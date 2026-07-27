@@ -166,8 +166,8 @@ wp_enqueue_script( 'moment-app' );
 	<title><?php esc_html_e( 'Moment', 'moment' ); ?></title>
 	<?php /* Dynamic manifest: start_url/scope track the resolved app base. */ ?>
 	<link rel="manifest" href="<?php echo esc_url( Moment_Routes::app_url( 'manifest.json' ) ); ?>" />
-	<?php /* iOS ignores SVG here; icon-192.png is generated from assets/icon.svg (see README). */ ?>
-	<link rel="apple-touch-icon" href="<?php echo esc_url( MOMENT_PLUGIN_URL . 'assets/icon-192.png' ); ?>" />
+	<?php /* Home-screen icon: the site's Site Icon when set, else Moment's (opaque PNG; iOS ignores SVG here). */ ?>
+	<link rel="apple-touch-icon" href="<?php echo esc_url( Moment_Routes::icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( MOMENT_PLUGIN_URL . 'assets/icon.svg' ); ?>" type="image/svg+xml" />
 	<?php wp_print_styles( array( 'moment-app' ) ); ?>
 </head>

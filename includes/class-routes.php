@@ -128,24 +128,53 @@ class Moment_Routes {
 			'display'          => 'standalone',
 			'background_color' => '#ffffff',
 			'theme_color'      => '#7a00df',
+			// PNG icons only — iOS chokes on an SVG "any" entry and then
+			// shows no home-screen icon at all. The site's own Site Icon is
+			// preferred when set, so the installed app matches the site.
 			'icons'            => array(
-				array(
-					'src'   => MOMENT_PLUGIN_URL . 'assets/icon.svg',
-					'sizes' => 'any',
-					'type'  => 'image/svg+xml',
-				),
-				array(
-					'src'   => MOMENT_PLUGIN_URL . 'assets/icon-192.png',
-					'sizes' => '192x192',
-					'type'  => 'image/png',
-				),
-				array(
-					'src'   => MOMENT_PLUGIN_URL . 'assets/icon-512.png',
-					'sizes' => '512x512',
-					'type'  => 'image/png',
-				),
+				self::icon_descriptor( 192 ),
+				self::icon_descriptor( 512 ),
 			),
 		);
+	}
+
+	/**
+	 * A home-screen/app icon URL at (approximately) the given size: the
+	 * site's own Site Icon when one is set, else Moment's bundled icon.
+	 *
+	 * @param int $size Desired square size in px.
+	 * @return string
+	 */
+	public static function icon_url( int $size ): string {
+		if ( has_site_icon() ) {
+			$url = get_site_icon_url( $size );
+			if ( $url ) {
+				return $url;
+			}
+		}
+
+		return MOMENT_PLUGIN_URL . 'assets/' . ( $size > 256 ? 'icon-512.png' : 'icon-192.png' );
+	}
+
+	/**
+	 * A manifest icon descriptor at the given size.
+	 *
+	 * @param int $size Square size in px.
+	 * @return array<string, string>
+	 */
+	private static function icon_descriptor( int $size ): array {
+		$url        = self::icon_url( $size );
+		$descriptor = array(
+			'src'   => $url,
+			'sizes' => $size . 'x' . $size,
+		);
+
+		// Only claim a type we're sure of (bundled PNGs, or a .png Site Icon).
+		if ( str_ends_with( strtok( $url, '?' ), '.png' ) ) {
+			$descriptor['type'] = 'image/png';
+		}
+
+		return $descriptor;
 	}
 
 	/**

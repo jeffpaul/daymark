@@ -98,7 +98,7 @@ class Test_Routes extends WP_UnitTestCase {
 		);
 	}
 
-	/** The manifest tracks the resolved base and uses plugin-URL icons. */
+	/** The manifest tracks the resolved base and uses PNG plugin-URL icons. */
 	public function test_manifest_tracks_base() {
 		self::factory()->post->create( array( 'post_type' => 'page', 'post_name' => 'moment' ) );
 		Moment_Routes::resolve_app_base();
@@ -108,5 +108,28 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( home_url( '/moment-app' ), $manifest['start_url'] );
 		$this->assertSame( home_url( '/moment-app' ), $manifest['scope'] );
 		$this->assertStringStartsWith( MOMENT_PLUGIN_URL, $manifest['icons'][0]['src'] );
+		// No SVG icon — iOS shows no home-screen icon when one is present.
+		foreach ( $manifest['icons'] as $icon ) {
+			$this->assertStringNotContainsString( '.svg', $icon['src'] );
+		}
+	}
+
+	/** Falls back to Moment's bundled PNG when the site has no Site Icon. */
+	public function test_icon_url_falls_back_to_bundled_png() {
+		$this->assertStringEndsWith( 'assets/icon-192.png', Moment_Routes::icon_url( 180 ) );
+		$this->assertStringEndsWith( 'assets/icon-512.png', Moment_Routes::icon_url( 512 ) );
+	}
+
+	/** Prefers the site's own Site Icon when one is set. */
+	public function test_icon_url_prefers_site_icon() {
+		$filter = static function () {
+			return 'https://example.test/site-icon.png';
+		};
+		add_filter( 'get_site_icon_url', $filter );
+
+		$this->assertSame( 'https://example.test/site-icon.png', Moment_Routes::icon_url( 180 ) );
+		$this->assertSame( 'https://example.test/site-icon.png', Moment_Routes::build_manifest()['icons'][0]['src'] );
+
+		remove_filter( 'get_site_icon_url', $filter );
 	}
 }
