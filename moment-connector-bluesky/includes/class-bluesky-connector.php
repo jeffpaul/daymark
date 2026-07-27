@@ -49,11 +49,24 @@ class Moment_Bluesky_Connector implements Moment_Syndication_Connector {
 	}
 
 	/**
-	 * Connected when a handle and app password are configured.
+	 * Connected when Moment can drive Bluesky — through ATmosphere's OAuth
+	 * connection (preferred), else a configured app password.
+	 *
+	 * Withheld when ATmosphere is present and auto-posting every post
+	 * itself: offering the toggle then would double-post, so ATmosphere
+	 * surfaces in Moment's awareness note instead.
 	 *
 	 * @return bool
 	 */
 	public function is_connected(): bool {
+		if ( Moment_Bluesky_Atmosphere::can_drive() ) {
+			return true;
+		}
+
+		if ( Moment_Bluesky_Atmosphere::would_autopost() ) {
+			return false;
+		}
+
 		return Moment_Bluesky_Integration::is_configured();
 	}
 
@@ -63,6 +76,10 @@ class Moment_Bluesky_Connector implements Moment_Syndication_Connector {
 	 * @return string
 	 */
 	public function get_status_label(): string {
+		if ( Moment_Bluesky_Atmosphere::can_drive() ) {
+			return __( 'Connected · via ATmosphere', 'moment-connector-bluesky' );
+		}
+
 		return $this->is_connected()
 			? __( 'Connected', 'moment-connector-bluesky' )
 			: __( 'Not connected · Mocked', 'moment-connector-bluesky' );
@@ -83,6 +100,11 @@ class Moment_Bluesky_Connector implements Moment_Syndication_Connector {
 	public function publish( int $post_id, array $payload ): array {
 		if ( ! $this->is_connected() ) {
 			return $this->mock_result( $post_id );
+		}
+
+		// Prefer ATmosphere's OAuth connection when it can drive publishing.
+		if ( Moment_Bluesky_Atmosphere::can_drive() ) {
+			return Moment_Bluesky_Atmosphere::publish( $post_id );
 		}
 
 		$caption = isset( $payload['caption'] ) ? wp_strip_all_tags( (string) $payload['caption'] ) : '';

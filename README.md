@@ -59,7 +59,18 @@ Moment's built-in connectors are mocked demos. The companion plugin
 plugin in this repo) replaces the Bluesky mock with the real thing —
 Moments publish to Bluesky, and replies flow back into WordPress as
 comments on the original Moment. Credentials are managed through the
-WordPress 7.0 **Connectors API**, so it feels core-native:
+WordPress 7.0 **Connectors API**, so it feels core-native.
+
+**Prefer ATmosphere's OAuth connection when present.** If the
+[ATmosphere](https://wordpress.org/plugins/atmosphere/) plugin is active
+with a connected account and its *own* auto-publish turned off, the
+Bluesky connector publishes through ATmosphere's OAuth connection (no app
+password, and the account is managed on Settings → Connectors) — the
+status reads "Connected · via ATmosphere". If ATmosphere is instead
+auto-posting every published post itself, Moment doesn't also drive
+Bluesky (that would double-post); ATmosphere just appears in the
+awareness note, and Moment falls back to the app-password path only when
+ATmosphere isn't auto-posting. To use an app password directly:
 
 1. **Activate both plugins** — `moment` and `moment-connector-bluesky`.
 2. **Create a Bluesky app password**: Bluesky → Settings → Privacy and

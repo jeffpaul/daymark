@@ -35,6 +35,7 @@ define( 'MOMENT_BLUESKY_PASSWORD_SETTING', 'connectors_social_bluesky_app_passwo
 define( 'MOMENT_BLUESKY_HANDLE_SETTING', 'moment_bluesky_handle' );
 
 require_once MOMENT_BLUESKY_PLUGIN_DIR . 'includes/class-bluesky-client.php';
+require_once MOMENT_BLUESKY_PLUGIN_DIR . 'includes/class-bluesky-atmosphere.php';
 require_once MOMENT_BLUESKY_PLUGIN_DIR . 'includes/class-bluesky-integration.php';
 
 // The connector class implements Moment's interface, so it can only load
