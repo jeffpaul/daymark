@@ -125,8 +125,9 @@ class Moment_Publish_Helpers {
 
 		/**
 		 * Filter the controllable publishing-helper adapters. Each entry is
-		 * id => { label, slugs, bind } where `bind` is a callable that
-		 * registers the plugin's own public per-post control filter.
+		 * keyed by id and carries `label`, `slugs`, and `bind`, where
+		 * `bind` is a callable that registers the plugin's own public
+		 * per-post control filter.
 		 *
 		 * @param array<string, array<string, mixed>> $adapters Adapter map.
 		 */
