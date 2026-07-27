@@ -970,6 +970,14 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
+/* Small inline "(view)" link beside the published heading. */
+.moment-success__viewlink {
+	font-size: 0.6em;
+	font-weight: 500;
+	color: var(--moment-accent);
+	vertical-align: middle;
+}
+
 .moment-syndication {
 	width: 100%;
 	list-style: none;

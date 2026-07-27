@@ -1127,19 +1127,19 @@
 				</span>
 				<h2 class="moment-screen__heading">${
 					isDraft ? 'Saved as draft' : 'Published to your site'
+				}${
+					!isDraft && permalink
+						? ` <a class="moment-success__viewlink" href="${esc(
+								permalink
+						  )}" target="_blank" rel="noopener">(view)</a>`
+						: ''
 				}</h2>
 				${
 					isDraft
 						? '<p class="moment-note-card__meta">Finish it any time from Recent Moments on Home.</p>'
 						: ''
 				}
-				${
-					!isDraft && permalink
-						? `<a class="moment-success__link" href="${esc(
-								permalink
-						  )}" target="_blank" rel="noopener">View on Site &rarr;</a>`
-						: ''
-				}
+				<a class="moment-success__link" href="#home">View all moments &rarr;</a>
 				${
 					isDraft
 						? publish.targets.length
