@@ -218,6 +218,8 @@ jobs:
           # Registers a fake publishing helper so the awareness-note test
           # has something to detect.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-publish-helper.php" /tmp/wp/wp-content/mu-plugins/
+          # Registers a fake controllable helper for the per-Moment toggle test.
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
           wp option update moment_bluesky_handle e2e.bsky.social --path=/tmp/wp
           wp option update connectors_social_bluesky_app_password e2e-fake --path=/tmp/wp
 

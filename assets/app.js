@@ -32,6 +32,7 @@
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
 		editing: null, // { id, type, media: [{id, kind, thumbnail, filename}] } while editing a draft
+		helpers: [], // enabled controllable third-party publishing helper ids
 	};
 
 	const TYPE_LABELS = {
@@ -194,6 +195,7 @@
 		state.targets = [];
 		state.aiAssistUsed = false;
 		state.editing = null;
+		state.helpers = [];
 	}
 
 	// Effective Moment type: new files win; otherwise an edited draft's
@@ -220,6 +222,7 @@
 		};
 		state.caption = moment.caption || '';
 		state.targets = Array.isArray(moment.targets) ? moment.targets.slice() : [];
+		state.helpers = Array.isArray(moment.helpers) ? moment.helpers.slice() : [];
 		state.primaryType = state.editing.type;
 		navigate('#create');
 	}
@@ -925,6 +928,33 @@
 				})
 				.join('');
 
+			// Controllable third-party helpers: publish through the plugin's
+			// own flow when toggled on (default off — opt-in).
+			const controllable = Array.isArray(config.controllableHelpers)
+				? config.controllableHelpers
+				: [];
+			const helperRows = controllable
+				.map(
+					(helper) => `
+				<li class="moment-dest">
+					<label class="moment-dest__row" for="moment-helper-${esc(helper.id)}">
+						<span class="moment-dest__info">
+							<span class="moment-dest__name">${esc(helper.label)}</span>
+							<span class="moment-chip moment-chip--muted">Via plugin</span>
+						</span>
+						<span class="moment-toggle">
+							<input type="checkbox" class="moment-toggle__input" id="moment-helper-${esc(
+								helper.id
+							)}" data-helper="${esc(helper.id)}"${
+						state.helpers.includes(helper.id) ? ' checked' : ''
+					} aria-label="Also publish through ${esc(helper.label)}" />
+							<span class="moment-toggle__track" aria-hidden="true"></span>
+						</span>
+					</label>
+				</li>`
+				)
+				.join('');
+
 			return `
 			<header class="moment-topbar">
 				<a class="moment-backlink" href="#create">&larr; Back</a>
@@ -953,6 +983,7 @@
 						</span>
 					</li>
 					${connectors.length ? connectorRows : rows}
+					${helperRows}
 				</ul>
 				${(() => {
 					const helpers = config.publishHelpers || [];
@@ -980,6 +1011,19 @@
 						}
 					} else {
 						state.targets = state.targets.filter((t) => t !== id);
+					}
+				});
+			});
+
+			root.querySelectorAll('[data-helper]').forEach((input) => {
+				input.addEventListener('change', () => {
+					const id = input.getAttribute('data-helper');
+					if (input.checked) {
+						if (!state.helpers.includes(id)) {
+							state.helpers.push(id);
+						}
+					} else {
+						state.helpers = state.helpers.filter((h) => h !== id);
 					}
 				});
 			});
@@ -1017,6 +1061,12 @@
 			formData.append('status', postStatus);
 			formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
 			state.targets.forEach((target) => formData.append('targets[]', target));
+			// When controllable helpers exist, send the selection (as JSON so
+			// an empty choice is authoritative "none"); omit entirely when
+			// there are none, leaving those plugins' own defaults untouched.
+			if (Array.isArray(config.controllableHelpers) && config.controllableHelpers.length) {
+				formData.append('publish_helpers', JSON.stringify(state.helpers));
+			}
 			state.files.forEach((entry) => formData.append('files[]', entry.file, entry.file.name));
 			if (state.altText) {
 				formData.append('alt_text', state.altText);

@@ -192,6 +192,23 @@ Twitter**, **Blog2Social**, **Social Networks Auto-Poster (SNAP)**, and
 **Revive Old Posts**. Other publishing plugins can add themselves to the
 note via the `moment_publish_helper_plugins` filter.
 
+### Can I turn a plugin's sharing on or off per Moment?
+
+For plugins that expose a public per-post control hook, yes — Moment
+turns the awareness note into an actual **per-Moment toggle** on the
+publish screen. Currently that's **Share on Mastodon** (via its
+`share_on_mastodon_enabled` filter) and **Autoshare for Twitter** (via
+`autoshare_for_twitter_enabled_default`). The toggle defaults to **off**
+(opt-in), and Moment drives each plugin only through its own public
+hook — it never writes the plugin's private data. A Moment that opts in
+publishes through the plugin's normal flow when it goes live.
+
+Adapters are registered through the `moment_publish_helper_adapters`
+filter, so a plugin (or a companion add-on) can make itself
+controllable by mapping a toggle to its own per-post hook. Plugins that
+don't yet expose such a hook stay awareness-only until they do — the
+right fix there is an upstream hook, not Moment writing private meta.
+
 One thing to watch: if you run *both* a Moment connector for a network
 **and** one of these plugins for the same network, a Moment can post
 twice. The note is there partly to make that visible — turn one of them

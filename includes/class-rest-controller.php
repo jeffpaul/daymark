@@ -292,6 +292,13 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 		);
 
+		// Only forward the helper selection when the client actually sent
+		// one, so API callers that omit it keep those plugins' defaults.
+		// Raw value (array or JSON string) — the publisher normalizes it.
+		if ( null !== $request->get_param( 'publish_helpers' ) ) {
+			$data['publish_helpers'] = $request->get_param( 'publish_helpers' );
+		}
+
 		$post_id = Moment_Plugin::instance()->publisher->publish( $data, is_array( $files ) ? $files : array() );
 
 		if ( is_wp_error( $post_id ) ) {
@@ -496,11 +503,13 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		}
 
 		$targets = json_decode( (string) get_post_meta( $post_id, '_moment_syndication_targets', true ), true );
+		$helpers = json_decode( (string) get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ), true );
 
 		$payload            = $this->prepare_moment_summary( $post_id );
 		$payload['caption'] = $caption;
 		$payload['media']   = $media;
 		$payload['targets'] = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+		$payload['helpers'] = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
 
 		return rest_ensure_response( $payload );
 	}
@@ -535,6 +544,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'alt_text'            => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			'tags'                => $request->get_param( 'tags' ),
 		);
+
+		if ( null !== $request->get_param( 'publish_helpers' ) ) {
+			$data['publish_helpers'] = $request->get_param( 'publish_helpers' );
+		}
 
 		$status = sanitize_key( (string) $request->get_param( 'status' ) );
 		if ( in_array( $status, array( 'publish', 'draft' ), true ) ) {

@@ -97,4 +97,95 @@ class Test_Publish_Helpers extends WP_UnitTestCase {
 
 		remove_filter( 'moment_publish_helper_plugins', $filter );
 	}
+
+	/** Mark a plugin folder slug active for the current test. */
+	private function activate_slug( string $slug ): void {
+		update_option( 'active_plugins', array( $slug . '/' . $slug . '.php' ) );
+	}
+
+	// --- Controllable adapters (per-Moment toggle) ---
+
+	/** Only active adapter plugins are offered as controllable helpers. */
+	public function test_controllable_lists_active_adapters_only() {
+		$this->assertSame( array(), Moment_Publish_Helpers::controllable() );
+
+		$this->activate_slug( 'share-on-mastodon' );
+
+		$ids = Moment_Publish_Helpers::controllable_ids();
+		$this->assertContains( 'share-on-mastodon', $ids );
+		$this->assertNotContains( 'autoshare-for-twitter', $ids, 'Inactive adapters are not controllable' );
+	}
+
+	/** The adapter's control filter governs only Moment posts that recorded a selection. */
+	public function test_adapter_filter_governs_by_selection() {
+		$this->activate_slug( 'share-on-mastodon' );
+		Moment_Publish_Helpers::register_adapters();
+
+		$post_id = (int) self::factory()->post->create();
+
+		// Non-Moment post: the plugin's own decision passes through untouched.
+		$this->assertFalse( apply_filters( 'share_on_mastodon_enabled', false, $post_id ) );
+		$this->assertTrue( apply_filters( 'share_on_mastodon_enabled', true, $post_id ) );
+
+		// Moment post with no recorded selection: still untouched.
+		update_post_meta( $post_id, '_moment_is_moment', '1' );
+		$this->assertTrue( apply_filters( 'share_on_mastodon_enabled', true, $post_id ) );
+
+		// Selected → forced on regardless of the plugin's fallback.
+		update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( array( 'share-on-mastodon' ) ) );
+		$this->assertTrue( apply_filters( 'share_on_mastodon_enabled', false, $post_id ) );
+
+		// Authoritative empty selection → forced off.
+		update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( array() ) );
+		$this->assertFalse( apply_filters( 'share_on_mastodon_enabled', true, $post_id ) );
+	}
+
+	/** The publisher records the selection and publishes (deferred path). */
+	public function test_publisher_records_selection_and_publishes() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->activate_slug( 'share-on-mastodon' );
+
+		$publisher = new Moment_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'         => 'Helper on',
+				'publish_helpers' => array( 'share-on-mastodon' ),
+			)
+		);
+
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+		$this->assertSame(
+			array( 'share-on-mastodon' ),
+			json_decode( (string) get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ), true )
+		);
+	}
+
+	/** An absent publish_helpers field leaves no selection meta. */
+	public function test_publisher_omits_meta_when_field_absent() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$publisher = new Moment_Publisher();
+		$post_id   = (int) $publisher->publish( array( 'caption' => 'No helpers' ) );
+
+		$this->assertSame( '', get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ) );
+	}
+
+	/** Unknown/inactive helper ids are dropped from the stored selection. */
+	public function test_publisher_drops_inactive_ids() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		// share-on-mastodon is NOT active here.
+		$publisher = new Moment_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'         => 'x',
+				'publish_helpers' => array( 'share-on-mastodon', 'bogus' ),
+			)
+		);
+
+		$this->assertSame(
+			array(),
+			json_decode( (string) get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ), true )
+		);
+	}
 }

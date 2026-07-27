@@ -75,6 +75,157 @@ class Moment_Publish_Helpers {
 	);
 
 	/**
+	 * Post meta recording which controllable helpers a Moment opted into.
+	 */
+	const CONTROL_META = '_moment_publish_helpers';
+
+	/**
+	 * Controllable adapters: active publishing plugins Moment can drive
+	 * per-Moment through the plugin's OWN public control filter (never by
+	 * writing the plugin's private meta). Only these get an in-app toggle;
+	 * other detected plugins stay awareness-only.
+	 *
+	 * Each `bind` registers the plugin's control filter with a callback
+	 * that defers to Moment's per-post selection for Moment posts and
+	 * leaves every other post's decision untouched.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function adapters(): array {
+		$adapters = array(
+			'share-on-mastodon'     => array(
+				'label' => 'Share on Mastodon',
+				'slugs' => array( 'share-on-mastodon' ),
+				'bind'  => static function () {
+					add_filter(
+						'share_on_mastodon_enabled',
+						static function ( $enabled, $post_id ) {
+							return self::decide( (int) $post_id, 'share-on-mastodon', (bool) $enabled );
+						},
+						10,
+						2
+					);
+				},
+			),
+			'autoshare-for-twitter' => array(
+				'label' => 'Autoshare for Twitter',
+				'slugs' => array( 'autoshare-for-twitter' ),
+				'bind'  => static function () {
+					add_filter(
+						'autoshare_for_twitter_enabled_default',
+						static function ( $enabled_default, $post_type, $post_id ) {
+							return self::decide( (int) $post_id, 'autoshare-for-twitter', (bool) $enabled_default );
+						},
+						10,
+						3
+					);
+				},
+			),
+		);
+
+		/**
+		 * Filter the controllable publishing-helper adapters. Each entry is
+		 * id => { label, slugs, bind } where `bind` is a callable that
+		 * registers the plugin's own public per-post control filter.
+		 *
+		 * @param array<string, array<string, mixed>> $adapters Adapter map.
+		 */
+		$adapters = apply_filters( 'moment_publish_helper_adapters', $adapters );
+
+		return is_array( $adapters ) ? $adapters : array();
+	}
+
+	/**
+	 * Active controllable helpers as [{id, label}], for the publish-screen
+	 * toggles.
+	 *
+	 * @return array<int, array<string, string>>
+	 */
+	public static function controllable(): array {
+		$active = self::active_plugin_slugs();
+		$found  = array();
+
+		foreach ( self::adapters() as $id => $def ) {
+			if ( is_array( $def ) && self::slug_active( $def, $active ) ) {
+				$found[] = array(
+					'id'    => sanitize_key( (string) $id ),
+					'label' => sanitize_text_field( (string) ( $def['label'] ?? $id ) ),
+				);
+			}
+		}
+
+		return $found;
+	}
+
+	/**
+	 * Ids of active controllable helpers.
+	 *
+	 * @return string[]
+	 */
+	public static function controllable_ids(): array {
+		return array_column( self::controllable(), 'id' );
+	}
+
+	/**
+	 * Register the control filters for every active controllable helper.
+	 * Called on init; the filters gate on per-post Moment selection, so
+	 * they never affect non-Moment posts.
+	 *
+	 * @return void
+	 */
+	public static function register_adapters(): void {
+		$active = self::active_plugin_slugs();
+
+		foreach ( self::adapters() as $def ) {
+			if ( is_array( $def ) && self::slug_active( $def, $active ) && isset( $def['bind'] ) && is_callable( $def['bind'] ) ) {
+				( $def['bind'] )();
+			}
+		}
+	}
+
+	/**
+	 * The share decision for one helper on one post: governs only Moment
+	 * posts that recorded a selection, and returns the plugin's own
+	 * fallback for everything else.
+	 *
+	 * @param int    $post_id  Post being evaluated.
+	 * @param string $id       Controllable helper id.
+	 * @param bool   $fallback The plugin's own default decision.
+	 * @return bool
+	 */
+	private static function decide( int $post_id, string $id, bool $fallback ): bool {
+		if ( '1' !== (string) get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+			return $fallback;
+		}
+
+		$selection = json_decode( (string) get_post_meta( $post_id, self::CONTROL_META, true ), true );
+
+		// No recorded selection → don't interfere with the plugin's default.
+		if ( ! is_array( $selection ) ) {
+			return $fallback;
+		}
+
+		return in_array( $id, $selection, true );
+	}
+
+	/**
+	 * Whether any of a definition's slugs is active.
+	 *
+	 * @param array<string, mixed> $def          Definition.
+	 * @param string[]             $active_slugs Active plugin folder slugs.
+	 * @return bool
+	 */
+	private static function slug_active( array $def, array $active_slugs ): bool {
+		foreach ( (array) ( $def['slugs'] ?? array() ) as $slug ) {
+			if ( in_array( $slug, $active_slugs, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * The detectable plugin definitions, filterable so other publishing
 	 * plugins can make themselves known to Moment's awareness note.
 	 *

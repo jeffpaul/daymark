@@ -183,6 +183,9 @@ final class Moment_Plugin {
 		$this->syndication_links->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
+		// Bridge active third-party publishing plugins' control filters to
+		// per-Moment selection (Share on Mastodon, Autoshare for Twitter).
+		Moment_Publish_Helpers::register_adapters();
 
 		/**
 		 * Fires after built-in Moment connectors are registered.

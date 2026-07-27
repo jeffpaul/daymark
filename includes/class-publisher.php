@@ -156,11 +156,24 @@ class Moment_Publisher {
 
 		// An explicitly requested draft always wins; a requested (or
 		// implied) publish still requires the capability.
-		$wants_draft = isset( $data['status'] ) && 'draft' === $data['status'];
+		$wants_draft   = isset( $data['status'] ) && 'draft' === $data['status'];
+		$final_publish = ! $wants_draft && current_user_can( 'publish_posts' );
+
+		// Controllable third-party helpers (Share on Mastodon, Autoshare
+		// for Twitter, …). A present `publish_helpers` field means the app
+		// rendered the toggles and the user's choice is authoritative; an
+		// absent field means don't interfere with those plugins' defaults.
+		$has_helper_selection = array_key_exists( 'publish_helpers', $data );
+		$helper_selection     = $has_helper_selection ? $this->sanitize_helper_ids( $data['publish_helpers'] ) : array();
+
+		// When helpers are in play we insert as a draft first so the
+		// selection meta is in place before the publish transition fires
+		// each plugin's control filter, then transition to publish below.
+		$defer_helpers = $final_publish && $has_helper_selection;
 
 		$post_data = array(
 			'post_type'    => 'post', // NEVER a custom post type — the Moment is a standard post.
-			'post_status'  => ( ! $wants_draft && current_user_can( 'publish_posts' ) ) ? 'publish' : 'draft',
+			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
 			'post_content' => $this->build_block_markup( $media_ids, $caption ),
@@ -216,6 +229,10 @@ class Moment_Publisher {
 		update_post_meta( $post_id, '_moment_ai_assist_used', $ai_assist_used );
 		update_post_meta( $post_id, '_moment_created_from', 'mobile' );
 
+		if ( $has_helper_selection ) {
+			update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( $helper_selection ) );
+		}
+
 		$this->apply_post_format( $post_id, $type );
 
 		$moment_data = array(
@@ -238,14 +255,47 @@ class Moment_Publisher {
 		 */
 		do_action( 'moment_published', $post_id, $moment_data );
 
-		// Drafts never syndicate. Targets stay stored in post meta with
-		// status 'not_attempted'; syndicate_on_publish() runs them when
-		// the Moment goes live — from the app or wp-admin alike.
-		if ( 'publish' === get_post_status( $post_id ) ) {
+		if ( $defer_helpers ) {
+			// Meta (incl. the helper selection) is now in place; go live.
+			// The draft→publish transition runs connector syndication via
+			// syndicate_on_publish() and lets each opted-in third-party
+			// plugin publish through its own control filter.
+			wp_update_post(
+				array(
+					'ID'          => $post_id,
+					'post_status' => 'publish',
+				)
+			);
+		} elseif ( 'publish' === get_post_status( $post_id ) ) {
+			// Drafts never syndicate. Targets stay stored in post meta with
+			// status 'not_attempted'; syndicate_on_publish() runs them when
+			// the Moment goes live — from the app or wp-admin alike.
 			$this->maybe_syndicate( $post_id, $targets, $moment_data );
 		}
 
 		return $post_id;
+	}
+
+	/**
+	 * Sanitize a list of controllable helper ids to the currently active
+	 * ones, dropping anything unknown or inactive.
+	 *
+	 * @param mixed $raw Raw ids (array or JSON string).
+	 * @return string[]
+	 */
+	private function sanitize_helper_ids( $raw ): array {
+		if ( is_string( $raw ) ) {
+			$decoded = json_decode( $raw, true );
+			$raw     = is_array( $decoded ) ? $decoded : array();
+		}
+
+		if ( ! is_array( $raw ) ) {
+			return array();
+		}
+
+		$ids = array_map( 'sanitize_key', array_map( 'strval', $raw ) );
+
+		return array_values( array_intersect( $ids, Moment_Publish_Helpers::controllable_ids() ) );
 	}
 
 	/**
@@ -350,6 +400,13 @@ class Moment_Publisher {
 		update_post_meta( $post_id, '_moment_caption', $caption );
 		update_post_meta( $post_id, '_moment_primary_type', $type );
 		update_post_meta( $post_id, '_moment_media_ids', wp_json_encode( $media_ids ) );
+
+		// Helper selection is written before the status update below so a
+		// draft→publish transition here fires each plugin's control filter
+		// against the fresh choice.
+		if ( array_key_exists( 'publish_helpers', $data ) ) {
+			update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( $this->sanitize_helper_ids( $data['publish_helpers'] ) ) );
+		}
 
 		// Re-apply in case the type changed on edit (e.g. adding media to a note).
 		$this->apply_post_format( $post_id, $type );

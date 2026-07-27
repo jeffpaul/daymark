@@ -425,3 +425,33 @@ test('publish screen notes active third-party publishing plugins', async ({ page
 	await expect(note).toBeVisible();
 	await expect(note).toContainText('Test Publicize');
 });
+
+// A controllable third-party helper gets its own per-Moment toggle, and
+// the selection is sent with the publish request.
+test('controllable helper: per-Moment toggle appears and is sent on publish', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', `E2E helper ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+
+	const toggle = page.locator('[data-helper="moment-e2e-helper"]');
+	await expect(toggle).toBeVisible();
+	await expect(toggle).not.toBeChecked(); // opt-in: default off
+	await toggle.click({ force: true });
+	await expect(toggle).toBeChecked();
+
+	// Capture the create request body to confirm the selection is sent.
+	let sentBody = '';
+	await page.route('**/moment/v1/moments', async (route) => {
+		if ('POST' === route.request().method()) {
+			sentBody = route.request().postData() || '';
+		}
+		await route.continue();
+	});
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+	expect(sentBody).toContain('publish_helpers');
+	expect(sentBody).toContain('moment-e2e-helper');
+});

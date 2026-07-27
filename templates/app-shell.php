@@ -79,6 +79,19 @@ foreach ( $moment_all_types as $moment_type ) {
 
 $moment_ai = Moment_Plugin::instance()->ai_assist;
 
+// Controllable helpers get in-app toggles; awareness helpers are the
+// remaining detected publishing plugins Moment only notes (can't drive).
+$moment_controllable_helpers = Moment_Publish_Helpers::controllable();
+$moment_controllable_ids     = array_column( $moment_controllable_helpers, 'id' );
+$moment_awareness_helpers    = array_values(
+	array_filter(
+		Moment_Publish_Helpers::detect(),
+		static function ( $helper ) use ( $moment_controllable_ids ) {
+			return ! in_array( $helper['id'], $moment_controllable_ids, true );
+		}
+	)
+);
+
 // Section-page links resolve to the real pages (collision-aware slugs);
 // a view without a live Moment page gets '' and the app hides its link.
 $moment_pages = array();
@@ -89,25 +102,27 @@ foreach ( Moment_Plugin::get_moment_pages() as $moment_view => $moment_page_id )
 }
 
 $moment_config = array(
-	'restUrl'        => esc_url_raw( rest_url( 'moment/v1/' ) ),
-	'assetsUrl'      => esc_url_raw( MOMENT_PLUGIN_URL . 'assets/' ),
-	'nonce'          => wp_create_nonce( 'wp_rest' ),
-	'siteUrl'        => esc_url_raw( home_url( '/' ) ),
-	'screen'         => $moment_screen,
-	'connectors'     => $moment_connectors,
-	'defaults'       => $moment_type_defaults,
-	'pages'          => $moment_pages,
-	'ai'             => array(
+	'restUrl'             => esc_url_raw( rest_url( 'moment/v1/' ) ),
+	'assetsUrl'           => esc_url_raw( MOMENT_PLUGIN_URL . 'assets/' ),
+	'nonce'               => wp_create_nonce( 'wp_rest' ),
+	'siteUrl'             => esc_url_raw( home_url( '/' ) ),
+	'screen'              => $moment_screen,
+	'connectors'          => $moment_connectors,
+	'defaults'            => $moment_type_defaults,
+	'pages'               => $moment_pages,
+	'ai'                  => array(
 		'available'     => $moment_ai->is_available(),
 		'providerLabel' => $moment_ai->get_provider_label(),
 	),
-	'notifications'  => array(
+	'notifications'       => array(
 		'hasUnread' => Moment_Plugin::instance()->notifications->has_unread(),
 	),
-	// Active third-party publishing plugins that will also share this
-	// Moment on publish (awareness only — Moment does not drive them).
-	'publishHelpers' => Moment_Publish_Helpers::detect(),
-	'currentUser'    => array(
+	// Controllable third-party helpers get a per-Moment toggle; the rest
+	// of the detected publishing plugins stay awareness-only (Moment does
+	// not drive those).
+	'controllableHelpers' => $moment_controllable_helpers,
+	'publishHelpers'      => $moment_awareness_helpers,
+	'currentUser'         => array(
 		'id'          => (int) $moment_user->ID,
 		'displayName' => $moment_user->display_name,
 	),
