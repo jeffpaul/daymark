@@ -61,7 +61,15 @@ body.moment-app {
 	margin: 0 auto;
 	display: flex;
 	flex-direction: column;
-	padding-bottom: calc(var(--moment-spacing-xl) + env(safe-area-inset-bottom, 0px));
+	/* No bottom padding here: the bottom-pinned footers (home nav, action
+	 * bar) sit flush at the visible bottom and carry their own safe-area
+	 * inset. A shell padding would lift them up off the screen. */
+}
+
+/* Notifications is the one screen without a pinned footer, so it needs
+ * its own bottom clearance above the home indicator. */
+.moment-app--notifications .moment-screen {
+	padding-bottom: calc(var(--moment-spacing-lg) + env(safe-area-inset-bottom, 0px));
 }
 
 .moment-boot,
