@@ -68,3 +68,26 @@ jobs:
         run: |
           set -e
           find assets -name '*.js' -print0 | xargs -0 -n1 node --check
+
+  license:
+    name: LICENSE present (GPLv2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Guards against accidentally dropping the license: a GPL plugin must
+      # ship its full license text, and it must not be excluded from the zip.
+      - name: LICENSE exists and is GPLv2
+        run: |
+          set -e
+          test -f LICENSE || { echo "::error::LICENSE file is missing"; exit 1; }
+          grep -q "GNU GENERAL PUBLIC LICENSE" LICENSE || { echo "::error::LICENSE is not the GNU GPL"; exit 1; }
+          grep -q "Version 2" LICENSE || { echo "::error::LICENSE is not GPL version 2"; exit 1; }
+
+      - name: LICENSE is not excluded from the distributed build
+        run: |
+          set -e
+          if grep -qxE 'LICENSE(\.(txt|md))?' .distignore; then
+            echo "::error::LICENSE must not be listed in .distignore — it has to ship in the plugin zip"
+            exit 1
+          fi
