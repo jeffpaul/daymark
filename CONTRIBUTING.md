@@ -4,6 +4,9 @@ Thanks for your interest in improving Moment — a phone-first publishing
 experience for WordPress. Contributions of all kinds are welcome: bug
 reports, fixes, tests, docs, and new connectors.
 
+This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); by
+participating, you are expected to uphold it.
+
 ## Ways to contribute
 
 - **Report a bug or request a feature** via
