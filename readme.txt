@@ -5,8 +5,8 @@ Requires at least: 7.0
 Tested up to: 7.0
 Requires PHP: 8.1
 Stable tag: 0.3.0
-License: GPLv2 or later
-License URI: https://www.gnu.org/licenses/gpl-2.0.html
+License: GPL-2.0-or-later
+License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
 Personal Site Publisher Mode for WordPress: capture, caption, and publish Moments from your phone. Your site stays the source of truth.
 

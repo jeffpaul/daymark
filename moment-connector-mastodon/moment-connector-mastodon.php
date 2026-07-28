@@ -6,8 +6,8 @@
  * Requires at least: 7.0
  * Requires PHP: 8.1
  * Requires Plugins: moment
- * License: GPLv2 or later
- * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * License: GPL-2.0-or-later
+ * License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
  * Text Domain: moment-connector-mastodon
  *
  * @package Moment_Mastodon

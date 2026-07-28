@@ -143,5 +143,7 @@ shapes in words rather than `array{...}` syntax in hook docblocks.)
 
 ## License
 
-Moment is licensed under the **GPLv2 (or later)**. By contributing, you
-agree that your contributions are licensed under the same terms.
+Moment is licensed under **GPL-2.0-or-later**
+([GPL-2.0-or-later](https://spdx.org/licenses/GPL-2.0-or-later.html)). By
+contributing, you agree that your contributions are licensed under the
+same terms.
