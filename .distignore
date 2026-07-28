@@ -18,6 +18,7 @@ vendor
 .distignore
 .gitignore
 CLAUDE.md
+CONTRIBUTING.md
 composer.json
 composer.lock
 package.json

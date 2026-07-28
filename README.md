@@ -42,6 +42,12 @@ against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke,
 browser E2E) exist to keep that review honest. Treat it as an AI-generated,
 human-directed software.
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
+development setup, the test suites, coding standards, and the pull-request
+workflow.
+
 ## Requirements
 
 - WordPress 7.0+ (the bundled AI Client powers optional AI Assist; publishing never requires a configured AI provider)
