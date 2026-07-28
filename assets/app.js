@@ -24,9 +24,8 @@
 
 	// --- App state ---
 	const state = {
-		files: [], // { id, file, url, kind }
+		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
 		caption: '',
-		altText: '',
 		tags: [],
 		primaryType: 'note',
 		targets: [],
@@ -197,7 +196,6 @@
 		});
 		state.files = [];
 		state.caption = '';
-		state.altText = '';
 		state.tags = [];
 		state.primaryType = 'note';
 		state.targets = [];
@@ -509,16 +507,30 @@
 			const editing = state.editing;
 			const existingTiles =
 				editing && editing.media.length
-					? `<ul class="moment-preview__grid" aria-label="Media already attached to this draft">${editing.media
+					? `<ul class="moment-editmedia" aria-label="Media already attached to this draft">${editing.media
 							.map(
 								(m) =>
-									`<li class="moment-preview__tile">${
-										m.thumbnail
-											? `<img class="moment-preview__img" src="${esc(m.thumbnail)}" alt="Attached ${esc(
-													m.filename || m.kind
-											  )}" />`
-											: `<span class="moment-preview__glyph">${esc(m.kind)}</span>`
-									}</li>`
+									`<li class="moment-editmedia__item">
+										${
+											m.thumbnail
+												? `<img class="moment-editmedia__thumb" src="${esc(m.thumbnail)}" alt="Attached ${esc(
+														m.filename || m.kind
+												  )}" />`
+												: `<span class="moment-editmedia__glyph">${esc(m.kind)}</span>`
+										}
+										${
+											m.kind === 'image'
+												? `<span class="moment-alt moment-alt--edit">
+														<label class="moment-alt__label" for="moment-existing-alt-${esc(m.id)}">Alt text</label>
+														<input type="text" class="moment-input moment-alt__input" id="moment-existing-alt-${esc(
+															m.id
+														)}" data-existing-alt="${esc(m.id)}" value="${esc(
+														m.alt || ''
+												  )}" placeholder="Describe this image" />
+													</span>`
+												: `<span class="moment-editmedia__name">${esc(m.filename || m.kind)}</span>`
+										}
+									</li>`
 							)
 							.join('')}</ul>`
 					: '';
@@ -583,12 +595,22 @@
 						return;
 					}
 					state.fileCounter += 1;
-					state.files.push({
+					const isImage = file.type.indexOf('image/') === 0;
+					const entry = {
 						id: 'f' + state.fileCounter,
 						file,
-						url: file.type.indexOf('image/') === 0 ? URL.createObjectURL(file) : '',
+						url: isImage ? URL.createObjectURL(file) : '',
 						kind: (file.type || '').split('/')[0] || 'file',
-					});
+						alt: '',
+						altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
+						altEdited: false,
+					};
+					state.files.push(entry);
+					// Pre-fill alt text from the AI provider (if one is
+					// connected); the author can edit it before publishing.
+					if (entry.altStatus === 'loading') {
+						this.generateAltFor(entry);
+					}
 				});
 				input.value = '';
 				this.refreshMedia();
@@ -596,6 +618,18 @@
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
+			});
+
+			// Alt edits on media already attached to a draft, keyed by ID.
+			root.querySelectorAll('[data-existing-alt]').forEach((field) => {
+				field.addEventListener('input', () => {
+					const id = field.getAttribute('data-existing-alt');
+					const media = (state.editing && state.editing.media) || [];
+					const item = media.find((m) => String(m.id) === String(id));
+					if (item) {
+						item.alt = field.value;
+					}
+				});
 			});
 
 			const aiButton = root.querySelector('[data-action="ai-assist"]');
@@ -663,10 +697,13 @@
 				.map(
 					(entry) => `
 				<li class="moment-filelist__item">
-					<span class="moment-filelist__name">${esc(entry.file.name)}</span>
-					<button type="button" class="moment-filelist__clear" data-clear-file="${esc(
-						entry.id
-					)}" aria-label="Clear ${esc(entry.file.name)}">Clear</button>
+					<div class="moment-filelist__row">
+						<span class="moment-filelist__name">${esc(entry.file.name)}</span>
+						<button type="button" class="moment-filelist__clear" data-clear-file="${esc(
+							entry.id
+						)}" aria-label="Clear ${esc(entry.file.name)}">Clear</button>
+					</div>
+					${entry.kind === 'image' ? this.altFieldMarkup(entry) : ''}
 				</li>`
 				)
 				.join('');
@@ -687,6 +724,71 @@
 					this.refreshMedia();
 				});
 			});
+
+			preview.querySelectorAll('[data-alt-for]').forEach((field) => {
+				field.addEventListener('input', () => {
+					const entry = state.files.find((f) => f.id === field.getAttribute('data-alt-for'));
+					if (entry) {
+						entry.alt = field.value;
+						entry.altEdited = true; // Stop a late AI result from overwriting.
+					}
+				});
+			});
+		},
+
+		// Alt-text field for one image entry, with a hint reflecting AI state.
+		altFieldMarkup(entry) {
+			const hint =
+				entry.altStatus === 'loading'
+					? '<span class="moment-alt__hint">Generating alt text…</span>'
+					: entry.altStatus === 'done'
+					? '<span class="moment-alt__hint">AI-suggested — edit as needed</span>'
+					: '';
+			return `
+				<div class="moment-alt">
+					<label class="moment-alt__label" for="moment-alt-${esc(entry.id)}">Alt text</label>
+					<input type="text" class="moment-input moment-alt__input" id="moment-alt-${esc(
+						entry.id
+					)}" data-alt-for="${esc(entry.id)}" value="${esc(entry.alt)}" placeholder="Describe this image" ${
+				entry.altStatus === 'loading' ? 'aria-busy="true"' : ''
+			} />
+					${hint}
+				</div>`;
+		},
+
+		// Ask the provider to describe one image, then drop the suggestion
+		// into its alt field unless the author has already typed one. Patches
+		// just this entry's field in place so a late result never disrupts
+		// text the author is typing into another image's field.
+		async generateAltFor(entry) {
+			try {
+				const formData = new FormData();
+				formData.append('image', entry.file, entry.file.name);
+				formData.append('text', state.caption || '');
+				const result = await apiUpload('ai/alt-text', formData);
+				if (!entry.altEdited && result && result.alt_text) {
+					entry.alt = String(result.alt_text);
+				}
+				entry.altStatus = 'done';
+			} catch (err) {
+				entry.altStatus = 'idle';
+			}
+
+			if (!state.files.includes(entry)) {
+				return; // Image was cleared before the suggestion arrived.
+			}
+			const field = root.querySelector('[data-alt-for="' + entry.id + '"]');
+			if (!field) {
+				return;
+			}
+			if (!entry.altEdited) {
+				field.value = entry.alt;
+			}
+			field.removeAttribute('aria-busy');
+			const hint = field.parentElement.querySelector('.moment-alt__hint');
+			if (hint) {
+				hint.textContent = entry.altStatus === 'done' ? 'AI-suggested — edit as needed' : '';
+			}
 		},
 	};
 
@@ -777,12 +879,6 @@
 					suggestions.caption || ''
 				)}</textarea>
 			</div>
-			<div class="moment-field">
-				<label class="moment-field__label" for="moment-ai-alt">Suggested alt text</label>
-				<input type="text" id="moment-ai-alt" class="moment-input" value="${esc(
-					suggestions.alt_text || ''
-				)}" />
-			</div>
 			<fieldset class="moment-tags">
 				<legend class="moment-tags__legend">Suggested tags</legend>
 				<ul class="moment-tags__list" data-tag-list></ul>
@@ -814,7 +910,6 @@
 
 			this.el.querySelector('[data-sheet-accept]').addEventListener('click', () => {
 				state.caption = this.el.querySelector('#moment-ai-caption').value;
-				state.altText = this.el.querySelector('#moment-ai-alt').value;
 				state.tags = this.tags.slice();
 				state.aiAssistUsed = true;
 				const captionField = document.getElementById('moment-caption');
@@ -1129,9 +1224,23 @@
 			if (Array.isArray(config.controllableHelpers) && config.controllableHelpers.length) {
 				formData.append('publish_helpers', JSON.stringify(state.helpers));
 			}
-			state.files.forEach((entry) => formData.append('files[]', entry.file, entry.file.name));
-			if (state.altText) {
-				formData.append('alt_text', state.altText);
+			// Append each file with its per-image alt in the same order, so
+			// the server can map alt[] positionally onto the new attachments.
+			state.files.forEach((entry) => {
+				formData.append('files[]', entry.file, entry.file.name);
+				formData.append('alt[]', entry.kind === 'image' ? entry.alt || '' : '');
+			});
+			// Editing: alt edits on already-attached images, keyed by ID.
+			if (state.editing && Array.isArray(state.editing.media)) {
+				const existingAlt = {};
+				state.editing.media.forEach((m) => {
+					if (m.kind === 'image') {
+						existingAlt[m.id] = m.alt || '';
+					}
+				});
+				if (Object.keys(existingAlt).length) {
+					formData.append('existing_alt', JSON.stringify(existingAlt));
+				}
 			}
 			state.tags.forEach((tag) => formData.append('tags[]', tag));
 

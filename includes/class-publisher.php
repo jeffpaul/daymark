@@ -229,8 +229,13 @@ class Moment_Publisher {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
+		// Per-image alt text, positional against the uploaded files (and so
+		// against $media_ids in the same order). Falls back to the legacy
+		// single alt_text for the first image when no positional list is sent.
+		$this->apply_positional_alt( $media_ids, $data['alt'] ?? null );
+
 		$alt_text = isset( $data['alt_text'] ) ? sanitize_text_field( (string) $data['alt_text'] ) : '';
-		if ( '' !== $alt_text && $media_ids ) {
+		if ( '' !== $alt_text && $media_ids && ! isset( $data['alt'] ) ) {
 			$first_id = (int) $media_ids[0];
 			if ( wp_attachment_is_image( $first_id ) && '' === (string) get_post_meta( $first_id, '_wp_attachment_image_alt', true ) ) {
 				update_post_meta( $first_id, '_wp_attachment_image_alt', $alt_text );
@@ -425,8 +430,13 @@ class Moment_Publisher {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
+		// Alt text: positional for the newly added files, plus a map keyed
+		// by attachment ID for media already on the Moment (edited in place).
+		$this->apply_positional_alt( array_map( 'intval', $new_ids ), $data['alt'] ?? null );
+		$this->apply_alt_map( $data['existing_alt'] ?? null );
+
 		$alt_text = isset( $data['alt_text'] ) ? sanitize_text_field( (string) $data['alt_text'] ) : '';
-		if ( '' !== $alt_text && $media_ids ) {
+		if ( '' !== $alt_text && $media_ids && ! isset( $data['alt'] ) && ! isset( $data['existing_alt'] ) ) {
 			$first_id = (int) $media_ids[0];
 			if ( wp_attachment_is_image( $first_id ) && '' === (string) get_post_meta( $first_id, '_wp_attachment_image_alt', true ) ) {
 				update_post_meta( $first_id, '_wp_attachment_image_alt', $alt_text );
@@ -895,6 +905,70 @@ class Moment_Publisher {
 
 		if ( ! empty( $groups['image'] ) ) {
 			set_post_thumbnail( $post_id, $groups['image'][0] );
+		}
+	}
+
+	/**
+	 * Apply per-image alt text positionally against a list of attachments.
+	 *
+	 * The Nth alt entry describes the Nth uploaded file (the app appends
+	 * files[] and alt[] together, and sideloading preserves that order).
+	 * Non-image attachments and empty entries are skipped; alt is only ever
+	 * set on images.
+	 *
+	 * @param int[] $media_ids Attachment IDs in upload order.
+	 * @param mixed $alt_list  Positional alt values (array or JSON string).
+	 * @return void
+	 */
+	private function apply_positional_alt( array $media_ids, $alt_list ): void {
+		if ( is_string( $alt_list ) ) {
+			$decoded  = json_decode( $alt_list, true );
+			$alt_list = is_array( $decoded ) ? $decoded : null;
+		}
+
+		if ( ! is_array( $alt_list ) ) {
+			return;
+		}
+
+		foreach ( array_values( $media_ids ) as $i => $attachment_id ) {
+			if ( ! array_key_exists( $i, $alt_list ) ) {
+				continue;
+			}
+
+			$alt = sanitize_text_field( (string) $alt_list[ $i ] );
+
+			if ( '' !== $alt && wp_attachment_is_image( (int) $attachment_id ) ) {
+				update_post_meta( (int) $attachment_id, '_wp_attachment_image_alt', $alt );
+			}
+		}
+	}
+
+	/**
+	 * Apply alt text to already-attached images from an ID-keyed map.
+	 *
+	 * Used when editing a Moment: { attachmentId: altText }. An empty value
+	 * clears that image's alt (an intentional edit); non-image IDs are
+	 * ignored.
+	 *
+	 * @param mixed $map Alt map (array or JSON string) keyed by attachment ID.
+	 * @return void
+	 */
+	private function apply_alt_map( $map ): void {
+		if ( is_string( $map ) ) {
+			$decoded = json_decode( $map, true );
+			$map     = is_array( $decoded ) ? $decoded : null;
+		}
+
+		if ( ! is_array( $map ) ) {
+			return;
+		}
+
+		foreach ( $map as $id => $alt ) {
+			$id = absint( $id );
+
+			if ( $id && wp_attachment_is_image( $id ) ) {
+				update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( (string) $alt ) );
+			}
 		}
 	}
 

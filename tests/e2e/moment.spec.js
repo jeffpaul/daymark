@@ -139,6 +139,12 @@ test('image Moment: picker works, choice of networks is remembered per type', as
 
 	await page.setInputFiles('#moment-file-input', 'tests/e2e/fixtures/test-image.png');
 	await expect(page.locator('[data-type-badge]')).toHaveText(/image/i);
+
+	// Every image offers a per-image alt field; describe it before publish.
+	const altField = page.locator('[data-alt-for]').first();
+	await expect(altField).toBeVisible();
+	await altField.fill(`E2E alt ${RUN_ID}`);
+
 	await page.fill('#moment-caption', caption);
 	await page.locator('[data-action="next"]').click();
 

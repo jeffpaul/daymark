@@ -129,6 +129,16 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/ai/alt-text',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'ai_alt_text' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/moments/(?P<id>\d+)',
 			array(
 				array(
@@ -293,6 +303,8 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'categories'           => $request->get_param( 'categories' ),
 			'ai_assist_used'       => rest_sanitize_boolean( $request->get_param( 'ai_assist_used' ) ),
 			'alt_text'             => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
+			// Per-image alt: positional array aligned to files[] order.
+			'alt'                  => $request->get_param( 'alt' ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 		);
 
@@ -386,6 +398,60 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$suggestions = Moment_Plugin::instance()->ai_assist->get_suggestions( $caption, $type );
 
 		return rest_ensure_response( $suggestions );
+	}
+
+	/**
+	 * POST /moment/v1/ai/alt-text — vision alt text for one uploaded image.
+	 *
+	 * Reads the uploaded image from the temp upload (no attachment is
+	 * created) and returns AI-generated alt text so the composer can
+	 * pre-fill an editable per-image field. Falls back to mock alt when no
+	 * provider is configured. Requires the upload capability since it
+	 * accepts an uploaded file.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function ai_alt_text( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'upload_files' ) ) {
+			return new WP_Error(
+				'rest_cannot_upload',
+				__( 'You are not allowed to upload media.', 'moment' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		$files = $request->get_file_params();
+		$image = isset( $files['image'] ) && is_array( $files['image'] ) ? $files['image'] : null;
+
+		if ( ! $image || empty( $image['tmp_name'] ) || ! is_readable( $image['tmp_name'] ) ) {
+			return new WP_Error(
+				'moment_no_image',
+				__( 'No readable image was provided.', 'moment' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Validate from content, not the extension — and only images.
+		$finfo = new finfo( FILEINFO_MIME_TYPE );
+		$mime  = (string) $finfo->file( $image['tmp_name'] );
+
+		if ( ! str_starts_with( $mime, 'image/' ) || ! in_array( $mime, Moment_Publisher::ALLOWED_MIME_TYPES, true ) ) {
+			return new WP_Error(
+				'moment_not_an_image',
+				__( 'Alt text can only be generated for images.', 'moment' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$context = array(
+			'text' => sanitize_textarea_field( (string) $request->get_param( 'text' ) ),
+			'type' => 'image',
+		);
+
+		$suggestion = Moment_Plugin::instance()->ai_assist->get_image_alt_suggestion( (string) $image['tmp_name'], $context );
+
+		return rest_ensure_response( $suggestion );
 	}
 
 	/**
@@ -503,6 +569,9 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				'kind'      => $kind,
 				'thumbnail' => $thumbnail ? esc_url_raw( $thumbnail ) : '',
 				'filename'  => sanitize_file_name( basename( (string) get_attached_file( $attachment_id ) ) ),
+				// Current alt text so the composer can show it editable
+				// (images only; other media carry an empty string).
+				'alt'       => 'image' === $kind ? (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true ) : '',
 			);
 		}
 
@@ -548,6 +617,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'syndication_targets' => $targets,
 			'categories'          => $request->get_param( 'categories' ),
 			'alt_text'            => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
+			// Per-image alt: positional array for newly added files, plus a
+			// map keyed by attachment ID for media already on the Moment.
+			'alt'                 => $request->get_param( 'alt' ),
+			'existing_alt'        => $request->get_param( 'existing_alt' ),
 			'tags'                => $request->get_param( 'tags' ),
 		);
 

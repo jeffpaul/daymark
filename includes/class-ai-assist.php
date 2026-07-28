@@ -149,6 +149,87 @@ class Moment_AI_Assist {
 	}
 
 	/**
+	 * Suggest alt text for an image from its actual pixels (vision).
+	 *
+	 * Unlike suggest_alt_text(), this sends the image bytes to the provider
+	 * so the alt describes what is really in the frame. Used to pre-fill the
+	 * composer's per-image alt field, which the author can then edit before
+	 * publishing. Falls back to deterministic mock alt on any failure or
+	 * when no provider is configured — never throws.
+	 *
+	 * @param string $image_path Absolute path to a readable image file.
+	 * @param array  $context    Optional context: text, type.
+	 * @return array{alt_text: string, is_mocked: bool, provider_label: string}
+	 */
+	public function get_image_alt_suggestion( string $image_path, array $context = array() ): array {
+		$context = $this->normalize_context( $context );
+
+		if ( $this->is_available() && '' !== $image_path && is_readable( $image_path ) ) {
+			$alt = $this->generate_vision_alt( $image_path );
+
+			if ( null !== $alt ) {
+				return array(
+					'alt_text'       => sanitize_text_field( $alt ),
+					'is_mocked'      => false,
+					'provider_label' => $this->get_provider_label(),
+				);
+			}
+		}
+
+		return array(
+			'alt_text'       => $this->mock_alt_text( $context ),
+			'is_mocked'      => true,
+			'provider_label' => self::MOCK_PROVIDER_LABEL,
+		);
+	}
+
+	/**
+	 * Run a single vision generation to describe an image as alt text.
+	 *
+	 * Builds a mixed text+image prompt for the WP 7.0 AI Client. Returns
+	 * null on any failure so the caller falls back to mock alt.
+	 *
+	 * @param string $image_path Absolute path to a readable image file.
+	 * @return string|null Trimmed alt text, or null on any failure.
+	 */
+	private function generate_vision_alt( string $image_path ): ?string {
+		$file_class = '\WordPress\AiClient\Files\DTO\File';
+		$part_class = '\WordPress\AiClient\Messages\DTO\MessagePart';
+
+		if ( ! class_exists( $file_class ) || ! class_exists( $part_class ) ) {
+			return null;
+		}
+
+		try {
+			$file = new $file_class( $image_path );
+			$part = new $part_class( $file );
+
+			$instruction = 'Write concise, descriptive alt text for the attached image, for a personal blog. '
+				. 'Describe what is actually visible. One plain-text phrase, at most 125 characters. '
+				. 'No quotes, no leading "Image of" or "Photo of".';
+
+			$result = wp_ai_client_prompt( array( $instruction, $part ) )
+				->using_system_instruction( 'You write concise, accurate alt text for accessibility.' )
+				->using_max_tokens( 80 )
+				->generate_text();
+
+			if ( is_wp_error( $result ) ) {
+				$this->log_debug( 'Vision alt failed: ' . $result->get_error_message() );
+				return null;
+			}
+
+			if ( ! is_string( $result ) || '' === trim( $result ) ) {
+				return null;
+			}
+
+			return trim( $result );
+		} catch ( Throwable $e ) {
+			$this->log_debug( 'Vision alt threw: ' . $e->getMessage() );
+			return null;
+		}
+	}
+
+	/**
 	 * Suggest tags for a Moment draft.
 	 *
 	 * @param array $context Context: text, media_count, media_types, filename.
