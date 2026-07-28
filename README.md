@@ -2,6 +2,11 @@
 
 Personal Site Publisher Mode for WordPress.
 
+[![CI](https://github.com/jeffpaul/moment/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/ci.yml)
+[![Tests](https://github.com/jeffpaul/moment/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/tests.yml)
+[![Plugin Check](https://github.com/jeffpaul/moment/actions/workflows/plugin-check.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/plugin-check.yml)
+[![Hooks Docs](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml)
+
 **Requires at least:** 7.0 · **Tested up to:** 7.0 ·
 **Requires PHP:** 8.1 · **Stable tag:** 0.1.0 · **License:** GPLv2 or later
 
