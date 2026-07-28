@@ -28,11 +28,11 @@ WordPress does not need to become a social network. Moment makes your own site t
 
 = Publishing destinations =
 
-Out of the box, Moment ships demonstration connectors so you can explore the full publish-and-reply flow without any accounts. Real bi-directional publishing for Bluesky and Mastodon is available through separate companion connector plugins (see the FAQ) that store credentials via the WordPress 7.0 Connectors API. Your site itself is always the primary destination — social networks are strictly additive.
+Your site itself is always the primary destination — social networks are strictly additive. Moment works with the publishing plugins you already use (Jetpack Social, Share on Mastodon, ATmosphere, and more): it detects them and, where a plugin exposes a per-post control, adds an in-app on/off toggle per Moment. Replies delivered by federation plugins are recognized and labeled in notifications. An open connector interface lets any plugin register a first-class destination without changing Moment.
 
 = External services =
 
-This plugin does not send data to any external service. The bundled demonstration connectors are mocks; real network publishing is handled by separate companion connector plugins, and AI features go through the WordPress core AI Client and whichever provider plugin you have configured.
+This plugin does not send data to any external service on its own. Publishing to social networks is handled by whichever publishing or federation plugin you install, and AI features go through the WordPress core AI Client and whichever provider plugin you have configured.
 
 = AI-assisted development =
 
@@ -49,17 +49,17 @@ Activation creates section pages (`/timeline`, `/images`, `/videos`, `/audio`, `
 
 == Frequently Asked Questions ==
 
-= How do I publish to Bluesky or Mastodon for real? =
+= How do I publish to social networks? =
 
-Install the companion connector plugins — **Moment Connector for Bluesky** and **Moment Connector for Mastodon**, available from the plugin's GitHub repository at https://github.com/jeffpaul/moment. Each stores its credential (a Bluesky app password or Mastodon access token) through the WordPress 7.0 Connectors API under Settings → Connectors. Once configured, Moments publish for real and replies flow back into WordPress as comments on the original post. If a connector is unconfigured or a call fails, publishing never blocks — it degrades to mocked demo behavior.
+A Moment is a standard post, so any publishing plugin you already use shares it when it publishes. Moment detects popular ones (Jetpack Social, Share on Mastodon, ATmosphere, XPoster, Autoshare for Twitter, and more) and notes them on the publish screen; for plugins that expose a per-post control it adds an in-app on/off toggle per Moment (currently Share on Mastodon, Autoshare for Twitter, and ATmosphere for Bluesky). Replies come back through federation plugins (ActivityPub, ATmosphere, Webmention) as native comments. Moment also exposes an open connector interface (`moment_register_connectors`) so a plugin can register a first-class destination. Your site is always the primary destination and publishing never depends on any of this.
 
 = Why don't I see any social networks on the publish screen? =
 
-Moment only offers destinations that can actually publish (and pull replies back): a network appears once its connector plugin is active and configured. With nothing connected, "Your Site" is the only destination — publishing to your own site always works.
+Moment only offers destinations that can actually publish (and pull replies back): a network appears once a connector plugin registers it. With nothing connected, "Your Site" is the only destination — publishing to your own site always works. (Publishing plugins like Jetpack Social or Share on Mastodon aren't destinations — they appear as an awareness note or a per-Moment toggle instead.)
 
 = How do replies come back to my site? =
 
-Automatically. An hourly background sync (plus a refresh whenever you view notifications) fetches replies from your syndicated copies and imports them as WordPress comments, deduplicated per reply and labeled with their source ("Reply from Bluesky"). If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver are recognized and labeled too — those arrive by push, live, with no polling at all.
+If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver arrive as native WordPress comments and are recognized and labeled in Moment notifications ("Reply from Bluesky", "Reply from the Fediverse", …) — by push, live, with no polling. When a polling connector is registered, an hourly background sync (plus a refresh whenever you view notifications) imports replies from your syndicated copies too, deduplicated per reply.
 
 = Which AI providers work with AI Assist? =
 

@@ -17,8 +17,8 @@ participating, you are expected to uphold it.
   [Pull requests](#pull-requests) below).
 - **Build a connector.** Moment's adapter layer
   (`moment_register_connectors` + `moment_import_network_responses`) is open
-  to any network; the bundled Bluesky and Mastodon connectors are working
-  references.
+  to any network — a companion plugin can register a real destination
+  without changing Moment core.
 
 ## Repository layout
 
@@ -28,13 +28,12 @@ the repo is symlinked into a WordPress install as `wp-content/plugins/moment`.
 | Path | What it is |
 |---|---|
 | `moment.php`, `includes/`, `templates/`, `assets/`, `blocks/` | The Moment plugin itself |
-| `moment-connector-bluesky/`, `moment-connector-mastodon/` | Companion connector plugins (separate plugins, shipped separately) |
 | `tests/` | PHPUnit tests, the WP-CLI smoke suite (`tests/smoke.sh`), and Playwright E2E (`tests/e2e/`) |
 | `wp-hooks-docs/` | Docusaurus site for the generated hook reference |
 | `docs/` | Product/spec documents (excluded from the distributed plugin) |
 
 `.distignore` controls what is excluded from the built plugin zip (tests,
-tooling, docs, and the companion connectors are all excluded).
+tooling, and docs are all excluded).
 
 ## Development setup
 

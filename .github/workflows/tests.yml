@@ -201,27 +201,20 @@ jobs:
           # /moment and the section pages need pretty permalinks in a browser.
           wp rewrite structure '/%postname%/' --path=/tmp/wp
 
-      - name: Link and activate the plugins
+      - name: Link and activate the plugin
         run: |
           ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/moment
-          ln -s "$GITHUB_WORKSPACE/moment-connector-bluesky" /tmp/wp/wp-content/plugins/moment-connector-bluesky
-          wp plugin activate moment moment-connector-bluesky --path=/tmp/wp
+          wp plugin activate moment --path=/tmp/wp
           wp rewrite flush --path=/tmp/wp
 
-      - name: Connect Bluesky (stubbed API)
+      - name: Seed E2E fixtures
         run: |
-          # The publish screen only offers connected networks; the E2E
-          # suite exercises the real connected path against a stubbed
-          # AT Protocol API (no network, no real account).
           mkdir -p /tmp/wp/wp-content/mu-plugins
-          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-bluesky-stub.php" /tmp/wp/wp-content/mu-plugins/
           # Registers a fake publishing helper so the awareness-note test
           # has something to detect.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-publish-helper.php" /tmp/wp/wp-content/mu-plugins/
           # Registers a fake controllable helper for the per-Moment toggle test.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
-          wp option update moment_bluesky_handle e2e.bsky.social --path=/tmp/wp
-          wp option update connectors_social_bluesky_app_password e2e-fake --path=/tmp/wp
           # A couple of categories so the "File under" picker has a real
           # choice beyond the site's single default category.
           wp term create category "E2E Photos" --path=/tmp/wp || true

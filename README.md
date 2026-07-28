@@ -63,90 +63,50 @@ Then visit `/moment` on a phone-sized viewport while logged in.
 
 ## FAQ
 
-### How do I connect Bluesky for bi-directional publishing?
+### How do I publish to social networks?
 
-Moment's built-in connectors are mocked demos. The companion plugin
-**Moment Connector for Bluesky** (`moment-connector-bluesky/`, a separate
-plugin in this repo) replaces the Bluesky mock with the real thing —
-Moments publish to Bluesky, and replies flow back into WordPress as
-comments on the original Moment. Credentials are managed through the
-WordPress 7.0 **Connectors API**, so it feels core-native.
+A Moment is a standard WordPress post, so the leanest path is to let a
+publishing plugin you already trust share it. Moment is built to
+cooperate with those rather than reimplement them:
 
-**Prefer ATmosphere's OAuth connection when present.** If the
-[ATmosphere](https://wordpress.org/plugins/atmosphere/) plugin is active
-with a connected account and its *own* auto-publish turned off, the
-Bluesky connector publishes through ATmosphere's OAuth connection (no app
-password, and the account is managed on Settings → Connectors) — the
-status reads "Connected · via ATmosphere". If ATmosphere is instead
-auto-posting every published post itself, Moment doesn't also drive
-Bluesky (that would double-post); ATmosphere just appears in the
-awareness note, and Moment falls back to the app-password path only when
-ATmosphere isn't auto-posting. To use an app password directly:
+- **Publicize-style plugins** (Jetpack Social, Share on Mastodon,
+  ATmosphere, XPoster, Autoshare for Twitter, …) already share your
+  Moment when it publishes. Moment detects them and shows an awareness
+  note on the publish screen. For plugins that expose a per-post control,
+  Moment turns that into an in-app **on/off toggle** per Moment —
+  currently **Share on Mastodon**, **Autoshare for Twitter**, and
+  **ATmosphere** (for Bluesky, when it's connected and auto-publishing).
+- **Federation plugins** ([ActivityPub](https://wordpress.org/plugins/activitypub/),
+  [ATmosphere](https://wordpress.org/plugins/atmosphere/),
+  [Webmention](https://wordpress.org/plugins/webmention/)) make your site
+  itself the account; replies they receive land as native WordPress
+  comments and appear in Moment notifications automatically (see below).
 
-1. **Activate both plugins** — `moment` and `moment-connector-bluesky`.
-2. **Create a Bluesky app password**: Bluesky → Settings → Privacy and
-   Security → [App Passwords](https://bsky.app/settings/app-passwords) →
-   Add App Password. Never use your main account password.
-3. **Enter the app password in WordPress**: wp-admin → Settings →
-   **Connectors** → Bluesky. (Core masks the stored key in REST
-   responses; you can also supply it via a `BLUESKY_APP_PASSWORD`
-   environment variable or PHP constant instead, which takes precedence
-   over the database value.)
-4. **Enter your handle**: wp-admin → Settings → **General** → "Bluesky
-   Handle" (e.g. `you.bsky.social`).
-5. **Publish**: in `/moment`, the Bluesky row on the publish screen now
-   shows **Connected**. Note and mixed Moments publish for real — the
-   caption plus a link back to your post, and the Bluesky post URL is
-   stored on the Moment (`_moment_external_posts`).
-6. **Replies come back automatically**: an hourly background sync (plus
-   an opportunistic freshen whenever the notifications feed is viewed)
-   fetches actual replies from your Bluesky thread and imports them as
-   WordPress comments labeled "Reply from Bluesky", deduplicated by
-   reply ID. No manual sync step exists — they appear on the post and
-   in `/moment/notifications` on their own. (The
-   `POST /moment/v1/moments/{id}/sync-responses` endpoint remains for
-   demos and integrations.)
+Moment also keeps an open connector interface
+(`moment_register_connectors`) so a plugin can register a first-class
+destination — appearing on the publish screen and syndicating through
+Moment's own pipeline, with replies imported via
+`moment_import_network_responses` — without any change to Moment core. No
+such connector ships in this repo; the hook is the integration point.
 
-If the connector is not configured (or a Bluesky call fails), publishing
-never blocks — the connector degrades to the same mocked behavior as the
-built-in demo connector.
-
-### How do I connect Mastodon?
-
-Same model as Bluesky, via the companion plugin **Moment Connector for
-Mastodon** (`moment-connector-mastodon/`):
-
-1. **Activate both plugins** — `moment` and `moment-connector-mastodon`.
-2. **Create an access token on your instance**: Preferences →
-   Development → **New application** (any name; `read` and `write`
-   scopes) → copy the access token.
-3. **Enter the token in WordPress**: wp-admin → Settings →
-   **Connectors** → Mastodon. (Also accepted via a
-   `MASTODON_ACCESS_TOKEN` environment variable or PHP constant.)
-4. **Enter your instance**: wp-admin → Settings → **General** →
-   "Mastodon Instance" (e.g. `https://mastodon.social`).
-5. **Publish and sync** exactly as with Bluesky: note, image, and mixed
-   Moments post for real (caption + link), and syncing responses imports
-   direct replies to your status as comments labeled "Reply from
-   Mastodon", deduplicated per reply.
-
-The same never-blocks rule applies: unconfigured or failing, it falls
-back to mocked demo behavior.
+If nothing is set up, "Your Site" is simply the only destination —
+publishing to your own site always works, and everything social is
+additive.
 
 ### Why don't I see any social networks on the publish screen?
 
 Moment only offers destinations that can actually publish (and pull
-replies back): a network appears once its connector plugin is active
-*and* configured. With nothing connected, "Your Site" is the only
+replies back): a network appears once a connector plugin registers it as
+a destination. With nothing connected, "Your Site" is the only
 destination — publishing to your own site always works; social networks
 are strictly additive. The same rule applies to AI: the **AI Assist**
 button only appears when a WordPress AI provider is actually configured.
+(Publicize-style plugins are separate — they show up as the awareness
+note or a per-Moment toggle, described above, not as destinations.)
 
-Moment also remembers your routing habits per Moment type: once you
-publish, say, an image Moment to a specific set of networks, the next
-image Moment preselects the same set (per user). Types you have never
-published fall back to the built-in defaults (note → Bluesky, image →
-Instagram, video → YouTube).
+When connectors are present, Moment remembers your routing habits per
+Moment type: once you publish, say, an image Moment to a specific set of
+networks, the next image Moment preselects the same set (per user).
 
 ### How are Moments filed into categories?
 
@@ -168,8 +128,8 @@ by platform:
 
 | Network | Publish | Reply backflow | Notes |
 |---|---|---|---|
-| **Bluesky** | ✅ shipped | ✅ shipped | App password; AT Protocol is open, no app review |
-| **Mastodon** | ✅ shipped | ✅ shipped | Per-instance access token; open API, no app review |
+| **Bluesky** | via ATmosphere | via ATmosphere / Bridgy | Covered today by the ATmosphere plugin; AT Protocol is open, no app review |
+| **Mastodon** | via Share on Mastodon | via ActivityPub | Covered today by existing plugins; open API, no app review |
 | Threads | plausible | plausible | Official API exists; requires a Meta app + review |
 | X | plausible | limited | API v2 posting works; free tier is heavily rate-limited, replies effectively need a paid tier |
 | Instagram | hard | hard | Graph API requires a Business/Creator account, app review, and media hosted at public URLs |
@@ -182,11 +142,11 @@ weekend-sized connectors; platforms with app-review gates are projects.
 
 ### Do ActivityPub, ATmosphere, or Webmention work with Moment?
 
-Yes — and they're the *push-based* complement to Moment's connectors.
-Those plugins deliver social replies as native WordPress comments, which
-is exactly Moment's backflow storage, so replies they import appear in
-Moment notifications automatically — labeled with honest source context
-(Moment recognizes each plugin's comment markers):
+Yes — they're the *push-based* way replies come back. Those plugins
+deliver social replies as native WordPress comments, which is exactly
+Moment's backflow storage, so replies they import appear in Moment
+notifications automatically — labeled with honest source context (Moment
+recognizes each plugin's comment markers):
 
 | Plugin | Covers | Notification label |
 |---|---|---|
@@ -194,17 +154,17 @@ Moment notifications automatically — labeled with honest source context
 | [ATmosphere](https://wordpress.org/plugins/atmosphere/) | Bluesky / AT Protocol | Reply from Bluesky |
 | [Webmention](https://wordpress.org/plugins/webmention/) | IndieWeb + [Bridgy](https://brid.gy) backfeed | Reply via Webmention |
 
-The identity model differs from connectors, and both are valid: Moment
-connectors publish a copy to **your personal account** (replies to that
-copy come back on sync), while ActivityPub/ATmosphere make **your site
-itself the account** (people follow your domain; replies arrive by push,
-live, no syncing). Reactions (likes/reposts) that those plugins store as
-comments are kept out of Moment notifications — replies only.
+There are two identity models, and both are valid: a publicize-style
+plugin posts a copy to **your personal account** on the network, while
+ActivityPub/ATmosphere make **your site itself the account** (people
+follow your domain; replies arrive by push, live, no syncing). Reactions
+(likes/reposts) that those plugins store as comments are kept out of
+Moment notifications — replies only.
 
 Moment also renders IndieWeb `u-syndication` markup on Moment posts
-("Also on: Bluesky · Mastodon" links to the syndicated copies), which is
-what Bridgy needs to backfeed replies from those copies as webmentions —
-so connector-based syndication and webmention backfeed compose.
+("Also on: …" links to the syndicated copies), which is what Bridgy needs
+to backfeed replies from those copies as webmentions — so publicize-style
+syndication and webmention backfeed compose.
 
 ### I already run a social auto-poster (Jetpack Social, XPoster, …). Does it work with Moment?
 

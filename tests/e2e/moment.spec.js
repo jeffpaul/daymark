@@ -1,25 +1,18 @@
 /**
- * Moment E2E browser tests (doc 13 scenarios 1-4, 7 + wp-admin visibility).
+ * Moment E2E browser tests.
  *
  * Run:
  *   npx playwright install chromium   # once
  *   WP_BASE_URL=http://wp70.local WP_ADMIN_USER=... WP_ADMIN_PASS=... npx playwright test
  *
  * Needs a live WordPress with pretty permalinks, an administrator account,
- * and the moment + moment-connector-bluesky plugins active. Tests create
- * posts titled "E2E ..." and do not delete them — use a scratch site or
- * clean up afterwards.
+ * and the moment plugin active. Tests create posts titled "E2E ..." and do
+ * not delete them — use a scratch site or clean up afterwards.
  *
- * CONNECTED BLUESKY REQUIRED: the publish screen only offers connected
- * networks, so the target site needs Bluesky "connected" with the stubbed
- * API (the CI workflow does all of this):
- *   1. copy tests/e2e/fixtures/moment-e2e-bluesky-stub.php into wp-content/mu-plugins/
- *   2. wp option update moment_bluesky_handle e2e.bsky.social
- *   3. wp option update connectors_social_bluesky_app_password e2e-fake
- *
- * FRESH USER REQUIRED per run: destination memory persists per user, so
- * the image test's "nothing preselected" baseline needs an account with
- * no publish history (recreate the test user between local runs).
+ * No social connectors are required: Moment publishes to "Your Site", and
+ * it works with third-party publishing plugins via detection and per-Moment
+ * toggles. The syndication-connector interface itself is covered by the
+ * PHPUnit suite, not here.
  */
 import { test, expect } from '@playwright/test';
 
@@ -59,9 +52,9 @@ test('authenticated user sees Moment Home without wp-admin chrome', async ({ pag
 	await expect(page.locator('[data-drafts-section]')).toBeHidden();
 });
 
-// Scenarios 3 + 4: note Moment with the connected network (Bluesky)
-// preselected by the model default; unconnected networks are not offered.
-test('note Moment: connected Bluesky preselected, publishes, appears in notes view', async ({ page }) => {
+// Publish a note Moment to your own site and see it in the Notes view.
+// With nothing connected, "Your Site" is the only destination.
+test('note Moment publishes to your site and appears in the notes view', async ({ page }) => {
 	const caption = `E2E note ${RUN_ID}`;
 
 	await loginAs(page);
@@ -71,17 +64,12 @@ test('note Moment: connected Bluesky preselected, publishes, appears in notes vi
 	await page.fill('#moment-caption', caption);
 	await page.locator('[data-action="next"]').click();
 
-	// Bluesky is connected (stubbed) → offered with a Connected chip and
-	// preselected for notes. Unconnected networks are not offered at all.
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
-	await expect(page.getByText('Connected').first()).toBeVisible();
-	await expect(page.locator('[data-connector="instagram"]')).toHaveCount(0);
-	await expect(page.locator('[data-connector="youtube"]')).toHaveCount(0);
-	await expect(page.locator('[data-connector="mastodon"]')).toHaveCount(0);
+	// Your Site is always the destination; no social networks are offered
+	// unless a connector plugin registers one.
+	await expect(page.getByText('Your Site')).toBeVisible();
 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
-	await expect(page.getByText('Bluesky')).toBeVisible(); // syndication row
 
 	await page.goto('/notes/');
 	await expect(page.getByText(caption)).toBeVisible();
@@ -126,11 +114,9 @@ test('categories: File under picker files the Moment and remembers the choice pe
 	await expect(rememberedPhotos).toBeChecked();
 });
 
-// Scenario 2 + destination memory: image Moment via the file picker; no
-// networks preselected initially (image default Instagram is not
-// connected), the user's explicit choice is remembered for the next
-// image Moment.
-test('image Moment: picker works, choice of networks is remembered per type', async ({ page }) => {
+// Image Moment via the file picker: per-image alt field, correct article
+// on the publish screen, and it lands in the timeline + images views.
+test('image Moment: alt field, correct article, appears in image views', async ({ page }) => {
 	const caption = `E2E image ${RUN_ID}`;
 
 	await loginAs(page);
@@ -151,74 +137,55 @@ test('image Moment: picker works, choice of networks is remembered per type', as
 	// Grammatical article: "an Image", not "a Image".
 	await expect(page.locator('.moment-typebadge')).toContainText('Publishing an Image Moment');
 
-	// Image default is Instagram — not connected, so nothing preselected;
-	// Bluesky is offered (text networks take any type) but off.
-	await expect(page.locator('[data-connector="bluesky"]')).not.toBeChecked();
-
-	// Explicitly choose Bluesky for this image Moment.
-	await page.locator('[data-connector="bluesky"]').click({ force: true });
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
-
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	// Standard post visible in wp-admin.
+	// Standard post visible in wp-admin, and in the timeline + images views.
 	await page.goto('/wp-admin/edit.php');
 	await expect(page.locator('.row-title').filter({ hasText: caption }).first()).toBeVisible();
-
-	// Timeline and images views show it.
 	await page.goto('/timeline/');
 	await expect(page.getByText(caption)).toBeVisible();
 	await page.goto('/images/');
 	await expect(page.getByText(caption)).toBeVisible();
-
-	// Destination memory: the next image Moment preselects Bluesky.
-	await page.goto('/moment');
-	await page.locator('[data-action="new-moment"]').click();
-	await page.setInputFiles('#moment-file-input', 'tests/e2e/fixtures/test-image.png');
-	await page.fill('#moment-caption', `E2E image memory ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
 });
 
 // Scenario 7: real (stubbed) backflow replies appear in notifications.
-test('notifications show imported social replies with source labels', async ({ page }) => {
-	const caption = `E2E backflow ${RUN_ID}`;
+// Replies to a Moment surface in notifications. Without a social connector
+// we exercise this with an on-site comment on the Moment post — imported
+// social replies share the same storage and rendering path.
+test('notifications show replies to a Moment', async ({ page }) => {
+	const caption = `E2E reply ${RUN_ID}`;
+	const reply = `E2E nice shot ${RUN_ID}`;
 
 	await loginAs(page);
 
-	// Publish a note Moment to connected (stubbed) Bluesky through the UI.
+	// Publish a note Moment through the UI.
 	await page.goto('/moment');
 	await page.locator('[data-action="new-moment"]').click();
 	await page.fill('#moment-caption', caption);
 	await page.locator('[data-action="next"]').click();
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	// Trigger the sync from the app context (uses the page's own nonce +
-	// REST config, same as a future in-UI sync control would).
-	const imported = await page.evaluate(async () => {
+	// Add a comment to it via the core REST API (same nonce/session).
+	await page.evaluate(async (replyText) => {
 		const config = window.momentApp;
 		const listRes = await fetch(`${config.restUrl}moments?per_page=1`, {
 			headers: { 'X-WP-Nonce': config.nonce },
 			credentials: 'same-origin',
 		});
 		const [latest] = await listRes.json();
-		const syncRes = await fetch(`${config.restUrl}moments/${latest.id}/sync-responses`, {
+		await fetch('/wp-json/wp/v2/comments', {
 			method: 'POST',
 			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
 			credentials: 'same-origin',
-			body: JSON.stringify({ networks: ['bluesky'] }),
+			body: JSON.stringify({ post: latest.id, content: replyText }),
 		});
-		const sync = await syncRes.json();
-		return sync.imported_count;
-	});
-	expect(imported).toBeGreaterThan(0);
+	}, reply);
 
 	await page.goto('/moment/notifications');
-	await expect(page.getByText('Reply from Bluesky').first()).toBeVisible();
-	await expect(page.getByText('Love this one!').first()).toBeVisible();
+	await expect(page.getByText(reply).first()).toBeVisible();
+	await expect(page.getByText('On-site comment').first()).toBeVisible();
 });
 
 // --- Coverage for changes since 0.1.1 ---
@@ -297,7 +264,6 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.locator('[data-action="new-moment"]').click();
 	await page.fill('#moment-caption', caption);
 	await page.locator('[data-action="next"]').click();
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
@@ -312,16 +278,14 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(row).toBeVisible();
 	await expect(row.locator('.moment-chip--draft')).toBeVisible();
 
-	// Resume: composer reopens prefilled, destinations remembered.
+	// Resume: composer reopens prefilled with the draft's caption.
 	await row.click();
 	await expect(page.getByText('Edit Draft')).toBeVisible();
 	await expect(page.locator('#moment-caption')).toHaveValue(caption);
 	await page.fill('#moment-caption', finished);
 	await page.locator('[data-action="next"]').click();
-	await expect(page.locator('[data-connector="bluesky"]')).toBeChecked();
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
-	await expect(page.getByText('Bluesky')).toBeVisible();
 
 	// Draft row entry is gone; the published Moment is public.
 	await page.goto('/moment');
@@ -330,36 +294,19 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.getByText(finished)).toBeVisible();
 });
 
-// Unread indicator: set by newly imported replies, cleared by viewing
-// notifications — client-side and across a full reload.
-test('unread dot appears for new replies and clears after viewing', async ({ page }) => {
+// Unread indicator: set by a new reply, cleared by viewing notifications —
+// client-side and across a full reload.
+test('unread dot appears for a new reply and clears after viewing', async ({ page }) => {
 	const caption = `E2E unread ${RUN_ID}`;
+	const reply = `E2E unread reply ${RUN_ID}`;
 
 	await loginAs(page);
 
-	// Hygiene: earlier tests leave syndicated Moments with never-imported
-	// stub replies; the async backflow freshen would import them during
-	// this test and legitimately re-set the unread flag. Drain everything
-	// first so this test owns the only unread transition.
+	// Baseline: mark existing notifications seen so this test owns the only
+	// unread transition.
 	await page.goto('/moment');
 	await page.evaluate(async () => {
 		const config = window.momentApp;
-		// per_page=50 is the REST cap — drain as many prior Moments as the
-		// API allows so the baseline holds even on a well-used site.
-		const listRes = await fetch(`${config.restUrl}moments?per_page=50`, {
-			headers: { 'X-WP-Nonce': config.nonce },
-			credentials: 'same-origin',
-		});
-		const moments = await listRes.json();
-		for (const moment of moments) {
-			await fetch(`${config.restUrl}moments/${moment.id}/sync-responses`, {
-				method: 'POST',
-				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
-				credentials: 'same-origin',
-				body: JSON.stringify({ networks: ['bluesky'] }),
-			});
-		}
-		// Mark everything seen so the baseline is "no unread".
 		await fetch(`${config.restUrl}notifications`, {
 			headers: { 'X-WP-Nonce': config.nonce },
 			credentials: 'same-origin',
@@ -374,25 +321,25 @@ test('unread dot appears for new replies and clears after viewing', async ({ pag
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
 	// Comment dates are second-resolution and the "seen" baseline was set
-	// moments ago; guarantee the imported reply lands in a later second so
+	// moments ago; guarantee the reply lands in a later second so
 	// has_unread()'s strict > holds on fast runners (not a flake).
 	await page.waitForTimeout(1100);
 
-	// Import replies through the sync endpoint (same as the hourly cron).
-	await page.evaluate(async () => {
+	// A new reply arrives (on-site comment on the Moment post).
+	await page.evaluate(async (replyText) => {
 		const config = window.momentApp;
 		const listRes = await fetch(`${config.restUrl}moments?per_page=1`, {
 			headers: { 'X-WP-Nonce': config.nonce },
 			credentials: 'same-origin',
 		});
 		const [latest] = await listRes.json();
-		await fetch(`${config.restUrl}moments/${latest.id}/sync-responses`, {
+		await fetch('/wp-json/wp/v2/comments', {
 			method: 'POST',
 			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
 			credentials: 'same-origin',
-			body: JSON.stringify({ networks: ['bluesky'] }),
+			body: JSON.stringify({ post: latest.id, content: replyText }),
 		});
-	});
+	}, reply);
 
 	// Fresh load: the bell carries the unread dot.
 	await page.goto('/moment');
@@ -400,7 +347,7 @@ test('unread dot appears for new replies and clears after viewing', async ({ pag
 
 	// Viewing notifications clears it without a reload…
 	await page.locator('.moment-iconbtn').click();
-	await expect(page.getByText('Reply from Bluesky').first()).toBeVisible();
+	await expect(page.getByText(reply).first()).toBeVisible();
 	await page.locator('.moment-backlink').click();
 	await expect(page.locator('[data-action="new-moment"]')).toBeVisible();
 	await expect(page.locator('.moment-iconbtn__dot')).toHaveCount(0);

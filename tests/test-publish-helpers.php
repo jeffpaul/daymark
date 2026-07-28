@@ -12,19 +12,7 @@ class Test_Publish_Helpers extends WP_UnitTestCase {
 
 	/** With no syndication plugins active, nothing is detected. */
 	public function test_detects_nothing_by_default() {
-		// Test_Bluesky_Atmosphere stubs the `Atmosphere\Publisher` class in
-		// this process, which legitimately trips ATmosphere's class-based
-		// detection; ignore it — no real plugin slugs are active here.
-		$detected = array_values(
-			array_filter(
-				Moment_Publish_Helpers::detect(),
-				static function ( $helper ) {
-					return 'atmosphere' !== $helper['id'];
-				}
-			)
-		);
-
-		$this->assertSame( array(), $detected );
+		$this->assertSame( array(), Moment_Publish_Helpers::detect() );
 	}
 
 	/** The known publishing plugins ship in the default definitions. */

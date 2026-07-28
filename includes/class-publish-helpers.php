@@ -93,6 +93,51 @@ class Moment_Publish_Helpers {
 	 */
 	private static function adapters(): array {
 		$adapters = array(
+			'atmosphere'            => array(
+				'label'     => 'ATmosphere',
+				'slugs'     => array( 'wordpress-atmosphere' ),
+				// Only a meaningful toggle when ATmosphere is connected AND
+				// actually auto-publishing; in connection-only mode it posts
+				// nothing, so there is nothing to gate per Moment.
+				'available' => static function () {
+					return function_exists( 'Atmosphere\\is_connected' )
+						&& function_exists( 'Atmosphere\\is_auto_publish_enabled' )
+						&& \Atmosphere\is_connected()
+						&& \Atmosphere\is_auto_publish_enabled();
+				},
+				// ATmosphere exposes no per-post filter; its documented
+				// per-post control is the `atmosphere_disabled` opt-out meta.
+				// Translate the Moment's toggle into that meta just before
+				// ATmosphere auto-publishes on the publish transition.
+				'bind'      => static function () {
+					add_action(
+						'transition_post_status',
+						static function ( $new_status, $old_status, $post ) {
+							if ( 'publish' !== $new_status || ! $post instanceof WP_Post ) {
+								return;
+							}
+							if ( '1' !== (string) get_post_meta( $post->ID, '_moment_is_moment', true ) ) {
+								return;
+							}
+
+							$selection = json_decode( (string) get_post_meta( $post->ID, self::CONTROL_META, true ), true );
+
+							// No Moment selection → leave ATmosphere's own behavior alone.
+							if ( ! is_array( $selection ) ) {
+								return;
+							}
+
+							if ( in_array( 'atmosphere', $selection, true ) ) {
+								delete_post_meta( $post->ID, 'atmosphere_disabled' );
+							} else {
+								update_post_meta( $post->ID, 'atmosphere_disabled', '1' );
+							}
+						},
+						5,
+						3
+					);
+				},
+			),
 			'share-on-mastodon'     => array(
 				'label' => 'Share on Mastodon',
 				'slugs' => array( 'share-on-mastodon' ),
@@ -147,7 +192,7 @@ class Moment_Publish_Helpers {
 		$found  = array();
 
 		foreach ( self::adapters() as $id => $def ) {
-			if ( is_array( $def ) && self::slug_active( $def, $active ) ) {
+			if ( is_array( $def ) && self::slug_active( $def, $active ) && self::adapter_available( $def ) ) {
 				$found[] = array(
 					'id'    => sanitize_key( (string) $id ),
 					'label' => sanitize_text_field( (string) ( $def['label'] ?? $id ) ),
@@ -156,6 +201,21 @@ class Moment_Publish_Helpers {
 		}
 
 		return $found;
+	}
+
+	/**
+	 * Whether an adapter's optional `available` gate passes (adapters with
+	 * no gate are always available when their plugin slug is active).
+	 *
+	 * @param array<string, mixed> $def Adapter definition.
+	 * @return bool
+	 */
+	private static function adapter_available( array $def ): bool {
+		if ( isset( $def['available'] ) && is_callable( $def['available'] ) ) {
+			return (bool) ( $def['available'] )();
+		}
+
+		return true;
 	}
 
 	/**
@@ -178,7 +238,7 @@ class Moment_Publish_Helpers {
 		$active = self::active_plugin_slugs();
 
 		foreach ( self::adapters() as $def ) {
-			if ( is_array( $def ) && self::slug_active( $def, $active ) && isset( $def['bind'] ) && is_callable( $def['bind'] ) ) {
+			if ( is_array( $def ) && self::slug_active( $def, $active ) && self::adapter_available( $def ) && isset( $def['bind'] ) && is_callable( $def['bind'] ) ) {
 				( $def['bind'] )();
 			}
 		}
