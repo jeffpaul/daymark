@@ -197,6 +197,19 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
+/* "File under" category picker on the Publish screen — a secondary
+   grouping below the destinations, styled to match. */
+.moment-publish-subhead {
+	margin-top: var(--moment-spacing-lg);
+}
+
+.moment-publish-subnote {
+	margin: var(--moment-spacing-xs) 0 var(--moment-spacing-sm);
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--moment-text-secondary);
+}
+
 /* --- Buttons --- */
 .moment-btn {
 	display: inline-flex;

@@ -70,6 +70,9 @@ class Moment_REST_Controller extends WP_REST_Controller {
 						'default_destinations' => array(
 							'description' => __( 'Default connector IDs (array or JSON string).', 'moment' ),
 						),
+						'categories'           => array(
+							'description' => __( 'Category term IDs to file the Moment under (array or JSON string).', 'moment' ),
+						),
 						'ai_assist_used'       => array(
 							'type'              => 'boolean',
 							'sanitize_callback' => 'rest_sanitize_boolean',
@@ -287,6 +290,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'status'               => sanitize_key( (string) $request->get_param( 'status' ) ),
 			'syndication_targets'  => $targets,
 			'default_destinations' => $request->get_param( 'default_destinations' ),
+			'categories'           => $request->get_param( 'categories' ),
 			'ai_assist_used'       => rest_sanitize_boolean( $request->get_param( 'ai_assist_used' ) ),
 			'alt_text'             => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
@@ -505,11 +509,12 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$targets = json_decode( (string) get_post_meta( $post_id, '_moment_syndication_targets', true ), true );
 		$helpers = json_decode( (string) get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ), true );
 
-		$payload            = $this->prepare_moment_summary( $post_id );
-		$payload['caption'] = $caption;
-		$payload['media']   = $media;
-		$payload['targets'] = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
-		$payload['helpers'] = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
+		$payload               = $this->prepare_moment_summary( $post_id );
+		$payload['caption']    = $caption;
+		$payload['media']      = $media;
+		$payload['targets']    = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+		$payload['helpers']    = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
+		$payload['categories'] = array_map( 'intval', wp_get_post_categories( $post_id ) );
 
 		return rest_ensure_response( $payload );
 	}
@@ -541,6 +546,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'title'               => sanitize_text_field( (string) $request->get_param( 'title' ) ),
 			'primary_type'        => sanitize_key( (string) $request->get_param( 'primary_type' ) ),
 			'syndication_targets' => $targets,
+			'categories'          => $request->get_param( 'categories' ),
 			'alt_text'            => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			'tags'                => $request->get_param( 'tags' ),
 		);

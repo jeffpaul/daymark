@@ -138,6 +138,19 @@ class Moment_Publisher {
 		// explicit empty selection (user deselected every destination).
 		$selection_provided = is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) );
 
+		// Categories: the site-filing counterpart to destinations. Same
+		// "provided vs fall back to the remembered per-type default" rule.
+		// Unlike post formats there is no built-in map — categories are a
+		// per-site taxonomy — so an empty effective default just leaves the
+		// WordPress default category in place.
+		$raw_categories    = $data['categories'] ?? null;
+		$categories        = $this->sanitize_category_ids( $raw_categories ?? array() );
+		$category_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
+
+		if ( ! $category_provided ) {
+			$categories = $this->get_effective_categories( $type );
+		}
+
 		if ( ! $selection_provided ) {
 			// Auto-applied defaults only go to destinations that can
 			// actually publish (connected connectors). The raw model
@@ -197,6 +210,17 @@ class Moment_Publisher {
 
 		if ( $selection_provided ) {
 			$this->remember_destination_prefs( $type, $targets );
+		}
+
+		// File the Moment under the chosen (or remembered) categories. An
+		// explicit selection — even an empty one — is remembered as the new
+		// per-type default; wp_set_post_categories() with an empty list falls
+		// back to the site's default category, which is the intended "none".
+		if ( $category_provided ) {
+			$this->remember_category_prefs( $type, $categories );
+		}
+		if ( $category_provided || ! empty( $categories ) ) {
+			wp_set_post_categories( $post_id, $categories, false );
 		}
 
 		// Apply AI-Assist-accepted tags and alt text when provided.
@@ -356,7 +380,15 @@ class Moment_Publisher {
 		$media_ids = array_merge( $existing_media, array_map( 'intval', $new_ids ) );
 
 		$requested_type = isset( $data['primary_type'] ) ? sanitize_key( (string) $data['primary_type'] ) : '';
-		$type           = $this->detect_primary_type( $media_ids, $requested_type );
+
+		// A caption-only edit (no media to detect from, no explicit type)
+		// must not silently reclassify the Moment to 'note' — keep its stored
+		// type so per-type memory (destinations, categories) stays coherent.
+		if ( '' === $requested_type && empty( $media_ids ) ) {
+			$requested_type = (string) get_post_meta( $post_id, '_moment_primary_type', true );
+		}
+
+		$type = $this->detect_primary_type( $media_ids, $requested_type );
 
 		$raw_targets = $data['syndication_targets'] ?? null;
 
@@ -365,6 +397,10 @@ class Moment_Publisher {
 			update_post_meta( $post_id, '_moment_syndication_targets', wp_json_encode( $targets ) );
 			$this->remember_destination_prefs( $type, $targets );
 		}
+
+		$raw_categories      = $data['categories'] ?? null;
+		$categories_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
+		$categories          = $categories_provided ? $this->sanitize_category_ids( $raw_categories ) : array();
 
 		$title = isset( $data['title'] ) ? sanitize_text_field( (string) $data['title'] ) : '';
 
@@ -426,6 +462,14 @@ class Moment_Publisher {
 			$result->add_data( array( 'status' => 500 ) );
 
 			return $result;
+		}
+
+		// File under the chosen categories AFTER wp_update_post: an update
+		// with no post_category re-applies $post_before's categories (core
+		// post.php), which would otherwise clobber a fresh selection here.
+		if ( $categories_provided ) {
+			wp_set_post_categories( $post_id, $categories, false );
+			$this->remember_category_prefs( $type, $categories );
 		}
 
 		return $post_id;
@@ -999,6 +1043,99 @@ class Moment_Publisher {
 		$prefs[ $type ] = $this->sanitize_connector_ids( $targets );
 
 		update_user_meta( $user_id, self::DESTINATION_PREFS_META, $prefs );
+	}
+
+	/**
+	 * User meta key remembering per-type category selections.
+	 *
+	 * @var string
+	 */
+	private const CATEGORY_PREFS_META = 'moment_category_prefs';
+
+	/**
+	 * The preselected categories for a Moment type.
+	 *
+	 * The user's last explicit selection for the type wins. Unlike
+	 * destinations there is no model fallback — categories are a per-site
+	 * taxonomy with no universal mapping — so a type never filed before
+	 * returns an empty list and the site's default category applies.
+	 *
+	 * @param string $type    Moment primary type.
+	 * @param int    $user_id User ID; defaults to the current user.
+	 * @return int[]
+	 */
+	public function get_effective_categories( string $type, int $user_id = 0 ): array {
+		$user_id = $user_id ? $user_id : get_current_user_id();
+		$prefs   = $user_id ? get_user_meta( $user_id, self::CATEGORY_PREFS_META, true ) : array();
+
+		if ( is_array( $prefs ) && isset( $prefs[ $type ] ) && is_array( $prefs[ $type ] ) ) {
+			return $this->sanitize_category_ids( $prefs[ $type ] );
+		}
+
+		return array();
+	}
+
+	/**
+	 * Remember an explicit category selection for a Moment type.
+	 *
+	 * Called on successful publish so the next Moment of the same type
+	 * preselects the same categories. An explicit empty selection is
+	 * remembered too — "file notes nowhere in particular" is a real choice.
+	 *
+	 * @param string $type Moment primary type.
+	 * @param int[]  $ids  Selected category term IDs.
+	 * @return void
+	 */
+	private function remember_category_prefs( string $type, array $ids ): void {
+		$user_id = get_current_user_id();
+
+		if ( ! $user_id ) {
+			return;
+		}
+
+		$prefs = get_user_meta( $user_id, self::CATEGORY_PREFS_META, true );
+
+		if ( ! is_array( $prefs ) ) {
+			$prefs = array();
+		}
+
+		$prefs[ $type ] = $this->sanitize_category_ids( $ids );
+
+		update_user_meta( $user_id, self::CATEGORY_PREFS_META, $prefs );
+	}
+
+	/**
+	 * Sanitize a list of category term IDs to those that actually exist.
+	 *
+	 * Accepts an array, a JSON-encoded string, or a comma-separated string
+	 * (multipart form fields arrive as strings). Every ID is verified
+	 * against the category taxonomy — an unknown or non-category term is
+	 * dropped rather than silently created.
+	 *
+	 * @param mixed $raw Raw input.
+	 * @return int[] Sanitized, existing category term IDs.
+	 */
+	private function sanitize_category_ids( $raw ): array {
+		if ( is_string( $raw ) && '' !== trim( $raw ) ) {
+			$decoded = json_decode( $raw, true );
+			$raw     = is_array( $decoded ) ? $decoded : explode( ',', $raw );
+		}
+
+		if ( ! is_array( $raw ) ) {
+			return array();
+		}
+
+		$ids = array();
+
+		foreach ( $raw as $id ) {
+			$id = absint( $id );
+
+			if ( $id && term_exists( $id, 'category' ) ) {
+				$ids[] = $id;
+			}
+		}
+
+		return array_values( array_unique( $ids ) );
 	}
 
 	/**

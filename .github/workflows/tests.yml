@@ -222,6 +222,10 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
           wp option update moment_bluesky_handle e2e.bsky.social --path=/tmp/wp
           wp option update connectors_social_bluesky_app_password e2e-fake --path=/tmp/wp
+          # A couple of categories so the "File under" picker has a real
+          # choice beyond the site's single default category.
+          wp term create category "E2E Photos" --path=/tmp/wp || true
+          wp term create category "E2E Travel" --path=/tmp/wp || true
 
       - name: Start web server
         run: |

@@ -14,6 +14,8 @@
 	const config = window.momentApp || {};
 	const connectors = Array.isArray(config.connectors) ? config.connectors : [];
 	const typeDefaults = config.defaults || {};
+	const siteCategories = Array.isArray(config.categories) ? config.categories : [];
+	const categoryDefaults = config.categoryDefaults || {};
 	const root = document.getElementById('moment-app');
 
 	if (!root) {
@@ -28,6 +30,7 @@
 		tags: [],
 		primaryType: 'note',
 		targets: [],
+		categories: [], // selected category term IDs (numbers)
 		aiAssistUsed: false,
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
@@ -181,6 +184,11 @@
 		return Array.isArray(defaults) ? defaults.slice() : [];
 	}
 
+	function defaultCategoriesFor(type) {
+		const defaults = categoryDefaults[type];
+		return Array.isArray(defaults) ? defaults.map(Number) : [];
+	}
+
 	function resetComposer() {
 		state.files.forEach((entry) => {
 			if (entry.url) {
@@ -193,6 +201,7 @@
 		state.tags = [];
 		state.primaryType = 'note';
 		state.targets = [];
+		state.categories = [];
 		state.aiAssistUsed = false;
 		state.editing = null;
 		state.helpers = [];
@@ -222,6 +231,7 @@
 		};
 		state.caption = moment.caption || '';
 		state.targets = Array.isArray(moment.targets) ? moment.targets.slice() : [];
+		state.categories = Array.isArray(moment.categories) ? moment.categories.map(Number) : [];
 		state.helpers = Array.isArray(moment.helpers) ? moment.helpers.slice() : [];
 		state.primaryType = state.editing.type;
 		navigate('#create');
@@ -605,10 +615,11 @@
 				}
 				status.textContent = '';
 				state.primaryType = effectiveType();
-				// An edited draft keeps its stored destination selection;
-				// fresh Moments start from the per-type defaults.
+				// An edited draft keeps its stored destination and category
+				// selections; fresh Moments start from the per-type defaults.
 				if (!state.editing) {
 					state.targets = defaultTargetsFor(state.primaryType);
+					state.categories = defaultCategoriesFor(state.primaryType);
 				}
 				navigate('#publish');
 			});
@@ -993,12 +1004,49 @@
 					const names = helpers.map((h) => esc(h.label)).join(', ');
 					return `<p class="moment-helpers-note">Your site’s publishing tools will also share this Moment, per their own settings: <strong>${names}</strong>.</p>`;
 				})()}
+				${this.renderCategories()}
 			</section>
 			<footer class="moment-actionbar">
 				<p class="moment-status" data-publish-status aria-live="polite"></p>
 				<button type="button" class="moment-btn moment-btn--primary" data-action="publish">Publish Now</button>
 				<button type="button" class="moment-btn moment-btn--secondary" data-action="save-draft">Save as Draft</button>
 			</footer>`;
+		},
+
+		// "File under" category picker — the site-filing counterpart to
+		// destinations. Only shown when the site offers a real choice beyond
+		// its single default category (a lone "Uncategorized" is just the
+		// fallback and needs no toggle).
+		renderCategories() {
+			const meaningful = siteCategories.filter((c) => c.id !== config.defaultCategory);
+			if (!meaningful.length) {
+				return '';
+			}
+			const items = siteCategories
+				.map(
+					(cat) => `
+				<li class="moment-dest">
+					<label class="moment-dest__row" for="moment-cat-${esc(cat.id)}">
+						<span class="moment-dest__info">
+							<span class="moment-dest__name">${esc(cat.name)}</span>
+						</span>
+						<span class="moment-toggle">
+							<input type="checkbox" class="moment-toggle__input" id="moment-cat-${esc(
+								cat.id
+							)}" data-category="${esc(cat.id)}"${
+						state.categories.includes(cat.id) ? ' checked' : ''
+					} aria-label="File under ${esc(cat.name)}" />
+							<span class="moment-toggle__track" aria-hidden="true"></span>
+						</span>
+					</label>
+				</li>`
+				)
+				.join('');
+			const typeLabel = esc(TYPE_LABELS[state.primaryType] || 'these');
+			return `
+				<h2 class="moment-section-heading moment-publish-subhead">File under</h2>
+				<p class="moment-publish-subnote">Saved as the default for ${typeLabel} Moments — change it any time.</p>
+				<ul class="moment-destlist">${items}</ul>`;
 		},
 
 		bindEvents() {
@@ -1011,6 +1059,19 @@
 						}
 					} else {
 						state.targets = state.targets.filter((t) => t !== id);
+					}
+				});
+			});
+
+			root.querySelectorAll('[data-category]').forEach((input) => {
+				input.addEventListener('change', () => {
+					const id = Number(input.getAttribute('data-category'));
+					if (input.checked) {
+						if (!state.categories.includes(id)) {
+							state.categories.push(id);
+						}
+					} else {
+						state.categories = state.categories.filter((c) => c !== id);
 					}
 				});
 			});
@@ -1061,6 +1122,7 @@
 			formData.append('status', postStatus);
 			formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
 			state.targets.forEach((target) => formData.append('targets[]', target));
+			state.categories.forEach((id) => formData.append('categories[]', id));
 			// When controllable helpers exist, send the selection (as JSON so
 			// an empty choice is authoritative "none"); omit entirely when
 			// there are none, leaving those plugins' own defaults untouched.

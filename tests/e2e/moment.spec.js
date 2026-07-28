@@ -87,6 +87,45 @@ test('note Moment: connected Bluesky preselected, publishes, appears in notes vi
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// Categories: the "File under" picker files a Moment under a chosen
+// category and remembers it as the per-type default for the next Moment.
+// (CI seeds the "E2E Photos"/"E2E Travel" categories; the picker only
+// renders when the site has a real choice beyond its default category.)
+test('categories: File under picker files the Moment and remembers the choice per type', async ({ page }) => {
+	const caption = `E2E category ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', caption);
+	await page.locator('[data-action="next"]').click();
+
+	// The picker renders with the seeded categories; pick "E2E Photos".
+	const fileUnder = page.locator('.moment-publish-subhead');
+	await expect(fileUnder).toHaveText('File under');
+	const photos = page.locator('[data-category]').filter({ has: page.getByText('E2E Photos') }).locator('input');
+	await photos.check({ force: true });
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	// wp-admin confirms the post is filed under the chosen category.
+	await page.goto('/wp-admin/edit.php');
+	const row = page.locator('tr').filter({ hasText: caption }).first();
+	await expect(row).toContainText('E2E Photos');
+
+	// Per-type memory: the next note Moment preselects the same category.
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', `E2E category memory ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	const rememberedPhotos = page
+		.locator('[data-category]')
+		.filter({ has: page.getByText('E2E Photos') })
+		.locator('input');
+	await expect(rememberedPhotos).toBeChecked();
+});
+
 // Scenario 2 + destination memory: image Moment via the file picker; no
 // networks preselected initially (image default Instagram is not
 // connected), the user's explicit choice is remembered for the next
