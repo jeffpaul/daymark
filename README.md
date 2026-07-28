@@ -137,6 +137,18 @@ image Moment preselects the same set (per user). Types you have never
 published fall back to the built-in defaults (note → Bluesky, image →
 Instagram, video → YouTube).
 
+### How are Moments filed into categories?
+
+The publish screen has a **File under** picker for your site's existing
+categories. Like destinations, the choice is remembered per Moment type —
+file image Moments under "Photos" once and the next image Moment
+preselects it (per user) — and you can change it for any single Moment.
+The picker only appears when your site has categories beyond its default
+one; otherwise Moments file into the default category as usual.
+Selections are validated against your existing categories (Moment never
+creates new ones) and stored natively, so they behave like any other
+post's categories.
+
 ### What social network connectors could work?
 
 Moment's adapter layer (`moment_register_connectors` +
@@ -234,16 +246,19 @@ configured provider is used):
 
 | Provider plugin | Powers |
 |---|---|
-| AI Provider for Anthropic (Claude) | Caption suggestions, alt text drafts, tag suggestions — the full AI Assist sheet |
+| AI Provider for Anthropic (Claude) | Caption and tag suggestions (AI Assist sheet); per-image alt text generated from the image itself |
 | AI Provider for Google (Gemini) | Same — the features are provider-agnostic |
 | AI Provider for OpenAI (GPT) | Same |
 
 Feature-by-feature: **caption suggestion** rewrites your draft text (or
-proposes one from the media context); **alt text** drafts accessibility
-text for the primary image; **tags** proposes post tags — accepted
-suggestions are applied as real post tags and attachment alt text at
-publish. All of it is optional: no provider, no AI UI, and publishing
-never depends on it.
+proposes one from the media context) and **tag suggestions** propose post
+tags — both from the AI Assist sheet, with accepted tags applied as real
+post tags at publish. **Alt text** works differently: every image in the
+composer gets its own alt field, pre-filled from the actual image via a
+vision call to the AI Client and editable before you publish (when no
+provider is configured the field is simply empty to fill in by hand). All
+of it is optional: no provider, no AI UI, and publishing never depends on
+it.
 
 ## Using Moment Like a Phone App
 
