@@ -452,3 +452,46 @@ test('controllable helper: per-Moment toggle appears and is sent on publish', as
 	expect(sentBody).toContain('publish_helpers');
 	expect(sentBody).toContain('moment-e2e-helper');
 });
+
+// A registered, connected connector appears as a real destination, can be
+// toggled and published to, and is remembered per Moment type. The E2E
+// Connector fixture registers a fake connected network; this guards the
+// connector destination UI in app.js (rendering, checked-state, per-type
+// preselection) that ships but no default install exercises. Backflow
+// *display* of connector replies is covered by PHPUnit, not here.
+test('connected connector: destination toggle publishes and is remembered per type', async ({ page }) => {
+	const caption = `E2E connector ${RUN_ID}`;
+
+	await loginAs(page);
+	// Opt this test's requests into the fake connector (see the
+	// moment-e2e-connector fixture); other tests keep the no-connector base.
+	await page
+		.context()
+		.addCookies([{ name: 'moment_e2e_connector', value: '1', url: new URL(page.url()).origin }]);
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', caption);
+	await page.locator('[data-action="next"]').click();
+
+	// Offered as a connected destination, initially unchecked (the fake
+	// connector isn't a model default for notes).
+	const toggle = page.locator('[data-connector="e2e-net"]');
+	await expect(toggle).toBeVisible();
+	await expect(page.getByText('Connected · E2E')).toBeVisible();
+	await expect(toggle).not.toBeChecked();
+
+	await toggle.click({ force: true });
+	await expect(toggle).toBeChecked();
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+	// The success screen lists the chosen syndication destination.
+	await expect(page.getByText('E2E Network')).toBeVisible();
+
+	// Per-type memory: the next note Moment preselects the connector.
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', `E2E connector memory ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	await expect(page.locator('[data-connector="e2e-net"]')).toBeChecked();
+});

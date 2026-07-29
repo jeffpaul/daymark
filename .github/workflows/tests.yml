@@ -215,6 +215,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-publish-helper.php" /tmp/wp/wp-content/mu-plugins/
           # Registers a fake controllable helper for the per-Moment toggle test.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
+          # Registers a fake CONNECTED connector for the destination-toggle test.
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-connector.php" /tmp/wp/wp-content/mu-plugins/
           # A couple of categories so the "File under" picker has a real
           # choice beyond the site's single default category.
           wp term create category "E2E Photos" --path=/tmp/wp || true
