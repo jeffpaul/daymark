@@ -91,8 +91,11 @@ test('categories: File under picker files the Moment and remembers the choice pe
 	// The picker renders with the seeded categories; pick "E2E Photos".
 	const fileUnder = page.locator('.moment-publish-subhead');
 	await expect(fileUnder).toHaveText('File under');
+	// The real checkbox is visually hidden behind the toggle track, so click
+	// it (force) rather than check() — matching the destination/helper toggles.
 	const photos = page.locator('.moment-dest').filter({ hasText: 'E2E Photos' }).locator('[data-category]');
-	await photos.check({ force: true });
+	await photos.click({ force: true });
+	await expect(photos).toBeChecked();
 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
