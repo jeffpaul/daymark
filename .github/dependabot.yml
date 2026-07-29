@@ -1,0 +1,44 @@
+# Keeps pinned GitHub Actions and dev dependencies current. Every PR Dependabot
+# opens runs through the existing CI (tests, PHPCS, plugin-check) and the
+# dependency-review license gate before it can merge. Updates are grouped so a
+# quiet week produces one PR per ecosystem rather than a flood.
+version: 2
+updates:
+  # Pinned action SHAs in .github/workflows/*.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # PHP dev dependencies (PHPUnit, WPCS, etc.) — runtime has none.
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(dev)"
+    groups:
+      composer-dev:
+        patterns:
+          - "*"
+
+  # JS dev dependencies (Playwright, etc.) — no bundled runtime JS deps.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(dev)"
+    groups:
+      npm-dev:
+        patterns:
+          - "*"
