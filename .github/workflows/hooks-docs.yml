@@ -36,7 +36,7 @@ jobs:
     outputs:
       pages-enabled: ${{ steps.pages-check.outputs.enabled }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -45,7 +45,7 @@ jobs:
           coverage: none
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
 
@@ -72,7 +72,7 @@ jobs:
       - name: Upload Pages artifact
         # PRs validate the build only — no artifact, no deploy.
         if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: wp-hooks-docs/build
 
@@ -104,4 +104,4 @@ jobs:
     steps:
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
