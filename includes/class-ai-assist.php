@@ -283,10 +283,11 @@ class Moment_AI_Assist {
 			}
 		}
 
-		// TODO: Replace with real WordPress\AiClient\AiClient call when a provider is configured.
+		// NOTE: Deterministic mock fallback — reached only when no AI provider is
+		// configured, or when a real call failed. The real path already runs above via
+		// generate_suggestion_bundle(): wp_ai_client_prompt( $prompt )->as_json_response( $schema )->generate_text().
 		// WP 7.0 AI Client: https://make.wordpress.org/core/2026/03/24/introducing-the-ai-client-in-wordpress-7-0/
-		// Real path: wp_ai_client_prompt( $prompt )->as_json_response( $schema )->generate_text()
-		// (see generate_suggestion_bundle()). This mock is deterministic: same input, same output.
+		// This mock is deterministic: same input, same output — no randomness.
 		return array(
 			'caption'        => $this->mock_caption( $context ),
 			'alt_text'       => $this->mock_alt_text( $context ),
