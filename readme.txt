@@ -76,8 +76,8 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 == Screenshots ==
 
 1. Home — the phone-first app shell: drafts and recent Moments in reach, one-tap publishing.
-2. Create — pick media from the camera roll, add a caption, optional AI Assist.
-3. Publish — choose destinations (your site always, connected networks strictly additive) or save as a draft.
+2. Create — pick media, add a caption, and get AI-suggested alt text for each image, editable before you publish.
+3. Publish — your site is always the destination; file the Moment under categories (remembered per type), or save as a draft.
 4. Notifications — replies from syndicated copies flow back automatically, labeled by source.
 5. Timeline — Moments rendered inside your theme, via shortcode or block.
 
