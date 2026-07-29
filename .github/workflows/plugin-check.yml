@@ -13,7 +13,7 @@ jobs:
     # blocking merges. Flip to blocking before any public/dot-org release.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build distribution copy (respects .distignore)
         run: |
