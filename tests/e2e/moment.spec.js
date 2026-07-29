@@ -66,7 +66,7 @@ test('note Moment publishes to your site and appears in the notes view', async (
 
 	// Your Site is always the destination; no social networks are offered
 	// unless a connector plugin registers one.
-	await expect(page.getByText('Your Site')).toBeVisible();
+	await expect(page.locator('.moment-dest__name', { hasText: 'Your Site' })).toBeVisible();
 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
@@ -91,7 +91,7 @@ test('categories: File under picker files the Moment and remembers the choice pe
 	// The picker renders with the seeded categories; pick "E2E Photos".
 	const fileUnder = page.locator('.moment-publish-subhead');
 	await expect(fileUnder).toHaveText('File under');
-	const photos = page.locator('[data-category]').filter({ has: page.getByText('E2E Photos') }).locator('input');
+	const photos = page.locator('.moment-dest').filter({ hasText: 'E2E Photos' }).locator('[data-category]');
 	await photos.check({ force: true });
 
 	await page.locator('[data-action="publish"]').click();
@@ -108,9 +108,9 @@ test('categories: File under picker files the Moment and remembers the choice pe
 	await page.fill('#moment-caption', `E2E category memory ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	const rememberedPhotos = page
-		.locator('[data-category]')
-		.filter({ has: page.getByText('E2E Photos') })
-		.locator('input');
+		.locator('.moment-dest')
+		.filter({ hasText: 'E2E Photos' })
+		.locator('[data-category]');
 	await expect(rememberedPhotos).toBeChecked();
 });
 
