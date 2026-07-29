@@ -151,15 +151,13 @@ do_action('moment_import_responses', $post_id, $network_id);  // backflow trigge
 
 ## Sub-agent directory
 
-These agents are defined in `.claude/agents/`. The orchestrator delegates to them by name.
-
-| Agent | File | Scope |
-|-------|------|-------|
-| `wp-php-core` | `.claude/agents/wp-php-core.md` | PHP, REST API, publisher, AI adapter |
-| `moment-frontend` | `.claude/agents/moment-frontend.md` | App shell, screens, CSS, JS, PWA |
-| `moment-syndication` | `.claude/agents/moment-syndication.md` | Connector registry, routing, metadata |
-| `moment-backflow` | `.claude/agents/moment-backflow.md` | Backflow import, notifications endpoint |
-| `moment-tester` | `.claude/agents/moment-tester.md` | PHPUnit, WP-CLI smoke tests, Playwright |
+The phased build (Phases 0–9) used five specialist sub-agents under `.claude/agents/`
+(`wp-php-core`, `moment-frontend`, `moment-syndication`, `moment-backflow`,
+`moment-tester`). Those files were removed after 0.4.0: the phased build is complete,
+they had drifted from the shipped code, and their durable guidance (identity, security
+checklist, content model, hooks) already lives in this file and in CONTRIBUTING.md. The
+original agent definitions remain archived in `docs/05_llm_prompt_build_prototype_claude_code.md`
+for historical reference.
 
 ## Project artifact context
 
