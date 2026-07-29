@@ -100,6 +100,16 @@ class Moment_REST_Controller extends WP_REST_Controller {
 							'enum'              => array( 'any', 'publish', 'draft' ),
 							'sanitize_callback' => 'sanitize_key',
 						),
+						'type'     => array(
+							'type'              => 'string',
+							'default'           => '',
+							'sanitize_callback' => 'sanitize_key',
+						),
+						's'        => array(
+							'type'              => 'string',
+							'default'           => '',
+							'sanitize_callback' => 'sanitize_text_field',
+						),
 					),
 				),
 			)
@@ -174,6 +184,18 @@ class Moment_REST_Controller extends WP_REST_Controller {
 						),
 					),
 				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'delete_moment' ),
+					'permission_callback' => array( $this, 'permissions_check_post' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
 			)
 		);
 
@@ -189,6 +211,28 @@ class Moment_REST_Controller extends WP_REST_Controller {
 						'type'              => 'integer',
 						'required'          => true,
 						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/notifications/(?P<comment_id>\d+)/reply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'reply_to_comment' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'comment_id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+					'content'    => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_textarea_field',
 					),
 				),
 			)
@@ -334,37 +378,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function get_moments( WP_REST_Request $request ) {
-		$per_page = min( self::MAX_PER_PAGE, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
-		$page     = max( 1, absint( $request->get_param( 'page' ) ) );
-
-		// Status filter, so drafts stay reachable in the app no matter how
-		// many Moments have published since (the Home Drafts row).
-		$status   = sanitize_key( (string) $request->get_param( 'status' ) );
-		$statuses = in_array( $status, array( 'publish', 'draft' ), true )
-			? array( $status )
-			: array( 'publish', 'draft' );
-
-		$query = new WP_Query(
-			array(
-				'post_type'      => 'post',
-				'post_status'    => $statuses,
-				'posts_per_page' => $per_page,
-				'paged'          => $page,
-				'orderby'        => 'date',
-				'order'          => 'DESC',
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Moment lookup.
-				'meta_key'       => '_moment_is_moment',
-				'meta_value'     => '1',
-			)
-		);
+		$query = new WP_Query( $this->get_moments_query_args( $request ) );
 
 		$moments = array();
 
 		foreach ( $query->posts as $post ) {
-			// Published Moments are public; drafts are only listed for
-			// users who can edit that specific post (authors see their
-			// own, editors see all).
 			if ( 'publish' !== $post->post_status && ! current_user_can( 'edit_post', $post->ID ) ) {
 				continue;
 			}
@@ -373,6 +391,51 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $moments );
+	}
+
+	/**
+	 * Build the WP_Query args for listing Moments, merging optional filter
+	 * arguments into a consistent query shape.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return array<string, mixed>
+	 */
+	private function get_moments_query_args( WP_REST_Request $request ): array {
+		$per_page = min( self::MAX_PER_PAGE, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
+		$page     = max( 1, absint( $request->get_param( 'page' ) ) );
+
+		$status   = sanitize_key( (string) $request->get_param( 'status' ) );
+		$statuses = in_array( $status, array( 'publish', 'draft' ), true )
+			? array( $status )
+			: array( 'publish', 'draft' );
+
+		$args = array(
+			'post_type'      => 'post',
+			'post_status'    => $statuses,
+			'posts_per_page' => $per_page,
+			'paged'          => $page,
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+			'meta_key'       => '_moment_is_moment',
+			'meta_value'     => '1',
+		);
+
+		$type = sanitize_key( (string) $request->get_param( 'type' ) );
+		if ( '' !== $type ) {
+			$args['meta_query'] = array(
+				array(
+					'key'   => '_moment_primary_type',
+					'value' => $type,
+				),
+			);
+		}
+
+		$search = sanitize_text_field( (string) $request->get_param( 's' ) );
+		if ( '' !== $search ) {
+			$args['s'] = $search;
+		}
+
+		return $args;
 	}
 
 	/**
@@ -489,6 +552,70 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $result );
+	}
+
+	/**
+	 * POST /moment/v1/notifications/{comment_id}/reply — reply to a comment
+	 * on a Moment from within the app.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function reply_to_comment( WP_REST_Request $request ) {
+		$comment_id = absint( $request->get_param( 'comment_id' ) );
+		$comment    = get_comment( $comment_id );
+
+		if ( ! $comment ) {
+			return new WP_Error(
+				'moment_comment_not_found',
+				__( 'Comment not found.', 'moment' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		// The parent post must be a Moment the user can edit.
+		if ( '1' !== get_post_meta( (int) $comment->comment_post_ID, '_moment_is_moment', true )
+			|| ! current_user_can( 'edit_post', (int) $comment->comment_post_ID )
+		) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'You cannot reply to this comment.', 'moment' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		$user     = wp_get_current_user();
+		$reply_id = wp_new_comment(
+			array(
+				'comment_post_ID'      => (int) $comment->comment_post_ID,
+				'comment_parent'       => $comment_id,
+				'comment_content'      => sanitize_textarea_field( (string) $request->get_param( 'content' ) ),
+				'comment_author'       => $user->display_name,
+				'comment_author_email' => $user->user_email,
+				'comment_author_url'   => '',
+				'user_id'              => $user->ID,
+				'comment_approved'     => 1,
+			)
+		);
+
+		if ( ! $reply_id ) {
+			return new WP_Error(
+				'moment_reply_failed',
+				__( 'Could not post reply.', 'moment' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		$reply = get_comment( $reply_id );
+
+		return rest_ensure_response(
+			array(
+				'id'      => $reply_id,
+				'author'  => $user->display_name,
+				'date'    => $reply ? $reply->comment_date_gmt : '',
+				'content' => sanitize_textarea_field( (string) $request->get_param( 'content' ) ),
+			)
+		);
 	}
 
 	/**
@@ -644,6 +771,39 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $this->prepare_moment_summary( (int) $result ) );
+	}
+
+	/**
+	 * DELETE /moment/v1/moments/{id} — trash a Moment.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function delete_moment( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$post    = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+			return new WP_Error(
+				'moment_not_found',
+				__( 'Not a Moment post.', 'moment' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		if ( 'trash' === $post->post_status ) {
+			return rest_ensure_response( array( 'deleted' => true ) );
+		}
+
+		if ( ! wp_trash_post( $post_id ) ) {
+			return new WP_Error(
+				'moment_delete_failed',
+				__( 'Could not delete this Moment.', 'moment' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		return rest_ensure_response( array( 'deleted' => true ) );
 	}
 
 	/**

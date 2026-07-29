@@ -16,6 +16,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Contract for a syndication destination (e.g. Bluesky, Instagram).
+ *
+ * @since 0.4.0
  */
 interface Moment_Syndication_Connector {
 
@@ -64,7 +66,11 @@ interface Moment_Syndication_Connector {
 	 *     external_url: string|null,
 	 *     status: string,
 	 *     message: string,
+	 *     backflow_supported?: bool,
 	 * } Result with status one of 'published'|'mocked'|'failed'.
+	 * Optional `backflow_supported` signals that the connector can
+	 * pull replies back (real connectors set it; mocks omit it). When
+	 * absent it defaults to false everywhere it is checked.
 	 */
 	public function publish( int $post_id, array $payload ): array;
 

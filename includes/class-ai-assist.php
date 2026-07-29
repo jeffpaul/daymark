@@ -270,7 +270,7 @@ class Moment_AI_Assist {
 	 * @param array|string $context Context array (text, media_count, media_types,
 	 *                              filename) or a plain caption string.
 	 * @param string       $type    Primary Moment type (image|video|audio|podcast|note|gallery|mixed).
-	 * @return array{caption: string, alt_text: string, tags: string[], is_mocked: bool, provider_label: string}
+	 * @return array{title: string, caption: string, alt_text: string, tags: string[], is_mocked: bool, provider_label: string}
 	 */
 	public function get_suggestions( $context, string $type = '' ): array {
 		$context = $this->normalize_context( $context, $type );
@@ -289,6 +289,7 @@ class Moment_AI_Assist {
 		// WP 7.0 AI Client: https://make.wordpress.org/core/2026/03/24/introducing-the-ai-client-in-wordpress-7-0/
 		// This mock is deterministic: same input, same output — no randomness.
 		return array(
+			'title'          => $this->mock_title( $context ),
 			'caption'        => $this->mock_caption( $context ),
 			'alt_text'       => $this->mock_alt_text( $context ),
 			'tags'           => $this->mock_tags( $context ),
@@ -412,10 +413,9 @@ class Moment_AI_Assist {
 	private function generate_suggestion_bundle( array $context ): ?array {
 		$schema = array(
 			'type'                 => 'object',
-			// Anthropic structured output rejects object schemas unless
-			// additionalProperties is explicitly false.
 			'additionalProperties' => false,
 			'properties'           => array(
+				'title'    => array( 'type' => 'string' ),
 				'caption'  => array( 'type' => 'string' ),
 				'alt_text' => array( 'type' => 'string' ),
 				'tags'     => array(
@@ -423,12 +423,12 @@ class Moment_AI_Assist {
 					'items' => array( 'type' => 'string' ),
 				),
 			),
-			'required'             => array( 'caption', 'alt_text', 'tags' ),
+			'required'             => array( 'title', 'caption', 'alt_text', 'tags' ),
 		);
 
-		$prompt = 'Suggest a caption, alt text, and 3-5 topic tags for this personal blog moment. '
+		$prompt = 'Suggest a title, caption, alt text, and 3-5 topic tags for this personal blog moment. '
 			. $this->describe_context( $context )
-			. ' Respond as JSON with keys "caption" (max 200 chars), "alt_text" (max 125 chars, empty string if no media), and "tags" (array of lowercase strings).';
+			. ' Respond as JSON with keys "title" (max 60 chars), "caption" (max 200 chars), "alt_text" (max 125 chars, empty string if no media), and "tags" (array of lowercase strings).';
 
 		$raw = $this->generate_text(
 			$prompt,
@@ -443,7 +443,7 @@ class Moment_AI_Assist {
 
 		$data = json_decode( $raw, true );
 
-		if ( ! is_array( $data ) || ! isset( $data['caption'], $data['alt_text'], $data['tags'] ) ) {
+		if ( ! is_array( $data ) || ! isset( $data['title'], $data['caption'], $data['alt_text'], $data['tags'] ) ) {
 			$this->log_debug( 'Structured suggestion response was not valid JSON.' );
 			return null;
 		}
@@ -451,6 +451,7 @@ class Moment_AI_Assist {
 		$tags = $this->sanitize_tags( (array) $data['tags'] );
 
 		return array(
+			'title'          => sanitize_text_field( (string) $data['title'] ),
 			'caption'        => sanitize_text_field( (string) $data['caption'] ),
 			'alt_text'       => sanitize_text_field( (string) $data['alt_text'] ),
 			'tags'           => ! empty( $tags ) ? $tags : $this->mock_tags( $context ),
@@ -556,6 +557,36 @@ class Moment_AI_Assist {
 	 */
 	private function build_tags_prompt( array $context ): string {
 		return 'Suggest 3 to 5 topic tags for this personal blog moment. ' . $this->describe_context( $context );
+	}
+
+	/**
+	 * Deterministic mock title. Same input, same output.
+	 *
+	 * @param array $context Normalized context.
+	 * @return string
+	 */
+	private function mock_title( array $context ): string {
+		if ( '' !== $context['text'] ) {
+			return wp_html_excerpt( $context['text'], 60, '…' );
+		}
+
+		$now       = time();
+		$formatted = wp_date( get_option( 'date_format' ), $now );
+
+		$labels = array(
+			'image'   => '',
+			'gallery' => 'Gallery',
+			'video'   => 'Clip',
+			'audio'   => 'Recording',
+			'podcast' => 'Podcast Episode',
+			'note'    => 'Note',
+			'mixed'   => 'Moment',
+		);
+
+		$label = $labels[ $context['type'] ] ?? $labels['note'];
+
+		/* translators: 1: label (e.g. "Note") 2: formatted date (e.g. "July 29, 2026") */
+		return sprintf( __( '%1$s — %2$s', 'moment' ), $label, $formatted );
 	}
 
 	/**

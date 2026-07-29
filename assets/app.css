@@ -173,6 +173,40 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* --- Search bar and type filter chips --- */
+.moment-searchbar {
+	padding: 0 var(--moment-spacing-md) var(--moment-spacing-xs);
+}
+
+.moment-searchbar__input {
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: var(--moment-spacing-sm);
+}
+
+.moment-filterchips {
+	display: flex;
+	gap: var(--moment-spacing-xs);
+	flex-wrap: wrap;
+}
+
+.moment-filterchip {
+	flex-shrink: 0;
+	padding: 4px 12px;
+	border: 1px solid var(--moment-border);
+	border-radius: 20px;
+	background: var(--moment-bg);
+	color: var(--moment-text-secondary);
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.moment-filterchip--active {
+	background: var(--moment-accent);
+	color: var(--moment-accent-fg);
+	border-color: var(--moment-accent);
+}
+
 .moment-section-heading {
 	font-size: 14px;
 	font-weight: 600;
@@ -269,6 +303,11 @@ h2[tabindex='-1']:focus {
 .moment-recent__more {
 	margin: var(--moment-spacing-xs) 0 0;
 	text-align: center;
+}
+
+.moment-loadmore {
+	width: 100%;
+	margin-top: var(--moment-spacing-sm);
 }
 
 .moment-recent__morelink {
@@ -410,6 +449,61 @@ h2[tabindex='-1']:focus {
 	background: var(--moment-bg);
 	text-decoration: none;
 	color: var(--moment-text-primary);
+}
+
+.moment-recent__row {
+	display: flex;
+	align-items: center;
+	gap: 0;
+}
+
+.moment-recent__row .moment-recent__item {
+	flex: 1;
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+	border-right: 0;
+}
+
+.moment-item-delete {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--moment-tap-min);
+	min-height: 64px;
+	border: 1px solid var(--moment-border);
+	border-left: 0;
+	border-radius: 0 var(--moment-radius) var(--moment-radius) 0;
+	background: var(--moment-bg);
+	color: var(--moment-text-muted);
+	font-size: 20px;
+	cursor: pointer;
+	padding: 0;
+	line-height: 1;
+}
+
+.moment-item-delete:hover {
+	color: var(--moment-error);
+}
+
+.moment-item-edit {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--moment-tap-min);
+	min-height: 64px;
+	border: 1px solid var(--moment-border);
+	border-left: 0;
+	border-right: 0;
+	background: var(--moment-bg);
+	color: var(--moment-text-muted);
+	cursor: pointer;
+	padding: 0;
+}
+
+.moment-item-edit:hover {
+	color: var(--moment-accent);
 }
 
 .moment-recent__thumb {
@@ -1205,4 +1299,39 @@ h2[tabindex='-1']:focus {
 	.moment-toggle__track::after {
 		transition: none;
 	}
+}
+
+/* --- Notification reply form --- */
+.moment-note-card__replybtn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 0;
+	font: inherit;
+}
+
+.moment-note-card__replyform {
+	margin-top: var(--moment-spacing-sm);
+	padding-top: var(--moment-spacing-sm);
+	border-top: 1px solid var(--moment-border);
+}
+
+.moment-note-card__replyform .moment-textarea {
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.moment-note-card__replyactions {
+	display: flex;
+	gap: var(--moment-spacing-sm);
+	margin-top: var(--moment-spacing-xs);
+}
+
+/* --- Filter chip hover --- */
+.moment-filterchip:hover {
+	border-color: var(--moment-accent-light);
+}
+
+.moment-filterchip--active:hover {
+	opacity: 0.9;
 }

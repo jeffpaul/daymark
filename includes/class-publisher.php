@@ -59,11 +59,23 @@ class Moment_Publisher {
 		'image/png',
 		'image/gif',
 		'image/webp',
+		'image/heic',
+		'image/heif',
 		'video/mp4',
 		'video/quicktime',
 		'audio/mpeg',
 		'audio/wav',
 	);
+
+	/**
+	 * Maximum allowed upload size per file, in bytes. Defaults to 50 MB.
+	 *
+	 * PHP's upload_max_filesize also applies, but this cap provides a
+	 * mobile-friendly guard before the server-level limit.
+	 *
+	 * @var int
+	 */
+	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
 
 	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
@@ -73,10 +85,13 @@ class Moment_Publisher {
 	 * @var array<string, string>
 	 */
 	private const MIME_ALIASES = array(
-		'audio/x-wav' => 'audio/wav',
-		'audio/wave'  => 'audio/wav',
-		'audio/mp3'   => 'audio/mpeg',
-		'video/x-m4v' => 'video/mp4',
+		'audio/x-wav'  => 'audio/wav',
+		'audio/wave'   => 'audio/wav',
+		'audio/mp3'    => 'audio/mpeg',
+		'video/x-m4v'  => 'video/mp4',
+		'image/heif'   => 'image/heic',
+		'image/heic-x' => 'image/heic',
+		'image/heif-x' => 'image/heif',
 	);
 
 	/**
@@ -605,6 +620,20 @@ class Moment_Publisher {
 			return new WP_Error(
 				'moment_upload_error',
 				__( 'The file failed to upload.', 'moment' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$file_size = (int) ( $file['size'] ?? 0 );
+		if ( $file_size > self::MAX_FILE_BYTES ) {
+			return new WP_Error(
+				'moment_upload_too_large',
+				sprintf(
+					/* translators: %1$s: file name  %2$s: human-readable size limit */
+					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'moment' ),
+					sanitize_text_field( (string) $file['name'] ),
+					size_format( self::MAX_FILE_BYTES )
+				),
 				array( 'status' => 400 )
 			);
 		}

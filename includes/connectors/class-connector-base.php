@@ -74,7 +74,7 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 	/**
 	 * Mock publish. Returns deterministic demo data; never throws.
 	 *
-	 * TODO: Real implementation would authenticate via the WordPress
+	 * NOTE: Real implementation would authenticate via the WordPress
 	 * Connector API or an existing social publishing plugin, then call
 	 * the platform API. See:
 	 * https://make.wordpress.org/core/2026/03/18/introducing-the-connectors-api-in-wordpress-7-0/

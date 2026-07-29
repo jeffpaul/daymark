@@ -11,6 +11,7 @@
  * plugin's core portability promise.
  *
  * @package Moment
+ * @since   0.4.0
  */
 
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
@@ -32,18 +33,26 @@ delete_metadata( 'user', 0, 'moment_notifications_seen', '', true );
 wp_clear_scheduled_hook( 'moment_backflow_sync' );
 wp_clear_scheduled_hook( 'moment_backflow_sync_now' );
 
-// Backflow transients: the freshen marker plus per-post sync cooldowns.
+// Backflow transients: freshen marker + per-post, per-network sync cooldowns.
 delete_transient( 'moment_backflow_freshened' );
 
-global $wpdb;
-
-$cooldowns = $wpdb->get_col(
-	$wpdb->prepare(
-		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
-		$wpdb->esc_like( '_transient_moment_backflow_cooldown_' ) . '%'
+$moment_ids = get_posts(
+	array(
+		'post_type'      => 'post',
+		'post_status'    => 'any',
+		'fields'         => 'ids',
+		'posts_per_page' => -1,
+		'meta_key'       => '_moment_is_moment',
+		'meta_value'     => '1',
 	)
-); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+);
 
-foreach ( $cooldowns as $option_name ) {
-	delete_transient( str_replace( '_transient_', '', $option_name ) );
+foreach ( $moment_ids as $post_id ) {
+	$external_posts = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
+	if ( ! is_array( $external_posts ) ) {
+		continue;
+	}
+	foreach ( array_keys( $external_posts ) as $network ) {
+		delete_transient( 'moment_backflow_cooldown_' . $post_id . '_' . $network );
+	}
 }

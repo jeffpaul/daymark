@@ -30,6 +30,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Schedules and runs automatic backflow syncs.
+ *
+ * @since 0.4.0
  */
 class Moment_Backflow_Sync {
 

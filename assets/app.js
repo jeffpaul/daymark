@@ -24,17 +24,22 @@
 
 	// --- App state ---
 	const state = {
-		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
+		files: [],
+		title: '',
 		caption: '',
 		tags: [],
 		primaryType: 'note',
 		targets: [],
-		categories: [], // selected category term IDs (numbers)
+		categories: [],
 		aiAssistUsed: false,
-		lastPublish: null, // { response, targets, type }
+		lastPublish: null,
 		fileCounter: 0,
-		editing: null, // { id, type, media: [{id, kind, thumbnail, filename}] } while editing a draft
-		helpers: [], // enabled controllable third-party publishing helper ids
+		editing: null,
+		helpers: [],
+		homePage: 1,
+		homeHasMore: false,
+		homeSearch: '',
+		homeType: '',
 	};
 
 	const TYPE_LABELS = {
@@ -195,6 +200,7 @@
 			}
 		});
 		state.files = [];
+		state.title = '';
 		state.caption = '';
 		state.tags = [];
 		state.primaryType = 'note';
@@ -219,15 +225,17 @@
 	}
 
 	// Load a draft into the composer for continued editing.
-	async function openDraft(id) {
+	async function editMoment(id) {
 		const moment = await apiGet('moments/' + id);
 		resetComposer();
 		state.editing = {
 			id: moment.id,
 			type: moment.type || 'note',
+			status: moment.status || 'draft',
 			media: Array.isArray(moment.media) ? moment.media : [],
 		};
 		state.caption = moment.caption || '';
+		state.title = moment.title || '';
 		state.targets = Array.isArray(moment.targets) ? moment.targets.slice() : [];
 		state.categories = Array.isArray(moment.categories) ? moment.categories.map(Number) : [];
 		state.helpers = Array.isArray(moment.helpers) ? moment.helpers.slice() : [];
@@ -241,6 +249,17 @@
 			out += '<div class="moment-skeleton" aria-hidden="true"></div>';
 		}
 		return out;
+	}
+
+	function buildHomeQuery(page) {
+		let query = 'moments?status=publish&per_page=5&page=' + page;
+		if (state.homeSearch) {
+			query += '&s=' + encodeURIComponent(state.homeSearch);
+		}
+		if (state.homeType) {
+			query += '&type=' + encodeURIComponent(state.homeType);
+		}
+		return query;
 	}
 
 	// --- API helpers ---
@@ -278,6 +297,18 @@
 			},
 			credentials: 'same-origin',
 			body: JSON.stringify(data),
+		});
+		if (!res.ok) {
+			throw await readError(res);
+		}
+		return res.json();
+	}
+
+	async function apiDelete(path) {
+		const res = await fetch(config.restUrl + path, {
+			method: 'DELETE',
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
 		});
 		if (!res.ok) {
 			throw await readError(res);
@@ -366,6 +397,16 @@
 				</a>
 			</header>
 			<section class="moment-screen">
+				<div class="moment-searchbar">
+					<input type="search" class="moment-input moment-searchbar__input" data-home-search placeholder="Search Moments…" value="${esc(state.homeSearch)}" />
+					<div class="moment-filterchips" data-home-filters>
+						${['', 'note', 'image', 'video', 'audio'].map((t) => {
+							const label = t ? (TYPE_LABELS[t] || t) : 'All';
+							const active = state.homeType === t ? ' moment-filterchip--active' : '';
+							return `<button type="button" class="moment-filterchip${active}" data-home-type="${esc(t)}">${esc(label)}</button>`;
+						}).join('')}
+					</div>
+				</div>
 				<section class="moment-recent" data-drafts-section hidden aria-labelledby="moment-drafts-heading">
 					<h2 id="moment-drafts-heading" class="moment-section-heading">Drafts</h2>
 					<div class="moment-recent__list" data-drafts-list></div>
@@ -376,7 +417,9 @@
 						${skeletonRows(3)}
 						<span class="moment-visually-hidden">Loading recent Moments</span>
 					</div>
-					<p class="moment-recent__more" data-recent-more hidden></p>
+					<div class="moment-recent__more" data-recent-more hidden>
+						<button type="button" class="moment-btn moment-loadmore" data-load-more>Load more</button>
+					</div>
 				</section>
 			</section>
 			<footer class="moment-homefooter">
@@ -405,30 +448,88 @@
 				resetComposer();
 				navigate('#create');
 			});
+			const loadMoreBtn = root.querySelector('[data-load-more]');
+			if (loadMoreBtn) {
+				loadMoreBtn.addEventListener('click', () => this.loadMore());
+			}
+			const searchInput = root.querySelector('[data-home-search]');
+			if (searchInput) {
+				let searchTimer;
+				searchInput.addEventListener('input', () => {
+					clearTimeout(searchTimer);
+					searchTimer = setTimeout(() => {
+						state.homeSearch = searchInput.value.trim();
+						state.homePage = 1;
+						state.homeHasMore = false;
+						this.init();
+					}, 400);
+				});
+			}
+			const filterChips = root.querySelector('[data-home-filters]');
+			if (filterChips) {
+				filterChips.addEventListener('click', (event) => {
+					const chip = event.target.closest('[data-home-type]');
+					if (!chip) {
+						return;
+					}
+					state.homeType = chip.getAttribute('data-home-type') || '';
+					state.homePage = 1;
+					state.homeHasMore = false;
+					// Trigger a full screen re-render so filter chips reflect
+					// the new selection, then fetch the filtered list.
+					root.innerHTML = this.render();
+					this.bindEvents();
+					this.init();
+				});
+			}
 		},
 
-		bindDraftTaps(container) {
-			container.querySelectorAll('[data-edit-draft]').forEach((row) => {
+		bindEditTaps(container) {
+			container.querySelectorAll('[data-edit-moment]').forEach((row) => {
 				row.addEventListener('click', (event) => {
 					event.preventDefault();
 					row.setAttribute('aria-busy', 'true');
-					openDraft(row.getAttribute('data-edit-draft')).catch(() => {
+					editMoment(row.getAttribute('data-edit-moment')).catch(() => {
 						row.removeAttribute('aria-busy');
 					});
 				});
 			});
 		},
 
+		bindDeleteButtons(container) {
+			container.querySelectorAll('[data-delete-moment]').forEach((button) => {
+				button.addEventListener('click', async (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+					const id = button.getAttribute('data-delete-moment');
+					if (!window.confirm('Delete this Moment? It will be moved to Trash.')) {
+						return;
+					}
+					button.disabled = true;
+					try {
+						await apiDelete('moments/' + id);
+						const wrapper = button.closest('.moment-recent__row');
+						if (wrapper) {
+							wrapper.remove();
+						}
+					} catch (err) {
+						button.disabled = false;
+						alert('Delete failed: ' + err.message);
+					}
+				});
+			});
+		},
+
 		async init() {
+			state.homePage = 1;
+			state.homeHasMore = false;
 			const list = root.querySelector('[data-recent-list]');
 			const draftsSection = root.querySelector('[data-drafts-section]');
 			const draftsList = root.querySelector('[data-drafts-list]');
 			try {
-				// Drafts are fetched separately so they stay reachable no
-				// matter how many Moments have published since.
-				const [drafts, published] = await Promise.all([
+				const [drafts, page1] = await Promise.all([
 					apiGet('moments?status=draft&per_page=10'),
-					apiGet('moments?status=publish'),
+					apiGet(buildHomeQuery(1)),
 				]);
 				if (!list || !list.isConnected) {
 					return;
@@ -438,28 +539,28 @@
 				if (draftItems.length && draftsSection && draftsList) {
 					draftsList.innerHTML = draftItems.map((item) => this.renderItem(item)).join('');
 					draftsSection.hidden = false;
-					this.bindDraftTaps(draftsList);
+					this.bindEditTaps(draftsList);
+					this.bindDeleteButtons(draftsList);
 				}
 
-				const publishedItems = Array.isArray(published) ? published : [];
-				const items = publishedItems.slice(0, 5);
-				if (!items.length) {
+				const publishedItems = Array.isArray(page1) ? page1 : [];
+				if (!publishedItems.length) {
 					list.innerHTML = draftItems.length
 						? '<p class="moment-empty">Nothing published yet.</p>'
 						: '<p class="moment-empty">Nothing here yet. Create your first Moment.</p>';
 					return;
 				}
-				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
+				list.innerHTML = publishedItems.map((item) => this.renderItem(item)).join('');
+				this.bindEditTaps(list);
+				this.bindDeleteButtons(list);
 
-				// When more published Moments exist than the five shown, offer
-				// a path to the full timeline (only if that page resolved).
-				const more = root.querySelector('[data-recent-more]');
-				const timeline = pageLink('timeline');
-				if (more && timeline && publishedItems.length > items.length) {
-					more.innerHTML = `<a class="moment-recent__morelink" href="${esc(
-						timeline
-					)}">View more on your timeline &rarr;</a>`;
-					more.hidden = false;
+				// 5 per page; if we got exactly 5 there might be more.
+				if (publishedItems.length >= 5) {
+					state.homeHasMore = true;
+					const more = root.querySelector('[data-recent-more]');
+					if (more) {
+						more.hidden = false;
+					}
 				}
 			} catch (err) {
 				if (list && list.isConnected) {
@@ -467,6 +568,46 @@
 						'<p class="moment-error" role="alert">Could not load recent Moments. ' +
 						esc(err.message) +
 						'</p>';
+				}
+			}
+		},
+
+		async loadMore() {
+			const list = root.querySelector('[data-recent-list]');
+			if (!list || !state.homeHasMore) {
+				return;
+			}
+			const button = root.querySelector('[data-load-more]');
+			if (button) {
+				button.disabled = true;
+				button.textContent = 'Loading…';
+			}
+			try {
+				state.homePage++;
+				const items = await apiGet(buildHomeQuery(state.homePage));
+				if (!list || !list.isConnected) {
+					return;
+				}
+				const moreItems = Array.isArray(items) ? items : [];
+				if (moreItems.length < 5) {
+					state.homeHasMore = false;
+				}
+				if (moreItems.length) {
+					list.insertAdjacentHTML('beforeend', moreItems.map((item) => this.renderItem(item)).join(''));
+					this.bindEditTaps(list);
+					this.bindDeleteButtons(list);
+				}
+				if (!state.homeHasMore && button) {
+					button.remove();
+				} else if (button) {
+					button.disabled = false;
+					button.textContent = 'Load more';
+				}
+			} catch (err) {
+				state.homePage--;
+			} finally {
+				if (button && button.isConnected) {
+					button.remove();
 				}
 			}
 		},
@@ -486,9 +627,16 @@
 				? '<span class="moment-chip moment-chip--draft">Draft</span> '
 				: '';
 			const href = isDraft ? '#create' : item.permalink || '#home';
-			const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
+			const editAttr = ` data-edit-moment="${esc(String(item.id))}" data-is-draft="${isDraft ? '1' : '0'}"`;
+			const deleteAttr = ` data-delete-moment="${esc(String(item.id))}"`;
+			const editBtn = isDraft
+				? ''
+				: `<a class="moment-item-edit" href="#create"${editAttr} aria-label="Edit ${esc(title)}" title="Edit">
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+				   </a>`;
 			return `
-			<a class="moment-recent__item" href="${esc(href)}"${editAttr}>
+			<div class="moment-recent__row">
+			<a class="moment-recent__item" href="${esc(href)}"${isDraft ? editAttr : ''}>
 				${thumb}
 				<span class="moment-recent__body">
 					<span class="moment-recent__title">${esc(title)}</span>
@@ -496,7 +644,10 @@
 						TYPE_LABELS[item.type] || item.type || ''
 					)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
 				</span>
-			</a>`;
+			</a>
+			${editBtn}
+			<button type="button" class="moment-item-delete"${deleteAttr} aria-label="Delete ${esc(title)}" title="Delete">&times;</button>
+			</div>`;
 		},
 	};
 
@@ -538,13 +689,17 @@
 			<header class="moment-topbar">
 				<a class="moment-backlink" href="#home">&larr; Back</a>
 				<h1 class="moment-topbar__title" tabindex="-1" data-moment-focus>${
-					editing ? 'Edit Draft' : 'New Moment'
+					editing
+						? editing.status === 'publish'
+							? 'Edit Moment'
+							: 'Edit Draft'
+						: 'New Moment'
 				}</h1>
 			</header>
 			<section class="moment-screen">
 				${
 					editing
-						? '<p class="moment-editbanner"><span class="moment-chip moment-chip--draft">Draft</span> Changes save to this Moment — new media is added alongside what’s attached.</p>'
+						? '<p class="moment-editbanner"><span class="moment-chip' + (editing.status === 'publish' ? '' : ' moment-chip--draft') + '">' + (editing.status === 'publish' ? 'Published' : 'Draft') + '</span> Changes save to this Moment — new media is added alongside what’s attached.</p>'
 						: ''
 				}
 				${existingTiles}
@@ -560,6 +715,12 @@
 				<p class="moment-typebadge">Moment type: <span class="moment-chip" data-type-badge>${esc(
 					TYPE_LABELS[effectiveType()]
 				)}</span></p>
+				<div class="moment-field">
+					<label class="moment-field__label" for="moment-title">Title</label>
+					<input type="text" id="moment-title" class="moment-input" value="${esc(
+						state.title
+					)}" maxlength="200" placeholder="Give it a name" />
+				</div>
 				<div class="moment-field">
 					<label class="moment-field__label" for="moment-caption">Caption</label>
 					<textarea id="moment-caption" class="moment-textarea" rows="4" placeholder="What&#39;s happening?">${esc(
@@ -581,6 +742,7 @@
 		bindEvents() {
 			const input = root.querySelector('#moment-file-input');
 			const caption = root.querySelector('#moment-caption');
+			const titleField = root.querySelector('#moment-title');
 
 			input.addEventListener('change', () => {
 				const picked = Array.from(input.files || []);
@@ -619,6 +781,12 @@
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
 			});
+
+			if (titleField) {
+				titleField.addEventListener('input', () => {
+					state.title = titleField.value;
+				});
+			}
 
 			// Alt edits on media already attached to a draft, keyed by ID.
 			root.querySelectorAll('[data-existing-alt]').forEach((field) => {
@@ -874,6 +1042,12 @@
 			return `
 			${notice}
 			<div class="moment-field">
+				<label class="moment-field__label" for="moment-ai-title">Suggested title</label>
+				<input type="text" id="moment-ai-title" class="moment-input" value="${esc(
+					suggestions.title || ''
+				)}" maxlength="200" />
+			</div>
+			<div class="moment-field">
 				<label class="moment-field__label" for="moment-ai-caption">Suggested caption</label>
 				<textarea id="moment-ai-caption" class="moment-textarea" rows="3">${esc(
 					suggestions.caption || ''
@@ -909,6 +1083,7 @@
 			});
 
 			this.el.querySelector('[data-sheet-accept]').addEventListener('click', () => {
+				state.title = this.el.querySelector('#moment-ai-title').value.trim();
 				state.caption = this.el.querySelector('#moment-ai-caption').value;
 				state.tags = this.tags.slice();
 				state.aiAssistUsed = true;
@@ -1213,6 +1388,9 @@
 
 			const formData = new FormData();
 			formData.append('caption', state.caption);
+			if (state.title) {
+				formData.append('title', state.title);
+			}
 			formData.append('primary_type', state.primaryType);
 			formData.append('status', postStatus);
 			formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
@@ -1400,6 +1578,7 @@
 				}
 				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
 				this.bindShowMore(list);
+				this.bindReplyButtons(list);
 			} catch (err) {
 				if (list && list.isConnected) {
 					list.innerHTML =
@@ -1424,6 +1603,7 @@
 			if (item.post_title) {
 				metaParts.push('on &ldquo;' + esc(item.post_title) + '&rdquo;');
 			}
+			const cid = esc(String(item.comment_id || item.id || ''));
 			return `
 			<article class="moment-note-card">
 				<span class="moment-chip">${esc(item.source_label || 'Comment')}</span>
@@ -1449,8 +1629,64 @@
 							  )}" target="_blank" rel="noopener">&nearr; View on network</a>`
 							: ''
 					}
+					<button type="button" class="moment-note-card__link moment-note-card__replybtn" data-reply-comment="${cid}" aria-label="Reply to this comment">Reply</button>
+				</div>
+				<div class="moment-note-card__replyform" data-reply-form="${cid}" hidden>
+					<textarea class="moment-textarea" data-reply-text="${cid}" rows="2" placeholder="Write a reply…"></textarea>
+					<div class="moment-note-card__replyactions">
+						<button type="button" class="moment-btn moment-btn--primary" data-reply-send="${cid}">Send</button>
+						<button type="button" class="moment-btn moment-btn--text" data-reply-cancel="${cid}">Cancel</button>
+					</div>
+					<p class="moment-status" data-reply-status="${cid}" aria-live="polite"></p>
 				</div>
 			</article>`;
+		},
+
+		bindReplyButtons(list) {
+			list.querySelectorAll('[data-reply-comment]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const cid = button.getAttribute('data-reply-comment');
+					const form = list.querySelector('[data-reply-form="' + cid + '"]');
+					if (form) {
+						form.hidden = !form.hidden;
+						if (!form.hidden) {
+							form.querySelector('textarea').focus();
+						}
+					}
+				});
+			});
+			list.querySelectorAll('[data-reply-cancel]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const cid = button.getAttribute('data-reply-cancel');
+					const form = list.querySelector('[data-reply-form="' + cid + '"]');
+					if (form) {
+						form.hidden = true;
+					}
+				});
+			});
+			list.querySelectorAll('[data-reply-send]').forEach((button) => {
+				button.addEventListener('click', async () => {
+					const cid = button.getAttribute('data-reply-send');
+					const textarea = list.querySelector('[data-reply-text="' + cid + '"]');
+					const status = list.querySelector('[data-reply-status="' + cid + '"]');
+					const form = list.querySelector('[data-reply-form="' + cid + '"]');
+					const content = textarea ? textarea.value.trim() : '';
+					if (!content) {
+						return;
+					}
+					button.disabled = true;
+					status.textContent = 'Sending…';
+					try {
+						await apiPost('notifications/' + cid + '/reply', { content });
+						form.hidden = true;
+						textarea.value = '';
+						status.textContent = 'Reply sent.';
+					} catch (err) {
+						status.textContent = 'Failed: ' + err.message;
+						button.disabled = false;
+					}
+				});
+			});
 		},
 
 		bindShowMore(list) {
