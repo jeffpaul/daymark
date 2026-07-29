@@ -15,7 +15,7 @@ jobs:
         # "Requires PHP: 8.1" per the plugin header, through current stable.
         php: ['8.1', '8.2', '8.3', '8.4']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -35,7 +35,7 @@ jobs:
     name: WordPress Coding Standards
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -54,7 +54,7 @@ jobs:
     name: JSON + JS syntax
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate JSON (block.json, manifest.json, composer.json)
         run: |
@@ -73,7 +73,7 @@ jobs:
     name: LICENSE present (GPLv2)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Guards against accidentally dropping the license: a GPL plugin must
       # ship its full license text, and it must not be excluded from the zip.
