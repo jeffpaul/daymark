@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -83,6 +83,15 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 
 == Changelog ==
 
+= 0.4.0 =
+* Per-image alt text: every image in an image, gallery, or mixed Moment gets its own alt field in the composer. When an AI provider is connected, each image's alt is generated from the image itself (vision) and pre-filled for you to edit before publishing.
+* Categories: a "File under" picker on the publish screen files a Moment under your existing categories, remembers the choice per Moment type, and lets you change it per Moment. Shown only when your site has categories beyond its default.
+* Third-party publishing toggles now include ATmosphere, giving Bluesky a per-Moment on/off control alongside Share on Mastodon and Autoshare for Twitter.
+* The bundled Bluesky and Mastodon connector plugins were removed. Moment now works with your existing publishing plugins — detected on the publish screen, with per-Moment toggles where a plugin supports it — and replies still flow back via ActivityPub, ATmosphere, and Webmention. The `moment_register_connectors` hook remains for any plugin that wants to add a first-class destination.
+* iOS home-screen polish: the app now uses your Site Icon (or Moment's) as its home-screen icon, the bottom navigation sits flush with the bottom of the screen, and the Publish and Save as Draft buttons are spaced apart.
+* Success screen: an inline "(view)" link next to "Published to your site" and a "View all moments" link back home.
+* Project health: shipped LICENSE (GPL-2.0-or-later), contributing guide, code of conduct, issue and pull-request templates, and a dependency license-review check.
+
 = 0.3.0 =
 * Awareness for other publishing plugins: when Jetpack Social, ATmosphere, Autoblue, Share on Mastodon, XPoster, Autoshare for Twitter, Blog2Social, Social Networks Auto-Poster (SNAP), or Revive Old Posts is active, the publish screen notes that your Moment will also go out through it. Detection only — Moment never drives or configures them — and it is extensible via the `moment_publish_helper_plugins` filter.
 * Site-views nav (Timeline/Images/Videos/Audio/Notes) now uses icons, with each label kept as the hover tooltip and the accessible name.
@@ -120,6 +129,9 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.4.0 =
+Adds per-image (AI-assisted) alt text and a per-type category picker, an ATmosphere publish toggle, iOS home-screen polish, and project health files. Removes the bundled Bluesky/Mastodon connector plugins in favor of your existing publishing plugins.
 
 = 0.3.0 =
 Notes active social-publishing plugins on the publish screen, icon-based site nav, per-type post formats, and publish-UI polish.
