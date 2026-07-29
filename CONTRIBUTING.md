@@ -125,7 +125,8 @@ stubbed AT Protocol API — see the setup notes at the top of
 ## Hook documentation
 
 Public hooks are documented from their docblocks and rendered by the
-Docusaurus site in `wp-hooks-docs/`. When adding or changing a hook, write a
+Docusaurus site in `wp-hooks-docs/`, published at
+<https://jeffpaul.github.io/moment/>. When adding or changing a hook, write a
 clear docblock — and **avoid curly braces `{ }` in hook docblock prose**, as
 MDX parses them as JavaScript and will break the docs build. (Describe array
 shapes in words rather than `array{...}` syntax in hook docblocks.)

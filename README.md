@@ -15,6 +15,9 @@ user visits `/moment`, picks media from the camera roll, adds a caption,
 and publishes a standard WordPress post — the site stays the canonical
 source of truth.
 
+**Extending Moment?** The full action and filter reference is published at
+**<https://jeffpaul.github.io/moment/>**.
+
 **Status:** early release. App shell, REST API, and home-screen/PWA support
 are in place; see "Using Moment Like a Phone App" below.
 
