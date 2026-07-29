@@ -197,6 +197,19 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
+/* "File under" category picker on the Publish screen — a secondary
+   grouping below the destinations, styled to match. */
+.moment-publish-subhead {
+	margin-top: var(--moment-spacing-lg);
+}
+
+.moment-publish-subnote {
+	margin: var(--moment-spacing-xs) 0 var(--moment-spacing-sm);
+	font-size: 13px;
+	line-height: 1.45;
+	color: var(--moment-text-secondary);
+}
+
 /* --- Buttons --- */
 .moment-btn {
 	display: inline-flex;
@@ -591,13 +604,19 @@ h2[tabindex='-1']:focus {
 
 .moment-filelist__item {
 	display: flex;
-	align-items: center;
-	gap: var(--moment-spacing-sm);
-	min-height: var(--moment-tap-min);
-	padding: 0 var(--moment-spacing-sm);
+	flex-direction: column;
+	gap: var(--moment-spacing-xs);
+	padding: var(--moment-spacing-xs) var(--moment-spacing-sm);
 	border-radius: var(--moment-radius-sm);
 	background: var(--moment-surface);
 	font-size: 14px;
+}
+
+.moment-filelist__row {
+	display: flex;
+	align-items: center;
+	gap: var(--moment-spacing-sm);
+	min-height: var(--moment-tap-min);
 }
 
 .moment-filelist__name {
@@ -619,6 +638,79 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 	text-decoration: underline;
 	cursor: pointer;
+}
+
+/* Per-image alt text field (composer + draft edit). */
+.moment-alt {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.moment-alt__label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--moment-text-secondary);
+}
+
+.moment-alt__input[aria-busy='true'] {
+	opacity: 0.7;
+}
+
+.moment-alt__hint {
+	font-size: 12px;
+	color: var(--moment-text-secondary);
+}
+
+/* Editable media list when reopening a draft: thumbnail + alt field. */
+.moment-editmedia {
+	list-style: none;
+	margin: 0 0 var(--moment-spacing-md);
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--moment-spacing-sm);
+}
+
+.moment-editmedia__item {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--moment-spacing-sm);
+	padding: var(--moment-spacing-sm);
+	border-radius: var(--moment-radius-sm);
+	background: var(--moment-surface);
+}
+
+.moment-editmedia__thumb {
+	width: 56px;
+	height: 56px;
+	object-fit: cover;
+	border-radius: var(--moment-radius-sm);
+	flex-shrink: 0;
+}
+
+.moment-editmedia__glyph {
+	width: 56px;
+	height: 56px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: var(--moment-radius-sm);
+	background: var(--moment-accent-wash);
+	font-size: 12px;
+	text-transform: uppercase;
+	color: var(--moment-accent-deep);
+	flex-shrink: 0;
+}
+
+.moment-editmedia__name {
+	align-self: center;
+	color: var(--moment-text-secondary);
+}
+
+.moment-alt--edit {
+	flex: 1;
+	min-width: 0;
 }
 
 /* --- Forms --- */

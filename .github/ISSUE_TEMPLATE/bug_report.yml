@@ -1,0 +1,48 @@
+name: Bug report
+description: Report something in Moment that isn't working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+      placeholder: When I …, Moment …. I expected ….
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to /moment
+        2. …
+        3. See the problem
+    validations:
+      required: true
+  - type: input
+    id: wp-version
+    attributes:
+      label: WordPress version
+      placeholder: "7.0"
+    validations:
+      required: true
+  - type: input
+    id: moment-version
+    attributes:
+      label: Moment version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: php-version
+    attributes:
+      label: PHP version
+      placeholder: "8.2"
+  - type: input
+    id: device
+    attributes:
+      label: Device / browser
+      description: Helpful for the phone-first UI (e.g. Home Screen app vs. browser tab).
+      placeholder: iPhone 15, Safari 17 (added to Home Screen)

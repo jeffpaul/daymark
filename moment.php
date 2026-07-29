@@ -8,8 +8,8 @@
  * Requires PHP: 8.1
  * Author: Jeff Paul
  * Author URI: https://github.com/jeffpaul
- * License: GPLv2 or later
- * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * License: GPL-2.0-or-later
+ * License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
  * Text Domain: moment
  *
  * @package Moment

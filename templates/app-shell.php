@@ -77,6 +77,29 @@ foreach ( $moment_all_types as $moment_type ) {
 	);
 }
 
+// Site categories (the filing counterpart to destinations) and the
+// remembered per-type default categories. Flat list, name-ordered; the
+// app shows the picker only when there is a real choice beyond the
+// site's single default category.
+$moment_categories = array();
+foreach ( get_categories(
+	array(
+		'hide_empty' => false,
+		'orderby'    => 'name',
+	)
+) as $moment_cat ) {
+	$moment_categories[] = array(
+		'id'     => (int) $moment_cat->term_id,
+		'name'   => $moment_cat->name,
+		'parent' => (int) $moment_cat->parent,
+	);
+}
+
+$moment_category_defaults = array();
+foreach ( $moment_all_types as $moment_type ) {
+	$moment_category_defaults[ $moment_type ] = $moment_publisher->get_effective_categories( $moment_type );
+}
+
 $moment_ai = Moment_Plugin::instance()->ai_assist;
 
 // Controllable helpers get in-app toggles; awareness helpers are the
@@ -109,6 +132,9 @@ $moment_config = array(
 	'screen'              => $moment_screen,
 	'connectors'          => $moment_connectors,
 	'defaults'            => $moment_type_defaults,
+	'categories'          => $moment_categories,
+	'categoryDefaults'    => $moment_category_defaults,
+	'defaultCategory'     => (int) get_option( 'default_category' ),
 	'pages'               => $moment_pages,
 	'ai'                  => array(
 		'available'     => $moment_ai->is_available(),
