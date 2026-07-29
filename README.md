@@ -8,7 +8,7 @@ Personal Site Publisher Mode for WordPress.
 [![Hooks Docs](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml)
 
 **Requires at least:** 7.0 · **Tested up to:** 7.0 ·
-**Requires PHP:** 8.1 · **Stable tag:** 0.1.0 · **License:** GPL-2.0-or-later
+**Requires PHP:** 8.1 · **Stable tag:** 0.4.0 · **License:** GPL-2.0-or-later
 
 Moment is a phone-first publishing experience for WordPress. A logged-in
 user visits `/moment`, picks media from the camera roll, adds a caption,
