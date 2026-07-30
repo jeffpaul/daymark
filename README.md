@@ -280,12 +280,16 @@ redirected to the WordPress login screen and then back to Moment).
 
 ### Icons
 
-The manifest references `assets/icon.svg` (the source of truth) plus
-`assets/icon-192.png` and `assets/icon-512.png`, all checked in. If you
-edit the SVG, regenerate the PNGs, for example:
+The home-screen, PWA, and favicon icons (`assets/icon-32.png`,
+`assets/icon-192.png`, `assets/icon-512.png`) are the brand mark, generated
+from the design master at `.wordpress-org/src/icon-source.png` (the same
+source as the wp.org listing icon). The PWA manifest is served dynamically by
+`Moment_Routes::build_manifest()` and prefers the site's own Site Icon when one
+is set. To regenerate the checked-in PNGs from the master, for example:
 
 ```bash
-# From the plugin root, with librsvg installed:
-rsvg-convert -w 192 -h 192 assets/icon.svg > assets/icon-192.png
-rsvg-convert -w 512 -h 512 assets/icon.svg > assets/icon-512.png
+# From the plugin root, on macOS (sips); use ImageMagick's `convert` elsewhere:
+for s in 32 192 512; do
+  sips -s format png -Z "$s" .wordpress-org/src/icon-source.png --out "assets/icon-$s.png"
+done
 ```
