@@ -156,23 +156,26 @@ The phased build (Phases 0–9) used five specialist sub-agents under `.claude/a
 `moment-tester`). Those files were removed after 0.4.0: the phased build is complete,
 they had drifted from the shipped code, and their durable guidance (identity, security
 checklist, content model, hooks) already lives in this file and in CONTRIBUTING.md. The
-original agent definitions remain archived in `docs/05_llm_prompt_build_prototype_claude_code.md`
-for historical reference.
+original agent definitions live in git history (in the removed build-prompt doc
+`docs/05_llm_prompt_build_prototype_claude_code.md`); the compacted design record
+summarizes the phased build in its build-history section —
+[docs/planning/README.md](docs/planning/README.md).
 
 ## Project artifact context
 
-These files are loaded into context at session start. All are in the docs/ directory.
+The prototype's planning docs (vision, product brief, MVP spec, routing, backflow,
+content model, success metrics, visual/PWA, build history) were compacted into a
+single design record after 0.4.0:
 
-| File | Purpose |
-|------|---------|
-| `00_README.md` | Architecture overview |
-| `02_one_page_product_brief.md` | Product shape |
-| `04_prototype_mvp_spec.md` | MVP scope and non-goals |
-| `08_decisions_and_open_questions.md` | Resolved constraints |
-| `09_default_syndication_routing.md` | Routing model |
-| `11_conversation_backflow_notifications.md` | Backflow product model |
-| `12_content_model_technical_path.md` | Content model |
-| `13_success_metrics_and_e2e_tests.md` | Acceptance tests |
+- **[docs/planning/README.md](docs/planning/README.md)** — condensed product
+  vision, positioning, principles, non-goals, the type→destination routing model,
+  the backflow model, success metrics, the 10 E2E acceptance scenarios, and
+  visual/PWA intent. It flags where the original docs went stale vs shipped
+  (connector removal, namespaced AI client, federation labeling) and maps each
+  original doc to its new home. The 18 originals are in git history.
+
+This file (CLAUDE.md) remains the authoritative **technical** record; the design
+record is its product/vision/history companion.
 
 ## Non-goals (never build these in the prototype)
 
