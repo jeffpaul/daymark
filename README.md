@@ -1,6 +1,6 @@
 # Moment
 
-Personal Site Publisher Mode for WordPress.
+> Personal Site Publisher Mode for WordPress.
 
 [![CI](https://github.com/jeffpaul/moment/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/ci.yml)
 [![Tests](https://github.com/jeffpaul/moment/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/tests.yml)
@@ -11,62 +11,85 @@ Personal Site Publisher Mode for WordPress.
 [![GPLv2 License](https://img.shields.io/github/license/jeffpaul/moment.svg)](https://github.com/jeffpaul/moment/blob/main/LICENSE)
 [![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/moment/main/.github/blueprints/blueprint.json)
 
-**Requires at least:** 7.0 · **Tested up to:** 7.0 ·
-**Requires PHP:** 8.1 · **Stable tag:** 0.4.0 · **License:** GPL-2.0-or-later
+## Overview
 
-Moment is a phone-first publishing experience for WordPress. A logged-in
-user visits `/moment`, picks media from the camera roll, adds a caption,
-and publishes a standard WordPress post — the site stays the canonical
-source of truth.
+Moment is a phone-first publishing experience for WordPress — a "Personal Site
+Publisher Mode" that makes posting to your own site as fast as a social app. A
+logged-in user visits `/moment`, picks media from the camera roll or types a
+note, optionally runs AI Assist, and publishes a standard WordPress post. The
+site stays the canonical source of truth; social networks are optional, additive
+destinations.
+
+Every Moment is a normal `post` — no custom post type — so your content stays
+portable and works with standard themes, feeds, comments, and exports. Around
+that, Moment adds:
+
+- a mobile **app shell** at `/moment`, installable to the home screen as a PWA;
+- a **REST API** for creating and listing Moments;
+- optional **AI Assist** for captions, tags, and per-image alt text via the
+  WordPress 7.0 AI Client (no provider, no AI UI — and publishing never
+  depends on it);
+- **conversation backflow** that brings social replies back as native
+  WordPress comments and surfaces them in an in-app notifications screen.
+
+Publishing outward happens through the WordPress plugins you already trust —
+publicize-style and federation plugins — rather than Moment reimplementing
+network APIs. See the [FAQ](#faq) for how that works.
 
 **Extending Moment?** The full action and filter reference is published at
 **<https://jeffpaul.github.io/moment/>**.
-
-**Status:** early release. App shell, REST API, and home-screen/PWA support
-are in place; see "Using Moment Like a Phone App" below.
-
-## Colors
-
-The Moment brand palette is a range of purples:
-
-| Token | Value | Use |
-|---|---|---|
-| Primary purple | `#7A00DF` | Primary actions, accents, brand marks |
-| Deep purple | `#5300BE` | Pressed/hover states, emphasis, dark surfaces |
-| Light purple | `#D7A7FF` | Tints, highlights, chips, subtle backgrounds |
-| Transparent purple | `rgba(122, 0, 223, 0.12)` | Washes, focus rings, selected states |
-
-> The app shell applies these purples throughout via the `--moment-accent*`
-> custom properties in `assets/app.css`; the manifest theme color and app
-> icon use the same palette.
-
-## AI-assisted development
-
-This plugin was generated with [Claude Code](https://claude.com/claude-code)
-working from the Project Moment specification documents, with human guidance,
-review, and testing throughout — every build phase was gated on verification
-against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke,
-browser E2E) exist to keep that review honest. Treat it as an AI-generated,
-human-directed software.
-
-## Contributing
-
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
-development setup, the test suites, coding standards, and the pull-request
-workflow.
 
 ## Requirements
 
 - WordPress 7.0+ (the bundled AI Client powers optional AI Assist; publishing never requires a configured AI provider)
 - PHP 8.1+
 
-## Quick start
+## Using Moment Like a Phone App
+
+Activate the plugin, then visit `/moment` on a phone-sized viewport while logged
+in:
 
 ```bash
 wp plugin activate moment
 ```
 
-Then visit `/moment` on a phone-sized viewport while logged in.
+Moment is designed to sit on your phone's home screen like a native app. The URL
+pattern is always:
+
+```
+https://[yoursite]/moment
+```
+
+For example: `https://example.com/moment` (log in first, or you will be
+redirected to the WordPress login screen and then back to Moment).
+
+### iOS (Safari)
+
+1. Open `https://[yoursite]/moment` in Safari.
+2. Tap the **Share** button.
+3. Tap **Add to Home Screen**.
+4. Confirm the name "Moment" and tap **Add**.
+
+### Android (Chrome)
+
+1. Open `https://[yoursite]/moment` in Chrome.
+2. Tap the **⋮** menu.
+3. Tap **Add to Home Screen** (or **Install App** when Chrome offers it).
+
+### What to expect
+
+- The home-screen icon launches Moment as a browser shortcut. Full
+  standalone display (`display: standalone` in the manifest, no browser
+  chrome) requires **HTTPS**.
+- **Local demo note:** the local dev site (`http://wp70.local`) is
+  HTTP-only, so iOS will open the shortcut in regular Safari and Chrome
+  will not offer "Install App". That is expected for local demos — on
+  any HTTPS site the same URL installs as a standalone app.
+- A conservative service worker (`assets/moment-sw.js`, cache
+  `moment-v1`, scope limited to the plugin `assets/` directory) caches
+  only the app's static `app.css` and `app.js`. It never caches REST
+  responses, nonces, HTML, media, or anything under `/wp-admin/`. There
+  is no offline publishing mode.
 
 ## FAQ
 
@@ -238,58 +261,17 @@ provider is configured the field is simply empty to fill in by hand). All
 of it is optional: no provider, no AI UI, and publishing never depends on
 it.
 
-## Using Moment Like a Phone App
+## Contributing
 
-Moment is designed to sit on your phone's home screen like a native app.
-The demo URL pattern is always:
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
+development setup, the test suites, coding standards, and the pull-request
+workflow.
 
-```
-https://[yoursite]/moment
-```
+## AI-assisted development
 
-For example: `https://example.com/moment` (log in first, or you will be
-redirected to the WordPress login screen and then back to Moment).
-
-### iOS (Safari)
-
-1. Open `https://[yoursite]/moment` in Safari.
-2. Tap the **Share** button.
-3. Tap **Add to Home Screen**.
-4. Confirm the name "Moment" and tap **Add**.
-
-### Android (Chrome)
-
-1. Open `https://[yoursite]/moment` in Chrome.
-2. Tap the **⋮** menu.
-3. Tap **Add to Home Screen** (or **Install App** when Chrome offers it).
-
-### What to expect
-
-- The home-screen icon launches Moment as a browser shortcut. Full
-  standalone display (`display: standalone` in the manifest, no browser
-  chrome) requires **HTTPS**.
-- **Local demo note:** the local dev site (`http://wp70.local`) is
-  HTTP-only, so iOS will open the shortcut in regular Safari and Chrome
-  will not offer "Install App". That is expected for local demos — on
-  any HTTPS site the same URL installs as a standalone app.
-- A conservative service worker (`assets/moment-sw.js`, cache
-  `moment-v1`, scope limited to the plugin `assets/` directory) caches
-  only the app's static `app.css` and `app.js`. It never caches REST
-  responses, nonces, HTML, media, or anything under `/wp-admin/`. There
-  is no offline publishing mode.
-
-### Icons
-
-The home-screen, PWA, and favicon icons (`assets/icon-32.png`,
-`assets/icon-192.png`, `assets/icon-512.png`) are the brand mark, generated
-from the design master at `.wordpress-org/src/icon-source.png` (the same
-source as the wp.org listing icon). The PWA manifest is served dynamically by
-`Moment_Routes::build_manifest()` and prefers the site's own Site Icon when one
-is set. To regenerate the checked-in PNGs from the master, for example:
-
-```bash
-# From the plugin root, on macOS (sips); use ImageMagick's `convert` elsewhere:
-for s in 32 192 512; do
-  sips -s format png -Z "$s" .wordpress-org/src/icon-source.png --out "assets/icon-$s.png"
-done
-```
+This plugin was generated with [Claude Code](https://claude.com/claude-code)
+working from the Project Moment specification documents, with human guidance,
+review, and testing throughout — every build phase was gated on verification
+against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke,
+browser E2E) exist to keep that review honest. Treat it as an AI-generated,
+human-directed software.
