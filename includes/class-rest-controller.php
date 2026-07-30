@@ -100,6 +100,16 @@ class Moment_REST_Controller extends WP_REST_Controller {
 							'enum'              => array( 'any', 'publish', 'draft' ),
 							'sanitize_callback' => 'sanitize_key',
 						),
+						'type'     => array(
+							'type'              => 'string',
+							'default'           => '',
+							'sanitize_callback' => 'sanitize_key',
+						),
+						's'        => array(
+							'type'              => 'string',
+							'default'           => '',
+							'sanitize_callback' => 'sanitize_text_field',
+						),
 					),
 				),
 			)
@@ -174,6 +184,18 @@ class Moment_REST_Controller extends WP_REST_Controller {
 						),
 					),
 				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'delete_moment' ),
+					'permission_callback' => array( $this, 'permissions_check_delete' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
 			)
 		);
 
@@ -201,6 +223,28 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_notifications' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/notifications/(?P<comment_id>\d+)/reply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'reply_to_comment' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'comment_id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+					'content'    => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_textarea_field',
+					),
+				),
 			)
 		);
 	}
@@ -259,6 +303,40 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			return new WP_Error(
 				'rest_forbidden',
 				__( 'You cannot manage responses for this Moment.', 'moment' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Per-post permission callback for deletion: the shared nonce + capability
+	 * check plus the delete_post capability on the targeted Moment. Deleting is
+	 * more privileged than editing, so it needs its own capability, not merely
+	 * edit_post.
+	 *
+	 * A nonexistent post passes through to the handler, which returns its
+	 * regular 404 — only a real post the user cannot delete is a 403.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return true|WP_Error
+	 */
+	public function permissions_check_delete( WP_REST_Request $request ) {
+		$shared = $this->permissions_check( $request );
+
+		if ( true !== $shared ) {
+			return $shared;
+		}
+
+		$post_id = absint( $request->get_param( 'id' ) );
+
+		if ( get_post( $post_id ) && ! current_user_can( 'delete_post', $post_id ) ) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'You cannot delete this Moment.', 'moment' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -344,20 +422,46 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			? array( $status )
 			: array( 'publish', 'draft' );
 
-		$query = new WP_Query(
-			array(
-				'post_type'      => 'post',
-				'post_status'    => $statuses,
-				'posts_per_page' => $per_page,
-				'paged'          => $page,
-				'orderby'        => 'date',
-				'order'          => 'DESC',
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Moment lookup.
-				'meta_key'       => '_moment_is_moment',
-				'meta_value'     => '1',
-			)
+		$args = array(
+			'post_type'      => 'post',
+			'post_status'    => $statuses,
+			'posts_per_page' => $per_page,
+			'paged'          => $page,
+			'orderby'        => 'date',
+			'order'          => 'DESC',
+			'no_found_rows'  => true,
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Moment lookup.
+			'meta_key'       => '_moment_is_moment',
+			'meta_value'     => '1',
 		);
+
+		// Optional content-type filter: narrow to one _moment_primary_type.
+		// This adds a second meta condition, so switch to an explicit
+		// meta_query that keeps the _moment_is_moment gate intact.
+		$type = sanitize_key( (string) $request->get_param( 'type' ) );
+		if ( '' !== $type ) {
+			unset( $args['meta_key'], $args['meta_value'] );
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Moment lookup.
+			$args['meta_query'] = array(
+				'relation' => 'AND',
+				array(
+					'key'   => '_moment_is_moment',
+					'value' => '1',
+				),
+				array(
+					'key'   => '_moment_primary_type',
+					'value' => $type,
+				),
+			);
+		}
+
+		// Optional keyword search across title/content.
+		$search = sanitize_text_field( (string) $request->get_param( 's' ) );
+		if ( '' !== $search ) {
+			$args['s'] = $search;
+		}
+
+		$query = new WP_Query( $args );
 
 		$moments = array();
 
@@ -644,6 +748,144 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $this->prepare_moment_summary( (int) $result ) );
+	}
+
+	/**
+	 * DELETE /moment/v1/moments/{id} — trash a Moment.
+	 *
+	 * Reversible: sends the post to the trash via wp_trash_post rather than
+	 * deleting it permanently. Scoped to Moment posts, so a non-Moment id is a
+	 * 404. Idempotent — an already-trashed Moment returns success.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function delete_moment( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$post    = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+			return new WP_Error(
+				'moment_not_found',
+				__( 'Not a Moment post.', 'moment' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		// Already trashed: idempotent success, no second trash needed.
+		if ( 'trash' === $post->post_status ) {
+			return rest_ensure_response(
+				array(
+					'id'      => $post_id,
+					'trashed' => true,
+					'status'  => 'trash',
+				)
+			);
+		}
+
+		$trashed = wp_trash_post( $post_id );
+
+		if ( ! $trashed ) {
+			return new WP_Error(
+				'moment_trash_failed',
+				__( 'The Moment could not be trashed.', 'moment' ),
+				array( 'status' => 500 )
+			);
+		}
+
+		return rest_ensure_response(
+			array(
+				'id'      => $post_id,
+				'trashed' => true,
+				'status'  => sanitize_key( (string) get_post_status( $post_id ) ),
+			)
+		);
+	}
+
+	/**
+	 * POST /moment/v1/notifications/{comment_id}/reply — reply to a comment
+	 * on a Moment from the notifications screen.
+	 *
+	 * Validates that the comment exists and its parent post is a Moment the
+	 * current user can edit, then creates a nested reply comment authored by
+	 * the current user. wp_new_comment() runs in WP_Error mode so disallowed
+	 * or duplicate content returns a clean JSON error instead of wp_die().
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function reply_to_comment( WP_REST_Request $request ) {
+		$comment_id = absint( $request->get_param( 'comment_id' ) );
+		$comment    = get_comment( $comment_id );
+
+		if ( ! $comment instanceof WP_Comment ) {
+			return new WP_Error(
+				'moment_comment_not_found',
+				__( 'Comment not found.', 'moment' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$post_id = (int) $comment->comment_post_ID;
+
+		// The parent post must be a Moment the current user can edit; anything
+		// else is forbidden (never leak whether the post exists).
+		if ( '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) || ! current_user_can( 'edit_post', $post_id ) ) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'You cannot reply to this comment.', 'moment' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$content = sanitize_textarea_field( (string) $request->get_param( 'content' ) );
+
+		if ( '' === $content ) {
+			return new WP_Error(
+				'moment_empty_reply',
+				__( 'A reply cannot be empty.', 'moment' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$user = wp_get_current_user();
+
+		$comment_data = array(
+			'comment_post_ID'      => $post_id,
+			'comment_parent'       => $comment_id,
+			'comment_content'      => $content,
+			'user_id'              => $user->ID,
+			'comment_author'       => $user->display_name,
+			'comment_author_email' => $user->user_email,
+			'comment_author_url'   => $user->user_url,
+			'comment_approved'     => 1,
+		);
+
+		// The second argument returns a WP_Error on a disallowed or duplicate
+		// comment instead of calling wp_die(), so the endpoint stays JSON.
+		$new_comment_id = wp_new_comment( $comment_data, true );
+
+		if ( is_wp_error( $new_comment_id ) ) {
+			$new_comment_id->add_data( array( 'status' => 400 ) );
+
+			return $new_comment_id;
+		}
+
+		$response = rest_ensure_response(
+			array(
+				'comment_ID'      => (int) $new_comment_id,
+				'comment_parent'  => $comment_id,
+				'comment_post_ID' => $post_id,
+				'content'         => $content,
+			)
+		);
+		$response->set_status( 201 );
+
+		return $response;
 	}
 
 	/**
