@@ -99,6 +99,52 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertEquals( 'moment_empty', $result->get_error_code() );
 	}
 
+	/** A file larger than MAX_FILE_BYTES is rejected before sideloading. */
+	public function test_oversized_file_rejected() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+
+		$publisher = new Moment_Publisher();
+		$result    = $publisher->publish(
+			array( 'caption' => 'Too big to publish' ),
+			array(
+				'files' => array(
+					'name'     => 'huge.png',
+					'type'     => 'image/png',
+					'tmp_name' => $fixture,
+					'error'    => UPLOAD_ERR_OK,
+					// One byte over the cap; the real fixture stays small on disk.
+					'size'     => Moment_Publisher::MAX_FILE_BYTES + 1,
+				),
+			)
+		);
+
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'moment_upload_too_large', $result->get_error_code() );
+	}
+
+	/** A file at exactly MAX_FILE_BYTES is accepted (boundary is inclusive). */
+	public function test_file_at_size_cap_accepted() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'moment-size-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Moment_Publisher();
+		$post_id   = $publisher->publish(
+			array( 'caption' => 'Right at the cap' ),
+			array(
+				'files' => array(
+					'name'     => 'atcap.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => Moment_Publisher::MAX_FILE_BYTES,
+				),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+	}
+
 	/** Unauthenticated REST create is refused with 401. */
 	public function test_unauthenticated_rest_create_returns_401() {
 		wp_set_current_user( 0 );
