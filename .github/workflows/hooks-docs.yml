@@ -36,7 +36,7 @@ jobs:
     outputs:
       pages-enabled: ${{ steps.pages-check.outputs.enabled }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
