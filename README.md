@@ -6,6 +6,10 @@ Personal Site Publisher Mode for WordPress.
 [![Tests](https://github.com/jeffpaul/moment/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/tests.yml)
 [![Plugin Check](https://github.com/jeffpaul/moment/actions/workflows/plugin-check.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/plugin-check.yml)
 [![Hooks Docs](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/hooks-docs.yml)
+[![Dependency Review](https://github.com/jeffpaul/moment/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jeffpaul/moment/actions/workflows/dependency-review.yml)
+
+[![GPLv2 License](https://img.shields.io/github/license/jeffpaul/moment.svg)](https://github.com/jeffpaul/moment/blob/main/LICENSE)
+[![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/moment/main/.github/blueprints/blueprint.json)
 
 **Requires at least:** 7.0 · **Tested up to:** 7.0 ·
 **Requires PHP:** 8.1 · **Stable tag:** 0.4.0 · **License:** GPL-2.0-or-later
