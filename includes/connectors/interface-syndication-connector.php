@@ -64,7 +64,13 @@ interface Moment_Syndication_Connector {
 	 *     external_url: string|null,
 	 *     status: string,
 	 *     message: string,
-	 * } Result with status one of 'published'|'mocked'|'failed'.
+	 *     backflow_supported?: bool,
+	 * } Result with status one of 'published'|'mocked'|'failed'. The optional
+	 *   `backflow_supported` key marks a reference whose replies can be pulled
+	 *   back into the Moment: real connectors set it true, mocks omit it, and it
+	 *   defaults to false everywhere it is checked.
+	 *
+	 * @since 0.5.0 Documented the optional `backflow_supported` result key.
 	 */
 	public function publish( int $post_id, array $payload ): array;
 
