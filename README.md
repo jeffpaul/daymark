@@ -265,7 +265,9 @@ it.
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
 development setup, the test suites, coding standards, and the pull-request
-workflow.
+workflow. To understand how the plugin is built, read the
+[codebase guide](docs/codebase.md) (architecture, class map, data flows, and
+extension points).
 
 ## AI-assisted development
 

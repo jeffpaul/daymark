@@ -605,9 +605,9 @@
 				}
 			} catch (err) {
 				state.homePage--;
-			} finally {
-				if (button && button.isConnected) {
-					button.remove();
+				if (button) {
+					button.disabled = false;
+					button.textContent = 'Load more';
 				}
 			}
 		},

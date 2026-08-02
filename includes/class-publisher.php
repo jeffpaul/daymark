@@ -68,16 +68,6 @@ class Moment_Publisher {
 	);
 
 	/**
-<<<<<<< HEAD
-	 * Maximum allowed upload size per file, in bytes. Defaults to 50 MB.
-	 *
-	 * PHP's upload_max_filesize also applies, but this cap provides a
-	 * mobile-friendly guard before the server-level limit.
-	 *
-	 * @var int
-	 */
-	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
-=======
 	 * Maximum accepted size, in bytes, for a single uploaded media file.
 	 *
 	 * Enforced per file during validation (against the reported upload size)
@@ -88,7 +78,6 @@ class Moment_Publisher {
 	 * @var int
 	 */
 	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB.
->>>>>>> upstream/main
 
 	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
@@ -474,6 +463,11 @@ class Moment_Publisher {
 		update_post_meta( $post_id, '_moment_caption', $caption );
 		update_post_meta( $post_id, '_moment_primary_type', $type );
 		update_post_meta( $post_id, '_moment_media_ids', wp_json_encode( $media_ids ) );
+
+		// Editing a draft after an AI assist run must not lose the flag.
+		if ( array_key_exists( 'ai_assist_used', $data ) ) {
+			update_post_meta( $post_id, '_moment_ai_assist_used', ! empty( $data['ai_assist_used'] ) ? '1' : '0' );
+		}
 
 		// Helper selection is written before the status update below so a
 		// draft→publish transition here fires each plugin's control filter

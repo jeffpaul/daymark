@@ -4,8 +4,8 @@ name: WordPress Version Checker
 # (wordpress.org publishes wordpress-X.Y-RC1.zip). When an RC exists — or,
 # as a fallback, when a final release shipped without the bump being merged —
 # opens a PR that:
-#   - bumps "Tested up to" to the upcoming/new version (README.md, readme.txt)
-#   - bumps "Requires at least" to one release earlier (moment.php, README.md,
+#   - bumps "Tested up to" to the upcoming/new version (readme.txt)
+#   - bumps "Requires at least" to one release earlier (moment.php,
 #     readme.txt, phpcs.xml.dist) per the latest-and-latest-minus-one
 #     support policy
 #
@@ -87,10 +87,13 @@ jobs:
           target = nxt if rc_available else stable
           reason = 'release candidate available' if rc_available else 'stable release'
 
-          readme = open('README.md').read()
-          match = re.search(r'\*\*Tested up to:\*\* (\d+\.\d+)', readme)
+          # readme.txt — canonical "Tested up to" / "Requires at least"
+          # source (the wordpress.org header block). README.md intentionally
+          # has no version-header fields.
+          readme = open('readme.txt').read()
+          match = re.search(r'Tested up to: (\d+\.\d+)', readme)
           if not match:
-              raise SystemExit('Could not find "Tested up to" in README.md')
+              raise SystemExit('Could not find "Tested up to" in readme.txt')
           tested = match.group(1)
 
           if parse(tested) >= parse(target):
@@ -102,22 +105,13 @@ jobs:
           # One release earlier; the release before X.0 is (X-1).9.
           minimum = f'{t_major - 1}.9' if t_minor == 0 else f'{t_major}.{t_minor - 1}'
 
-          old_match = re.search(r'\*\*Requires at least:\*\* (\d+\.\d+)', readme)
+          old_match = re.search(r'Requires at least: (\d+\.\d+)', readme)
           if not old_match:
-              raise SystemExit('Could not find "Requires at least" in README.md')
+              raise SystemExit('Could not find "Requires at least" in readme.txt')
           old_minimum = old_match.group(1)
 
-          # README.md — header line + Requirements bullet.
-          readme = readme.replace(f'**Tested up to:** {tested}', f'**Tested up to:** {target}')
-          readme = readme.replace(
-              f'**Requires at least:** {old_minimum}', f'**Requires at least:** {minimum}'
-          )
-          readme = readme.replace(f'- WordPress {old_minimum}+', f'- WordPress {minimum}+')
-          open('README.md', 'w').write(readme)
-
           # readme.txt — wordpress.org header block.
-          readme_txt = open('readme.txt').read()
-          readme_txt = readme_txt.replace(f'Tested up to: {tested}', f'Tested up to: {target}')
+          readme_txt = readme.replace(f'Tested up to: {tested}', f'Tested up to: {target}')
           readme_txt = readme_txt.replace(
               f'Requires at least: {old_minimum}', f'Requires at least: {minimum}'
           )
@@ -162,8 +156,8 @@ jobs:
           body: |
             WordPress ${{ steps.bump.outputs.target }} — ${{ steps.bump.outputs.reason }}. This automated PR:
 
-            - Bumps **Tested up to** to `${{ steps.bump.outputs.target }}` (README.md, readme.txt)
-            - Bumps **Requires at least** from `${{ steps.bump.outputs.old_minimum }}` to `${{ steps.bump.outputs.minimum }}` (moment.php, README.md, readme.txt, phpcs.xml.dist)
+            - Bumps **Tested up to** to `${{ steps.bump.outputs.target }}` (readme.txt)
+            - Bumps **Requires at least** from `${{ steps.bump.outputs.old_minimum }}` to `${{ steps.bump.outputs.minimum }}` (moment.php, readme.txt, phpcs.xml.dist)
 
             The Tests workflow's candidate matrix legs resolve to the ${{ steps.bump.outputs.target }} release candidate while it exists, so the checks on this PR exercise the actual upcoming release.
 

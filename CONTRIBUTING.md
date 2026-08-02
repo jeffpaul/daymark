@@ -30,7 +30,7 @@ the repo is symlinked into a WordPress install as `wp-content/plugins/moment`.
 | `moment.php`, `includes/`, `templates/`, `assets/`, `blocks/` | The Moment plugin itself |
 | `tests/` | PHPUnit tests, the WP-CLI smoke suite (`tests/smoke.sh`), and Playwright E2E (`tests/e2e/`) |
 | `wp-hooks-docs/` | Docusaurus site for the generated hook reference |
-| `docs/` | Product/spec documents (excluded from the distributed plugin) |
+| `docs/` | Product/spec documents and the [codebase guide](docs/codebase.md) (excluded from the distributed plugin) |
 
 `.distignore` controls what is excluded from the built plugin zip (tests,
 tooling, and docs are all excluded).

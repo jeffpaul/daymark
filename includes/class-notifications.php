@@ -417,6 +417,17 @@ class Moment_Notifications {
 				continue;
 			}
 
+			$reference = $external_posts[ $network ];
+
+			// A real connector published this reference (it carries the
+			// backflow_supported flag or a 'published' status) but no
+			// connector plugin handled the import filter — e.g. it was
+			// deactivated after publishing. Never fabricate demo replies
+			// for a live post: skip the mock importer until a handler exists.
+			if ( ! empty( $reference['backflow_supported'] ) || 'published' === ( $reference['status'] ?? '' ) ) {
+				continue;
+			}
+
 			// Dedup guard: skip networks already synced for this post so
 			// repeated syncs don't pile up duplicate mock comments. This
 			// mirrors production deduplication, which would key on
@@ -425,7 +436,6 @@ class Moment_Notifications {
 				continue;
 			}
 
-			$reference    = $external_posts[ $network ];
 			$external_url = isset( $reference['external_url'] ) ? (string) $reference['external_url'] : '';
 			$texts        = self::SAMPLE_TEXTS[ $network ] ?? array( __( 'Nice post!', 'moment' ) );
 			$author       = self::SAMPLE_AUTHORS[ $network ] ?? '@demouser';

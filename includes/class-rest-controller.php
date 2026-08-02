@@ -123,15 +123,23 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'ai_suggestions' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'caption' => array(
+					// Canonical fields (the app sends these); the handler
+					// still accepts the older caption/type names as fallbacks.
+					'text'         => array(
 						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_textarea_field',
 					),
-					'type'    => array(
+					'primary_type' => array(
 						'type'              => 'string',
 						'default'           => 'note',
 						'sanitize_callback' => 'sanitize_key',
+					),
+					'media_ids'    => array(
+						'type'  => 'array',
+						'items' => array(
+							'type' => 'integer',
+						),
 					),
 				),
 			)
@@ -187,11 +195,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_moment' ),
-<<<<<<< HEAD
-					'permission_callback' => array( $this, 'permissions_check_post' ),
-=======
 					'permission_callback' => array( $this, 'permissions_check_delete' ),
->>>>>>> upstream/main
 					'args'                => array(
 						'id' => array(
 							'type'              => 'integer',
@@ -249,28 +253,6 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_notifications' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
-			)
-		);
-
-		register_rest_route(
-			$this->namespace,
-			'/notifications/(?P<comment_id>\d+)/reply',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'reply_to_comment' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
-				'args'                => array(
-					'comment_id' => array(
-						'type'              => 'integer',
-						'required'          => true,
-						'sanitize_callback' => 'absint',
-					),
-					'content'    => array(
-						'type'              => 'string',
-						'required'          => true,
-						'sanitize_callback' => 'sanitize_textarea_field',
-					),
-				),
 			)
 		);
 	}
@@ -438,60 +420,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function get_moments( WP_REST_Request $request ) {
-<<<<<<< HEAD
 		$query = new WP_Query( $this->get_moments_query_args( $request ) );
-=======
-		$per_page = min( self::MAX_PER_PAGE, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
-		$page     = max( 1, absint( $request->get_param( 'page' ) ) );
-
-		// Status filter, so drafts stay reachable in the app no matter how
-		// many Moments have published since (the Home Drafts row).
-		$status   = sanitize_key( (string) $request->get_param( 'status' ) );
-		$statuses = in_array( $status, array( 'publish', 'draft' ), true )
-			? array( $status )
-			: array( 'publish', 'draft' );
-
-		$args = array(
-			'post_type'      => 'post',
-			'post_status'    => $statuses,
-			'posts_per_page' => $per_page,
-			'paged'          => $page,
-			'orderby'        => 'date',
-			'order'          => 'DESC',
-			'no_found_rows'  => true,
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Moment lookup.
-			'meta_key'       => '_moment_is_moment',
-			'meta_value'     => '1',
-		);
->>>>>>> upstream/main
-
-		// Optional content-type filter: narrow to one _moment_primary_type.
-		// This adds a second meta condition, so switch to an explicit
-		// meta_query that keeps the _moment_is_moment gate intact.
-		$type = sanitize_key( (string) $request->get_param( 'type' ) );
-		if ( '' !== $type ) {
-			unset( $args['meta_key'], $args['meta_value'] );
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Moment lookup.
-			$args['meta_query'] = array(
-				'relation' => 'AND',
-				array(
-					'key'   => '_moment_is_moment',
-					'value' => '1',
-				),
-				array(
-					'key'   => '_moment_primary_type',
-					'value' => $type,
-				),
-			);
-		}
-
-		// Optional keyword search across title/content.
-		$search = sanitize_text_field( (string) $request->get_param( 's' ) );
-		if ( '' !== $search ) {
-			$args['s'] = $search;
-		}
-
-		$query = new WP_Query( $args );
 
 		$moments = array();
 
@@ -668,70 +597,6 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * POST /moment/v1/notifications/{comment_id}/reply — reply to a comment
-	 * on a Moment from within the app.
-	 *
-	 * @param WP_REST_Request $request The request.
-	 * @return WP_REST_Response|WP_Error
-	 */
-	public function reply_to_comment( WP_REST_Request $request ) {
-		$comment_id = absint( $request->get_param( 'comment_id' ) );
-		$comment    = get_comment( $comment_id );
-
-		if ( ! $comment ) {
-			return new WP_Error(
-				'moment_comment_not_found',
-				__( 'Comment not found.', 'moment' ),
-				array( 'status' => 404 )
-			);
-		}
-
-		// The parent post must be a Moment the user can edit.
-		if ( '1' !== get_post_meta( (int) $comment->comment_post_ID, '_moment_is_moment', true )
-			|| ! current_user_can( 'edit_post', (int) $comment->comment_post_ID )
-		) {
-			return new WP_Error(
-				'rest_forbidden',
-				__( 'You cannot reply to this comment.', 'moment' ),
-				array( 'status' => rest_authorization_required_code() )
-			);
-		}
-
-		$user     = wp_get_current_user();
-		$reply_id = wp_new_comment(
-			array(
-				'comment_post_ID'      => (int) $comment->comment_post_ID,
-				'comment_parent'       => $comment_id,
-				'comment_content'      => sanitize_textarea_field( (string) $request->get_param( 'content' ) ),
-				'comment_author'       => $user->display_name,
-				'comment_author_email' => $user->user_email,
-				'comment_author_url'   => '',
-				'user_id'              => $user->ID,
-				'comment_approved'     => 1,
-			)
-		);
-
-		if ( ! $reply_id ) {
-			return new WP_Error(
-				'moment_reply_failed',
-				__( 'Could not post reply.', 'moment' ),
-				array( 'status' => 500 )
-			);
-		}
-
-		$reply = get_comment( $reply_id );
-
-		return rest_ensure_response(
-			array(
-				'id'      => $reply_id,
-				'author'  => $user->display_name,
-				'date'    => $reply ? $reply->comment_date_gmt : '',
-				'content' => sanitize_textarea_field( (string) $request->get_param( 'content' ) ),
-			)
-		);
-	}
-
-	/**
 	 * GET /moment/v1/notifications — unified Moment activity list.
 	 *
 	 * Returns approved comments (on-site and imported social responses)
@@ -862,6 +727,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
 			'tags'                => $request->get_param( 'tags' ),
+			'ai_assist_used'      => rest_sanitize_boolean( $request->get_param( 'ai_assist_used' ) ),
 		);
 
 		if ( null !== $request->get_param( 'publish_helpers' ) ) {
@@ -889,15 +755,12 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	/**
 	 * DELETE /moment/v1/moments/{id} — trash a Moment.
 	 *
-<<<<<<< HEAD
-=======
 	 * Reversible: sends the post to the trash via wp_trash_post rather than
 	 * deleting it permanently. Scoped to Moment posts, so a non-Moment id is a
 	 * 404. Idempotent — an already-trashed Moment returns success.
 	 *
 	 * @since 0.5.0
 	 *
->>>>>>> upstream/main
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
@@ -913,16 +776,6 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-<<<<<<< HEAD
-		if ( 'trash' === $post->post_status ) {
-			return rest_ensure_response( array( 'deleted' => true ) );
-		}
-
-		if ( ! wp_trash_post( $post_id ) ) {
-			return new WP_Error(
-				'moment_delete_failed',
-				__( 'Could not delete this Moment.', 'moment' ),
-=======
 		// Already trashed: idempotent success, no second trash needed.
 		if ( 'trash' === $post->post_status ) {
 			return rest_ensure_response(
@@ -940,14 +793,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			return new WP_Error(
 				'moment_trash_failed',
 				__( 'The Moment could not be trashed.', 'moment' ),
->>>>>>> upstream/main
 				array( 'status' => 500 )
 			);
 		}
 
-<<<<<<< HEAD
-		return rest_ensure_response( array( 'deleted' => true ) );
-=======
 		return rest_ensure_response(
 			array(
 				'id'      => $post_id,
@@ -1039,7 +888,6 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$response->set_status( 201 );
 
 		return $response;
->>>>>>> upstream/main
 	}
 
 	/**
@@ -1050,6 +898,8 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	 */
 	private function prepare_moment_summary( int $post_id ): array {
 		$thumbnail = get_the_post_thumbnail_url( $post_id, 'medium' );
+
+		$external_posts = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
 
 		return array(
 			'id'                 => absint( $post_id ),
@@ -1066,6 +916,9 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $thumbnail ? esc_url_raw( $thumbnail ) : '',
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_moment_syndication_status', true ) ),
+			// External publish references keyed by connector ID, so clients can
+			// render per-destination syndication chips (published vs mocked).
+			'external_posts'     => (object) ( is_array( $external_posts ) ? $external_posts : array() ),
 		);
 	}
 }
