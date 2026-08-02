@@ -570,6 +570,10 @@
 			if (!list) {
 				return;
 			}
+			const heading = root.querySelector('#moment-recent-heading');
+			if (heading) {
+				heading.textContent = 'Recent Moments';
+			}
 			this.teardownObserver();
 			this.recentPage = 1;
 			this.recentDone = false;
@@ -780,6 +784,10 @@
 			const sentinel = root.querySelector('[data-recent-sentinel]');
 			if (!list) {
 				return;
+			}
+			const heading = root.querySelector('#moment-recent-heading');
+			if (heading) {
+				heading.textContent = 'Results';
 			}
 			// Search overrides the paginated list: stop infinite scroll and
 			// hide the timeline shortcut while a query/filter is active.

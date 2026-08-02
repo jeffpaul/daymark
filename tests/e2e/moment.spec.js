@@ -316,10 +316,14 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 
 	const list = page.locator('[data-recent-list]');
 
-	// A query narrows the recent list to the matching Moment only.
+	// A query narrows the recent list to the matching Moment only, and the
+	// section heading switches from "Recent Moments" to "Results".
+	const heading = page.locator('#moment-recent-heading');
+	await expect(heading).toHaveText('Recent Moments');
 	await page.locator('[data-search-input]').fill(alpha);
 	await expect(list.getByText(alpha).first()).toBeVisible();
 	await expect(list.getByText(bravo)).toHaveCount(0);
+	await expect(heading).toHaveText('Results');
 
 	// A type filter narrows too: "Images" excludes these note Moments.
 	await page.locator('[data-search-input]').fill('');
