@@ -36,7 +36,7 @@ interface Moment_Syndication_Connector {
 	/**
 	 * Whether this connector can publish a given Moment type.
 	 *
-	 * @param string $type One of: note, image, video, audio, podcast, gallery, mixed.
+	 * @param string $type One of: note, image, video, audio, gallery, mixed.
 	 * @return bool
 	 */
 	public function supports_moment_type( string $type ): bool;

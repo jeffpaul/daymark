@@ -45,7 +45,7 @@ class Moment_Connector_Mastodon extends Moment_Connector_Base {
 	 * @return string[]
 	 */
 	protected function get_supported_types(): array {
-		return array( 'note', 'image', 'gallery', 'video', 'audio', 'podcast', 'mixed' );
+		return array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed' );
 	}
 
 	/**

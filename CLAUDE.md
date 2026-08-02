@@ -109,7 +109,7 @@ post_content = block markup               // core/image, core/video, etc.
 
 // Required post meta
 _moment_is_moment              = '1'
-_moment_primary_type           = image|video|audio|podcast|note|gallery|mixed
+_moment_primary_type           = image|video|audio|note|gallery|mixed
 _moment_media_ids              = JSON array of attachment IDs
 _moment_syndication_targets    = JSON array of selected connector IDs
 _moment_default_destinations   = JSON array of default connector IDs

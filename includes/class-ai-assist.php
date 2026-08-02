@@ -269,7 +269,7 @@ class Moment_AI_Assist {
 	 *
 	 * @param array|string $context Context array (text, media_count, media_types,
 	 *                              filename) or a plain caption string.
-	 * @param string       $type    Primary Moment type (image|video|audio|podcast|note|gallery|mixed).
+	 * @param string       $type    Primary Moment type (image|video|audio|note|gallery|mixed).
 	 * @return array{caption: string, alt_text: string, tags: string[], is_mocked: bool, provider_label: string}
 	 */
 	public function get_suggestions( $context, string $type = '' ): array {
@@ -577,7 +577,6 @@ class Moment_AI_Assist {
 			'gallery' => 'A few moments, gathered together.',
 			'video'   => 'A moment in motion.',
 			'audio'   => 'A moment in sound.',
-			'podcast' => 'A new episode, in the moment.',
 			'note'    => 'A small note from today.',
 			'mixed'   => 'A mixed-media moment.',
 		);
@@ -600,7 +599,6 @@ class Moment_AI_Assist {
 			'gallery' => 'Photo gallery',
 			'video'   => 'Video',
 			'audio'   => 'Audio file',
-			'podcast' => 'Audio file',
 			'mixed'   => 'Media',
 		);
 

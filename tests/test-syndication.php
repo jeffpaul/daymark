@@ -38,9 +38,9 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		$this->assertContains( 'youtube', $this->registry->get_defaults_for_type( 'video' ) );
 	}
 
-	public function test_audio_and_podcast_have_no_defaults() {
+	public function test_audio_and_mixed_have_no_defaults() {
 		$this->assertSame( array(), $this->registry->get_defaults_for_type( 'audio' ) );
-		$this->assertSame( array(), $this->registry->get_defaults_for_type( 'podcast' ) );
+		$this->assertSame( array(), $this->registry->get_defaults_for_type( 'mixed' ) );
 	}
 
 	public function test_seven_built_in_connectors_registered() {

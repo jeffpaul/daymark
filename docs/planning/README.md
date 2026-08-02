@@ -105,7 +105,7 @@ are stored in post meta.
 | Image | Instagram |
 | Gallery | Instagram |
 | Video | YouTube |
-| Audio / Podcast | Configured audio/podcast destination |
+| Audio | Configured audio destination |
 | Mixed | Primary type / ask |
 
 Connections sit behind an adapter layer: the `Moment_Syndication_Connector`

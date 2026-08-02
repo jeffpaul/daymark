@@ -5,8 +5,8 @@
 	"title": "Moment Audio",
 	"category": "widgets",
 	"icon": "format-audio",
-	"description": "Displays published audio and podcast Moments.",
-	"keywords": [ "moment", "audio", "podcast" ],
+	"description": "Displays published audio Moments.",
+	"keywords": [ "moment", "audio" ],
 	"textdomain": "moment",
 	"attributes": {
 		"count": {
