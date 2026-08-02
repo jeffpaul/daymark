@@ -266,6 +266,12 @@ h2[tabindex='-1']:focus {
 	min-height: var(--moment-tap-min);
 }
 
+/* Infinite-scroll trigger: a tiny sentinel the IntersectionObserver watches
+   to auto-load the next page. Kept minimal so it never adds visible space. */
+.moment-recent__sentinel {
+	height: 1px;
+}
+
 .moment-recent__more {
 	margin: var(--moment-spacing-xs) 0 0;
 	text-align: center;
@@ -1193,6 +1199,241 @@ h2[tabindex='-1']:focus {
 	padding-bottom: var(--moment-spacing-sm);
 }
 
+/* --- Header search (collapsible) --- */
+.moment-searchbtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: var(--moment-tap-min);
+	min-width: var(--moment-tap-min);
+	border: 1px solid var(--moment-border);
+	border-radius: var(--moment-radius);
+	background: var(--moment-bg);
+	color: var(--moment-text-primary);
+	cursor: pointer;
+}
+
+.moment-searchbtn:hover,
+.moment-searchbtn:focus-visible {
+	color: var(--moment-accent);
+	border-color: var(--moment-accent-light);
+}
+
+.moment-searchbar {
+	display: flex;
+	flex-direction: column;
+	gap: var(--moment-spacing-sm);
+	padding: 0 var(--moment-spacing-md) var(--moment-spacing-md);
+}
+
+.moment-searchbar .moment-input {
+	width: 100%;
+}
+
+.moment-filterchips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--moment-spacing-sm);
+}
+
+.moment-filterchip {
+	min-height: 36px;
+	padding: 0 var(--moment-spacing-md);
+	border-radius: 999px;
+	border: 1px solid var(--moment-border);
+	background: var(--moment-bg);
+	color: var(--moment-text-secondary);
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.moment-filterchip.is-active,
+.moment-filterchip[aria-pressed='true'] {
+	background: var(--moment-accent-wash);
+	border-color: var(--moment-accent-light);
+	color: var(--moment-accent-deep);
+}
+
+.moment-filterchip:focus-visible {
+	outline: 2px solid var(--moment-accent);
+	outline-offset: 2px;
+}
+
+/* --- Recent item: per-item ⋯ actions menu --- */
+.moment-recent__item-wrap {
+	position: relative;
+}
+
+.moment-recent__item-wrap .moment-recent__item {
+	/* Room for the ⋯ button pinned to the right edge. */
+	padding-right: 56px;
+}
+
+.moment-recent__actions {
+	position: absolute;
+	top: 50%;
+	right: var(--moment-spacing-sm);
+	transform: translateY(-50%);
+}
+
+.moment-recent__menubtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	border: 1px solid var(--moment-border);
+	border-radius: var(--moment-radius-sm);
+	background: var(--moment-bg);
+	color: var(--moment-text-secondary);
+	cursor: pointer;
+}
+
+.moment-recent__menubtn:hover,
+.moment-recent__menubtn:focus-visible {
+	color: var(--moment-accent);
+	border-color: var(--moment-accent-light);
+}
+
+.moment-menu {
+	position: absolute;
+	top: calc(50% + 22px);
+	right: 0;
+	z-index: 20;
+	min-width: 200px;
+	padding: var(--moment-spacing-xs);
+	border: 1px solid var(--moment-border);
+	border-radius: var(--moment-radius);
+	background: var(--moment-bg);
+	box-shadow: 0 8px 24px rgba(46, 0, 84, 0.16);
+}
+
+.moment-menu__actions {
+	display: flex;
+	flex-direction: column;
+}
+
+.moment-menu__item {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: var(--moment-tap-min);
+	padding: 0 var(--moment-spacing-md);
+	border: none;
+	border-radius: var(--moment-radius-sm);
+	background: none;
+	color: var(--moment-text-primary);
+	font-size: 15px;
+	font-weight: 500;
+	text-align: left;
+	cursor: pointer;
+}
+
+.moment-menu__item:hover,
+.moment-menu__item:focus-visible {
+	background: var(--moment-accent-wash);
+}
+
+.moment-menu__item--danger {
+	color: var(--moment-error);
+}
+
+.moment-menu__confirm {
+	display: flex;
+	flex-direction: column;
+	gap: var(--moment-spacing-sm);
+	padding: var(--moment-spacing-sm) var(--moment-spacing-md) var(--moment-spacing-md);
+}
+
+.moment-menu__confirmtext {
+	font-size: 14px;
+	line-height: 1.4;
+}
+
+.moment-menu__confirmactions {
+	display: flex;
+	gap: var(--moment-spacing-sm);
+}
+
+.moment-menu__confirmactions .moment-btn {
+	width: auto;
+	flex: 1;
+	min-height: 40px;
+	padding: 0 var(--moment-spacing-md);
+}
+
+.moment-menu__status:not(:empty) {
+	font-size: 13px;
+	color: var(--moment-error);
+}
+
+.moment-btn--danger {
+	background: var(--moment-error);
+	color: #ffffff;
+	border-color: var(--moment-error);
+}
+
+.moment-btn--danger:not(:disabled):hover,
+.moment-btn--danger:not(:disabled):active {
+	background: #97140c;
+	border-color: #97140c;
+}
+
+/* --- Notifications: per-item reply --- */
+.moment-note-card__reply {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--moment-spacing-xs);
+	min-height: var(--moment-tap-min);
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--moment-text-secondary);
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.moment-note-card__reply:hover,
+.moment-note-card__reply:focus-visible {
+	color: var(--moment-accent);
+}
+
+.moment-reply {
+	display: flex;
+	flex-direction: column;
+	gap: var(--moment-spacing-sm);
+	margin-top: var(--moment-spacing-sm);
+}
+
+.moment-reply__input {
+	min-height: 72px;
+}
+
+.moment-reply__actions {
+	display: flex;
+	align-items: center;
+	gap: var(--moment-spacing-sm);
+}
+
+.moment-reply__actions .moment-btn--primary {
+	width: auto;
+	flex: 1;
+	min-height: 40px;
+}
+
+.moment-reply__status:not(:empty) {
+	font-size: 13px;
+	color: var(--moment-text-secondary);
+}
+
+.moment-note-card__replied {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--moment-success);
+}
+
 /* --- Reduced motion --- */
 @media (prefers-reduced-motion: reduce) {
 	.moment-sheet__panel,
@@ -1205,4 +1446,10 @@ h2[tabindex='-1']:focus {
 	.moment-toggle__track::after {
 		transition: none;
 	}
+}
+
+/* Lift the item whose ⋯ menu is open above later cards so the open menu is
+   not covered by following list items (sibling stacking-context fix). */
+.moment-recent__item-wrap:has(.moment-menu:not([hidden])) {
+	z-index: 30;
 }
