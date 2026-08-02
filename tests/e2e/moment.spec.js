@@ -207,15 +207,17 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 	expect(box.y).toBeGreaterThan(viewport.height * 0.6);
 });
 
-// Recent Moments loads a first page and offers a "View more" link to the
-// timeline once a full page of published Moments exists. (Infinite scroll
-// then appends further pages — covered by its own scenario below.)
-test('home shows a View more link to the timeline when a page of Moments exists', async ({ page }) => {
+// With IntersectionObserver (all supported browsers) the recent list uses
+// infinite scroll, so the redundant "View more on your timeline" link is not
+// rendered — the appended pages already show everything and the bottom-nav
+// Timeline icon still reaches the full timeline. (The link only appears as a
+// no-IntersectionObserver fallback.)
+test('home does not render the redundant View more link when infinite scroll is active', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/moment');
 
 	// Publish six quick note Moments via REST (fast, no media) — more than a
-	// single page (5), so the first page is full and the link surfaces.
+	// single page (5), so the first page is full and infinite scroll arms.
 	await page.evaluate(async () => {
 		const config = window.momentApp;
 		for (let i = 1; i <= 6; i++) {
@@ -232,11 +234,12 @@ test('home shows a View more link to the timeline when a page of Moments exists'
 	const rows = page.locator('[data-recent-list] .moment-recent__item');
 	await expect(rows.first()).toBeVisible();
 
-	// Scope to the recent section's own link so a substring name match never
-	// collides with the bottom-nav "Timeline" link.
-	const more = page.locator('.moment-recent__morelink');
-	await expect(more).toBeVisible();
-	expect(await more.getAttribute('href')).toContain('/timeline');
+	// Infinite scroll owns "more", so no redundant timeline link is shown...
+	await expect(page.locator('.moment-recent__morelink')).toHaveCount(0);
+	// ...and the timeline stays reachable via the bottom-nav Timeline icon.
+	await expect(
+		page.locator('.moment-bottomnav').getByRole('link', { name: 'Timeline' })
+	).toBeVisible();
 });
 
 // Infinite scroll: the first page caps the list; scrolling the sentinel

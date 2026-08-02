@@ -610,16 +610,22 @@
 					return;
 				}
 
-				// A full page: more may exist. Offer the timeline shortcut and
-				// arm the sentinel so scrolling appends the next page.
-				const timeline = pageLink('timeline');
-				if (more && timeline) {
-					more.innerHTML = `<a class="moment-recent__morelink" href="${esc(
-						timeline
-					)}">View more on your timeline &rarr;</a>`;
-					more.hidden = false;
+				// A full page: more may exist. Prefer infinite scroll; only fall
+				// back to a timeline link when IntersectionObserver is
+				// unavailable. Otherwise the link is redundant — the appended
+				// pages already show everything, and the bottom-nav Timeline
+				// icon still reaches the full timeline.
+				if ('IntersectionObserver' in window) {
+					this.setupObserver();
+				} else {
+					const timeline = pageLink('timeline');
+					if (more && timeline) {
+						more.innerHTML = `<a class="moment-recent__morelink" href="${esc(
+							timeline
+						)}">View more on your timeline &rarr;</a>`;
+						more.hidden = false;
+					}
 				}
-				this.setupObserver();
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
