@@ -176,7 +176,7 @@ class Moment_Publisher {
 		$title = isset( $data['title'] ) ? sanitize_text_field( (string) $data['title'] ) : '';
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption );
+			$title = $this->derive_title( $type, $caption, $media_ids );
 		}
 
 		// An explicitly requested draft always wins; a requested (or
@@ -422,7 +422,7 @@ class Moment_Publisher {
 		$title = isset( $data['title'] ) ? sanitize_text_field( (string) $data['title'] ) : '';
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption );
+			$title = $this->derive_title( $type, $caption, $media_ids );
 		}
 
 		$new_status = $post->post_status;
@@ -1011,6 +1011,73 @@ class Moment_Publisher {
 
 		// 'standard' clears the format term (set_post_format( , false )).
 		set_post_format( $post_id, 'standard' === $format ? false : $format );
+	}
+
+	/**
+	 * Resolve the post title for a new or updated Moment.
+	 *
+	 * Audio, podcast, and video Moments prefer an AI-suggested title (via
+	 * Moment_AI_Assist) — those types often lack usable caption text, so a
+	 * generated headline reads better than a media filename or timestamp.
+	 * Every other type (note, image, gallery, mixed) keeps the existing
+	 * caption/timestamp-derived title unchanged. AI is optional and
+	 * non-blocking: an empty or unavailable suggestion falls back to
+	 * generate_title().
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param string $type      Primary Moment type.
+	 * @param string $caption   Caption text.
+	 * @param int[]  $media_ids Attached media IDs.
+	 * @return string Title.
+	 */
+	private function derive_title( string $type, string $caption, array $media_ids ): string {
+		if ( in_array( $type, array( 'audio', 'podcast', 'video' ), true ) ) {
+			$ai_title = $this->ai_suggested_title( $type, $caption, $media_ids );
+
+			if ( '' !== $ai_title ) {
+				return $ai_title;
+			}
+		}
+
+		return $this->generate_title( $caption );
+	}
+
+	/**
+	 * Ask Moment_AI_Assist for a suggested title. Never throws.
+	 *
+	 * Returns a real provider title when one is configured, the deterministic
+	 * mock title otherwise, or an empty string on any failure so the caller
+	 * falls back to the caption/timestamp title. AI never blocks publishing.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param string $type      Primary Moment type.
+	 * @param string $caption   Caption text.
+	 * @param int[]  $media_ids Attached media IDs.
+	 * @return string Suggested title, or '' when unavailable.
+	 */
+	private function ai_suggested_title( string $type, string $caption, array $media_ids ): string {
+		if ( ! class_exists( 'Moment_AI_Assist' ) ) {
+			return '';
+		}
+
+		try {
+			$ai          = new Moment_AI_Assist();
+			$suggestions = $ai->get_suggestions(
+				array(
+					'text'        => wp_strip_all_tags( $caption ),
+					'media_count' => count( $media_ids ),
+					'type'        => $type,
+				),
+				$type
+			);
+
+			return isset( $suggestions['title'] ) ? sanitize_text_field( (string) $suggestions['title'] ) : '';
+		} catch ( Throwable $e ) {
+			// AI is optional — any failure falls back to the derived title.
+			return '';
+		}
 	}
 
 	/**
