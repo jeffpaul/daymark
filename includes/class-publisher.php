@@ -68,6 +68,7 @@ class Moment_Publisher {
 	);
 
 	/**
+<<<<<<< HEAD
 	 * Maximum allowed upload size per file, in bytes. Defaults to 50 MB.
 	 *
 	 * PHP's upload_max_filesize also applies, but this cap provides a
@@ -76,6 +77,18 @@ class Moment_Publisher {
 	 * @var int
 	 */
 	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB
+=======
+	 * Maximum accepted size, in bytes, for a single uploaded media file.
+	 *
+	 * Enforced per file during validation (against the reported upload size)
+	 * before the file is handed to WordPress for sideloading.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @var int
+	 */
+	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB.
+>>>>>>> upstream/main
 
 	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
@@ -642,6 +655,19 @@ class Moment_Publisher {
 			return new WP_Error(
 				'moment_upload_error',
 				__( 'The uploaded file could not be read.', 'moment' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		if ( (int) ( $file['size'] ?? 0 ) > self::MAX_FILE_BYTES ) {
+			return new WP_Error(
+				'moment_upload_too_large',
+				sprintf(
+					/* translators: 1: file name, 2: maximum upload size (e.g. "50 MB"). */
+					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'moment' ),
+					sanitize_text_field( (string) $file['name'] ),
+					size_format( self::MAX_FILE_BYTES )
+				),
 				array( 'status' => 400 )
 			);
 		}

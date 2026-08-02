@@ -153,7 +153,14 @@ class Moment_Routes {
 			}
 		}
 
-		return MOMENT_PLUGIN_URL . 'assets/' . ( $size > 256 ? 'icon-512.png' : 'icon-192.png' );
+		$file = 'icon-192.png';
+		if ( $size > 256 ) {
+			$file = 'icon-512.png';
+		} elseif ( $size <= 32 ) {
+			$file = 'icon-32.png';
+		}
+
+		return MOMENT_PLUGIN_URL . 'assets/' . $file;
 	}
 
 	/**

@@ -116,6 +116,7 @@ class Test_Routes extends WP_UnitTestCase {
 
 	/** Falls back to Moment's bundled PNG when the site has no Site Icon. */
 	public function test_icon_url_falls_back_to_bundled_png() {
+		$this->assertStringEndsWith( 'assets/icon-32.png', Moment_Routes::icon_url( 32 ) );
 		$this->assertStringEndsWith( 'assets/icon-192.png', Moment_Routes::icon_url( 180 ) );
 		$this->assertStringEndsWith( 'assets/icon-512.png', Moment_Routes::icon_url( 512 ) );
 	}

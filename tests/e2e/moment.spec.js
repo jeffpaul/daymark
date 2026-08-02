@@ -396,7 +396,11 @@ test('site-views nav shows icons with accessible labels', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/moment');
 
-	const timeline = page.getByRole('link', { name: 'Timeline' });
+	// Scope to the bottom nav: a substring name match on 'Timeline' would
+	// also catch the recent section's "View more on your timeline →" link
+	// when Moments exist, so query within the nav to assert the nav link itself.
+	const nav = page.locator('.moment-bottomnav');
+	const timeline = nav.getByRole('link', { name: 'Timeline' });
 	await expect(timeline).toBeVisible();
 	await expect(timeline).toHaveAttribute('title', 'Timeline');
 	await expect(timeline.locator('svg.moment-bottomnav__icon')).toBeVisible();
@@ -405,7 +409,7 @@ test('site-views nav shows icons with accessible labels', async ({ page }) => {
 	// Every view link carries an icon.
 	await expect(page.locator('.moment-bottomnav__link svg')).toHaveCount(5);
 	// The label text is present for assistive tech but visually hidden.
-	await expect(page.getByRole('link', { name: 'Notes' })).toBeVisible();
+	await expect(nav.getByRole('link', { name: 'Notes' })).toBeVisible();
 });
 
 // Awareness note: when a third-party publishing plugin is active, the

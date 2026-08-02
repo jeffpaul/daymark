@@ -91,7 +91,7 @@ Document decisions here as they are made. This is the authoritative record.
 | Block vs shortcode | **Both** — shortcodes as required baseline, dynamic blocks (`block.json` + `render.php`, no build step) as thin wrappers | Activation pages already embed `[moment_*]` shortcodes; MVP spec requires both; all query/markup logic lives once in `Moment_Renderer::render()` so both surfaces emit identical HTML |
 | WP 7.0 AI path | **Real** — `WordPress\AiClient\AiClient` via `wp_ai_client_prompt()`; provider Anthropic (first configured). Mock fallback when no provider is configured or any call fails. | Plugin requires WP 7.0+, so the AI Client is assumed present (no class/function existence shims). Detection: `wp_supports_ai()` + ≥1 `isProviderConfigured()`. Never throws, never blocks publishing. Legacy `WP_AI_Client` name does not exist — do not use it for calls. |
 | JS framework | Vanilla ES2020, no build step | Prototype speed; no npm required |
-| Brand colors | Purples: primary `#7A00DF`, deep `#5300BE`, light `#D7A7FF`, transparent `rgba(122, 0, 223, 0.12)` | Documented in README "Colors" and applied throughout the app shell (`--moment-accent*` custom props), views, manifest, theme-color, and icon. |
+| Brand colors | Purples: primary `#7A00DF`, deep `#5300BE`, light `#D7A7FF`, transparent `rgba(122, 0, 223, 0.12)` | Documented in [docs/brand.md](docs/brand.md) and applied throughout the app shell (`--moment-accent*` custom props), views, manifest, theme-color, and icon. |
 | Destination visibility | Only **connected** connectors are offered as publish destinations; auto-applied type defaults filter to connected too (explicit API selections honored as-is). AI Assist UI only renders when a provider `is_available()`. No demo-mode filter — the site itself is always the canonical destination. | A destination that can't publish or return replies shouldn't be offered. No connector ships in-repo; the connector interface + `moment_register_connectors` hook is the extension point and is covered by PHPUnit (`test-syndication.php`), not E2E. Model defaults stay recorded in `_moment_default_destinations`. |
 | Companion connectors removed | The `moment-connector-bluesky`/`-mastodon` plugins were removed from the repo (not published to wp.org). Real syndication rides on existing ecosystem plugins instead: publicize-style plugins via `Moment_Publish_Helpers` (awareness + per-Moment toggles) and federation plugins via `Moment_Federated_Comments`. ATmosphere is a controllable toggle (its documented `atmosphere_disabled` opt-out meta), so Bluesky gets an in-app on/off when ATmosphere is connected and auto-publishing. | Leaner repo; aligns with the "no real social API publishing in core" non-goal. The open connector hook remains for any plugin to register a first-class destination. |
 | Destination memory | Explicit per-type selections are remembered in `moment_destination_prefs` user meta and win over model defaults on the next publish of that type (explicit empty = "none" is remembered too). | Publishing habits differ per person and per content type; `Moment_Publisher::get_effective_defaults()` is the single resolution point used by both the app shell and the publisher's no-selection fallback. |
@@ -156,23 +156,26 @@ The phased build (Phases 0–9) used five specialist sub-agents under `.claude/a
 `moment-tester`). Those files were removed after 0.4.0: the phased build is complete,
 they had drifted from the shipped code, and their durable guidance (identity, security
 checklist, content model, hooks) already lives in this file and in CONTRIBUTING.md. The
-original agent definitions remain archived in `docs/05_llm_prompt_build_prototype_claude_code.md`
-for historical reference.
+original agent definitions live in git history (in the removed build-prompt doc
+`docs/05_llm_prompt_build_prototype_claude_code.md`); the compacted design record
+summarizes the phased build in its build-history section —
+[docs/planning/README.md](docs/planning/README.md).
 
 ## Project artifact context
 
-These files are loaded into context at session start. All are in the docs/ directory.
+The prototype's planning docs (vision, product brief, MVP spec, routing, backflow,
+content model, success metrics, visual/PWA, build history) were compacted into a
+single design record after 0.4.0:
 
-| File | Purpose |
-|------|---------|
-| `00_README.md` | Architecture overview |
-| `02_one_page_product_brief.md` | Product shape |
-| `04_prototype_mvp_spec.md` | MVP scope and non-goals |
-| `08_decisions_and_open_questions.md` | Resolved constraints |
-| `09_default_syndication_routing.md` | Routing model |
-| `11_conversation_backflow_notifications.md` | Backflow product model |
-| `12_content_model_technical_path.md` | Content model |
-| `13_success_metrics_and_e2e_tests.md` | Acceptance tests |
+- **[docs/planning/README.md](docs/planning/README.md)** — condensed product
+  vision, positioning, principles, non-goals, the type→destination routing model,
+  the backflow model, success metrics, the 10 E2E acceptance scenarios, and
+  visual/PWA intent. It flags where the original docs went stale vs shipped
+  (connector removal, namespaced AI client, federation labeling) and maps each
+  original doc to its new home. The 18 originals are in git history.
+
+This file (CLAUDE.md) remains the authoritative **technical** record; the design
+record is its product/vision/history companion.
 
 ## Non-goals (never build these in the prototype)
 
