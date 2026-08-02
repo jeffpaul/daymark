@@ -1447,3 +1447,9 @@ h2[tabindex='-1']:focus {
 		transition: none;
 	}
 }
+
+/* Lift the item whose ⋯ menu is open above later cards so the open menu is
+   not covered by following list items (sibling stacking-context fix). */
+.moment-recent__item-wrap:has(.moment-menu:not([hidden])) {
+	z-index: 30;
+}
