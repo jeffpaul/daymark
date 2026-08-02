@@ -207,13 +207,15 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 	expect(box.y).toBeGreaterThan(viewport.height * 0.6);
 });
 
-// Recent Moments caps at five and offers a "View more" link to the
-// timeline once more than five published Moments exist.
-test('home shows five recent Moments with a View more link to the timeline', async ({ page }) => {
+// Recent Moments loads a first page and offers a "View more" link to the
+// timeline once a full page of published Moments exists. (Infinite scroll
+// then appends further pages — covered by its own scenario below.)
+test('home shows a View more link to the timeline when a page of Moments exists', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/moment');
 
-	// Publish six quick note Moments via REST (fast, no media).
+	// Publish six quick note Moments via REST (fast, no media) — more than a
+	// single page (5), so the first page is full and the link surfaces.
 	await page.evaluate(async () => {
 		const config = window.momentApp;
 		for (let i = 1; i <= 6; i++) {
@@ -229,11 +231,198 @@ test('home shows five recent Moments with a View more link to the timeline', asy
 	await page.goto('/moment');
 	const rows = page.locator('[data-recent-list] .moment-recent__item');
 	await expect(rows.first()).toBeVisible();
-	await expect(rows).toHaveCount(5);
 
+	// Scope to the recent section's own link so a substring name match never
+	// collides with the bottom-nav "Timeline" link.
 	const more = page.locator('.moment-recent__morelink');
 	await expect(more).toBeVisible();
 	expect(await more.getAttribute('href')).toContain('/timeline');
+});
+
+// Infinite scroll: the first page caps the list; scrolling the sentinel
+// into view auto-fetches and appends the next page, growing the list
+// beyond one page. The bottom section-nav stays anchored throughout.
+test('infinite scroll appends more recent Moments as the sentinel enters view', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/moment');
+
+	// Seed enough published Moments to guarantee a second page (per_page 5).
+	await page.evaluate(async () => {
+		const config = window.momentApp;
+		for (let i = 1; i <= 8; i++) {
+			await fetch(`${config.restUrl}moments`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: `Infinite seed ${i}`, primary_type: 'note' }),
+			});
+		}
+	});
+
+	await page.goto('/moment');
+	const rows = page.locator('[data-recent-list] .moment-recent__item');
+	await expect(rows.first()).toBeVisible();
+
+	// Drive the sentinel into view to trigger the next page (a no-op if an
+	// eager observer already loaded everything).
+	await page
+		.locator('[data-recent-sentinel]')
+		.scrollIntoViewIfNeeded()
+		.catch(() => {});
+
+	// More than a single page (5) is now present.
+	await expect.poll(async () => rows.count(), { timeout: 6000 }).toBeGreaterThan(5);
+
+	// The section-nav stayed reachable (anchored, not buried by the list).
+	await expect(page.locator('.moment-bottomnav')).toBeVisible();
+});
+
+// Search: the header search icon expands an inline bar with type-filter
+// chips; a query narrows the list, and a type filter narrows it too.
+test('search: header icon expands the bar and query + type filter narrow the list', async ({ page }) => {
+	const tag = `${RUN_ID}srch`;
+	const alpha = `E2E searchable ${tag} alphaword`;
+	const bravo = `E2E searchable ${tag} bravoword`;
+
+	await loginAs(page);
+	await page.goto('/moment');
+
+	// Two distinct note Moments to filter between.
+	await page.evaluate(
+		async ({ alpha, bravo }) => {
+			const config = window.momentApp;
+			for (const caption of [alpha, bravo]) {
+				await fetch(`${config.restUrl}moments`, {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify({ caption, primary_type: 'note' }),
+				});
+			}
+		},
+		{ alpha, bravo }
+	);
+
+	await page.goto('/moment');
+
+	// The search bar is collapsed until the icon is tapped.
+	const bar = page.locator('[data-searchbar]');
+	await expect(bar).toBeHidden();
+	await page.locator('[data-search-toggle]').click();
+	await expect(bar).toBeVisible();
+
+	const list = page.locator('[data-recent-list]');
+
+	// A query narrows the recent list to the matching Moment only.
+	await page.locator('[data-search-input]').fill(alpha);
+	await expect(list.getByText(alpha).first()).toBeVisible();
+	await expect(list.getByText(bravo)).toHaveCount(0);
+
+	// A type filter narrows too: "Images" excludes these note Moments.
+	await page.locator('[data-search-input]').fill('');
+	await page.locator('[data-filter-chips] [data-filter="image"]').click();
+	await expect(list.getByText(alpha)).toHaveCount(0);
+
+	// Back to "Notes" surfaces them again.
+	await page.locator('[data-filter-chips] [data-filter="note"]').click();
+	await expect(list.getByText(alpha).first()).toBeVisible();
+});
+
+// Per-item delete: the ⋯ menu offers Delete, which requires an explicit
+// confirm step. Cancel keeps the item; confirm removes it from the list.
+test('per-item menu: delete requires confirm — cancel keeps, confirm removes', async ({ page }) => {
+	const caption = `E2E deletable ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/moment');
+	await page.evaluate(async (cap) => {
+		const config = window.momentApp;
+		await fetch(`${config.restUrl}moments`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	await page.goto('/moment');
+
+	// Scope every action to this Moment's own card.
+	const card = page.locator('.moment-recent__item-wrap').filter({ hasText: caption }).first();
+	await expect(card).toBeVisible();
+
+	// Open the ⋯ menu and start a delete — a confirm step must appear first.
+	await card.locator('[data-menu-toggle]').click();
+	await card.locator('[data-menu-delete]').click();
+	const confirm = card.locator('[data-menu-confirm]');
+	await expect(confirm).toBeVisible();
+	await expect(confirm).toContainText('move to Trash');
+
+	// Cancel returns to the action list and keeps the Moment.
+	await card.locator('[data-menu-delete-cancel]').click();
+	await expect(confirm).toBeHidden();
+	await expect(card.locator('[data-menu-actions]')).toBeVisible();
+	await expect(card).toBeVisible();
+
+	// Delete again and confirm — this time it is removed from the list.
+	await card.locator('[data-menu-delete]').click();
+	await expect(confirm).toBeVisible();
+	await card.locator('[data-menu-delete-confirm]').click();
+	await expect(
+		page.locator('.moment-recent__item-wrap').filter({ hasText: caption })
+	).toHaveCount(0);
+});
+
+// Per-notification reply: a reply icon reveals an inline box for that
+// notification; submitting posts the reply and collapses the box.
+test('notifications: reply icon expands an inline box and submits', async ({ page }) => {
+	const caption = `E2E replyui ${RUN_ID}`;
+	const incoming = `E2E incoming ${RUN_ID}`;
+	const myReply = `E2E my reply ${RUN_ID}`;
+
+	await loginAs(page);
+
+	// Publish a note Moment through the UI.
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+	await page.fill('#moment-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	// A comment arrives on it (same storage path as an imported reply).
+	await page.evaluate(async (replyText) => {
+		const config = window.momentApp;
+		const listRes = await fetch(`${config.restUrl}moments?per_page=1`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const [latest] = await listRes.json();
+		await fetch('/wp-json/wp/v2/comments', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ post: latest.id, content: replyText }),
+		});
+	}, incoming);
+
+	await page.goto('/moment/notifications');
+
+	// Scope to this notification's own card.
+	const card = page.locator('.moment-note-card').filter({ hasText: incoming }).first();
+	await expect(card).toBeVisible();
+
+	// The reply box is hidden until the reply icon is tapped.
+	const form = card.locator('[data-reply-form]');
+	await expect(form).toBeHidden();
+	await card.locator('[data-reply-toggle]').click();
+	await expect(form).toBeVisible();
+
+	// Submitting a reply collapses the box and confirms.
+	await form.locator('[data-reply-input]').fill(myReply);
+	await form.locator('[data-reply-send]').click();
+	await expect(form).toBeHidden();
+	await expect(card.locator('[data-replied]')).toBeVisible();
 });
 
 // Plugins list table offers a one-click path into the app.

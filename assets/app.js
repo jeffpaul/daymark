@@ -131,6 +131,20 @@
 		notes: 'Notes',
 	};
 
+	// Home "Recent Moments" page size — the infinite-scroll unit. A page
+	// shorter than this means there are no more Moments to load.
+	const RECENT_PER_PAGE = 5;
+
+	// Header search: the type-filter chips, mapped to _moment_primary_type
+	// values ('' = every type). Wired to GET /moments?s=&type=.
+	const SEARCH_FILTERS = [
+		{ type: '', label: 'All' },
+		{ type: 'image', label: 'Images' },
+		{ type: 'video', label: 'Videos' },
+		{ type: 'audio', label: 'Audio' },
+		{ type: 'note', label: 'Notes' },
+	];
+
 	// Feather-style icon glyphs (inner SVG markup) for the site-views nav,
 	// matching the app's other inline icons. Text stays as the accessible
 	// name and hover title.
@@ -298,6 +312,35 @@
 		return res.json();
 	}
 
+	async function apiDelete(path) {
+		const res = await fetch(config.restUrl + path, {
+			method: 'DELETE',
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		if (!res.ok) {
+			throw await readError(res);
+		}
+		return res.json();
+	}
+
+	/**
+	 * Trailing debounce: coalesce rapid calls (e.g. search keystrokes) into
+	 * one call after the delay.
+	 */
+	function debounce(fn, wait) {
+		let timer = null;
+		return function (...args) {
+			if (timer) {
+				clearTimeout(timer);
+			}
+			timer = setTimeout(() => {
+				timer = null;
+				fn.apply(this, args);
+			}, wait);
+		};
+	}
+
 	// --- Screen router ---
 
 	let SCREENS = {};
@@ -349,22 +392,37 @@
 
 	const HomeScreen = {
 		render() {
+			const hasUnread = config.notifications && config.notifications.hasUnread;
+			const filterChips = SEARCH_FILTERS.map(
+				(filter, index) =>
+					`<button type="button" class="moment-filterchip${
+						index === 0 ? ' is-active' : ''
+					}" data-filter="${esc(filter.type)}" aria-pressed="${
+						index === 0 ? 'true' : 'false'
+					}">${esc(filter.label)}</button>`
+			).join('');
 			return `
 			<header class="moment-topbar">
 				<h1 class="moment-topbar__title" tabindex="-1" data-moment-focus>Moment</h1>
+				<button type="button" class="moment-searchbtn" data-search-toggle aria-label="Search Moments" aria-expanded="false" aria-controls="moment-searchbar">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+				</button>
 				<a class="moment-iconbtn" href="#notifications" aria-label="${
-					config.notifications && config.notifications.hasUnread
-						? 'Notifications — unread replies'
-						: 'Notifications'
+					hasUnread ? 'Notifications — unread replies' : 'Notifications'
 				}">
 					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
 					${
-						config.notifications && config.notifications.hasUnread
+						hasUnread
 							? '<span class="moment-iconbtn__dot" aria-hidden="true"></span>'
 							: ''
 					}
 				</a>
 			</header>
+			<div class="moment-searchbar" id="moment-searchbar" data-searchbar hidden>
+				<label class="moment-visually-hidden" for="moment-search-input">Search Moments</label>
+				<input type="search" id="moment-search-input" class="moment-input" data-search-input placeholder="Search your Moments" autocomplete="off" />
+				<div class="moment-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
+			</div>
 			<section class="moment-screen">
 				<section class="moment-recent" data-drafts-section hidden aria-labelledby="moment-drafts-heading">
 					<h2 id="moment-drafts-heading" class="moment-section-heading">Drafts</h2>
@@ -376,6 +434,7 @@
 						${skeletonRows(3)}
 						<span class="moment-visually-hidden">Loading recent Moments</span>
 					</div>
+					<div class="moment-recent__sentinel" data-recent-sentinel aria-hidden="true"></div>
 					<p class="moment-recent__more" data-recent-more hidden></p>
 				</section>
 			</section>
@@ -405,6 +464,59 @@
 				resetComposer();
 				navigate('#create');
 			});
+
+			// --- Search (collapsible header bar + type-filter chips) ---
+			const searchToggle = root.querySelector('[data-search-toggle]');
+			const searchInput = root.querySelector('[data-search-input]');
+			if (searchToggle) {
+				searchToggle.addEventListener('click', () => this.toggleSearch());
+			}
+			if (searchInput) {
+				const runDebounced = debounce(() => this.applySearch(), 250);
+				searchInput.addEventListener('input', () => {
+					this.searchQuery = searchInput.value.trim();
+					runDebounced();
+				});
+				// The native clear (✕) / an emptied field fires 'search' with an
+				// empty value — collapse back to the icon, per the spec.
+				searchInput.addEventListener('search', () => {
+					if ('' === searchInput.value) {
+						this.closeSearch();
+					}
+				});
+				searchInput.addEventListener('keydown', (event) => {
+					if ('Escape' === event.key) {
+						this.closeSearch();
+					}
+				});
+			}
+			root.querySelectorAll('[data-filter]').forEach((chip) => {
+				chip.addEventListener('click', () => this.setFilter(chip.getAttribute('data-filter')));
+			});
+
+			// --- Per-item ⋯ menu (edit / delete) via list delegation ---
+			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
+				list.addEventListener('click', (event) => this.onListClick(event));
+			});
+			// Close any open item menu on an outside click or Escape. Removing
+			// the previous pair first keeps these from stacking across the
+			// repeated Home renders within a single session.
+			if (this._onDocClick) {
+				document.removeEventListener('click', this._onDocClick, true);
+				document.removeEventListener('keydown', this._onDocKey, true);
+			}
+			this._onDocClick = (event) => {
+				if (!event.target.closest || !event.target.closest('[data-actions]')) {
+					this.closeItemMenus();
+				}
+			};
+			this._onDocKey = (event) => {
+				if ('Escape' === event.key) {
+					this.closeItemMenus();
+				}
+			};
+			document.addEventListener('click', this._onDocClick, true);
+			document.addEventListener('keydown', this._onDocKey, true);
 		},
 
 		bindDraftTaps(container) {
@@ -420,54 +532,448 @@
 		},
 
 		async init() {
-			const list = root.querySelector('[data-recent-list]');
+			this._searchSeq = 0;
+			this.searchOpen = false;
+			this.searchQuery = '';
+			this.searchType = '';
+			this._hasDrafts = false;
+			this.recentPage = 1;
+			this.recentDone = false;
+			this.recentLoading = false;
+
 			const draftsSection = root.querySelector('[data-drafts-section]');
 			const draftsList = root.querySelector('[data-drafts-list]');
-			try {
-				// Drafts are fetched separately so they stay reachable no
-				// matter how many Moments have published since.
-				const [drafts, published] = await Promise.all([
-					apiGet('moments?status=draft&per_page=10'),
-					apiGet('moments?status=publish'),
-				]);
-				if (!list || !list.isConnected) {
-					return;
-				}
 
+			// Drafts are fetched separately so they stay reachable no matter
+			// how many Moments have published since.
+			try {
+				const drafts = await apiGet('moments?status=draft&per_page=10');
 				const draftItems = Array.isArray(drafts) ? drafts : [];
-				if (draftItems.length && draftsSection && draftsList) {
+				if (draftItems.length && draftsSection && draftsList && draftsList.isConnected) {
 					draftsList.innerHTML = draftItems.map((item) => this.renderItem(item)).join('');
 					draftsSection.hidden = false;
+					this._hasDrafts = true;
 					this.bindDraftTaps(draftsList);
 				}
+			} catch (err) {
+				// A drafts failure never blocks the recent list below.
+			}
 
-				const publishedItems = Array.isArray(published) ? published : [];
-				const items = publishedItems.slice(0, 5);
-				if (!items.length) {
-					list.innerHTML = draftItems.length
-						? '<p class="moment-empty">Nothing published yet.</p>'
-						: '<p class="moment-empty">Nothing here yet. Create your first Moment.</p>';
+			await this.loadRecent();
+		},
+
+		// (Re)load the first page of recent Moments and arm infinite scroll.
+		async loadRecent() {
+			const list = root.querySelector('[data-recent-list]');
+			const more = root.querySelector('[data-recent-more]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list) {
+				return;
+			}
+			this.teardownObserver();
+			this.recentPage = 1;
+			this.recentDone = false;
+			this.recentLoading = false;
+			const seq = ++this._searchSeq;
+			if (more) {
+				more.hidden = true;
+			}
+			if (sentinel) {
+				sentinel.hidden = false;
+			}
+			try {
+				const items = await apiGet(
+					'moments?status=publish&per_page=' + RECENT_PER_PAGE + '&page=1'
+				);
+				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
-				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
+				const arr = Array.isArray(items) ? items : [];
+				if (!arr.length) {
+					list.innerHTML = this._hasDrafts
+						? '<p class="moment-empty">Nothing published yet.</p>'
+						: '<p class="moment-empty">Nothing here yet. Create your first Moment.</p>';
+					this.recentDone = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+				list.innerHTML = arr.map((item) => this.renderItem(item)).join('');
 
-				// When more published Moments exist than the five shown, offer
-				// a path to the full timeline (only if that page resolved).
-				const more = root.querySelector('[data-recent-more]');
+				if (arr.length < RECENT_PER_PAGE) {
+					// A short first page means there is nothing more to load.
+					this.recentDone = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+
+				// A full page: more may exist. Offer the timeline shortcut and
+				// arm the sentinel so scrolling appends the next page.
 				const timeline = pageLink('timeline');
-				if (more && timeline && publishedItems.length > items.length) {
+				if (more && timeline) {
 					more.innerHTML = `<a class="moment-recent__morelink" href="${esc(
 						timeline
 					)}">View more on your timeline &rarr;</a>`;
 					more.hidden = false;
 				}
+				this.setupObserver();
 			} catch (err) {
-				if (list && list.isConnected) {
-					list.innerHTML =
-						'<p class="moment-error" role="alert">Could not load recent Moments. ' +
-						esc(err.message) +
-						'</p>';
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
 				}
+				list.innerHTML =
+					'<p class="moment-error" role="alert">Could not load recent Moments. ' +
+					esc(err.message) +
+					'</p>';
+			}
+		},
+
+		// Append the next page when the sentinel scrolls into view.
+		async loadMorePage() {
+			if (this.recentLoading || this.recentDone) {
+				return;
+			}
+			this.recentLoading = true;
+			const list = root.querySelector('[data-recent-list]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list || !list.isConnected) {
+				this.recentLoading = false;
+				return;
+			}
+			const nextPage = this.recentPage + 1;
+			try {
+				const items = await apiGet(
+					'moments?status=publish&per_page=' + RECENT_PER_PAGE + '&page=' + nextPage
+				);
+				const arr = Array.isArray(items) ? items : [];
+				if (arr.length && list.isConnected) {
+					this.recentPage = nextPage;
+					list.insertAdjacentHTML('beforeend', arr.map((item) => this.renderItem(item)).join(''));
+				}
+				if (arr.length < RECENT_PER_PAGE) {
+					this.recentDone = true;
+					this.teardownObserver();
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+				}
+			} catch (err) {
+				// Stop trying on error; keep whatever already loaded.
+				this.recentDone = true;
+				this.teardownObserver();
+			} finally {
+				this.recentLoading = false;
+			}
+		},
+
+		setupObserver() {
+			if (!('IntersectionObserver' in window)) {
+				return; // The timeline "View more" link is the fallback path.
+			}
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!sentinel) {
+				return;
+			}
+			this.teardownObserver();
+			this.observer = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (entry.isIntersecting) {
+							this.loadMorePage();
+						}
+					}
+				},
+				{ rootMargin: '200px' }
+			);
+			this.observer.observe(sentinel);
+		},
+
+		teardownObserver() {
+			if (this.observer) {
+				this.observer.disconnect();
+				this.observer = null;
+			}
+		},
+
+		// --- Search behaviour ---
+
+		toggleSearch() {
+			if (this.searchOpen) {
+				this.closeSearch();
+			} else {
+				this.openSearch();
+			}
+		},
+
+		openSearch() {
+			this.searchOpen = true;
+			const bar = root.querySelector('[data-searchbar]');
+			const toggle = root.querySelector('[data-search-toggle]');
+			const input = root.querySelector('[data-search-input]');
+			if (bar) {
+				bar.hidden = false;
+			}
+			if (toggle) {
+				toggle.setAttribute('aria-expanded', 'true');
+			}
+			if (input) {
+				input.focus();
+			}
+		},
+
+		closeSearch() {
+			this.searchOpen = false;
+			this.searchQuery = '';
+			this.searchType = '';
+			const bar = root.querySelector('[data-searchbar]');
+			const toggle = root.querySelector('[data-search-toggle]');
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				input.value = '';
+			}
+			this.syncFilterChips();
+			if (bar) {
+				bar.hidden = true;
+			}
+			if (toggle) {
+				toggle.setAttribute('aria-expanded', 'false');
+				toggle.focus();
+			}
+			// Restore the ordinary paginated recent list.
+			this.loadRecent();
+		},
+
+		setFilter(type) {
+			this.searchType = type || '';
+			this.syncFilterChips();
+			this.applySearch();
+		},
+
+		syncFilterChips() {
+			root.querySelectorAll('[data-filter]').forEach((chip) => {
+				const active = (chip.getAttribute('data-filter') || '') === this.searchType;
+				chip.classList.toggle('is-active', active);
+				chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+			});
+		},
+
+		applySearch() {
+			if ('' === this.searchQuery && '' === this.searchType) {
+				this.loadRecent();
+			} else {
+				this.runSearch();
+			}
+		},
+
+		async runSearch() {
+			const list = root.querySelector('[data-recent-list]');
+			const more = root.querySelector('[data-recent-more]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list) {
+				return;
+			}
+			// Search overrides the paginated list: stop infinite scroll and
+			// hide the timeline shortcut while a query/filter is active.
+			this.teardownObserver();
+			if (more) {
+				more.hidden = true;
+			}
+			if (sentinel) {
+				sentinel.hidden = true;
+			}
+			const seq = ++this._searchSeq;
+			list.innerHTML =
+				skeletonRows(2) + '<span class="moment-visually-hidden">Searching Moments</span>';
+			const params = new URLSearchParams();
+			params.set('status', 'publish');
+			params.set('per_page', '20');
+			if (this.searchQuery) {
+				params.set('s', this.searchQuery);
+			}
+			if (this.searchType) {
+				params.set('type', this.searchType);
+			}
+			try {
+				const items = await apiGet('moments?' + params.toString());
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				const arr = Array.isArray(items) ? items : [];
+				if (!arr.length) {
+					list.innerHTML = '<p class="moment-empty">No Moments match your search.</p>';
+					return;
+				}
+				list.innerHTML = arr.map((item) => this.renderItem(item)).join('');
+			} catch (err) {
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				list.innerHTML =
+					'<p class="moment-error" role="alert">Search failed. ' + esc(err.message) + '</p>';
+			}
+		},
+
+		// --- Per-item ⋯ menu (edit / delete) ---
+
+		closeItemMenus() {
+			root.querySelectorAll('[data-menu]').forEach((menu) => {
+				menu.hidden = true;
+				const actions = menu.querySelector('[data-menu-actions]');
+				const confirm = menu.querySelector('[data-menu-confirm]');
+				if (actions) {
+					actions.hidden = false;
+				}
+				if (confirm) {
+					confirm.hidden = true;
+				}
+				const toggle = menu.parentElement
+					? menu.parentElement.querySelector('[data-menu-toggle]')
+					: null;
+				if (toggle) {
+					toggle.setAttribute('aria-expanded', 'false');
+				}
+			});
+		},
+
+		onListClick(event) {
+			const target = event.target;
+
+			const toggle = target.closest('[data-menu-toggle]');
+			if (toggle) {
+				event.preventDefault();
+				const menu = toggle.parentElement.querySelector('[data-menu]');
+				const wasOpen = menu && !menu.hidden;
+				this.closeItemMenus();
+				if (menu && !wasOpen) {
+					menu.hidden = false;
+					toggle.setAttribute('aria-expanded', 'true');
+					const first = menu.querySelector('[data-menu-edit]');
+					if (first) {
+						first.focus();
+					}
+				}
+				return;
+			}
+
+			const edit = target.closest('[data-menu-edit]');
+			if (edit) {
+				event.preventDefault();
+				const wrap = edit.closest('[data-item]');
+				this.closeItemMenus();
+				if (wrap) {
+					openDraft(wrap.getAttribute('data-item')).catch(() => {});
+				}
+				return;
+			}
+
+			const del = target.closest('[data-menu-delete]');
+			if (del) {
+				event.preventDefault();
+				const menu = del.closest('[data-menu]');
+				const actions = menu.querySelector('[data-menu-actions]');
+				const confirm = menu.querySelector('[data-menu-confirm]');
+				if (actions) {
+					actions.hidden = true;
+				}
+				if (confirm) {
+					confirm.hidden = false;
+					// Focus lands on Cancel so a stray Enter is non-destructive.
+					const cancel = confirm.querySelector('[data-menu-delete-cancel]');
+					if (cancel) {
+						cancel.focus();
+					}
+				}
+				return;
+			}
+
+			const cancel = target.closest('[data-menu-delete-cancel]');
+			if (cancel) {
+				event.preventDefault();
+				const menu = cancel.closest('[data-menu]');
+				const actions = menu.querySelector('[data-menu-actions]');
+				const confirm = menu.querySelector('[data-menu-confirm]');
+				if (confirm) {
+					confirm.hidden = true;
+				}
+				if (actions) {
+					actions.hidden = false;
+				}
+				const del2 = menu.querySelector('[data-menu-delete]');
+				if (del2) {
+					del2.focus();
+				}
+				return;
+			}
+
+			const confirmDel = target.closest('[data-menu-delete-confirm]');
+			if (confirmDel) {
+				event.preventDefault();
+				this.deleteItem(confirmDel);
+			}
+		},
+
+		async deleteItem(confirmBtn) {
+			const wrap = confirmBtn.closest('[data-item]');
+			const menu = confirmBtn.closest('[data-menu]');
+			if (!wrap || !menu) {
+				return;
+			}
+			const id = wrap.getAttribute('data-item');
+			const cancelBtn = menu.querySelector('[data-menu-delete-cancel]');
+			const status = menu.querySelector('[data-menu-status]');
+			confirmBtn.disabled = true;
+			if (cancelBtn) {
+				cancelBtn.disabled = true;
+			}
+			confirmBtn.textContent = 'Deleting…';
+			if (status) {
+				status.textContent = '';
+			}
+			try {
+				await apiDelete('moments/' + id);
+				const parentList = wrap.parentElement;
+				wrap.remove();
+				this.reflectEmptied(parentList);
+			} catch (err) {
+				confirmBtn.disabled = false;
+				if (cancelBtn) {
+					cancelBtn.disabled = false;
+				}
+				confirmBtn.textContent = 'Delete';
+				if (status) {
+					status.textContent = 'Could not delete. ' + err.message;
+				}
+			}
+		},
+
+		// After a delete, keep the emptied region honest: hide an empty Drafts
+		// section, or show the empty state in the recent list.
+		reflectEmptied(list) {
+			if (!list || list.querySelector('[data-item]')) {
+				return;
+			}
+			if (list.hasAttribute('data-drafts-list')) {
+				const section = root.querySelector('[data-drafts-section]');
+				if (section) {
+					section.hidden = true;
+				}
+				this._hasDrafts = false;
+			} else if (list.hasAttribute('data-recent-list')) {
+				this.teardownObserver();
+				const sentinel = root.querySelector('[data-recent-sentinel]');
+				if (sentinel) {
+					sentinel.hidden = true;
+				}
+				const more = root.querySelector('[data-recent-more]');
+				if (more) {
+					more.hidden = true;
+				}
+				list.innerHTML = this._hasDrafts
+					? '<p class="moment-empty">Nothing published yet.</p>'
+					: '<p class="moment-empty">Nothing here yet. Create your first Moment.</p>';
 			}
 		},
 
@@ -487,16 +993,40 @@
 				: '';
 			const href = isDraft ? '#create' : item.permalink || '#home';
 			const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
+			const id = esc(String(item.id));
 			return `
-			<a class="moment-recent__item" href="${esc(href)}"${editAttr}>
-				${thumb}
-				<span class="moment-recent__body">
-					<span class="moment-recent__title">${esc(title)}</span>
-					<span class="moment-recent__meta">${draftChip}${esc(
-						TYPE_LABELS[item.type] || item.type || ''
-					)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
-				</span>
-			</a>`;
+			<div class="moment-recent__item-wrap" data-item="${id}">
+				<a class="moment-recent__item" href="${esc(href)}"${editAttr}>
+					${thumb}
+					<span class="moment-recent__body">
+						<span class="moment-recent__title">${esc(title)}</span>
+						<span class="moment-recent__meta">${draftChip}${esc(
+							TYPE_LABELS[item.type] || item.type || ''
+						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
+					</span>
+				</a>
+				<div class="moment-recent__actions" data-actions>
+					<button type="button" class="moment-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
+						title
+					)}">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+					</button>
+					<div class="moment-menu" data-menu role="menu" aria-label="Moment actions" hidden>
+						<div class="moment-menu__actions" data-menu-actions>
+							<button type="button" class="moment-menu__item" data-menu-edit role="menuitem">Edit</button>
+							<button type="button" class="moment-menu__item moment-menu__item--danger" data-menu-delete role="menuitem">Delete</button>
+						</div>
+						<div class="moment-menu__confirm" data-menu-confirm hidden>
+							<p class="moment-menu__confirmtext">Delete this Moment? It&rsquo;ll move to Trash.</p>
+							<div class="moment-menu__confirmactions">
+								<button type="button" class="moment-btn moment-btn--danger" data-menu-delete-confirm>Delete</button>
+								<button type="button" class="moment-btn moment-btn--secondary" data-menu-delete-cancel>Cancel</button>
+							</div>
+							<p class="moment-menu__status" data-menu-status aria-live="polite"></p>
+						</div>
+					</div>
+				</div>
+			</div>`;
 		},
 	};
 
@@ -1400,6 +1930,9 @@
 				}
 				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
 				this.bindShowMore(list);
+				// Reply interactions are delegated on the list so appended /
+				// re-rendered cards stay wired.
+				list.addEventListener('click', (event) => this.onReplyClick(event));
 			} catch (err) {
 				if (list && list.isConnected) {
 					list.innerHTML =
@@ -1414,6 +1947,7 @@
 			const text = toPlainText(item.comment_content);
 			const long = text.length > 140;
 			const author = item.comment_author || item.author || '';
+			const commentId = Number(item.comment_ID || item.comment_id || 0);
 			const metaParts = [];
 			if (author) {
 				metaParts.push(esc(author));
@@ -1424,8 +1958,11 @@
 			if (item.post_title) {
 				metaParts.push('on &ldquo;' + esc(item.post_title) + '&rdquo;');
 			}
+			// A reply targets a specific comment; only offer it when we have a
+			// comment id to reply to.
+			const replyId = 'moment-reply-' + commentId;
 			return `
-			<article class="moment-note-card">
+			<article class="moment-note-card"${commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''}>
 				<span class="moment-chip">${esc(item.source_label || 'Comment')}</span>
 				<p class="moment-note-card__text moment-clamp">${esc(text)}</p>
 				${
@@ -1449,7 +1986,26 @@
 							  )}" target="_blank" rel="noopener">&nearr; View on network</a>`
 							: ''
 					}
+					${
+						commentId
+							? `<button type="button" class="moment-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> Reply</button>`
+							: ''
+					}
 				</div>
+				${
+					commentId
+						? `<div class="moment-reply" id="${replyId}" data-reply-form hidden>
+						<label class="moment-visually-hidden" for="${replyId}-input">Your reply</label>
+						<textarea id="${replyId}-input" class="moment-textarea moment-reply__input" data-reply-input rows="2" placeholder="Write a reply&hellip;"></textarea>
+						<div class="moment-reply__actions">
+							<button type="button" class="moment-btn moment-btn--primary" data-reply-send>Send reply</button>
+							<button type="button" class="moment-btn moment-btn--text" data-reply-cancel>Cancel</button>
+						</div>
+						<p class="moment-reply__status" data-reply-status aria-live="polite"></p>
+					</div>
+					<p class="moment-note-card__replied" data-replied hidden>Reply sent.</p>`
+						: ''
+				}
 			</article>`;
 		},
 
@@ -1462,6 +2018,90 @@
 					button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 				});
 			});
+		},
+
+		// Collapse every open reply box (one open at a time).
+		closeAllReplies(list) {
+			list.querySelectorAll('[data-reply-form]').forEach((form) => {
+				form.hidden = true;
+			});
+			list.querySelectorAll('[data-reply-toggle]').forEach((toggle) => {
+				toggle.setAttribute('aria-expanded', 'false');
+			});
+		},
+
+		onReplyClick(event) {
+			const list = event.currentTarget;
+			const target = event.target;
+
+			const toggle = target.closest('[data-reply-toggle]');
+			if (toggle) {
+				const card = toggle.closest('.moment-note-card');
+				const form = card.querySelector('[data-reply-form]');
+				const wasOpen = form && !form.hidden;
+				this.closeAllReplies(list);
+				if (form && !wasOpen) {
+					form.hidden = false;
+					toggle.setAttribute('aria-expanded', 'true');
+					const input = form.querySelector('[data-reply-input]');
+					if (input) {
+						input.focus();
+					}
+				}
+				return;
+			}
+
+			const cancel = target.closest('[data-reply-cancel]');
+			if (cancel) {
+				this.closeAllReplies(list);
+				return;
+			}
+
+			const send = target.closest('[data-reply-send]');
+			if (send) {
+				this.submitReply(send);
+			}
+		},
+
+		async submitReply(sendBtn) {
+			const card = sendBtn.closest('.moment-note-card');
+			const form = card.querySelector('[data-reply-form]');
+			const input = form.querySelector('[data-reply-input]');
+			const status = form.querySelector('[data-reply-status]');
+			const cancelBtn = form.querySelector('[data-reply-cancel]');
+			const commentId = card.getAttribute('data-comment-id');
+			const content = (input.value || '').trim();
+			if (!content) {
+				status.textContent = 'Write a reply first.';
+				input.focus();
+				return;
+			}
+			sendBtn.disabled = true;
+			if (cancelBtn) {
+				cancelBtn.disabled = true;
+			}
+			sendBtn.textContent = 'Sending…';
+			status.textContent = '';
+			try {
+				await apiPost('notifications/' + commentId + '/reply', { content });
+				input.value = '';
+				form.hidden = true;
+				const toggle = card.querySelector('[data-reply-toggle]');
+				if (toggle) {
+					toggle.setAttribute('aria-expanded', 'false');
+				}
+				const replied = card.querySelector('[data-replied]');
+				if (replied) {
+					replied.hidden = false;
+				}
+			} catch (err) {
+				sendBtn.disabled = false;
+				if (cancelBtn) {
+					cancelBtn.disabled = false;
+				}
+				sendBtn.textContent = 'Send reply';
+				status.textContent = 'Reply failed. ' + err.message;
+			}
 		},
 	};
 
