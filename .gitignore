@@ -11,8 +11,12 @@ playwright-report/
 # OS noise
 .DS_Store
 
-# Machine-local Claude Code settings
+# Machine-local Claude Code state. Scoped to these paths rather than all of
+# .claude/ so shared config (settings.json, commands/) can still be committed —
+# a bare `.claude/` ignore could not be selectively un-ignored later. Agent
+# worktrees are nested git repos, so `git add -A` stages them as gitlinks.
 .claude/settings.local.json
+.claude/worktrees/
 
 # Generated hooks documentation site
 wp-hooks-docs/
