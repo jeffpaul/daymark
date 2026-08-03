@@ -3,7 +3,7 @@
 # paths are stripped from `git archive` output so anyone downloading the
 # tarball from the tags/releases page gets a clean plugin, not the build repo.
 #
-# NOTE: This governs `git archive` only. The wp.org-ready moment.zip is built
+# NOTE: This governs `git archive` only. The wp.org-ready daymark.zip is built
 # separately by `wp dist-archive` (see .github/workflows/release.yml), which
 # reads .distignore. Keep the two lists aligned when either changes.
 

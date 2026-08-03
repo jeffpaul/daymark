@@ -7,7 +7,7 @@ name: Release
 # the exact tree that would be committed to the wordpress.org SVN trunk.
 #
 # Guard: the tag must match the plugin's declared version everywhere —
-# moment.php header, MOMENT_VERSION, and readme.txt Stable tag — or the
+# daymark.php header, DAYMARK_VERSION, and readme.txt Stable tag — or the
 # release fails before anything is published.
 
 on:
@@ -30,8 +30,8 @@ jobs:
       - name: Verify tag matches declared plugin version
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
-          header=$(sed -n 's/^ \* Version: //p' moment.php)
-          constant=$(sed -n "s/^define( 'MOMENT_VERSION', '\(.*\)' );$/\1/p" moment.php)
+          header=$(sed -n 's/^ \* Version: //p' daymark.php)
+          constant=$(sed -n "s/^define( 'DAYMARK_VERSION', '\(.*\)' );$/\1/p" daymark.php)
           stable=$(sed -n 's/^Stable tag: //p' readme.txt)
           echo "tag=$tag_version header=$header constant=$constant stable=$stable"
           for v in "$header" "$constant" "$stable"; do
@@ -58,15 +58,15 @@ jobs:
           # Pinned: v3.2+ requires wp-cli ^2.13, which is not yet released —
           # v3.1.0 works with the wp-cli 2.12 that setup-php installs.
           wp package install wp-cli/dist-archive-command:v3.1.0
-          wp dist-archive . "$PWD/moment.zip"
-          unzip -l moment.zip
+          wp dist-archive . "$PWD/daymark.zip"
+          unzip -l daymark.zip
 
       - name: Guard the zip contents
         run: |
-          listing=$(unzip -l moment.zip)
-          echo "$listing" | grep -q 'moment/readme.txt' || { echo '::error::readme.txt missing from zip'; exit 1; }
-          echo "$listing" | grep -q 'moment/moment.php' || { echo '::error::moment.php missing from zip'; exit 1; }
-          for banned in 'moment/tests/' 'moment/docs/' 'moment/README.md' 'moment/CHANGELOG.md' 'moment/CLAUDE.md' 'moment/node_modules/' 'moment/vendor/' 'moment/moment-connector-'; do
+          listing=$(unzip -l daymark.zip)
+          echo "$listing" | grep -q 'daymark/readme.txt' || { echo '::error::readme.txt missing from zip'; exit 1; }
+          echo "$listing" | grep -q 'daymark/daymark.php' || { echo '::error::daymark.php missing from zip'; exit 1; }
+          for banned in 'daymark/tests/' 'daymark/docs/' 'daymark/README.md' 'daymark/CHANGELOG.md' 'daymark/CLAUDE.md' 'daymark/node_modules/' 'daymark/vendor/' 'daymark/daymark-connector-'; do
             if echo "$listing" | grep -q "$banned"; then
               echo "::error::dev file leaked into zip: $banned"
               exit 1
@@ -74,7 +74,7 @@ jobs:
           done
           # Every file in the zip must be git-tracked — catches untracked
           # strays (build caches, local scratch files) .distignore missed.
-          unzip -Z1 moment.zip | sed -n 's|^moment/||p' | grep -v '/$' | grep . | while read -r f; do
+          unzip -Z1 daymark.zip | sed -n 's|^daymark/||p' | grep -v '/$' | grep . | while read -r f; do
             git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "::error::untracked file in zip: $f"; exit 1; }
           done
 
@@ -138,15 +138,15 @@ jobs:
           # An existing release was drafted by hand — attach the zip but leave
           # whatever notes were written there alone.
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" moment.zip --clobber --repo "$GITHUB_REPOSITORY"
+            gh release upload "$GITHUB_REF_NAME" daymark.zip --clobber --repo "$GITHUB_REPOSITORY"
           elif [ -n "$NOTES_FILE" ]; then
-            gh release create "$GITHUB_REF_NAME" moment.zip \
+            gh release create "$GITHUB_REF_NAME" daymark.zip \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Moment ${GITHUB_REF_NAME#v}" \
+              --title "Daymark ${GITHUB_REF_NAME#v}" \
               --notes-file "$NOTES_FILE"
           else
-            gh release create "$GITHUB_REF_NAME" moment.zip \
+            gh release create "$GITHUB_REF_NAME" daymark.zip \
               --repo "$GITHUB_REPOSITORY" \
-              --title "Moment ${GITHUB_REF_NAME#v}" \
+              --title "Daymark ${GITHUB_REF_NAME#v}" \
               --generate-notes
           fi

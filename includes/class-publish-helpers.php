@@ -2,14 +2,14 @@
 /**
  * Detection of third-party publishing plugins.
  *
- * A Moment is a standard post, so any active "publicize"-style plugin
+ * A Mark is a standard post, so any active "publicize"-style plugin
  * (Jetpack Social, Share on Mastodon, XPoster, …) already syndicates
- * Moments on publish through its own hooks — Moment neither drives nor
+ * Marks on publish through its own hooks — Daymark neither drives nor
  * blocks them. This class only *detects* those plugins so the publish
- * screen can tell the user their Moment will also go out that way. It
+ * screen can tell the user their Mark will also go out that way. It
  * does not call them, configure them, or change their behavior.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Detects popular social-publishing plugins for awareness-only surfacing.
  */
-class Moment_Publish_Helpers {
+class Daymark_Publish_Helpers {
 
 	/**
 	 * Known publishing-helper plugins and how to detect each.
@@ -75,18 +75,18 @@ class Moment_Publish_Helpers {
 	);
 
 	/**
-	 * Post meta recording which controllable helpers a Moment opted into.
+	 * Post meta recording which controllable helpers a Mark opted into.
 	 */
-	const CONTROL_META = '_moment_publish_helpers';
+	const CONTROL_META = '_daymark_publish_helpers';
 
 	/**
-	 * Controllable adapters: active publishing plugins Moment can drive
-	 * per-Moment through the plugin's OWN public control filter (never by
+	 * Controllable adapters: active publishing plugins Daymark can drive
+	 * per-Mark through the plugin's OWN public control filter (never by
 	 * writing the plugin's private meta). Only these get an in-app toggle;
 	 * other detected plugins stay awareness-only.
 	 *
 	 * Each `bind` registers the plugin's control filter with a callback
-	 * that defers to Moment's per-post selection for Moment posts and
+	 * that defers to Daymark's per-post selection for Mark posts and
 	 * leaves every other post's decision untouched.
 	 *
 	 * @return array<string, array<string, mixed>>
@@ -98,7 +98,7 @@ class Moment_Publish_Helpers {
 				'slugs'     => array( 'wordpress-atmosphere' ),
 				// Only a meaningful toggle when ATmosphere is connected AND
 				// actually auto-publishing; in connection-only mode it posts
-				// nothing, so there is nothing to gate per Moment.
+				// nothing, so there is nothing to gate per Mark.
 				'available' => static function () {
 					return function_exists( 'Atmosphere\\is_connected' )
 						&& function_exists( 'Atmosphere\\is_auto_publish_enabled' )
@@ -107,7 +107,7 @@ class Moment_Publish_Helpers {
 				},
 				// ATmosphere exposes no per-post filter; its documented
 				// per-post control is the `atmosphere_disabled` opt-out meta.
-				// Translate the Moment's toggle into that meta just before
+				// Translate the Mark's toggle into that meta just before
 				// ATmosphere auto-publishes on the publish transition.
 				'bind'      => static function () {
 					add_action(
@@ -116,13 +116,13 @@ class Moment_Publish_Helpers {
 							if ( 'publish' !== $new_status || ! $post instanceof WP_Post ) {
 								return;
 							}
-							if ( '1' !== (string) get_post_meta( $post->ID, '_moment_is_moment', true ) ) {
+							if ( '1' !== (string) get_post_meta( $post->ID, '_daymark_is_mark', true ) ) {
 								return;
 							}
 
 							$selection = json_decode( (string) get_post_meta( $post->ID, self::CONTROL_META, true ), true );
 
-							// No Moment selection → leave ATmosphere's own behavior alone.
+							// No Daymark selection → leave ATmosphere's own behavior alone.
 							if ( ! is_array( $selection ) ) {
 								return;
 							}
@@ -176,7 +176,7 @@ class Moment_Publish_Helpers {
 		 *
 		 * @param array<string, array<string, mixed>> $adapters Adapter map.
 		 */
-		$adapters = apply_filters( 'moment_publish_helper_adapters', $adapters );
+		$adapters = apply_filters( 'daymark_publish_helper_adapters', $adapters );
 
 		return is_array( $adapters ) ? $adapters : array();
 	}
@@ -229,8 +229,8 @@ class Moment_Publish_Helpers {
 
 	/**
 	 * Register the control filters for every active controllable helper.
-	 * Called on init; the filters gate on per-post Moment selection, so
-	 * they never affect non-Moment posts.
+	 * Called on init; the filters gate on per-post Daymark selection, so
+	 * they never affect non-Mark posts.
 	 *
 	 * @return void
 	 */
@@ -245,7 +245,7 @@ class Moment_Publish_Helpers {
 	}
 
 	/**
-	 * The share decision for one helper on one post: governs only Moment
+	 * The share decision for one helper on one post: governs only Daymark
 	 * posts that recorded a selection, and returns the plugin's own
 	 * fallback for everything else.
 	 *
@@ -255,7 +255,7 @@ class Moment_Publish_Helpers {
 	 * @return bool
 	 */
 	private static function decide( int $post_id, string $id, bool $fallback ): bool {
-		if ( '1' !== (string) get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( '1' !== (string) get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return $fallback;
 		}
 
@@ -288,7 +288,7 @@ class Moment_Publish_Helpers {
 
 	/**
 	 * The detectable plugin definitions, filterable so other publishing
-	 * plugins can make themselves known to Moment's awareness note.
+	 * plugins can make themselves known to Daymark's awareness note.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
@@ -300,7 +300,7 @@ class Moment_Publish_Helpers {
 		 *        where a definition may carry `label`, `slugs`, `classes`,
 		 *        `functions`, and `constants`.
 		 */
-		$defs = apply_filters( 'moment_publish_helper_plugins', self::PLUGINS );
+		$defs = apply_filters( 'daymark_publish_helper_plugins', self::PLUGINS );
 
 		return is_array( $defs ) ? $defs : array();
 	}

@@ -10,7 +10,7 @@
  * Contract: never throws, never blocks publishing. Any failure on the real
  * path falls back to the mock path silently (logged only under WP_DEBUG).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -20,7 +20,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Optional AI suggestion adapter with a deterministic mock fallback.
  */
-class Moment_AI_Assist {
+class Daymark_AI_Assist {
 
 	/**
 	 * Provider label reported when suggestions are mocked.
@@ -86,7 +86,7 @@ class Moment_AI_Assist {
 	}
 
 	/**
-	 * Suggest a caption for a Moment draft.
+	 * Suggest a caption for a Mark draft.
 	 *
 	 * @param array $context Context: text, media_count, media_types, filename.
 	 * @return string Suggested caption (plain text).
@@ -110,13 +110,13 @@ class Moment_AI_Assist {
 	}
 
 	/**
-	 * Suggest a short title for a Moment draft.
+	 * Suggest a short title for a Mark draft.
 	 *
 	 * Mirrors suggest_caption(): the real path asks the WP 7.0 AI Client for a
 	 * short, plain-text title; any failure or a missing provider falls back to
 	 * the deterministic mock_title(). Optional and non-blocking — never throws,
 	 * never blocks publishing. Titles are only surfaced in the composer for the
-	 * types whose Moment_Publisher::title_field_policy() is 'optional'.
+	 * types whose Daymark_Publisher::title_field_policy() is 'optional'.
 	 *
 	 * @since 0.5.0
 	 *
@@ -262,7 +262,7 @@ class Moment_AI_Assist {
 	}
 
 	/**
-	 * Suggest tags for a Moment draft.
+	 * Suggest tags for a Mark draft.
 	 *
 	 * @param array $context Context: text, media_count, media_types, filename.
 	 * @return string[] Suggested tag slugs/phrases (max 5).
@@ -290,7 +290,7 @@ class Moment_AI_Assist {
 	}
 
 	/**
-	 * Get the full suggestion bundle for a Moment draft.
+	 * Get the full suggestion bundle for a Mark draft.
 	 *
 	 * Backward compatible with the Phase 2 call shape used by the REST
 	 * controller: get_suggestions( $caption_string, $type ). A string first
@@ -301,7 +301,7 @@ class Moment_AI_Assist {
 	 *
 	 * @param array|string $context Context array (text, media_count, media_types,
 	 *                              filename) or a plain caption string.
-	 * @param string       $type    Primary Moment type (image|video|audio|note|gallery|mixed).
+	 * @param string       $type    Primary Mark type (image|video|audio|note|gallery|mixed).
 	 * @return array{caption: string, alt_text: string, tags: string[], is_mocked: bool, provider_label: string}
 	 */
 	public function get_suggestions( $context, string $type = '' ): array {
@@ -458,7 +458,7 @@ class Moment_AI_Assist {
 			'required'             => array( 'caption', 'alt_text', 'tags' ),
 		);
 
-		$prompt = 'Suggest a caption, alt text, and 3-5 topic tags for this personal blog moment. '
+		$prompt = 'Suggest a caption, alt text, and 3-5 topic tags for this personal blog daymark. '
 			. $this->describe_context( $context )
 			. ' Respond as JSON with keys "caption" (max 200 chars), "alt_text" (max 125 chars, empty string if no media), and "tags" (array of lowercase strings).';
 
@@ -495,7 +495,7 @@ class Moment_AI_Assist {
 	 * Normalize a context array (or legacy caption string) into a known shape.
 	 *
 	 * @param array|string $context Context array or plain caption string.
-	 * @param string       $type    Primary Moment type hint.
+	 * @param string       $type    Primary Mark type hint.
 	 * @return array{text: string, media_count: int, media_types: string[], filename: string, type: string}
 	 */
 	private function normalize_context( $context, string $type = '' ): array {
@@ -539,7 +539,7 @@ class Moment_AI_Assist {
 	 * @return string
 	 */
 	private function describe_context( array $context ): string {
-		$parts = array( 'Moment type: ' . $context['type'] . '.' );
+		$parts = array( 'Mark type: ' . $context['type'] . '.' );
 
 		if ( '' !== $context['text'] ) {
 			$parts[] = 'Draft text: "' . $context['text'] . '".';
@@ -567,7 +567,7 @@ class Moment_AI_Assist {
 	 * @return string
 	 */
 	private function build_caption_prompt( array $context ): string {
-		return 'Suggest one short caption for this personal blog moment. ' . $this->describe_context( $context );
+		return 'Suggest one short caption for this personal blog daymark. ' . $this->describe_context( $context );
 	}
 
 	/**
@@ -579,7 +579,7 @@ class Moment_AI_Assist {
 	 * @return string
 	 */
 	private function build_title_prompt( array $context ): string {
-		return 'Suggest one short title (at most 60 characters) for this personal blog moment. ' . $this->describe_context( $context );
+		return 'Suggest one short title (at most 60 characters) for this personal blog daymark. ' . $this->describe_context( $context );
 	}
 
 	/**
@@ -599,7 +599,7 @@ class Moment_AI_Assist {
 	 * @return string
 	 */
 	private function build_tags_prompt( array $context ): string {
-		return 'Suggest 3 to 5 topic tags for this personal blog moment. ' . $this->describe_context( $context );
+		return 'Suggest 3 to 5 topic tags for this personal blog daymark. ' . $this->describe_context( $context );
 	}
 
 	/**
@@ -617,12 +617,12 @@ class Moment_AI_Assist {
 		}
 
 		$captions = array(
-			'image'   => 'A quiet moment, captured.',
-			'gallery' => 'A few moments, gathered together.',
-			'video'   => 'A moment in motion.',
-			'audio'   => 'A moment in sound.',
+			'image'   => 'A quiet scene, captured.',
+			'gallery' => 'A few scenes, gathered together.',
+			'video'   => 'A scene in motion.',
+			'audio'   => 'A scene in sound.',
 			'note'    => 'A small note from today.',
-			'mixed'   => 'A mixed-media moment.',
+			'mixed'   => 'A mixed-media mark.',
 		);
 
 		return $captions[ $context['type'] ] ?? $captions['note'];
@@ -647,15 +647,15 @@ class Moment_AI_Assist {
 		}
 
 		$titles = array(
-			'image'   => 'A captured moment',
-			'gallery' => 'A gathered moment',
-			'video'   => 'A moment in motion',
-			'audio'   => 'A moment in sound',
+			'image'   => 'A captured scene',
+			'gallery' => 'A gathered set',
+			'video'   => 'A scene in motion',
+			'audio'   => 'A scene in sound',
 			'note'    => 'A small note',
-			'mixed'   => 'A mixed-media moment',
+			'mixed'   => 'A mixed-media mark',
 		);
 
-		return $titles[ $context['type'] ] ?? 'A moment';
+		return $titles[ $context['type'] ] ?? 'A mark';
 	}
 
 	/**
@@ -689,7 +689,7 @@ class Moment_AI_Assist {
 		// Fallback when no AI provider is configured. The real path is
 		// wp_ai_client_prompt( $this->build_tags_prompt( $context ) )->generate_text()
 		// in suggest_tags().
-		return $this->sanitize_tags( array( 'moment', $context['type'], 'personal' ) );
+		return $this->sanitize_tags( array( 'daymark', $context['type'], 'personal' ) );
 	}
 
 	/**
@@ -726,7 +726,7 @@ class Moment_AI_Assist {
 	private function log_debug( string $message ): void {
 		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug-only fallback logging.
-			error_log( '[Moment AI Assist] ' . $message );
+			error_log( '[Daymark AI Assist] ' . $message );
 		}
 	}
 }

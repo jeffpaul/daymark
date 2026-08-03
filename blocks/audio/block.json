@@ -1,13 +1,13 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "moment/audio",
-	"title": "Moment Audio",
+	"name": "daymark/audio",
+	"title": "Daymark Audio",
 	"category": "widgets",
 	"icon": "format-audio",
-	"description": "Displays published audio Moments.",
-	"keywords": [ "moment", "audio" ],
-	"textdomain": "moment",
+	"description": "Displays published audio Marks.",
+	"keywords": [ "daymark", "audio" ],
+	"textdomain": "daymark",
 	"attributes": {
 		"count": {
 			"type": "integer",

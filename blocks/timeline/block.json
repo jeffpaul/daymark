@@ -1,13 +1,13 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "moment/timeline",
-	"title": "Moment Timeline",
+	"name": "daymark/timeline",
+	"title": "Daymark Timeline",
 	"category": "widgets",
 	"icon": "list-view",
-	"description": "Displays all published Moments in reverse-chronological order.",
-	"keywords": [ "moment", "timeline", "feed" ],
-	"textdomain": "moment",
+	"description": "Displays all published Marks in reverse-chronological order.",
+	"keywords": [ "daymark", "timeline", "feed" ],
+	"textdomain": "daymark",
 	"attributes": {
 		"count": {
 			"type": "integer",

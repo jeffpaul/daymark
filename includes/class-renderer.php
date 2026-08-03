@@ -1,12 +1,12 @@
 <?php
 /**
- * Moment view renderer.
+ * Daymark view renderer.
  *
  * Produces escaped HTML for the timeline, images, videos, audio, and
- * notes views. Shared by the moment_* shortcodes and moment/* dynamic
+ * notes views. Shared by the daymark_* shortcodes and daymark/* dynamic
  * blocks so both surfaces render identical markup.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,23 +14,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders Moment feed views. All output is escaped at build time.
+ * Renders Daymark feed views. All output is escaped at build time.
  */
-class Moment_Renderer {
+class Daymark_Renderer {
 
 	/**
-	 * Default number of Moments per view.
+	 * Default number of Marks per view.
 	 */
 	private const DEFAULT_COUNT = 10;
 
 	/**
-	 * Hard cap on Moments per view.
+	 * Hard cap on Marks per view.
 	 */
 	private const MAX_COUNT = 50;
 
 	/**
-	 * Map of view => _moment_primary_type values included in that view.
-	 * An empty array means no type filter (all Moments).
+	 * Map of view => _daymark_primary_type values included in that view.
+	 * An empty array means no type filter (all Marks).
 	 *
 	 * @var array<string, array<int, string>>
 	 */
@@ -45,10 +45,10 @@ class Moment_Renderer {
 	/**
 	 * Style handle for the view stylesheet.
 	 */
-	private const STYLE_HANDLE = 'moment-views';
+	private const STYLE_HANDLE = 'daymark-views';
 
 	/**
-	 * Render a Moment view.
+	 * Render a Mark view.
 	 *
 	 * @param string               $view One of timeline|images|videos|audio|notes.
 	 * @param array<string, mixed> $args Optional view arguments. Supports 'count'.
@@ -66,16 +66,16 @@ class Moment_Renderer {
 
 		$query = new WP_Query( $this->build_query_args( $view, $count ) );
 
-		$html = '<div class="moment-view moment-view--' . esc_attr( $view ) . '">';
+		$html = '<div class="daymark-view daymark-view--' . esc_attr( $view ) . '">';
 
 		if ( ! $query->have_posts() ) {
-			$html .= '<p class="moment-view-empty">' . esc_html( $this->empty_message( $view ) ) . '</p>';
+			$html .= '<p class="daymark-view-empty">' . esc_html( $this->empty_message( $view ) ) . '</p>';
 			$html .= '</div>';
 
 			return $html;
 		}
 
-		$html .= '<div class="moment-view-list">';
+		$html .= '<div class="daymark-view-list">';
 
 		while ( $query->have_posts() ) {
 			$query->the_post();
@@ -99,7 +99,7 @@ class Moment_Renderer {
 	private function build_query_args( string $view, int $count ): array {
 		$meta_query = array(
 			array(
-				'key'   => '_moment_is_moment',
+				'key'   => '_daymark_is_mark',
 				'value' => '1',
 			),
 		);
@@ -108,7 +108,7 @@ class Moment_Renderer {
 
 		if ( ! empty( $types ) ) {
 			$meta_query[] = array(
-				'key'     => '_moment_primary_type',
+				'key'     => '_daymark_primary_type',
 				'value'   => $types,
 				'compare' => 'IN',
 			);
@@ -122,39 +122,39 @@ class Moment_Renderer {
 			'order'               => 'DESC',
 			'ignore_sticky_posts' => true,
 			'no_found_rows'       => true,
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Moments are identified by meta by design (standard post type, no CPT).
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Marks are identified by meta by design (standard post type, no CPT).
 			'meta_query'          => $meta_query,
 		);
 	}
 
 	/**
-	 * Render a single Moment item.
+	 * Render a single Mark item.
 	 *
-	 * @param WP_Post $post The Moment post.
+	 * @param WP_Post $post The Mark post.
 	 * @return string Escaped HTML.
 	 */
 	private function render_item( WP_Post $post ): string {
 		$permalink = get_permalink( $post );
-		$type      = get_post_meta( $post->ID, '_moment_primary_type', true );
+		$type      = get_post_meta( $post->ID, '_daymark_primary_type', true );
 		$type      = is_string( $type ) && '' !== $type ? sanitize_key( $type ) : 'note';
 		$caption   = get_the_excerpt( $post );
 		$title     = get_the_title( $post );
 		$thumb     = $this->item_thumbnail( $post );
 
-		$html = '<article class="moment-item moment-item--' . esc_attr( $type ) . '">';
+		$html = '<article class="daymark-item daymark-item--' . esc_attr( $type ) . '">';
 
 		if ( '' !== $thumb ) {
-			$html .= '<a class="moment-item-media" href="' . esc_url( $permalink ) . '" aria-label="' . esc_attr( $title ) . '">' . $thumb . '</a>';
+			$html .= '<a class="daymark-item-media" href="' . esc_url( $permalink ) . '" aria-label="' . esc_attr( $title ) . '">' . $thumb . '</a>';
 		}
 
-		$html .= '<div class="moment-item-body">';
-		$html .= '<span class="moment-badge moment-badge--' . esc_attr( $type ) . '">' . esc_html( $this->type_label( $type ) ) . '</span>';
-		$html .= '<a class="moment-item-date" href="' . esc_url( $permalink ) . '">';
+		$html .= '<div class="daymark-item-body">';
+		$html .= '<span class="daymark-badge daymark-badge--' . esc_attr( $type ) . '">' . esc_html( $this->type_label( $type ) ) . '</span>';
+		$html .= '<a class="daymark-item-date" href="' . esc_url( $permalink ) . '">';
 		$html .= '<time datetime="' . esc_attr( get_the_date( 'c', $post ) ) . '">' . esc_html( $this->human_date( $post ) ) . '</time>';
 		$html .= '</a>';
 
 		if ( is_string( $caption ) && '' !== $caption ) {
-			$html .= '<p class="moment-item-caption">' . esc_html( $caption ) . '</p>';
+			$html .= '<p class="daymark-item-caption">' . esc_html( $caption ) . '</p>';
 		}
 
 		$html .= '</div></article>';
@@ -163,17 +163,17 @@ class Moment_Renderer {
 	}
 
 	/**
-	 * Get the thumbnail markup for a Moment: featured image first,
-	 * then the first attachment from _moment_media_ids if it is an image.
+	 * Get the thumbnail markup for a Mark: featured image first,
+	 * then the first attachment from _daymark_media_ids if it is an image.
 	 *
-	 * @param WP_Post $post The Moment post.
+	 * @param WP_Post $post The Mark post.
 	 * @return string Escaped image HTML or empty string.
 	 */
 	private function item_thumbnail( WP_Post $post ): string {
 		$attachment_id = (int) get_post_thumbnail_id( $post );
 
 		if ( 0 === $attachment_id ) {
-			$raw       = get_post_meta( $post->ID, '_moment_media_ids', true );
+			$raw       = get_post_meta( $post->ID, '_daymark_media_ids', true );
 			$media_ids = json_decode( is_string( $raw ) ? $raw : '', true );
 
 			if ( is_array( $media_ids ) && ! empty( $media_ids ) ) {
@@ -190,7 +190,7 @@ class Moment_Renderer {
 			'medium',
 			false,
 			array(
-				'class'   => 'moment-item-thumb',
+				'class'   => 'daymark-item-thumb',
 				'loading' => 'lazy',
 			)
 		);
@@ -199,7 +199,7 @@ class Moment_Renderer {
 	/**
 	 * Human-readable date: relative within the last week, absolute after.
 	 *
-	 * @param WP_Post $post The Moment post.
+	 * @param WP_Post $post The Mark post.
 	 * @return string
 	 */
 	private function human_date( WP_Post $post ): string {
@@ -208,29 +208,29 @@ class Moment_Renderer {
 
 		if ( $timestamp > 0 && ( $now - $timestamp ) < WEEK_IN_SECONDS && $timestamp <= $now ) {
 			/* translators: %s: human-readable time difference, e.g. "3 hours". */
-			return sprintf( __( '%s ago', 'moment' ), human_time_diff( $timestamp, $now ) );
+			return sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, $now ) );
 		}
 
 		return (string) get_the_date( '', $post );
 	}
 
 	/**
-	 * Translated badge label for a Moment type.
+	 * Translated badge label for a Mark type.
 	 *
-	 * @param string $type Sanitized _moment_primary_type value.
+	 * @param string $type Sanitized _daymark_primary_type value.
 	 * @return string
 	 */
 	private function type_label( string $type ): string {
 		$labels = array(
-			'image'   => __( 'Image', 'moment' ),
-			'video'   => __( 'Video', 'moment' ),
-			'audio'   => __( 'Audio', 'moment' ),
-			'note'    => __( 'Note', 'moment' ),
-			'gallery' => __( 'Gallery', 'moment' ),
-			'mixed'   => __( 'Mixed', 'moment' ),
+			'image'   => __( 'Image', 'daymark' ),
+			'video'   => __( 'Video', 'daymark' ),
+			'audio'   => __( 'Audio', 'daymark' ),
+			'note'    => __( 'Note', 'daymark' ),
+			'gallery' => __( 'Gallery', 'daymark' ),
+			'mixed'   => __( 'Mixed', 'daymark' ),
 		);
 
-		return $labels[ $type ] ?? __( 'Moment', 'moment' );
+		return $labels[ $type ] ?? __( 'Mark', 'daymark' );
 	}
 
 	/**
@@ -241,11 +241,11 @@ class Moment_Renderer {
 	 */
 	private function empty_message( string $view ): string {
 		$messages = array(
-			'timeline' => __( 'No Moments yet. Publish your first Moment and it will appear here.', 'moment' ),
-			'images'   => __( 'No image Moments yet. Share a photo and it will appear here.', 'moment' ),
-			'videos'   => __( 'No video Moments yet. Share a video and it will appear here.', 'moment' ),
-			'audio'    => __( 'No audio Moments yet. Share audio and it will appear here.', 'moment' ),
-			'notes'    => __( 'No note Moments yet. Write a quick note and it will appear here.', 'moment' ),
+			'timeline' => __( 'No Marks yet. Publish your first Mark and it will appear here.', 'daymark' ),
+			'images'   => __( 'No image Marks yet. Share a photo and it will appear here.', 'daymark' ),
+			'videos'   => __( 'No video Marks yet. Share a video and it will appear here.', 'daymark' ),
+			'audio'    => __( 'No audio Marks yet. Share audio and it will appear here.', 'daymark' ),
+			'notes'    => __( 'No note Marks yet. Write a quick note and it will appear here.', 'daymark' ),
 		);
 
 		return $messages[ $view ] ?? $messages['timeline'];
@@ -264,9 +264,9 @@ class Moment_Renderer {
 
 		wp_enqueue_style(
 			self::STYLE_HANDLE,
-			MOMENT_PLUGIN_URL . 'assets/views.css',
+			DAYMARK_PLUGIN_URL . 'assets/views.css',
 			array(),
-			MOMENT_VERSION
+			DAYMARK_VERSION
 		);
 	}
 }

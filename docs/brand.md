@@ -1,6 +1,6 @@
-# Moment brand colors
+# Daymark brand colors
 
-The Moment brand palette is a range of purples:
+The Daymark brand palette is a range of purples:
 
 | Token | Value | Use |
 |---|---|---|
@@ -9,6 +9,6 @@ The Moment brand palette is a range of purples:
 | Light purple | `#D7A7FF` | Tints, highlights, chips, subtle backgrounds |
 | Transparent purple | `rgba(122, 0, 223, 0.12)` | Washes, focus rings, selected states |
 
-The app shell applies these purples throughout via the `--moment-accent*`
+The app shell applies these purples throughout via the `--daymark-accent*`
 custom properties in `assets/app.css`; the manifest theme color and app icon
 use the same palette.

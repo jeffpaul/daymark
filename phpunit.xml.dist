@@ -10,7 +10,7 @@
     convertWarningsToExceptions="true"
 >
     <testsuites>
-        <testsuite name="moment">
+        <testsuite name="daymark">
             <directory prefix="test-" suffix=".php">./tests/</directory>
         </testsuite>
     </testsuites>

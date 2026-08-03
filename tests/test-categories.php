@@ -3,16 +3,16 @@
  * Per-type category filing and remembered defaults.
  *
  * Categories are the site-filing counterpart to destinations: chosen (or
- * remembered) per Moment type, editable per publish, and remembered on
+ * remembered) per Mark type, editable per publish, and remembered on
  * publish. Unlike post formats there is no built-in map — categories are a
  * per-site taxonomy — so a type never filed before falls back to the site's
  * default category.
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
- * Category assignment + moment_category_prefs memory.
+ * Category assignment + daymark_category_prefs memory.
  */
 class Test_Categories extends WP_UnitTestCase {
 
@@ -39,7 +39,7 @@ class Test_Categories extends WP_UnitTestCase {
 
 	/** No remembered default until a type has been filed. */
 	public function test_effective_categories_empty_by_default() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$this->assertSame( array(), $publisher->get_effective_categories( 'image' ) );
 	}
@@ -47,7 +47,7 @@ class Test_Categories extends WP_UnitTestCase {
 	/** An explicit selection is assigned to the post and remembered per type. */
 	public function test_publish_assigns_and_remembers_categories() {
 		$photos    = $this->make_category( 'Photos' );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -61,10 +61,10 @@ class Test_Categories extends WP_UnitTestCase {
 		$this->assertSame( array( $photos ), $publisher->get_effective_categories( 'image' ) );
 	}
 
-	/** The remembered default is per Moment type — image does not leak to note. */
+	/** The remembered default is per Mark type — image does not leak to note. */
 	public function test_remembered_default_is_per_type() {
 		$photos    = $this->make_category( 'Photos' );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$publisher->publish(
 			array(
@@ -81,7 +81,7 @@ class Test_Categories extends WP_UnitTestCase {
 	/** A later same-type publish with no selection inherits the remembered default. */
 	public function test_next_publish_inherits_remembered_default() {
 		$photos    = $this->make_category( 'Photos' );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$publisher->publish(
 			array(
@@ -106,7 +106,7 @@ class Test_Categories extends WP_UnitTestCase {
 	public function test_nonexistent_terms_are_dropped() {
 		$photos    = $this->make_category( 'Photos' );
 		$tag        = (int) self::factory()->tag->create( array( 'name' => 'not-a-category' ) );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -121,7 +121,7 @@ class Test_Categories extends WP_UnitTestCase {
 
 	/** An explicit empty selection falls back to the site default and is remembered as "none". */
 	public function test_explicit_empty_selection_uses_default_category() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 		$default   = (int) get_option( 'default_category' );
 
 		$post_id = (int) $publisher->publish(
@@ -134,16 +134,16 @@ class Test_Categories extends WP_UnitTestCase {
 
 		$this->assertSame( array( $default ), $this->category_ids( $post_id ) );
 		// Remembered as an explicit empty preference (distinct from "never set").
-		$prefs = get_user_meta( $this->author, 'moment_category_prefs', true );
+		$prefs = get_user_meta( $this->author, 'daymark_category_prefs', true );
 		$this->assertArrayHasKey( 'note', $prefs );
 		$this->assertSame( array(), $prefs['note'] );
 	}
 
-	/** Editing a Moment replaces its categories and updates the remembered default. */
+	/** Editing a Mark replaces its categories and updates the remembered default. */
 	public function test_update_replaces_categories() {
 		$photos    = $this->make_category( 'Photos' );
 		$travel    = $this->make_category( 'Travel' );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -166,11 +166,11 @@ class Test_Categories extends WP_UnitTestCase {
 		$this->assertSame( array( $travel ), $publisher->get_effective_categories( 'image' ) );
 	}
 
-	/** REST create accepts categories[] and files the Moment accordingly. */
+	/** REST create accepts categories[] and files the Mark accordingly. */
 	public function test_rest_create_accepts_categories() {
 		$photos = $this->make_category( 'Photos' );
 
-		$request = new WP_REST_Request( 'POST', '/moment/v1/moments' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$request->set_param( 'caption', 'Via REST' );
 		$request->set_param( 'primary_type', 'image' );
@@ -182,10 +182,10 @@ class Test_Categories extends WP_UnitTestCase {
 		$this->assertSame( array( $photos ), $this->category_ids( $response->get_data()['id'] ) );
 	}
 
-	/** GET /moments/{id} returns the current categories for the composer to prefill. */
-	public function test_get_moment_returns_categories() {
+	/** GET /marks/{id} returns the current categories for the composer to prefill. */
+	public function test_get_daymark_returns_categories() {
 		$photos    = $this->make_category( 'Photos' );
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -196,7 +196,7 @@ class Test_Categories extends WP_UnitTestCase {
 			)
 		);
 
-		$request = new WP_REST_Request( 'GET', "/moment/v1/moments/{$post_id}" );
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 
 		$this->assertSame( array( $photos ), rest_do_request( $request )->get_data()['categories'] );

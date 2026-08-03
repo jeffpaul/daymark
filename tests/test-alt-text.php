@@ -3,7 +3,7 @@
  * Per-image alt text: positional on new uploads, ID-mapped on edit, and
  * the vision AI suggestion endpoint (mock fallback without a provider).
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
@@ -31,7 +31,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 	 * @return string Temp path.
 	 */
 	private function temp_png(): string {
-		$tmp = wp_tempnam( 'moment-alt-' ) . '.png';
+		$tmp = wp_tempnam( 'daymark-alt-' ) . '.png';
 		copy( $this->fixture, $tmp );
 
 		return $tmp;
@@ -74,12 +74,12 @@ class Test_Alt_Text extends WP_UnitTestCase {
 	}
 
 	private function media_ids_of( int $post_id ): array {
-		return array_map( 'intval', (array) json_decode( (string) get_post_meta( $post_id, '_moment_media_ids', true ), true ) );
+		return array_map( 'intval', (array) json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true ) );
 	}
 
 	/** Positional alt maps each entry to the matching uploaded image. */
 	public function test_positional_alt_on_publish() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -98,7 +98,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** An empty positional entry leaves that image's alt untouched. */
 	public function test_positional_alt_skips_empty_entries() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -115,7 +115,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** The legacy single alt_text still describes the first image alone. */
 	public function test_legacy_single_alt_text_still_works() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -129,9 +129,9 @@ class Test_Alt_Text extends WP_UnitTestCase {
 		$this->assertSame( 'Legacy description', $this->alt_of( $media[0] ) );
 	}
 
-	/** Editing a Moment updates alt on already-attached images by ID. */
+	/** Editing a Mark updates alt on already-attached images by ID. */
 	public function test_existing_alt_map_on_update() {
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -159,9 +159,9 @@ class Test_Alt_Text extends WP_UnitTestCase {
 		$this->assertSame( '', $this->alt_of( $media[1] ), 'An empty map value clears alt' );
 	}
 
-	/** GET /moments/{id} exposes each image's current alt for the composer. */
-	public function test_get_moment_media_includes_alt() {
-		$publisher = new Moment_Publisher();
+	/** GET /marks/{id} exposes each image's current alt for the composer. */
+	public function test_get_daymark_media_includes_alt() {
+		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(
 			array(
@@ -172,7 +172,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 			$this->files_array( array( $this->temp_png() ) )
 		);
 
-		$request = new WP_REST_Request( 'GET', "/moment/v1/moments/{$post_id}" );
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$media = rest_do_request( $request )->get_data()['media'];
 
@@ -182,7 +182,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** Without a provider, vision alt falls back to deterministic mock. */
 	public function test_ai_alt_suggestion_mock_without_provider() {
-		$ai         = new Moment_AI_Assist();
+		$ai         = new Daymark_AI_Assist();
 		$suggestion = $ai->get_image_alt_suggestion( $this->fixture, array( 'type' => 'image' ) );
 
 		$this->assertTrue( $suggestion['is_mocked'] );
@@ -191,7 +191,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** POST /ai/alt-text returns alt for an uploaded image. */
 	public function test_rest_alt_text_returns_alt_for_image() {
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/alt-text' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/alt-text' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$request->set_file_params(
 			array(
@@ -213,10 +213,10 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** A non-image upload is rejected. */
 	public function test_rest_alt_text_rejects_non_image() {
-		$txt = wp_tempnam( 'moment-notimg-' ) . '.txt';
+		$txt = wp_tempnam( 'daymark-notimg-' ) . '.txt';
 		file_put_contents( $txt, 'just text, not an image' );
 
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/alt-text' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/alt-text' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$request->set_file_params(
 			array(
@@ -235,7 +235,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 	/** A missing image is a 400. */
 	public function test_rest_alt_text_requires_image() {
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/alt-text' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/alt-text' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 
 		$this->assertSame( 400, rest_do_request( $request )->get_status() );

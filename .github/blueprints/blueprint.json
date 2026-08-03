@@ -1,8 +1,8 @@
 {
   "$schema": "https://playground.wordpress.net/blueprint-schema.json",
   "meta": {
-    "title": "Moment — Personal Site Publisher Mode",
-    "description": "Try Moment in a throwaway WordPress. Lands in the /moment app shell, logged in as admin.",
+    "title": "Mark — Personal Site Publisher Mode",
+    "description": "Try Daymark in a throwaway WordPress. Lands in the /daymark app shell, logged in as admin.",
     "author": "jeffpaul",
     "categories": ["publishing", "mobile"]
   },
@@ -10,7 +10,7 @@
     "wp": "latest"
   },
   "login": true,
-  "landingPage": "/moment",
+  "landingPage": "/daymark",
   "steps": [
     {
       "step": "setSiteOptions",
@@ -22,7 +22,7 @@
       "step": "installPlugin",
       "pluginData": {
         "resource": "git:directory",
-        "url": "https://github.com/jeffpaul/moment",
+        "url": "https://github.com/jeffpaul/daymark",
         "ref": "main",
         "path": "/"
       },

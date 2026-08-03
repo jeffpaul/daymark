@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Moment is an active prototype. Security fixes are made against the latest
+Daymark is an active prototype. Security fixes are made against the latest
 release only; there are no long-term support branches.
 
 | Version | Supported |
@@ -19,9 +19,9 @@ at risk.
 Instead, report privately in either of these ways:
 
 - **Preferred:** open a private advisory via GitHub's
-  [Report a vulnerability](https://github.com/jeffpaul/moment/security/advisories/new)
+  [Report a vulnerability](https://github.com/jeffpaul/daymark/security/advisories/new)
   form (Security tab → Report a vulnerability).
-- **Email:** <jeffpaul@hotmail.com> with "Moment security" in the subject.
+- **Email:** <jeffpaul@hotmail.com> with "Daymark security" in the subject.
 
 Please include enough detail to reproduce: affected version, environment
 (WordPress and PHP versions), steps or a proof of concept, and the impact you
@@ -37,8 +37,8 @@ observed.
 
 ## Scope
 
-This policy covers the Moment plugin code in this repository. Vulnerabilities in
+This policy covers the Daymark plugin code in this repository. Vulnerabilities in
 WordPress core, PHP, or third-party plugins (including any syndication,
-federation, or AI provider plugins Moment integrates with) should be reported to
-those projects directly. Issues in how Moment *uses* those integrations are in
+federation, or AI provider plugins Daymark integrates with) should be reported to
+those projects directly. Issues in how Daymark *uses* those integrations are in
 scope here.

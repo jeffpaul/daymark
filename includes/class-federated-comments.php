@@ -3,7 +3,7 @@
  * Federated comment detection.
  *
  * Federation plugins deliver social replies as native WordPress comments
- * — exactly Moment's backflow storage model, but push-based (no polling):
+ * — exactly Daymark's backflow storage model, but push-based (no polling):
  *
  * - ActivityPub (wordpress.org/plugins/activitypub): fediverse replies
  *   (Mastodon, Threads, Pixelfed, …); comment meta `protocol` =
@@ -15,12 +15,12 @@
  *   including Bridgy backfeed from social silos; comment meta `protocol`
  *   = 'webmention', source link in `webmention_source_url`.
  *
- * This adapter maps those markers onto Moment's source-label scheme at
- * read time so federated replies surface in Moment notifications with
+ * This adapter maps those markers onto Daymark's source-label scheme at
+ * read time so federated replies surface in Daymark notifications with
  * honest source context. Pure meta detection — no dependency on any of
  * the plugins being present.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -30,10 +30,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Detects comments delivered by federation plugins.
  */
-class Moment_Federated_Comments {
+class Daymark_Federated_Comments {
 
 	/**
-	 * Identify a federated comment and its Moment source labeling.
+	 * Identify a federated comment and its Daymark source labeling.
 	 *
 	 * @param WP_Comment $comment The comment.
 	 * @return array{source: string, label: string, url: string}|null Null when not federated.
@@ -46,21 +46,21 @@ class Moment_Federated_Comments {
 			case 'activitypub':
 				return array(
 					'source' => 'fediverse',
-					'label'  => __( 'Reply from the Fediverse', 'moment' ),
+					'label'  => __( 'Reply from the Fediverse', 'daymark' ),
 					'url'    => self::source_url( $comment, 'source_url' ),
 				);
 
 			case 'atproto':
 				return array(
 					'source' => 'bluesky',
-					'label'  => __( 'Reply from Bluesky', 'moment' ),
+					'label'  => __( 'Reply from Bluesky', 'daymark' ),
 					'url'    => self::source_url( $comment, 'source_url' ),
 				);
 
 			case 'webmention':
 				return array(
 					'source' => 'webmention',
-					'label'  => __( 'Reply via Webmention', 'moment' ),
+					'label'  => __( 'Reply via Webmention', 'daymark' ),
 					'url'    => self::source_url( $comment, 'webmention_source_url' ),
 				);
 		}

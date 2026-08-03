@@ -1,33 +1,33 @@
 <?php
 /**
- * Plugin Name: Moment E2E Connector
+ * Plugin Name: Daymark E2E Connector
  * Description: Registers a fake CONNECTED syndication connector so the E2E
  *              suite can exercise the connected-destination publish path —
  *              the toggle rendering, per-type memory, and syndication result
  *              that ship in the plugin but no default install exercises.
  *              Test-only; never shipped in the plugin zip.
  *
- * @package Moment
+ * @package Daymark
  */
 
 add_action(
-	'moment_register_connectors',
+	'daymark_register_connectors',
 	static function ( $registry ) {
 		// Opt-in per request via a cookie the connector spec sets, so every
 		// other E2E test keeps the "nothing connected → Your Site only"
 		// baseline and only this one test sees a connected destination.
-		if ( empty( $_COOKIE['moment_e2e_connector'] ) ) {
+		if ( empty( $_COOKIE['daymark_e2e_connector'] ) ) {
 			return;
 		}
 
-		// The interface only exists once Moment (a regular plugin) has loaded;
+		// The interface only exists once Daymark (a regular plugin) has loaded;
 		// this action fires on init, after mu-plugins, so it is safe here.
-		if ( ! interface_exists( 'Moment_Syndication_Connector' ) ) {
+		if ( ! interface_exists( 'Daymark_Syndication_Connector' ) ) {
 			return;
 		}
 
 		$registry->register_connector(
-			new class() implements Moment_Syndication_Connector {
+			new class() implements Daymark_Syndication_Connector {
 
 				public function get_id(): string {
 					return 'e2e-net';
@@ -37,8 +37,8 @@ add_action(
 					return 'E2E Network';
 				}
 
-				public function supports_moment_type( string $type ): bool {
-					unset( $type ); // Accepts every Moment type.
+				public function supports_daymark_type( string $type ): bool {
+					unset( $type ); // Accepts every Mark type.
 					return true;
 				}
 

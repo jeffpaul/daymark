@@ -17,10 +17,10 @@ jobs:
 
       - name: Build distribution copy (respects .distignore)
         run: |
-          mkdir -p /tmp/dist/moment
-          rsync -a --exclude-from=.distignore --exclude='.git' ./ /tmp/dist/moment/
+          mkdir -p /tmp/dist/daymark
+          rsync -a --exclude-from=.distignore --exclude='.git' ./ /tmp/dist/daymark/
 
       - name: Run plugin check
         uses: WordPress/plugin-check-action@v1
         with:
-          build-dir: /tmp/dist/moment
+          build-dir: /tmp/dist/daymark

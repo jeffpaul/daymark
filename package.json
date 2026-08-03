@@ -1,12 +1,12 @@
 {
-  "name": "moment",
+  "name": "daymark",
   "version": "0.5.0",
   "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests only.",
   "private": true,
   "license": "GPL-2.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jeffpaul/moment.git"
+    "url": "git+https://github.com/jeffpaul/daymark.git"
   },
   "scripts": {
     "test:e2e": "playwright test"

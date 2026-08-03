@@ -1,5 +1,5 @@
 name: Enhancement request
-description: Suggest an improvement or new capability for Moment
+description: Suggest an improvement or new capability for Daymark
 title: "[Enhancement]: "
 labels: ["enhancement"]
 body:
@@ -14,7 +14,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What you'd like Moment to do.
+      description: What you'd like Daymark to do.
     validations:
       required: true
   - type: textarea

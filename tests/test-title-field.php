@@ -3,7 +3,7 @@
  * Optional Title field: per-type policy (filterable), the AI title
  * suggestion mock fallback, and the POST /ai/title REST route.
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
@@ -21,7 +21,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 
 	/** Audio and video are optional by default; every other type is hidden. */
 	public function test_policy_defaults() {
-		$policy = Moment_Publisher::title_field_policy();
+		$policy = Daymark_Publisher::title_field_policy();
 
 		$this->assertSame( 'optional', $policy['audio'] );
 		$this->assertSame( 'optional', $policy['video'] );
@@ -31,16 +31,16 @@ class Test_Title_Field extends WP_UnitTestCase {
 		}
 	}
 
-	/** The moment_title_field_policy filter can flip a type. */
+	/** The daymark_title_field_policy filter can flip a type. */
 	public function test_policy_filter_overrides_a_type() {
 		$override = static function ( $policy ) {
 			$policy['note'] = 'optional';
 			return $policy;
 		};
 
-		add_filter( 'moment_title_field_policy', $override );
-		$policy = Moment_Publisher::title_field_policy();
-		remove_filter( 'moment_title_field_policy', $override );
+		add_filter( 'daymark_title_field_policy', $override );
+		$policy = Daymark_Publisher::title_field_policy();
+		remove_filter( 'daymark_title_field_policy', $override );
 
 		$this->assertSame( 'optional', $policy['note'] );
 		// Untouched defaults still hold.
@@ -52,7 +52,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 	public function test_suggest_title_mock_without_provider() {
 		add_filter( 'wp_supports_ai', '__return_false' );
 
-		$ai    = new Moment_AI_Assist();
+		$ai    = new Daymark_AI_Assist();
 		$title = $ai->suggest_title(
 			array(
 				'text' => 'Late-night studio session',
@@ -70,7 +70,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 	public function test_suggest_title_mock_without_text() {
 		add_filter( 'wp_supports_ai', '__return_false' );
 
-		$ai    = new Moment_AI_Assist();
+		$ai    = new Daymark_AI_Assist();
 		$title = $ai->suggest_title( array( 'type' => 'video' ) );
 
 		remove_filter( 'wp_supports_ai', '__return_false' );
@@ -86,8 +86,8 @@ class Test_Title_Field extends WP_UnitTestCase {
 			'text' => 'Morning walk in the park',
 			'type' => 'audio',
 		);
-		$first   = ( new Moment_AI_Assist() )->suggest_title( $context );
-		$second  = ( new Moment_AI_Assist() )->suggest_title( $context );
+		$first   = ( new Daymark_AI_Assist() )->suggest_title( $context );
+		$second  = ( new Daymark_AI_Assist() )->suggest_title( $context );
 
 		remove_filter( 'wp_supports_ai', '__return_false' );
 
@@ -98,7 +98,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 	public function test_rest_title_returns_title_when_authorized() {
 		add_filter( 'wp_supports_ai', '__return_false' );
 
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/title' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/title' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$request->set_param( 'text', 'A quiet field recording' );
 		$request->set_param( 'primary_type', 'audio' );
@@ -118,7 +118,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 
 	/** POST /ai/title rejects a request with no nonce (logged-in → 403). */
 	public function test_rest_title_rejects_missing_nonce() {
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/title' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/title' );
 		$request->set_param( 'text', 'No nonce here' );
 		$request->set_param( 'primary_type', 'audio' );
 
@@ -130,7 +130,7 @@ class Test_Title_Field extends WP_UnitTestCase {
 	public function test_rest_title_rejects_unauthenticated() {
 		wp_set_current_user( 0 );
 
-		$request = new WP_REST_Request( 'POST', '/moment/v1/ai/title' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/title' );
 		$request->set_param( 'text', 'Logged out' );
 		$request->set_param( 'primary_type', 'audio' );
 

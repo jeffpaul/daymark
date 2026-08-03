@@ -2,7 +2,7 @@
 /**
  * YouTube connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Long uploads would be queued (e.g. Action Scheduler) rather than run
  * inside the publish request.
  */
-class Moment_Connector_YouTube extends Moment_Connector_Base {
+class Daymark_Connector_YouTube extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -34,11 +34,11 @@ class Moment_Connector_YouTube extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'YouTube', 'moment' );
+		return __( 'YouTube', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
 	 * @return string[]
 	 */

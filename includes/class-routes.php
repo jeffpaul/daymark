@@ -1,12 +1,12 @@
 <?php
 /**
- * Front-end route handling for the Moment app shell.
+ * Front-end route handling for the Daymark app shell.
  *
- * Route strategy (committed): rewrite rules mapping /moment and
- * /moment/notifications to the `moment_app` query var, with a
+ * Route strategy (committed): rewrite rules mapping /daymark and
+ * /daymark/notifications to the `daymark_app` query var, with a
  * template_include filter that loads templates/app-shell.php.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,23 +14,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Registers the /moment rewrite rules and routes to the app shell template.
+ * Registers the /daymark rewrite rules and routes to the app shell template.
  */
-class Moment_Routes {
+class Daymark_Routes {
 
 	/**
-	 * Query var carrying the requested Moment app screen.
+	 * Query var carrying the requested Daymark app screen.
 	 */
-	public const QUERY_VAR = 'moment_app';
+	public const QUERY_VAR = 'daymark_app';
 
 	/**
-	 * Option storing the resolved app base path ('moment', or 'moment-app'
-	 * when existing site content already owns /moment).
+	 * Option storing the resolved app base path ('daymark', or 'daymark-app'
+	 * when existing site content already owns /daymark).
 	 */
-	public const OPTION_APP_BASE = 'moment_app_base';
+	public const OPTION_APP_BASE = 'daymark_app_base';
 
 	/**
-	 * Allowed screens for the moment_app query var.
+	 * Allowed screens for the daymark_app query var.
 	 *
 	 * @var string[]
 	 */
@@ -64,7 +64,7 @@ class Moment_Routes {
 	/**
 	 * The app's base path. Resolves and persists on first use.
 	 *
-	 * @return string 'moment', or 'moment-app' when /moment is owned by
+	 * @return string 'daymark', or 'daymark-app' when /daymark is owned by
 	 *                existing site content.
 	 */
 	public static function app_base(): string {
@@ -81,16 +81,16 @@ class Moment_Routes {
 	 * Resolve which base path the app may claim, and persist it.
 	 *
 	 * The route is a top rewrite rule, which would silently shadow a page
-	 * or post already living at /moment — so when such content exists the
-	 * app steps aside to /moment-app. Resolved at activation (and lazily
+	 * or post already living at /daymark — so when such content exists the
+	 * app steps aside to /daymark-app. Resolved at activation (and lazily
 	 * for older installs), then kept stable: a home-screen-installed app
 	 * URL should not move underneath its users.
 	 *
 	 * @return string The resolved base.
 	 */
 	public static function resolve_app_base(): string {
-		$taken = get_page_by_path( 'moment', OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
-		$base  = $taken ? 'moment-app' : 'moment';
+		$taken = get_page_by_path( 'daymark', OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
+		$base  = $taken ? 'daymark-app' : 'daymark';
 
 		update_option( self::OPTION_APP_BASE, $base );
 
@@ -98,7 +98,7 @@ class Moment_Routes {
 	}
 
 	/**
-	 * Absolute URL into the Moment app.
+	 * Absolute URL into the Mark app.
 	 *
 	 * @param string $path Optional path within the app (e.g. 'notifications').
 	 * @return string
@@ -121,8 +121,8 @@ class Moment_Routes {
 	 */
 	public static function build_manifest(): array {
 		return array(
-			'name'             => 'Moment',
-			'short_name'       => 'Moment',
+			'name'             => 'Daymark',
+			'short_name'       => 'Daymark',
 			'start_url'        => self::app_url(),
 			'scope'            => self::app_url(),
 			'display'          => 'standalone',
@@ -140,7 +140,7 @@ class Moment_Routes {
 
 	/**
 	 * A home-screen/app icon URL at (approximately) the given size: the
-	 * site's own Site Icon when one is set, else Moment's bundled icon.
+	 * site's own Site Icon when one is set, else Daymark's bundled icon.
 	 *
 	 * @param int $size Desired square size in px.
 	 * @return string
@@ -160,7 +160,7 @@ class Moment_Routes {
 			$file = 'icon-32.png';
 		}
 
-		return MOMENT_PLUGIN_URL . 'assets/' . $file;
+		return DAYMARK_PLUGIN_URL . 'assets/' . $file;
 	}
 
 	/**
@@ -185,7 +185,7 @@ class Moment_Routes {
 	}
 
 	/**
-	 * Register the moment_app query var.
+	 * Register the daymark_app query var.
 	 *
 	 * @param string[] $vars Registered query vars.
 	 * @return string[]
@@ -215,7 +215,7 @@ class Moment_Routes {
 	}
 
 	/**
-	 * Load the Moment app shell template when moment_app is set.
+	 * Load the Daymark app shell template when daymark_app is set.
 	 *
 	 * @param string $template The template WordPress resolved.
 	 * @return string
@@ -239,7 +239,7 @@ class Moment_Routes {
 			return $template;
 		}
 
-		$app_shell = MOMENT_PLUGIN_DIR . 'templates/app-shell.php';
+		$app_shell = DAYMARK_PLUGIN_DIR . 'templates/app-shell.php';
 
 		if ( is_readable( $app_shell ) ) {
 			return $app_shell;
@@ -249,7 +249,7 @@ class Moment_Routes {
 	}
 
 	/**
-	 * Get the current Moment app screen, if any.
+	 * Get the current Daymark app screen, if any.
 	 *
 	 * @return string One of 'home', 'notifications', or '' when not in the app.
 	 */

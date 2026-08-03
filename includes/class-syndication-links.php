@@ -2,15 +2,15 @@
 /**
  * Syndication links markup (IndieWeb u-syndication).
  *
- * Appends an "Also on" line to singular Moment posts linking each
+ * Appends an "Also on" line to singular Mark posts linking each
  * syndicated copy with `class="u-syndication" rel="syndication"`. That
  * markup is what IndieWeb tooling discovers — most notably Bridgy
  * (brid.gy), which watches the linked social copies and sends replies,
  * likes, and reposts back to this site as webmentions. Combined with the
- * Webmention plugin (and Moment's federated-comment labeling), that is
- * backfeed for networks Moment has no API connector for — free.
+ * Webmention plugin (and Daymark's federated-comment labeling), that is
+ * backfeed for networks Daymark has no API connector for — free.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,9 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders u-syndication links on Moment posts.
+ * Renders u-syndication links on Mark posts.
  */
-class Moment_Syndication_Links {
+class Daymark_Syndication_Links {
 
 	/**
 	 * Hook up.
@@ -32,7 +32,7 @@ class Moment_Syndication_Links {
 	}
 
 	/**
-	 * Append syndication links to singular Moment content.
+	 * Append syndication links to singular Mark content.
 	 *
 	 * @param string $content Post content.
 	 * @return string
@@ -44,7 +44,7 @@ class Moment_Syndication_Links {
 
 		$post_id = get_the_ID();
 
-		if ( ! $post_id || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( ! $post_id || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return $content;
 		}
 
@@ -54,16 +54,16 @@ class Moment_Syndication_Links {
 	}
 
 	/**
-	 * Build the "Also on" paragraph for a Moment's external posts.
+	 * Build the "Also on" paragraph for a Mark's external posts.
 	 *
 	 * Only references with a real URL are rendered; failed syndications
 	 * have no entry to link.
 	 *
-	 * @param int $post_id Moment post ID.
+	 * @param int $post_id Mark post ID.
 	 * @return string Escaped HTML, or '' when there is nothing to link.
 	 */
 	public function links_markup( int $post_id ): string {
-		$external_posts = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
+		$external_posts = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
 
 		if ( ! is_array( $external_posts ) ) {
 			return '';
@@ -79,7 +79,7 @@ class Moment_Syndication_Links {
 			$links[] = sprintf(
 				'<a class="u-syndication" rel="syndication nofollow" href="%s">%s</a>',
 				esc_url( (string) $reference['external_url'] ),
-				esc_html( (string) ( $reference['label'] ?? __( 'View', 'moment' ) ) )
+				esc_html( (string) ( $reference['label'] ?? __( 'View', 'daymark' ) ) )
 			);
 		}
 
@@ -88,8 +88,8 @@ class Moment_Syndication_Links {
 		}
 
 		return sprintf(
-			'<p class="moment-syndication-links">%s %s</p>',
-			esc_html__( 'Also on:', 'moment' ),
+			'<p class="daymark-syndication-links">%s %s</p>',
+			esc_html__( 'Also on:', 'daymark' ),
 			implode( ' · ', $links )
 		);
 	}

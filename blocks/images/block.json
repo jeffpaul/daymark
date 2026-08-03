@@ -1,13 +1,13 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "moment/images",
-	"title": "Moment Images",
+	"name": "daymark/images",
+	"title": "Daymark Images",
 	"category": "widgets",
 	"icon": "format-image",
-	"description": "Displays published image, gallery, and mixed Moments.",
-	"keywords": [ "moment", "images", "photos", "gallery" ],
-	"textdomain": "moment",
+	"description": "Displays published image, gallery, and mixed Marks.",
+	"keywords": [ "daymark", "images", "photos", "gallery" ],
+	"textdomain": "daymark",
 	"attributes": {
 		"count": {
 			"type": "integer",

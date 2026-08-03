@@ -1,4 +1,4 @@
-=== Moment ===
+=== Daymark ===
 Contributors: jeffpaul
 Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
@@ -8,27 +8,27 @@ Stable tag: 0.5.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
-Personal Site Publisher Mode for WordPress: capture, caption, and publish Moments from your phone. Your site stays the source of truth.
+Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
 
 == Description ==
 
-Moment is a phone-first publishing experience for WordPress. A logged-in user visits `/moment`, picks media from the camera roll, adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
+Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, picks media from the camera roll, adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
 
-WordPress does not need to become a social network. Moment makes your own site the starting point for social-shaped content: publish once on your domain, syndicate outward, and let the conversation flow back.
+WordPress does not need to become a social network. Daymark makes your own site the starting point for social-shaped content: publish once on your domain, syndicate outward, and let the conversation flow back.
 
 = What you get =
 
-* **A phone app feel** — visit `/moment`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome.
-* **Standard WordPress posts** — every Moment is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Moment never strands your content.
-* **Syndication routing** — choose which networks each Moment also publishes to. Moment remembers your routing habits per content type and only offers destinations that are actually connected.
+* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome.
+* **Standard WordPress posts** — every Mark is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Daymark never strands your content.
+* **Syndication routing** — choose which networks each Mark also publishes to. Daymark remembers your routing habits per content type and only offers destinations that are actually connected.
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
-* **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Moment notifications, and Moment renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
+* **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
-* **Blocks and shortcodes** — timeline and per-type views are available as both `[moment_*]` shortcodes and `moment/*` blocks, rendering identical output.
+* **Blocks and shortcodes** — timeline and per-type views are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output.
 
 = Publishing destinations =
 
-Your site itself is always the primary destination — social networks are strictly additive. Moment works with the publishing plugins you already use (Jetpack Social, Share on Mastodon, ATmosphere, and more): it detects them and, where a plugin exposes a per-post control, adds an in-app on/off toggle per Moment. Replies delivered by federation plugins are recognized and labeled in notifications. An open connector interface lets any plugin register a first-class destination without changing Moment.
+Your site itself is always the primary destination — social networks are strictly additive. Daymark works with the publishing plugins you already use (Jetpack Social, Share on Mastodon, ATmosphere, and more): it detects them and, where a plugin exposes a per-post control, adds an in-app on/off toggle per Mark. Replies delivered by federation plugins are recognized and labeled in notifications. An open connector interface lets any plugin register a first-class destination without changing Daymark.
 
 = External services =
 
@@ -36,38 +36,38 @@ This plugin does not send data to any external service on its own. Publishing to
 
 = AI-assisted development =
 
-This plugin was generated with Claude Code working from the Project Moment specification documents, with human guidance, review, and testing throughout — every build phase was gated on verification against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke, browser E2E) exist to keep that review honest. Treat it as AI-generated, human-directed software.
+This plugin was generated with Claude Code working from the Project Daymark specification documents, with human guidance, review, and testing throughout — every build phase was gated on verification against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke, browser E2E) exist to keep that review honest. Treat it as AI-generated, human-directed software.
 
 == Installation ==
 
-1. Upload the `moment` folder to `/wp-content/plugins/`, or install through the WordPress plugins screen.
+1. Upload the `daymark` folder to `/wp-content/plugins/`, or install through the WordPress plugins screen.
 2. Activate the plugin through the **Plugins** screen.
-3. Visit `https://yoursite.example/moment` on your phone while logged in.
+3. Visit `https://yoursite.example/daymark` on your phone while logged in.
 4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
-Activation creates section pages (`/timeline`, `/images`, `/videos`, `/audio`, `/notes`) that render your Moments inside your theme.
+Activation creates section pages (`/timeline`, `/images`, `/videos`, `/audio`, `/notes`) that render your Marks inside your theme.
 
 == Frequently Asked Questions ==
 
 = How do I publish to social networks? =
 
-A Moment is a standard post, so any publishing plugin you already use shares it when it publishes. Moment detects popular ones (Jetpack Social, Share on Mastodon, ATmosphere, XPoster, Autoshare for Twitter, and more) and notes them on the publish screen; for plugins that expose a per-post control it adds an in-app on/off toggle per Moment (currently Share on Mastodon, Autoshare for Twitter, and ATmosphere for Bluesky). Replies come back through federation plugins (ActivityPub, ATmosphere, Webmention) as native comments. Moment also exposes an open connector interface (`moment_register_connectors`) so a plugin can register a first-class destination. Your site is always the primary destination and publishing never depends on any of this.
+A Mark is a standard post, so any publishing plugin you already use shares it when it publishes. Daymark detects popular ones (Jetpack Social, Share on Mastodon, ATmosphere, XPoster, Autoshare for Twitter, and more) and notes them on the publish screen; for plugins that expose a per-post control it adds an in-app on/off toggle per Mark (currently Share on Mastodon, Autoshare for Twitter, and ATmosphere for Bluesky). Replies come back through federation plugins (ActivityPub, ATmosphere, Webmention) as native comments. Daymark also exposes an open connector interface (`daymark_register_connectors`) so a plugin can register a first-class destination. Your site is always the primary destination and publishing never depends on any of this.
 
 = Why don't I see any social networks on the publish screen? =
 
-Moment only offers destinations that can actually publish (and pull replies back): a network appears once a connector plugin registers it. With nothing connected, "Your Site" is the only destination — publishing to your own site always works. (Publishing plugins like Jetpack Social or Share on Mastodon aren't destinations — they appear as an awareness note or a per-Moment toggle instead.)
+Daymark only offers destinations that can actually publish (and pull replies back): a network appears once a connector plugin registers it. With nothing connected, "Your Site" is the only destination — publishing to your own site always works. (Publishing plugins like Jetpack Social or Share on Mastodon aren't destinations — they appear as an awareness note or a per-Mark toggle instead.)
 
 = How do replies come back to my site? =
 
-If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver arrive as native WordPress comments and are recognized and labeled in Moment notifications ("Reply from Bluesky", "Reply from the Fediverse", …) — by push, live, with no polling. When a polling connector is registered, an hourly background sync (plus a refresh whenever you view notifications) imports replies from your syndicated copies too, deduplicated per reply.
+If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver arrive as native WordPress comments and are recognized and labeled in Daymark notifications ("Reply from Bluesky", "Reply from the Fediverse", …) — by push, live, with no polling. When a polling connector is registered, an hourly background sync (plus a refresh whenever you view notifications) imports replies from your syndicated copies too, deduplicated per reply.
 
 = Which AI providers work with AI Assist? =
 
-Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Moment never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, alt text, and tag suggestions. Without a configured provider, the AI Assist UI simply does not appear.
+Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Daymark never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, alt text, and tag suggestions. Without a configured provider, the AI Assist UI simply does not appear.
 
-= Does Moment create a custom post type? =
+= Does Daymark create a custom post type? =
 
-No. Every Moment is a standard post with post meta, so your content is fully portable and remains intact and readable if you deactivate the plugin.
+No. Every Mark is a standard post with post meta, so your content is fully portable and remains intact and readable if you deactivate the plugin.
 
 = Does it work offline? =
 
@@ -75,11 +75,11 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 
 == Screenshots ==
 
-1. Home — the phone-first app shell: drafts and recent Moments in reach, one-tap publishing.
+1. Home — the phone-first app shell: drafts and recent Marks in reach, one-tap publishing.
 2. Create — pick media, add a caption, and get AI-suggested alt text for each image, editable before you publish.
-3. Publish — your site is always the destination; file the Moment under categories (remembered per type), or save as a draft.
+3. Publish — your site is always the destination; file the Mark under categories (remembered per type), or save as a draft.
 4. Notifications — replies from syndicated copies flow back automatically, labeled by source.
-5. Timeline — Moments rendered inside your theme, via shortcode or block.
+5. Timeline — Marks rendered inside your theme, via shortcode or block.
 
 == Changelog ==
 

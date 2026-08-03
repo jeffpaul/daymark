@@ -11,13 +11,13 @@
 		"/wp-hooks-docs/"
 	],
 	"ignoreHooks": [],
-	"title": "Moment Hooks",
-	"tagline": "Action and filter reference for the Moment plugin and its connectors",
+	"title": "Daymark Hooks",
+	"tagline": "Action and filter reference for the Daymark plugin and its connectors",
 	"url": "https://jeffpaul.github.io",
-	"baseUrl": "/moment/",
-	"repoUrl": "https://github.com/jeffpaul/moment",
+	"baseUrl": "/daymark/",
+	"repoUrl": "https://github.com/jeffpaul/daymark",
 	"organizationName": "jeffpaul",
-	"projectName": "moment",
+	"projectName": "daymark",
 	"footerStyle": "dark",
 	"clean": true
 }
