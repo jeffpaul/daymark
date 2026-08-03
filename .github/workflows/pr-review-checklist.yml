@@ -50,7 +50,8 @@ jobs:
           ### Review checklist
 
           - [ ] Tests added or updated for the change
-          - [ ] Docs updated (README / readme.txt / CONTRIBUTING) if behavior changed
+          - [ ] Changelog entry added under \`## [Unreleased]\` in CHANGELOG.md (user-facing changes)
+          - [ ] Docs updated (README / CONTRIBUTING) if behavior changed
           - [ ] Any manual testing is described in the PR description
 
           CI already covers PHPUnit, WordPress Coding Standards, the WP-CLI smoke suite,

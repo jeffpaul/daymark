@@ -173,6 +173,75 @@ the end of the PR description covering everyone who commits to, reviews, or comm
 on the PR — plus the authors and commenters of its linked issues. You only need to
 add someone by hand when they can't be detected (for example, off-GitHub help).
 
+## Changelog
+
+`CHANGELOG.md` is the source of truth for what changed, and it follows
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Add an entry
+under `## [Unreleased]` in the same PR as your change, grouped under one of the
+standard headings — **Added**, **Changed**, **Deprecated**, **Removed**,
+**Fixed**, **Security**:
+
+```markdown
+## [Unreleased]
+
+### Added
+
+- Optional Title field for audio and video Moments… ([#28](https://github.com/jeffpaul/moment/pull/28))
+```
+
+Write for the person using Moment, not for the repository. "You can now search
+your Moments from Home" beats "implement search endpoint" — no commit hashes and
+no internal file names.
+
+End each entry with a link to its pull request, for traceability. Use an explicit
+markdown link rather than a bare `#28`, which does not autolink in a rendered
+file, and list more than one where a change genuinely spanned PRs. These links
+are stripped automatically when `readme.txt` is generated, so keep them here.
+
+`readme.txt`'s `== Changelog ==` section is **generated** from `CHANGELOG.md` —
+never edit it by hand. wordpress.org's readme format has no `###` headings, so
+the generator renders each category as a bold label instead:
+
+```bash
+bin/sync-changelog.sh           # regenerate readme.txt from CHANGELOG.md
+bin/sync-changelog.sh --check   # what CI runs; fails with a diff if stale
+```
+
+CI fails if the two have drifted, so wordpress.org can't end up showing a stale
+changelog.
+
+## Releasing
+
+Releases are tag-driven: pushing a version tag builds the distribution zip and
+publishes the GitHub release (`.github/workflows/release.yml`).
+
+1. **Open a release PR** that bumps the version in all four places — the
+   `Version:` header and `MOMENT_VERSION` in `moment.php`, `Stable tag:` in
+   `readme.txt`, and `package.json`. The release workflow fails the build if
+   these disagree with the tag.
+2. **Close out the changelog.** Rename `## [Unreleased]` to
+   `## [X.Y.Z] - YYYY-MM-DD` (ISO 8601), add the version's compare link to the
+   reference block at the bottom of the file, start a fresh empty
+   `## [Unreleased]`, then run `bin/sync-changelog.sh` and commit the
+   regenerated `readme.txt`. Add the `readme.txt` upgrade notice too — that one
+   is hand-written, since it is a short wordpress.org-specific summary rather
+   than a changelog.
+3. **Keep the release PR description short.** It becomes the commit message the
+   tag points at, which is what anyone browsing the tag list reads first. Put
+   post-merge steps in a PR comment rather than the description — or pass an
+   explicit message at merge time:
+   ```bash
+   gh pr merge <n> --squash --subject "Release X.Y.Z (#<n>)" --body-file notes.md
+   ```
+4. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
+   `git tag -a`. GitHub shows a lightweight tag's verification from the
+   underlying commit, and squash merges here are GitHub-signed, so the tag reads
+   as Verified. An unsigned annotated tag reads as Unverified instead.
+5. **Push the tag.** The workflow verifies the version, builds the zip, checks
+   that nothing untracked or dev-only leaked into it, and creates the release
+   with notes from the changelog. It is safe to re-run against an existing
+   release: the zip is re-uploaded and hand-written notes are left alone.
+
 ## License
 
 Moment is licensed under **GPL-2.0-or-later**

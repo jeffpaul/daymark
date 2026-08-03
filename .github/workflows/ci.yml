@@ -69,6 +69,18 @@ jobs:
           set -e
           find assets -name '*.js' -print0 | xargs -0 -n1 node --check
 
+  changelog:
+    name: Changelog in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # CHANGELOG.md is the source of truth; readme.txt's == Changelog ==
+      # section is generated from it. This fails with a diff if the two have
+      # drifted, so wordpress.org can never show a stale changelog.
+      - name: readme.txt changelog matches CHANGELOG.md
+        run: bin/sync-changelog.sh --check
+
   license:
     name: LICENSE present (GPLv2)
     runs-on: ubuntu-latest

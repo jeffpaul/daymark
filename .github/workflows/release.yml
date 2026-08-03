@@ -66,7 +66,7 @@ jobs:
           listing=$(unzip -l moment.zip)
           echo "$listing" | grep -q 'moment/readme.txt' || { echo '::error::readme.txt missing from zip'; exit 1; }
           echo "$listing" | grep -q 'moment/moment.php' || { echo '::error::moment.php missing from zip'; exit 1; }
-          for banned in 'moment/tests/' 'moment/docs/' 'moment/README.md' 'moment/CLAUDE.md' 'moment/node_modules/' 'moment/vendor/' 'moment/moment-connector-'; do
+          for banned in 'moment/tests/' 'moment/docs/' 'moment/README.md' 'moment/CHANGELOG.md' 'moment/CLAUDE.md' 'moment/node_modules/' 'moment/vendor/' 'moment/moment-connector-'; do
             if echo "$listing" | grep -q "$banned"; then
               echo "::error::dev file leaked into zip: $banned"
               exit 1
@@ -78,12 +78,72 @@ jobs:
             git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "::error::untracked file in zip: $f"; exit 1; }
           done
 
+      # Release notes are the tag's CHANGELOG.md section, verbatim — the same
+      # Keep a Changelog entries that generate readme.txt's changelog, so the
+      # release, the plugin readme, and wordpress.org cannot drift apart.
+      # GitHub's --generate-notes emits a raw list of merged PRs instead
+      # (Dependabot bumps, the release PR itself), which is internal churn
+      # rather than "what changed for you"; it stays only as the fallback for a
+      # tag with no matching section.
+      - name: Build release notes from CHANGELOG.md
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Written outside the checkout so it can never be mistaken for a
+          # repository file (the zip is already built and guarded by this point).
+          notes_file="${RUNNER_TEMP:-/tmp}/release-notes.md"
+
+          # The section runs from this version's heading to the next one (or to
+          # the link-reference block at the end of the file).
+          section=$(awk -v v="$version" '
+            $0 ~ ("^## \\[" v "\\]") { f = 1; next }
+            f && /^## \[/ { exit }
+            f && /^\[[^]]+\]:[[:space:]]/ { exit }
+            f' CHANGELOG.md | awk 'NF { blank = 0; print; next } { if (!blank++ && NR > 1) print }')
+
+          if [ -z "$section" ]; then
+            echo "::warning::No '## [$version]' section in CHANGELOG.md; falling back to generated notes."
+            echo 'file=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Previous release = the next version heading below this one.
+          prev=$(awk -v v="$version" '
+            $0 ~ ("^## \\[" v "\\]") { f = 1; next }
+            f && /^## \[/ {
+              line = $0
+              sub(/^## \[/, "", line)
+              sub(/\].*/, "", line)
+              print line
+              exit
+            }' CHANGELOG.md)
+
+          {
+            printf '%s\n' "$section"
+            if [ -n "$prev" ]; then
+              printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+                "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME"
+            fi
+          } > "$notes_file"
+
+          echo "--- release notes ---"
+          cat "$notes_file"
+          echo "file=$notes_file" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release with zip attached
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
+          # An existing release was drafted by hand — attach the zip but leave
+          # whatever notes were written there alone.
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" moment.zip --clobber --repo "$GITHUB_REPOSITORY"
+          elif [ -n "$NOTES_FILE" ]; then
+            gh release create "$GITHUB_REF_NAME" moment.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Moment ${GITHUB_REF_NAME#v}" \
+              --notes-file "$NOTES_FILE"
           else
             gh release create "$GITHUB_REF_NAME" moment.zip \
               --repo "$GITHUB_REPOSITORY" \

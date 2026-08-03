@@ -1,0 +1,129 @@
+# Changelog
+
+All notable changes to Moment are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+This file is the source of truth for the changelog: the `== Changelog ==` section
+of `readme.txt` is generated from it by `bin/sync-changelog.sh`, and the GitHub
+release notes for a tag are its section here. Add entries under
+[Unreleased](#unreleased) as you go, then rename that heading to the new version
+at release time.
+
+Entries link to the pull request that made the change. Releases before 0.5.0
+have no links because they predate this project's pull-request workflow — their
+history is reachable through the compare links at the bottom of this file. The
+links are stripped when `readme.txt` is generated, since wordpress.org readers
+can't act on them.
+
+## [Unreleased]
+
+## [0.5.0] - 2026-08-03
+
+### Added
+
+- Optional Title field for audio and video Moments: those types read well with a title, so the composer offers one — pre-filled by AI from your caption when a provider is connected, editable, and optional (leave it blank and Moment derives the title from your text, as before). Which types show the field is filterable via the `moment_title_field_policy` filter. ([#28](https://github.com/jeffpaul/moment/pull/28))
+- Search and filter your Moments from Home: a search icon in the header expands a search box, with type-filter chips for Images, Videos, Audio, and Notes; the list heading reads "Results" while you search. ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- Manage a Moment straight from the list: a per-item menu edits a published Moment in the composer or deletes it (with a confirmation step; delete moves the Moment to Trash). ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- Reply to a notification inline: each notification has a reply icon that opens a reply box and posts your reply as a comment on the Moment. ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- A 50 MB per-file upload cap, with a clear message when a file is too large. ([#22](https://github.com/jeffpaul/moment/pull/22))
+- For developers: new REST endpoints (`DELETE /moments/{id}`, `POST /notifications/{id}/reply`, `type`/`s` filters on `GET /moments`, and `POST /ai/title`), the `moment_title_field_policy` filter, and `backflow_supported` documented on the connector interface. ([#22](https://github.com/jeffpaul/moment/pull/22), [#23](https://github.com/jeffpaul/moment/pull/23), [#28](https://github.com/jeffpaul/moment/pull/28))
+
+### Changed
+
+- Infinite scroll on the recent Moments list replaces the manual "view more" step, and the site-views navigation stays anchored at the bottom. ([#25](https://github.com/jeffpaul/moment/pull/25))
+- The app, PWA, and browser-tab icons now use Moment's designed brand mark. ([#21](https://github.com/jeffpaul/moment/pull/21))
+
+### Removed
+
+- The `podcast` Moment type: a podcast is simply an audio (or video) Moment. Use a Category if you want to label one as a podcast. ([#27](https://github.com/jeffpaul/moment/pull/27))
+
+## [0.4.0] - 2026-07-29
+
+### Added
+
+- Per-image alt text: every image in an image, gallery, or mixed Moment gets its own alt field in the composer. When an AI provider is connected, each image's alt is generated from the image itself (vision) and pre-filled for you to edit before publishing.
+- Categories: a "File under" picker on the publish screen files a Moment under your existing categories, remembers the choice per Moment type, and lets you change it per Moment. Shown only when your site has categories beyond its default.
+- ATmosphere joins the third-party publishing toggles, giving Bluesky a per-Moment on/off control alongside Share on Mastodon and Autoshare for Twitter.
+- Success screen: an inline "(view)" link next to "Published to your site" and a "View all moments" link back home.
+- Project health: LICENSE (GPL-2.0-or-later), contributing guide, code of conduct, issue and pull-request templates, and a dependency license-review check.
+
+### Changed
+
+- iOS home-screen polish: the app now uses your Site Icon (or Moment's) as its home-screen icon, the bottom navigation sits flush with the bottom of the screen, and the Publish and Save as Draft buttons are spaced apart.
+
+### Removed
+
+- The bundled Bluesky and Mastodon connector plugins. Moment now works with your existing publishing plugins — detected on the publish screen, with per-Moment toggles where a plugin supports it — and replies still flow back via ActivityPub, ATmosphere, and Webmention. The `moment_register_connectors` hook remains for any plugin that wants to add a first-class destination.
+
+## [0.3.0] - 2026-07-22
+
+### Added
+
+- Awareness for other publishing plugins: when Jetpack Social, ATmosphere, Autoblue, Share on Mastodon, XPoster, Autoshare for Twitter, Blog2Social, Social Networks Auto-Poster (SNAP), or Revive Old Posts is active, the publish screen notes that your Moment will also go out through it. Detection only — Moment never drives or configures them — and it is extensible via the `moment_publish_helper_plugins` filter.
+
+### Changed
+
+- Site-views nav (Timeline/Images/Videos/Audio/Notes) now uses icons, with each label kept as the hover tooltip and the accessible name.
+- Recent Moments caps at five, with a "View more" link to your timeline once there are more.
+- Each Moment now gets a post format matching its type (image → Image, note → Aside, …) instead of inheriting the site's default format.
+- Publishing shows the loading state on the button itself; both Publish and Save as Draft disable while a publish is in flight.
+- The Drafts section is hidden when there are no drafts.
+
+### Fixed
+
+- "Publishing a Image Moment" now reads "Publishing an Image Moment".
+
+## [0.2.0] - 2026-07-16
+
+### Added
+
+- Save as Draft: start a Moment now, finish it later. Drafts store your selected destinations and never syndicate until published.
+- Continue editing: tap a draft on Home to reopen the composer with its caption, media, and destinations restored; publishing an edited draft (from the app or wp-admin) runs the stored destinations.
+- Drafts row on Home keeps drafts reachable no matter how many Moments publish after them; draft rows carry a Draft chip.
+- Unread indicator on the notifications bell — a simple dot, cleared by viewing notifications.
+- "Open Moment" action link on the Plugins screen for a one-click path into the app.
+
+### Changed
+
+- The + New Moment button moved to the bottom of the screen for one-handed reach.
+- Section pages are created with Moment blocks, so block themes edit them natively; shortcodes remain fully supported.
+
+### Fixed
+
+- Slug collisions are handled instead of silently shadowed: existing pages keep /timeline (etc.) while Moment views fall back to prefixed slugs, and a site with content at /moment gets the app at /moment-app — app links always point at the real locations.
+- The PWA manifest is served dynamically for the resolved app path, without a redirect hop, and no longer hardcodes the wp-content path.
+
+## [0.1.1] - 2026-07-15
+
+### Changed
+
+- App shell CSS/JS now load through the WordPress enqueue API (registered handles, inline bootstrap config via `wp_add_inline_script`, defer strategy).
+- Reworded the plugin description per wordpress.org review guidelines.
+
+### Security
+
+- Tightened REST API capability checks: draft Moments list only for users who can edit them, notifications are scoped to Moments the current user can edit, syncing responses requires `edit_post` on the target, and attaching media requires `upload_files`.
+
+## [0.1.0] - 2026-07-10
+
+### Added
+
+- Initial release.
+- Phone-first `/moment` app shell with Home, Create, Publish, and Notifications screens; PWA manifest and home-screen support.
+- Publishing pipeline creating standard WordPress posts with block markup for image, video, audio, note, gallery, and mixed Moments.
+- REST API under `/wp-json/moment/v1/` (moments, AI suggestions, response sync, notifications).
+- Syndication connector registry with per-type routing defaults, per-user destination memory, and connected-only destination visibility.
+- Automatic conversation backflow: hourly sync plus on-view freshen, importing replies as native WordPress comments.
+- Federation integration: labeled backflow from the ActivityPub, ATmosphere, and Webmention plugins; IndieWeb u-syndication markup for Bridgy backfeed.
+- Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
+- Timeline and per-type views as both shortcodes and dynamic blocks.
+
+[unreleased]: https://github.com/jeffpaul/moment/compare/0.5.0...HEAD
+[0.5.0]: https://github.com/jeffpaul/moment/compare/0.4.0...0.5.0
+[0.4.0]: https://github.com/jeffpaul/moment/compare/0.3.0...0.4.0
+[0.3.0]: https://github.com/jeffpaul/moment/compare/0.2.0...0.3.0
+[0.2.0]: https://github.com/jeffpaul/moment/compare/0.1.1...0.2.0
+[0.1.1]: https://github.com/jeffpaul/moment/compare/0.1.0...0.1.1
+[0.1.0]: https://github.com/jeffpaul/moment/releases/tag/0.1.0
