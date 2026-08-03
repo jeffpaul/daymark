@@ -144,6 +144,23 @@ shapes in words rather than `array{...}` syntax in hook docblocks.)
 5. **Update docs** (`README.md`, `readme.txt`, and this file) when you
    change user-facing behavior or the development workflow.
 
+### Crediting contributors
+
+We credit everyone who helps — code, testing, review, or ideas — not just the
+person who wrote the commits. This repository squash-merges with the **PR title
+and description** as the commit message, so list contributors as
+`Co-authored-by:` trailers at the **end of the PR description**. They then land in
+the merge commit and on the GitHub contributor graph:
+
+```
+Co-authored-by: Ada Lovelace <12345+ada@users.noreply.github.com>
+```
+
+Use each person's GitHub no-reply email — `https://api.github.com/users/USERNAME`
+gives their numeric ID. Keep these lines last, with nothing after them. (Commits
+made on the branch already carry their authors through automatically; this is for
+crediting people who tested, reviewed, or shaped the idea without committing.)
+
 ## License
 
 Moment is licensed under **GPL-2.0-or-later**
