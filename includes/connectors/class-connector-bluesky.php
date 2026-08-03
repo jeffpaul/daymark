@@ -46,7 +46,7 @@ class Moment_Connector_Bluesky extends Moment_Connector_Base {
 	 * @return string[]
 	 */
 	protected function get_supported_types(): array {
-		return array( 'note', 'image', 'gallery', 'video', 'audio', 'podcast', 'mixed' );
+		return array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed' );
 	}
 
 	/**

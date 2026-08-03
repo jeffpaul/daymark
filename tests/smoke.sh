@@ -172,7 +172,7 @@ $cases = array(
   "gallery" => array("instagram"),
   "video"   => array("youtube"),
   "audio"   => array(),
-  "podcast" => array(),
+  "mixed"   => array(),
 );
 foreach ($cases as $type => $expected) {
   $actual = $r->get_defaults_for_type($type);

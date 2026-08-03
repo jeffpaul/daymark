@@ -155,8 +155,8 @@ class Moment_Syndication_Registry {
 	 * Get default destination connector IDs for a Moment type.
 	 *
 	 * Routing: note→bluesky, image→instagram, gallery→instagram,
-	 * video→youtube; audio, podcast, and mixed have no defaults (mixed
-	 * asks each time; audio/podcast await a configured destination).
+	 * video→youtube; audio and mixed have no defaults (mixed asks each
+	 * time; audio awaits a configured destination).
 	 *
 	 * @param string $type Primary Moment type.
 	 * @return string[] Connector IDs.
@@ -168,7 +168,6 @@ class Moment_Syndication_Registry {
 			'gallery' => array( 'instagram' ),
 			'video'   => array( 'youtube' ),
 			'audio'   => array(),
-			'podcast' => array(),
 			'mixed'   => array(),
 		);
 

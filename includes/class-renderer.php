@@ -38,7 +38,7 @@ class Moment_Renderer {
 		'timeline' => array(),
 		'images'   => array( 'image', 'gallery', 'mixed' ),
 		'videos'   => array( 'video', 'mixed' ),
-		'audio'    => array( 'audio', 'podcast' ),
+		'audio'    => array( 'audio' ),
 		'notes'    => array( 'note' ),
 	);
 
@@ -225,7 +225,6 @@ class Moment_Renderer {
 			'image'   => __( 'Image', 'moment' ),
 			'video'   => __( 'Video', 'moment' ),
 			'audio'   => __( 'Audio', 'moment' ),
-			'podcast' => __( 'Podcast', 'moment' ),
 			'note'    => __( 'Note', 'moment' ),
 			'gallery' => __( 'Gallery', 'moment' ),
 			'mixed'   => __( 'Mixed', 'moment' ),
@@ -245,7 +244,7 @@ class Moment_Renderer {
 			'timeline' => __( 'No Moments yet. Publish your first Moment and it will appear here.', 'moment' ),
 			'images'   => __( 'No image Moments yet. Share a photo and it will appear here.', 'moment' ),
 			'videos'   => __( 'No video Moments yet. Share a video and it will appear here.', 'moment' ),
-			'audio'    => __( 'No audio Moments yet. Share audio or a podcast episode and it will appear here.', 'moment' ),
+			'audio'    => __( 'No audio Moments yet. Share audio and it will appear here.', 'moment' ),
 			'notes'    => __( 'No note Moments yet. Write a quick note and it will appear here.', 'moment' ),
 		);
 

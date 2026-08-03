@@ -43,7 +43,6 @@
 		gallery: 'Gallery',
 		video: 'Video',
 		audio: 'Audio',
-		podcast: 'Podcast',
 		mixed: 'Mixed media',
 	};
 

@@ -43,7 +43,7 @@ $moment_user = wp_get_current_user();
  * their live connection status.
  */
 $moment_registry   = Moment_Syndication_Registry::instance();
-$moment_all_types  = array( 'note', 'image', 'gallery', 'video', 'audio', 'podcast', 'mixed' );
+$moment_all_types  = array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed' );
 $moment_connectors = array();
 
 // Only genuinely connected networks (a real connector plugin with

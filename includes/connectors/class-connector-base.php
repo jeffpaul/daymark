@@ -21,7 +21,7 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 	/**
 	 * Moment types this connector supports.
 	 *
-	 * @return string[] Subset of: note, image, video, audio, podcast, gallery, mixed.
+	 * @return string[] Subset of: note, image, video, audio, gallery, mixed.
 	 */
 	abstract protected function get_supported_types(): array;
 

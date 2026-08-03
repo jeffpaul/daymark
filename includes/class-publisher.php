@@ -23,7 +23,7 @@ class Moment_Publisher {
 	 *
 	 * @var string[]
 	 */
-	public const PRIMARY_TYPES = array( 'image', 'video', 'audio', 'podcast', 'note', 'gallery', 'mixed' );
+	public const PRIMARY_TYPES = array( 'image', 'video', 'audio', 'note', 'gallery', 'mixed' );
 
 	/**
 	 * Moment type → WordPress standard post format.
@@ -40,7 +40,6 @@ class Moment_Publisher {
 		'gallery' => 'gallery',
 		'video'   => 'video',
 		'audio'   => 'audio',
-		'podcast' => 'audio',
 		'note'    => 'aside',
 		'mixed'   => 'standard',
 	);
@@ -716,7 +715,7 @@ class Moment_Publisher {
 	 *
 	 * Rules: no media → note; 1 image → image; 2+ images → gallery;
 	 * video only → video; audio only → audio; mixed media → mixed.
-	 * An explicit valid override (e.g. `podcast`) wins.
+	 * An explicit valid override (e.g. `note`) wins.
 	 *
 	 * @param int[]  $media_ids      Attachment IDs.
 	 * @param string $requested_type Explicit override from input, if any.
