@@ -1,15 +1,22 @@
 name: PR Playground Preview
 
-# Adds a "Preview in WordPress Playground" button to the PR description.
-# No build step needed — the plugin is plain PHP/JS, so the blueprint
-# installs it straight from the PR branch via git:directory.
+# Adds a "Preview in WordPress Playground" button to the PR as a managed
+# comment. No build step needed — the plugin is plain PHP/JS, so the
+# blueprint installs it straight from the PR branch via git:directory.
+#
+# Why a comment and not the PR description: this repo squash-merges using
+# the PR title + description as the commit message (so Co-authored-by
+# trailers land in the merge commit — see credit-contributors.yml). A
+# button appended to the description therefore baked a multi-line
+# base64-ish blueprint data URI into permanent git history. A comment
+# keeps the button on the PR and out of the commit message.
 #
 # NOTE: Playground fetches the branch from the browser, unauthenticated,
 # so the button only works while the repository is PUBLIC. On a private
 # repo the button appears but the instance cannot load the plugin.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
 
 # Disable permissions for all available scopes by default.
 # Any needed permissions should be configured at the job level.
@@ -19,8 +26,8 @@ jobs:
   playground-preview:
     name: Add Playground preview button to the PR
     runs-on: ubuntu-latest
-    # Fork PRs get a read-only GITHUB_TOKEN and cannot edit the PR
-    # description; skip rather than fail.
+    # Fork PRs get a read-only GITHUB_TOKEN and cannot comment on the PR;
+    # skip rather than fail.
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -79,6 +86,8 @@ jobs:
       - name: Post Playground preview button
         uses: WordPress/action-wp-playground-pr-preview@5e92f5e3c80d06126f22e83e4bb21221fbbd3e7f # v3
         with:
-          mode: append-to-description
+          # Comment, not append-to-description: keeps the blueprint data URI
+          # out of the squash-merge commit message (see the note above).
+          mode: comment
           blueprint: ${{ steps.blueprint.outputs.blueprint }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

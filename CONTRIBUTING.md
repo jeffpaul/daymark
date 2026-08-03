@@ -143,6 +143,12 @@ shapes in words rather than `array{...}` syntax in hook docblocks.)
    isn't obvious.
 5. **Update docs** (`README.md`, `readme.txt`, and this file) when you
    change user-facing behavior or the development workflow.
+6. **Write the description as the commit message.** Merges here are squashed
+   using the PR title and description verbatim, so that text becomes
+   permanent git history — delete the template's HTML comments and any
+   unused sections before merge, and keep the summary readable as a commit
+   body. Automated PR content (like the Playground preview button) is posted
+   as a comment for the same reason.
 
 ### Crediting contributors
 
