@@ -11,27 +11,33 @@ release notes for a tag are its section here. Add entries under
 [Unreleased](#unreleased) as you go, then rename that heading to the new version
 at release time.
 
+Entries link to the pull request that made the change. Releases before 0.5.0
+have no links because they predate this project's pull-request workflow — their
+history is reachable through the compare links at the bottom of this file. The
+links are stripped when `readme.txt` is generated, since wordpress.org readers
+can't act on them.
+
 ## [Unreleased]
 
 ## [0.5.0] - 2026-08-03
 
 ### Added
 
-- Optional Title field for audio and video Moments: those types read well with a title, so the composer offers one — pre-filled by AI from your caption when a provider is connected, editable, and optional (leave it blank and Moment derives the title from your text, as before). Which types show the field is filterable via the `moment_title_field_policy` filter.
-- Search and filter your Moments from Home: a search icon in the header expands a search box, with type-filter chips for Images, Videos, Audio, and Notes; the list heading reads "Results" while you search.
-- Manage a Moment straight from the list: a per-item menu edits a published Moment in the composer or deletes it (with a confirmation step; delete moves the Moment to Trash).
-- Reply to a notification inline: each notification has a reply icon that opens a reply box and posts your reply as a comment on the Moment.
-- A 50 MB per-file upload cap, with a clear message when a file is too large.
-- For developers: new REST endpoints (`DELETE /moments/{id}`, `POST /notifications/{id}/reply`, `type`/`s` filters on `GET /moments`, and `POST /ai/title`), the `moment_title_field_policy` filter, and `backflow_supported` documented on the connector interface.
+- Optional Title field for audio and video Moments: those types read well with a title, so the composer offers one — pre-filled by AI from your caption when a provider is connected, editable, and optional (leave it blank and Moment derives the title from your text, as before). Which types show the field is filterable via the `moment_title_field_policy` filter. ([#28](https://github.com/jeffpaul/moment/pull/28))
+- Search and filter your Moments from Home: a search icon in the header expands a search box, with type-filter chips for Images, Videos, Audio, and Notes; the list heading reads "Results" while you search. ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- Manage a Moment straight from the list: a per-item menu edits a published Moment in the composer or deletes it (with a confirmation step; delete moves the Moment to Trash). ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- Reply to a notification inline: each notification has a reply icon that opens a reply box and posts your reply as a comment on the Moment. ([#23](https://github.com/jeffpaul/moment/pull/23), [#25](https://github.com/jeffpaul/moment/pull/25))
+- A 50 MB per-file upload cap, with a clear message when a file is too large. ([#22](https://github.com/jeffpaul/moment/pull/22))
+- For developers: new REST endpoints (`DELETE /moments/{id}`, `POST /notifications/{id}/reply`, `type`/`s` filters on `GET /moments`, and `POST /ai/title`), the `moment_title_field_policy` filter, and `backflow_supported` documented on the connector interface. ([#22](https://github.com/jeffpaul/moment/pull/22), [#23](https://github.com/jeffpaul/moment/pull/23), [#28](https://github.com/jeffpaul/moment/pull/28))
 
 ### Changed
 
-- Infinite scroll on the recent Moments list replaces the manual "view more" step, and the site-views navigation stays anchored at the bottom.
-- The app, PWA, and browser-tab icons now use Moment's designed brand mark.
+- Infinite scroll on the recent Moments list replaces the manual "view more" step, and the site-views navigation stays anchored at the bottom. ([#25](https://github.com/jeffpaul/moment/pull/25))
+- The app, PWA, and browser-tab icons now use Moment's designed brand mark. ([#21](https://github.com/jeffpaul/moment/pull/21))
 
 ### Removed
 
-- The `podcast` Moment type: a podcast is simply an audio (or video) Moment. Use a Category if you want to label one as a podcast.
+- The `podcast` Moment type: a podcast is simply an audio (or video) Moment. Use a Category if you want to label one as a podcast. ([#27](https://github.com/jeffpaul/moment/pull/27))
 
 ## [0.4.0] - 2026-07-29
 

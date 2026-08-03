@@ -13,7 +13,9 @@
 #   - An entry               →  * An entry
 #
 # The `[Unreleased]` section and the link-reference block are dropped: neither
-# means anything on wordpress.org.
+# means anything on wordpress.org. Trailing pull-request links are dropped too —
+# they belong on GitHub, where a reader can follow them; on the plugin page and
+# the update screen they are noise nobody can act on.
 #
 # Usage:
 #   bin/sync-changelog.sh           # rewrite readme.txt in place
@@ -79,7 +81,9 @@ changelog_body() {
 
 		# Continuation of a wrapped entry.
 		/^[[:space:]]+[^[:space:]]/ && body { print; next }
-	' "$CHANGELOG"
+	' "$CHANGELOG" |
+		# Strip a trailing "([#12](url))" or "([#12](url), [#13](url))".
+		sed -E 's/ \(\[#[0-9]+\]\([^)]*\)(, \[#[0-9]+\]\([^)]*\))*\)$//'
 }
 
 # Splice the generated body between the Changelog and Upgrade Notice headings.

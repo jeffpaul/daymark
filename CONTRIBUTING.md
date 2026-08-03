@@ -186,12 +186,17 @@ standard headings — **Added**, **Changed**, **Deprecated**, **Removed**,
 
 ### Added
 
-- Optional Title field for audio and video Moments…
+- Optional Title field for audio and video Moments… ([#28](https://github.com/jeffpaul/moment/pull/28))
 ```
 
 Write for the person using Moment, not for the repository. "You can now search
-your Moments from Home" beats "implement search endpoint" — no PR numbers, no
-commit references, no internal file names.
+your Moments from Home" beats "implement search endpoint" — no commit hashes and
+no internal file names.
+
+End each entry with a link to its pull request, for traceability. Use an explicit
+markdown link rather than a bare `#28`, which does not autolink in a rendered
+file, and list more than one where a change genuinely spanned PRs. These links
+are stripped automatically when `readme.txt` is generated, so keep them here.
 
 `readme.txt`'s `== Changelog ==` section is **generated** from `CHANGELOG.md` —
 never edit it by hand. wordpress.org's readme format has no `###` headings, so
