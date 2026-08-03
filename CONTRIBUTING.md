@@ -173,6 +173,38 @@ the end of the PR description covering everyone who commits to, reviews, or comm
 on the PR — plus the authors and commenters of its linked issues. You only need to
 add someone by hand when they can't be detected (for example, off-GitHub help).
 
+## Changelog
+
+`CHANGELOG.md` is the source of truth for what changed, and it follows
+[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Add an entry
+under `## [Unreleased]` in the same PR as your change, grouped under one of the
+standard headings — **Added**, **Changed**, **Deprecated**, **Removed**,
+**Fixed**, **Security**:
+
+```markdown
+## [Unreleased]
+
+### Added
+
+- Optional Title field for audio and video Moments…
+```
+
+Write for the person using Moment, not for the repository. "You can now search
+your Moments from Home" beats "implement search endpoint" — no PR numbers, no
+commit references, no internal file names.
+
+`readme.txt`'s `== Changelog ==` section is **generated** from `CHANGELOG.md` —
+never edit it by hand. wordpress.org's readme format has no `###` headings, so
+the generator renders each category as a bold label instead:
+
+```bash
+bin/sync-changelog.sh           # regenerate readme.txt from CHANGELOG.md
+bin/sync-changelog.sh --check   # what CI runs; fails with a diff if stale
+```
+
+CI fails if the two have drifted, so wordpress.org can't end up showing a stale
+changelog.
+
 ## Releasing
 
 Releases are tag-driven: pushing a version tag builds the distribution zip and
@@ -180,13 +212,15 @@ publishes the GitHub release (`.github/workflows/release.yml`).
 
 1. **Open a release PR** that bumps the version in all four places — the
    `Version:` header and `MOMENT_VERSION` in `moment.php`, `Stable tag:` in
-   `readme.txt`, and `package.json` — and adds the `readme.txt` changelog and
-   upgrade-notice entries. The release workflow fails the build if these
-   disagree with the tag.
-2. **Write the changelog for users, not for the repo.** Those entries are the
-   single source of truth: wordpress.org renders them, and the release workflow
-   turns the tag's section into the GitHub release notes. Describe what someone
-   can now do, not which PR did it.
+   `readme.txt`, and `package.json`. The release workflow fails the build if
+   these disagree with the tag.
+2. **Close out the changelog.** Rename `## [Unreleased]` to
+   `## [X.Y.Z] - YYYY-MM-DD` (ISO 8601), add the version's compare link to the
+   reference block at the bottom of the file, start a fresh empty
+   `## [Unreleased]`, then run `bin/sync-changelog.sh` and commit the
+   regenerated `readme.txt`. Add the `readme.txt` upgrade notice too — that one
+   is hand-written, since it is a short wordpress.org-specific summary rather
+   than a changelog.
 3. **Keep the release PR description short.** It becomes the commit message the
    tag points at, which is what anyone browsing the tag list reads first. Put
    post-merge steps in a PR comment rather than the description — or pass an

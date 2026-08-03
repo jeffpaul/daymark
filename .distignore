@@ -16,6 +16,7 @@ vendor
 .distignore
 .gitattributes
 .gitignore
+CHANGELOG.md
 CLAUDE.md
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
