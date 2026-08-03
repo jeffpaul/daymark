@@ -78,12 +78,60 @@ jobs:
             git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "::error::untracked file in zip: $f"; exit 1; }
           done
 
+      # Release notes come from the tag's readme.txt changelog section — the same
+      # user-facing text wordpress.org shows — so the release, the plugin readme,
+      # and wp.org never drift apart. GitHub's --generate-notes emits a raw list
+      # of merged PRs instead (Dependabot bumps, the release PR itself), which is
+      # internal churn rather than "what changed for you"; it stays only as the
+      # fallback for a tag with no matching changelog section.
+      - name: Build release notes from the readme changelog
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          section=$(awk -v v="= $version =" '
+            $0==v {f=1; next}
+            f && /^= [0-9]/ {exit}
+            f && /^== / {exit}
+            f' readme.txt | sed '/^$/d')
+
+          if [ -z "$section" ]; then
+            echo "::warning::No '= $version =' section in readme.txt; falling back to generated notes."
+            echo 'file=' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Previous release = the next version heading below this one.
+          esc=$(printf '%s' "$version" | sed 's/\./\\./g')
+          prev=$(sed -n "/^= $esc =\$/,\$p" readme.txt \
+            | sed -n 's/^= \([0-9][0-9.]*\) =$/\1/p' | sed -n 2p)
+
+          {
+            echo "## What's Changed"
+            echo "$section"
+            if [ -n "$prev" ]; then
+              printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
+                "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME"
+            fi
+          } > release-notes.md
+
+          echo "--- release notes ---"
+          cat release-notes.md
+          echo 'file=release-notes.md' >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release with zip attached
         env:
           GH_TOKEN: ${{ github.token }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
         run: |
+          # An existing release was drafted by hand — attach the zip but leave
+          # whatever notes were written there alone.
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" moment.zip --clobber --repo "$GITHUB_REPOSITORY"
+          elif [ -n "$NOTES_FILE" ]; then
+            gh release create "$GITHUB_REF_NAME" moment.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Moment ${GITHUB_REF_NAME#v}" \
+              --notes-file "$NOTES_FILE"
           else
             gh release create "$GITHUB_REF_NAME" moment.zip \
               --repo "$GITHUB_REPOSITORY" \

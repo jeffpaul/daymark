@@ -173,6 +173,36 @@ the end of the PR description covering everyone who commits to, reviews, or comm
 on the PR — plus the authors and commenters of its linked issues. You only need to
 add someone by hand when they can't be detected (for example, off-GitHub help).
 
+## Releasing
+
+Releases are tag-driven: pushing a version tag builds the distribution zip and
+publishes the GitHub release (`.github/workflows/release.yml`).
+
+1. **Open a release PR** that bumps the version in all four places — the
+   `Version:` header and `MOMENT_VERSION` in `moment.php`, `Stable tag:` in
+   `readme.txt`, and `package.json` — and adds the `readme.txt` changelog and
+   upgrade-notice entries. The release workflow fails the build if these
+   disagree with the tag.
+2. **Write the changelog for users, not for the repo.** Those entries are the
+   single source of truth: wordpress.org renders them, and the release workflow
+   turns the tag's section into the GitHub release notes. Describe what someone
+   can now do, not which PR did it.
+3. **Keep the release PR description short.** It becomes the commit message the
+   tag points at, which is what anyone browsing the tag list reads first. Put
+   post-merge steps in a PR comment rather than the description — or pass an
+   explicit message at merge time:
+   ```bash
+   gh pr merge <n> --squash --subject "Release X.Y.Z (#<n>)" --body-file notes.md
+   ```
+4. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
+   `git tag -a`. GitHub shows a lightweight tag's verification from the
+   underlying commit, and squash merges here are GitHub-signed, so the tag reads
+   as Verified. An unsigned annotated tag reads as Unverified instead.
+5. **Push the tag.** The workflow verifies the version, builds the zip, checks
+   that nothing untracked or dev-only leaked into it, and creates the release
+   with notes from the changelog. It is safe to re-run against an existing
+   release: the zip is re-uploaded and hand-written notes are left alone.
+
 ## License
 
 Moment is licensed under **GPL-2.0-or-later**
