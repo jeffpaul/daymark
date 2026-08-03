@@ -26,6 +26,47 @@ class Moment_Publisher {
 	public const PRIMARY_TYPES = array( 'image', 'video', 'audio', 'note', 'gallery', 'mixed' );
 
 	/**
+	 * Per-type policy for the composer's optional Title field.
+	 *
+	 * Returns a map of primary type => 'optional' | 'hidden'. Audio and video
+	 * Moments show an optional, editable Title field by default (a spoken or
+	 * filmed Moment reads better with a real title); every other type derives
+	 * its title from the caption or a timestamp, so the field stays hidden.
+	 *
+	 * The title itself is always optional in storage — when no title reaches
+	 * the publisher, it falls back to a caption/timestamp-derived title. This
+	 * policy only governs whether the composer surfaces the field.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @return array<string, string> Map of primary type to 'optional' or 'hidden'.
+	 */
+	public static function title_field_policy(): array {
+		$policy = array(
+			'audio'   => 'optional',
+			'video'   => 'optional',
+			'note'    => 'hidden',
+			'image'   => 'hidden',
+			'gallery' => 'hidden',
+			'mixed'   => 'hidden',
+		);
+
+		/**
+		 * Filters the per-type policy for the composer's optional Title field.
+		 *
+		 * Each primary Moment type maps to 'optional' (the composer shows an
+		 * editable, AI-pre-filled Title field) or 'hidden' (the title is
+		 * derived from the caption or a timestamp). Return a modified map to
+		 * show or hide the field for a given type.
+		 *
+		 * @since 0.5.0
+		 *
+		 * @param array<string, string> $policy Map of primary type to 'optional' or 'hidden'.
+		 */
+		return (array) apply_filters( 'moment_title_field_policy', $policy );
+	}
+
+	/**
 	 * Moment type → WordPress standard post format.
 	 *
 	 * Set explicitly so a Moment lands in the right format regardless of

@@ -26,6 +26,9 @@
 	const state = {
 		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
 		caption: '',
+		title: '', // optional Title field value (audio/video by policy)
+		titleStatus: 'idle', // idle | loading | done — AI prefill lifecycle
+		titleEdited: false, // author typed a title: never overwrite it
 		tags: [],
 		primaryType: 'note',
 		targets: [],
@@ -209,6 +212,9 @@
 		});
 		state.files = [];
 		state.caption = '';
+		state.title = '';
+		state.titleStatus = 'idle';
+		state.titleEdited = false;
 		state.tags = [];
 		state.primaryType = 'note';
 		state.targets = [];
@@ -231,6 +237,21 @@
 		return state.editing ? state.editing.type : detectType(state.files);
 	}
 
+	// Per-type Title-field policy from the server ('optional' | 'hidden').
+	// Any unknown type is treated as 'hidden' so the field never leaks onto a
+	// type the server did not mark optional.
+	const titlePolicy = config.titlePolicy || {};
+
+	function titlePolicyFor(type) {
+		return titlePolicy[type] === 'optional' ? 'optional' : 'hidden';
+	}
+
+	// Whether the composer should surface the optional Title field for the
+	// current effective type (audio/video by default).
+	function titleFieldShown() {
+		return titlePolicyFor(effectiveType()) === 'optional';
+	}
+
 	// Load a draft into the composer for continued editing.
 	async function openDraft(id) {
 		const moment = await apiGet('moments/' + id);
@@ -241,6 +262,11 @@
 			media: Array.isArray(moment.media) ? moment.media : [],
 		};
 		state.caption = moment.caption || '';
+		// Preserve the draft's existing title: seed the field and mark it done
+		// so the AI prefill never overwrites a title the author already has.
+		state.title = moment.title || '';
+		state.titleStatus = 'done';
+		state.titleEdited = false;
 		state.targets = Array.isArray(moment.targets) ? moment.targets.slice() : [];
 		state.categories = Array.isArray(moment.categories) ? moment.categories.map(Number) : [];
 		state.helpers = Array.isArray(moment.helpers) ? moment.helpers.slice() : [];
@@ -1109,6 +1135,7 @@
 						state.caption
 					)}</textarea>
 				</div>
+				<div data-title-slot></div>
 				${
 					config.ai && config.ai.available
 						? '<button type="button" class="moment-btn moment-btn--secondary" data-action="ai-assist">AI Assist</button>'
@@ -1214,6 +1241,9 @@
 			if (badge) {
 				badge.textContent = TYPE_LABELS[state.primaryType];
 			}
+			// The Title field's visibility tracks the effective type, so
+			// re-render its slot whenever the media (and thus the type) shifts.
+			this.refreshTitleField();
 			if (!state.files.length) {
 				preview.innerHTML = '';
 				return;
@@ -1332,6 +1362,101 @@
 			if (hint) {
 				hint.textContent = entry.altStatus === 'done' ? 'AI-suggested — edit as needed' : '';
 			}
+		},
+
+		// Markup for the optional Title field, or '' when the current type's
+		// policy hides it. The ⓘ button toggles the keyboard-reachable hint.
+		titleFieldMarkup() {
+			if (!titleFieldShown()) {
+				return '';
+			}
+			const busy = state.titleStatus === 'loading' ? ' aria-busy="true"' : '';
+			return `
+				<div class="moment-field moment-titlefield">
+					<div class="moment-titlefield__labelrow">
+						<label class="moment-field__label" for="moment-title">Title (optional)</label>
+						<button type="button" class="moment-infobtn" data-title-info aria-label="About the title field" aria-expanded="false" aria-controls="moment-title-hint">
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+						</button>
+					</div>
+					<input type="text" class="moment-input moment-titlefield__input" id="moment-title" data-title-input value="${esc(
+						state.title
+					)}" placeholder="Add a title"${busy} />
+					<p class="moment-titlefield__hint" id="moment-title-hint" data-title-hint hidden>If left blank, the title is generated from your Moment&#39;s text.</p>
+				</div>`;
+		},
+
+		// Render (or clear) the Title-field slot in place and, when a provider
+		// is available, kick off a one-time AI prefill. Called on every media
+		// change so the field appears/disappears as the effective type shifts.
+		refreshTitleField() {
+			const slot = root.querySelector('[data-title-slot]');
+			if (!slot) {
+				return;
+			}
+			slot.innerHTML = this.titleFieldMarkup();
+			if (!titleFieldShown()) {
+				return;
+			}
+
+			const input = slot.querySelector('[data-title-input]');
+			if (input) {
+				input.addEventListener('input', () => {
+					state.title = input.value;
+					state.titleEdited = true; // Stop a late AI result from overwriting.
+				});
+			}
+
+			const info = slot.querySelector('[data-title-info]');
+			const hint = slot.querySelector('[data-title-hint]');
+			if (info && hint) {
+				info.addEventListener('click', () => {
+					const open = info.getAttribute('aria-expanded') === 'true';
+					info.setAttribute('aria-expanded', open ? 'false' : 'true');
+					hint.hidden = open;
+				});
+			}
+
+			// Pre-fill from the AI provider once (if one is connected and the
+			// author has not already typed or seeded a title). No provider →
+			// leave the field empty for manual entry.
+			if (
+				config.ai &&
+				config.ai.available &&
+				state.titleStatus === 'idle' &&
+				!state.titleEdited
+			) {
+				this.generateTitle();
+			}
+		},
+
+		// Ask the provider for a short title and drop it into the field unless
+		// the author has already typed one. Attempted at most once per compose
+		// session (status advances to 'done' even on failure, so a repeated
+		// media change never re-fires the request).
+		async generateTitle() {
+			state.titleStatus = 'loading';
+			try {
+				const result = await apiPost('ai/title', {
+					text: state.caption || '',
+					primary_type: effectiveType(),
+				});
+				if (!state.titleEdited && result && result.title) {
+					state.title = String(result.title);
+				}
+			} catch (err) {
+				// Non-blocking: leave the field for manual entry.
+			}
+			state.titleStatus = 'done';
+
+			const field = root.querySelector('[data-title-input]');
+			if (!field) {
+				return; // Field was hidden (type changed) before the result arrived.
+			}
+			if (!state.titleEdited) {
+				field.value = state.title;
+			}
+			field.removeAttribute('aria-busy');
 		},
 	};
 
@@ -1758,6 +1883,12 @@
 			formData.append('caption', state.caption);
 			formData.append('primary_type', state.primaryType);
 			formData.append('status', postStatus);
+			// Include the optional title only when the field is shown for this
+			// type; when hidden, omit it so the publisher keeps deriving the
+			// title from the caption/timestamp.
+			if (titleFieldShown()) {
+				formData.append('title', state.title || '');
+			}
 			formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
 			state.targets.forEach((target) => formData.append('targets[]', target));
 			state.categories.forEach((id) => formData.append('categories[]', id));

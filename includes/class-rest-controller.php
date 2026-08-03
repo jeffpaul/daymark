@@ -139,6 +139,28 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/ai/title',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'ai_title' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'caption' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_textarea_field',
+					),
+					'type'    => array(
+						'type'              => 'string',
+						'default'           => 'note',
+						'sanitize_callback' => 'sanitize_key',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/ai/alt-text',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -502,6 +524,46 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$suggestions = Moment_Plugin::instance()->ai_assist->get_suggestions( $caption, $type );
 
 		return rest_ensure_response( $suggestions );
+	}
+
+	/**
+	 * POST /moment/v1/ai/title — a short AI-suggested title for a Moment.
+	 *
+	 * Mirrors /ai/suggestions: delegates to Moment_AI_Assist, which falls back
+	 * to a deterministic mock title when no provider is configured. Used to
+	 * pre-fill the composer's optional Title field for audio/video Moments.
+	 * Optional and non-blocking — never blocks publishing.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function ai_title( WP_REST_Request $request ) {
+		// Canonical request fields are `text` and `primary_type`; accept the
+		// older `caption`/`type` names as fallbacks (matches /ai/suggestions).
+		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
+		$type    = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+
+		if ( ! in_array( $type, Moment_Publisher::PRIMARY_TYPES, true ) ) {
+			$type = 'note';
+		}
+
+		$ai    = Moment_Plugin::instance()->ai_assist;
+		$title = $ai->suggest_title(
+			array(
+				'text' => $caption,
+				'type' => $type,
+			)
+		);
+
+		return rest_ensure_response(
+			array(
+				'title'          => $title,
+				'is_mocked'      => ! $ai->is_available(),
+				'provider_label' => $ai->get_provider_label(),
+			)
+		);
 	}
 
 	/**

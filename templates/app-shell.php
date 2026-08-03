@@ -100,6 +100,17 @@ foreach ( $moment_all_types as $moment_type ) {
 	$moment_category_defaults[ $moment_type ] = $moment_publisher->get_effective_categories( $moment_type );
 }
 
+// Per-type policy for the composer's optional Title field. Normalized to a
+// strict 'optional' | 'hidden' map for every known type so the app can look
+// up any type without a missing-key gap (a filter may return a partial map).
+$moment_title_policy_all = Moment_Publisher::title_field_policy();
+$moment_title_policy     = array();
+foreach ( $moment_all_types as $moment_type ) {
+	$moment_title_policy[ $moment_type ] = ( isset( $moment_title_policy_all[ $moment_type ] ) && 'optional' === $moment_title_policy_all[ $moment_type ] )
+		? 'optional'
+		: 'hidden';
+}
+
 $moment_ai = Moment_Plugin::instance()->ai_assist;
 
 // Controllable helpers get in-app toggles; awareness helpers are the
@@ -134,6 +145,7 @@ $moment_config = array(
 	'defaults'            => $moment_type_defaults,
 	'categories'          => $moment_categories,
 	'categoryDefaults'    => $moment_category_defaults,
+	'titlePolicy'         => $moment_title_policy,
 	'defaultCategory'     => (int) get_option( 'default_category' ),
 	'pages'               => $moment_pages,
 	'ai'                  => array(
