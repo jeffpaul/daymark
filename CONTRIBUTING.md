@@ -157,9 +157,13 @@ Co-authored-by: Ada Lovelace <12345+ada@users.noreply.github.com>
 ```
 
 Use each person's GitHub no-reply email — `https://api.github.com/users/USERNAME`
-gives their numeric ID. Keep these lines last, with nothing after them. (Commits
-made on the branch already carry their authors through automatically; this is for
-crediting people who tested, reviewed, or shaped the idea without committing.)
+gives their numeric ID. Keep these lines last, with nothing after them.
+
+Most of this is automated: the **Credit contributors** workflow
+(`.github/workflows/credit-contributors.yml`) maintains a `Co-authored-by:` block at
+the end of the PR description covering everyone who commits to, reviews, or comments
+on the PR — plus the authors and commenters of its linked issues. You only need to
+add someone by hand when they can't be detected (for example, off-GitHub help).
 
 ## License
 
