@@ -1,0 +1,107 @@
+name: Credit contributors
+
+# Maintains a `Co-authored-by:` block at the end of each PR description covering
+# everyone who committed to, reviewed, or commented on the PR — plus the authors
+# and commenters of any linked (closing) issues. Because this repo squash-merges
+# with the PR title + description as the commit message, those trailers land in
+# the merge commit and on the GitHub contributor graph with no manual step.
+#
+# Runs as `pull_request_target` so it has write access on fork PRs. It never
+# checks out or executes PR code — it only reads metadata via the API and edits a
+# marked block in the PR body — which makes this a safe use of the trigger.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  pull-requests: write
+  issues: read
+  contents: read
+
+concurrency:
+  group: credit-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  credit:
+    # Skip comment events that aren't on a pull request.
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request != null }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.eventName === 'issue_comment'
+              ? context.payload.issue.number
+              : context.payload.pull_request.number;
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+            const authorId = pr.user && pr.user.id;
+
+            const people = new Map(); // id -> login
+            const add = (u) => {
+              if (!u || !u.id || !u.login) return;
+              if (u.type === 'Bot' || u.login.endsWith('[bot]')) return;
+              if (u.id === authorId) return; // the PR author is already the commit author
+              people.set(u.id, u.login);
+            };
+
+            for (const c of await github.paginate(github.rest.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 })) add(c.author);
+            for (const r of await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: prNumber, per_page: 100 })) add(r.user);
+            for (const c of await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: prNumber, per_page: 100 })) add(c.user);
+            for (const c of await github.paginate(github.rest.pulls.listReviewComments, { owner, repo, pull_number: prNumber, per_page: 100 })) add(c.user);
+
+            // Linked (closing) issues: their authors + commenters.
+            try {
+              const q = `query($owner:String!,$repo:String!,$pr:Int!){
+                repository(owner:$owner,name:$repo){ pullRequest(number:$pr){
+                  closingIssuesReferences(first:30){ nodes{
+                    author{ login ... on User { databaseId } }
+                    comments(first:100){ nodes{ author{ login ... on User { databaseId } } } }
+                  } }
+                } }
+              }`;
+              const res = await github.graphql(q, { owner, repo, pr: prNumber });
+              const collect = (a) => { if (a && a.databaseId && a.login) add({ id: a.databaseId, login: a.login, type: 'User' }); };
+              for (const issue of (res.repository.pullRequest.closingIssuesReferences.nodes || [])) {
+                collect(issue.author);
+                for (const cm of (issue.comments.nodes || [])) collect(cm.author);
+              }
+            } catch (e) {
+              core.warning('Linked-issue lookup failed: ' + e.message);
+            }
+
+            const START = '<!-- co-authors:start -->';
+            const END = '<!-- co-authors:end -->';
+            const lines = [...people.entries()]
+              .sort((a, b) => a[1].toLowerCase().localeCompare(b[1].toLowerCase()))
+              .map(([id, login]) => `Co-authored-by: ${login} <${id}+${login}@users.noreply.github.com>`);
+            const block = lines.length
+              ? `${START}\n<!-- Auto-maintained by .github/workflows/credit-contributors.yml -->\n${lines.join('\n')}\n${END}`
+              : '';
+
+            const body = pr.body || '';
+            const re = new RegExp(`\\n*${START}[\\s\\S]*?${END}`, 'm');
+            let newBody;
+            if (re.test(body)) {
+              newBody = lines.length ? body.replace(re, `\n\n${block}`) : body.replace(re, '');
+            } else if (lines.length) {
+              newBody = `${body.replace(/\s+$/, '')}\n\n${block}`;
+            } else {
+              newBody = body;
+            }
+            newBody = newBody.replace(/\s+$/, '') + '\n';
+
+            if (newBody.trim() === body.trim()) {
+              core.info('Co-author block already up to date.');
+              return;
+            }
+            await github.rest.pulls.update({ owner, repo, pull_number: prNumber, body: newBody });
+            core.info(`Updated co-author block: ${lines.length} contributor(s).`);
