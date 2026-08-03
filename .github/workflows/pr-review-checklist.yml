@@ -1,0 +1,65 @@
+name: PR Review Checklist
+
+# Posts the review checklist as a PR comment instead of shipping it in the PR
+# template.
+#
+# Why: this repo squash-merges using the PR title + description as the commit
+# message (so Co-authored-by trailers reach git history — see
+# credit-contributors.yml). Anything in the template therefore lands in
+# permanent history unless the author remembers to delete it, including the
+# HTML comments nobody can see while reviewing. A comment keeps the checklist
+# clickable for review and out of the commit message, with nothing to remember
+# at merge time.
+#
+# pull_request_target is used so the comment also appears on fork PRs, which
+# get a read-only token under pull_request. This workflow never checks out or
+# runs PR code — it only posts a static comment.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+# Disable permissions for all available scopes by default.
+# Any needed permissions should be configured at the job level.
+permissions: {}
+
+jobs:
+  checklist:
+    name: Post the review checklist
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Post the checklist comment (once per PR)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          MARKER: '<!-- moment:review-checklist -->'
+        run: |
+          # Skip if the checklist is already there (reopened PRs, re-runs).
+          if gh api --paginate "repos/$REPO/issues/$PR/comments" --jq '.[].body' \
+            | grep -qF "$MARKER"; then
+            echo "Checklist already present on #$PR — nothing to do."
+            exit 0
+          fi
+
+          # Heredoc body: everything below is flush-left in the comment.
+          cat > checklist.md <<EOF
+          $MARKER
+          ### Review checklist
+
+          - [ ] Tests added or updated for the change
+          - [ ] Docs updated (README / readme.txt / CONTRIBUTING) if behavior changed
+          - [ ] Any manual testing is described in the PR description
+
+          CI already covers PHPUnit, WordPress Coding Standards, the WP-CLI smoke suite,
+          and Playwright — no need to tick those off by hand.
+
+          <sub>This lives in a comment rather than the PR description because squash
+          merges here use the PR title and description as the commit message. Keep the
+          description readable as a commit body — see
+          [CONTRIBUTING](https://github.com/$REPO/blob/HEAD/CONTRIBUTING.md#pull-requests).</sub>
+          EOF
+
+          gh pr comment "$PR" --repo "$REPO" --body-file checklist.md
