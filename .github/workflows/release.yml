@@ -88,6 +88,9 @@ jobs:
         id: notes
         run: |
           version="${GITHUB_REF_NAME#v}"
+          # Written outside the checkout so it can never be mistaken for a
+          # repository file (the zip is already built and guarded by this point).
+          notes_file="${RUNNER_TEMP:-/tmp}/release-notes.md"
           section=$(awk -v v="= $version =" '
             $0==v {f=1; next}
             f && /^= [0-9]/ {exit}
@@ -112,11 +115,11 @@ jobs:
               printf '\n**Full Changelog**: %s/%s/compare/%s...%s\n' \
                 "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$prev" "$GITHUB_REF_NAME"
             fi
-          } > release-notes.md
+          } > "$notes_file"
 
           echo "--- release notes ---"
-          cat release-notes.md
-          echo 'file=release-notes.md' >> "$GITHUB_OUTPUT"
+          cat "$notes_file"
+          echo "file=$notes_file" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release with zip attached
         env:
