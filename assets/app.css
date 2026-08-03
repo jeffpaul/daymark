@@ -732,6 +732,43 @@ h2[tabindex='-1']:focus {
 	color: var(--moment-text-secondary);
 }
 
+/* Optional Title field (audio/video by policy): label row with an ⓘ toggle
+ * and a tap-to-reveal hint. */
+.moment-titlefield__labelrow {
+	display: flex;
+	align-items: center;
+	gap: var(--moment-spacing-xs);
+}
+
+.moment-infobtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: var(--moment-tap-min);
+	min-width: var(--moment-tap-min);
+	margin: -12px 0; /* Keep the 44px tap target without inflating the row. */
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--moment-text-muted);
+	cursor: pointer;
+}
+
+.moment-infobtn:hover,
+.moment-infobtn[aria-expanded='true'] {
+	color: var(--moment-accent);
+}
+
+.moment-titlefield__hint {
+	margin: 0;
+	font-size: 12px;
+	color: var(--moment-text-secondary);
+}
+
+.moment-titlefield__hint[hidden] {
+	display: none;
+}
+
 .moment-textarea,
 .moment-input {
 	width: 100%;

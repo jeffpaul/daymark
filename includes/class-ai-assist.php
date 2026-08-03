@@ -110,6 +110,38 @@ class Moment_AI_Assist {
 	}
 
 	/**
+	 * Suggest a short title for a Moment draft.
+	 *
+	 * Mirrors suggest_caption(): the real path asks the WP 7.0 AI Client for a
+	 * short, plain-text title; any failure or a missing provider falls back to
+	 * the deterministic mock_title(). Optional and non-blocking — never throws,
+	 * never blocks publishing. Titles are only surfaced in the composer for the
+	 * types whose Moment_Publisher::title_field_policy() is 'optional'.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param array $context Context: text, media_count, media_types, filename, type.
+	 * @return string Suggested title (plain text).
+	 */
+	public function suggest_title( array $context ): string {
+		$context = $this->normalize_context( $context );
+
+		if ( $this->is_available() ) {
+			$result = $this->generate_text(
+				$this->build_title_prompt( $context ),
+				'You write short, plain-text titles for a personal blog post. Respond with a single title of at most 60 characters. Plain text only — no quotes, no hashtags, no markdown, no trailing punctuation.',
+				40
+			);
+
+			if ( null !== $result ) {
+				return sanitize_text_field( $result );
+			}
+		}
+
+		return $this->mock_title( $context );
+	}
+
+	/**
 	 * Suggest alt text for an attachment.
 	 *
 	 * The real path prompts from textual context only (caption, filename,
@@ -539,6 +571,18 @@ class Moment_AI_Assist {
 	}
 
 	/**
+	 * Build the title prompt for the real path.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param array $context Normalized context.
+	 * @return string
+	 */
+	private function build_title_prompt( array $context ): string {
+		return 'Suggest one short title (at most 60 characters) for this personal blog moment. ' . $this->describe_context( $context );
+	}
+
+	/**
 	 * Build the alt text prompt for the real path.
 	 *
 	 * @param array $context Normalized context.
@@ -582,6 +626,36 @@ class Moment_AI_Assist {
 		);
 
 		return $captions[ $context['type'] ] ?? $captions['note'];
+	}
+
+	/**
+	 * Deterministic mock title. Same input, same output.
+	 *
+	 * Fallback when no AI provider is configured. The real path is
+	 * wp_ai_client_prompt( $this->build_title_prompt( $context ) )->generate_text()
+	 * in suggest_title(). Derives a short title from the draft text when present,
+	 * otherwise a fixed per-type phrase. Always returns a non-empty string.
+	 *
+	 * @since 0.5.0
+	 *
+	 * @param array $context Normalized context.
+	 * @return string
+	 */
+	private function mock_title( array $context ): string {
+		if ( '' !== $context['text'] ) {
+			return wp_trim_words( wp_strip_all_tags( $context['text'] ), 10, '…' );
+		}
+
+		$titles = array(
+			'image'   => 'A captured moment',
+			'gallery' => 'A gathered moment',
+			'video'   => 'A moment in motion',
+			'audio'   => 'A moment in sound',
+			'note'    => 'A small note',
+			'mixed'   => 'A mixed-media moment',
+		);
+
+		return $titles[ $context['type'] ] ?? 'A moment';
 	}
 
 	/**

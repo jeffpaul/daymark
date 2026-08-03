@@ -154,6 +154,56 @@ test('image Moment: alt field, correct article, appears in image views', async (
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// Optional Title field: audio/video Moments surface an editable, optionally
+// AI-pre-filled Title field with a ⓘ tap-to-reveal hint; note Moments do not.
+test('audio Moment shows an editable optional Title field with a toggleable hint', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+
+	// Scope every assertion to the composer screen (bare role/text matches
+	// break this suite). Before any media the type is a note → no Title field.
+	const composer = page.locator('.moment-screen').first();
+	await expect(composer.locator('[data-title-slot] .moment-titlefield')).toHaveCount(0);
+
+	// Attaching audio flips the effective type to audio and reveals the field.
+	await page.setInputFiles('#moment-file-input', 'tests/e2e/fixtures/test-audio.wav');
+	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
+
+	const titleField = composer.locator('[data-title-slot] .moment-titlefield');
+	await expect(titleField).toBeVisible();
+
+	// The field is editable (prefilled by AI when a provider is configured, or
+	// empty for manual entry otherwise) — either way the author can type.
+	const titleInput = titleField.locator('[data-title-input]');
+	await expect(titleInput).toBeVisible();
+	await titleInput.fill(`E2E audio title ${RUN_ID}`);
+	await expect(titleInput).toHaveValue(`E2E audio title ${RUN_ID}`);
+
+	// The ⓘ button toggles the keyboard-reachable hint.
+	const info = titleField.locator('[data-title-info]');
+	const hint = titleField.locator('[data-title-hint]');
+	await expect(hint).toBeHidden();
+	await expect(info).toHaveAttribute('aria-expanded', 'false');
+	await info.click();
+	await expect(hint).toBeVisible();
+	await expect(info).toHaveAttribute('aria-expanded', 'true');
+	await info.click();
+	await expect(hint).toBeHidden();
+});
+
+// The Title field is a per-type affordance: a plain note Moment never shows
+// it (its title is derived from the caption/timestamp).
+test('note Moment does not show the Title field', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/moment');
+	await page.locator('[data-action="new-moment"]').click();
+
+	const composer = page.locator('.moment-screen').first();
+	await composer.locator('#moment-caption').fill(`E2E no-title note ${RUN_ID}`);
+	await expect(composer.locator('[data-title-slot] .moment-titlefield')).toHaveCount(0);
+});
+
 // Scenario 7: real (stubbed) backflow replies appear in notifications.
 // Replies to a Moment surface in notifications. Without a social connector
 // we exercise this with an on-site comment on the Moment post — imported
