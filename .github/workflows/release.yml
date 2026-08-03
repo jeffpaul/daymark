@@ -48,6 +48,12 @@ jobs:
           tools: wp-cli
 
       - name: Build distribution zip
+        env:
+          # setup-php can leave composer with an invalid github-oauth token, which
+          # breaks `wp package install` ("github oauth token ... contains invalid
+          # characters") since it shells out to composer. Force a valid token via
+          # COMPOSER_AUTH, which takes precedence over any stored auth config.
+          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
         run: |
           # Pinned: v3.2+ requires wp-cli ^2.13, which is not yet released —
           # v3.1.0 works with the wp-cli 2.12 that setup-php installs.
