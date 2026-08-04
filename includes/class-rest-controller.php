@@ -452,8 +452,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'orderby'        => 'date',
 			'order'          => 'DESC',
 			'no_found_rows'  => true,
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Mark lookup.
 			'meta_key'       => '_daymark_is_mark',
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
 			'meta_value'     => '1',
 		);
 
