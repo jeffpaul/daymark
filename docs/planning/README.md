@@ -1,5 +1,13 @@
 # Moment — Design Record (compacted planning archive)
 
+> **Renamed (August 2026):** the plugin shipped as **Moment** through 0.5.0.
+> The wordpress.org plugin review team did not approve that name and approved
+> **Daymark**, so as of 0.6.0 the plugin is Daymark and posts ("Moments") are
+> **Marks**. This design record keeps its original naming as history — read
+> "Moment" as Daymark (the product) and "a Moment" as a Mark (a post). The
+> reference-mockup asset was renamed to `assets/daymark-reference-mockup-board.png`;
+> its artwork still shows the Moment-era branding.
+
 This is a single, compacted record of the planning documents written for the
 Moment prototype (2026), preserved after the plugin shipped at **v0.4.0**. It
 condenses ~4,500 lines of pre-build vision, spec, visual, and process notes into
@@ -165,7 +173,7 @@ requirement was documenting "Add to Home Screen" for iOS Safari and Android Chro
 > front-end patterns (Moment Timeline, Image Grid, Video Shelf, Audio Feed, Notes
 > Stream, Profile Header). The shipped product uses section-page shortcodes/blocks
 > instead. A reference mockup board image is preserved at
-> [`assets/moment-reference-mockup-board.png`](assets/moment-reference-mockup-board.png).
+> [`assets/daymark-reference-mockup-board.png`](assets/daymark-reference-mockup-board.png).
 
 ## 10. Success metrics & E2E acceptance
 

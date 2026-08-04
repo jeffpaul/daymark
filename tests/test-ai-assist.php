@@ -2,11 +2,11 @@
 /**
  * AI Assist tests — E2E scenario 6 (AI is optional, mock is deterministic).
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
- * Tests the Moment_AI_Assist adapter mock fallback contract.
+ * Tests the Daymark_AI_Assist adapter mock fallback contract.
  */
 class Test_AI_Assist extends WP_UnitTestCase {
 
@@ -23,7 +23,7 @@ class Test_AI_Assist extends WP_UnitTestCase {
 
 	/** Mock suggestions contain the full contract keys. */
 	public function test_mock_suggestions_have_required_keys() {
-		$ai          = new Moment_AI_Assist();
+		$ai          = new Daymark_AI_Assist();
 		$suggestions = $ai->get_suggestions(
 			array(
 				'text'        => 'Morning walk in the park',
@@ -49,8 +49,8 @@ class Test_AI_Assist extends WP_UnitTestCase {
 			'media_types' => array( 'image' ),
 		);
 
-		$first  = ( new Moment_AI_Assist() )->get_suggestions( $context );
-		$second = ( new Moment_AI_Assist() )->get_suggestions( $context );
+		$first  = ( new Daymark_AI_Assist() )->get_suggestions( $context );
+		$second = ( new Daymark_AI_Assist() )->get_suggestions( $context );
 
 		$this->assertSame( $first, $second );
 	}
@@ -60,7 +60,7 @@ class Test_AI_Assist extends WP_UnitTestCase {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $user_id );
 
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'No AI test',
@@ -70,6 +70,6 @@ class Test_AI_Assist extends WP_UnitTestCase {
 
 		$this->assertIsInt( $post_id );
 		$this->assertGreaterThan( 0, $post_id );
-		$this->assertEquals( '0', get_post_meta( $post_id, '_moment_ai_assist_used', true ) );
+		$this->assertEquals( '0', get_post_meta( $post_id, '_daymark_ai_assist_used', true ) );
 	}
 }

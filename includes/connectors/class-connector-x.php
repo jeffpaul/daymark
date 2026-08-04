@@ -2,7 +2,7 @@
 /**
  * X (Twitter) connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * X API v2 POST /2/tweets. Given API access pricing, this is a prime
  * candidate for delegation to a hosted provider connector.
  */
-class Moment_Connector_X extends Moment_Connector_Base {
+class Daymark_Connector_X extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -34,13 +34,13 @@ class Moment_Connector_X extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'X', 'moment' );
+		return __( 'X', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
-	 * Text-first network: any Moment can be announced as caption + permalink.
+	 * Text-first network: any Mark can be announced as caption + permalink.
 	 *
 	 * @return string[]
 	 */

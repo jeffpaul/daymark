@@ -35,7 +35,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          MARKER: '<!-- moment:review-checklist -->'
+          MARKER: '<!-- daymark:review-checklist -->'
         run: |
           # Skip if the checklist is already there (reopened PRs, re-runs).
           if gh api --paginate "repos/$REPO/issues/$PR/comments" --jq '.[].body' \

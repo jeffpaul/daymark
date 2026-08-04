@@ -1,4 +1,4 @@
-// Playwright config for Moment E2E tests.
+// Playwright config for Daymark E2E tests.
 // Set WP_BASE_URL / WP_ADMIN_USER / WP_ADMIN_PASS for your target site.
 import { defineConfig, devices } from '@playwright/test';
 

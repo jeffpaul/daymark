@@ -1,6 +1,6 @@
-# Contributing to Moment
+# Contributing to Daymark
 
-Thanks for your interest in improving Moment — a phone-first publishing
+Thanks for your interest in improving Mark — a phone-first publishing
 experience for WordPress. Contributions of all kinds are welcome: bug
 reports, fixes, tests, docs, and new connectors.
 
@@ -10,24 +10,24 @@ participating, you are expected to uphold it.
 ## Ways to contribute
 
 - **Report a bug or request a feature** via
-  [GitHub issues](https://github.com/jeffpaul/moment/issues). Include your
+  [GitHub issues](https://github.com/jeffpaul/daymark/issues). Include your
   WordPress and PHP versions, the steps to reproduce, and what you expected
   to happen.
 - **Open a pull request** for fixes and improvements (see
   [Pull requests](#pull-requests) below).
-- **Build a connector.** Moment's adapter layer
-  (`moment_register_connectors` + `moment_import_network_responses`) is open
+- **Build a connector.** Daymark's adapter layer
+  (`daymark_register_connectors` + `daymark_import_network_responses`) is open
   to any network — a companion plugin can register a real destination
-  without changing Moment core.
+  without changing Daymark core.
 
 ## Repository layout
 
-This repository **is** the plugin: `moment.php` lives at the repo root and
-the repo is symlinked into a WordPress install as `wp-content/plugins/moment`.
+This repository **is** the plugin: `daymark.php` lives at the repo root and
+the repo is symlinked into a WordPress install as `wp-content/plugins/daymark`.
 
 | Path | What it is |
 |---|---|
-| `moment.php`, `includes/`, `templates/`, `assets/`, `blocks/` | The Moment plugin itself |
+| `daymark.php`, `includes/`, `templates/`, `assets/`, `blocks/` | The Daymark plugin itself |
 | `tests/` | PHPUnit tests, the WP-CLI smoke suite (`tests/smoke.sh`), and Playwright E2E (`tests/e2e/`) |
 | `wp-hooks-docs/` | Docusaurus site for the generated hook reference |
 | `docs/` | Product/spec documents (excluded from the distributed plugin) |
@@ -39,7 +39,7 @@ tooling, and docs are all excluded).
 
 ### Requirements
 
-- **WordPress 7.0+** (Moment targets the 7.0 Connectors API and AI Client)
+- **WordPress 7.0+** (Daymark targets the 7.0 Connectors API and AI Client)
 - **PHP 8.1+**
 - **Composer** (PHP dependencies, PHPUnit, and coding standards)
 - **Node.js 18+** (only for the Playwright E2E suite)
@@ -51,11 +51,11 @@ tooling, and docs are all excluded).
 Symlink the repo into your site's plugins directory and activate:
 
 ```bash
-ln -s /path/to/moment /path/to/wp/wp-content/plugins/moment
-wp plugin activate moment
+ln -s /path/to/daymark /path/to/wp/wp-content/plugins/daymark
+wp plugin activate daymark
 ```
 
-Then visit `/moment` on a phone-sized viewport while logged in.
+Then visit `/daymark` on a phone-sized viewport while logged in.
 
 ## Testing
 
@@ -103,18 +103,20 @@ npx playwright test
 The E2E suite needs a live WordPress with pretty permalinks and an admin
 account. Some scenarios exercise the *connected* connector path against a
 stubbed AT Protocol API — see the setup notes at the top of
-`tests/e2e/moment.spec.js` for the fixtures and options involved.
+`tests/e2e/daymark.spec.js` for the fixtures and options involved.
 
 ## Coding standards and conventions
 
 - **WordPress Coding Standards** for all PHP (enforced via PHPCS).
 - **Naming is strict.** Use the plugin's own identifiers everywhere:
-  - Slug / text domain: `moment`
-  - REST namespace: `/wp-json/moment/v1/`
-  - Block namespace: `moment/*`
-  - PHP class prefix: `Moment_` · Action/filter/shortcode prefix: `moment_`
-  - **Never** use `project-moment`, `project_moment`, or `projectmoment`.
-- **Content model:** every Moment is a standard `post` with `_moment_*` post
+  - Slug / text domain: `daymark`
+  - REST namespace: `/wp-json/daymark/v1/`
+  - Block namespace: `daymark/*`
+  - PHP class prefix: `Daymark_` · Action/filter/shortcode prefix: `daymark_`
+  - **Never** use `project-daymark`, `project_daymark`, or `projectdaymark` —
+    and never reintroduce any `moment`-based identifier (the plugin's pre-0.6.0
+    name; it also collides with the Moment.js library bundled in core).
+- **Content model:** every Mark is a standard `post` with `_daymark_*` post
   meta — never a custom post type. Portability is a core promise.
 - **Frontend is vanilla ES2020**, no build step. Keep it framework-free.
 - **Security checklist** for every REST endpoint and form handler:
@@ -126,7 +128,7 @@ stubbed AT Protocol API — see the setup notes at the top of
 
 Public hooks are documented from their docblocks and rendered by the
 Docusaurus site in `wp-hooks-docs/`, published at
-<https://jeffpaul.github.io/moment/>. When adding or changing a hook, write a
+<https://jeffpaul.github.io/daymark/>. When adding or changing a hook, write a
 clear docblock — and **avoid curly braces `{ }` in hook docblock prose**, as
 MDX parses them as JavaScript and will break the docs build. (Describe array
 shapes in words rather than `array{...}` syntax in hook docblocks.)
@@ -186,11 +188,11 @@ standard headings — **Added**, **Changed**, **Deprecated**, **Removed**,
 
 ### Added
 
-- Optional Title field for audio and video Moments… ([#28](https://github.com/jeffpaul/moment/pull/28))
+- Optional Title field for audio and video Marks… ([#28](https://github.com/jeffpaul/daymark/pull/28))
 ```
 
-Write for the person using Moment, not for the repository. "You can now search
-your Moments from Home" beats "implement search endpoint" — no commit hashes and
+Write for the person using Daymark, not for the repository. "You can now search
+your Marks from Home" beats "implement search endpoint" — no commit hashes and
 no internal file names.
 
 End each entry with a link to its pull request, for traceability. Use an explicit
@@ -216,7 +218,7 @@ Releases are tag-driven: pushing a version tag builds the distribution zip and
 publishes the GitHub release (`.github/workflows/release.yml`).
 
 1. **Open a release PR** that bumps the version in all four places — the
-   `Version:` header and `MOMENT_VERSION` in `moment.php`, `Stable tag:` in
+   `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
    `readme.txt`, and `package.json`. The release workflow fails the build if
    these disagree with the tag.
 2. **Close out the changelog.** Rename `## [Unreleased]` to
@@ -244,7 +246,7 @@ publishes the GitHub release (`.github/workflows/release.yml`).
 
 ## License
 
-Moment is licensed under **GPL-2.0-or-later**
+Daymark is licensed under **GPL-2.0-or-later**
 ([GPL-2.0-or-later](https://spdx.org/licenses/GPL-2.0-or-later.html)). By
 contributing, you agree that your contributions are licensed under the
 same terms.

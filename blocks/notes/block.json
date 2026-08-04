@@ -1,13 +1,13 @@
 {
 	"$schema": "https://schemas.wp.org/trunk/block.json",
 	"apiVersion": 3,
-	"name": "moment/notes",
-	"title": "Moment Notes",
+	"name": "daymark/notes",
+	"title": "Daymark Notes",
 	"category": "widgets",
 	"icon": "edit",
-	"description": "Displays published note Moments.",
-	"keywords": [ "moment", "notes", "text" ],
-	"textdomain": "moment",
+	"description": "Displays published note Marks.",
+	"keywords": [ "daymark", "notes", "text" ],
+	"textdomain": "daymark",
 	"attributes": {
 		"count": {
 			"type": "integer",

@@ -1,5 +1,5 @@
 /**
- * Moment service worker — conservative static-asset cache only.
+ * Daymark service worker — conservative static-asset cache only.
  *
  * Caches EXACTLY two files, cache-first: the plugin's app.css and app.js
  * (resolved relative to this worker's location in the plugin assets dir).
@@ -9,11 +9,11 @@
  * - WP nonces or any authenticated payloads
  * - /wp-admin/ anything
  * - Media/attachment URLs
- * - HTML documents (the /moment app shell is always network-rendered)
+ * - HTML documents (the /daymark app shell is always network-rendered)
  *
  * SCOPE CONSTRAINT (intentional, documented):
- * This worker is served from /wp-content/plugins/moment/assets/, so its
- * maximum scope is that directory — it CANNOT control the /moment page
+ * This worker is served from /wp-content/plugins/daymark/assets/, so its
+ * maximum scope is that directory — it CANNOT control the /daymark page
  * itself, and we deliberately do NOT add a Service-Worker-Allowed header
  * to widen the scope. That is fine here:
  * - install-time precaching below still populates the Cache Storage with
@@ -22,12 +22,12 @@
  * - the fetch handler only ever answers for requests inside the assets
  *   scope, so there is zero risk of stale REST data, stale nonces, or a
  *   stale app shell being served;
- * - the /moment HTML document is always fetched from the network.
+ * - the /daymark HTML document is always fetched from the network.
  */
 
-const CACHE_NAME = 'moment-v1';
+const CACHE_NAME = 'daymark-v1';
 
-// Relative to this worker's location: /wp-content/plugins/moment/assets/.
+// Relative to this worker's location: /wp-content/plugins/daymark/assets/.
 const PRECACHE_URLS = ['./app.css', './app.js'];
 
 self.addEventListener('install', (event) => {
@@ -46,7 +46,7 @@ self.addEventListener('activate', (event) => {
 			.then((keys) =>
 				Promise.all(
 					keys
-						.filter((key) => key.startsWith('moment-') && key !== CACHE_NAME)
+						.filter((key) => key.startsWith('daymark-') && key !== CACHE_NAME)
 						.map((key) => caches.delete(key))
 				)
 			)

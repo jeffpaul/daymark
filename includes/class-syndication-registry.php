@@ -1,29 +1,29 @@
 <?php
 /**
- * Moment Syndication Registry
+ * Daymark Syndication Registry
  *
- * Manages outbound publishing connectors for Moment.
+ * Manages outbound publishing connectors for Daymark.
  *
  * Integration paths for real connectors:
  *
  * 1. WordPress Connector plugins (preferred for WP 7.0+ environments)
- *    Register via the `moment_register_connectors` action hook.
+ *    Register via the `daymark_register_connectors` action hook.
  *
  * 2. Existing WordPress social publishing plugins
- *    Implement Moment_Syndication_Connector as a thin adapter that
+ *    Implement Daymark_Syndication_Connector as a thin adapter that
  *    delegates to the existing plugin's publish method.
  *
- * 3. Native Moment connector plugins
+ * 3. Native Daymark connector plugins
  *    Standalone plugins that implement the interface and register
- *    via `moment_register_connectors`.
+ *    via `daymark_register_connectors`.
  *
  * 4. Hosted provider integrations
  *    A hosting provider can register connectors at platform level
  *    for managed social connections.
  *
- * Core Moment does not own any network API credentials or OAuth flows.
+ * Core Daymark does not own any network API credentials or OAuth flows.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -34,38 +34,38 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Singleton registry of syndication connectors and default routing rules.
  *
  * Built-in mocked connectors are registered at construction, so they
- * always exist before `moment_register_connectors` fires on `init`
- * (see Moment_Plugin::on_init()) for third-party connectors.
+ * always exist before `daymark_register_connectors` fires on `init`
+ * (see Daymark_Plugin::on_init()) for third-party connectors.
  *
  * Future real connectors can be registered via:
  *
- *     add_action( 'moment_register_connectors', function( $registry ) {
+ *     add_action( 'daymark_register_connectors', function( $registry ) {
  *         $registry->register_connector( new My_Connector() );
  *     } );
  *
  * This allows WordPress Connector plugins, social plugins, or
- * native Moment connector plugins to hook in without modifying core.
+ * native Daymark connector plugins to hook in without modifying core.
  */
-class Moment_Syndication_Registry {
+class Daymark_Syndication_Registry {
 
 	/**
 	 * Singleton instance.
 	 *
-	 * @var Moment_Syndication_Registry|null
+	 * @var Daymark_Syndication_Registry|null
 	 */
 	private static ?self $instance = null;
 
 	/**
 	 * Registered connectors, keyed by connector ID.
 	 *
-	 * @var array<string, Moment_Syndication_Connector>
+	 * @var array<string, Daymark_Syndication_Connector>
 	 */
 	private array $connectors = array();
 
 	/**
 	 * Get the singleton instance.
 	 *
-	 * @return Moment_Syndication_Registry
+	 * @return Daymark_Syndication_Registry
 	 */
 	public static function instance(): self {
 		if ( null === self::$instance ) {
@@ -91,25 +91,25 @@ class Moment_Syndication_Registry {
 	 * @return void
 	 */
 	private function register_built_in_connectors(): void {
-		$this->register_connector( new Moment_Connector_Bluesky() );
-		$this->register_connector( new Moment_Connector_Mastodon() );
-		$this->register_connector( new Moment_Connector_Instagram() );
-		$this->register_connector( new Moment_Connector_YouTube() );
-		$this->register_connector( new Moment_Connector_TikTok() );
-		$this->register_connector( new Moment_Connector_Threads() );
-		$this->register_connector( new Moment_Connector_X() );
+		$this->register_connector( new Daymark_Connector_Bluesky() );
+		$this->register_connector( new Daymark_Connector_Mastodon() );
+		$this->register_connector( new Daymark_Connector_Instagram() );
+		$this->register_connector( new Daymark_Connector_YouTube() );
+		$this->register_connector( new Daymark_Connector_TikTok() );
+		$this->register_connector( new Daymark_Connector_Threads() );
+		$this->register_connector( new Daymark_Connector_X() );
 	}
 
 	/**
 	 * Register a connector.
 	 *
-	 * Third-party adapters register via the `moment_register_connectors`
+	 * Third-party adapters register via the `daymark_register_connectors`
 	 * action, which receives this registry instance.
 	 *
-	 * @param Moment_Syndication_Connector $connector Connector instance.
+	 * @param Daymark_Syndication_Connector $connector Connector instance.
 	 * @return void
 	 */
-	public function register_connector( Moment_Syndication_Connector $connector ): void {
+	public function register_connector( Daymark_Syndication_Connector $connector ): void {
 		$id = sanitize_key( $connector->get_id() );
 
 		if ( '' === $id ) {
@@ -122,7 +122,7 @@ class Moment_Syndication_Registry {
 	/**
 	 * Get all registered connectors.
 	 *
-	 * @return array<string, Moment_Syndication_Connector>
+	 * @return array<string, Daymark_Syndication_Connector>
 	 */
 	public function get_connectors(): array {
 		return $this->connectors;
@@ -132,33 +132,33 @@ class Moment_Syndication_Registry {
 	 * Get a single connector by ID.
 	 *
 	 * @param string $id Connector ID.
-	 * @return Moment_Syndication_Connector|null
+	 * @return Daymark_Syndication_Connector|null
 	 */
-	public function get_connector( string $id ): ?Moment_Syndication_Connector {
+	public function get_connector( string $id ): ?Daymark_Syndication_Connector {
 		return $this->connectors[ $id ] ?? null;
 	}
 
 	/**
-	 * Get all registered connectors that support a Moment type.
+	 * Get all registered connectors that support a Mark type.
 	 *
-	 * @param string $type Primary Moment type.
-	 * @return array<string, Moment_Syndication_Connector>
+	 * @param string $type Primary Mark type.
+	 * @return array<string, Daymark_Syndication_Connector>
 	 */
 	public function get_supported_for_type( string $type ): array {
 		return array_filter(
 			$this->connectors,
-			static fn( Moment_Syndication_Connector $connector ): bool => $connector->supports_moment_type( $type )
+			static fn( Daymark_Syndication_Connector $connector ): bool => $connector->supports_daymark_type( $type )
 		);
 	}
 
 	/**
-	 * Get default destination connector IDs for a Moment type.
+	 * Get default destination connector IDs for a Mark type.
 	 *
 	 * Routing: note→bluesky, image→instagram, gallery→instagram,
 	 * video→youtube; audio and mixed have no defaults (mixed asks each
 	 * time; audio awaits a configured destination).
 	 *
-	 * @param string $type Primary Moment type.
+	 * @param string $type Primary Mark type.
 	 * @return string[] Connector IDs.
 	 */
 	public function get_defaults_for_type( string $type ): array {
@@ -172,21 +172,21 @@ class Moment_Syndication_Registry {
 		);
 
 		/**
-		 * Filters the default destination connector IDs for a Moment type.
+		 * Filters the default destination connector IDs for a Mark type.
 		 *
 		 * Lets a host, settings screen, or onboarding flow supply
-		 * per-site routing without modifying core Moment.
+		 * per-site routing without modifying core Daymark.
 		 *
 		 * @param string[] $type_defaults Default connector IDs for this type.
-		 * @param string   $type          Primary Moment type.
+		 * @param string   $type          Primary Mark type.
 		 */
-		return apply_filters( 'moment_default_destinations', $defaults[ $type ] ?? array(), $type );
+		return apply_filters( 'daymark_default_destinations', $defaults[ $type ] ?? array(), $type );
 	}
 
 	/**
-	 * Alias kept for Moment_Publisher, which calls this method name.
+	 * Alias kept for Daymark_Publisher, which calls this method name.
 	 *
-	 * @param string $type Primary Moment type.
+	 * @param string $type Primary Mark type.
 	 * @return string[] Connector IDs.
 	 */
 	public function get_default_destinations( string $type ): array {
@@ -194,18 +194,18 @@ class Moment_Syndication_Registry {
 	}
 
 	/**
-	 * Publish a Moment to the selected destinations (built-in demo
+	 * Publish a Mark to the selected destinations (built-in demo
 	 * connectors mock; connector plugins publish for real) and record the
 	 * results in post meta.
 	 *
 	 * Unknown connector IDs are skipped. Successful results are merged
-	 * into `_moment_external_posts` (a JSON object keyed by connector
-	 * ID) and `_moment_syndication_status` becomes 'mocked' when at
+	 * into `_daymark_external_posts` (a JSON object keyed by connector
+	 * ID) and `_daymark_syndication_status` becomes 'mocked' when at
 	 * least one destination succeeded.
 	 *
-	 * @param int                  $post_id    Moment post ID.
+	 * @param int                  $post_id    Mark post ID.
 	 * @param string[]             $target_ids Selected connector IDs.
-	 * @param array<string, mixed> $payload    Moment context data.
+	 * @param array<string, mixed> $payload    Mark context data.
 	 * @return array<string, array<string, mixed>> Results keyed by connector ID.
 	 */
 	public function publish_to_targets( int $post_id, array $target_ids, array $payload ): array {
@@ -220,16 +220,16 @@ class Moment_Syndication_Registry {
 			}
 
 			// A note can't become an Instagram post or a YouTube video:
-			// skip targets that can't represent this Moment type. The
+			// skip targets that can't represent this Mark type. The
 			// publish UI disables these toggles, but the REST API accepts
 			// arbitrary targets, so enforce here too.
-			if ( '' !== $type && ! $connector->supports_moment_type( $type ) ) {
+			if ( '' !== $type && ! $connector->supports_daymark_type( $type ) ) {
 				$results[ $connector->get_id() ] = array(
 					'success' => false,
 					'status'  => 'unsupported',
 					'message' => sprintf(
-						/* translators: 1: connector label, 2: Moment type. */
-						__( '%1$s does not support %2$s Moments.', 'moment' ),
+						/* translators: 1: connector label, 2: Mark type. */
+						__( '%1$s does not support %2$s Marks.', 'daymark' ),
 						$connector->get_label(),
 						$type
 					),
@@ -246,13 +246,13 @@ class Moment_Syndication_Registry {
 		}
 
 		/**
-		 * Fires after Moment has attempted publishing to all selected
+		 * Fires after Daymark has attempted publishing to all selected
 		 * destinations.
 		 *
-		 * @param int                                  $post_id Moment post ID.
+		 * @param int                                  $post_id Mark post ID.
 		 * @param array<string, array<string, mixed>> $results Publish results keyed by connector ID.
 		 */
-		do_action( 'moment_syndication_complete', $post_id, $results );
+		do_action( 'daymark_syndication_complete', $post_id, $results );
 
 		return $results;
 	}
@@ -260,18 +260,18 @@ class Moment_Syndication_Registry {
 	/**
 	 * Merge publish results into post meta.
 	 *
-	 * `_moment_external_posts` is initialized as "{}" at publish time
+	 * `_daymark_external_posts` is initialized as "{}" at publish time
 	 * (Phase 2), so existing entries are decoded, merged, and re-encoded
 	 * as a JSON object keyed by connector ID. The stored reference
 	 * carries what conversation backflow needs later: external ID/URL,
 	 * connector label, timestamp, status, and backflow capability.
 	 *
-	 * @param int                                 $post_id Moment post ID.
+	 * @param int                                 $post_id Mark post ID.
 	 * @param array<string, array<string, mixed>> $results Publish results keyed by connector ID.
 	 * @return void
 	 */
 	private function store_results( int $post_id, array $results ): void {
-		$external_posts = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
+		$external_posts = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
 
 		if ( ! is_array( $external_posts ) ) {
 			$external_posts = array();
@@ -298,7 +298,7 @@ class Moment_Syndication_Registry {
 			);
 		}
 
-		update_post_meta( $post_id, '_moment_external_posts', wp_json_encode( (object) $external_posts ) );
+		update_post_meta( $post_id, '_daymark_external_posts', wp_json_encode( (object) $external_posts ) );
 
 		if ( $any_success ) {
 			$statuses = wp_list_pluck( array_values( $results ), 'status' );
@@ -306,7 +306,7 @@ class Moment_Syndication_Registry {
 			// A real publish outranks mocked ones for the overall status.
 			update_post_meta(
 				$post_id,
-				'_moment_syndication_status',
+				'_daymark_syndication_status',
 				in_array( 'published', $statuses, true ) ? 'published' : 'mocked'
 			);
 		}

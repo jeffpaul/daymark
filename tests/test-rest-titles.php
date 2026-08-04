@@ -2,7 +2,7 @@
 /**
  * REST title serialization tests.
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
@@ -18,8 +18,8 @@ class Test_Rest_Titles extends WP_UnitTestCase {
 		wp_set_current_user( $user_id );
 	}
 
-	private function publish_apostrophe_moment(): int {
-		$publisher = new Moment_Publisher();
+	private function publish_apostrophe_daymark(): int {
+		$publisher = new Daymark_Publisher();
 
 		return (int) $publisher->publish(
 			array(
@@ -29,11 +29,11 @@ class Test_Rest_Titles extends WP_UnitTestCase {
 		);
 	}
 
-	/** GET /moments summaries carry decoded plain-text titles. */
-	public function test_moments_list_title_is_plain_text() {
-		$post_id = $this->publish_apostrophe_moment();
+	/** GET /marks summaries carry decoded plain-text titles. */
+	public function test_marks_list_title_is_plain_text() {
+		$post_id = $this->publish_apostrophe_daymark();
 
-		$request = new WP_REST_Request( 'GET', '/moment/v1/moments' );
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/marks' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$data = rest_do_request( $request )->get_data();
 
@@ -44,17 +44,17 @@ class Test_Rest_Titles extends WP_UnitTestCase {
 			}
 		}
 
-		$this->assertNotNull( $summary, 'Published Moment should be listed' );
+		$this->assertNotNull( $summary, 'Published Mark should be listed' );
 		$this->assertStringNotContainsString( '&#', $summary['title'], 'Title must not be entity-encoded' );
 		$this->assertStringContainsString( 's sky', $summary['title'] );
 	}
 
 	/** Notification items carry decoded plain-text post titles. */
 	public function test_notification_post_title_is_plain_text() {
-		$post_id = $this->publish_apostrophe_moment();
+		$post_id = $this->publish_apostrophe_daymark();
 		self::factory()->comment->create( array( 'comment_post_ID' => $post_id ) );
 
-		$notifications = new Moment_Notifications();
+		$notifications = new Daymark_Notifications();
 		$items         = $notifications->get_notifications();
 
 		$this->assertNotEmpty( $items );

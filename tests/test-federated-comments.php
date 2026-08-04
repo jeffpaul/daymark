@@ -2,30 +2,30 @@
 /**
  * Federated comment labeling + u-syndication markup tests.
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
- * Tests Moment_Federated_Comments detection in notifications and
- * Moment_Syndication_Links markup.
+ * Tests Daymark_Federated_Comments detection in notifications and
+ * Daymark_Syndication_Links markup.
  */
 class Test_Federated_Comments extends WP_UnitTestCase {
 
 	/**
-	 * A published Moment post to hang comments on.
+	 * A published Mark post to hang comments on.
 	 *
 	 * @var int
 	 */
-	private int $moment_id;
+	private int $daymark_id;
 
 	public function set_up(): void {
 		parent::set_up();
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $user_id );
 
-		$this->moment_id = (int) self::factory()->post->create( array( 'post_status' => 'publish' ) );
-		update_post_meta( $this->moment_id, '_moment_is_moment', '1' );
-		update_post_meta( $this->moment_id, '_moment_primary_type', 'note' );
+		$this->daymark_id = (int) self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		update_post_meta( $this->daymark_id, '_daymark_is_mark', '1' );
+		update_post_meta( $this->daymark_id, '_daymark_primary_type', 'note' );
 	}
 
 	/**
@@ -38,7 +38,7 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 	private function insert_federated_comment( array $meta, string $comment_type = 'comment' ): int {
 		$comment_id = (int) self::factory()->comment->create(
 			array(
-				'comment_post_ID'  => $this->moment_id,
+				'comment_post_ID'  => $this->daymark_id,
 				'comment_content'  => 'Federated reply',
 				'comment_approved' => 1,
 				'comment_type'     => $comment_type,
@@ -59,7 +59,7 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 	 * @return array<string, mixed>|null
 	 */
 	private function notification_item( int $comment_id ): ?array {
-		$items = Moment_Plugin::instance()->notifications->get_notifications();
+		$items = Daymark_Plugin::instance()->notifications->get_notifications();
 
 		foreach ( $items as $item ) {
 			if ( (int) $item['comment_ID'] === $comment_id ) {
@@ -145,8 +145,8 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 	/** u-syndication links render for external posts with URLs. */
 	public function test_u_syndication_markup() {
 		update_post_meta(
-			$this->moment_id,
-			'_moment_external_posts',
+			$this->daymark_id,
+			'_daymark_external_posts',
 			wp_json_encode(
 				array(
 					'bluesky'  => array(
@@ -163,7 +163,7 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 			)
 		);
 
-		$markup = Moment_Plugin::instance()->syndication_links->links_markup( $this->moment_id );
+		$markup = Daymark_Plugin::instance()->syndication_links->links_markup( $this->daymark_id );
 
 		$this->assertStringContainsString( 'class="u-syndication"', $markup );
 		$this->assertStringContainsString( 'rel="syndication nofollow"', $markup );
@@ -173,11 +173,11 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'Mastodon', $markup );
 	}
 
-	/** The content filter appends links on singular Moment views only. */
+	/** The content filter appends links on singular Mark views only. */
 	public function test_content_filter_appends_on_singular() {
 		update_post_meta(
-			$this->moment_id,
-			'_moment_external_posts',
+			$this->daymark_id,
+			'_daymark_external_posts',
 			wp_json_encode(
 				array(
 					'bluesky' => array(
@@ -188,7 +188,7 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 			)
 		);
 
-		$this->go_to( get_permalink( $this->moment_id ) );
+		$this->go_to( get_permalink( $this->daymark_id ) );
 		$this->assertTrue( is_singular() );
 
 		$content = '';

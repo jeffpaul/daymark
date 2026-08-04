@@ -2,33 +2,33 @@
 /**
  * Notifications + backflow tests — E2E scenarios 7, 8, 9.
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
- * Tests Moment_Notifications backflow import, exclusion scope, portability.
+ * Tests Daymark_Notifications backflow import, exclusion scope, portability.
  */
 class Test_Notifications extends WP_UnitTestCase {
 
-	/** Scenario 8: comments on non-Moment posts are excluded. */
+	/** Scenario 8: comments on non-Mark posts are excluded. */
 	public function test_excludes_normal_post_comments() {
 		// Notifications are scoped to posts the user can edit; an editor
-		// sees all of them, so the Moment-only exclusion is what's tested.
+		// sees all of them, so the Daymark-only exclusion is what's tested.
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 
 		$normal_post = self::factory()->post->create( array( 'post_type' => 'post' ) );
 		$comment_id  = self::factory()->comment->create( array( 'comment_post_ID' => $normal_post ) );
 
-		$moment_post = self::factory()->post->create( array( 'post_type' => 'post' ) );
-		update_post_meta( $moment_post, '_moment_is_moment', '1' );
-		update_post_meta( $moment_post, '_moment_primary_type', 'note' );
-		$moment_comment = self::factory()->comment->create( array( 'comment_post_ID' => $moment_post ) );
+		$daymark_post = self::factory()->post->create( array( 'post_type' => 'post' ) );
+		update_post_meta( $daymark_post, '_daymark_is_mark', '1' );
+		update_post_meta( $daymark_post, '_daymark_primary_type', 'note' );
+		$daymark_comment = self::factory()->comment->create( array( 'comment_post_ID' => $daymark_post ) );
 
-		$notifications = new Moment_Notifications();
+		$notifications = new Daymark_Notifications();
 		$results       = $notifications->get_notifications();
 
 		$returned_ids = array_column( $results, 'comment_ID' );
-		$this->assertContains( (int) $moment_comment, $returned_ids, 'Moment comment should appear' );
+		$this->assertContains( (int) $daymark_comment, $returned_ids, 'Mark comment should appear' );
 		$this->assertNotContains( (int) $comment_id, $returned_ids, 'Normal post comment must not appear' );
 	}
 
@@ -37,7 +37,7 @@ class Test_Notifications extends WP_UnitTestCase {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $user_id );
 
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
 				'caption'             => 'Backflow test note',
@@ -46,7 +46,7 @@ class Test_Notifications extends WP_UnitTestCase {
 			)
 		);
 
-		$notifications = new Moment_Notifications();
+		$notifications = new Daymark_Notifications();
 		$result        = $notifications->import_responses( $post_id, array( 'bluesky' ) );
 
 		$this->assertIsArray( $result );
@@ -64,18 +64,18 @@ class Test_Notifications extends WP_UnitTestCase {
 		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $owner_id );
 
-		$notifications = new Moment_Notifications();
-		$this->assertFalse( $notifications->has_unread(), 'No Moments, no unread' );
+		$notifications = new Daymark_Notifications();
+		$this->assertFalse( $notifications->has_unread(), 'No Marks, no unread' );
 
 		$post_id = self::factory()->post->create( array( 'post_author' => $owner_id ) );
-		update_post_meta( $post_id, '_moment_is_moment', '1' );
-		update_post_meta( $post_id, '_moment_primary_type', 'note' );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
+		update_post_meta( $post_id, '_daymark_primary_type', 'note' );
 		self::factory()->comment->create( array( 'comment_post_ID' => $post_id ) );
 
 		$this->assertTrue( $notifications->has_unread(), 'A new reply means unread' );
 
 		// Viewing the notifications endpoint clears the flag server-side.
-		$request = new WP_REST_Request( 'GET', '/moment/v1/notifications' );
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/notifications' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		rest_do_request( $request );
 
@@ -95,17 +95,17 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertFalse( $notifications->has_unread(), "Other authors don't inherit unread state" );
 	}
 
-	/** Sync against a non-Moment post is a 404. */
-	public function test_sync_non_moment_post_is_404() {
+	/** Sync against a non-Mark post is a 404. */
+	public function test_sync_non_daymark_post_is_404() {
 		$normal_post   = self::factory()->post->create( array( 'post_type' => 'post' ) );
-		$notifications = new Moment_Notifications();
+		$notifications = new Daymark_Notifications();
 		$result        = $notifications->import_responses( $normal_post, array( 'bluesky' ) );
 
 		$this->assertInstanceOf( 'WP_Error', $result );
 		$this->assertEquals( 404, $result->get_error_data()['status'] );
 	}
 
-	/** Scenario 9: deactivation preserves Moment posts. */
+	/** Scenario 9: deactivation preserves Mark posts. */
 	public function test_post_survives_deactivation() {
 		$post_id = self::factory()->post->create(
 			array(
@@ -113,14 +113,14 @@ class Test_Notifications extends WP_UnitTestCase {
 				'post_title' => 'Portability test',
 			)
 		);
-		update_post_meta( $post_id, '_moment_is_moment', '1' );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
 
 		// Simulate deactivation (flushes rewrites only; never deletes content).
-		Moment_Plugin::deactivate();
+		Daymark_Plugin::deactivate();
 
 		$post = get_post( $post_id );
 		$this->assertNotNull( $post );
 		$this->assertEquals( 'Portability test', $post->post_title );
-		$this->assertEquals( '1', get_post_meta( $post_id, '_moment_is_moment', true ) );
+		$this->assertEquals( '1', get_post_meta( $post_id, '_daymark_is_mark', true ) );
 	}
 }

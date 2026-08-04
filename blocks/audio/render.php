@@ -1,11 +1,11 @@
 <?php
 /**
- * Server render for the moment/audio dynamic block.
+ * Server render for the daymark/audio dynamic block.
  *
- * Delegates to the shared Moment_Renderer so the block and the
- * [moment_audio] shortcode produce identical markup.
+ * Delegates to the shared Daymark_Renderer so the block and the
+ * [daymark_audio] shortcode produce identical markup.
  *
- * @package Moment
+ * @package Daymark
  *
  * @var array<string, mixed> $attributes Block attributes.
  */
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$moment_view_count = isset( $attributes['count'] ) ? absint( $attributes['count'] ) : 10;
+$daymark_view_count = isset( $attributes['count'] ) ? absint( $attributes['count'] ) : 10;
 
-// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Moment_Renderer output is fully escaped at build time.
-echo Moment_Plugin::instance()->renderer->render( 'audio', array( 'count' => $moment_view_count ) );
+// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Daymark_Renderer output is fully escaped at build time.
+echo Daymark_Plugin::instance()->renderer->render( 'audio', array( 'count' => $daymark_view_count ) );

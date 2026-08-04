@@ -1,5 +1,5 @@
 /**
- * Moment app shell styles.
+ * Daymark app shell styles.
  *
  * Mobile-first (390px base), touch-first, no theme or wp-admin chrome.
  * Plain CSS with custom properties. No admin color scheme variables.
@@ -7,29 +7,29 @@
 
 /* --- Design tokens --- */
 :root {
-	--moment-bg: #ffffff;
-	--moment-surface: #f8f8f8;
-	--moment-border: #e0e0e0;
-	--moment-text-primary: #111111;
-	--moment-text-secondary: #666666;
-	--moment-text-muted: #999999;
-	--moment-accent: #7a00df;
-	--moment-accent-deep: #5300be;
-	--moment-accent-light: #d7a7ff;
-	--moment-accent-wash: rgba(122, 0, 223, 0.12);
-	--moment-accent-fg: #ffffff;
-	--moment-success: #1a7f37;
-	--moment-error: #b42318;
-	--moment-radius: 12px;
-	--moment-radius-sm: 8px;
-	--moment-tap-min: 44px;
-	--moment-input-height: 48px;
-	--moment-spacing-xs: 4px;
-	--moment-spacing-sm: 8px;
-	--moment-spacing-md: 16px;
-	--moment-spacing-lg: 24px;
-	--moment-spacing-xl: 32px;
-	--moment-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--daymark-bg: #ffffff;
+	--daymark-surface: #f8f8f8;
+	--daymark-border: #e0e0e0;
+	--daymark-text-primary: #111111;
+	--daymark-text-secondary: #666666;
+	--daymark-text-muted: #999999;
+	--daymark-accent: #7a00df;
+	--daymark-accent-deep: #5300be;
+	--daymark-accent-light: #d7a7ff;
+	--daymark-accent-wash: rgba(122, 0, 223, 0.12);
+	--daymark-accent-fg: #ffffff;
+	--daymark-success: #1a7f37;
+	--daymark-error: #b42318;
+	--daymark-radius: 12px;
+	--daymark-radius-sm: 8px;
+	--daymark-tap-min: 44px;
+	--daymark-input-height: 48px;
+	--daymark-spacing-xs: 4px;
+	--daymark-spacing-sm: 8px;
+	--daymark-spacing-md: 16px;
+	--daymark-spacing-lg: 24px;
+	--daymark-spacing-xl: 32px;
+	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* --- Base --- */
@@ -43,18 +43,18 @@ html {
 	-webkit-text-size-adjust: 100%;
 }
 
-body.moment-app {
+body.daymark-app {
 	margin: 0;
-	background: var(--moment-bg);
-	color: var(--moment-text-primary);
-	font-family: var(--moment-font);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	font-family: var(--daymark-font);
 	font-size: 16px;
 	line-height: 1.5;
 	-webkit-tap-highlight-color: transparent;
 	overflow-x: hidden;
 }
 
-.moment-shell {
+.daymark-shell {
 	max-width: 480px;
 	min-height: 100vh;
 	min-height: 100dvh;
@@ -68,14 +68,14 @@ body.moment-app {
 
 /* Notifications is the one screen without a pinned footer, so it needs
  * its own bottom clearance above the home indicator. */
-.moment-app--notifications .moment-screen {
-	padding-bottom: calc(var(--moment-spacing-lg) + env(safe-area-inset-bottom, 0px));
+.daymark-app--notifications .daymark-screen {
+	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
 }
 
-.moment-boot,
-.moment-noscript {
-	padding: var(--moment-spacing-xl) var(--moment-spacing-md);
-	color: var(--moment-text-secondary);
+.daymark-boot,
+.daymark-noscript {
+	padding: var(--daymark-spacing-xl) var(--daymark-spacing-md);
+	color: var(--daymark-text-secondary);
 	text-align: center;
 }
 
@@ -87,7 +87,7 @@ p {
 }
 
 a {
-	color: var(--moment-text-primary);
+	color: var(--daymark-text-primary);
 }
 
 button {
@@ -96,7 +96,7 @@ button {
 }
 
 :focus-visible {
-	outline: 2px solid var(--moment-accent);
+	outline: 2px solid var(--daymark-accent);
 	outline-offset: 2px;
 }
 
@@ -105,7 +105,7 @@ h2[tabindex='-1']:focus {
 	outline: none;
 }
 
-.moment-visually-hidden {
+.daymark-visually-hidden {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -118,107 +118,107 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Top bar --- */
-.moment-topbar {
+.daymark-topbar {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-sm);
-	min-height: calc(var(--moment-tap-min) + var(--moment-spacing-sm));
-	padding: var(--moment-spacing-md);
-	padding-top: calc(var(--moment-spacing-md) + env(safe-area-inset-top, 0px));
+	gap: var(--daymark-spacing-sm);
+	min-height: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
+	padding: var(--daymark-spacing-md);
+	padding-top: calc(var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
 }
 
-.moment-topbar__title {
+.daymark-topbar__title {
 	flex: 1;
 	font-size: 22px;
 	font-weight: 700;
 	letter-spacing: -0.02em;
 }
 
-.moment-backlink {
+.daymark-backlink {
 	display: inline-flex;
 	align-items: center;
-	min-height: var(--moment-tap-min);
-	min-width: var(--moment-tap-min);
-	padding: 0 var(--moment-spacing-sm) 0 0;
+	min-height: var(--daymark-tap-min);
+	min-width: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-sm) 0 0;
 	font-size: 16px;
 	font-weight: 500;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	text-decoration: none;
 }
 
-.moment-iconbtn {
+.daymark-iconbtn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: var(--moment-tap-min);
-	min-width: var(--moment-tap-min);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
-	color: var(--moment-text-primary);
+	min-height: var(--daymark-tap-min);
+	min-width: var(--daymark-tap-min);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
 	text-decoration: none;
 }
 
 /* --- Screen layout --- */
-.moment-screen {
+.daymark-screen {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-lg);
-	padding: 0 var(--moment-spacing-md) var(--moment-spacing-lg);
+	gap: var(--daymark-spacing-lg);
+	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-lg);
 }
 
-.moment-screen__heading {
+.daymark-screen__heading {
 	font-size: 22px;
 	font-weight: 700;
 	letter-spacing: -0.02em;
 }
 
-.moment-section-heading {
+.daymark-section-heading {
 	font-size: 14px;
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.06em;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-/* Awareness note: other publishing plugins that will also share a Moment. */
-.moment-helpers-note {
-	margin: var(--moment-spacing-md) 0 0;
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-accent-wash);
+/* Awareness note: other publishing plugins that will also share a Mark. */
+.daymark-helpers-note {
+	margin: var(--daymark-spacing-md) 0 0;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-accent-wash);
 	font-size: 13px;
 	line-height: 1.45;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-helpers-note strong {
-	color: var(--moment-text-primary, inherit);
+.daymark-helpers-note strong {
+	color: var(--daymark-text-primary, inherit);
 	font-weight: 600;
 }
 
 /* "File under" category picker on the Publish screen — a secondary
    grouping below the destinations, styled to match. */
-.moment-publish-subhead {
-	margin-top: var(--moment-spacing-lg);
+.daymark-publish-subhead {
+	margin-top: var(--daymark-spacing-lg);
 }
 
-.moment-publish-subnote {
-	margin: var(--moment-spacing-xs) 0 var(--moment-spacing-sm);
+.daymark-publish-subnote {
+	margin: var(--daymark-spacing-xs) 0 var(--daymark-spacing-sm);
 	font-size: 13px;
 	line-height: 1.45;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
 /* --- Buttons --- */
-.moment-btn {
+.daymark-btn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: var(--moment-spacing-sm);
-	min-height: var(--moment-input-height);
-	padding: var(--moment-spacing-sm) var(--moment-spacing-lg);
-	border-radius: var(--moment-radius);
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-input-height);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-lg);
+	border-radius: var(--daymark-radius);
 	border: 1px solid transparent;
 	font-size: 16px;
 	font-weight: 600;
@@ -226,171 +226,171 @@ h2[tabindex='-1']:focus {
 	text-decoration: none;
 }
 
-.moment-btn--primary {
-	background: var(--moment-accent);
-	color: var(--moment-accent-fg);
-	border-color: var(--moment-accent);
+.daymark-btn--primary {
+	background: var(--daymark-accent);
+	color: var(--daymark-accent-fg);
+	border-color: var(--daymark-accent);
 	width: 100%;
 }
 
-.moment-btn--primary:hover,
-.moment-btn--primary:active {
-	background: var(--moment-accent-deep);
-	border-color: var(--moment-accent-deep);
+.daymark-btn--primary:hover,
+.daymark-btn--primary:active {
+	background: var(--daymark-accent-deep);
+	border-color: var(--daymark-accent-deep);
 }
 
-.moment-btn:disabled {
+.daymark-btn:disabled {
 	opacity: 0.5;
 	cursor: default;
 }
 
-.moment-btn--secondary:not(:disabled):hover,
-.moment-btn--secondary:not(:disabled):active {
-	border-color: var(--moment-accent-light);
-	background: var(--moment-accent-wash);
+.daymark-btn--secondary:not(:disabled):hover,
+.daymark-btn--secondary:not(:disabled):active {
+	border-color: var(--daymark-accent-light);
+	background: var(--daymark-accent-wash);
 }
 
-.moment-btn--secondary {
-	background: var(--moment-bg);
-	color: var(--moment-text-primary);
-	border-color: var(--moment-border);
+.daymark-btn--secondary {
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	border-color: var(--daymark-border);
 	width: 100%;
 }
 
-.moment-btn--text {
+.daymark-btn--text {
 	background: none;
 	border: none;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	text-decoration: underline;
 	font-weight: 500;
-	min-height: var(--moment-tap-min);
+	min-height: var(--daymark-tap-min);
 }
 
 /* Infinite-scroll trigger: a tiny sentinel the IntersectionObserver watches
    to auto-load the next page. Kept minimal so it never adds visible space. */
-.moment-recent__sentinel {
+.daymark-recent__sentinel {
 	height: 1px;
 }
 
-.moment-recent__more {
-	margin: var(--moment-spacing-xs) 0 0;
+.daymark-recent__more {
+	margin: var(--daymark-spacing-xs) 0 0;
 	text-align: center;
 }
 
-.moment-recent__morelink {
+.daymark-recent__morelink {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: var(--moment-tap-min);
-	color: var(--moment-accent);
+	min-height: var(--daymark-tap-min);
+	color: var(--daymark-accent);
 	font-weight: 600;
 	font-size: 14px;
 	text-decoration: none;
 }
 
-.moment-btn--hero {
+.daymark-btn--hero {
 	min-height: 64px;
 	font-size: 18px;
 }
 
 /* --- Sticky footer action bar --- */
-.moment-actionbar {
+.daymark-actionbar {
 	position: sticky;
 	bottom: 0;
 	margin-top: auto;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
-	padding: var(--moment-spacing-md);
-	padding-bottom: calc(var(--moment-spacing-md) + env(safe-area-inset-bottom, 0px));
-	background: var(--moment-bg);
-	border-top: 1px solid var(--moment-border);
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-md);
+	padding-bottom: calc(var(--daymark-spacing-md) + env(safe-area-inset-bottom, 0px));
+	background: var(--daymark-bg);
+	border-top: 1px solid var(--daymark-border);
 }
 
 /* --- Home footer: primary CTA in the thumb zone, above the site nav --- */
-.moment-homefooter {
+.daymark-homefooter {
 	position: sticky;
 	bottom: 0;
 	margin-top: auto;
-	background: var(--moment-bg);
-	border-top: 1px solid var(--moment-border);
+	background: var(--daymark-bg);
+	border-top: 1px solid var(--daymark-border);
 }
 
-.moment-homefooter__cta {
+.daymark-homefooter__cta {
 	display: block;
-	width: calc(100% - 2 * var(--moment-spacing-md));
-	margin: var(--moment-spacing-md) var(--moment-spacing-md) 0;
+	width: calc(100% - 2 * var(--daymark-spacing-md));
+	margin: var(--daymark-spacing-md) var(--daymark-spacing-md) 0;
 }
 
-.moment-homefooter .moment-bottomnav {
+.daymark-homefooter .daymark-bottomnav {
 	margin-top: 0;
 	border-top: 0;
 }
 
 /* --- Chips and badges --- */
-.moment-chip {
+.daymark-chip {
 	display: inline-flex;
 	align-items: center;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 	padding: 2px 10px;
 	border-radius: 999px;
-	background: var(--moment-accent-wash);
-	border: 1px solid var(--moment-accent-light);
+	background: var(--daymark-accent-wash);
+	border: 1px solid var(--daymark-accent-light);
 	font-size: 12px;
 	font-weight: 500;
-	color: var(--moment-accent-deep);
+	color: var(--daymark-accent-deep);
 	white-space: nowrap;
 }
 
 /* Unread indicator on the notifications bell — presence only, no count. */
-.moment-iconbtn {
+.daymark-iconbtn {
 	position: relative;
 }
 
-.moment-iconbtn__dot {
+.daymark-iconbtn__dot {
 	position: absolute;
 	top: 9px;
 	right: 9px;
 	width: 9px;
 	height: 9px;
 	border-radius: 50%;
-	background: var(--moment-accent);
-	border: 2px solid var(--moment-bg);
+	background: var(--daymark-accent);
+	border: 2px solid var(--daymark-bg);
 }
 
 /* Editing-a-draft banner at the top of the composer. */
-.moment-editbanner {
+.daymark-editbanner {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-xs);
-	margin: 0 0 var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-xs);
+	margin: 0 0 var(--daymark-spacing-sm);
 	font-size: 13px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
 /* Neutral (non-brand) chip marking unpublished items in private views. */
-.moment-chip--draft {
-	background: var(--moment-bg-subtle, #f4f4f5);
-	border-color: var(--moment-border);
-	color: var(--moment-text-secondary);
+.daymark-chip--draft {
+	background: var(--daymark-bg-subtle, #f4f4f5);
+	border-color: var(--daymark-border);
+	color: var(--daymark-text-secondary);
 	vertical-align: middle;
 }
 
-.moment-chip--muted {
+.daymark-chip--muted {
 	font-style: italic;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 }
 
-.moment-chip--success {
-	color: var(--moment-success);
+.daymark-chip--success {
+	color: var(--daymark-success);
 	border-color: currentColor;
 }
 
-/* --- Home: recent Moments --- */
-.moment-recent {
+/* --- Home: recent Marks --- */
+.daymark-recent {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
 /* Author display rules above beat the UA's [hidden] styling — restore
@@ -399,115 +399,115 @@ h2[tabindex='-1']:focus {
 	display: none !important;
 }
 
-.moment-recent__list {
+.daymark-recent__list {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-recent__item {
+.daymark-recent__item {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-md);
+	gap: var(--daymark-spacing-md);
 	min-height: 64px;
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
 	text-decoration: none;
-	color: var(--moment-text-primary);
+	color: var(--daymark-text-primary);
 }
 
-.moment-recent__thumb {
+.daymark-recent__thumb {
 	width: 48px;
 	height: 48px;
 	flex-shrink: 0;
-	border-radius: var(--moment-radius-sm);
+	border-radius: var(--daymark-radius-sm);
 	object-fit: cover;
-	background: var(--moment-surface);
+	background: var(--daymark-surface);
 }
 
-.moment-recent__thumb--glyph {
+.daymark-recent__thumb--glyph {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 20px;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 }
 
-.moment-recent__body {
+.daymark-recent__body {
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 }
 
-.moment-recent__title {
+.daymark-recent__title {
 	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.moment-recent__meta {
+.daymark-recent__meta {
 	font-size: 13px;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 }
 
-.moment-empty {
-	padding: var(--moment-spacing-lg);
-	border: 1px dashed var(--moment-border);
-	border-radius: var(--moment-radius);
+.daymark-empty {
+	padding: var(--daymark-spacing-lg);
+	border: 1px dashed var(--daymark-border);
+	border-radius: var(--daymark-radius);
 	text-align: center;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-error {
-	padding: var(--moment-spacing-md);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-surface);
-	color: var(--moment-error);
+.daymark-error {
+	padding: var(--daymark-spacing-md);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+	color: var(--daymark-error);
 	font-size: 14px;
 }
 
 /* --- Bottom nav --- */
-.moment-bottomnav {
+.daymark-bottomnav {
 	display: flex;
 	justify-content: space-between;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 	margin-top: auto;
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	padding-bottom: calc(var(--moment-spacing-sm) + env(safe-area-inset-bottom, 0px));
-	border-top: 1px solid var(--moment-border);
-	background: var(--moment-bg);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	padding-bottom: calc(var(--daymark-spacing-sm) + env(safe-area-inset-bottom, 0px));
+	border-top: 1px solid var(--daymark-border);
+	background: var(--daymark-bg);
 	position: sticky;
 	bottom: 0;
 }
 
-.moment-bottomnav__link {
+.daymark-bottomnav__link {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	flex: 1;
-	min-height: var(--moment-tap-min);
-	padding: 0 var(--moment-spacing-xs);
-	border-radius: var(--moment-radius-sm);
-	color: var(--moment-text-secondary);
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-xs);
+	border-radius: var(--daymark-radius-sm);
+	color: var(--daymark-text-secondary);
 	text-decoration: none;
 }
 
-.moment-bottomnav__link:hover,
-.moment-bottomnav__link:focus-visible {
-	color: var(--moment-accent);
-	background: var(--moment-accent-wash);
+.daymark-bottomnav__link:hover,
+.daymark-bottomnav__link:focus-visible {
+	color: var(--daymark-accent);
+	background: var(--daymark-accent-wash);
 }
 
-.moment-bottomnav__icon {
+.daymark-bottomnav__icon {
 	display: block;
 }
 
 /* --- Create: media picker --- */
-.moment-picker__input {
+.daymark-picker__input {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -515,66 +515,66 @@ h2[tabindex='-1']:focus {
 	overflow: hidden;
 }
 
-.moment-picker__zone {
+.daymark-picker__zone {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 	min-height: 120px;
-	padding: var(--moment-spacing-lg);
-	border: 2px dashed var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-surface);
+	padding: var(--daymark-spacing-lg);
+	border: 2px dashed var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
 	text-align: center;
 	font-weight: 600;
 	cursor: pointer;
 }
 
-.moment-picker__input:focus-visible + .moment-picker__zone {
-	outline: 2px solid var(--moment-accent);
+.daymark-picker__input:focus-visible + .daymark-picker__zone {
+	outline: 2px solid var(--daymark-accent);
 	outline-offset: 2px;
 }
 
-.moment-picker__hint {
+.daymark-picker__hint {
 	font-size: 13px;
 	font-weight: 400;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 }
 
 /* --- Create: preview grid --- */
-.moment-preview {
+.daymark-preview {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-preview__grid {
+.daymark-preview__grid {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 	list-style: none;
 	margin: 0;
 	padding: 0;
 }
 
-.moment-preview__tile {
+.daymark-preview__tile {
 	position: relative;
 	aspect-ratio: 1 / 1;
-	border-radius: var(--moment-radius-sm);
+	border-radius: var(--daymark-radius-sm);
 	overflow: hidden;
-	background: var(--moment-surface);
-	border: 1px solid var(--moment-border);
+	background: var(--daymark-surface);
+	border: 1px solid var(--daymark-border);
 }
 
-.moment-preview__img {
+.daymark-preview__img {
 	width: 100%;
 	height: 100%;
 	object-fit: cover;
 	display: block;
 }
 
-.moment-preview__glyph {
+.daymark-preview__glyph {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -582,12 +582,12 @@ h2[tabindex='-1']:focus {
 	height: 100%;
 	font-size: 12px;
 	font-weight: 600;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
 }
 
-.moment-preview__more {
+.daymark-preview__more {
 	position: absolute;
 	inset: 0;
 	display: flex;
@@ -599,47 +599,47 @@ h2[tabindex='-1']:focus {
 	font-weight: 700;
 }
 
-.moment-filelist {
+.daymark-filelist {
 	list-style: none;
 	margin: 0;
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 }
 
-.moment-filelist__item {
+.daymark-filelist__item {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-xs);
-	padding: var(--moment-spacing-xs) var(--moment-spacing-sm);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-surface);
+	gap: var(--daymark-spacing-xs);
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
 	font-size: 14px;
 }
 
-.moment-filelist__row {
+.daymark-filelist__row {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-sm);
-	min-height: var(--moment-tap-min);
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
 }
 
-.moment-filelist__name {
+.daymark-filelist__name {
 	flex: 1;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-filelist__clear {
-	min-height: var(--moment-tap-min);
-	min-width: var(--moment-tap-min);
+.daymark-filelist__clear {
+	min-height: var(--daymark-tap-min);
+	min-width: var(--daymark-tap-min);
 	border: none;
 	background: none;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	font-size: 14px;
 	font-weight: 600;
 	text-decoration: underline;
@@ -647,160 +647,160 @@ h2[tabindex='-1']:focus {
 }
 
 /* Per-image alt text field (composer + draft edit). */
-.moment-alt {
+.daymark-alt {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 }
 
-.moment-alt__label {
+.daymark-alt__label {
 	font-size: 12px;
 	font-weight: 600;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-alt__input[aria-busy='true'] {
+.daymark-alt__input[aria-busy='true'] {
 	opacity: 0.7;
 }
 
-.moment-alt__hint {
+.daymark-alt__hint {
 	font-size: 12px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
 /* Editable media list when reopening a draft: thumbnail + alt field. */
-.moment-editmedia {
+.daymark-editmedia {
 	list-style: none;
-	margin: 0 0 var(--moment-spacing-md);
+	margin: 0 0 var(--daymark-spacing-md);
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-editmedia__item {
+.daymark-editmedia__item {
 	display: flex;
 	align-items: flex-start;
-	gap: var(--moment-spacing-sm);
-	padding: var(--moment-spacing-sm);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-surface);
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-sm);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
 }
 
-.moment-editmedia__thumb {
+.daymark-editmedia__thumb {
 	width: 56px;
 	height: 56px;
 	object-fit: cover;
-	border-radius: var(--moment-radius-sm);
+	border-radius: var(--daymark-radius-sm);
 	flex-shrink: 0;
 }
 
-.moment-editmedia__glyph {
+.daymark-editmedia__glyph {
 	width: 56px;
 	height: 56px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-accent-wash);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-accent-wash);
 	font-size: 12px;
 	text-transform: uppercase;
-	color: var(--moment-accent-deep);
+	color: var(--daymark-accent-deep);
 	flex-shrink: 0;
 }
 
-.moment-editmedia__name {
+.daymark-editmedia__name {
 	align-self: center;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-alt--edit {
+.daymark-alt--edit {
 	flex: 1;
 	min-width: 0;
 }
 
 /* --- Forms --- */
-.moment-field {
+.daymark-field {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 }
 
-.moment-field__label {
+.daymark-field__label {
 	font-size: 14px;
 	font-weight: 600;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
 /* Optional Title field (audio/video by policy): label row with an ⓘ toggle
  * and a tap-to-reveal hint. */
-.moment-titlefield__labelrow {
+.daymark-titlefield__labelrow {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 }
 
-.moment-infobtn {
+.daymark-infobtn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: var(--moment-tap-min);
-	min-width: var(--moment-tap-min);
+	min-height: var(--daymark-tap-min);
+	min-width: var(--daymark-tap-min);
 	margin: -12px 0; /* Keep the 44px tap target without inflating the row. */
 	padding: 0;
 	border: 0;
 	background: none;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 	cursor: pointer;
 }
 
-.moment-infobtn:hover,
-.moment-infobtn[aria-expanded='true'] {
-	color: var(--moment-accent);
+.daymark-infobtn:hover,
+.daymark-infobtn[aria-expanded='true'] {
+	color: var(--daymark-accent);
 }
 
-.moment-titlefield__hint {
+.daymark-titlefield__hint {
 	margin: 0;
 	font-size: 12px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-titlefield__hint[hidden] {
+.daymark-titlefield__hint[hidden] {
 	display: none;
 }
 
-.moment-textarea,
-.moment-input {
+.daymark-textarea,
+.daymark-input {
 	width: 100%;
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-bg);
-	color: var(--moment-text-primary);
-	font-family: var(--moment-font);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	font-family: var(--daymark-font);
 	font-size: 16px;
 	line-height: 1.5;
 }
 
-.moment-input {
-	min-height: var(--moment-input-height);
+.daymark-input {
+	min-height: var(--daymark-input-height);
 }
 
-.moment-textarea {
+.daymark-textarea {
 	resize: vertical;
 	min-height: 112px;
 }
 
-.moment-typebadge {
+.daymark-typebadge {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 	font-size: 14px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
 /* --- AI Assist sheet --- */
-.moment-sheet {
+.daymark-sheet {
 	position: fixed;
 	inset: 0;
 	z-index: 100;
@@ -809,7 +809,7 @@ h2[tabindex='-1']:focus {
 	justify-content: flex-end;
 }
 
-.moment-sheet__backdrop {
+.daymark-sheet__backdrop {
 	position: absolute;
 	inset: 0;
 	background: rgba(46, 0, 84, 0.45);
@@ -818,24 +818,24 @@ h2[tabindex='-1']:focus {
 	cursor: pointer;
 }
 
-.moment-sheet__panel {
+.daymark-sheet__panel {
 	position: relative;
 	max-height: 85vh;
 	overflow-y: auto;
-	background: var(--moment-bg);
-	border-radius: var(--moment-radius) var(--moment-radius) 0 0;
-	padding: var(--moment-spacing-lg) var(--moment-spacing-md);
-	padding-bottom: calc(var(--moment-spacing-lg) + env(safe-area-inset-bottom, 0px));
+	background: var(--daymark-bg);
+	border-radius: var(--daymark-radius) var(--daymark-radius) 0 0;
+	padding: var(--daymark-spacing-lg) var(--daymark-spacing-md);
+	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-md);
-	animation: moment-sheet-up 0.25s ease-out;
+	gap: var(--daymark-spacing-md);
+	animation: daymark-sheet-up 0.25s ease-out;
 	max-width: 480px;
 	width: 100%;
 	margin: 0 auto;
 }
 
-@keyframes moment-sheet-up {
+@keyframes daymark-sheet-up {
 	from {
 		transform: translateY(24px);
 		opacity: 0;
@@ -847,100 +847,100 @@ h2[tabindex='-1']:focus {
 	}
 }
 
-.moment-sheet__title {
+.daymark-sheet__title {
 	font-size: 18px;
 	font-weight: 700;
 }
 
-.moment-sheet__body {
+.daymark-sheet__body {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-md);
+	gap: var(--daymark-spacing-md);
 }
 
-.moment-sheet__actions {
+.daymark-sheet__actions {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-md);
+	gap: var(--daymark-spacing-md);
 }
 
-.moment-sheet__actions .moment-btn--primary {
+.daymark-sheet__actions .daymark-btn--primary {
 	flex: 1;
 	width: auto;
 }
 
-.moment-notice {
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-surface);
-	color: var(--moment-text-muted);
+.daymark-notice {
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+	color: var(--daymark-text-muted);
 	font-size: 13px;
 	font-style: italic;
 }
 
-.moment-loading {
+.daymark-loading {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-sm);
-	color: var(--moment-text-secondary);
-	padding: var(--moment-spacing-md) 0;
+	gap: var(--daymark-spacing-sm);
+	color: var(--daymark-text-secondary);
+	padding: var(--daymark-spacing-md) 0;
 }
 
-.moment-spinner {
+.daymark-spinner {
 	width: 20px;
 	height: 20px;
 	flex-shrink: 0;
-	border: 2px solid var(--moment-border);
-	border-top-color: var(--moment-accent);
+	border: 2px solid var(--daymark-border);
+	border-top-color: var(--daymark-accent);
 	border-radius: 50%;
-	animation: moment-spin 0.8s linear infinite;
+	animation: daymark-spin 0.8s linear infinite;
 }
 
-@keyframes moment-spin {
+@keyframes daymark-spin {
 	to {
 		transform: rotate(360deg);
 	}
 }
 
 /* --- Tag chips --- */
-.moment-tags {
+.daymark-tags {
 	border: none;
 	margin: 0;
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-tags__legend {
+.daymark-tags__legend {
 	font-size: 14px;
 	font-weight: 600;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	padding: 0;
 }
 
-.moment-tags__list {
+.daymark-tags__list {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 	list-style: none;
 	margin: 0;
 	padding: 0;
 }
 
-.moment-tags__chip {
+.daymark-tags__chip {
 	display: inline-flex;
 	align-items: center;
-	gap: var(--moment-spacing-xs);
+	gap: var(--daymark-spacing-xs);
 	min-height: 36px;
-	padding: 0 var(--moment-spacing-xs) 0 var(--moment-spacing-md);
+	padding: 0 var(--daymark-spacing-xs) 0 var(--daymark-spacing-md);
 	border-radius: 999px;
-	background: var(--moment-surface);
-	border: 1px solid var(--moment-border);
+	background: var(--daymark-surface);
+	border: 1px solid var(--daymark-border);
 	font-size: 14px;
 }
 
-.moment-tags__remove {
+.daymark-tags__remove {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -949,70 +949,70 @@ h2[tabindex='-1']:focus {
 	border: none;
 	border-radius: 50%;
 	background: none;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	font-size: 16px;
 	cursor: pointer;
 }
 
-.moment-tags__addrow {
+.daymark-tags__addrow {
 	display: flex;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-tags__addrow .moment-input {
+.daymark-tags__addrow .daymark-input {
 	flex: 1;
 }
 
-.moment-tags__addrow .moment-btn--secondary {
+.daymark-tags__addrow .daymark-btn--secondary {
 	width: auto;
 	flex-shrink: 0;
 }
 
 /* --- Publish: destination rows --- */
-.moment-destlist {
+.daymark-destlist {
 	list-style: none;
 	margin: 0;
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-dest {
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
+.daymark-dest {
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
 }
 
-.moment-dest--locked {
-	background: var(--moment-surface);
+.daymark-dest--locked {
+	background: var(--daymark-surface);
 }
 
-.moment-dest__row {
+.daymark-dest__row {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-md);
+	gap: var(--daymark-spacing-md);
 	min-height: 64px;
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
 	cursor: pointer;
 }
 
-.moment-dest--locked .moment-dest__row {
+.daymark-dest--locked .daymark-dest__row {
 	cursor: default;
 }
 
-/* Connector can't represent the current Moment type (e.g. a note to
+/* Connector can't represent the current Mark type (e.g. a note to
    Instagram): visible but not selectable. */
-.moment-dest--unsupported {
-	background: var(--moment-surface);
+.daymark-dest--unsupported {
+	background: var(--daymark-surface);
 }
 
-.moment-dest--unsupported .moment-dest__row {
+.daymark-dest--unsupported .daymark-dest__row {
 	cursor: default;
 	opacity: 0.55;
 }
 
-.moment-dest__info {
+.daymark-dest__info {
 	flex: 1;
 	min-width: 0;
 	display: flex;
@@ -1021,22 +1021,22 @@ h2[tabindex='-1']:focus {
 	align-items: flex-start;
 }
 
-.moment-dest__name {
+.daymark-dest__name {
 	font-weight: 600;
 }
 
 /* --- Toggle switch --- */
-.moment-toggle {
+.daymark-toggle {
 	position: relative;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: var(--moment-tap-min);
-	height: var(--moment-tap-min);
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
 	flex-shrink: 0;
 }
 
-.moment-toggle__input {
+.daymark-toggle__input {
 	position: absolute;
 	inset: 0;
 	width: 100%;
@@ -1046,178 +1046,178 @@ h2[tabindex='-1']:focus {
 	cursor: pointer;
 }
 
-.moment-toggle__track {
+.daymark-toggle__track {
 	display: block;
 	width: 44px;
 	height: 26px;
 	border-radius: 999px;
-	background: var(--moment-border);
+	background: var(--daymark-border);
 	transition: background 0.15s ease;
 	pointer-events: none;
 }
 
-.moment-toggle__track::after {
+.daymark-toggle__track::after {
 	content: '';
 	display: block;
 	width: 20px;
 	height: 20px;
 	margin: 3px;
 	border-radius: 50%;
-	background: var(--moment-bg);
+	background: var(--daymark-bg);
 	transition: transform 0.15s ease;
 }
 
-.moment-toggle__input:checked + .moment-toggle__track {
-	background: var(--moment-accent);
+.daymark-toggle__input:checked + .daymark-toggle__track {
+	background: var(--daymark-accent);
 }
 
-.moment-toggle__input:checked + .moment-toggle__track::after {
+.daymark-toggle__input:checked + .daymark-toggle__track::after {
 	transform: translateX(18px);
 }
 
-.moment-toggle__input:focus-visible + .moment-toggle__track {
-	outline: 2px solid var(--moment-accent);
+.daymark-toggle__input:focus-visible + .daymark-toggle__track {
+	outline: 2px solid var(--daymark-accent);
 	outline-offset: 2px;
 }
 
-.moment-toggle__input:disabled {
+.daymark-toggle__input:disabled {
 	cursor: default;
 }
 
-.moment-toggle__input:disabled + .moment-toggle__track {
+.daymark-toggle__input:disabled + .daymark-toggle__track {
 	opacity: 0.6;
 }
 
 /* --- Success screen --- */
-.moment-success {
+.daymark-success {
 	align-items: center;
 	text-align: center;
-	padding-top: var(--moment-spacing-xl);
+	padding-top: var(--daymark-spacing-xl);
 }
 
-.moment-success__icon {
+.daymark-success__icon {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 72px;
 	height: 72px;
 	border-radius: 50%;
-	background: var(--moment-surface);
-	color: var(--moment-success);
+	background: var(--daymark-surface);
+	color: var(--daymark-success);
 }
 
-.moment-success__link {
+.daymark-success__link {
 	display: inline-flex;
 	align-items: center;
-	min-height: var(--moment-tap-min);
+	min-height: var(--daymark-tap-min);
 	font-weight: 600;
 }
 
 /* Small inline "(view)" link beside the published heading. */
-.moment-success__viewlink {
+.daymark-success__viewlink {
 	font-size: 0.6em;
 	font-weight: 500;
-	color: var(--moment-accent);
+	color: var(--daymark-accent);
 	vertical-align: middle;
 }
 
-.moment-syndication {
+.daymark-syndication {
 	width: 100%;
 	list-style: none;
 	margin: 0;
 	padding: 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 	text-align: left;
 }
 
-.moment-syndication__row {
+.daymark-syndication__row {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: var(--moment-spacing-md);
-	min-height: var(--moment-tap-min);
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius-sm);
+	gap: var(--daymark-spacing-md);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
 	font-size: 14px;
 }
 
 /* --- Notifications --- */
-.moment-note-card {
+.daymark-note-card {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
-	padding: var(--moment-spacing-md);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
 }
 
-.moment-note-card__text {
-	color: var(--moment-text-primary);
+.daymark-note-card__text {
+	color: var(--daymark-text-primary);
 }
 
-.moment-clamp {
+.daymark-clamp {
 	display: -webkit-box;
 	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;
 	overflow: hidden;
 }
 
-.moment-note-card__text.is-expanded {
+.daymark-note-card__text.is-expanded {
 	display: block;
 	-webkit-line-clamp: none;
 }
 
-.moment-note-card__showmore {
+.daymark-note-card__showmore {
 	align-self: flex-start;
-	min-height: var(--moment-tap-min);
+	min-height: var(--daymark-tap-min);
 	padding: 0;
 	border: none;
 	background: none;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	font-size: 14px;
 	font-weight: 600;
 	text-decoration: underline;
 	cursor: pointer;
 }
 
-.moment-note-card__meta {
+.daymark-note-card__meta {
 	font-size: 13px;
-	color: var(--moment-text-muted);
+	color: var(--daymark-text-muted);
 }
 
-.moment-note-card__links {
+.daymark-note-card__links {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--moment-spacing-md);
+	gap: var(--daymark-spacing-md);
 }
 
-.moment-note-card__link {
+.daymark-note-card__link {
 	display: inline-flex;
 	align-items: center;
-	min-height: var(--moment-tap-min);
+	min-height: var(--daymark-tap-min);
 	font-size: 14px;
 	font-weight: 600;
 }
 
 /* --- Loading skeleton --- */
-.moment-skeleton {
+.daymark-skeleton {
 	height: 64px;
-	border-radius: var(--moment-radius);
+	border-radius: var(--daymark-radius);
 	background: linear-gradient(
 		90deg,
-		var(--moment-surface) 25%,
-		var(--moment-border) 50%,
-		var(--moment-surface) 75%
+		var(--daymark-surface) 25%,
+		var(--daymark-border) 50%,
+		var(--daymark-surface) 75%
 	);
 	background-size: 200% 100%;
-	animation: moment-shimmer 1.2s linear infinite;
+	animation: daymark-shimmer 1.2s linear infinite;
 }
 
-@keyframes moment-shimmer {
+@keyframes daymark-shimmer {
 	from {
 		background-position: 200% 0;
 	}
@@ -1228,265 +1228,265 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Async status region --- */
-.moment-status {
+.daymark-status {
 	min-height: 20px;
 	font-size: 14px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	text-align: center;
-	padding-bottom: var(--moment-spacing-sm);
+	padding-bottom: var(--daymark-spacing-sm);
 }
 
 /* --- Header search (collapsible) --- */
-.moment-searchbtn {
+.daymark-searchbtn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: var(--moment-tap-min);
-	min-width: var(--moment-tap-min);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
-	color: var(--moment-text-primary);
+	min-height: var(--daymark-tap-min);
+	min-width: var(--daymark-tap-min);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
 	cursor: pointer;
 }
 
-.moment-searchbtn:hover,
-.moment-searchbtn:focus-visible {
-	color: var(--moment-accent);
-	border-color: var(--moment-accent-light);
+.daymark-searchbtn:hover,
+.daymark-searchbtn:focus-visible {
+	color: var(--daymark-accent);
+	border-color: var(--daymark-accent-light);
 }
 
-.moment-searchbar {
+.daymark-searchbar {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
-	padding: 0 var(--moment-spacing-md) var(--moment-spacing-md);
+	gap: var(--daymark-spacing-sm);
+	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-md);
 }
 
-.moment-searchbar .moment-input {
+.daymark-searchbar .daymark-input {
 	width: 100%;
 }
 
-.moment-filterchips {
+.daymark-filterchips {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-filterchip {
+.daymark-filterchip {
 	min-height: 36px;
-	padding: 0 var(--moment-spacing-md);
+	padding: 0 var(--daymark-spacing-md);
 	border-radius: 999px;
-	border: 1px solid var(--moment-border);
-	background: var(--moment-bg);
-	color: var(--moment-text-secondary);
+	border: 1px solid var(--daymark-border);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
 	font-size: 14px;
 	font-weight: 600;
 	cursor: pointer;
 }
 
-.moment-filterchip.is-active,
-.moment-filterchip[aria-pressed='true'] {
-	background: var(--moment-accent-wash);
-	border-color: var(--moment-accent-light);
-	color: var(--moment-accent-deep);
+.daymark-filterchip.is-active,
+.daymark-filterchip[aria-pressed='true'] {
+	background: var(--daymark-accent-wash);
+	border-color: var(--daymark-accent-light);
+	color: var(--daymark-accent-deep);
 }
 
-.moment-filterchip:focus-visible {
-	outline: 2px solid var(--moment-accent);
+.daymark-filterchip:focus-visible {
+	outline: 2px solid var(--daymark-accent);
 	outline-offset: 2px;
 }
 
 /* --- Recent item: per-item ⋯ actions menu --- */
-.moment-recent__item-wrap {
+.daymark-recent__item-wrap {
 	position: relative;
 }
 
-.moment-recent__item-wrap .moment-recent__item {
+.daymark-recent__item-wrap .daymark-recent__item {
 	/* Room for the ⋯ button pinned to the right edge. */
 	padding-right: 56px;
 }
 
-.moment-recent__actions {
+.daymark-recent__actions {
 	position: absolute;
 	top: 50%;
-	right: var(--moment-spacing-sm);
+	right: var(--daymark-spacing-sm);
 	transform: translateY(-50%);
 }
 
-.moment-recent__menubtn {
+.daymark-recent__menubtn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	width: 40px;
 	height: 40px;
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius-sm);
-	background: var(--moment-bg);
-	color: var(--moment-text-secondary);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
 	cursor: pointer;
 }
 
-.moment-recent__menubtn:hover,
-.moment-recent__menubtn:focus-visible {
-	color: var(--moment-accent);
-	border-color: var(--moment-accent-light);
+.daymark-recent__menubtn:hover,
+.daymark-recent__menubtn:focus-visible {
+	color: var(--daymark-accent);
+	border-color: var(--daymark-accent-light);
 }
 
-.moment-menu {
+.daymark-menu {
 	position: absolute;
 	top: calc(50% + 22px);
 	right: 0;
 	z-index: 20;
 	min-width: 200px;
-	padding: var(--moment-spacing-xs);
-	border: 1px solid var(--moment-border);
-	border-radius: var(--moment-radius);
-	background: var(--moment-bg);
+	padding: var(--daymark-spacing-xs);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
 	box-shadow: 0 8px 24px rgba(46, 0, 84, 0.16);
 }
 
-.moment-menu__actions {
+.daymark-menu__actions {
 	display: flex;
 	flex-direction: column;
 }
 
-.moment-menu__item {
+.daymark-menu__item {
 	display: flex;
 	align-items: center;
 	width: 100%;
-	min-height: var(--moment-tap-min);
-	padding: 0 var(--moment-spacing-md);
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
 	border: none;
-	border-radius: var(--moment-radius-sm);
+	border-radius: var(--daymark-radius-sm);
 	background: none;
-	color: var(--moment-text-primary);
+	color: var(--daymark-text-primary);
 	font-size: 15px;
 	font-weight: 500;
 	text-align: left;
 	cursor: pointer;
 }
 
-.moment-menu__item:hover,
-.moment-menu__item:focus-visible {
-	background: var(--moment-accent-wash);
+.daymark-menu__item:hover,
+.daymark-menu__item:focus-visible {
+	background: var(--daymark-accent-wash);
 }
 
-.moment-menu__item--danger {
-	color: var(--moment-error);
+.daymark-menu__item--danger {
+	color: var(--daymark-error);
 }
 
-.moment-menu__confirm {
+.daymark-menu__confirm {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
-	padding: var(--moment-spacing-sm) var(--moment-spacing-md) var(--moment-spacing-md);
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) var(--daymark-spacing-md);
 }
 
-.moment-menu__confirmtext {
+.daymark-menu__confirmtext {
 	font-size: 14px;
 	line-height: 1.4;
 }
 
-.moment-menu__confirmactions {
+.daymark-menu__confirmactions {
 	display: flex;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-menu__confirmactions .moment-btn {
+.daymark-menu__confirmactions .daymark-btn {
 	width: auto;
 	flex: 1;
 	min-height: 40px;
-	padding: 0 var(--moment-spacing-md);
+	padding: 0 var(--daymark-spacing-md);
 }
 
-.moment-menu__status:not(:empty) {
+.daymark-menu__status:not(:empty) {
 	font-size: 13px;
-	color: var(--moment-error);
+	color: var(--daymark-error);
 }
 
-.moment-btn--danger {
-	background: var(--moment-error);
+.daymark-btn--danger {
+	background: var(--daymark-error);
 	color: #ffffff;
-	border-color: var(--moment-error);
+	border-color: var(--daymark-error);
 }
 
-.moment-btn--danger:not(:disabled):hover,
-.moment-btn--danger:not(:disabled):active {
+.daymark-btn--danger:not(:disabled):hover,
+.daymark-btn--danger:not(:disabled):active {
 	background: #97140c;
 	border-color: #97140c;
 }
 
 /* --- Notifications: per-item reply --- */
-.moment-note-card__reply {
+.daymark-note-card__reply {
 	display: inline-flex;
 	align-items: center;
-	gap: var(--moment-spacing-xs);
-	min-height: var(--moment-tap-min);
+	gap: var(--daymark-spacing-xs);
+	min-height: var(--daymark-tap-min);
 	padding: 0;
 	border: none;
 	background: none;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 	font-size: 14px;
 	font-weight: 600;
 	cursor: pointer;
 }
 
-.moment-note-card__reply:hover,
-.moment-note-card__reply:focus-visible {
-	color: var(--moment-accent);
+.daymark-note-card__reply:hover,
+.daymark-note-card__reply:focus-visible {
+	color: var(--daymark-accent);
 }
 
-.moment-reply {
+.daymark-reply {
 	display: flex;
 	flex-direction: column;
-	gap: var(--moment-spacing-sm);
-	margin-top: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
+	margin-top: var(--daymark-spacing-sm);
 }
 
-.moment-reply__input {
+.daymark-reply__input {
 	min-height: 72px;
 }
 
-.moment-reply__actions {
+.daymark-reply__actions {
 	display: flex;
 	align-items: center;
-	gap: var(--moment-spacing-sm);
+	gap: var(--daymark-spacing-sm);
 }
 
-.moment-reply__actions .moment-btn--primary {
+.daymark-reply__actions .daymark-btn--primary {
 	width: auto;
 	flex: 1;
 	min-height: 40px;
 }
 
-.moment-reply__status:not(:empty) {
+.daymark-reply__status:not(:empty) {
 	font-size: 13px;
-	color: var(--moment-text-secondary);
+	color: var(--daymark-text-secondary);
 }
 
-.moment-note-card__replied {
+.daymark-note-card__replied {
 	font-size: 13px;
 	font-weight: 600;
-	color: var(--moment-success);
+	color: var(--daymark-success);
 }
 
 /* --- Reduced motion --- */
 @media (prefers-reduced-motion: reduce) {
-	.moment-sheet__panel,
-	.moment-spinner,
-	.moment-skeleton {
+	.daymark-sheet__panel,
+	.daymark-spinner,
+	.daymark-skeleton {
 		animation: none;
 	}
 
-	.moment-toggle__track,
-	.moment-toggle__track::after {
+	.daymark-toggle__track,
+	.daymark-toggle__track::after {
 		transition: none;
 	}
 }
 
 /* Lift the item whose ⋯ menu is open above later cards so the open menu is
    not covered by following list items (sibling stacking-context fix). */
-.moment-recent__item-wrap:has(.moment-menu:not([hidden])) {
+.daymark-recent__item-wrap:has(.daymark-menu:not([hidden])) {
 	z-index: 30;
 }

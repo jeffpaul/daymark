@@ -150,8 +150,8 @@ jobs:
 
       - name: Link and activate the plugin
         run: |
-          ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/moment
-          wp plugin activate moment --path=/tmp/wp
+          ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/daymark
+          wp plugin activate daymark --path=/tmp/wp
 
       - name: Run smoke suite (57 assertions, E2E scenarios 1-10)
         run: |
@@ -198,13 +198,13 @@ jobs:
           wp config create --path=/tmp/wp --dbname=wp_e2e --dbuser=root --dbpass=root --dbhost=127.0.0.1
           wp core install --path=/tmp/wp --url=http://127.0.0.1:8889 --title=E2E \
             --admin_user=admin --admin_password=admin --admin_email=admin@e2e.test --skip-email
-          # /moment and the section pages need pretty permalinks in a browser.
+          # /daymark and the section pages need pretty permalinks in a browser.
           wp rewrite structure '/%postname%/' --path=/tmp/wp
 
       - name: Link and activate the plugin
         run: |
-          ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/moment
-          wp plugin activate moment --path=/tmp/wp
+          ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/daymark
+          wp plugin activate daymark --path=/tmp/wp
           wp rewrite flush --path=/tmp/wp
 
       - name: Seed E2E fixtures
@@ -212,11 +212,11 @@ jobs:
           mkdir -p /tmp/wp/wp-content/mu-plugins
           # Registers a fake publishing helper so the awareness-note test
           # has something to detect.
-          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-publish-helper.php" /tmp/wp/wp-content/mu-plugins/
-          # Registers a fake controllable helper for the per-Moment toggle test.
-          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-publish-helper.php" /tmp/wp/wp-content/mu-plugins/
+          # Registers a fake controllable helper for the per-Mark toggle test.
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
           # Registers a fake CONNECTED connector for the destination-toggle test.
-          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/moment-e2e-connector.php" /tmp/wp/wp-content/mu-plugins/
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-connector.php" /tmp/wp/wp-content/mu-plugins/
           # A couple of categories so the "File under" picker has a real
           # choice beyond the site's single default category.
           wp term create category "E2E Photos" --path=/tmp/wp || true

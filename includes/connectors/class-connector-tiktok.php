@@ -2,7 +2,7 @@
 /**
  * TikTok connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -15,9 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Real implementation: OAuth via TikTok Login Kit, then the Content
  * Posting API — initialize an upload (POST /v2/post/publish/video/init/),
  * transfer the video bytes, and poll publish status. Best delivered by
- * a dedicated connector plugin hooked to `moment_register_connectors`.
+ * a dedicated connector plugin hooked to `daymark_register_connectors`.
  */
-class Moment_Connector_TikTok extends Moment_Connector_Base {
+class Daymark_Connector_TikTok extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -34,11 +34,11 @@ class Moment_Connector_TikTok extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'TikTok', 'moment' );
+		return __( 'TikTok', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
 	 * @return string[]
 	 */

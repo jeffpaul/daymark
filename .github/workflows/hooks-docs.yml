@@ -1,7 +1,7 @@
 name: Hooks Docs
 
 # Builds the hooks reference site (wp-hooks-documentor → Docusaurus) and
-# deploys it to GitHub Pages: https://jeffpaul.github.io/moment/
+# deploys it to GitHub Pages: https://jeffpaul.github.io/daymark/
 #
 # Pull requests run the build job only, to catch a broken docs build (e.g.
 # MDX-hostile syntax in a hook docblock) before it reaches main. Pushes to
@@ -56,7 +56,7 @@ jobs:
         # so install the bundler and build explicitly below.
         run: npx --yes @10up/wp-hooks-documentor@latest generate || true
 
-      - name: Apply Moment brand palette
+      - name: Apply Daymark brand palette
         # Appended after the generator's defaults so the later rules win;
         # the tool's structural styles reference these palette variables.
         run: cat .github/hooks-docs/brand.css >> wp-hooks-docs/src/css/custom.css

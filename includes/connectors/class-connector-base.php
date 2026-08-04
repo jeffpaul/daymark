@@ -6,7 +6,7 @@
  * real network calls, deterministic fake external IDs and URLs. A real
  * connector may extend this class or implement the interface directly.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,10 +16,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Shared mock behavior for the built-in demo connectors.
  */
-abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
+abstract class Daymark_Connector_Base implements Daymark_Syndication_Connector {
 
 	/**
-	 * Moment types this connector supports.
+	 * Mark types this connector supports.
 	 *
 	 * @return string[] Subset of: note, image, video, audio, gallery, mixed.
 	 */
@@ -42,12 +42,12 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 	abstract protected function get_mock_url_base(): string;
 
 	/**
-	 * Whether this connector supports the given Moment type.
+	 * Whether this connector supports the given Mark type.
 	 *
-	 * @param string $type Primary Moment type.
+	 * @param string $type Primary Mark type.
 	 * @return bool
 	 */
-	public function supports_moment_type( string $type ): bool {
+	public function supports_daymark_type( string $type ): bool {
 		return in_array( $type, $this->get_supported_types(), true );
 	}
 
@@ -67,8 +67,8 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 	 */
 	public function get_status_label(): string {
 		return $this->is_connected()
-			? __( 'Connected', 'moment' )
-			: __( 'Mocked · Demo', 'moment' );
+			? __( 'Connected', 'daymark' )
+			: __( 'Mocked · Demo', 'daymark' );
 	}
 
 	/**
@@ -79,8 +79,8 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 	 * the platform API. See:
 	 * https://make.wordpress.org/core/2026/03/18/introducing-the-connectors-api-in-wordpress-7-0/
 	 *
-	 * @param int                  $post_id Moment post ID.
-	 * @param array<string, mixed> $payload Moment context data (unused by mocks).
+	 * @param int                  $post_id Mark post ID.
+	 * @param array<string, mixed> $payload Mark context data (unused by mocks).
 	 * @return array{success: bool, external_id: ?string, external_url: ?string, status: string, message: string}
 	 */
 	public function publish( int $post_id, array $payload ): array {
@@ -95,7 +95,7 @@ abstract class Moment_Connector_Base implements Moment_Syndication_Connector {
 			'status'       => 'mocked',
 			'message'      => sprintf(
 				/* translators: %s: connector label, e.g. Bluesky. */
-				__( 'Demo mode — %s not connected.', 'moment' ),
+				__( 'Demo mode — %s not connected.', 'daymark' ),
 				$this->get_label()
 			),
 		);

@@ -1,35 +1,35 @@
 <?php
 /**
- * Moment Notifications and Conversation Backflow
+ * Daymark Notifications and Conversation Backflow
  *
  * Imports are mocked by default; real connector plugins take over via
- * the `moment_import_network_responses` filter.
+ * the `daymark_import_network_responses` filter.
  *
  * Imported social responses are stored as standard WordPress comments on
- * the original Moment post, so they render alongside on-site comments in
+ * the original Mark post, so they render alongside on-site comments in
  * any theme with no special handling. Comment meta preserves the source
  * context (network, external ID/URL, external author, timestamps).
  *
  * Future real backflow via:
  * 1. WordPress Connector plugins — preferred for WP 7.0+ environments.
  *    A connector implements polling or webhook receipt, then calls
- *    Moment_Notifications::import_response() with verified data.
+ *    Daymark_Notifications::import_response() with verified data.
  *
  * 2. Existing WordPress social plugins — thin adapter translates
- *    incoming comment/reply events to the Moment comment meta schema.
+ *    incoming comment/reply events to the Daymark comment meta schema.
  *
- * 3. Native Moment connector plugins — register via:
- *    add_action('moment_import_responses', [$my_connector, 'import'], 10, 2);
+ * 3. Native Daymark connector plugins — register via:
+ *    add_action('daymark_import_responses', [$my_connector, 'import'], 10, 2);
  *
  * Production implementation would need:
- * - Deduplication by _moment_comment_external_id
+ * - Deduplication by _daymark_comment_external_id
  * - Handling deleted/hidden/edited social responses
  * - Comment moderation integration
  * - Rate limiting for polling connectors
  * - Webhook signature verification
  * - Per-network opt-in settings
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -37,10 +37,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Collects notification items for /moment/notifications and imports
+ * Collects notification items for /daymark/notifications and imports
  * mocked social responses as WordPress comments (conversation backflow).
  */
-class Moment_Notifications {
+class Daymark_Notifications {
 
 	/**
 	 * Default maximum notification items returned.
@@ -103,14 +103,14 @@ class Moment_Notifications {
 
 	/**
 	 * Build the unified notifications list: on-site comments and imported
-	 * social responses, for Moment-created posts ONLY.
+	 * social responses, for Daymark-created posts ONLY.
 	 *
-	 * The Moment-only scope is enforced server-side here — comments on
-	 * normal posts created outside Moment never enter the result set,
+	 * The Daymark-only scope is enforced server-side here — comments on
+	 * normal posts created outside Daymark never enter the result set,
 	 * because the comment query is restricted to post IDs that carry
-	 * _moment_is_moment = 1. This is not a client-side filter.
+	 * _daymark_is_mark = 1. This is not a client-side filter.
 	 *
-	 * Scoped per user: notifications are replies to Moments the current
+	 * Scoped per user: notifications are replies to Marks the current
 	 * user can edit (authors get their own posts' activity; editors and
 	 * admins get all of it) — never other authors' draft activity.
 	 *
@@ -118,13 +118,13 @@ class Moment_Notifications {
 	 * @return array<int, array<string, mixed>> Notification items, newest first.
 	 */
 	public function get_notifications( int $limit = self::DEFAULT_LIMIT ): array {
-		$moment_post_ids = $this->scoped_moment_post_ids();
+		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
-		if ( empty( $moment_post_ids ) ) {
+		if ( empty( $daymark_post_ids ) ) {
 			return array();
 		}
 
-		$comments = $this->get_comments_for_posts( $moment_post_ids, $limit );
+		$comments = $this->get_comments_for_posts( $daymark_post_ids, $limit );
 		$items    = array();
 
 		foreach ( $comments as $comment ) {
@@ -143,7 +143,7 @@ class Moment_Notifications {
 	/**
 	 * User meta key holding the last-seen notifications timestamp.
 	 */
-	public const SEEN_META = 'moment_notifications_seen';
+	public const SEEN_META = 'daymark_notifications_seen';
 
 	/**
 	 * Whether the current user has notifications newer than their last
@@ -158,13 +158,13 @@ class Moment_Notifications {
 			return false;
 		}
 
-		$moment_post_ids = $this->scoped_moment_post_ids();
+		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
-		if ( empty( $moment_post_ids ) ) {
+		if ( empty( $daymark_post_ids ) ) {
 			return false;
 		}
 
-		$comments = $this->get_comments_for_posts( $moment_post_ids, 1 );
+		$comments = $this->get_comments_for_posts( $daymark_post_ids, 1 );
 
 		if ( empty( $comments ) ) {
 			return false;
@@ -189,14 +189,14 @@ class Moment_Notifications {
 	}
 
 	/**
-	 * Moment post IDs the current user may see activity for.
+	 * Mark post IDs the current user may see activity for.
 	 *
 	 * @return int[]
 	 */
-	private function scoped_moment_post_ids(): array {
+	private function scoped_daymark_post_ids(): array {
 		return array_values(
 			array_filter(
-				$this->get_moment_post_ids(),
+				$this->get_daymark_post_ids(),
 				static function ( $post_id ) {
 					return current_user_can( 'edit_post', $post_id );
 				}
@@ -205,11 +205,11 @@ class Moment_Notifications {
 	}
 
 	/**
-	 * Get IDs of all Moment-created posts.
+	 * Get IDs of all Daymark-created posts.
 	 *
-	 * @return int[] Post IDs where _moment_is_moment = 1.
+	 * @return int[] Post IDs where _daymark_is_mark = 1.
 	 */
-	private function get_moment_post_ids(): array {
+	private function get_daymark_post_ids(): array {
 		$query = new WP_Query(
 			array(
 				'post_type'      => 'post',
@@ -217,10 +217,10 @@ class Moment_Notifications {
 				'posts_per_page' => -1,
 				'fields'         => 'ids',
 				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Moment lookup.
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 				'meta_query'     => array(
 					array(
-						'key'   => '_moment_is_moment',
+						'key'   => '_daymark_is_mark',
 						'value' => '1',
 					),
 				),
@@ -233,7 +233,7 @@ class Moment_Notifications {
 	/**
 	 * Get approved comments on the given posts, newest first.
 	 *
-	 * @param int[] $post_ids Moment post IDs.
+	 * @param int[] $post_ids Mark post IDs.
 	 * @param int   $limit    Maximum comments to return.
 	 * @return WP_Comment[]
 	 */
@@ -258,15 +258,15 @@ class Moment_Notifications {
 	}
 
 	/**
-	 * Build a unified notification item from a comment + its Moment post.
+	 * Build a unified notification item from a comment + its Mark post.
 	 *
-	 * Imported social responses (identified by _moment_comment_source
+	 * Imported social responses (identified by _daymark_comment_source
 	 * meta) surface their source network, external author, and a link to
 	 * the original social reply. On-site comments get source 'site' and
 	 * the label 'On-site comment'.
 	 *
 	 * @param WP_Comment $comment The comment.
-	 * @param WP_Post    $post    The Moment post it belongs to.
+	 * @param WP_Post    $post    The Mark post it belongs to.
 	 * @return array<string, mixed>
 	 */
 	private function format_comment( WP_Comment $comment, WP_Post $post ): array {
@@ -274,15 +274,15 @@ class Moment_Notifications {
 		$source      = $this->get_comment_source( $comment_id );
 		$is_imported = 'site' !== $source;
 
-		$source_label    = (string) get_comment_meta( $comment_id, '_moment_comment_source_label', true );
-		$source_url      = (string) get_comment_meta( $comment_id, '_moment_comment_external_url', true );
-		$external_author = (string) get_comment_meta( $comment_id, '_moment_comment_external_author', true );
+		$source_label    = (string) get_comment_meta( $comment_id, '_daymark_comment_source_label', true );
+		$source_url      = (string) get_comment_meta( $comment_id, '_daymark_comment_external_url', true );
+		$external_author = (string) get_comment_meta( $comment_id, '_daymark_comment_external_author', true );
 
 		// Comments delivered by federation plugins (ActivityPub, ATmosphere,
-		// Webmention) carry no _moment_comment_* meta but are social replies
+		// Webmention) carry no _daymark_comment_* meta but are social replies
 		// all the same — label them from their own protocol markers.
 		if ( ! $is_imported ) {
-			$federated = Moment_Federated_Comments::detect( $comment );
+			$federated = Daymark_Federated_Comments::detect( $comment );
 
 			if ( null !== $federated ) {
 				$is_imported  = true;
@@ -299,11 +299,11 @@ class Moment_Notifications {
 		$timestamp = strtotime( $comment->comment_date_gmt . ' UTC' );
 		$relative  = $timestamp
 			/* translators: %s: human-readable time difference, e.g. "2 minutes". */
-			? sprintf( __( '%s ago', 'moment' ), human_time_diff( $timestamp, time() ) )
+			? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
 			: '';
 
 		return array(
-			// comment_ID is the canonical key the Moment frontend reads;
+			// comment_ID is the canonical key the Daymark frontend reads;
 			// comment_id is kept as a lowercase alias.
 			'comment_ID'            => $comment_id,
 			'comment_id'            => $comment_id,
@@ -315,7 +315,7 @@ class Moment_Notifications {
 			'source'                => $source,
 			'source_label'          => $is_imported && '' !== $source_label
 				? sanitize_text_field( $source_label )
-				: __( 'On-site comment', 'moment' ),
+				: __( 'On-site comment', 'daymark' ),
 			'source_url'            => $source_url ? esc_url_raw( $source_url ) : '',
 			'external_author'       => $is_imported && '' !== $external_author
 				? sanitize_text_field( $external_author )
@@ -329,7 +329,7 @@ class Moment_Notifications {
 				'UTF-8'
 			),
 			'post_url'              => esc_url_raw( (string) get_permalink( $post ) ),
-			'moment_type'           => sanitize_key( (string) get_post_meta( $post->ID, '_moment_primary_type', true ) ),
+			'daymark_type'          => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
 		);
 	}
 
@@ -340,37 +340,37 @@ class Moment_Notifications {
 	 * @return string Network ID ('bluesky', 'instagram', …) or 'site'.
 	 */
 	public function get_comment_source( int $comment_id ): string {
-		$source = get_comment_meta( $comment_id, '_moment_comment_source', true );
+		$source = get_comment_meta( $comment_id, '_daymark_comment_source', true );
 
 		return is_string( $source ) && '' !== $source ? sanitize_key( $source ) : 'site';
 	}
 
 	/**
-	 * Import mocked social responses for a Moment (conversation backflow).
+	 * Import mocked social responses for a Mark (conversation backflow).
 	 *
-	 * For each requested network that has an entry in the Moment's
-	 * _moment_external_posts reference map, inserts 1–2 sample WordPress
+	 * For each requested network that has an entry in the Mark's
+	 * _daymark_external_posts reference map, inserts 1–2 sample WordPress
 	 * comments with full source metadata. This is where a real connector
 	 * would instead fetch replies from the platform API and hand each one
 	 * to import_response().
 	 *
-	 * @param int      $post_id  Moment post ID.
+	 * @param int      $post_id  Mark post ID.
 	 * @param string[] $networks Requested network IDs; empty = all networks
-	 *                           present in _moment_external_posts.
+	 *                           present in _daymark_external_posts.
 	 * @return array{imported_count: int, comments: array<int, array<string, mixed>>}|WP_Error
 	 */
 	public function import_responses( int $post_id, array $networks = array() ) {
 		$post = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return new WP_Error(
-				'moment_not_found',
-				__( 'Moment not found.', 'moment' ),
+				'daymark_not_found',
+				__( 'Mark not found.', 'daymark' ),
 				array( 'status' => 404 )
 			);
 		}
 
-		$external_posts = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
+		$external_posts = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
 
 		if ( ! is_array( $external_posts ) ) {
 			$external_posts = array();
@@ -386,7 +386,7 @@ class Moment_Notifications {
 
 		foreach ( $networks as $network ) {
 			if ( ! isset( $external_posts[ $network ] ) || ! is_array( $external_posts[ $network ] ) ) {
-				continue; // The Moment was never syndicated to this network.
+				continue; // The Mark was never syndicated to this network.
 			}
 
 			/**
@@ -397,22 +397,22 @@ class Moment_Notifications {
 			 * the network as handled; return null to fall through to the
 			 * mock importer. Handlers should call import_response() on the
 			 * passed notifications instance — it deduplicates per response
-			 * by `_moment_comment_external_id`, so real imports safely run
-			 * on every sync (no `_moment_backflow_synced_*` flag involved).
+			 * by `_daymark_comment_external_id`, so real imports safely run
+			 * on every sync (no `_daymark_backflow_synced_*` flag involved).
 			 *
 			 * @param array<int>|null      $handled       Imported comment IDs, or null when unhandled.
-			 * @param int                  $post_id       Moment post ID.
+			 * @param int                  $post_id       Mark post ID.
 			 * @param string               $network       Network ID, e.g. 'bluesky'.
 			 * @param array<string, mixed> $reference     External post reference for the network.
-			 * @param Moment_Notifications $notifications This instance, for import_response() calls.
+			 * @param Daymark_Notifications $notifications This instance, for import_response() calls.
 			 */
-			$handled = apply_filters( 'moment_import_network_responses', null, $post_id, $network, $external_posts[ $network ], $this );
+			$handled = apply_filters( 'daymark_import_network_responses', null, $post_id, $network, $external_posts[ $network ], $this );
 
 			if ( is_array( $handled ) ) {
 				$imported = array_merge( $imported, array_values( array_filter( $handled, 'is_int' ) ) );
 
 				/** This action is documented later in this method. */
-				do_action( 'moment_import_responses', $post_id, $network );
+				do_action( 'daymark_import_responses', $post_id, $network );
 
 				continue;
 			}
@@ -420,14 +420,14 @@ class Moment_Notifications {
 			// Dedup guard: skip networks already synced for this post so
 			// repeated syncs don't pile up duplicate mock comments. This
 			// mirrors production deduplication, which would key on
-			// _moment_comment_external_id per response instead.
-			if ( '1' === get_post_meta( $post_id, '_moment_backflow_synced_' . $network, true ) ) {
+			// _daymark_comment_external_id per response instead.
+			if ( '1' === get_post_meta( $post_id, '_daymark_backflow_synced_' . $network, true ) ) {
 				continue;
 			}
 
 			$reference    = $external_posts[ $network ];
 			$external_url = isset( $reference['external_url'] ) ? (string) $reference['external_url'] : '';
-			$texts        = self::SAMPLE_TEXTS[ $network ] ?? array( __( 'Nice post!', 'moment' ) );
+			$texts        = self::SAMPLE_TEXTS[ $network ] ?? array( __( 'Nice post!', 'daymark' ) );
 			$author       = self::SAMPLE_AUTHORS[ $network ] ?? '@demouser';
 			$label        = $this->get_source_label( $network, isset( $reference['label'] ) ? (string) $reference['label'] : $network );
 
@@ -452,7 +452,7 @@ class Moment_Notifications {
 				}
 			}
 
-			update_post_meta( $post_id, '_moment_backflow_synced_' . $network, '1' );
+			update_post_meta( $post_id, '_daymark_backflow_synced_' . $network, '1' );
 
 			/**
 			 * Fires after responses were imported for one network.
@@ -460,10 +460,10 @@ class Moment_Notifications {
 			 * Real connector plugins hook here (or are invoked from here)
 			 * to run their own platform-API import for the network.
 			 *
-			 * @param int    $post_id Moment post ID.
+			 * @param int    $post_id Mark post ID.
 			 * @param string $network Network ID, e.g. 'bluesky'.
 			 */
-			do_action( 'moment_import_responses', $post_id, $network );
+			do_action( 'daymark_import_responses', $post_id, $network );
 		}
 
 		$comments = array();
@@ -488,9 +488,9 @@ class Moment_Notifications {
 	 * This is the plug-in point for real connectors: a WordPress Connector
 	 * plugin or social-plugin adapter calls this with verified platform
 	 * data and gets back a standard WordPress comment attached to the
-	 * Moment post, carrying the full Moment comment meta schema.
+	 * Mark post, carrying the full Daymark comment meta schema.
 	 *
-	 * @param int                  $post_id  Moment post ID.
+	 * @param int                  $post_id  Mark post ID.
 	 * @param string               $network  Network ID, e.g. 'bluesky'.
 	 * @param array<string, mixed> $response {
 	 *     Response data.
@@ -512,8 +512,8 @@ class Moment_Notifications {
 		// polling/webhook connector must enforce.
 		if ( '' !== $external_id && $this->external_response_exists( $external_id ) ) {
 			return new WP_Error(
-				'moment_duplicate_response',
-				__( 'This external response was already imported.', 'moment' )
+				'daymark_duplicate_response',
+				__( 'This external response was already imported.', 'daymark' )
 			);
 		}
 
@@ -531,18 +531,18 @@ class Moment_Notifications {
 
 		if ( ! $comment_id ) {
 			return new WP_Error(
-				'moment_import_failed',
-				__( 'Could not import the external response.', 'moment' )
+				'daymark_import_failed',
+				__( 'Could not import the external response.', 'daymark' )
 			);
 		}
 
-		add_comment_meta( $comment_id, '_moment_comment_source', $network );
-		add_comment_meta( $comment_id, '_moment_comment_source_label', sanitize_text_field( (string) ( $response['source_label'] ?? '' ) ) );
-		add_comment_meta( $comment_id, '_moment_comment_external_id', $external_id );
-		add_comment_meta( $comment_id, '_moment_comment_external_url', esc_url_raw( (string) ( $response['external_url'] ?? '' ) ) );
-		add_comment_meta( $comment_id, '_moment_comment_external_author', sanitize_text_field( (string) ( $response['author'] ?? '' ) ) );
-		add_comment_meta( $comment_id, '_moment_comment_external_created_at', sanitize_text_field( (string) ( $response['created_at'] ?? '' ) ) );
-		add_comment_meta( $comment_id, '_moment_comment_imported_at', current_time( 'mysql' ) );
+		add_comment_meta( $comment_id, '_daymark_comment_source', $network );
+		add_comment_meta( $comment_id, '_daymark_comment_source_label', sanitize_text_field( (string) ( $response['source_label'] ?? '' ) ) );
+		add_comment_meta( $comment_id, '_daymark_comment_external_id', $external_id );
+		add_comment_meta( $comment_id, '_daymark_comment_external_url', esc_url_raw( (string) ( $response['external_url'] ?? '' ) ) );
+		add_comment_meta( $comment_id, '_daymark_comment_external_author', sanitize_text_field( (string) ( $response['author'] ?? '' ) ) );
+		add_comment_meta( $comment_id, '_daymark_comment_external_created_at', sanitize_text_field( (string) ( $response['created_at'] ?? '' ) ) );
+		add_comment_meta( $comment_id, '_daymark_comment_imported_at', current_time( 'mysql' ) );
 
 		return (int) $comment_id;
 	}
@@ -558,7 +558,7 @@ class Moment_Notifications {
 			array(
 				'count'      => true,
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale dedup lookup.
-				'meta_key'   => '_moment_comment_external_id',
+				'meta_key'   => '_daymark_comment_external_id',
 				'meta_value' => $external_id,
 			)
 		);
@@ -580,10 +580,10 @@ class Moment_Notifications {
 	private function get_source_label( string $network, string $network_label ): string {
 		if ( in_array( $network, self::REPLY_NETWORKS, true ) ) {
 			/* translators: %s: social network name, e.g. Bluesky. */
-			return sprintf( __( 'Reply from %s', 'moment' ), $network_label );
+			return sprintf( __( 'Reply from %s', 'daymark' ), $network_label );
 		}
 
 		/* translators: %s: social network name, e.g. Instagram. */
-		return sprintf( __( 'Comment from %s', 'moment' ), $network_label );
+		return sprintf( __( 'Comment from %s', 'daymark' ), $network_label );
 	}
 }

@@ -2,11 +2,11 @@
 /**
  * Block and shortcode registration.
  *
- * Registers the moment/* dynamic blocks from the blocks/ directory and
- * the matching moment_* shortcodes. Both delegate to Moment_Renderer so
+ * Registers the daymark/* dynamic blocks from the blocks/ directory and
+ * the matching daymark_* shortcodes. Both delegate to Daymark_Renderer so
  * blocks and shortcodes produce identical markup.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,14 +14,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Registers Moment blocks and shortcode fallbacks.
+ * Registers Daymark blocks and shortcode fallbacks.
  */
-class Moment_Blocks {
+class Daymark_Blocks {
 
 	/**
 	 * View keys shared by blocks and shortcodes.
 	 *
-	 * Blocks: moment/{view}. Shortcodes: [moment_{view}].
+	 * Blocks: daymark/{view}. Shortcodes: [daymark_{view}].
 	 *
 	 * @var array<int, string>
 	 */
@@ -30,17 +30,17 @@ class Moment_Blocks {
 	/**
 	 * Shared view renderer.
 	 *
-	 * @var Moment_Renderer
+	 * @var Daymark_Renderer
 	 */
-	private Moment_Renderer $renderer;
+	private Daymark_Renderer $renderer;
 
 	/**
 	 * Constructor.
 	 *
-	 * @param Moment_Renderer|null $renderer Shared renderer instance.
+	 * @param Daymark_Renderer|null $renderer Shared renderer instance.
 	 */
-	public function __construct( ?Moment_Renderer $renderer = null ) {
-		$this->renderer = $renderer ?? new Moment_Renderer();
+	public function __construct( ?Daymark_Renderer $renderer = null ) {
+		$this->renderer = $renderer ?? new Daymark_Renderer();
 	}
 
 	/**
@@ -51,13 +51,13 @@ class Moment_Blocks {
 	public function register(): void {
 		foreach ( self::VIEWS as $view ) {
 			add_shortcode(
-				'moment_' . $view,
+				'daymark_' . $view,
 				function ( $atts ) use ( $view ): string {
 					return $this->render_shortcode( $view, $atts );
 				}
 			);
 
-			$block_json = MOMENT_PLUGIN_DIR . 'blocks/' . $view . '/block.json';
+			$block_json = DAYMARK_PLUGIN_DIR . 'blocks/' . $view . '/block.json';
 
 			if ( file_exists( $block_json ) ) {
 				register_block_type( $block_json );
@@ -66,7 +66,7 @@ class Moment_Blocks {
 	}
 
 	/**
-	 * Shortcode callback for a Moment view.
+	 * Shortcode callback for a Mark view.
 	 *
 	 * @param string       $view Validated view key from self::VIEWS.
 	 * @param array|string $atts Raw shortcode attributes.
@@ -78,7 +78,7 @@ class Moment_Blocks {
 				'count' => 10,
 			),
 			(array) $atts,
-			'moment_' . $view
+			'daymark_' . $view
 		);
 
 		return $this->renderer->render(

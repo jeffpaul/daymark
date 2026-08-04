@@ -2,24 +2,24 @@
 /**
  * Syndication tests — E2E scenarios 4, 5 (type-based defaults, canonical site).
  *
- * @package Moment
+ * @package Daymark
  */
 
 /**
- * Tests Moment_Syndication_Registry routing and mocked publishing.
+ * Tests Daymark_Syndication_Registry routing and mocked publishing.
  */
 class Test_Syndication_Registry extends WP_UnitTestCase {
 
 	/**
 	 * Registry under test.
 	 *
-	 * @var Moment_Syndication_Registry
+	 * @var Daymark_Syndication_Registry
 	 */
-	private Moment_Syndication_Registry $registry;
+	private Daymark_Syndication_Registry $registry;
 
 	public function set_up(): void {
 		parent::set_up();
-		$this->registry = Moment_Syndication_Registry::instance();
+		$this->registry = Daymark_Syndication_Registry::instance();
 	}
 
 	public function test_note_defaults_to_bluesky() {
@@ -56,7 +56,7 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $user_id );
 
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
 				'caption'             => 'Syndication round trip',
@@ -66,9 +66,9 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		);
 
 		$this->assertIsInt( $post_id );
-		$external = json_decode( (string) get_post_meta( $post_id, '_moment_external_posts', true ), true );
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
 		$this->assertArrayHasKey( 'bluesky', $external );
-		$this->assertEquals( 'mocked', get_post_meta( $post_id, '_moment_syndication_status', true ) );
+		$this->assertEquals( 'mocked', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
 	}
 
 	/** Your Site is always canonical — syndication never replaces the WP post. */
@@ -76,7 +76,7 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 		wp_set_current_user( $user_id );
 
-		$publisher = new Moment_Publisher();
+		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
 				'caption'             => 'Site canonical test',

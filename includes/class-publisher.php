@@ -1,12 +1,12 @@
 <?php
 /**
- * Moment publisher.
+ * Daymark publisher.
  *
- * Creates the canonical Moment as a standard WordPress `post` (never a
- * custom post type), attaches uploaded media, writes the _moment_*
- * metadata, and fires `moment_published`.
+ * Creates the canonical Mark as a standard WordPress `post` (never a
+ * custom post type), attaches uploaded media, writes the _daymark_*
+ * metadata, and fires `daymark_published`.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,12 +14,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Creates Moments as standard WordPress posts with attached media.
+ * Creates Marks as standard WordPress posts with attached media.
  */
-class Moment_Publisher {
+class Daymark_Publisher {
 
 	/**
-	 * Allowed primary Moment types.
+	 * Allowed primary Mark types.
 	 *
 	 * @var string[]
 	 */
@@ -29,8 +29,8 @@ class Moment_Publisher {
 	 * Per-type policy for the composer's optional Title field.
 	 *
 	 * Returns a map of primary type => 'optional' | 'hidden'. Audio and video
-	 * Moments show an optional, editable Title field by default (a spoken or
-	 * filmed Moment reads better with a real title); every other type derives
+	 * Marks show an optional, editable Title field by default (a spoken or
+	 * filmed Mark reads better with a real title); every other type derives
 	 * its title from the caption or a timestamp, so the field stays hidden.
 	 *
 	 * The title itself is always optional in storage — when no title reaches
@@ -54,7 +54,7 @@ class Moment_Publisher {
 		/**
 		 * Filters the per-type policy for the composer's optional Title field.
 		 *
-		 * Each primary Moment type maps to 'optional' (the composer shows an
+		 * Each primary Mark type maps to 'optional' (the composer shows an
 		 * editable, AI-pre-filled Title field) or 'hidden' (the title is
 		 * derived from the caption or a timestamp). Return a modified map to
 		 * show or hide the field for a given type.
@@ -63,13 +63,13 @@ class Moment_Publisher {
 		 *
 		 * @param array<string, string> $policy Map of primary type to 'optional' or 'hidden'.
 		 */
-		return (array) apply_filters( 'moment_title_field_policy', $policy );
+		return (array) apply_filters( 'daymark_title_field_policy', $policy );
 	}
 
 	/**
-	 * Moment type → WordPress standard post format.
+	 * Mark type → WordPress standard post format.
 	 *
-	 * Set explicitly so a Moment lands in the right format regardless of
+	 * Set explicitly so a Mark lands in the right format regardless of
 	 * the site's default post format (Settings → Writing). 'mixed' maps to
 	 * the standard format (no term). Themes without post-format support
 	 * simply ignore the term.
@@ -86,7 +86,7 @@ class Moment_Publisher {
 	);
 
 	/**
-	 * Allowed MIME types for Moment media uploads.
+	 * Allowed MIME types for Daymark media uploads.
 	 *
 	 * MIME must be validated against file content (finfo +
 	 * wp_check_filetype_and_ext()) before upload — never trust the file
@@ -132,13 +132,13 @@ class Moment_Publisher {
 	);
 
 	/**
-	 * Publish a Moment.
+	 * Publish a Mark.
 	 *
-	 * Validates and sideloads media, detects the primary Moment type,
-	 * creates a standard `post` with block markup, writes all `_moment_*`
-	 * metadata, and fires `moment_published`.
+	 * Validates and sideloads media, detects the primary Mark type,
+	 * creates a standard `post` with block markup, writes all `_daymark_*`
+	 * metadata, and fires `daymark_published`.
 	 *
-	 * @param array<string, mixed>                $data  Sanitized Moment input. Supported keys:
+	 * @param array<string, mixed>                $data  Sanitized Mark input. Supported keys:
 	 *                                                   caption, title, primary_type,
 	 *                                                   syndication_targets, default_destinations,
 	 *                                                   ai_assist_used.
@@ -153,8 +153,8 @@ class Moment_Publisher {
 
 		if ( empty( $file_list ) && '' === $caption ) {
 			return new WP_Error(
-				'moment_empty',
-				__( 'A Moment needs media or text.', 'moment' ),
+				'daymark_empty',
+				__( 'A Mark needs media or text.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -206,10 +206,10 @@ class Moment_Publisher {
 		if ( ! $selection_provided ) {
 			// Auto-applied defaults only go to destinations that can
 			// actually publish (connected connectors). The raw model
-			// defaults are still recorded in _moment_default_destinations;
+			// defaults are still recorded in _daymark_default_destinations;
 			// explicit selections (e.g. tests, API callers) are honored
 			// as-is, mocked or not. The user's remembered selection for
-			// this Moment type wins over the model defaults.
+			// this Mark type wins over the model defaults.
 			$targets = $this->filter_connected( $this->get_effective_defaults( $type ) );
 		}
 
@@ -237,7 +237,7 @@ class Moment_Publisher {
 		$defer_helpers = $final_publish && $has_helper_selection;
 
 		$post_data = array(
-			'post_type'    => 'post', // NEVER a custom post type — the Moment is a standard post.
+			'post_type'    => 'post', // NEVER a custom post type — the Daymark is a standard post.
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
@@ -264,7 +264,7 @@ class Moment_Publisher {
 			$this->remember_destination_prefs( $type, $targets );
 		}
 
-		// File the Moment under the chosen (or remembered) categories. An
+		// File the Mark under the chosen (or remembered) categories. An
 		// explicit selection — even an empty one — is remembered as the new
 		// per-type default; wp_set_post_categories() with an empty list falls
 		// back to the site's default category, which is the intended "none".
@@ -296,27 +296,27 @@ class Moment_Publisher {
 
 		$ai_assist_used = ! empty( $data['ai_assist_used'] ) ? '1' : '0';
 
-		update_post_meta( $post_id, '_moment_is_moment', '1' );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
 		// Raw caption, so editing can reopen the composer losslessly
 		// (post_content is derived block markup, post_excerpt is trimmed).
-		update_post_meta( $post_id, '_moment_caption', $caption );
-		update_post_meta( $post_id, '_moment_primary_type', $type );
-		update_post_meta( $post_id, '_moment_media_ids', wp_json_encode( array_map( 'intval', $media_ids ) ) );
-		update_post_meta( $post_id, '_moment_syndication_targets', wp_json_encode( $targets ) );
-		update_post_meta( $post_id, '_moment_default_destinations', wp_json_encode( $defaults ) );
-		update_post_meta( $post_id, '_moment_syndication_status', 'not_attempted' );
-		update_post_meta( $post_id, '_moment_external_posts', wp_json_encode( (object) array() ) );
-		update_post_meta( $post_id, '_moment_comment_backflow_enabled', '1' );
-		update_post_meta( $post_id, '_moment_ai_assist_used', $ai_assist_used );
-		update_post_meta( $post_id, '_moment_created_from', 'mobile' );
+		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_primary_type', $type );
+		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( array_map( 'intval', $media_ids ) ) );
+		update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
+		update_post_meta( $post_id, '_daymark_default_destinations', wp_json_encode( $defaults ) );
+		update_post_meta( $post_id, '_daymark_syndication_status', 'not_attempted' );
+		update_post_meta( $post_id, '_daymark_external_posts', wp_json_encode( (object) array() ) );
+		update_post_meta( $post_id, '_daymark_comment_backflow_enabled', '1' );
+		update_post_meta( $post_id, '_daymark_ai_assist_used', $ai_assist_used );
+		update_post_meta( $post_id, '_daymark_created_from', 'mobile' );
 
 		if ( $has_helper_selection ) {
-			update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( $helper_selection ) );
+			update_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, wp_json_encode( $helper_selection ) );
 		}
 
 		$this->apply_post_format( $post_id, $type );
 
-		$moment_data = array(
+		$daymark_data = array(
 			'post_id'              => $post_id,
 			'primary_type'         => $type,
 			'media_ids'            => array_map( 'intval', $media_ids ),
@@ -329,12 +329,12 @@ class Moment_Publisher {
 		);
 
 		/**
-		 * Fires after a Moment has been successfully created.
+		 * Fires after a Mark has been successfully created.
 		 *
-		 * @param int                  $post_id     The Moment post ID.
-		 * @param array<string, mixed> $moment_data Moment context data.
+		 * @param int                  $post_id     The Mark post ID.
+		 * @param array<string, mixed> $daymark_data Mark context data.
 		 */
-		do_action( 'moment_published', $post_id, $moment_data );
+		do_action( 'daymark_published', $post_id, $daymark_data );
 
 		if ( $defer_helpers ) {
 			// Meta (incl. the helper selection) is now in place; go live.
@@ -350,8 +350,8 @@ class Moment_Publisher {
 		} elseif ( 'publish' === get_post_status( $post_id ) ) {
 			// Drafts never syndicate. Targets stay stored in post meta with
 			// status 'not_attempted'; syndicate_on_publish() runs them when
-			// the Moment goes live — from the app or wp-admin alike.
-			$this->maybe_syndicate( $post_id, $targets, $moment_data );
+			// the Mark goes live — from the app or wp-admin alike.
+			$this->maybe_syndicate( $post_id, $targets, $daymark_data );
 		}
 
 		return $post_id;
@@ -376,18 +376,18 @@ class Moment_Publisher {
 
 		$ids = array_map( 'sanitize_key', array_map( 'strval', $raw ) );
 
-		return array_values( array_intersect( $ids, Moment_Publish_Helpers::controllable_ids() ) );
+		return array_values( array_intersect( $ids, Daymark_Publish_Helpers::controllable_ids() ) );
 	}
 
 	/**
-	 * Update an existing Moment: caption, media (additive), targets,
+	 * Update an existing Mark: caption, media (additive), targets,
 	 * and status.
 	 *
 	 * Meta is written before the post update so a draft→publish here
 	 * fires syndicate_on_publish() against the fresh targets. Existing
 	 * media is kept; new files are appended.
 	 *
-	 * @param int                                 $post_id The Moment post ID.
+	 * @param int                                 $post_id The Mark post ID.
 	 * @param array<string, mixed>                $data    Sanitized input: caption, title,
 	 *                                                     primary_type, syndication_targets,
 	 *                                                     status, tags, alt_text.
@@ -397,25 +397,25 @@ class Moment_Publisher {
 	public function update( int $post_id, array $data, array $files = array() ) {
 		$post = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return new WP_Error(
-				'moment_not_found',
-				__( 'Not a Moment post.', 'moment' ),
+				'daymark_not_found',
+				__( 'Not a Mark post.', 'daymark' ),
 				array( 'status' => 404 )
 			);
 		}
 
 		$caption = isset( $data['caption'] ) ? trim( wp_kses_post( (string) $data['caption'] ) ) : '';
 
-		$existing_media = json_decode( (string) get_post_meta( $post_id, '_moment_media_ids', true ), true );
+		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
 
 		$file_list = $this->normalize_files( $files );
 
 		if ( '' === $caption && empty( $existing_media ) && empty( $file_list ) ) {
 			return new WP_Error(
-				'moment_empty',
-				__( 'A Moment needs media or text.', 'moment' ),
+				'daymark_empty',
+				__( 'A Mark needs media or text.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -439,10 +439,10 @@ class Moment_Publisher {
 		$requested_type = isset( $data['primary_type'] ) ? sanitize_key( (string) $data['primary_type'] ) : '';
 
 		// A caption-only edit (no media to detect from, no explicit type)
-		// must not silently reclassify the Moment to 'note' — keep its stored
+		// must not silently reclassify the Mark to 'note' — keep its stored
 		// type so per-type memory (destinations, categories) stays coherent.
 		if ( '' === $requested_type && empty( $media_ids ) ) {
-			$requested_type = (string) get_post_meta( $post_id, '_moment_primary_type', true );
+			$requested_type = (string) get_post_meta( $post_id, '_daymark_primary_type', true );
 		}
 
 		$type = $this->detect_primary_type( $media_ids, $requested_type );
@@ -451,7 +451,7 @@ class Moment_Publisher {
 
 		if ( is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) ) ) {
 			$targets = $this->sanitize_connector_ids( $raw_targets );
-			update_post_meta( $post_id, '_moment_syndication_targets', wp_json_encode( $targets ) );
+			update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
 			$this->remember_destination_prefs( $type, $targets );
 		}
 
@@ -483,7 +483,7 @@ class Moment_Publisher {
 		}
 
 		// Alt text: positional for the newly added files, plus a map keyed
-		// by attachment ID for media already on the Moment (edited in place).
+		// by attachment ID for media already on the Mark (edited in place).
 		$this->apply_positional_alt( array_map( 'intval', $new_ids ), $data['alt'] ?? null );
 		$this->apply_alt_map( $data['existing_alt'] ?? null );
 
@@ -495,15 +495,15 @@ class Moment_Publisher {
 			}
 		}
 
-		update_post_meta( $post_id, '_moment_caption', $caption );
-		update_post_meta( $post_id, '_moment_primary_type', $type );
-		update_post_meta( $post_id, '_moment_media_ids', wp_json_encode( $media_ids ) );
+		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_primary_type', $type );
+		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( $media_ids ) );
 
 		// Helper selection is written before the status update below so a
 		// draft→publish transition here fires each plugin's control filter
 		// against the fresh choice.
 		if ( array_key_exists( 'publish_helpers', $data ) ) {
-			update_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, wp_json_encode( $this->sanitize_helper_ids( $data['publish_helpers'] ) ) );
+			update_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, wp_json_encode( $this->sanitize_helper_ids( $data['publish_helpers'] ) ) );
 		}
 
 		// Re-apply in case the type changed on edit (e.g. adding media to a note).
@@ -547,10 +547,10 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Run stored, never-attempted syndication targets when a Moment draft
+	 * Run stored, never-attempted syndication targets when a Mark draft
 	 * becomes published — regardless of where the publish happened.
 	 *
-	 * Safe against the inline create path (Moment meta does not exist yet
+	 * Safe against the inline create path (Mark meta does not exist yet
 	 * when wp_insert_post fires this transition) and against repeats (the
 	 * syndication status leaves 'not_attempted' after the first run).
 	 *
@@ -564,40 +564,40 @@ class Moment_Publisher {
 			return;
 		}
 
-		if ( '1' !== get_post_meta( $post->ID, '_moment_is_moment', true ) ) {
+		if ( '1' !== get_post_meta( $post->ID, '_daymark_is_mark', true ) ) {
 			return;
 		}
 
-		if ( 'not_attempted' !== get_post_meta( $post->ID, '_moment_syndication_status', true ) ) {
+		if ( 'not_attempted' !== get_post_meta( $post->ID, '_daymark_syndication_status', true ) ) {
 			return;
 		}
 
-		$targets = json_decode( (string) get_post_meta( $post->ID, '_moment_syndication_targets', true ), true );
+		$targets = json_decode( (string) get_post_meta( $post->ID, '_daymark_syndication_targets', true ), true );
 		$targets = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
 
 		if ( empty( $targets ) ) {
 			return;
 		}
 
-		$media_ids = json_decode( (string) get_post_meta( $post->ID, '_moment_media_ids', true ), true );
+		$media_ids = json_decode( (string) get_post_meta( $post->ID, '_daymark_media_ids', true ), true );
 
-		$moment_data = array(
+		$daymark_data = array(
 			'post_id'             => (int) $post->ID,
-			'primary_type'        => (string) get_post_meta( $post->ID, '_moment_primary_type', true ),
+			'primary_type'        => (string) get_post_meta( $post->ID, '_daymark_primary_type', true ),
 			'media_ids'           => is_array( $media_ids ) ? array_map( 'intval', $media_ids ) : array(),
 			'caption'             => '' !== $post->post_excerpt ? $post->post_excerpt : $post->post_title,
 			'syndication_targets' => $targets,
 			'post_status'         => 'publish',
-			'created_from'        => (string) get_post_meta( $post->ID, '_moment_created_from', true ),
+			'created_from'        => (string) get_post_meta( $post->ID, '_daymark_created_from', true ),
 		);
 
-		$this->maybe_syndicate( (int) $post->ID, $targets, $moment_data );
+		$this->maybe_syndicate( (int) $post->ID, $targets, $daymark_data );
 	}
 
 	/**
 	 * Normalize a $_FILES-style array into a flat list of single files.
 	 *
-	 * Handles both `moment_media` (single) and `moment_media[]` (PHP's
+	 * Handles both `daymark_media` (single) and `daymark_media[]` (PHP's
 	 * transposed multi-file structure), across any number of field names.
 	 *
 	 * @param array<string, array<string, mixed>> $files $_FILES-style array.
@@ -655,26 +655,26 @@ class Moment_Publisher {
 	private function validate_file( array $file ) {
 		if ( UPLOAD_ERR_OK !== $file['error'] ) {
 			return new WP_Error(
-				'moment_upload_error',
-				__( 'The file failed to upload.', 'moment' ),
+				'daymark_upload_error',
+				__( 'The file failed to upload.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
 
 		if ( '' === $file['tmp_name'] || ! is_readable( $file['tmp_name'] ) ) {
 			return new WP_Error(
-				'moment_upload_error',
-				__( 'The uploaded file could not be read.', 'moment' ),
+				'daymark_upload_error',
+				__( 'The uploaded file could not be read.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
 
 		if ( (int) ( $file['size'] ?? 0 ) > self::MAX_FILE_BYTES ) {
 			return new WP_Error(
-				'moment_upload_too_large',
+				'daymark_upload_too_large',
 				sprintf(
 					/* translators: 1: file name, 2: maximum upload size (e.g. "50 MB"). */
-					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'moment' ),
+					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'daymark' ),
 					sanitize_text_field( (string) $file['name'] ),
 					size_format( self::MAX_FILE_BYTES )
 				),
@@ -690,7 +690,7 @@ class Moment_Publisher {
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
 				'invalid_mime',
-				__( 'File type not allowed.', 'moment' ),
+				__( 'File type not allowed.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -703,7 +703,7 @@ class Moment_Publisher {
 		if ( '' === $check_mime || ! in_array( $check_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
 				'invalid_mime',
-				__( 'File type not allowed.', 'moment' ),
+				__( 'File type not allowed.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -715,7 +715,7 @@ class Moment_Publisher {
 	 * Sideload validated files into the Media Library.
 	 *
 	 * Attachments are created unattached; attach_media() re-parents them
-	 * once the Moment post exists.
+	 * once the Mark post exists.
 	 *
 	 * @param array<int, array<string, mixed>> $file_list Validated file list.
 	 * @return int[]|WP_Error Attachment IDs.
@@ -752,7 +752,7 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Detect the primary Moment type from attached media.
+	 * Detect the primary Mark type from attached media.
 	 *
 	 * Rules: no media → note; 1 image → image; 2+ images → gallery;
 	 * video only → video; audio only → audio; mixed media → mixed.
@@ -821,10 +821,10 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Build standard block markup for the Moment content.
+	 * Build standard block markup for the Mark content.
 	 *
 	 * Uses core/image, core/gallery, core/video, core/audio, and
-	 * core/paragraph so the Moment renders in any theme.
+	 * core/paragraph so the Mark renders in any theme.
 	 *
 	 * @param int[]  $media_ids Attachment IDs.
 	 * @param string $caption   Caption text (already run through wp_kses_post).
@@ -945,11 +945,11 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Attach media to the Moment post and set the featured image.
+	 * Attach media to the Mark post and set the featured image.
 	 *
-	 * @param int    $post_id   Moment post ID.
+	 * @param int    $post_id   Mark post ID.
 	 * @param int[]  $media_ids Attachment IDs.
-	 * @param string $type      Primary Moment type.
+	 * @param string $type      Primary Mark type.
 	 * @return void
 	 */
 	private function attach_media( int $post_id, array $media_ids, string $type ): void {
@@ -1011,7 +1011,7 @@ class Moment_Publisher {
 	/**
 	 * Apply alt text to already-attached images from an ID-keyed map.
 	 *
-	 * Used when editing a Moment: { attachmentId: altText }. An empty value
+	 * Used when editing a Mark: { attachmentId: altText }. An empty value
 	 * clears that image's alt (an intentional edit); non-image IDs are
 	 * ignored.
 	 *
@@ -1038,12 +1038,12 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Set the post format matching the Moment type, so a Moment is not
-	 * left in the site's default post format (e.g. an image Moment
+	 * Set the post format matching the Mark type, so a Mark is not
+	 * left in the site's default post format (e.g. an image Mark
 	 * landing under Asides).
 	 *
-	 * @param int    $post_id Moment post ID.
-	 * @param string $type    Primary Moment type.
+	 * @param int    $post_id Mark post ID.
+	 * @param string $type    Primary Mark type.
 	 * @return void
 	 */
 	private function apply_post_format( int $post_id, string $type ): void {
@@ -1055,7 +1055,7 @@ class Moment_Publisher {
 
 	/**
 	 * Generate a post title from the caption (first ~8 words) or a
-	 * timestamp fallback like "Moment — March 3, 2026 4:12 pm".
+	 * timestamp fallback like "Mark — March 3, 2026 4:12 pm".
 	 *
 	 * @param string $caption Caption text.
 	 * @return string Title.
@@ -1069,7 +1069,7 @@ class Moment_Publisher {
 
 		return sprintf(
 			/* translators: 1: localized date, 2: localized time. */
-			__( 'Moment — %1$s %2$s', 'moment' ),
+			__( 'Mark — %1$s %2$s', 'daymark' ),
 			wp_date( get_option( 'date_format', 'F j, Y' ) ),
 			wp_date( get_option( 'time_format', 'g:i a' ) )
 		);
@@ -1114,15 +1114,15 @@ class Moment_Publisher {
 	/**
 	 * Get default destinations for a type from the syndication registry.
 	 *
-	 * @param string $type Primary Moment type.
+	 * @param string $type Primary Mark type.
 	 * @return string[] Connector IDs.
 	 */
 	private function get_registry_defaults( string $type ): array {
-		if ( ! class_exists( 'Moment_Plugin' ) ) {
+		if ( ! class_exists( 'Daymark_Plugin' ) ) {
 			return array();
 		}
 
-		$registry = Moment_Plugin::instance()->syndication_registry;
+		$registry = Daymark_Plugin::instance()->syndication_registry;
 
 		return $this->sanitize_connector_ids( $registry->get_default_destinations( $type ) );
 	}
@@ -1132,15 +1132,15 @@ class Moment_Publisher {
 	 *
 	 * @var string
 	 */
-	private const DESTINATION_PREFS_META = 'moment_destination_prefs';
+	private const DESTINATION_PREFS_META = 'daymark_destination_prefs';
 
 	/**
-	 * The preselected destinations for a Moment type.
+	 * The preselected destinations for a Mark type.
 	 *
 	 * The user's last explicit selection for the type wins; the registry's
 	 * model defaults are the fallback for types never published before.
 	 *
-	 * @param string $type    Moment primary type.
+	 * @param string $type    Mark primary type.
 	 * @param int    $user_id User ID; defaults to the current user.
 	 * @return string[]
 	 */
@@ -1156,13 +1156,13 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Remember an explicit destination selection for a Moment type.
+	 * Remember an explicit destination selection for a Mark type.
 	 *
-	 * Called on successful publish so the next Moment of the same type
+	 * Called on successful publish so the next Mark of the same type
 	 * preselects the same networks. An explicit empty selection is
 	 * remembered too — "none for notes" is a real preference.
 	 *
-	 * @param string   $type    Moment primary type.
+	 * @param string   $type    Mark primary type.
 	 * @param string[] $targets Selected connector IDs.
 	 * @return void
 	 */
@@ -1189,17 +1189,17 @@ class Moment_Publisher {
 	 *
 	 * @var string
 	 */
-	private const CATEGORY_PREFS_META = 'moment_category_prefs';
+	private const CATEGORY_PREFS_META = 'daymark_category_prefs';
 
 	/**
-	 * The preselected categories for a Moment type.
+	 * The preselected categories for a Mark type.
 	 *
 	 * The user's last explicit selection for the type wins. Unlike
 	 * destinations there is no model fallback — categories are a per-site
 	 * taxonomy with no universal mapping — so a type never filed before
 	 * returns an empty list and the site's default category applies.
 	 *
-	 * @param string $type    Moment primary type.
+	 * @param string $type    Mark primary type.
 	 * @param int    $user_id User ID; defaults to the current user.
 	 * @return int[]
 	 */
@@ -1215,13 +1215,13 @@ class Moment_Publisher {
 	}
 
 	/**
-	 * Remember an explicit category selection for a Moment type.
+	 * Remember an explicit category selection for a Mark type.
 	 *
-	 * Called on successful publish so the next Moment of the same type
+	 * Called on successful publish so the next Mark of the same type
 	 * preselects the same categories. An explicit empty selection is
 	 * remembered too — "file notes nowhere in particular" is a real choice.
 	 *
-	 * @param string $type Moment primary type.
+	 * @param string $type Mark primary type.
 	 * @param int[]  $ids  Selected category term IDs.
 	 * @return void
 	 */
@@ -1284,11 +1284,11 @@ class Moment_Publisher {
 	 * @return string[]
 	 */
 	private function filter_connected( array $ids ): array {
-		if ( ! class_exists( 'Moment_Plugin' ) ) {
+		if ( ! class_exists( 'Daymark_Plugin' ) ) {
 			return array();
 		}
 
-		$registry = Moment_Plugin::instance()->syndication_registry;
+		$registry = Daymark_Plugin::instance()->syndication_registry;
 
 		return array_values(
 			array_filter(
@@ -1308,20 +1308,20 @@ class Moment_Publisher {
 	 * Selection is stored as meta regardless; if the registry gains a
 	 * publish_to_targets() method in Phase 5, it is invoked here.
 	 *
-	 * @param int                  $post_id     Moment post ID.
+	 * @param int                  $post_id     Mark post ID.
 	 * @param string[]             $targets     Selected connector IDs.
-	 * @param array<string, mixed> $moment_data Moment context data.
+	 * @param array<string, mixed> $daymark_data Mark context data.
 	 * @return void
 	 */
-	private function maybe_syndicate( int $post_id, array $targets, array $moment_data ): void {
-		if ( empty( $targets ) || ! class_exists( 'Moment_Plugin' ) ) {
+	private function maybe_syndicate( int $post_id, array $targets, array $daymark_data ): void {
+		if ( empty( $targets ) || ! class_exists( 'Daymark_Plugin' ) ) {
 			return;
 		}
 
-		$registry = Moment_Plugin::instance()->syndication_registry;
+		$registry = Daymark_Plugin::instance()->syndication_registry;
 
 		if ( method_exists( $registry, 'publish_to_targets' ) ) {
-			$registry->publish_to_targets( $post_id, $targets, $moment_data );
+			$registry->publish_to_targets( $post_id, $targets, $daymark_data );
 		}
 	}
 }

@@ -50,11 +50,11 @@ jobs:
               wp: 'latest',
             },
             login: true,
-            // Land straight in the Moment app shell.
-            landingPage: '/moment',
+            // Land straight in the Daymark app shell.
+            landingPage: '/daymark',
             steps: [
               {
-                // /moment relies on rewrite rules; Playground defaults to
+                // /daymark relies on rewrite rules; Playground defaults to
                 // plain permalinks, so set a pretty structure before the
                 // activation hook flushes rewrites.
                 step: 'setSiteOptions',

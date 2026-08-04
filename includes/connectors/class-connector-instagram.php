@@ -2,7 +2,7 @@
 /**
  * Instagram connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,9 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * the Instagram Graph API (Facebook Login), create a media container
  * via POST /{ig-user-id}/media, then publish it via
  * POST /{ig-user-id}/media_publish — ideally provided by a WordPress
- * Connector plugin so Moment never stores Meta credentials.
+ * Connector plugin so Daymark never stores Meta credentials.
  */
-class Moment_Connector_Instagram extends Moment_Connector_Base {
+class Daymark_Connector_Instagram extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -35,11 +35,11 @@ class Moment_Connector_Instagram extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'Instagram', 'moment' );
+		return __( 'Instagram', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
 	 * @return string[]
 	 */

@@ -1,11 +1,11 @@
 <?php
 /**
- * REST API controller for the /wp-json/moment/v1/ namespace.
+ * REST API controller for the /wp-json/daymark/v1/ namespace.
  *
  * Every endpoint verifies the X-WP-Nonce header AND the edit_posts
  * capability before processing. No unauthenticated endpoints, ever.
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -13,19 +13,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Registers and handles Moment REST endpoints.
+ * Registers and handles Daymark REST endpoints.
  */
-class Moment_REST_Controller extends WP_REST_Controller {
+class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * REST namespace.
 	 *
 	 * @var string
 	 */
-	protected $namespace = 'moment/v1';
+	protected $namespace = 'daymark/v1';
 
 	/**
-	 * Maximum Moments per page for GET /moments.
+	 * Maximum Marks per page for GET /marks.
 	 *
 	 * @var int
 	 */
@@ -39,11 +39,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	public function register_routes() {
 		register_rest_route(
 			$this->namespace,
-			'/moments',
+			'/marks',
 			array(
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
-					'callback'            => array( $this, 'create_moment' ),
+					'callback'            => array( $this, 'create_mark' ),
 					'permission_callback' => array( $this, 'permissions_check' ),
 					'args'                => array(
 						'caption'              => array(
@@ -65,13 +65,13 @@ class Moment_REST_Controller extends WP_REST_Controller {
 							'sanitize_callback' => 'sanitize_key',
 						),
 						'syndication_targets'  => array(
-							'description' => __( 'Selected connector IDs (array or JSON string).', 'moment' ),
+							'description' => __( 'Selected connector IDs (array or JSON string).', 'daymark' ),
 						),
 						'default_destinations' => array(
-							'description' => __( 'Default connector IDs (array or JSON string).', 'moment' ),
+							'description' => __( 'Default connector IDs (array or JSON string).', 'daymark' ),
 						),
 						'categories'           => array(
-							'description' => __( 'Category term IDs to file the Moment under (array or JSON string).', 'moment' ),
+							'description' => __( 'Category term IDs to file the Mark under (array or JSON string).', 'daymark' ),
 						),
 						'ai_assist_used'       => array(
 							'type'              => 'boolean',
@@ -81,7 +81,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				),
 				array(
 					'methods'             => WP_REST_Server::READABLE,
-					'callback'            => array( $this, 'get_moments' ),
+					'callback'            => array( $this, 'get_marks' ),
 					'permission_callback' => array( $this, 'permissions_check' ),
 					'args'                => array(
 						'per_page' => array(
@@ -171,11 +171,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
-			'/moments/(?P<id>\d+)',
+			'/marks/(?P<id>\d+)',
 			array(
 				array(
 					'methods'             => WP_REST_Server::READABLE,
-					'callback'            => array( $this, 'get_moment' ),
+					'callback'            => array( $this, 'get_daymark' ),
 					'permission_callback' => array( $this, 'permissions_check_post' ),
 					'args'                => array(
 						'id' => array(
@@ -187,7 +187,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				),
 				array(
 					'methods'             => WP_REST_Server::EDITABLE,
-					'callback'            => array( $this, 'update_moment' ),
+					'callback'            => array( $this, 'update_daymark' ),
 					'permission_callback' => array( $this, 'permissions_check_post' ),
 					'args'                => array(
 						'id'      => array(
@@ -208,7 +208,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 				),
 				array(
 					'methods'             => WP_REST_Server::DELETABLE,
-					'callback'            => array( $this, 'delete_moment' ),
+					'callback'            => array( $this, 'delete_daymark' ),
 					'permission_callback' => array( $this, 'permissions_check_delete' ),
 					'args'                => array(
 						'id' => array(
@@ -223,7 +223,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
-			'/moments/(?P<id>\d+)/sync-responses',
+			'/marks/(?P<id>\d+)/sync-responses',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'sync_responses' ),
@@ -286,7 +286,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		if ( ! $nonce || ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
 			return new WP_Error(
 				'rest_forbidden',
-				__( 'Invalid nonce.', 'moment' ),
+				__( 'Invalid nonce.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -294,7 +294,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		if ( ! current_user_can( 'edit_posts' ) ) {
 			return new WP_Error(
 				'rest_forbidden',
-				__( 'Insufficient permissions.', 'moment' ),
+				__( 'Insufficient permissions.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -304,7 +304,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * Per-post permission callback: the shared check plus edit_post on the
-	 * targeted Moment, so users cannot act on posts they cannot edit.
+	 * targeted Mark, so users cannot act on posts they cannot edit.
 	 *
 	 * A nonexistent post passes through to the handler, which returns its
 	 * regular 404 — only a real post the user cannot edit is a 403.
@@ -324,7 +324,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		if ( get_post( $post_id ) && ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error(
 				'rest_forbidden',
-				__( 'You cannot manage responses for this Moment.', 'moment' ),
+				__( 'You cannot manage responses for this Mark.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -334,7 +334,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * Per-post permission callback for deletion: the shared nonce + capability
-	 * check plus the delete_post capability on the targeted Moment. Deleting is
+	 * check plus the delete_post capability on the targeted Mark. Deleting is
 	 * more privileged than editing, so it needs its own capability, not merely
 	 * edit_post.
 	 *
@@ -358,7 +358,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		if ( get_post( $post_id ) && ! current_user_can( 'delete_post', $post_id ) ) {
 			return new WP_Error(
 				'rest_forbidden',
-				__( 'You cannot delete this Moment.', 'moment' ),
+				__( 'You cannot delete this Mark.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -367,21 +367,21 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * POST /moment/v1/moments — create a Moment.
+	 * POST /daymark/v1/marks — create a Mark.
 	 *
 	 * Accepts multipart file uploads plus caption/type/target fields and
-	 * delegates to Moment_Publisher.
+	 * delegates to Daymark_Publisher.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
-	public function create_moment( WP_REST_Request $request ) {
+	public function create_mark( WP_REST_Request $request ) {
 		$files = $request->get_file_params();
 
 		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error(
 				'rest_cannot_upload',
-				__( 'You are not allowed to upload media.', 'moment' ),
+				__( 'You are not allowed to upload media.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -415,30 +415,30 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			$data['publish_helpers'] = $request->get_param( 'publish_helpers' );
 		}
 
-		$post_id = Moment_Plugin::instance()->publisher->publish( $data, is_array( $files ) ? $files : array() );
+		$post_id = Daymark_Plugin::instance()->publisher->publish( $data, is_array( $files ) ? $files : array() );
 
 		if ( is_wp_error( $post_id ) ) {
 			return $post_id;
 		}
 
-		$response = rest_ensure_response( $this->prepare_moment_summary( $post_id ) );
+		$response = rest_ensure_response( $this->prepare_mark_summary( $post_id ) );
 		$response->set_status( 201 );
 
 		return $response;
 	}
 
 	/**
-	 * GET /moment/v1/moments — recent Moment summaries.
+	 * GET /daymark/v1/marks — recent Mark summaries.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
-	public function get_moments( WP_REST_Request $request ) {
+	public function get_marks( WP_REST_Request $request ) {
 		$per_page = min( self::MAX_PER_PAGE, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
 		$page     = max( 1, absint( $request->get_param( 'page' ) ) );
 
 		// Status filter, so drafts stay reachable in the app no matter how
-		// many Moments have published since (the Home Drafts row).
+		// many Marks have published since (the Home Drafts row).
 		$status   = sanitize_key( (string) $request->get_param( 'status' ) );
 		$statuses = in_array( $status, array( 'publish', 'draft' ), true )
 			? array( $status )
@@ -452,26 +452,26 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'orderby'        => 'date',
 			'order'          => 'DESC',
 			'no_found_rows'  => true,
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Moment lookup.
-			'meta_key'       => '_moment_is_moment',
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
+			'meta_key'       => '_daymark_is_mark',
 			'meta_value'     => '1',
 		);
 
-		// Optional content-type filter: narrow to one _moment_primary_type.
+		// Optional content-type filter: narrow to one _daymark_primary_type.
 		// This adds a second meta condition, so switch to an explicit
-		// meta_query that keeps the _moment_is_moment gate intact.
+		// meta_query that keeps the _daymark_is_mark gate intact.
 		$type = sanitize_key( (string) $request->get_param( 'type' ) );
 		if ( '' !== $type ) {
 			unset( $args['meta_key'], $args['meta_value'] );
-			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Moment lookup.
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 			$args['meta_query'] = array(
 				'relation' => 'AND',
 				array(
-					'key'   => '_moment_is_moment',
+					'key'   => '_daymark_is_mark',
 					'value' => '1',
 				),
 				array(
-					'key'   => '_moment_primary_type',
+					'key'   => '_daymark_primary_type',
 					'value' => $type,
 				),
 			);
@@ -485,26 +485,26 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		$query = new WP_Query( $args );
 
-		$moments = array();
+		$marks = array();
 
 		foreach ( $query->posts as $post ) {
-			// Published Moments are public; drafts are only listed for
+			// Published Marks are public; drafts are only listed for
 			// users who can edit that specific post (authors see their
 			// own, editors see all).
 			if ( 'publish' !== $post->post_status && ! current_user_can( 'edit_post', $post->ID ) ) {
 				continue;
 			}
 
-			$moments[] = $this->prepare_moment_summary( $post->ID );
+			$marks[] = $this->prepare_mark_summary( $post->ID );
 		}
 
-		return rest_ensure_response( $moments );
+		return rest_ensure_response( $marks );
 	}
 
 	/**
-	 * POST /moment/v1/ai/suggestions — AI Assist suggestions.
+	 * POST /daymark/v1/ai/suggestions — AI Assist suggestions.
 	 *
-	 * Delegates to Moment_AI_Assist, which falls back to deterministic
+	 * Delegates to Daymark_AI_Assist, which falls back to deterministic
 	 * mock suggestions when no provider is configured. Never blocks
 	 * publishing.
 	 *
@@ -517,21 +517,21 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
 		$type    = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
 
-		if ( ! in_array( $type, Moment_Publisher::PRIMARY_TYPES, true ) ) {
+		if ( ! in_array( $type, Daymark_Publisher::PRIMARY_TYPES, true ) ) {
 			$type = 'note';
 		}
 
-		$suggestions = Moment_Plugin::instance()->ai_assist->get_suggestions( $caption, $type );
+		$suggestions = Daymark_Plugin::instance()->ai_assist->get_suggestions( $caption, $type );
 
 		return rest_ensure_response( $suggestions );
 	}
 
 	/**
-	 * POST /moment/v1/ai/title — a short AI-suggested title for a Moment.
+	 * POST /daymark/v1/ai/title — a short AI-suggested title for a Mark.
 	 *
-	 * Mirrors /ai/suggestions: delegates to Moment_AI_Assist, which falls back
+	 * Mirrors /ai/suggestions: delegates to Daymark_AI_Assist, which falls back
 	 * to a deterministic mock title when no provider is configured. Used to
-	 * pre-fill the composer's optional Title field for audio/video Moments.
+	 * pre-fill the composer's optional Title field for audio/video Marks.
 	 * Optional and non-blocking — never blocks publishing.
 	 *
 	 * @since 0.5.0
@@ -545,11 +545,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
 		$type    = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
 
-		if ( ! in_array( $type, Moment_Publisher::PRIMARY_TYPES, true ) ) {
+		if ( ! in_array( $type, Daymark_Publisher::PRIMARY_TYPES, true ) ) {
 			$type = 'note';
 		}
 
-		$ai    = Moment_Plugin::instance()->ai_assist;
+		$ai    = Daymark_Plugin::instance()->ai_assist;
 		$title = $ai->suggest_title(
 			array(
 				'text' => $caption,
@@ -567,7 +567,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * POST /moment/v1/ai/alt-text — vision alt text for one uploaded image.
+	 * POST /daymark/v1/ai/alt-text — vision alt text for one uploaded image.
 	 *
 	 * Reads the uploaded image from the temp upload (no attachment is
 	 * created) and returns AI-generated alt text so the composer can
@@ -582,7 +582,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		if ( ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error(
 				'rest_cannot_upload',
-				__( 'You are not allowed to upload media.', 'moment' ),
+				__( 'You are not allowed to upload media.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -592,8 +592,8 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		if ( ! $image || empty( $image['tmp_name'] ) || ! is_readable( $image['tmp_name'] ) ) {
 			return new WP_Error(
-				'moment_no_image',
-				__( 'No readable image was provided.', 'moment' ),
+				'daymark_no_image',
+				__( 'No readable image was provided.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -602,10 +602,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 		$finfo = new finfo( FILEINFO_MIME_TYPE );
 		$mime  = (string) $finfo->file( $image['tmp_name'] );
 
-		if ( ! str_starts_with( $mime, 'image/' ) || ! in_array( $mime, Moment_Publisher::ALLOWED_MIME_TYPES, true ) ) {
+		if ( ! str_starts_with( $mime, 'image/' ) || ! in_array( $mime, Daymark_Publisher::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
-				'moment_not_an_image',
-				__( 'Alt text can only be generated for images.', 'moment' ),
+				'daymark_not_an_image',
+				__( 'Alt text can only be generated for images.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -615,19 +615,19 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'type' => 'image',
 		);
 
-		$suggestion = Moment_Plugin::instance()->ai_assist->get_image_alt_suggestion( (string) $image['tmp_name'], $context );
+		$suggestion = Daymark_Plugin::instance()->ai_assist->get_image_alt_suggestion( (string) $image['tmp_name'], $context );
 
 		return rest_ensure_response( $suggestion );
 	}
 
 	/**
-	 * POST /moment/v1/moments/{id}/sync-responses — import mocked social
-	 * responses for a Moment (conversation backflow).
+	 * POST /daymark/v1/marks/{id}/sync-responses — import mocked social
+	 * responses for a Mark (conversation backflow).
 	 *
 	 * Accepts { "networks": ["bluesky", "instagram"] }; empty or missing
-	 * networks means every network in _moment_external_posts. All imports
+	 * networks means every network in _daymark_external_posts. All imports
 	 * are mocked — a real connector would plug into
-	 * Moment_Notifications::import_response().
+	 * Daymark_Notifications::import_response().
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -648,7 +648,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		$networks = array_filter( array_map( 'sanitize_key', array_map( 'strval', $networks ) ) );
 
-		$result = Moment_Plugin::instance()->notifications->import_responses( $post_id, $networks );
+		$result = Daymark_Plugin::instance()->notifications->import_responses( $post_id, $networks );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -658,11 +658,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /moment/v1/notifications — unified Moment activity list.
+	 * GET /daymark/v1/notifications — unified Daymark activity list.
 	 *
 	 * Returns approved comments (on-site and imported social responses)
-	 * for Moment-created posts only. Comments on non-Moment posts are
-	 * excluded server-side by Moment_Notifications.
+	 * for Daymark-created posts only. Comments on non-Mark posts are
+	 * excluded server-side by Daymark_Notifications.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
@@ -670,11 +670,11 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	public function get_notifications( WP_REST_Request $request ) {
 		// Viewing the feed freshens it: a stale feed schedules an async
 		// background sync (never a manual control, never blocks this request).
-		Moment_Plugin::instance()->backflow_sync->maybe_freshen();
+		Daymark_Plugin::instance()->backflow_sync->maybe_freshen();
 
-		unset( $request ); // No query args yet; Moment-only scope is enforced server-side.
+		unset( $request ); // No query args yet; Daymark-only scope is enforced server-side.
 
-		$notifications = Moment_Plugin::instance()->notifications;
+		$notifications = Daymark_Plugin::instance()->notifications;
 		$items         = $notifications->get_notifications();
 
 		// This endpoint backs the notifications screen, so serving it IS
@@ -685,32 +685,32 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /moment/v1/moments/{id} — full editable payload for the composer.
+	 * GET /daymark/v1/marks/{id} — full editable payload for the composer.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
-	public function get_moment( WP_REST_Request $request ) {
+	public function get_daymark( WP_REST_Request $request ) {
 		$post_id = absint( $request->get_param( 'id' ) );
 		$post    = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return new WP_Error(
-				'moment_not_found',
-				__( 'Not a Moment post.', 'moment' ),
+				'daymark_not_found',
+				__( 'Not a Mark post.', 'daymark' ),
 				array( 'status' => 404 )
 			);
 		}
 
-		$caption = (string) get_post_meta( $post_id, '_moment_caption', true );
+		$caption = (string) get_post_meta( $post_id, '_daymark_caption', true );
 
-		// Moments created before the caption meta existed: recover the
+		// Marks created before the caption meta existed: recover the
 		// paragraph text from the derived block markup.
 		if ( '' === $caption && preg_match_all( '#<p>(.*?)</p>#s', $post->post_content, $matches ) ) {
 			$caption = implode( "\n\n", array_map( 'wp_strip_all_tags', $matches[1] ) );
 		}
 
-		$media_ids = json_decode( (string) get_post_meta( $post_id, '_moment_media_ids', true ), true );
+		$media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$media_ids = is_array( $media_ids ) ? array_map( 'intval', $media_ids ) : array();
 		$media     = array();
 
@@ -741,10 +741,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		$targets = json_decode( (string) get_post_meta( $post_id, '_moment_syndication_targets', true ), true );
-		$helpers = json_decode( (string) get_post_meta( $post_id, Moment_Publish_Helpers::CONTROL_META, true ), true );
+		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
+		$helpers = json_decode( (string) get_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, true ), true );
 
-		$payload               = $this->prepare_moment_summary( $post_id );
+		$payload               = $this->prepare_mark_summary( $post_id );
 		$payload['caption']    = $caption;
 		$payload['media']      = $media;
 		$payload['targets']    = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
@@ -755,18 +755,18 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * POST/PUT /moment/v1/moments/{id} — update a Moment from the composer.
+	 * POST/PUT /daymark/v1/marks/{id} — update a Mark from the composer.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
-	public function update_moment( WP_REST_Request $request ) {
+	public function update_daymark( WP_REST_Request $request ) {
 		$files = $request->get_file_params();
 
 		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error(
 				'rest_cannot_upload',
-				__( 'You are not allowed to upload media.', 'moment' ),
+				__( 'You are not allowed to upload media.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
 		}
@@ -784,7 +784,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			'categories'          => $request->get_param( 'categories' ),
 			'alt_text'            => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			// Per-image alt: positional array for newly added files, plus a
-			// map keyed by attachment ID for media already on the Moment.
+			// map keyed by attachment ID for media already on the Mark.
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
 			'tags'                => $request->get_param( 'tags' ),
@@ -799,7 +799,7 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			$data['status'] = $status;
 		}
 
-		$result = Moment_Plugin::instance()->publisher->update(
+		$result = Daymark_Plugin::instance()->publisher->update(
 			absint( $request->get_param( 'id' ) ),
 			$data,
 			$files
@@ -809,29 +809,29 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
-		return rest_ensure_response( $this->prepare_moment_summary( (int) $result ) );
+		return rest_ensure_response( $this->prepare_mark_summary( (int) $result ) );
 	}
 
 	/**
-	 * DELETE /moment/v1/moments/{id} — trash a Moment.
+	 * DELETE /daymark/v1/marks/{id} — trash a Mark.
 	 *
 	 * Reversible: sends the post to the trash via wp_trash_post rather than
-	 * deleting it permanently. Scoped to Moment posts, so a non-Moment id is a
-	 * 404. Idempotent — an already-trashed Moment returns success.
+	 * deleting it permanently. Scoped to Mark posts, so a non-Mark id is a
+	 * 404. Idempotent — an already-trashed Mark returns success.
 	 *
 	 * @since 0.5.0
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
-	public function delete_moment( WP_REST_Request $request ) {
+	public function delete_daymark( WP_REST_Request $request ) {
 		$post_id = absint( $request->get_param( 'id' ) );
 		$post    = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) ) {
+		if ( ! $post instanceof WP_Post || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
 			return new WP_Error(
-				'moment_not_found',
-				__( 'Not a Moment post.', 'moment' ),
+				'daymark_not_found',
+				__( 'Not a Mark post.', 'daymark' ),
 				array( 'status' => 404 )
 			);
 		}
@@ -851,8 +851,8 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		if ( ! $trashed ) {
 			return new WP_Error(
-				'moment_trash_failed',
-				__( 'The Moment could not be trashed.', 'moment' ),
+				'daymark_trash_failed',
+				__( 'The Mark could not be trashed.', 'daymark' ),
 				array( 'status' => 500 )
 			);
 		}
@@ -867,10 +867,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * POST /moment/v1/notifications/{comment_id}/reply — reply to a comment
-	 * on a Moment from the notifications screen.
+	 * POST /daymark/v1/notifications/{comment_id}/reply — reply to a comment
+	 * on a Mark from the notifications screen.
 	 *
-	 * Validates that the comment exists and its parent post is a Moment the
+	 * Validates that the comment exists and its parent post is a Mark the
 	 * current user can edit, then creates a nested reply comment authored by
 	 * the current user. wp_new_comment() runs in WP_Error mode so disallowed
 	 * or duplicate content returns a clean JSON error instead of wp_die().
@@ -886,20 +886,20 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		if ( ! $comment instanceof WP_Comment ) {
 			return new WP_Error(
-				'moment_comment_not_found',
-				__( 'Comment not found.', 'moment' ),
+				'daymark_comment_not_found',
+				__( 'Comment not found.', 'daymark' ),
 				array( 'status' => 404 )
 			);
 		}
 
 		$post_id = (int) $comment->comment_post_ID;
 
-		// The parent post must be a Moment the current user can edit; anything
+		// The parent post must be a Mark the current user can edit; anything
 		// else is forbidden (never leak whether the post exists).
-		if ( '1' !== get_post_meta( $post_id, '_moment_is_moment', true ) || ! current_user_can( 'edit_post', $post_id ) ) {
+		if ( '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) || ! current_user_can( 'edit_post', $post_id ) ) {
 			return new WP_Error(
 				'rest_forbidden',
-				__( 'You cannot reply to this comment.', 'moment' ),
+				__( 'You cannot reply to this comment.', 'daymark' ),
 				array( 'status' => 403 )
 			);
 		}
@@ -908,8 +908,8 @@ class Moment_REST_Controller extends WP_REST_Controller {
 
 		if ( '' === $content ) {
 			return new WP_Error(
-				'moment_empty_reply',
-				__( 'A reply cannot be empty.', 'moment' ),
+				'daymark_empty_reply',
+				__( 'A reply cannot be empty.', 'daymark' ),
 				array( 'status' => 400 )
 			);
 		}
@@ -951,12 +951,12 @@ class Moment_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Prepare a Moment summary response array.
+	 * Prepare a Mark summary response array.
 	 *
-	 * @param int $post_id Moment post ID.
+	 * @param int $post_id Mark post ID.
 	 * @return array<string, mixed>
 	 */
-	private function prepare_moment_summary( int $post_id ): array {
+	private function prepare_mark_summary( int $post_id ): array {
 		$thumbnail = get_the_post_thumbnail_url( $post_id, 'medium' );
 
 		return array(
@@ -970,10 +970,10 @@ class Moment_REST_Controller extends WP_REST_Controller {
 			),
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
-			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_moment_primary_type', true ) ),
+			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $thumbnail ? esc_url_raw( $thumbnail ) : '',
-			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_moment_syndication_status', true ) ),
+			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 		);
 	}
 }

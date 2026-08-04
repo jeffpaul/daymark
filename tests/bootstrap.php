@@ -1,11 +1,11 @@
 <?php
 /**
- * PHPUnit bootstrap for the Moment plugin.
+ * PHPUnit bootstrap for the Daymark plugin.
  *
  * Requires the WordPress PHPUnit test library. Set WP_TESTS_DIR or install
  * to /tmp/wordpress-tests-lib.
  *
- * @package Moment
+ * @package Daymark
  */
 
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
@@ -37,11 +37,11 @@ if ( file_exists( $_polyfills ) ) {
 require_once $_tests_dir . '/includes/functions.php';
 
 /**
- * Manually load the Moment plugin.
+ * Manually load the Daymark plugin.
  */
-function _moment_manually_load_plugin() {
-	require dirname( __DIR__ ) . '/moment.php';
+function _daymark_manually_load_plugin() {
+	require dirname( __DIR__ ) . '/daymark.php';
 }
-tests_add_filter( 'muplugins_loaded', '_moment_manually_load_plugin' );
+tests_add_filter( 'muplugins_loaded', '_daymark_manually_load_plugin' );
 
 require $_tests_dir . '/includes/bootstrap.php';

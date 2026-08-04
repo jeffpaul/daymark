@@ -2,7 +2,7 @@
 /**
  * Bluesky connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,9 +16,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * password or OAuth session via com.atproto.server.createSession),
  * then create a post record via com.atproto.repo.createRecord with an
  * app.bsky.feed.post record — either directly or through a WordPress
- * Connector plugin registered on `moment_register_connectors`.
+ * Connector plugin registered on `daymark_register_connectors`.
  */
-class Moment_Connector_Bluesky extends Moment_Connector_Base {
+class Daymark_Connector_Bluesky extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -35,13 +35,13 @@ class Moment_Connector_Bluesky extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'Bluesky', 'moment' );
+		return __( 'Bluesky', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
-	 * Text-first network: any Moment can be announced as caption + permalink.
+	 * Text-first network: any Mark can be announced as caption + permalink.
 	 *
 	 * @return string[]
 	 */

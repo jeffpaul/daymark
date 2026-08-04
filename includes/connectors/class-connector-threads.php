@@ -2,7 +2,7 @@
 /**
  * Threads connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * publish via POST /{threads-user-id}/threads_publish — or adapt an
  * existing social publishing plugin that already speaks Threads.
  */
-class Moment_Connector_Threads extends Moment_Connector_Base {
+class Daymark_Connector_Threads extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -34,13 +34,13 @@ class Moment_Connector_Threads extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'Threads', 'moment' );
+		return __( 'Threads', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
-	 * Text-first network: any Moment can be announced as caption + permalink.
+	 * Text-first network: any Mark can be announced as caption + permalink.
 	 *
 	 * @return string[]
 	 */

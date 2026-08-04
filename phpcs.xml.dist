@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
-<ruleset name="Moment">
-	<description>WordPress Coding Standards for the Moment plugin.</description>
+<ruleset name="Daymark">
+	<description>WordPress Coding Standards for the Daymark plugin.</description>
 
-	<file>moment.php</file>
+	<file>daymark.php</file>
 	<file>includes</file>
 	<file>blocks</file>
 	<file>templates</file>
@@ -27,7 +27,7 @@
 	</rule>
 
 	<!-- Keep the established short class-file names (class-publisher.php for
-	     Moment_Publisher) rather than repeating the plugin prefix in every filename. -->
+	     Daymark_Publisher) rather than repeating the plugin prefix in every filename. -->
 	<rule ref="WordPress.Files.FileName">
 		<properties>
 			<property name="strict_class_file_names" value="false"/>
@@ -37,7 +37,7 @@
 	<rule ref="WordPress.WP.I18n">
 		<properties>
 			<property name="text_domain" type="array">
-				<element value="moment"/>
+				<element value="daymark"/>
 			</property>
 		</properties>
 	</rule>
@@ -45,9 +45,9 @@
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="moment"/>
-				<element value="Moment"/>
-				<element value="MOMENT"/>
+				<element value="daymark"/>
+				<element value="Daymark"/>
+				<element value="DAYMARK"/>
 			</property>
 		</properties>
 	</rule>

@@ -2,7 +2,7 @@
 /**
  * Mastodon connector (mocked).
  *
- * @package Moment
+ * @package Daymark
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,7 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * POST /api/v1/statuses — either directly or by delegating to an
  * existing Mastodon publishing plugin as a thin adapter.
  */
-class Moment_Connector_Mastodon extends Moment_Connector_Base {
+class Daymark_Connector_Mastodon extends Daymark_Connector_Base {
 
 	/**
 	 * Connector ID.
@@ -34,13 +34,13 @@ class Moment_Connector_Mastodon extends Moment_Connector_Base {
 	 * @return string
 	 */
 	public function get_label(): string {
-		return __( 'Mastodon', 'moment' );
+		return __( 'Mastodon', 'daymark' );
 	}
 
 	/**
-	 * Supported Moment types.
+	 * Supported Mark types.
 	 *
-	 * Text-first network: any Moment can be announced as caption + permalink.
+	 * Text-first network: any Mark can be announced as caption + permalink.
 	 *
 	 * @return string[]
 	 */
