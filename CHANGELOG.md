@@ -20,11 +20,13 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-04
+
 ### Changed
 
-- Moment is now **Daymark**, and your posts are now called **Marks** — the wordpress.org plugin review team did not approve the name "Moment" and approved "Daymark". The app lives at `/daymark` on new installs; existing installs keep their current app URL, so a home-screen icon keeps working.
-- Existing installs are converted automatically: a one-time migration renames the stored options, per-user preferences, post and comment meta, and the section pages' blocks/shortcodes in place. Nothing is lost and nothing needs to be done by hand. (The migration will be retired in a later release.)
-- For developers: every public identifier is renamed with no back-compat bridges — REST is `daymark/v1` with a `marks` resource, blocks are `daymark/*`, shortcodes `[daymark_*]`, hooks and meta use the `daymark_`/`_daymark_*` prefixes (the post marker is `_daymark_is_mark`), and PHP classes are `Daymark_*`.
+- Moment is now **Daymark**, and your posts are now called **Marks** — the wordpress.org plugin review team did not approve the name "Moment" and approved "Daymark". The app lives at `/daymark` on new installs; existing installs keep their current app URL, so a home-screen icon keeps working. ([#35](https://github.com/jeffpaul/daymark/pull/35))
+- Existing installs are converted automatically: a one-time migration renames the stored options, per-user preferences, post and comment meta, and the section pages' blocks/shortcodes in place. Nothing is lost and nothing needs to be done by hand. (The migration will be retired in a later release.) ([#35](https://github.com/jeffpaul/daymark/pull/35))
+- For developers: every public identifier is renamed with no back-compat bridges — REST is `daymark/v1` with a `marks` resource, blocks are `daymark/*`, shortcodes `[daymark_*]`, hooks and meta use the `daymark_`/`_daymark_*` prefixes (the post marker is `_daymark_is_mark`), and PHP classes are `Daymark_*`. ([#35](https://github.com/jeffpaul/daymark/pull/35))
 
 ## [0.5.0] - 2026-08-03
 
@@ -127,7 +129,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.5.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.6.0...HEAD
+[0.6.0]: https://github.com/jeffpaul/daymark/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/jeffpaul/daymark/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/jeffpaul/daymark/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/jeffpaul/daymark/compare/0.2.0...0.3.0
