@@ -37,15 +37,16 @@ delete_transient( 'daymark_backflow_freshened' );
 
 global $wpdb;
 
-$cooldowns = $wpdb->get_col(
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_cooldowns = $wpdb->get_col(
 	$wpdb->prepare(
 		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
 		$wpdb->esc_like( '_transient_daymark_backflow_cooldown_' ) . '%'
 	)
-); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+);
 
-foreach ( $cooldowns as $option_name ) {
-	delete_transient( str_replace( '_transient_', '', $option_name ) );
+foreach ( $daymark_cooldowns as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 
 // Legacy Moment (≤ 0.5.0) bookkeeping, in case the plugin is uninstalled
@@ -62,13 +63,14 @@ wp_clear_scheduled_hook( 'moment_backflow_sync' );
 wp_clear_scheduled_hook( 'moment_backflow_sync_now' );
 delete_transient( 'moment_backflow_freshened' );
 
-$legacy_cooldowns = $wpdb->get_col(
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_legacy_cooldowns = $wpdb->get_col(
 	$wpdb->prepare(
 		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
 		$wpdb->esc_like( '_transient_moment_backflow_cooldown_' ) . '%'
 	)
-); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+);
 
-foreach ( $legacy_cooldowns as $option_name ) {
-	delete_transient( str_replace( '_transient_', '', $option_name ) );
+foreach ( $daymark_legacy_cooldowns as $daymark_legacy_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_legacy_option_name ) );
 }

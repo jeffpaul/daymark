@@ -557,8 +557,9 @@ class Daymark_Notifications {
 		$existing = get_comments(
 			array(
 				'count'      => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale dedup lookup.
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale dedup lookup.
 				'meta_key'   => '_daymark_comment_external_id',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale dedup lookup.
 				'meta_value' => $external_id,
 			)
 		);

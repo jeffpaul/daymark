@@ -141,7 +141,7 @@ final class Daymark_Migration {
 		$like = $wpdb->esc_like( '_moment_' ) . '%';
 
 		foreach ( array( $wpdb->postmeta, $wpdb->commentmeta ) as $table ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-time bulk key rename; the prefix swap must cover dynamically named keys.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- One-time bulk key rename; the prefix swap must cover dynamically named keys, and $table is always a core wpdb table property, never user input.
 			$wpdb->query(
 				$wpdb->prepare(
 					"UPDATE {$table} SET meta_key = REPLACE(meta_key, '_moment_', '_daymark_') WHERE meta_key LIKE %s", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Core table name.

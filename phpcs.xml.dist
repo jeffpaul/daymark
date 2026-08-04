@@ -3,6 +3,7 @@
 	<description>WordPress Coding Standards for the Daymark plugin.</description>
 
 	<file>daymark.php</file>
+	<file>uninstall.php</file>
 	<file>includes</file>
 	<file>blocks</file>
 	<file>templates</file>
