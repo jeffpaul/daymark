@@ -45,6 +45,21 @@
 	width: 100%;
 }
 
+.daymark-item-player {
+	display: block;
+	width: 100%;
+}
+
+.daymark-item-player--video {
+	background: #000;
+	max-height: 24rem;
+}
+
+.daymark-item-player--audio {
+	margin: 0.875rem 1rem 0;
+	width: calc(100% - 2rem);
+}
+
 .daymark-item-body {
 	display: flex;
 	flex-direction: column;
@@ -107,6 +122,14 @@
 	line-height: 1.5;
 	margin: 0;
 	overflow-wrap: anywhere;
+}
+
+.daymark-item-caption--note {
+	border-left: 3px solid #7a00df;
+	font-size: 1.1875rem;
+	font-weight: 500;
+	line-height: 1.45;
+	padding-left: 0.875rem;
 }
 
 .daymark-item-stats {
