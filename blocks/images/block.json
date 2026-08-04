@@ -3,7 +3,7 @@
 	"apiVersion": 3,
 	"name": "daymark/images",
 	"title": "Daymark Images",
-	"category": "widgets",
+	"category": "daymark",
 	"icon": "format-image",
 	"description": "Displays published image, gallery, and mixed Marks.",
 	"keywords": [ "daymark", "images", "photos", "gallery" ],
@@ -14,9 +14,24 @@
 			"default": 10
 		}
 	},
+	"example": {},
 	"supports": {
 		"html": false,
-		"align": [ "wide", "full" ]
+		"align": [ "wide", "full" ],
+		"color": {
+			"text": true,
+			"background": true,
+			"gradients": true,
+			"link": false
+		},
+		"typography": {
+			"fontSize": true,
+			"lineHeight": true
+		},
+		"spacing": {
+			"margin": true,
+			"padding": true
+		}
 	},
 	"render": "file:./render.php"
 }

@@ -3,7 +3,7 @@
 	"apiVersion": 3,
 	"name": "daymark/videos",
 	"title": "Daymark Videos",
-	"category": "widgets",
+	"category": "daymark",
 	"icon": "format-video",
 	"description": "Displays published video and mixed Marks.",
 	"keywords": [ "daymark", "videos" ],
@@ -14,9 +14,24 @@
 			"default": 10
 		}
 	},
+	"example": {},
 	"supports": {
 		"html": false,
-		"align": [ "wide", "full" ]
+		"align": [ "wide", "full" ],
+		"color": {
+			"text": true,
+			"background": true,
+			"gradients": true,
+			"link": false
+		},
+		"typography": {
+			"fontSize": true,
+			"lineHeight": true
+		},
+		"spacing": {
+			"margin": true,
+			"padding": true
+		}
 	},
 	"render": "file:./render.php"
 }
