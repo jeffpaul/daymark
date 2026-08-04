@@ -125,6 +125,24 @@ class Test_Renderer extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'daymark-item-caption daymark-item-caption--note', $html );
 	}
 
+	/**
+	 * A note's pull-quote caption leads the card, the same way a
+	 * thumbnail/player does for other types — not tucked after the
+	 * badge/date row.
+	 */
+	public function test_note_caption_renders_before_badge() {
+		self::factory()->post->update_object( $this->daymark_id, array( 'post_content' => 'A late-night thought.' ) );
+
+		$html = ( new Daymark_Renderer() )->render( 'timeline' );
+
+		$caption_pos = strpos( $html, 'daymark-item-caption--note' );
+		$badge_pos   = strpos( $html, 'daymark-badge' );
+
+		$this->assertNotFalse( $caption_pos );
+		$this->assertNotFalse( $badge_pos );
+		$this->assertLessThan( $badge_pos, $caption_pos, 'The pull-quote caption should render before the badge/date row' );
+	}
+
 	/** A non-note type's caption stays the plain (non-pull-quote) style. */
 	public function test_non_note_caption_has_no_pull_quote_class() {
 		update_post_meta( $this->daymark_id, '_daymark_primary_type', 'image' );

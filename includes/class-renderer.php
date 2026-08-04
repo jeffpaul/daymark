@@ -165,13 +165,25 @@ class Daymark_Renderer {
 
 		$html = '<article class="daymark-item daymark-item--' . esc_attr( $type ) . '">';
 
-		// Pure audio/video Marks (detect_primary_type() only returns these
-		// when no image is attached) get an inline player instead of a
-		// thumbnail — there is usually nothing to thumbnail in the first
-		// place. It isn't wrapped in the permalink link like the image
-		// thumbnail is: native controls need direct interaction.
+		$has_caption   = is_string( $caption ) && '' !== $caption;
+		$note_led_here = false;
+
+		// Every type leads with its most prominent content, ahead of the
+		// badge/date row — a thumbnail or player for the types that have
+		// one; for a note, which has nothing else, that's its caption
+		// (pull-quote styled), since the caption *is* the whole Mark.
 		if ( in_array( $type, array( 'audio', 'video' ), true ) ) {
+			// Pure audio/video Marks (detect_primary_type() only returns
+			// these when no image is attached) get an inline player instead
+			// of a thumbnail — there is usually nothing to thumbnail in the
+			// first place. It isn't wrapped in the permalink link like the
+			// image thumbnail is: native controls need direct interaction.
 			$html .= $this->item_player( $post, $type );
+		} elseif ( 'note' === $type ) {
+			if ( $has_caption ) {
+				$html         .= '<p class="daymark-item-caption daymark-item-caption--note">' . esc_html( $caption ) . '</p>';
+				$note_led_here = true;
+			}
 		} else {
 			$thumb = $this->item_thumbnail( $post );
 
@@ -186,12 +198,8 @@ class Daymark_Renderer {
 		$html .= '<time datetime="' . esc_attr( get_the_date( 'c', $post ) ) . '">' . esc_html( $this->human_date( $post ) ) . '</time>';
 		$html .= '</a>';
 
-		if ( is_string( $caption ) && '' !== $caption ) {
-			// A note has nothing else to show, so its caption is the Mark's
-			// entire content — give it a pull-quote treatment instead of
-			// the smaller supporting-text style used under a thumbnail/player.
-			$caption_class = 'daymark-item-caption' . ( 'note' === $type ? ' daymark-item-caption--note' : '' );
-			$html         .= '<p class="' . esc_attr( $caption_class ) . '">' . esc_html( $caption ) . '</p>';
+		if ( $has_caption && ! $note_led_here ) {
+			$html .= '<p class="daymark-item-caption">' . esc_html( $caption ) . '</p>';
 		}
 
 		$html .= $this->render_stats( $post->ID );
