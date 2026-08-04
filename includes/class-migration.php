@@ -208,12 +208,13 @@ final class Daymark_Migration {
 		wp_clear_scheduled_hook( 'moment_backflow_sync_now' );
 		delete_transient( 'moment_backflow_freshened' );
 
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Discovery of dynamically named legacy transients.
 		$cooldowns = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
 				$wpdb->esc_like( '_transient_moment_backflow_cooldown_' ) . '%'
 			)
-		); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Discovery of dynamically named legacy transients.
+		);
 
 		foreach ( $cooldowns as $option_name ) {
 			delete_transient( str_replace( '_transient_', '', $option_name ) );

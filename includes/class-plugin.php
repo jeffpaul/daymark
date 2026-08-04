@@ -217,9 +217,12 @@ final class Daymark_Plugin {
 		Daymark_Migration::maybe_migrate();
 
 		Daymark_Backflow_Sync::schedule();
-		// Resolve the app base fresh (respecting content at /daymark), then
-		// register rewrite rules so the flush below picks them up.
-		Daymark_Routes::resolve_app_base();
+		// Resolve the app base on first activation (respecting content at
+		// /daymark); a base that is already persisted — including one the
+		// migration carried over — is kept, because a home-screen-installed
+		// app URL must never move. Then register rewrite rules so the flush
+		// below picks them up.
+		Daymark_Routes::app_base();
 		$routes = new Daymark_Routes();
 		$routes->register();
 

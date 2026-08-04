@@ -329,7 +329,7 @@ class Daymark_Notifications {
 				'UTF-8'
 			),
 			'post_url'              => esc_url_raw( (string) get_permalink( $post ) ),
-			'daymark_type'           => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
+			'daymark_type'          => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
 		);
 	}
 

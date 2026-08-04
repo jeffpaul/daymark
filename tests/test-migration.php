@@ -28,6 +28,14 @@ class Test_Migration extends WP_UnitTestCase {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 
 		// --- Seed a legacy Moment install. ---
+		// The test bootstrap already ran init, so routes resolved and
+		// persisted a fresh app base; on a real legacy site the migration
+		// runs first (init@5, before routes at 10). Clear the resolved
+		// state to simulate that.
+		delete_option( 'daymark_app_base' );
+		delete_option( 'daymark_pages' );
+		delete_option( 'daymark_version' );
+
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_activated', 12345 );
 		update_option( 'moment_app_base', 'moment' );
@@ -95,6 +103,7 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Running twice is safe and changes nothing the second time. */
 	public function test_idempotent() {
+		delete_option( 'daymark_app_base' ); // See test_migrates_legacy_install.
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
 
@@ -117,6 +126,17 @@ class Test_Migration extends WP_UnitTestCase {
 
 		$this->assertSame( 'daymark', get_option( 'daymark_app_base' ) );
 		$this->assertFalse( get_option( 'moment_app_base' ), 'Legacy option still removed' );
+	}
+
+	/** Full activation over a legacy install keeps the carried app base. */
+	public function test_activation_preserves_carried_app_base() {
+		delete_option( 'daymark_app_base' ); // See test_migrates_legacy_install.
+		update_option( 'moment_version', '0.5.0' );
+		update_option( 'moment_app_base', 'moment' );
+
+		Daymark_Plugin::activate();
+
+		$this->assertSame( 'moment', get_option( 'daymark_app_base' ), 'Activation must not re-resolve a persisted app base' );
 	}
 
 	/** Section pages with shortcode markup are rewritten too. */
