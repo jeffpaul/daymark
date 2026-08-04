@@ -45,21 +45,6 @@
 	width: 100%;
 }
 
-.daymark-item-player {
-	display: block;
-	width: 100%;
-}
-
-.daymark-item-player--video {
-	background: #000;
-	max-height: 24rem;
-}
-
-.daymark-item-player--audio {
-	margin: 0.875rem 1rem 0;
-	width: calc(100% - 2rem);
-}
-
 .daymark-item-body {
 	display: flex;
 	flex-direction: column;
@@ -69,8 +54,8 @@
 
 .daymark-badge {
 	align-self: flex-start;
-	background: rgba(122, 0, 223, 0.12);
-	color: #5300be;
+	background: rgba(201, 58, 6, 0.12);
+	color: #9e2a02;
 	border-radius: 999px;
 	font-size: 0.6875rem;
 	font-weight: 600;
@@ -124,15 +109,6 @@
 	overflow-wrap: anywhere;
 }
 
-.daymark-item-caption--note {
-	border-left: 3px solid #7a00df;
-	font-size: 1.1875rem;
-	font-weight: 500;
-	line-height: 1.45;
-	margin: 0;
-	padding: 1rem 1rem 1rem 0.875rem;
-}
-
 .daymark-item-stats {
 	display: flex;
 	gap: 1rem;
@@ -150,7 +126,7 @@
 }
 
 .daymark-stat--active {
-	color: #7a00df;
+	color: #c93a06;
 	font-weight: 600;
 }
 
@@ -169,9 +145,5 @@
 @media (max-width: 480px) {
 	.daymark-item-body {
 		padding: 0.75rem 0.875rem 0.875rem;
-	}
-
-	.daymark-item-caption--note {
-		padding: 0.875rem 0.875rem 0.875rem 0.75rem;
 	}
 }
