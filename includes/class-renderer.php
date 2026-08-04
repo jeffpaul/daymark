@@ -162,12 +162,34 @@ class Daymark_Renderer {
 		$type      = is_string( $type ) && '' !== $type ? sanitize_key( $type ) : 'note';
 		$caption   = get_the_excerpt( $post );
 		$title     = get_the_title( $post );
-		$thumb     = $this->item_thumbnail( $post );
 
 		$html = '<article class="daymark-item daymark-item--' . esc_attr( $type ) . '">';
 
-		if ( '' !== $thumb ) {
-			$html .= '<a class="daymark-item-media" href="' . esc_url( $permalink ) . '" aria-label="' . esc_attr( $title ) . '">' . $thumb . '</a>';
+		$has_caption   = is_string( $caption ) && '' !== $caption;
+		$note_led_here = false;
+
+		// Every type leads with its most prominent content, ahead of the
+		// badge/date row — a thumbnail or player for the types that have
+		// one; for a note, which has nothing else, that's its caption
+		// (pull-quote styled), since the caption *is* the whole Mark.
+		if ( in_array( $type, array( 'audio', 'video' ), true ) ) {
+			// Pure audio/video Marks (detect_primary_type() only returns
+			// these when no image is attached) get an inline player instead
+			// of a thumbnail — there is usually nothing to thumbnail in the
+			// first place. It isn't wrapped in the permalink link like the
+			// image thumbnail is: native controls need direct interaction.
+			$html .= $this->item_player( $post, $type );
+		} elseif ( 'note' === $type ) {
+			if ( $has_caption ) {
+				$html         .= '<p class="daymark-item-caption daymark-item-caption--note">' . esc_html( $caption ) . '</p>';
+				$note_led_here = true;
+			}
+		} else {
+			$thumb = $this->item_thumbnail( $post );
+
+			if ( '' !== $thumb ) {
+				$html .= '<a class="daymark-item-media" href="' . esc_url( $permalink ) . '" aria-label="' . esc_attr( $title ) . '">' . $thumb . '</a>';
+			}
 		}
 
 		$html .= '<div class="daymark-item-body">';
@@ -176,7 +198,7 @@ class Daymark_Renderer {
 		$html .= '<time datetime="' . esc_attr( get_the_date( 'c', $post ) ) . '">' . esc_html( $this->human_date( $post ) ) . '</time>';
 		$html .= '</a>';
 
-		if ( is_string( $caption ) && '' !== $caption ) {
+		if ( $has_caption && ! $note_led_here ) {
 			$html .= '<p class="daymark-item-caption">' . esc_html( $caption ) . '</p>';
 		}
 
@@ -306,6 +328,43 @@ class Daymark_Renderer {
 				'loading' => 'lazy',
 			)
 		);
+	}
+
+	/**
+	 * Inline `<audio>`/`<video>` player for a pure audio or video Mark, using
+	 * its first attached file. Empty when the expected attachment is
+	 * missing or doesn't actually match the requested media kind — callers
+	 * treat an empty return as "nothing to show", same as item_thumbnail().
+	 *
+	 * @param WP_Post $post The Mark post.
+	 * @param string  $type 'audio' or 'video'.
+	 * @return string Escaped HTML, or ''.
+	 */
+	private function item_player( WP_Post $post, string $type ): string {
+		$raw       = get_post_meta( $post->ID, '_daymark_media_ids', true );
+		$media_ids = json_decode( is_string( $raw ) ? $raw : '', true );
+
+		if ( ! is_array( $media_ids ) || empty( $media_ids ) ) {
+			return '';
+		}
+
+		$attachment_id = absint( reset( $media_ids ) );
+		$expected_mime = 'audio' === $type ? 'audio/' : 'video/';
+		$mime          = (string) get_post_mime_type( $attachment_id );
+
+		if ( 0 === $attachment_id || ! str_starts_with( $mime, $expected_mime ) ) {
+			return '';
+		}
+
+		$url = wp_get_attachment_url( $attachment_id );
+
+		if ( ! is_string( $url ) || '' === $url ) {
+			return '';
+		}
+
+		$tag = 'audio' === $type ? 'audio' : 'video';
+
+		return '<' . $tag . ' class="daymark-item-player daymark-item-player--' . esc_attr( $type ) . '" controls preload="metadata" src="' . esc_url( $url ) . '"></' . $tag . '>';
 	}
 
 	/**

@@ -24,6 +24,7 @@ can't act on them.
 
 - The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now support color, typography, and spacing from your theme's Global Styles, and sit under their own "Daymark" category in the block inserter instead of the generic "Widgets" bucket. The inserter's hover preview now shows the block rendered against your actual content. ([#39](https://github.com/jeffpaul/daymark/pull/39))
 - Each Mark on the public views now shows a comment count and a like count (from replies and reactions the ActivityPub, ATmosphere, or Webmention plugins deliver, plus your own on-site comments). A count of zero stays quiet — just a dimmed icon, no "0" — and steps up in weight and color as soon as there's something to report. ([#43](https://github.com/jeffpaul/daymark/pull/43))
+- Audio and video Marks on the public views now play inline, right in the card, instead of showing only a badge and caption; note Marks get a larger, pull-quoted caption since the text is the whole Mark. ([#44](https://github.com/jeffpaul/daymark/pull/44))
 
 ## [0.6.0] - 2026-08-04
 
