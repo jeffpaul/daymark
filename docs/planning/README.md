@@ -158,7 +158,7 @@ personal-creator tool, **not** an enterprise dashboard and explicitly **not**
 wp-admin. Large tap targets. Notifications must not look like comment-moderation UI.
 
 **Brand:** the visual briefs specified *feel*, not exact colors (no palette was
-fixed at planning time). The shipped brand accent is **purple `#7A00DF`**
+fixed at planning time). The shipped brand accent is **ember `#C93A06`**
 (documented in CLAUDE.md/README). A simple app-style icon (`icon.svg` → 192/512
 PNGs) supports "Add to Home Screen."
 

@@ -127,7 +127,7 @@ class Daymark_Routes {
 			'scope'            => self::app_url(),
 			'display'          => 'standalone',
 			'background_color' => '#ffffff',
-			'theme_color'      => '#7a00df',
+			'theme_color'      => '#c93a06',
 			// PNG icons only — iOS chokes on an SVG "any" entry and then
 			// shows no home-screen icon at all. The site's own Site Icon is
 			// preferred when set, so the installed app matches the site.

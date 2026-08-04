@@ -3,28 +3,28 @@
  *
  * Appended to the generated wp-hooks-docs/src/css/custom.css by the
  * Hooks Docs workflow, overriding the generator's default WordPress-blue
- * Infima variables with the plugin's purples (see docs/brand.md):
- * primary #7A00DF, deep #5300BE, light #D7A7FF, wash rgba(122,0,223,.12).
+ * Infima variables with the plugin's sunset palette (see docs/brand.md):
+ * primary #C93A06, deep #9E2A02, light #FFD9A8, wash rgba(201,58,6,.12).
  */
 
 :root {
-  --ifm-color-primary: #7a00df;
-  --ifm-color-primary-dark: #6e00c9;
-  --ifm-color-primary-darker: #6100b1;
-  --ifm-color-primary-darkest: #5300be;
-  --ifm-color-primary-light: #8a1fe4;
-  --ifm-color-primary-lighter: #9538e8;
-  --ifm-color-primary-lightest: #d7a7ff;
-  --docusaurus-highlighted-code-line-bg: rgba(122, 0, 223, 0.12);
+  --ifm-color-primary: #c93a06;
+  --ifm-color-primary-dark: #b83505;
+  --ifm-color-primary-darker: #ab3105;
+  --ifm-color-primary-darkest: #9e2a02;
+  --ifm-color-primary-light: #de440a;
+  --ifm-color-primary-lighter: #ea5312;
+  --ifm-color-primary-lightest: #ffd9a8;
+  --docusaurus-highlighted-code-line-bg: rgba(201, 58, 6, 0.12);
 }
 
 [data-theme='dark'] {
-  --ifm-color-primary: #d7a7ff;
-  --ifm-color-primary-dark: #c98bff;
-  --ifm-color-primary-darker: #c17aff;
-  --ifm-color-primary-darkest: #a94fff;
-  --ifm-color-primary-light: #e5c3ff;
-  --ifm-color-primary-lighter: #ecd2ff;
-  --ifm-color-primary-lightest: #f5e7ff;
-  --docusaurus-highlighted-code-line-bg: rgba(215, 167, 255, 0.15);
+  --ifm-color-primary: #ffc98a;
+  --ifm-color-primary-dark: #ffb862;
+  --ifm-color-primary-darker: #ffae4e;
+  --ifm-color-primary-darkest: #f59421;
+  --ifm-color-primary-light: #ffd8a6;
+  --ifm-color-primary-lighter: #ffe2bd;
+  --ifm-color-primary-lightest: #fff2e0;
+  --docusaurus-highlighted-code-line-bg: rgba(255, 201, 138, 0.15);
 }
