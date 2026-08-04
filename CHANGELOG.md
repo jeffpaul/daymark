@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now support color, typography, and spacing from your theme's Global Styles, and sit under their own "Daymark" category in the block inserter instead of the generic "Widgets" bucket. The inserter's hover preview now shows the block rendered against your actual content. ([#39](https://github.com/jeffpaul/daymark/pull/39))
+
 ## [0.6.0] - 2026-08-04
 
 ### Changed
