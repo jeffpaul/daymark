@@ -1,6 +1,6 @@
 # Daymark
 
-![Daymark](https://github.com/jeffpaul/daymark/blob/main/.wordpress-org/banner-1544x500.png)
+![Daymark](.wordpress-org/banner-1544x500.png)
 
 [![CI](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml)
 [![Tests](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml)
