@@ -48,6 +48,17 @@ class Daymark_Renderer {
 	private const STYLE_HANDLE = 'daymark-views';
 
 	/**
+	 * Outline comment-bubble icon (Feather-style, 24x24, stroke-based —
+	 * matches the icon convention already used in assets/app.js).
+	 */
+	private const ICON_COMMENT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-4.7 7.6 8.5 8.5 0 0 1-3.8.9H12a8.48 8.48 0 0 1-4-.9l-5 1 1-5a8.48 8.48 0 0 1-.9-4 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>';
+
+	/**
+	 * Outline heart icon, same style as ICON_COMMENT.
+	 */
+	private const ICON_HEART = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"></path></svg>';
+
+	/**
 	 * Render a Mark view.
 	 *
 	 * @param string               $view Timeline|images|videos|audio|notes.
@@ -169,9 +180,98 @@ class Daymark_Renderer {
 			$html .= '<p class="daymark-item-caption">' . esc_html( $caption ) . '</p>';
 		}
 
+		$html .= $this->render_stats( $post->ID );
 		$html .= '</div></article>';
 
 		return $html;
+	}
+
+	/**
+	 * Render the comment/like stat row for a Mark.
+	 *
+	 * A stat with a zero count shows only its (dimmed) icon — no "0" — so
+	 * the row stays quiet until there's something to report; a stat with
+	 * one or more shows its count next to a bolder icon.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Escaped HTML.
+	 */
+	private function render_stats( int $post_id ): string {
+		$counts = $this->reaction_counts( $post_id );
+
+		/* translators: %d: Number of comments on this Mark. */
+		$comments_format = _n( '%d comment', '%d comments', $counts['comments'], 'daymark' );
+		/* translators: %d: Number of likes on this Mark. */
+		$likes_format = _n( '%d like', '%d likes', $counts['likes'], 'daymark' );
+
+		$html  = '<p class="daymark-item-stats">';
+		$html .= $this->render_stat( self::ICON_COMMENT, $counts['comments'], 'comments', $comments_format );
+		$html .= $this->render_stat( self::ICON_HEART, $counts['likes'], 'likes', $likes_format );
+		$html .= '</p>';
+
+		return $html;
+	}
+
+	/**
+	 * Render one stat pill.
+	 *
+	 * @param string $icon        Trusted inline SVG markup (a class constant).
+	 * @param int    $count       Stat count.
+	 * @param string $modifier    BEM modifier for this stat (e.g. 'comments').
+	 * @param string $label_format Translated `%d` label used for the accessible name.
+	 * @return string Escaped HTML.
+	 */
+	private function render_stat( string $icon, int $count, string $modifier, string $label_format ): string {
+		$is_active = $count > 0;
+
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- $icon is a trusted class constant (inline SVG), not user input.
+		$html = '<span class="daymark-stat daymark-stat--' . esc_attr( $modifier ) . ( $is_active ? ' daymark-stat--active' : '' ) . '" aria-label="' . esc_attr( sprintf( $label_format, $count ) ) . '">' . $icon;
+
+		if ( $is_active ) {
+			$html .= '<span class="daymark-stat__count" aria-hidden="true">' . (int) $count . '</span>';
+		}
+
+		$html .= '</span>';
+
+		return $html;
+	}
+
+	/**
+	 * Count a Mark's replies and reactions.
+	 *
+	 * Replies (comment_type 'comment') include on-site comments and, once
+	 * backflow imports them, replies from Bluesky/the fediverse/webmention.
+	 * Likes (comment_type 'like') are populated the same way, by
+	 * ActivityPub, ATmosphere, and Webmention — all three plugins land
+	 * likes under that exact comment type. Both are 0 for Marks with no
+	 * connected federation plugin or no engagement yet.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array{comments: int, likes: int}
+	 */
+	private function reaction_counts( int $post_id ): array {
+		return array(
+			'comments' => $this->count_comments_of_type( $post_id, 'comment' ),
+			'likes'    => $this->count_comments_of_type( $post_id, 'like' ),
+		);
+	}
+
+	/**
+	 * Count approved comments of one comment_type on a post.
+	 *
+	 * @param int    $post_id Mark post ID.
+	 * @param string $type    Comment type ('comment' or 'like').
+	 * @return int
+	 */
+	private function count_comments_of_type( int $post_id, string $type ): int {
+		return (int) get_comments(
+			array(
+				'post_id' => $post_id,
+				'type'    => $type,
+				'status'  => 'approve',
+				'count'   => true,
+			)
+		);
 	}
 
 	/**

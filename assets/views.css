@@ -109,6 +109,39 @@
 	overflow-wrap: anywhere;
 }
 
+.daymark-item-stats {
+	display: flex;
+	gap: 1rem;
+	margin: 0.125rem 0 0;
+}
+
+.daymark-stat {
+	align-items: center;
+	color: rgba(0, 0, 0, 0.35);
+	display: inline-flex;
+	font-size: 0.8125rem;
+	font-weight: 400;
+	gap: 0.3125rem;
+	line-height: 1;
+}
+
+.daymark-stat--active {
+	color: #7a00df;
+	font-weight: 600;
+}
+
+.daymark-stat svg {
+	stroke-width: 2;
+}
+
+.daymark-stat--active svg {
+	stroke-width: 2.5;
+}
+
+.daymark-stat__count {
+	font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 480px) {
 	.daymark-item-body {
 		padding: 0.75rem 0.875rem 0.875rem;
