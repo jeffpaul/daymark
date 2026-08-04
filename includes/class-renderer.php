@@ -50,8 +50,16 @@ class Daymark_Renderer {
 	/**
 	 * Render a Mark view.
 	 *
-	 * @param string               $view One of timeline|images|videos|audio|notes.
-	 * @param array<string, mixed> $args Optional view arguments. Supports 'count'.
+	 * @param string               $view Timeline|images|videos|audio|notes.
+	 * @param array<string, mixed> $args Optional view arguments. Supports
+	 *                                   'count' and 'wrapper_attributes' — the
+	 *                                   latter is a pre-built HTML attribute
+	 *                                   string (from get_block_wrapper_attributes())
+	 *                                   that the daymark/* blocks pass in so
+	 *                                   color/typography/spacing block supports
+	 *                                   reach the actual markup. The shortcode
+	 *                                   path leaves it unset and gets the plain
+	 *                                   class attribute instead.
 	 * @return string Escaped HTML.
 	 */
 	public function render( string $view, array $args = array() ): string {
@@ -66,7 +74,11 @@ class Daymark_Renderer {
 
 		$query = new WP_Query( $this->build_query_args( $view, $count ) );
 
-		$html = '<div class="daymark-view daymark-view--' . esc_attr( $view ) . '">';
+		$wrapper_attributes = isset( $args['wrapper_attributes'] ) && is_string( $args['wrapper_attributes'] ) && '' !== $args['wrapper_attributes']
+			? $args['wrapper_attributes']
+			: 'class="daymark-view daymark-view--' . esc_attr( $view ) . '"';
+
+		$html = '<div ' . $wrapper_attributes . '>';
 
 		if ( ! $query->have_posts() ) {
 			$html .= '<p class="daymark-view-empty">' . esc_html( $this->empty_message( $view ) ) . '</p>';

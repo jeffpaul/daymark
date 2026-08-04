@@ -49,6 +49,8 @@ class Daymark_Blocks {
 	 * @return void
 	 */
 	public function register(): void {
+		add_filter( 'block_categories_all', array( $this, 'register_category' ) );
+
 		foreach ( self::VIEWS as $view ) {
 			add_shortcode(
 				'daymark_' . $view,
@@ -63,6 +65,27 @@ class Daymark_Blocks {
 				register_block_type( $block_json );
 			}
 		}
+	}
+
+	/**
+	 * Add a dedicated "Daymark" inserter category so the five view blocks
+	 * are grouped together instead of scattered under the generic "Widgets"
+	 * category.
+	 *
+	 * @param array<int, array<string, mixed>> $categories Existing block categories.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function register_category( array $categories ): array {
+		return array_merge(
+			array(
+				array(
+					'slug'  => 'daymark',
+					'title' => __( 'Daymark', 'daymark' ),
+					'icon'  => 'location-alt',
+				),
+			),
+			$categories
+		);
 	}
 
 	/**
