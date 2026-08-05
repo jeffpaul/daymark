@@ -400,13 +400,18 @@ h2[tabindex='-1']:focus {
 	pointer-events: auto;
 }
 
-.daymark-launcher__bubbles {
-	position: relative;
-	z-index: 2;
-}
-
 .daymark-launcher__bubble {
+	/* Positioned relative to .daymark-launcher (the flex row's own box, not
+	   this bubble's immediate parent) so left: 50% lands on the row's true
+	   center — the same center the button sits at. The wrapper div these
+	   bubbles live in is deliberately NOT a positioning context: giving it
+	   `position: relative` here once made IT the containing block instead,
+	   and since it collapses to zero width (only absolutely-positioned
+	   children, no intrinsic size) sitting left-of-center in the flex row,
+	   every bubble's 50% resolved off that phantom left edge — landing
+	   the whole arc visibly left of the button instead of centered above it. */
 	position: absolute;
+	z-index: 2;
 	left: 50%;
 	bottom: 100%;
 	width: 44px;
