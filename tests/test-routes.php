@@ -17,6 +17,19 @@ class Test_Routes extends WP_UnitTestCase {
 	}
 
 	private function registered_rule_patterns(): array {
+		return array_keys( $this->registered_rules() );
+	}
+
+	/**
+	 * Full pattern => query-string map. Patterns alone can't distinguish the
+	 * redirect rules from the direct ones: '^daymark/?$' is the literal
+	 * pattern for both the normal home route (when the base is 'daymark')
+	 * and the migrated-install redirect — only the mapped query string
+	 * ('daymark_app=home' vs '=redirect-home') tells them apart.
+	 *
+	 * @return array<string, string>
+	 */
+	private function registered_rules(): array {
 		global $wp_rewrite;
 		// Top rules accumulate on the shared WP_Rewrite across in-process
 		// tests; start from a clean slate for this registration.
@@ -25,7 +38,7 @@ class Test_Routes extends WP_UnitTestCase {
 		$routes = new Daymark_Routes();
 		$routes->register();
 
-		return array_keys( $wp_rewrite->extra_rules_top );
+		return $wp_rewrite->extra_rules_top;
 	}
 
 	/** Default: no content at /daymark, the app claims it. */
@@ -67,6 +80,41 @@ class Test_Routes extends WP_UnitTestCase {
 		self::factory()->post->create( array( 'post_name' => 'daymark', 'post_title' => 'Daymark' ) );
 
 		$this->assertSame( 'daymark-app', Daymark_Routes::resolve_app_base() );
+	}
+
+	/** A migrated install's legacy base gets a /daymark redirect, since nothing else lives there. */
+	public function test_migrated_base_gets_daymark_redirect() {
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+
+		$rules = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=home', $rules['^moment/?$'] ?? null, 'The persisted (legacy) base keeps working' );
+		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^daymark/?$'] ?? null, 'The new brand URL redirects rather than 404ing' );
+		$this->assertSame( 'index.php?daymark_app=redirect-notifications', $rules['^daymark/notifications/?$'] ?? null );
+	}
+
+	/** A slug collision must never have /daymark rewritten out from under the real content. */
+	public function test_slug_collision_gets_no_daymark_redirect() {
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'daymark',
+			)
+		);
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'daymark-app' );
+
+		$rules = $this->registered_rules();
+
+		$this->assertArrayHasKey( '^daymark-app/?$', $rules );
+		$this->assertArrayNotHasKey( '^daymark/?$', $rules, 'Must not shadow the page actually living at /daymark' );
+	}
+
+	/** A fresh, unmigrated install needs no redirect — the base already is 'daymark'. */
+	public function test_default_base_gets_no_redirect_rule() {
+		$rules = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null, 'The direct app route, not a redirect' );
+		$this->assertSame( 'index.php?daymark_app=notifications', $rules['^daymark/notifications/?$'] ?? null );
 	}
 
 	/** Once resolved, the base is stable until explicitly re-resolved. */
