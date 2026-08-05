@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-05
+
 ### Fixed
 
 - `/daymark` no longer 404s on an install migrated from Moment. The app deliberately keeps its persisted URL (e.g. `/moment`) so a home-screen icon never breaks, but the new brand's own URL had nothing registered at all — it now redirects to wherever the app actually lives. ([#49](https://github.com/jeffpaul/daymark/pull/49))
@@ -140,7 +142,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.6.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.6.1...HEAD
+[0.6.1]: https://github.com/jeffpaul/daymark/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/jeffpaul/daymark/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/jeffpaul/daymark/compare/0.4.0...0.5.0
 [0.4.0]: https://github.com/jeffpaul/daymark/compare/0.3.0...0.4.0
