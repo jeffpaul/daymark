@@ -49,16 +49,44 @@ class Daymark_Routes {
 		add_rewrite_rule( '^' . $base . '/notifications/?$', 'index.php?' . self::QUERY_VAR . '=notifications', 'top' );
 		add_rewrite_rule( '^' . $base . '/manifest\.json$', 'index.php?' . self::QUERY_VAR . '=manifest', 'top' );
 
+		// A migrated install keeps its old base (e.g. 'moment') so a
+		// home-screen icon never breaks — but the new brand's own URL
+		// should still lead somewhere rather than 404. Redirect it to
+		// wherever the app actually lives, but only when /daymark is
+		// genuinely free: a site whose own content already lives there
+		// resolved to 'daymark-app' for exactly that reason, and must
+		// never have /daymark rewritten out from under it.
+		$needs_redirect = 'daymark' !== $base && ! self::daymark_slug_is_taken();
+
+		if ( $needs_redirect ) {
+			add_rewrite_rule( '^daymark/?$', 'index.php?' . self::QUERY_VAR . '=redirect-home', 'top' );
+			add_rewrite_rule( '^daymark/notifications/?$', 'index.php?' . self::QUERY_VAR . '=redirect-notifications', 'top' );
+		}
+
 		add_filter( 'query_vars', array( $this, 'register_query_var' ) );
 		add_filter( 'template_include', array( $this, 'maybe_load_app_shell' ) );
 		add_filter( 'redirect_canonical', array( $this, 'skip_canonical_for_manifest' ) );
 
 		// Installs that predate the option just resolved it: persist the
 		// rules registered above so the app URL works without a manual
-		// permalink flush.
-		if ( $base_was_unresolved ) {
+		// permalink flush. Installs that migrated before this redirect
+		// existed need the same one-time flush, so the new /daymark rule
+		// actually takes effect without a manual permalink resave.
+		if ( $base_was_unresolved || ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) ) ) {
+			update_option( 'daymark_redirect_rule_added', 1 );
 			flush_rewrite_rules( false );
 		}
+	}
+
+	/**
+	 * Whether /daymark is already owned by real site content (a page or
+	 * post at that slug) — the same check resolve_app_base() uses to decide
+	 * whether the app itself must step aside.
+	 *
+	 * @return bool
+	 */
+	private static function daymark_slug_is_taken(): bool {
+		return get_page_by_path( 'daymark', OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
 	}
 
 	/**
@@ -89,8 +117,7 @@ class Daymark_Routes {
 	 * @return string The resolved base.
 	 */
 	public static function resolve_app_base(): string {
-		$taken = get_page_by_path( 'daymark', OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
-		$base  = $taken ? 'daymark-app' : 'daymark';
+		$base = self::daymark_slug_is_taken() ? 'daymark-app' : 'daymark';
 
 		update_option( self::OPTION_APP_BASE, $base );
 
@@ -232,6 +259,15 @@ class Daymark_Routes {
 		if ( 'manifest' === $screen ) {
 			header( 'Content-Type: application/manifest+json; charset=utf-8' );
 			echo wp_json_encode( self::build_manifest() );
+			exit;
+		}
+
+		// /daymark on a migrated install (base still the legacy value):
+		// send visitors to wherever the app actually lives, rather than a
+		// hard 404 on the new brand's own URL.
+		if ( 'redirect-home' === $screen || 'redirect-notifications' === $screen ) {
+			$target = 'redirect-notifications' === $screen ? self::app_url( 'notifications' ) : self::app_url();
+			wp_safe_redirect( $target, 301 );
 			exit;
 		}
 
