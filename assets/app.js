@@ -542,6 +542,70 @@
 			};
 			document.addEventListener('click', this._onDocClick, true);
 			document.addEventListener('keydown', this._onDocKey, true);
+
+			this.bindFooterAutoHide();
+		},
+
+		// Slide the footer (CTA + site nav) out of view while scrolling down
+		// through the list, back in on scroll-up — reclaiming its height for
+		// content without losing the controls. Removing the previous listener
+		// first keeps these from stacking across repeated Home renders, same
+		// as the document click/keydown pair above.
+		bindFooterAutoHide() {
+			const footer = root.querySelector('.daymark-homefooter');
+			if (!footer) {
+				return;
+			}
+
+			if (this._onScroll) {
+				window.removeEventListener('scroll', this._onScroll);
+			}
+			if (this._onFooterFocusIn) {
+				footer.removeEventListener('focusin', this._onFooterFocusIn);
+			}
+
+			let lastY = window.scrollY;
+			let ticking = false;
+
+			this._onScroll = () => {
+				if (ticking) {
+					return;
+				}
+				ticking = true;
+				window.requestAnimationFrame(() => {
+					const y = window.scrollY;
+					const delta = y - lastY;
+
+					// Always show it near the top, regardless of direction.
+					if (y < 80) {
+						footer.classList.remove('is-footer-hidden');
+						lastY = y;
+						ticking = false;
+						return;
+					}
+
+					// Ignore small jitters either direction so the footer
+					// doesn't flicker mid-scroll.
+					if (Math.abs(delta) < 8) {
+						ticking = false;
+						return;
+					}
+
+					footer.classList.toggle('is-footer-hidden', delta > 0);
+					lastY = y;
+					ticking = false;
+				});
+			};
+
+			// A keyboard user tabbing to the CTA or a nav link must always
+			// find it visible, regardless of scroll position — the footer is
+			// never aria-hidden, so this just keeps sight in sync with focus.
+			this._onFooterFocusIn = () => {
+				footer.classList.remove('is-footer-hidden');
+			};
+
+			window.addEventListener('scroll', this._onScroll, { passive: true });
+			footer.addEventListener('focusin', this._onFooterFocusIn);
 		},
 
 		bindDraftTaps(container) {

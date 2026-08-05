@@ -257,6 +257,50 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 	expect(box.y).toBeGreaterThan(viewport.height * 0.6);
 });
 
+// The footer (CTA + site nav) slides out of view while scrolling down the
+// list, to reclaim its height for content, and back in on scroll-up or when
+// keyboard focus reaches one of its own controls.
+test('home footer auto-hides on scroll-down and returns on scroll-up or focus', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// Enough seeded Marks to make the page taller than the viewport.
+	await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		for (let i = 1; i <= 10; i++) {
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: `Auto-hide seed ${i}`, primary_type: 'note' }),
+			});
+		}
+	});
+	await page.goto('/daymark');
+
+	// Wait for the first page of recent rows to actually render — the
+	// footer itself is static markup and appears immediately, but scrolling
+	// before the list has loaded is a race that leaves the page too short
+	// to trigger auto-hide. Recent loads RECENT_PER_PAGE (5) rows at a time.
+	await expect(page.locator('[data-recent-list] .daymark-recent__item')).toHaveCount(5);
+
+	const footer = page.locator('.daymark-homefooter');
+	await expect(footer).toBeVisible();
+	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+
+	await page.mouse.wheel(0, 600);
+	await expect(footer).toHaveClass(/is-footer-hidden/);
+
+	await page.mouse.wheel(0, -600);
+	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+
+	// Hide it again, then confirm tabbing a footer control reveals it.
+	await page.mouse.wheel(0, 600);
+	await expect(footer).toHaveClass(/is-footer-hidden/);
+	await page.locator('[data-action="new-mark"]').focus();
+	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+});
+
 // With IntersectionObserver (all supported browsers) the recent list uses
 // infinite scroll, so the redundant "View more on your timeline" link is not
 // rendered — the appended pages already show everything and the bottom-nav

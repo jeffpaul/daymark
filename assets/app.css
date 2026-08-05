@@ -123,8 +123,8 @@ h2[tabindex='-1']:focus {
 	align-items: center;
 	gap: var(--daymark-spacing-sm);
 	min-height: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
-	padding: var(--daymark-spacing-md);
-	padding-top: calc(var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
+	padding: 12px var(--daymark-spacing-md);
+	padding-top: calc(12px + env(safe-area-inset-top, 0px));
 }
 
 .daymark-topbar__title {
@@ -314,6 +314,20 @@ h2[tabindex='-1']:focus {
 	margin-top: auto;
 	background: var(--daymark-bg);
 	border-top: 1px solid var(--daymark-border);
+	transition: transform 0.2s ease;
+}
+
+/* Slides fully out of view while scrolling down the Recent Marks list,
+   reclaiming its height for content; JS brings it back on scroll-up or
+   when focus lands on one of its controls (see bindFooterAutoHide()). */
+.daymark-homefooter.is-footer-hidden {
+	transform: translateY(100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-homefooter {
+		transition: none;
+	}
 }
 
 .daymark-homefooter__cta {
