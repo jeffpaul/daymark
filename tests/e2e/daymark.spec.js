@@ -278,11 +278,14 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 	});
 	await page.goto('/daymark');
 
-	// Wait for the first page of recent rows to actually render — the
+	// Wait for the page to actually grow taller than the viewport — the
 	// footer itself is static markup and appears immediately, but scrolling
-	// before the list has loaded is a race that leaves the page too short
-	// to trigger auto-hide. Recent loads RECENT_PER_PAGE (5) rows at a time.
-	await expect(page.locator('[data-recent-list] .daymark-recent__item')).toHaveCount(5);
+	// before there's enough rendered content is a race that leaves the page
+	// too short to trigger auto-hide. Gating on a specific row count is
+	// itself racy (infinite scroll can load a second page before the count
+	// is ever observed at the first page's size), so wait on the actual
+	// precondition instead.
+	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 100);
 
 	const footer = page.locator('.daymark-homefooter');
 	await expect(footer).toBeVisible();
