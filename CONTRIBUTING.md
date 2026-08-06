@@ -147,12 +147,13 @@ shapes in words rather than `array{...}` syntax in hook docblocks.)
    change user-facing behavior or the development workflow.
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
-   permanent git history. Say what changed and why, note anything you
-   verified by hand, and delete the template's HTML comment (and the
-   `Fixes #` line if there is no issue). The PR template is deliberately
-   almost empty for this reason — the review checklist, the Playground
-   preview button, and contributor credit are all posted or maintained
-   automatically, so review scaffolding never reaches the commit message.
+   permanent git history. Say what changed and why, and delete the
+   template's HTML comment (and the `Fixes #` line if there is no issue).
+   The PR template is deliberately almost empty for this reason — the
+   review checklist, the Playground preview button, and contributor credit
+   are all posted or maintained automatically, so review scaffolding never
+   reaches the commit message. A test plan checklist belongs the same way —
+   post it as a PR comment, not in the description, once tests have run.
 
 ### Crediting contributors
 
