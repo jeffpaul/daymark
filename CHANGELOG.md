@@ -22,7 +22,7 @@ can't act on them.
 
 ### Added
 
-- The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now expose how many recent Marks they show as a setting in the block editor, instead of requiring a hand-edit of the block markup. The count control appears under Block tab → "Number of Marks" (1–50) and the editor preview updates as you drag it. ([#53](https://github.com/jeffpaul/daymark/pull/53))
+- The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now expose how many recent Marks they show as a setting in the block editor, instead of requiring a hand-edit of the block markup. The count control appears under Block tab → "Number of Marks" (1–50) and the editor preview updates as you drag it. ([#56](https://github.com/jeffpaul/daymark/pull/56))
 
 ## [0.6.1] - 2026-08-05
 
