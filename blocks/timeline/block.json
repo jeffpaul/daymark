@@ -33,5 +33,6 @@
 			"padding": true
 		}
 	},
+	"editorScript": "file:../../build/index.js",
 	"render": "file:./render.php"
 }

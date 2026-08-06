@@ -24,7 +24,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
 * **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
-* **Blocks and shortcodes** — timeline and per-type views are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output.
+* **Blocks and shortcodes** — timeline and per-type views are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
 
 = Publishing destinations =
 
