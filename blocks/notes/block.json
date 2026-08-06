@@ -33,6 +33,6 @@
 			"padding": true
 		}
 	},
-	"editorScript": "file:../../build/index.js",
+	"editorScript": "daymark-editor-script",
 	"render": "file:./render.php"
 }

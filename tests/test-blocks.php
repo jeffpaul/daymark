@@ -18,21 +18,26 @@ class Test_Blocks extends WP_UnitTestCase {
 	private const VIEWS = array( 'timeline', 'images', 'videos', 'audio', 'notes' );
 
 	/**
-	 * Every block.json declares a built editor script that actually exists.
+	 * The shared block editor script handle.
+	 *
+	 * @var string
 	 */
-	public function test_blocks_declare_an_existing_editor_script() {
+	private const EDITOR_SCRIPT_HANDLE = 'daymark-editor-script';
+
+	/**
+	 * Every block.json references the single shared editor script handle, and
+	 * the built bundle that handle points at actually exists.
+	 */
+	public function test_blocks_declare_the_shared_editor_script() {
 		foreach ( self::VIEWS as $view ) {
 			$json_path = DAYMARK_PLUGIN_DIR . 'blocks/' . $view . '/block.json';
 			$metadata  = json_decode( (string) file_get_contents( $json_path ), true );
 
 			$this->assertIsArray( $metadata, "$view block.json must decode" );
-			$this->assertArrayHasKey( 'editorScript', $metadata, "$view block must declare an editor script" );
-			$this->assertStringStartsWith( 'file:', $metadata['editorScript'], "$view editorScript must be a file: path" );
+			$this->assertSame( self::EDITOR_SCRIPT_HANDLE, $metadata['editorScript'] ?? '', "$view editorScript must reference the shared handle" );
 
-			$script_path = dirname( $json_path ) . '/' . substr( $metadata['editorScript'], strlen( 'file:' ) );
-
-			$this->assertFileExists( $script_path, "$view editor script must exist (run 'npm run build')" );
-			$this->assertFileExists( substr_replace( $script_path, '.asset.php', -3 ), "$view editor script asset file must exist" );
+			$this->assertFileExists( DAYMARK_PLUGIN_DIR . 'build/index.js', "editor bundle must exist (run 'npm run build')" );
+			$this->assertFileExists( DAYMARK_PLUGIN_DIR . 'build/index.asset.php', 'editor bundle asset file must exist' );
 		}
 	}
 
@@ -49,15 +54,21 @@ class Test_Blocks extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The registered editor script handle is the generated one, so WordPress
-	 * enqueues the built bundle whenever the block appears in the editor.
-	 * (Checked on the block type rather than wp_scripts()->registered, which
-	 * other tests deliberately reset mid-suite.)
+	 * All five blocks share one editor script handle. Sharing a single handle
+	 * keeps core from enqueuing the built bundle once per block (which would
+	 * re-run registerBlockType() and throw "already registered" errors on
+	 * every editor screen). (Checked on the block types rather than
+	 * wp_scripts()->registered, which other tests deliberately reset
+	 * mid-suite; the script's wiring is pinned by the two checks above.)
 	 */
 	public function test_editor_script_handle_points_at_the_built_bundle() {
-		$block = WP_Block_Type_Registry::get_instance()->get_registered( 'daymark/timeline' );
+		$registry = WP_Block_Type_Registry::get_instance();
 
-		$this->assertNotNull( $block, 'daymark/timeline must be registered' );
-		$this->assertContains( 'daymark-timeline-editor-script', $block->editor_script_handles, 'editor script handle must be attached to the block type' );
+		foreach ( self::VIEWS as $view ) {
+			$block = $registry->get_registered( 'daymark/' . $view );
+
+			$this->assertNotNull( $block, "daymark/$view must be registered" );
+			$this->assertContains( self::EDITOR_SCRIPT_HANDLE, $block->editor_script_handles, "daymark/$view must attach the shared editor script handle" );
+		}
 	}
 }
