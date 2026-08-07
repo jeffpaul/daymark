@@ -99,6 +99,48 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( 'index.php?daymark_app=redirect-notifications', $rules['^moment/notifications/?$'] ?? null );
 	}
 
+	/**
+	 * An install that migrated before Daymark_Migration stopped carrying the
+	 * Moment-era base into daymark_app_base has it stuck there permanently —
+	 * app_base() must self-heal that on the next resolution rather than
+	 * trusting it forever, the way it does for a genuinely valid base.
+	 */
+	public function test_stale_app_base_self_heals_to_daymark() {
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+
+		$this->assertSame( 'daymark', Daymark_Routes::app_base(), 'A stale pre-rename value must not be trusted as a real base' );
+		$this->assertSame( 'daymark', get_option( Daymark_Routes::OPTION_APP_BASE ), 'The correction must persist, not just be returned once' );
+		$this->assertSame( 'moment', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ), 'The old value survives only for the redirect' );
+	}
+
+	/** Once self-healed, the corrected base is a real value and stays sticky. */
+	public function test_stale_app_base_self_heal_is_idempotent() {
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+
+		Daymark_Routes::app_base();
+		$this->assertSame( 'daymark', Daymark_Routes::app_base(), 'Second call sees an already-valid base and changes nothing' );
+	}
+
+	/** An existing legacy-base option is never overwritten by the self-heal either. */
+	public function test_stale_app_base_self_heal_does_not_overwrite_existing_legacy_base() {
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'already-set' );
+
+		Daymark_Routes::app_base();
+
+		$this->assertSame( 'already-set', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ) );
+	}
+
+	/** The self-healed base gets the exact same /daymark route + old-slug redirect as a fresh migration would. */
+	public function test_stale_app_base_self_heal_registers_redirect() {
+		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+
+		$rules = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null );
+		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^moment/?$'] ?? null );
+	}
+
 	/** A legacy-base redirect must never shadow real content that now lives at the old slug. */
 	public function test_legacy_slug_collision_gets_no_redirect() {
 		self::factory()->post->create(
