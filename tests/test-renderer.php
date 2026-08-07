@@ -224,4 +224,24 @@ class Test_Renderer extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( '<audio', $html );
 		$this->assertStringNotContainsString( '<video', $html );
 	}
+
+	/** Every view carries a way back into the app, pointed at the resolved app URL. */
+	public function test_view_includes_backlink_to_app() {
+		$html = ( new Daymark_Renderer() )->render( 'timeline' );
+
+		$this->assertStringContainsString(
+			'<a class="daymark-view-backlink" href="' . esc_url( Daymark_Routes::app_url() ) . '">',
+			$html
+		);
+	}
+
+	/** The backlink appears even when the view has no Marks to show. */
+	public function test_empty_view_still_includes_backlink() {
+		wp_delete_post( $this->daymark_id, true );
+
+		$html = ( new Daymark_Renderer() )->render( 'notes' );
+
+		$this->assertStringContainsString( 'daymark-view-backlink', $html );
+		$this->assertStringContainsString( 'daymark-view-empty', $html );
+	}
 }

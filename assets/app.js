@@ -31,6 +31,11 @@
 		titleEdited: false, // author typed a title: never overwrite it
 		tags: [],
 		primaryType: 'note',
+		// Set by the Home launcher before navigating to #create so the
+		// composer opens pre-set to the chosen type; cleared by
+		// resetComposer(). Only a fallback — picking files or resuming a
+		// draft still wins, exactly as effectiveType() already resolves.
+		pendingType: null,
 		targets: [],
 		categories: [], // selected category term IDs (numbers)
 		aiAssistUsed: false,
@@ -167,6 +172,35 @@
 		return `<svg class="daymark-bottomnav__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
 
+	// The 4 Mark types the Home launcher offers — Gallery isn't its own
+	// bubble since it's just "pick more than one image" in the existing
+	// file picker (detectType() already upgrades image → gallery for you).
+	const LAUNCHER_TYPES = ['image', 'video', 'audio', 'note'];
+
+	// Reuses the same glyphs as the site-views nav so "Images" and "New
+	// Image Mark" share one visual vocabulary.
+	const TYPE_ICONS = {
+		image: PAGE_ICONS.images,
+		video: PAGE_ICONS.videos,
+		audio: PAGE_ICONS.audio,
+		note: PAGE_ICONS.notes,
+	};
+
+	const PLUS_GLYPH = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+
+	// Pre-filters the composer's native file picker to match the launcher
+	// bubble that was tapped — 'note' has no entry since it skips the
+	// picker entirely (see CreateScreen.render()).
+	const ACCEPT_BY_TYPE = {
+		image: 'image/*',
+		video: 'video/*',
+		audio: 'audio/*',
+	};
+
+	function launcherIcon(glyph) {
+		return `<svg class="daymark-launcher__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
+	}
+
 	/**
 	 * Detect the Mark type from selected files (client-side mirror of the
 	 * server-side detection used for routing defaults).
@@ -217,6 +251,7 @@
 		state.titleEdited = false;
 		state.tags = [];
 		state.primaryType = 'note';
+		state.pendingType = null;
 		state.targets = [];
 		state.categories = [];
 		state.aiAssistUsed = false;
@@ -225,8 +260,9 @@
 	}
 
 	// Effective Mark type: new files win; otherwise an edited draft's
-	// stored type; otherwise the caption-only default. The server
-	// recomputes authoritatively on save.
+	// stored type; otherwise the Home launcher's chosen type (if any);
+	// otherwise the caption-only default. The server recomputes
+	// authoritatively on save.
 	function effectiveType() {
 		if (state.files.length && state.editing && state.editing.media.length) {
 			return 'mixed';
@@ -234,7 +270,10 @@
 		if (state.files.length) {
 			return detectType(state.files);
 		}
-		return state.editing ? state.editing.type : detectType(state.files);
+		if (state.editing) {
+			return state.editing.type;
+		}
+		return state.pendingType || detectType(state.files);
 	}
 
 	// Per-type Title-field policy from the server ('optional' | 'hidden').
@@ -426,9 +465,15 @@
 						index === 0 ? 'true' : 'false'
 					}">${esc(filter.label)}</button>`
 			).join('');
+			const timelineUrl = pageLink('timeline');
+			const wordmark = timelineUrl
+				? `<a class="daymark-homelink" href="${esc(timelineUrl)}"><svg class="daymark-homelink__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+						PAGE_ICONS.timeline
+				  }</svg><span>Daymark</span></a>`
+				: 'Daymark';
 			return `
 			<header class="daymark-topbar">
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Daymark</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
 				<button type="button" class="daymark-searchbtn" data-search-toggle aria-label="Search Marks" aria-expanded="false" aria-controls="daymark-searchbar">
 					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
 				</button>
@@ -464,31 +509,40 @@
 				</section>
 			</section>
 			<footer class="daymark-homefooter">
-				<button type="button" class="daymark-btn daymark-btn--primary daymark-btn--hero daymark-homefooter__cta" data-action="new-mark">+ New Mark</button>
 				${(() => {
-					const links = Object.keys(PAGE_LABELS)
-						.filter((view) => pageLink(view))
-						.map(
-							(view) =>
-								`<a class="daymark-bottomnav__link" href="${esc(pageLink(view))}" title="${esc(
-									PAGE_LABELS[view]
-								)}">${pageNavIcon(PAGE_ICONS[view])}<span class="daymark-visually-hidden">${esc(
-									PAGE_LABELS[view]
-								)}</span></a>`
-						)
-						.join('');
-					return links
-						? `<nav class="daymark-bottomnav" aria-label="Site views">${links}</nav>`
-						: '';
+					const navLink = (view) =>
+						`<a class="daymark-bottomnav__link" href="${esc(pageLink(view))}" title="${esc(
+							PAGE_LABELS[view]
+						)}">${pageNavIcon(PAGE_ICONS[view])}<span class="daymark-visually-hidden">${esc(
+							PAGE_LABELS[view]
+						)}</span></a>`;
+					// Timeline moved to the header home-link; the remaining 4
+					// site views flank the launcher, 2 a side.
+					const views = Object.keys(PAGE_LABELS).filter(
+						(view) => 'timeline' !== view && pageLink(view)
+					);
+					const before = views.slice(0, 2).map(navLink).join('');
+					const after = views.slice(2).map(navLink).join('');
+					const bubbles = LAUNCHER_TYPES.map(
+						(type) =>
+							`<button type="button" class="daymark-launcher__bubble" data-launcher-type="${type}" tabindex="-1" aria-hidden="true" aria-label="New ${esc(
+								TYPE_LABELS[type]
+							)} Mark">${launcherIcon(TYPE_ICONS[type])}</button>`
+					).join('');
+					const launcher = `<div class="daymark-launcher" data-launcher>
+						<div class="daymark-launcher__scrim" aria-hidden="true"></div>
+						<div class="daymark-launcher__bubbles" data-launcher-bubbles>${bubbles}</div>
+						<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="New Mark" aria-expanded="false">${launcherIcon(
+							PLUS_GLYPH
+						)}</button>
+					</div>`;
+					return `<nav class="daymark-bottomnav" aria-label="Site views">${before}${launcher}${after}</nav>`;
 				})()}
 			</footer>`;
 		},
 
 		bindEvents() {
-			root.querySelector('[data-action="new-mark"]').addEventListener('click', () => {
-				resetComposer();
-				navigate('#create');
-			});
+			this.bindLauncher();
 
 			// --- Search (collapsible header bar + type-filter chips) ---
 			const searchToggle = root.querySelector('[data-search-toggle]');
@@ -523,9 +577,9 @@
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
 				list.addEventListener('click', (event) => this.onListClick(event));
 			});
-			// Close any open item menu on an outside click or Escape. Removing
-			// the previous pair first keeps these from stacking across the
-			// repeated Home renders within a single session.
+			// Close any open item menu or the launcher on an outside click or
+			// Escape. Removing the previous pair first keeps these from
+			// stacking across the repeated Home renders within a session.
 			if (this._onDocClick) {
 				document.removeEventListener('click', this._onDocClick, true);
 				document.removeEventListener('keydown', this._onDocKey, true);
@@ -534,16 +588,103 @@
 				if (!event.target.closest || !event.target.closest('[data-actions]')) {
 					this.closeItemMenus();
 				}
+				if (!event.target.closest || !event.target.closest('[data-launcher]')) {
+					this.closeLauncher();
+				}
 			};
 			this._onDocKey = (event) => {
 				if ('Escape' === event.key) {
 					this.closeItemMenus();
+					// Escaping a disclosure returns focus to its trigger —
+					// only when the launcher was actually open, so Escape
+					// elsewhere on the page doesn't steal focus.
+					if (this._launcherOpen) {
+						this.closeLauncher();
+						const btn = root.querySelector('[data-action="new-mark"]');
+						if (btn) {
+							btn.focus();
+						}
+					}
 				}
 			};
 			document.addEventListener('click', this._onDocClick, true);
 			document.addEventListener('keydown', this._onDocKey, true);
 
 			this.bindFooterAutoHide();
+		},
+
+		// The Home launcher: tapping "+ New Mark" fans out Image/Video/Audio/
+		// Note bubbles (icon-only arc); tapping a bubble seeds the composer's
+		// pendingType and jumps to #create. Reuses the same open/close
+		// conventions as the per-item ⋯ menu (aria-expanded, focus-first-item
+		// on open) — the bubbles can't use `hidden` like that menu does,
+		// since `hidden` elements can't be CSS-animated, so tabindex/
+		// aria-hidden are toggled by hand instead to keep them out of the
+		// tab order and AT tree while closed.
+		bindLauncher() {
+			const launcher = root.querySelector('[data-launcher]');
+			if (!launcher) {
+				return;
+			}
+			const btn = launcher.querySelector('[data-action="new-mark"]');
+			const bubbles = launcher.querySelectorAll('[data-launcher-type]');
+			const scrim = launcher.querySelector('.daymark-launcher__scrim');
+
+			this._launcherOpen = false;
+
+			this.openLauncher = () => {
+				this._launcherOpen = true;
+				launcher.classList.add('is-open');
+				btn.setAttribute('aria-expanded', 'true');
+				bubbles.forEach((bubble) => {
+					bubble.removeAttribute('tabindex');
+					bubble.removeAttribute('aria-hidden');
+				});
+				const first = bubbles[0];
+				if (first) {
+					first.focus();
+				}
+			};
+
+			this.closeLauncher = () => {
+				if (!this._launcherOpen) {
+					return;
+				}
+				this._launcherOpen = false;
+				launcher.classList.remove('is-open');
+				btn.setAttribute('aria-expanded', 'false');
+				bubbles.forEach((bubble) => {
+					bubble.setAttribute('tabindex', '-1');
+					bubble.setAttribute('aria-hidden', 'true');
+				});
+			};
+
+			btn.addEventListener('click', () => {
+				if (this._launcherOpen) {
+					this.closeLauncher();
+				} else {
+					this.openLauncher();
+				}
+			});
+
+			// The scrim sits inside [data-launcher] (for stacking), so the
+			// shared outside-click handler's closest() check treats a tap on
+			// it as "inside" and leaves it alone — it needs its own listener.
+			// `pointer-events: none` while closed keeps this scoped to only
+			// when the scrim is actually showing.
+			if (scrim) {
+				scrim.addEventListener('click', () => this.closeLauncher());
+			}
+
+			bubbles.forEach((bubble) => {
+				bubble.addEventListener('click', () => {
+					const type = bubble.getAttribute('data-launcher-type');
+					this.closeLauncher();
+					resetComposer();
+					state.pendingType = type;
+					navigate('#create');
+				});
+			});
 		},
 
 		// Slide the footer (CTA + site nav) out of view while scrolling down
@@ -589,6 +730,12 @@
 					if (Math.abs(delta) < 8) {
 						ticking = false;
 						return;
+					}
+
+					// A real scroll closes the launcher too, so its bubbles
+					// never end up floating over a footer that just hid.
+					if (this.closeLauncher) {
+						this.closeLauncher();
 					}
 
 					footer.classList.toggle('is-footer-hidden', delta > 0);
@@ -1181,14 +1328,25 @@
 						: ''
 				}
 				${existingTiles}
-				<div class="daymark-picker">
-					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*,audio/*" multiple />
+				${
+					// The Home launcher's Note bubble jumps straight past the
+					// picker into a focused writing flow — attaching any file
+					// would flip the type away from 'note' anyway (detectType()
+					// only ever returns 'note' when nothing is attached), so
+					// hiding it here loses no real capability.
+					'note' === state.pendingType && !state.files.length && !editing
+						? ''
+						: `<div class="daymark-picker">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="${esc(
+						ACCEPT_BY_TYPE[state.pendingType] || 'image/*,video/*,audio/*'
+					)}" multiple />
 					<label for="daymark-file-input" class="daymark-picker__zone">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
 						<span>Tap to choose media</span>
 						<span class="daymark-picker__hint">Photos, videos, or audio from your device</span>
 					</label>
-				</div>
+				</div>`
+				}
 				<div class="daymark-preview" data-preview></div>
 				<p class="daymark-typebadge">Mark type: <span class="daymark-chip" data-type-badge>${esc(
 					TYPE_LABELS[effectiveType()]
@@ -1213,42 +1371,45 @@
 		},
 
 		bindEvents() {
+			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
 			const caption = root.querySelector('#daymark-caption');
 
-			input.addEventListener('change', () => {
-				const picked = Array.from(input.files || []);
-				picked.forEach((file) => {
-					const duplicate = state.files.some(
-						(entry) =>
-							entry.file.name === file.name &&
-							entry.file.size === file.size &&
-							entry.file.lastModified === file.lastModified
-					);
-					if (duplicate) {
-						return;
-					}
-					state.fileCounter += 1;
-					const isImage = file.type.indexOf('image/') === 0;
-					const entry = {
-						id: 'f' + state.fileCounter,
-						file,
-						url: isImage ? URL.createObjectURL(file) : '',
-						kind: (file.type || '').split('/')[0] || 'file',
-						alt: '',
-						altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
-						altEdited: false,
-					};
-					state.files.push(entry);
-					// Pre-fill alt text from the AI provider (if one is
-					// connected); the author can edit it before publishing.
-					if (entry.altStatus === 'loading') {
-						this.generateAltFor(entry);
-					}
+			if (input) {
+				input.addEventListener('change', () => {
+					const picked = Array.from(input.files || []);
+					picked.forEach((file) => {
+						const duplicate = state.files.some(
+							(entry) =>
+								entry.file.name === file.name &&
+								entry.file.size === file.size &&
+								entry.file.lastModified === file.lastModified
+						);
+						if (duplicate) {
+							return;
+						}
+						state.fileCounter += 1;
+						const isImage = file.type.indexOf('image/') === 0;
+						const entry = {
+							id: 'f' + state.fileCounter,
+							file,
+							url: isImage ? URL.createObjectURL(file) : '',
+							kind: (file.type || '').split('/')[0] || 'file',
+							alt: '',
+							altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
+							altEdited: false,
+						};
+						state.files.push(entry);
+						// Pre-fill alt text from the AI provider (if one is
+						// connected); the author can edit it before publishing.
+						if (entry.altStatus === 'loading') {
+							this.generateAltFor(entry);
+						}
+					});
+					input.value = '';
+					this.refreshMedia();
 				});
-				input.value = '';
-				this.refreshMedia();
-			});
+			}
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;

@@ -134,6 +134,22 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* The Timeline icon + wordmark act as one home-link — Timeline moved here
+   from the bottom nav so the launcher could take its place in that row. */
+.daymark-homelink {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	min-height: var(--daymark-tap-min);
+	color: inherit;
+	text-decoration: none;
+}
+
+.daymark-homelink__icon {
+	color: var(--daymark-accent);
+	flex: none;
+}
+
 .daymark-backlink {
 	display: inline-flex;
 	align-items: center;
@@ -288,11 +304,6 @@ h2[tabindex='-1']:focus {
 	text-decoration: none;
 }
 
-.daymark-btn--hero {
-	min-height: 64px;
-	font-size: 18px;
-}
-
 /* --- Sticky footer action bar --- */
 .daymark-actionbar {
 	position: sticky;
@@ -307,7 +318,7 @@ h2[tabindex='-1']:focus {
 	border-top: 1px solid var(--daymark-border);
 }
 
-/* --- Home footer: primary CTA in the thumb zone, above the site nav --- */
+/* --- Home footer: site nav + the launcher, in the thumb zone --- */
 .daymark-homefooter {
 	position: sticky;
 	bottom: 0;
@@ -330,15 +341,157 @@ h2[tabindex='-1']:focus {
 	}
 }
 
-.daymark-homefooter__cta {
-	display: block;
-	width: calc(100% - 2 * var(--daymark-spacing-md));
-	margin: var(--daymark-spacing-md) var(--daymark-spacing-md) 0;
-}
-
 .daymark-homefooter .daymark-bottomnav {
 	margin-top: 0;
 	border-top: 0;
+}
+
+/* --- Launcher: the "+" fans into Image/Video/Audio/Note bubbles --- */
+.daymark-launcher {
+	position: relative;
+	flex: 1;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+}
+
+.daymark-launcher__btn {
+	position: relative;
+	z-index: 2;
+	width: 54px;
+	height: 54px;
+	margin-top: -20px;
+	border: none;
+	border-radius: 50%;
+	background: var(--daymark-accent);
+	color: var(--daymark-accent-fg);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 8px 18px -6px rgba(201, 58, 6, 0.55), 0 0 0 5px var(--daymark-bg);
+	cursor: pointer;
+}
+
+.daymark-launcher__btn .daymark-launcher__icon {
+	transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* The "+" rotates into an "×" — same glyph, no separate icon swap needed. */
+.daymark-launcher.is-open .daymark-launcher__btn .daymark-launcher__icon {
+	transform: rotate(45deg);
+}
+
+.daymark-launcher.is-open .daymark-launcher__btn {
+	background: var(--daymark-accent-deep);
+}
+
+.daymark-launcher__scrim {
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	background: rgba(0, 0, 0, 0.16);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.2s ease;
+}
+
+.daymark-launcher.is-open .daymark-launcher__scrim {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.daymark-launcher__bubble {
+	/* Positioned relative to .daymark-launcher (the flex row's own box, not
+	   this bubble's immediate parent) so left: 50% lands on the row's true
+	   center — the same center the button sits at. The wrapper div these
+	   bubbles live in is deliberately NOT a positioning context: giving it
+	   `position: relative` here once made IT the containing block instead,
+	   and since it collapses to zero width (only absolutely-positioned
+	   children, no intrinsic size) sitting left-of-center in the flex row,
+	   every bubble's 50% resolved off that phantom left edge — landing
+	   the whole arc visibly left of the button instead of centered above it. */
+	position: absolute;
+	z-index: 2;
+	left: 50%;
+	bottom: 100%;
+	width: 44px;
+	height: 44px;
+	border: 1.5px solid var(--daymark-accent);
+	border-radius: 50%;
+	background: var(--daymark-bg);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.25);
+	opacity: 0;
+	pointer-events: none;
+	transform: translate(-50%, 12px) scale(0.4);
+	/* A back-out easing (overshoots past 1 then settles) reads as a bounce
+	   with pure CSS — the closest a transition gets to spring physics. */
+	transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+
+.daymark-launcher__bubble .daymark-launcher__icon {
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble {
+	pointer-events: auto;
+}
+
+.daymark-launcher__bubble[data-launcher-type="image"] {
+	margin-bottom: 62px;
+}
+
+.daymark-launcher__bubble[data-launcher-type="video"] {
+	margin-bottom: 108px;
+}
+
+.daymark-launcher__bubble[data-launcher-type="audio"] {
+	margin-bottom: 108px;
+}
+
+.daymark-launcher__bubble[data-launcher-type="note"] {
+	margin-bottom: 62px;
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
+	transform: translate(calc(-50% - 78px), -4px) scale(1);
+	opacity: 1;
+	transition-delay: 0.02s;
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
+	transform: translate(calc(-50% - 30px), -2px) scale(1);
+	opacity: 1;
+	transition-delay: 0.08s;
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
+	transform: translate(calc(-50% + 30px), -2px) scale(1);
+	opacity: 1;
+	transition-delay: 0.14s;
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
+	transform: translate(calc(-50% + 78px), -4px) scale(1);
+	opacity: 1;
+	transition-delay: 0.2s;
+}
+
+/* Closing is quicker and never staggered — snappy, not delightful. */
+.daymark-launcher:not(.is-open) .daymark-launcher__bubble {
+	transition: transform 0.16s ease-in, opacity 0.14s ease-in;
+	transition-delay: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-launcher__btn .daymark-launcher__icon,
+	.daymark-launcher__scrim,
+	.daymark-launcher__bubble {
+		transition: none !important;
+		transition-delay: 0s !important;
+	}
 }
 
 /* --- Chips and badges --- */

@@ -89,7 +89,8 @@ class Daymark_Renderer {
 			? $args['wrapper_attributes']
 			: 'class="daymark-view daymark-view--' . esc_attr( $view ) . '"';
 
-		$html = '<div ' . $wrapper_attributes . '>';
+		$html  = '<div ' . $wrapper_attributes . '>';
+		$html .= '<a class="daymark-view-backlink" href="' . esc_url( Daymark_Routes::app_url() ) . '">&larr; Daymark</a>';
 
 		if ( ! $query->have_posts() ) {
 			$html .= '<p class="daymark-view-empty">' . esc_html( $this->empty_message( $view ) ) . '</p>';
