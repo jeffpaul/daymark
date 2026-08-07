@@ -14,7 +14,7 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0",
+    "@playwright/test": "^1.62.1",
     "@wordpress/scripts": "^34.0.0"
   }
 }
