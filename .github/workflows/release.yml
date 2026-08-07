@@ -1,10 +1,11 @@
 name: Release
 
 # Tag-driven release: pushing a version tag (v0.1.0 or 0.1.0) builds the
-# .distignore-filtered distribution zip via wp dist-archive and attaches it
-# to a GitHub release — creating the release, or uploading to it if one
-# was already drafted by hand for the tag. The zip is the artifact to install for testing and
-# the exact tree that would be committed to the wordpress.org SVN trunk.
+# .distignore-filtered distribution zip (same rsync approach as
+# plugin-check.yml's dist build) and attaches it to a GitHub release —
+# creating the release, or uploading to it if one was already drafted by
+# hand for the tag. The zip is the artifact to install for testing and the
+# exact tree that would be committed to the wordpress.org SVN trunk.
 #
 # Guard: the tag must match the plugin's declared version everywhere —
 # daymark.php header, DAYMARK_VERSION, and readme.txt Stable tag — or the
@@ -41,24 +42,20 @@ jobs:
             fi
           done
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
-        with:
-          php-version: '8.3'
-          tools: wp-cli
-
       - name: Build distribution zip
-        env:
-          # setup-php can leave composer with an invalid github-oauth token, which
-          # breaks `wp package install` ("github oauth token ... contains invalid
-          # characters") since it shells out to composer. Force a valid token via
-          # COMPOSER_AUTH, which takes precedence over any stored auth config.
-          COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ github.token }}"}}'
         run: |
-          # Pinned: v3.2+ requires wp-cli ^2.13, which is not yet released —
-          # v3.1.0 works with the wp-cli 2.12 that setup-php installs.
-          wp package install wp-cli/dist-archive-command:v3.1.0
-          wp dist-archive . "$PWD/daymark.zip"
+          # Previously built via `wp dist-archive` (wp-cli/dist-archive-command),
+          # which shells out to wp-cli's own internal Composer bootstrap to
+          # install itself — that bootstrap started rejecting the runner's
+          # GITHUB_TOKEN format outright ("github oauth token ... contains
+          # invalid characters"), deterministically failing every run
+          # regardless of retries or an explicit COMPOSER_AUTH override.
+          # Plain rsync avoids wp-cli/Composer entirely and matches
+          # plugin-check.yml's own already-working dist build.
+          workdir=$(mktemp -d)
+          rsync -a --exclude-from=.distignore --exclude='.git' ./ "$workdir/daymark/"
+          (cd "$workdir" && zip -rq daymark.zip daymark)
+          mv "$workdir/daymark.zip" "$PWD/daymark.zip"
           unzip -l daymark.zip
 
       - name: Guard the zip contents
