@@ -43,15 +43,22 @@ jobs:
               : context.payload.pull_request.number;
 
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
-            const authorId = pr.user && pr.user.id;
 
             const people = new Map(); // id -> login
             const add = (u) => {
               if (!u || !u.id || !u.login) return;
               if (u.type === 'Bot' || u.login.endsWith('[bot]')) return;
-              if (u.id === authorId) return; // the PR author is already the commit author
               people.set(u.id, u.login);
             };
+
+            // The PR author isn't guaranteed to end up as the squash commit's
+            // git author — that depends on how the merge is performed (e.g.
+            // `gh pr merge --squash` doesn't replicate the web UI's
+            // contributor-picker default), so always credit them explicitly
+            // rather than assuming it. Seeded directly (not just relying on
+            // add() finding their commits) so this holds even if their
+            // commits were rewritten before this workflow ever ran.
+            add(pr.user);
 
             for (const c of await github.paginate(github.rest.pulls.listCommits, { owner, repo, pull_number: prNumber, per_page: 100 })) add(c.author);
             for (const r of await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: prNumber, per_page: 100 })) add(r.user);
