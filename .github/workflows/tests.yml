@@ -10,7 +10,15 @@ jobs:
   # "latest and latest-minus-one" support policy (see also
   # wordpress-version-checker.yml, which bumps "Requires at least"/"Tested
   # up to" against the same policy):
-  #   minimum — latest minus one minor (our declared floor: "Requires at least")
+  #   minimum — our actually-declared floor, read straight from daymark.php's
+  #             "Requires at least" header (NOT independently recomputed as
+  #             "stable minus one" — the declared floor can sit above that
+  #             arithmetic result, as it does today: Daymark hard-depends on
+  #             the WP 7.0 AI Client with no existence shims, so "latest
+  #             minus one" cannot go below 7.0 while 7.0 is still current.
+  #             wordpress-version-checker.yml already owns moving this
+  #             number forward on each new WP release — this just tests
+  #             whatever it last set).
   #   stable  — the current release (X.Y from the official API; "Tested up to")
   #   nightly — the highest RC of the NEXT version when one exists
   #             (release-candidate window), otherwise trunk
@@ -35,11 +43,14 @@ jobs:
       scratch-matrix: ${{ steps.resolve.outputs.scratch-matrix }}
       phpunit-matrix: ${{ steps.resolve.outputs.phpunit-matrix }}
     steps:
+      - uses: actions/checkout@v7.0.1
+
       - name: Resolve minimum + stable + candidate
         id: resolve
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import re
           import urllib.request
 
           def head_ok(url):
@@ -57,10 +68,14 @@ jobs:
           major, minor = (int(p) for p in offer.split('.')[:2])
           stable = f'{major}.{minor}'
 
-          # WordPress versioning: X.9 is followed by (X+1).0, so the release
-          # before X.0 is (X-1).9.
+          # WordPress versioning: X.9 is followed by (X+1).0.
           nxt = f'{major + 1}.0' if minor == 9 else f'{major}.{minor + 1}'
-          minimum = f'{major - 1}.9' if minor == 0 else f'{major}.{minor - 1}'
+
+          with open('daymark.php') as plugin_file:
+              match = re.search(r'Requires at least:\s*(\d+\.\d+)', plugin_file.read())
+          if not match:
+              raise SystemExit('Could not find "Requires at least" in daymark.php')
+          minimum = match.group(1)
 
           candidate = 'nightly'
           for n in range(9, 0, -1):  # highest published RC wins
