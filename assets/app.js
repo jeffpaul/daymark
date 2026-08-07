@@ -405,6 +405,62 @@
 		};
 	}
 
+	/**
+	 * Wires one capture-phase document click+keydown pair that closes any
+	 * number of open disclosures on an outside click or Escape — the
+	 * convention already used by the per-item menu and the launcher, now
+	 * shared with search and the reply box. Call again on re-render; a
+	 * previous pair registered on `owner` is removed first so listeners
+	 * never stack across repeated renders of the same view.
+	 *
+	 * Each item's `close` must be idempotent (safe to call whether or not
+	 * it's currently open) — an outside click calls every item's `close`
+	 * unconditionally, same as Escape does. `isOpen`/`focus` are optional
+	 * and Escape-only: when both are given and `isOpen()` is true, `focus()`
+	 * is evaluated — and its returned element focused — right *before*
+	 * `close()` runs, since a query like "which toggle is currently
+	 * expanded" can no longer answer that once `close()` has already
+	 * cleared it. Escape elsewhere on the page never steals focus into
+	 * something that was already closed, since `focus()` is skipped
+	 * entirely when `isOpen()` is false.
+	 *
+	 * @param {object} owner Object to stash the listener refs on (a view controller).
+	 * @param {Array<{selector: string, close: Function, isOpen?: Function, focus?: Function}>} items
+	 *   `selector` marks the disclosure's own trigger + panel — a click inside it is
+	 *   never treated as "outside".
+	 */
+	function bindDismissible(owner, items) {
+		if (owner._onDismissClick) {
+			document.removeEventListener('click', owner._onDismissClick, true);
+			document.removeEventListener('keydown', owner._onDismissKey, true);
+		}
+
+		owner._onDismissClick = (event) => {
+			items.forEach((item) => {
+				if (!event.target.closest || !event.target.closest(item.selector)) {
+					item.close();
+				}
+			});
+		};
+
+		owner._onDismissKey = (event) => {
+			if ('Escape' !== event.key) {
+				return;
+			}
+			items.forEach((item) => {
+				const wasOpen = item.isOpen ? item.isOpen() : false;
+				const focusTarget = wasOpen && item.focus ? item.focus() : null;
+				item.close();
+				if (focusTarget) {
+					focusTarget.focus();
+				}
+			});
+		};
+
+		document.addEventListener('click', owner._onDismissClick, true);
+		document.addEventListener('keydown', owner._onDismissKey, true);
+	}
+
 	// --- Screen router ---
 
 	let SCREENS = {};
@@ -561,13 +617,14 @@
 				searchInput.addEventListener('search', () => {
 					if ('' === searchInput.value) {
 						this.closeSearch();
+						if (searchToggle) {
+							searchToggle.focus();
+						}
 					}
 				});
-				searchInput.addEventListener('keydown', (event) => {
-					if ('Escape' === event.key) {
-						this.closeSearch();
-					}
-				});
+				// Escape is handled once, for the whole bar, by the shared
+				// dismissible wiring below — it fires regardless of which
+				// control inside the bar (input or a filter chip) has focus.
 			}
 			root.querySelectorAll('[data-filter]').forEach((chip) => {
 				chip.addEventListener('click', () => this.setFilter(chip.getAttribute('data-filter')));
@@ -577,38 +634,25 @@
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
 				list.addEventListener('click', (event) => this.onListClick(event));
 			});
-			// Close any open item menu or the launcher on an outside click or
-			// Escape. Removing the previous pair first keeps these from
-			// stacking across the repeated Home renders within a session.
-			if (this._onDocClick) {
-				document.removeEventListener('click', this._onDocClick, true);
-				document.removeEventListener('keydown', this._onDocKey, true);
-			}
-			this._onDocClick = (event) => {
-				if (!event.target.closest || !event.target.closest('[data-actions]')) {
-					this.closeItemMenus();
-				}
-				if (!event.target.closest || !event.target.closest('[data-launcher]')) {
-					this.closeLauncher();
-				}
-			};
-			this._onDocKey = (event) => {
-				if ('Escape' === event.key) {
-					this.closeItemMenus();
-					// Escaping a disclosure returns focus to its trigger —
-					// only when the launcher was actually open, so Escape
-					// elsewhere on the page doesn't steal focus.
-					if (this._launcherOpen) {
-						this.closeLauncher();
-						const btn = root.querySelector('[data-action="new-mark"]');
-						if (btn) {
-							btn.focus();
-						}
-					}
-				}
-			};
-			document.addEventListener('click', this._onDocClick, true);
-			document.addEventListener('keydown', this._onDocKey, true);
+			// Close any open item menu, the launcher, or search on an
+			// outside click or Escape (with focus returned to the launcher
+			// or search's own trigger — the item menu never took focus in
+			// the first place, so it has nothing to return).
+			bindDismissible(this, [
+				{ selector: '[data-actions]', close: () => this.closeItemMenus() },
+				{
+					selector: '[data-launcher]',
+					close: () => this.closeLauncher(),
+					isOpen: () => this._launcherOpen,
+					focus: () => root.querySelector('[data-action="new-mark"]'),
+				},
+				{
+					selector: '[data-search-toggle], [data-searchbar]',
+					close: () => this.closeSearch(),
+					isOpen: () => this.searchOpen,
+					focus: () => root.querySelector('[data-search-toggle]'),
+				},
+			]);
 
 			this.bindFooterAutoHide();
 		},
@@ -949,6 +993,10 @@
 		toggleSearch() {
 			if (this.searchOpen) {
 				this.closeSearch();
+				const toggle = root.querySelector('[data-search-toggle]');
+				if (toggle) {
+					toggle.focus();
+				}
 			} else {
 				this.openSearch();
 			}
@@ -971,6 +1019,11 @@
 		},
 
 		closeSearch() {
+			// Idempotent: an outside click or Escape calls this
+			// unconditionally, whether or not search is actually open.
+			if (!this.searchOpen) {
+				return;
+			}
 			this.searchOpen = false;
 			this.searchQuery = '';
 			this.searchType = '';
@@ -986,7 +1039,6 @@
 			}
 			if (toggle) {
 				toggle.setAttribute('aria-expanded', 'false');
-				toggle.focus();
 			}
 			// Restore the ordinary paginated recent list.
 			this.loadRecent();
@@ -2302,6 +2354,18 @@
 				// Reply interactions are delegated on the list so appended /
 				// re-rendered cards stay wired.
 				list.addEventListener('click', (event) => this.onReplyClick(event));
+				// Close the open reply box (there's only ever one) on an
+				// outside click or Escape, returning focus to its own
+				// toggle — same convention as the item menu, launcher, and
+				// search on Home.
+				bindDismissible(this, [
+					{
+						selector: '[data-reply-toggle], [data-reply-form]',
+						close: () => this.closeAllReplies(list),
+						isOpen: () => !!list.querySelector('[data-reply-toggle][aria-expanded="true"]'),
+						focus: () => list.querySelector('[data-reply-toggle][aria-expanded="true"]'),
+					},
+				]);
 			} catch (err) {
 				if (list && list.isConnected) {
 					list.innerHTML =
