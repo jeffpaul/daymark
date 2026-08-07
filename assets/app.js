@@ -676,17 +676,40 @@
 
 			this._launcherOpen = false;
 
+			// Bubbles become clickable only once this fires — see the CSS
+			// comment on `.is-open.is-settled .daymark-launcher__bubble`
+			// for why that's driven by a JS timer rather than a CSS
+			// transition-delay on pointer-events. 650ms covers the worst
+			// case (the last bubble's own 0.2s delay + 0.42s transition,
+			// 620ms, plus a small margin) — 0 for reduced motion, since
+			// CSS already skips the travel entirely and there's nothing
+			// to wait out.
+			const prefersReducedMotion =
+				window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			const SETTLE_MS = prefersReducedMotion ? 0 : 650;
+
 			this.openLauncher = () => {
 				this._launcherOpen = true;
+				clearTimeout(this._launcherSettleTimer);
+				launcher.classList.remove('is-settled');
 				launcher.classList.add('is-open');
+				this._launcherSettleTimer = setTimeout(() => {
+					launcher.classList.add('is-settled');
+				}, SETTLE_MS);
 				btn.setAttribute('aria-expanded', 'true');
 				bubbles.forEach((bubble) => {
 					bubble.removeAttribute('tabindex');
 					bubble.removeAttribute('aria-hidden');
 				});
+				// `preventScroll` matters here: a bubble sits well within
+				// view the moment it fans out, but the browser's default
+				// focus-triggered scrollIntoView can still nudge the page —
+				// and that nudge is itself a real scroll, which trips the
+				// "a real scroll closes the launcher" listener below,
+				// closing the launcher it was just supposed to focus into.
 				const first = bubbles[0];
 				if (first) {
-					first.focus();
+					first.focus({ preventScroll: true });
 				}
 			};
 
@@ -695,7 +718,8 @@
 					return;
 				}
 				this._launcherOpen = false;
-				launcher.classList.remove('is-open');
+				clearTimeout(this._launcherSettleTimer);
+				launcher.classList.remove('is-open', 'is-settled');
 				btn.setAttribute('aria-expanded', 'false');
 				bubbles.forEach((bubble) => {
 					bubble.setAttribute('tabindex', '-1');
@@ -741,6 +765,7 @@
 			if (!footer) {
 				return;
 			}
+			const launcher = footer.querySelector('[data-launcher]');
 
 			if (this._onScroll) {
 				window.removeEventListener('scroll', this._onScroll);
@@ -777,8 +802,17 @@
 					}
 
 					// A real scroll closes the launcher too, so its bubbles
-					// never end up floating over a footer that just hid.
-					if (this.closeLauncher) {
+					// never end up floating over a footer that just hid —
+					// but only once it has actually settled. Mid fan-out,
+					// bubbles are still `pointer-events: none` (see the CSS
+					// comment on `.is-settled`), so a click there makes the
+					// browser/automation retry its own scrollIntoView against
+					// a still-animating target; that retry's scroll would
+					// otherwise land right here and close the launcher out
+					// from under itself before it ever became clickable.
+					const launcherOpenAndSettled =
+						launcher && launcher.classList.contains('is-settled');
+					if (launcherOpenAndSettled && this.closeLauncher) {
 						this.closeLauncher();
 					}
 

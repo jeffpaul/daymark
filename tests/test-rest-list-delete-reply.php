@@ -80,6 +80,60 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 		$this->assertNotContains( $note, $ids, 'The note Mark is excluded by the type filter' );
 	}
 
+	/**
+	 * A Mark with no featured image (e.g. one migrated from Moment, which
+	 * never set one) still gets a thumbnail from its own media in the
+	 * GET /marks list Home reads from, matching the fallback
+	 * Daymark_Renderer already uses for the public views.
+	 */
+	public function test_list_thumbnail_falls_back_to_media_ids_without_featured_image() {
+		wp_set_current_user( $this->author_a );
+
+		$post_id       = $this->create_mark( $this->author_a, 'image', 'publish', 'No featured image' );
+		$attachment_id = self::factory()->attachment->create_object(
+			__DIR__ . '/e2e/fixtures/test-image.png',
+			$post_id,
+			array( 'post_mime_type' => 'image/png' )
+		);
+		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( array( $attachment_id ) ) );
+
+		$request = $this->request( 'GET', '/daymark/v1/marks' );
+		$marks   = rest_do_request( $request )->get_data();
+		$mark    = current( array_filter( $marks, static fn( $m ) => $m['id'] === $post_id ) );
+
+		$this->assertNotSame( '', $mark['thumbnail'], 'A thumbnail must be found via _daymark_media_ids' );
+		$this->assertStringContainsString( 'test-image', $mark['thumbnail'] );
+	}
+
+	/** A real featured image still wins over _daymark_media_ids when both exist. */
+	public function test_list_thumbnail_prefers_featured_image_over_media_ids() {
+		wp_set_current_user( $this->author_a );
+
+		$post_id             = $this->create_mark( $this->author_a, 'image', 'publish', 'Has featured image' );
+		$featured_id         = self::factory()->attachment->create_object(
+			__DIR__ . '/e2e/fixtures/test-image.png',
+			$post_id,
+			array( 'post_mime_type' => 'image/png' )
+		);
+		$other_attachment_id = self::factory()->attachment->create_upload_object( $this->temp_png() );
+		set_post_thumbnail( $post_id, $featured_id );
+		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( array( $other_attachment_id ) ) );
+
+		$request = $this->request( 'GET', '/daymark/v1/marks' );
+		$marks   = rest_do_request( $request )->get_data();
+		$mark    = current( array_filter( $marks, static fn( $m ) => $m['id'] === $post_id ) );
+
+		$this->assertSame( wp_get_attachment_image_url( $featured_id, 'medium' ), $mark['thumbnail'] );
+	}
+
+	/** A temporary PNG file for attachment tests that don't care about its content. */
+	private function temp_png(): string {
+		$file = wp_tempnam( 'daymark-thumb-' ) . '.png';
+		copy( __DIR__ . '/e2e/fixtures/test-image.png', $file );
+
+		return $file;
+	}
+
 	/** The search param matches on title/content and excludes non-matches. */
 	public function test_list_search_filter() {
 		wp_set_current_user( $this->author_a );

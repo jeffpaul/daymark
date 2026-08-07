@@ -425,7 +425,14 @@ h2[tabindex='-1']:focus {
 	box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.25);
 	opacity: 0;
 	pointer-events: none;
-	transform: translate(-50%, 12px) scale(0.4);
+	/* Collapsed, every type converges on the same point right at the "+"
+	   button — margin isn't in the transition list below (it can't be
+	   smoothly animated), so the per-type spread distance lives entirely
+	   in each open-state transform's translateY instead of a per-type
+	   margin-bottom. That's what makes the open transition read as a
+	   burst outward from the button, not four bubbles already sitting
+	   near their final height that just fade/slide/scale in place. */
+	transform: translate(-50%, 4px) scale(0.3);
 	/* A back-out easing (overshoots past 1 then settles) reads as a bounce
 	   with pure CSS — the closest a transition gets to spring physics. */
 	transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
@@ -435,46 +442,40 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-accent-deep);
 }
 
-.daymark-launcher.is-open .daymark-launcher__bubble {
+/* Clickable only once bindLauncher()'s JS settle timer confirms the whole
+   fan-out has finished (see openLauncher()/closeLauncher() in app.js) —
+   not driven by a CSS transition-delay on pointer-events, which real
+   testing showed some engines' hit-testing ignores outright, applying
+   the end value immediately regardless of any declared delay. Every
+   bubble starts from the same collapsed point and its path crosses the
+   others' on the way out, so nothing is safe to tap — hit-testing included
+   — until the whole sequence has actually settled; enabling each one as
+   soon as *it* arrives would still let an early tap hit a different,
+   still-travelling bubble passing through the same space. */
+.daymark-launcher.is-open.is-settled .daymark-launcher__bubble {
 	pointer-events: auto;
 }
 
-.daymark-launcher__bubble[data-launcher-type="image"] {
-	margin-bottom: 62px;
-}
-
-.daymark-launcher__bubble[data-launcher-type="video"] {
-	margin-bottom: 108px;
-}
-
-.daymark-launcher__bubble[data-launcher-type="audio"] {
-	margin-bottom: 108px;
-}
-
-.daymark-launcher__bubble[data-launcher-type="note"] {
-	margin-bottom: 62px;
-}
-
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(-50% - 78px), -4px) scale(1);
+	transform: translate(calc(-50% - 78px), -66px) scale(1);
 	opacity: 1;
 	transition-delay: 0.02s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(-50% - 30px), -2px) scale(1);
+	transform: translate(calc(-50% - 30px), -110px) scale(1);
 	opacity: 1;
 	transition-delay: 0.08s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(-50% + 30px), -2px) scale(1);
+	transform: translate(calc(-50% + 30px), -110px) scale(1);
 	opacity: 1;
 	transition-delay: 0.14s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(-50% + 78px), -4px) scale(1);
+	transform: translate(calc(-50% + 78px), -66px) scale(1);
 	opacity: 1;
 	transition-delay: 0.2s;
 }
