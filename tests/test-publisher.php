@@ -69,7 +69,8 @@ class Test_Publisher extends WP_UnitTestCase {
 				)
 			);
 
-			$this->assertSame( $expected, get_post_format( $post_id ), "Type {$type} should map to " . var_export( $expected, true ) );
+			$label = false === $expected ? 'false (standard)' : (string) $expected;
+			$this->assertSame( $expected, get_post_format( $post_id ), "Type {$type} should map to post format {$label}" );
 		}
 	}
 
@@ -87,7 +88,13 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( 'aside', get_post_format( $post_id ) );
 
 		// Re-classify as an image via update (mirrors adding media on edit).
-		$publisher->update( $post_id, array( 'caption' => 'Now an image', 'primary_type' => 'image' ) );
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Now an image',
+				'primary_type' => 'image',
+			)
+		);
 		$this->assertSame( 'image', get_post_format( $post_id ) );
 	}
 
@@ -148,7 +155,7 @@ class Test_Publisher extends WP_UnitTestCase {
 	/** Unauthenticated REST create is refused with 401. */
 	public function test_unauthenticated_rest_create_returns_401() {
 		wp_set_current_user( 0 );
-		$request  = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
 		$request->set_param( 'caption', 'nope' );
 		$response = rest_do_request( $request );
 		$this->assertEquals( 401, $response->get_status() );

@@ -303,6 +303,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Apply the per-user rate limit for an expensive action.
+	 *
+	 * Callers return the WP_Error verbatim so a 429 carries its
+	 * `retry_after` data through the REST response.
+	 *
+	 * @param string $action One of Daymark_Rate_Limiter::ACTION_*.
+	 * @return true|WP_Error
+	 */
+	private function rate_limit( string $action ) {
+		$attempt = Daymark_Plugin::instance()->rate_limiter->attempt( $action );
+
+		if ( is_wp_error( $attempt ) ) {
+			return new WP_Error(
+				$attempt->get_error_code(),
+				$attempt->get_error_message(),
+				$attempt->get_error_data()
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Per-post permission callback: the shared check plus edit_post on the
 	 * targeted Mark, so users cannot act on posts they cannot edit.
 	 *
@@ -376,6 +399,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function create_mark( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_PUBLISH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		$files = $request->get_file_params();
 
 		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
@@ -513,6 +542,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function ai_suggestions( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_AI );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		// Canonical request fields are `text` and `primary_type`; accept the
 		// older `caption`/`type` names as fallbacks.
 		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
@@ -541,6 +576,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response
 	 */
 	public function ai_title( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_AI );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		// Canonical request fields are `text` and `primary_type`; accept the
 		// older `caption`/`type` names as fallbacks (matches /ai/suggestions).
 		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
@@ -586,6 +627,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				__( 'You are not allowed to upload media.', 'daymark' ),
 				array( 'status' => rest_authorization_required_code() )
 			);
+		}
+
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_AI );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
 		}
 
 		$files = $request->get_file_params();
@@ -634,6 +681,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function sync_responses( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SYNC );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		$post_id  = absint( $request->get_param( 'id' ) );
 		$networks = $request->get_param( 'networks' );
 
@@ -649,10 +702,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$networks = array_filter( array_map( 'sanitize_key', array_map( 'strval', $networks ) ) );
 
+		// Real connector syncs honor the same per-post cooldown as the cron
+		// path, so manual polling can't hammer a platform API. Mocked demo
+		// syncs stay instant and repeat-safe (they dedupe instead).
+		$backflow = Daymark_Plugin::instance()->backflow_sync;
+
+		if ( $backflow->is_real_backflow_sync( $post_id, $networks ) ) {
+			if ( $backflow->on_cooldown( $post_id ) ) {
+				return new WP_Error(
+					'daymark_sync_cooldown',
+					__( 'Please wait a few minutes before syncing this Mark again.', 'daymark' ),
+					array(
+						'status'      => 429,
+						'retry_after' => Daymark_Backflow_Sync::POST_COOLDOWN_SECONDS,
+					)
+				);
+			}
+		}
+
 		$result = Daymark_Plugin::instance()->notifications->import_responses( $post_id, $networks );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
+		}
+
+		// Record the cooldown after a real sync so the endpoint and the
+		// cron share one 10-minute window per Mark.
+		if ( $backflow->is_real_backflow_sync( $post_id, $networks ) ) {
+			$backflow->mark_cooldown( $post_id );
 		}
 
 		return rest_ensure_response( $result );
@@ -762,6 +839,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function update_daymark( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_PUBLISH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		$files = $request->get_file_params();
 
 		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
@@ -972,6 +1055,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
 			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $thumbnail ? esc_url_raw( $thumbnail ) : '',
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),

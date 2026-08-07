@@ -92,9 +92,15 @@ WP_TESTS_DIR=$TMPDIR/wordpress-tests-lib composer test
 ```bash
 composer phpcs        # report violations
 composer phpcs:fix    # auto-fix what phpcbf can
+composer phpcs-tests  # the same standards against the test suite
+composer phpcompat    # PHP 8.1+ compatibility (PHPCompatibility standard)
 ```
 
-The ruleset is `phpcs.xml.dist`. A clean PHPCS run is required to merge.
+The ruleset is `phpcs.xml.dist`; the test-suite run uses `phpcs-tests.xml.dist`,
+which keeps the same baseline while dropping docblock checks and global-prefix
+rules that the WordPress test harness requires. A clean PHPCS run across both is
+required to merge, and CI runs `composer phpcs` and `composer phpcs-tests` on
+every PR.
 
 ### WP-CLI smoke suite
 
@@ -139,6 +145,10 @@ stubbed AT Protocol API — see the setup notes at the top of
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content
   (not the extension), and no unauthenticated publishing endpoints.
+- **Rate-limit expensive endpoints.** AI calls, publish, and manual sync
+  actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the REST
+  controller); a new expensive endpoint should, too. Uploads carry a per-file
+  and a per-request total byte budget (`Daymark_Publisher::validate_file_list()`).
 
 ## Hook documentation
 

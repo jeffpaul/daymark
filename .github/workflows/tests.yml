@@ -217,10 +217,18 @@ jobs:
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-controllable-helper.php" /tmp/wp/wp-content/mu-plugins/
           # Registers a fake CONNECTED connector for the destination-toggle test.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-connector.php" /tmp/wp/wp-content/mu-plugins/
+          # Relaxes Daymark's rate limits so the suite's rapid-fire publishes
+          # don't 429 (the limiter itself is covered by PHPUnit).
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-rate-limit.php" /tmp/wp/wp-content/mu-plugins/
           # A couple of categories so the "File under" picker has a real
           # choice beyond the site's single default category.
           wp term create category "E2E Photos" --path=/tmp/wp || true
           wp term create category "E2E Travel" --path=/tmp/wp || true
+          # Dismiss the editor's first-visit "Welcome to the editor" guide so
+          # the blocks-editor spec sees the editor canvas (fresh installs show
+          # the guide on the first post-new.php load).
+          wp user meta update 1 wp_persisted_preferences \
+            '{"isWelcomeGuide":false,"core/editor":{"isWelcomeGuide":false}}' --path=/tmp/wp
 
       - name: Start web server
         run: |

@@ -77,7 +77,12 @@ class Test_Routes extends WP_UnitTestCase {
 
 	/** A post (not page) at /daymark also counts as taken. */
 	public function test_existing_post_also_moves_app() {
-		self::factory()->post->create( array( 'post_name' => 'daymark', 'post_title' => 'Daymark' ) );
+		self::factory()->post->create(
+			array(
+				'post_name'  => 'daymark',
+				'post_title' => 'Daymark',
+			)
+		);
 
 		$this->assertSame( 'daymark-app', Daymark_Routes::resolve_app_base() );
 	}
@@ -121,7 +126,12 @@ class Test_Routes extends WP_UnitTestCase {
 	public function test_base_is_sticky_between_resolutions() {
 		$this->assertSame( 'daymark', Daymark_Routes::resolve_app_base() );
 
-		self::factory()->post->create( array( 'post_type' => 'page', 'post_name' => 'daymark' ) );
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'daymark',
+			)
+		);
 
 		$this->assertSame( 'daymark', Daymark_Routes::app_base(), 'app_base() must not move once persisted' );
 		$this->assertSame( 'daymark-app', Daymark_Routes::resolve_app_base(), 'Re-activation re-resolves' );
@@ -148,7 +158,12 @@ class Test_Routes extends WP_UnitTestCase {
 
 	/** The manifest tracks the resolved base and uses PNG plugin-URL icons. */
 	public function test_manifest_tracks_base() {
-		self::factory()->post->create( array( 'post_type' => 'page', 'post_name' => 'daymark' ) );
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'daymark',
+			)
+		);
 		Daymark_Routes::resolve_app_base();
 
 		$manifest = Daymark_Routes::build_manifest();

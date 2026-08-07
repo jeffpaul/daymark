@@ -9,9 +9,8 @@ jobs:
   plugin-check:
     name: WordPress Plugin Check
     runs-on: ubuntu-latest
-    # Advisory for the prototype: surfaces findings in the run log without
-    # blocking merges. Flip to blocking before any public/dot-org release.
-    continue-on-error: true
+    # Blocking since the 0.7.0 hardening pass: findings fail the run so
+    # dot-org-style review stays clean on every PR.
     steps:
       - uses: actions/checkout@v7.0.1
 

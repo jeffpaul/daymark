@@ -210,7 +210,7 @@ class Daymark_Syndication_Registry {
 	 */
 	public function publish_to_targets( int $post_id, array $target_ids, array $payload ): array {
 		$results = array();
-		$type    = isset( $payload['primary_type'] ) ? sanitize_key( (string) $payload['primary_type'] ) : '';
+		$type    = sanitize_key( (string) ( $payload['primary_type'] ?? '' ) );
 
 		foreach ( $target_ids as $id ) {
 			$connector = $this->get_connector( (string) $id );
@@ -292,7 +292,7 @@ class Daymark_Syndication_Registry {
 				'external_url'       => isset( $result['external_url'] ) ? (string) $result['external_url'] : null,
 				'label'              => $connector ? $connector->get_label() : $connector_id,
 				'published_at'       => current_time( 'mysql' ),
-				'status'             => isset( $result['status'] ) ? (string) $result['status'] : 'mocked',
+				'status'             => (string) ( $result['status'] ?? 'mocked' ),
 				// Real connectors report backflow support in their publish result.
 				'backflow_supported' => ! empty( $result['backflow_supported'] ),
 			);

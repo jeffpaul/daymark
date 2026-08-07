@@ -38,6 +38,7 @@ package.json       export-ignore
 package-lock.json  export-ignore
 phpcs.xml          export-ignore
 phpcs.xml.dist     export-ignore
+phpcs-tests.xml.dist export-ignore
 phpunit.xml        export-ignore
 phpunit.xml.dist   export-ignore
 playwright.config.js export-ignore
