@@ -52,8 +52,10 @@ class Daymark_Routes {
 	 * @return void
 	 */
 	public function register(): void {
-		$base_was_unresolved = '' === (string) get_option( self::OPTION_APP_BASE, '' );
-		$base                = self::app_base();
+		$stored_base          = (string) get_option( self::OPTION_APP_BASE, '' );
+		$base_was_unresolved  = '' === $stored_base;
+		$base_was_self_healed = '' !== $stored_base && ! self::is_valid_base( $stored_base );
+		$base                 = self::app_base();
 
 		add_rewrite_rule( '^' . $base . '/?$', 'index.php?' . self::QUERY_VAR . '=home', 'top' );
 		add_rewrite_rule( '^' . $base . '/notifications/?$', 'index.php?' . self::QUERY_VAR . '=notifications', 'top' );
@@ -80,9 +82,11 @@ class Daymark_Routes {
 		// Installs that predate the option just resolved it: persist the
 		// rules registered above so the app URL works without a manual
 		// permalink flush. Installs that migrated before this redirect
-		// existed need the same one-time flush, so the new /daymark rule
-		// actually takes effect without a manual permalink resave.
-		if ( $base_was_unresolved || ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) ) ) {
+		// existed, or before app_base() started self-healing a stale
+		// pre-rename value (see app_base()), need the same one-time flush,
+		// so the new /daymark rule actually takes effect without a manual
+		// permalink resave.
+		if ( $base_was_unresolved || $base_was_self_healed || ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) ) ) {
 			update_option( 'daymark_redirect_rule_added', 1 );
 			flush_rewrite_rules( false );
 		}
@@ -113,7 +117,26 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * Whether a base value is one this code would actually persist itself.
+	 *
+	 * @param string $base Base value to check.
+	 * @return bool
+	 */
+	private static function is_valid_base( string $base ): bool {
+		return 'daymark' === $base || 'daymark-app' === $base;
+	}
+
+	/**
 	 * The app's base path. Resolves and persists on first use.
+	 *
+	 * Self-heals a stale pre-rename value: an install that migrated before
+	 * Daymark_Migration stopped carrying the old Moment-era base into this
+	 * option (see its class docblock) has it permanently stuck at e.g.
+	 * 'moment' otherwise — this option is deliberately never re-resolved
+	 * once set, so nothing else would ever correct it. The old value is
+	 * captured into OPTION_LEGACY_APP_BASE first, same as a fresh migration
+	 * does, so register()'s redirect still 301s it to wherever the app
+	 * actually resolves to now.
 	 *
 	 * @return string 'daymark', or 'daymark-app' when /daymark is owned by
 	 *                existing site content.
@@ -122,7 +145,13 @@ class Daymark_Routes {
 		$base = get_option( self::OPTION_APP_BASE, '' );
 
 		if ( is_string( $base ) && '' !== $base ) {
-			return $base;
+			if ( self::is_valid_base( $base ) ) {
+				return $base;
+			}
+
+			if ( false === get_option( self::OPTION_LEGACY_APP_BASE, false ) ) {
+				update_option( self::OPTION_LEGACY_APP_BASE, $base );
+			}
 		}
 
 		return self::resolve_app_base();
