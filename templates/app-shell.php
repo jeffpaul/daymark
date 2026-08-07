@@ -34,6 +34,35 @@ if ( ! current_user_can( 'edit_posts' ) ) {
 	);
 }
 
+// Defense-in-depth: the shell is a self-contained document with one
+// same-origin script and stylesheet, so restrict what it may load. The
+// inline bootstrap config (window.daymarkApp) is JSON_HEX-escaped server-
+// side but still requires 'unsafe-inline' in script-src.
+$daymark_csp_parts = array(
+	"default-src 'self'",
+	"script-src 'self' 'unsafe-inline'",
+	"style-src 'self' 'unsafe-inline'",
+	'img-src ' . "'self' data: blob:",
+	'media-src ' . "'self' blob:",
+	"connect-src 'self'",
+	"font-src 'self' data:",
+	"object-src 'none'",
+	"base-uri 'self'",
+	"frame-ancestors 'none'",
+	"form-action 'self'",
+);
+
+/**
+ * Filters the app shell's Content-Security-Policy header.
+ *
+ * @param string $policy The full CSP policy string.
+ */
+$daymark_csp = (string) apply_filters( 'daymark_app_content_security_policy', implode( '; ', $daymark_csp_parts ) );
+
+if ( '' !== $daymark_csp && ! headers_sent() ) {
+	header( 'Content-Security-Policy: ' . $daymark_csp );
+}
+
 $daymark_user = wp_get_current_user();
 
 /*

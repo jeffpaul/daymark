@@ -68,8 +68,8 @@ class Daymark_Blocks {
 		wp_register_script(
 			self::EDITOR_SCRIPT_HANDLE,
 			DAYMARK_PLUGIN_URL . 'build/index.js',
-			isset( $asset['dependencies'] ) ? (array) $asset['dependencies'] : array(),
-			isset( $asset['version'] ) ? $asset['version'] : DAYMARK_VERSION,
+			(array) ( $asset['dependencies'] ?? array() ),
+			$asset['version'] ?? DAYMARK_VERSION,
 			true
 		);
 

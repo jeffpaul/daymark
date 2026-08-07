@@ -78,7 +78,7 @@ class Daymark_Renderer {
 			$view = 'timeline';
 		}
 
-		$count = isset( $args['count'] ) ? absint( $args['count'] ) : self::DEFAULT_COUNT;
+		$count = absint( $args['count'] ?? self::DEFAULT_COUNT );
 		$count = max( 1, min( self::MAX_COUNT, $count ) );
 
 		$this->enqueue_styles();

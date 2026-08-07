@@ -69,7 +69,8 @@ class Test_Publisher extends WP_UnitTestCase {
 				)
 			);
 
-			$this->assertSame( $expected, get_post_format( $post_id ), "Type {$type} should map to " . var_export( $expected, true ) );
+			$label = false === $expected ? 'false (standard)' : (string) $expected;
+			$this->assertSame( $expected, get_post_format( $post_id ), "Type {$type} should map to post format {$label}" );
 		}
 	}
 
@@ -87,7 +88,13 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( 'aside', get_post_format( $post_id ) );
 
 		// Re-classify as an image via update (mirrors adding media on edit).
-		$publisher->update( $post_id, array( 'caption' => 'Now an image', 'primary_type' => 'image' ) );
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Now an image',
+				'primary_type' => 'image',
+			)
+		);
 		$this->assertSame( 'image', get_post_format( $post_id ) );
 	}
 
@@ -145,10 +152,88 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertIsInt( $post_id );
 	}
 
+	/** The per-file cap is filterable independently of the total budget. */
+	public function test_per_file_cap_is_filterable() {
+		add_filter( 'daymark_upload_max_bytes', '__return_zero' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+
+		$publisher = new Daymark_Publisher();
+		$result    = $publisher->publish(
+			array( 'caption' => 'Filtered per-file cap' ),
+			array(
+				'files' => array(
+					'name'     => 'small.png',
+					'type'     => 'image/png',
+					'tmp_name' => $fixture,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $fixture ), // Well under the real default; only the filter makes this fail.
+				),
+			)
+		);
+
+		remove_filter( 'daymark_upload_max_bytes', '__return_zero' );
+
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'daymark_upload_too_large', $result->get_error_code() );
+	}
+
+	/** A per-request total byte budget stops many files from bypassing the per-file cap. */
+	public function test_combined_upload_honors_total_budget() {
+		add_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+
+		$publisher = new Daymark_Publisher();
+		$result    = $publisher->publish(
+			array( 'caption' => 'Over budget' ),
+			array(
+				'files' => array(
+					'name'     => array( 'one.png', 'two.png' ),
+					'type'     => array( 'image/png', 'image/png' ),
+					'tmp_name' => array( $fixture, $fixture ),
+					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
+					'size'     => array( filesize( $fixture ), filesize( $fixture ) ),
+				),
+			)
+		);
+
+		remove_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
+
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'daymark_upload_total_too_large', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/** A single file under the total budget still uploads fine. */
+	public function test_combined_upload_within_budget_passes() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-budget-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'Under budget' ),
+			array(
+				'files' => array(
+					'name'     => 'under.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertCount( 1, (array) $media_ids );
+	}
+
 	/** Unauthenticated REST create is refused with 401. */
 	public function test_unauthenticated_rest_create_returns_401() {
 		wp_set_current_user( 0 );
-		$request  = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
 		$request->set_param( 'caption', 'nope' );
 		$response = rest_do_request( $request );
 		$this->assertEquals( 401, $response->get_status() );

@@ -74,9 +74,11 @@ abstract class Daymark_Connector_Base implements Daymark_Syndication_Connector {
 	/**
 	 * Mock publish. Returns deterministic demo data; never throws.
 	 *
-	 * TODO: Real implementation would authenticate via the WordPress
-	 * Connector API or an existing social publishing plugin, then call
-	 * the platform API. See:
+	 * Bundled connectors are mock-only by design. Real syndication rides on
+	 * ecosystem plugins (publicize-style + federation) or a companion that
+	 * registers via daymark_register_connectors. A real connector would
+	 * authenticate via the WordPress Connectors API or an existing social
+	 * publishing plugin, then call the platform API:
 	 * https://make.wordpress.org/core/2026/03/18/introducing-the-connectors-api-in-wordpress-7-0/
 	 *
 	 * @param int                  $post_id Mark post ID.

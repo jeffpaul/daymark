@@ -159,6 +159,41 @@ class Test_Alt_Text extends WP_UnitTestCase {
 		$this->assertSame( '', $this->alt_of( $media[1] ), 'An empty map value clears alt' );
 	}
 
+	/** The ID-mapped alt editor is scoped to the Mark's own media (IDOR guard). */
+	public function test_existing_alt_map_cannot_touch_foreign_attachments() {
+		$publisher = new Daymark_Publisher();
+
+		$post_id = (int) $publisher->publish(
+			array(
+				'caption' => 'Own gallery',
+				'status'  => 'draft',
+				'alt'     => array( 'Mine' ),
+			),
+			$this->files_array( array( $this->temp_png() ) )
+		);
+
+		$own = $this->media_ids_of( $post_id )[0];
+
+		// A second attachment that belongs to a different post entirely.
+		$other_post = (int) self::factory()->post->create();
+		$foreign    = (int) self::factory()->attachment->create_upload_object( $this->temp_png(), $other_post );
+		update_post_meta( $foreign, '_wp_attachment_image_alt', 'Keep me' );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Edited gallery',
+				'existing_alt' => array(
+					(string) $own     => 'Mine, revised',
+					(string) $foreign => 'Stolen',
+				),
+			)
+		);
+
+		$this->assertSame( 'Mine, revised', $this->alt_of( $own ) );
+		$this->assertSame( 'Keep me', $this->alt_of( $foreign ), 'An attachment outside the Mark must be untouched' );
+	}
+
 	/** GET /marks/{id} exposes each image's current alt for the composer. */
 	public function test_get_daymark_media_includes_alt() {
 		$publisher = new Daymark_Publisher();
@@ -214,6 +249,7 @@ class Test_Alt_Text extends WP_UnitTestCase {
 	/** A non-image upload is rejected. */
 	public function test_rest_alt_text_rejects_non_image() {
 		$txt = wp_tempnam( 'daymark-notimg-' ) . '.txt';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture write; WP_Filesystem is unnecessary here.
 		file_put_contents( $txt, 'just text, not an image' );
 
 		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/alt-text' );

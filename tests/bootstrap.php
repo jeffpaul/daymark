@@ -15,6 +15,7 @@ if ( ! $_tests_dir ) {
 }
 
 if ( ! file_exists( $_tests_dir . '/includes/functions.php' ) ) {
+	// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Pre-bootstrap STDERR notice; WP_Filesystem is not loaded yet.
 	fwrite(
 		STDERR,
 		"SKIPPED: WordPress test library not found at {$_tests_dir}.\n\n"

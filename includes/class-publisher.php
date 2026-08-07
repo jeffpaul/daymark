@@ -118,6 +118,13 @@ class Daymark_Publisher {
 	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB.
 
 	/**
+	 * Maximum accepted total size, in bytes, across all files in one request.
+	 *
+	 * @var int
+	 */
+	public const MAX_TOTAL_FILE_BYTES = 200 * 1024 * 1024; // 200 MB.
+
+	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
 	 *
 	 * Content sniffing (finfo) reports some formats with non-canonical names (e.g. WAV).
@@ -146,8 +153,7 @@ class Daymark_Publisher {
 	 * @return int|WP_Error Post ID on success.
 	 */
 	public function publish( array $data, array $files = array() ) {
-		$caption = isset( $data['caption'] ) ? wp_kses_post( (string) $data['caption'] ) : '';
-		$caption = trim( $caption );
+		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
 
 		$file_list = $this->normalize_files( $files );
 
@@ -159,13 +165,11 @@ class Daymark_Publisher {
 			);
 		}
 
-		// Validate every file BEFORE uploading any of them.
-		foreach ( $file_list as $file ) {
-			$valid = $this->validate_file( $file );
+		// Validate every file (and the request total) BEFORE uploading any.
+		$valid = $this->validate_file_list( $file_list );
 
-			if ( is_wp_error( $valid ) ) {
-				return $valid;
-			}
+		if ( is_wp_error( $valid ) ) {
+			return $valid;
 		}
 
 		$media_ids = $this->sideload_files( $file_list );
@@ -174,7 +178,7 @@ class Daymark_Publisher {
 			return $media_ids;
 		}
 
-		$requested_type = isset( $data['primary_type'] ) ? sanitize_key( (string) $data['primary_type'] ) : '';
+		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 		$type           = $this->detect_primary_type( $media_ids, $requested_type );
 
 		$defaults = $this->sanitize_connector_ids( $data['default_destinations'] ?? array() );
@@ -213,7 +217,7 @@ class Daymark_Publisher {
 			$targets = $this->filter_connected( $this->get_effective_defaults( $type ) );
 		}
 
-		$title = isset( $data['title'] ) ? sanitize_text_field( (string) $data['title'] ) : '';
+		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
 			$title = $this->generate_title( $caption );
@@ -286,7 +290,7 @@ class Daymark_Publisher {
 		// single alt_text for the first image when no positional list is sent.
 		$this->apply_positional_alt( $media_ids, $data['alt'] ?? null );
 
-		$alt_text = isset( $data['alt_text'] ) ? sanitize_text_field( (string) $data['alt_text'] ) : '';
+		$alt_text = sanitize_text_field( (string) ( $data['alt_text'] ?? '' ) );
 		if ( '' !== $alt_text && $media_ids && ! isset( $data['alt'] ) ) {
 			$first_id = (int) $media_ids[0];
 			if ( wp_attachment_is_image( $first_id ) && '' === (string) get_post_meta( $first_id, '_wp_attachment_image_alt', true ) ) {
@@ -405,7 +409,7 @@ class Daymark_Publisher {
 			);
 		}
 
-		$caption = isset( $data['caption'] ) ? trim( wp_kses_post( (string) $data['caption'] ) ) : '';
+		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
 
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
@@ -420,12 +424,10 @@ class Daymark_Publisher {
 			);
 		}
 
-		foreach ( $file_list as $file ) {
-			$valid = $this->validate_file( $file );
+		$valid = $this->validate_file_list( $file_list );
 
-			if ( is_wp_error( $valid ) ) {
-				return $valid;
-			}
+		if ( is_wp_error( $valid ) ) {
+			return $valid;
 		}
 
 		$new_ids = $this->sideload_files( $file_list );
@@ -436,7 +438,7 @@ class Daymark_Publisher {
 
 		$media_ids = array_merge( $existing_media, array_map( 'intval', $new_ids ) );
 
-		$requested_type = isset( $data['primary_type'] ) ? sanitize_key( (string) $data['primary_type'] ) : '';
+		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 
 		// A caption-only edit (no media to detect from, no explicit type)
 		// must not silently reclassify the Mark to 'note' — keep its stored
@@ -459,7 +461,7 @@ class Daymark_Publisher {
 		$categories_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
 		$categories          = $categories_provided ? $this->sanitize_category_ids( $raw_categories ) : array();
 
-		$title = isset( $data['title'] ) ? sanitize_text_field( (string) $data['title'] ) : '';
+		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
 			$title = $this->generate_title( $caption );
@@ -484,10 +486,12 @@ class Daymark_Publisher {
 
 		// Alt text: positional for the newly added files, plus a map keyed
 		// by attachment ID for media already on the Mark (edited in place).
+		// The map is scoped to the Mark's own media so an edit can never
+		// overwrite alt text on an attachment that belongs elsewhere.
 		$this->apply_positional_alt( array_map( 'intval', $new_ids ), $data['alt'] ?? null );
-		$this->apply_alt_map( $data['existing_alt'] ?? null );
+		$this->apply_alt_map( $data['existing_alt'] ?? null, $media_ids );
 
-		$alt_text = isset( $data['alt_text'] ) ? sanitize_text_field( (string) $data['alt_text'] ) : '';
+		$alt_text = sanitize_text_field( (string) ( $data['alt_text'] ?? '' ) );
 		if ( '' !== $alt_text && $media_ids && ! isset( $data['alt'] ) && ! isset( $data['existing_alt'] ) ) {
 			$first_id = (int) $media_ids[0];
 			if ( wp_attachment_is_image( $first_id ) && '' === (string) get_post_meta( $first_id, '_wp_attachment_image_alt', true ) ) {
@@ -669,14 +673,22 @@ class Daymark_Publisher {
 			);
 		}
 
-		if ( (int) ( $file['size'] ?? 0 ) > self::MAX_FILE_BYTES ) {
+		/**
+		 * Filters the maximum accepted size of a single uploaded file, in bytes.
+		 *
+		 * @param int $max_bytes Defaults to Daymark_Publisher::MAX_FILE_BYTES.
+		 */
+		$max_file_bytes = (int) apply_filters( 'daymark_upload_max_bytes', self::MAX_FILE_BYTES );
+		$max_file_bytes = max( 1, $max_file_bytes );
+
+		if ( (int) ( $file['size'] ?? 0 ) > $max_file_bytes ) {
 			return new WP_Error(
 				'daymark_upload_too_large',
 				sprintf(
 					/* translators: 1: file name, 2: maximum upload size (e.g. "50 MB"). */
 					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'daymark' ),
 					sanitize_text_field( (string) $file['name'] ),
-					size_format( self::MAX_FILE_BYTES )
+					size_format( $max_file_bytes )
 				),
 				array( 'status' => 400 )
 			);
@@ -697,13 +709,57 @@ class Daymark_Publisher {
 
 		// 2) WordPress filename/extension cross-check.
 		$check      = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
-		$check_mime = isset( $check['type'] ) ? (string) $check['type'] : '';
+		$check_mime = (string) ( $check['type'] ?? '' );
 		$check_mime = self::MIME_ALIASES[ $check_mime ] ?? $check_mime;
 
 		if ( '' === $check_mime || ! in_array( $check_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
 				'invalid_mime',
 				__( 'File type not allowed.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate the whole file list before any upload: each file individually,
+	 * plus a per-request total byte budget so many files cannot bypass the
+	 * per-file cap.
+	 *
+	 * @param array<int, array<string, mixed>> $file_list Flat list of file arrays.
+	 * @return true|WP_Error
+	 */
+	private function validate_file_list( array $file_list ) {
+		/**
+		 * Filters the maximum combined size of one upload request, in bytes.
+		 *
+		 * @param int $max_bytes Defaults to Daymark_Publisher::MAX_TOTAL_FILE_BYTES.
+		 */
+		$max_total = (int) apply_filters( 'daymark_upload_total_max_bytes', self::MAX_TOTAL_FILE_BYTES );
+		$max_total = max( 1, $max_total );
+
+		$total = 0;
+
+		foreach ( $file_list as $file ) {
+			$valid = $this->validate_file( $file );
+
+			if ( is_wp_error( $valid ) ) {
+				return $valid;
+			}
+
+			$total += (int) ( $file['size'] ?? 0 );
+		}
+
+		if ( $total > $max_total ) {
+			return new WP_Error(
+				'daymark_upload_total_too_large',
+				sprintf(
+					/* translators: %s: maximum total upload size (e.g. "100 MB"). */
+					__( 'The combined upload is too large. Maximum total is %s.', 'daymark' ),
+					size_format( $max_total )
+				),
 				array( 'status' => 400 )
 			);
 		}
@@ -1013,12 +1069,15 @@ class Daymark_Publisher {
 	 *
 	 * Used when editing a Mark: { attachmentId: altText }. An empty value
 	 * clears that image's alt (an intentional edit); non-image IDs are
-	 * ignored.
+	 * ignored. IDs are restricted to the Mark's own media list so this can
+	 * never be used to edit alt text on an attachment that belongs to
+	 * another post.
 	 *
-	 * @param mixed $map Alt map (array or JSON string) keyed by attachment ID.
+	 * @param mixed $map         Alt map (array or JSON string) keyed by attachment ID.
+	 * @param int[] $allowed_ids Attachment IDs the map is allowed to touch.
 	 * @return void
 	 */
-	private function apply_alt_map( $map ): void {
+	private function apply_alt_map( $map, array $allowed_ids ): void {
 		if ( is_string( $map ) ) {
 			$decoded = json_decode( $map, true );
 			$map     = is_array( $decoded ) ? $decoded : null;
@@ -1028,10 +1087,12 @@ class Daymark_Publisher {
 			return;
 		}
 
+		$allowed_ids = array_map( 'intval', $allowed_ids );
+
 		foreach ( $map as $id => $alt ) {
 			$id = absint( $id );
 
-			if ( $id && wp_attachment_is_image( $id ) ) {
+			if ( $id && in_array( $id, $allowed_ids, true ) && wp_attachment_is_image( $id ) ) {
 				update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( (string) $alt ) );
 			}
 		}

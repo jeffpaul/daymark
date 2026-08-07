@@ -31,7 +31,8 @@ class Test_Blocks extends WP_UnitTestCase {
 	public function test_blocks_declare_the_shared_editor_script() {
 		foreach ( self::VIEWS as $view ) {
 			$json_path = DAYMARK_PLUGIN_DIR . 'blocks/' . $view . '/block.json';
-			$metadata  = json_decode( (string) file_get_contents( $json_path ), true );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local fixture, not a remote URL.
+			$metadata = json_decode( (string) file_get_contents( $json_path ), true );
 
 			$this->assertIsArray( $metadata, "$view block.json must decode" );
 			$this->assertSame( self::EDITOR_SCRIPT_HANDLE, $metadata['editorScript'] ?? '', "$view editorScript must reference the shared handle" );

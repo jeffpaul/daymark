@@ -60,7 +60,7 @@ class Test_Publish_Helpers extends WP_UnitTestCase {
 	public function test_detects_by_class_signature() {
 		// A dummy plugin definition pointing at a class we define here.
 		if ( ! class_exists( 'Daymark_Test_Publicize' ) ) {
-			// phpcs:ignore Squiz.Commenting.ClassComment.Missing, Generic.CodeAnalysis.EmptyStatement
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only stub class; no user input.
 			eval( 'class Daymark_Test_Publicize {}' );
 		}
 

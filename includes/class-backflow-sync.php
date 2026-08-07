@@ -55,6 +55,20 @@ class Daymark_Backflow_Sync {
 	private const POST_COOLDOWN_PREFIX = 'daymark_backflow_cooldown_';
 
 	/**
+	 * Cooldown duration for a synced Mark.
+	 *
+	 * @var int
+	 */
+	public const POST_COOLDOWN_SECONDS = 10 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Object-cache group used for the atomic cooldown lock.
+	 *
+	 * @var string
+	 */
+	private const POST_COOLDOWN_CACHE_GROUP = 'daymark_backflow_cooldown';
+
+	/**
 	 * Hook up.
 	 *
 	 * @return void
@@ -173,13 +187,11 @@ class Daymark_Backflow_Sync {
 				continue;
 			}
 
-			$cooldown_key = self::POST_COOLDOWN_PREFIX . $post_id;
-
-			if ( false !== get_transient( $cooldown_key ) ) {
+			// Atomic acquire: only one process wins the lock per post, so
+			// overlapping cron runs cannot both poll the same Mark.
+			if ( ! $this->mark_cooldown( $post_id ) ) {
 				continue;
 			}
-
-			set_transient( $cooldown_key, time(), 10 * MINUTE_IN_SECONDS );
 
 			$result = $notifications->import_responses( $post_id, $networks );
 
@@ -189,6 +201,75 @@ class Daymark_Backflow_Sync {
 		}
 
 		return $imported;
+	}
+
+	/**
+	 * Whether a Mark is inside its per-post sync cooldown.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return bool
+	 */
+	public function on_cooldown( int $post_id ): bool {
+		$key = self::POST_COOLDOWN_PREFIX . $post_id;
+
+		if ( false !== get_transient( $key ) ) {
+			return true;
+		}
+
+		return false !== wp_cache_get( $key, self::POST_COOLDOWN_CACHE_GROUP );
+	}
+
+	/**
+	 * Start the cooldown for a Mark, atomically.
+	 *
+	 * Acquires an object-cache lock so concurrent processes cannot double-
+	 * poll the same post, then mirrors it into a transient so the cooldown
+	 * survives cache flushes and separate cron requests. Returns whether
+	 * this call won the lock (and therefore should do the work).
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return bool True when the cooldown was just set (work may proceed).
+	 */
+	public function mark_cooldown( int $post_id ): bool {
+		$key = self::POST_COOLDOWN_PREFIX . $post_id;
+
+		if ( ! wp_cache_add( $key, time(), self::POST_COOLDOWN_CACHE_GROUP, self::POST_COOLDOWN_SECONDS ) ) {
+			return false;
+		}
+
+		set_transient( $key, time(), self::POST_COOLDOWN_SECONDS );
+
+		return true;
+	}
+
+	/**
+	 * Whether syncing the given networks would hit a real connector.
+	 *
+	 * Mocked demo references never auto-sync and never trigger the manual
+	 * sync cooldown, so repeated demo syncs keep deduplicating instead of
+	 * returning 429s. Only real (backflow_supported) references are worth
+	 * protecting from hammering.
+	 *
+	 * @param int      $post_id  Mark post ID.
+	 * @param string[] $networks Network IDs to check.
+	 * @return bool
+	 */
+	public function is_real_backflow_sync( int $post_id, array $networks ): bool {
+		$external_posts = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+
+		if ( ! is_array( $external_posts ) ) {
+			return false;
+		}
+
+		foreach ( $networks as $network ) {
+			$reference = $external_posts[ $network ] ?? null;
+
+			if ( is_array( $reference ) && ! empty( $reference['backflow_supported'] ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

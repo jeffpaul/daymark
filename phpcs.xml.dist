@@ -19,13 +19,18 @@
 	<config name="testVersion" value="8.1-"/>
 
 	<rule ref="WordPress">
-		<!-- Prototype-scale meta queries are a documented decision (CLAUDE.md). -->
+		<!-- Personal-site-scale Mark lookups use meta_key/meta_value/meta_query
+		     by design (CLAUDE.md content model). Not a multi-tenant table. -->
 		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_key"/>
 		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_value"/>
 		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_query"/>
-		<!-- Short array syntax and short ternaries are fine on PHP 8.1+. -->
+		<!-- Short ternaries (`?:`) are fine on the plugin's PHP 8.1+ floor. -->
 		<exclude name="Universal.Operators.DisallowShortTernary.Found"/>
 	</rule>
+
+	<!-- Activate the testVersion config above: refuse PHP syntax/APIs that
+	     need a version newer than 8.1 (the plugin's Requires PHP floor). -->
+	<rule ref="PHPCompatibility"/>
 
 	<!-- Keep the established short class-file names (class-publisher.php for
 	     Daymark_Publisher) rather than repeating the plugin prefix in every filename. -->
