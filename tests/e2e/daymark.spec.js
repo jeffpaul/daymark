@@ -31,6 +31,15 @@ async function loginAs(page) {
 	await page.waitForURL('**/wp-admin/**');
 }
 
+// Opens the composer via the Home launcher: tap "+ New Mark" to fan out the
+// Image/Video/Audio/Note bubbles, then tap the one matching `type`. Replaces
+// the old single click straight into #create now that the launcher sits in
+// front of it.
+async function openComposer(page, type = 'note') {
+	await page.locator('[data-action="new-mark"]').click();
+	await page.locator(`[data-launcher-type="${type}"]`).click();
+}
+
 // Scenario 1 (unauthenticated half): /daymark redirects to login.
 test('unauthenticated /daymark redirects to login', async ({ page }) => {
 	await page.goto('/daymark');
@@ -59,7 +68,7 @@ test('note Mark publishes to your site and appears in the notes view', async ({ 
 
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
@@ -84,7 +93,7 @@ test('categories: File under picker files the Mark and remembers the choice per 
 
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 
@@ -109,7 +118,7 @@ test('categories: File under picker files the Mark and remembers the choice per 
 
 	// Per-type memory: the next note Mark preselects the same category.
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E category memory ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	const rememberedPhotos = page
@@ -126,7 +135,7 @@ test('image Mark: alt field, correct article, appears in image views', async ({ 
 
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page, 'image');
 
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
 	await expect(page.locator('[data-type-badge]')).toHaveText(/image/i);
@@ -159,14 +168,16 @@ test('image Mark: alt field, correct article, appears in image views', async ({ 
 test('audio Mark shows an editable optional Title field with a toggleable hint', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page, 'audio');
 
 	// Scope every assertion to the composer screen (bare role/text matches
-	// break this suite). Before any media the type is a note → no Title field.
+	// break this suite). The Audio bubble pre-sets the type before any file
+	// is attached, so the Title field is already showing.
 	const composer = page.locator('.daymark-screen').first();
-	await expect(composer.locator('[data-title-slot] .daymark-titlefield')).toHaveCount(0);
+	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
 
-	// Attaching audio flips the effective type to audio and reveals the field.
+	// Attaching a real audio file exercises the picker's audio/* filter and
+	// leaves the type unchanged.
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-audio.wav');
 	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
 
@@ -197,7 +208,7 @@ test('audio Mark shows an editable optional Title field with a toggleable hint',
 test('note Mark does not show the Title field', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 
 	const composer = page.locator('.daymark-screen').first();
 	await composer.locator('#daymark-caption').fill(`E2E no-title note ${RUN_ID}`);
@@ -216,7 +227,7 @@ test('notifications show replies to a Mark', async ({ page }) => {
 
 	// Publish a note Mark through the UI.
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
@@ -306,9 +317,9 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 
 // With IntersectionObserver (all supported browsers) the recent list uses
 // infinite scroll, so the redundant "View more on your timeline" link is not
-// rendered — the appended pages already show everything and the bottom-nav
-// Timeline icon still reaches the full timeline. (The link only appears as a
-// no-IntersectionObserver fallback.)
+// rendered — the appended pages already show everything and the header's
+// Timeline home-link still reaches the full timeline. (The link only
+// appears as a no-IntersectionObserver fallback.)
 test('home does not render the redundant View more link when infinite scroll is active', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
@@ -333,10 +344,8 @@ test('home does not render the redundant View more link when infinite scroll is 
 
 	// Infinite scroll owns "more", so no redundant timeline link is shown...
 	await expect(page.locator('.daymark-recent__morelink')).toHaveCount(0);
-	// ...and the timeline stays reachable via the bottom-nav Timeline icon.
-	await expect(
-		page.locator('.daymark-bottomnav').getByRole('link', { name: 'Timeline' })
-	).toBeVisible();
+	// ...and the timeline stays reachable via the header home-link.
+	await expect(page.locator('.daymark-homelink')).toBeVisible();
 });
 
 // Infinite scroll: the first page caps the list; scrolling the sentinel
@@ -488,7 +497,7 @@ test('notifications: reply icon expands an inline box and submits', async ({ pag
 
 	// Publish a note Mark through the UI.
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
@@ -559,7 +568,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
@@ -612,7 +621,7 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	});
 
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
@@ -661,7 +670,7 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 test('publish in flight disables both buttons and shows only the button loading state', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E loading ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 
@@ -683,26 +692,84 @@ test('publish in flight disables both buttons and shows only the button loading 
 	await expect(page.getByText('Published to your site')).toBeVisible();
 });
 
-// Site-views nav renders as icon links: an SVG glyph, the label as the
+// Timeline moved into the header as a combined icon + "Daymark" home-link.
+test('header home-link reaches the full timeline', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	const home = page.locator('.daymark-homelink');
+	await expect(home).toBeVisible();
+	await expect(home).toHaveText('Daymark');
+	await expect(home.locator('svg')).toBeVisible();
+	expect(await home.getAttribute('href')).toContain('/timeline');
+});
+
+// The remaining site-views nav (Images/Videos/Audio/Notes, now flanking the
+// launcher) renders as icon links: an SVG glyph, the label as the
 // accessible name (role+name) and as the hover title, no visible text.
 test('site-views nav shows icons with accessible labels', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Scope to the bottom nav: a substring name match on 'Timeline' would
-	// also catch the recent section's "View more on your timeline →" link
-	// when Marks exist, so query within the nav to assert the nav link itself.
 	const nav = page.locator('.daymark-bottomnav');
-	const timeline = nav.getByRole('link', { name: 'Timeline' });
-	await expect(timeline).toBeVisible();
-	await expect(timeline).toHaveAttribute('title', 'Timeline');
-	await expect(timeline.locator('svg.daymark-bottomnav__icon')).toBeVisible();
-	expect(await timeline.getAttribute('href')).toContain('/timeline');
+	const images = nav.getByRole('link', { name: 'Images' });
+	await expect(images).toBeVisible();
+	await expect(images).toHaveAttribute('title', 'Images');
+	await expect(images.locator('svg.daymark-bottomnav__icon')).toBeVisible();
+	expect(await images.getAttribute('href')).toContain('/images');
 
-	// Every view link carries an icon.
-	await expect(page.locator('.daymark-bottomnav__link svg')).toHaveCount(5);
+	// Timeline moved to the header, so the row now holds 4 view links.
+	await expect(page.locator('.daymark-bottomnav__link svg')).toHaveCount(4);
 	// The label text is present for assistive tech but visually hidden.
 	await expect(nav.getByRole('link', { name: 'Notes' })).toBeVisible();
+});
+
+// The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles
+// (icon-only visually, but each still has a real accessible name), and
+// dismisses the same ways the rest of the app already does — an outside
+// tap, or Escape (which also returns focus to the trigger).
+test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses via outside tap or Escape', async ({
+	page,
+}) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	const btn = page.locator('[data-action="new-mark"]');
+	await expect(btn).toHaveAttribute('aria-label', 'New Mark');
+	await expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+	await btn.click();
+	await expect(btn).toHaveAttribute('aria-expanded', 'true');
+
+	for (const type of ['Image', 'Video', 'Audio', 'Note']) {
+		await expect(page.getByRole('button', { name: `New ${type} Mark` })).toBeVisible();
+	}
+
+	// An outside tap (the dimming scrim over the recent list) closes it —
+	// the scrim covers that area while open and is the real hit target,
+	// since it sits on top of the content underneath it.
+	await page.locator('.daymark-launcher__scrim').click();
+	await expect(btn).toHaveAttribute('aria-expanded', 'false');
+
+	// Escape closes it too, and returns focus to the launcher button.
+	await btn.click();
+	await expect(btn).toHaveAttribute('aria-expanded', 'true');
+	await page.keyboard.press('Escape');
+	await expect(btn).toHaveAttribute('aria-expanded', 'false');
+	await expect(btn).toBeFocused();
+});
+
+// prefers-reduced-motion collapses the bounce/spin to an instant toggle —
+// checked at the CSS level (computed transition-duration), since the visual
+// end state is identical either way and only the choreography differs.
+test('launcher animation respects prefers-reduced-motion', async ({ page }) => {
+	await loginAs(page);
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.goto('/daymark');
+
+	const bubble = page.locator('[data-launcher-type="note"]');
+	const duration = await bubble.evaluate((el) => getComputedStyle(el).transitionDuration);
+	expect(duration).toMatch(/^0s(,\s*0s)*$/);
 });
 
 // Awareness note: when a third-party publishing plugin is active, the
@@ -711,7 +778,7 @@ test('site-views nav shows icons with accessible labels', async ({ page }) => {
 test('publish screen notes active third-party publishing plugins', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E helpers ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 
@@ -725,7 +792,7 @@ test('publish screen notes active third-party publishing plugins', async ({ page
 test('controllable helper: per-Mark toggle appears and is sent on publish', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E helper ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 
@@ -766,7 +833,7 @@ test('connected connector: destination toggle publishes and is remembered per ty
 		.context()
 		.addCookies([{ name: 'daymark_e2e_connector', value: '1', url: new URL(page.url()).origin }]);
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 
@@ -787,8 +854,23 @@ test('connected connector: destination toggle publishes and is remembered per ty
 
 	// Per-type memory: the next note Mark preselects the connector.
 	await page.goto('/daymark');
-	await page.locator('[data-action="new-mark"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E connector memory ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	await expect(page.locator('[data-connector="e2e-net"]')).toBeChecked();
+});
+
+// Section pages render inside the theme with no Daymark-controlled chrome
+// of their own — the back-link is the one way in from there to the app.
+test('section page back-link returns to the app', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/timeline/');
+
+	const back = page.locator('.daymark-view-backlink');
+	await expect(back).toBeVisible();
+	await expect(back).toHaveText('← Daymark');
+	expect(await back.getAttribute('href')).toContain('/daymark');
+
+	await back.click();
+	await expect(page).toHaveURL(/\/daymark\/?(#.*)?$/);
 });

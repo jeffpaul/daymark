@@ -26,6 +26,21 @@
 	text-align: center;
 }
 
+/* A way back into the app from this theme-rendered page — same visual
+   language as the app shell's own .daymark-backlink (assets/app.css). */
+.daymark-view-backlink {
+	display: inline-block;
+	margin-bottom: 1rem;
+	color: rgba(0, 0, 0, 0.6);
+	font-size: 0.9rem;
+	text-decoration: none;
+}
+
+.daymark-view-backlink:hover,
+.daymark-view-backlink:focus-visible {
+	color: #9e2a02;
+}
+
 .daymark-item {
 	border: 1px solid rgba(0, 0, 0, 0.1);
 	border-radius: 0.75rem;
