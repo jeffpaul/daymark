@@ -271,10 +271,28 @@ jobs:
           done
           curl -sf -o /dev/null http://127.0.0.1:8889/wp-login.php
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Caches the downloaded browser binary (~150MB), keyed on the locked
+      # Playwright version so a version bump invalidates it automatically.
+      # `playwright install` itself skips re-downloading on a cache hit but
+      # still ensures the OS-level packages `--with-deps` installs are
+      # present, which a fresh runner VM never carries over between runs.
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install Playwright
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run browser E2E
         env:
