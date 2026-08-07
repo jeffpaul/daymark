@@ -25,6 +25,8 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Full conversion: options, user meta, post/comment meta, pages, cron, transients. */
 	public function test_migrates_legacy_install() {
+		$this->setExpectedDeprecated( 'Daymark_Migration::migrate' );
+
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
 
 		// --- Seed a legacy Moment install. ---
@@ -106,6 +108,8 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Running twice is safe and changes nothing the second time. */
 	public function test_idempotent() {
+		$this->setExpectedDeprecated( 'Daymark_Migration::migrate' );
+
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
 
@@ -121,6 +125,8 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** An existing legacy-base option is never overwritten by migration. */
 	public function test_existing_legacy_base_option_wins() {
+		$this->setExpectedDeprecated( 'Daymark_Migration::migrate' );
+
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
 		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'already-set' );
@@ -133,6 +139,8 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Activation resolves the real app base fresh, even over a migrated install. */
 	public function test_activation_resolves_fresh_base_over_a_legacy_install() {
+		$this->setExpectedDeprecated( 'Daymark_Migration::migrate' );
+
 		delete_option( 'daymark_app_base' ); // See test_migrates_legacy_install.
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
@@ -145,6 +153,8 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Section pages with shortcode markup are rewritten too. */
 	public function test_migrates_shortcode_pages() {
+		$this->setExpectedDeprecated( 'Daymark_Migration::migrate' );
+
 		update_option( 'moment_version', '0.5.0' );
 
 		$page_id = self::factory()->post->create(

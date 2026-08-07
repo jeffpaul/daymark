@@ -13,9 +13,12 @@
  * home-screen icon still lands somewhere real instead of breaking outright.
  *
  * Lifecycle: ships in 0.6.0, runs at most once (keyed on the legacy
- * `moment_version` option), and is scheduled for removal — soft-deprecated
- * in the next minor release, removed in the one after. When it goes, the
- * legacy cleanup block in uninstall.php goes with it.
+ * `moment_version` option). Soft-deprecated as of 0.8.0 — logs a
+ * `_deprecated_function()` notice (visible under WP_DEBUG) at the moment
+ * it actually converts a legacy install, with no other behavior change.
+ * Scheduled for full removal in 0.9.0: this file, tests/test-migration.php,
+ * and the legacy cleanup block in uninstall.php all go together then. See
+ * https://github.com/jeffpaul/daymark/issues/36.
  *
  * @package Daymark
  */
@@ -26,6 +29,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Converts a Moment (≤ 0.5.0) install to Daymark storage. Runs once.
+ *
+ * @deprecated 0.8.0 Scheduled for removal in 0.9.0, with no replacement —
+ *             sites still on Moment (≤ 0.5.0) must upgrade through an
+ *             intermediate 0.6.x–0.8.x release before jumping past that.
  */
 final class Daymark_Migration {
 
@@ -50,9 +57,16 @@ final class Daymark_Migration {
 	/**
 	 * Perform the one-time conversion.
 	 *
+	 * Only ever reached via maybe_migrate() after it has confirmed a real
+	 * legacy Moment install is present — so the deprecation notice below
+	 * fires exactly for the sites it's meant to warn, never on the no-op
+	 * fast path every other request takes.
+	 *
 	 * @return void
 	 */
 	private static function migrate(): void {
+		_deprecated_function( __METHOD__, '0.8.0' );
+
 		self::migrate_options();
 		self::migrate_user_meta();
 		self::migrate_post_and_comment_meta();

@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Deprecated
+
+- `Daymark_Migration` (the one-time Moment → Daymark storage conversion) is soft-deprecated ahead of removal in 0.9.0. No behavior change for anyone still upgrading from Moment (≤ 0.5.0) — sites with real legacy data to convert now also get a logged `_deprecated_function()` notice (visible under `WP_DEBUG`) at the moment the conversion runs, as a heads-up before it's removed. ([#69](https://github.com/jeffpaul/daymark/pull/69))
+
 ## [0.7.0] - 2026-08-07
 
 ### Added
