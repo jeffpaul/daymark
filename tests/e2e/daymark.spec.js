@@ -439,6 +439,19 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	// Back to "Notes" surfaces them again.
 	await page.locator('[data-filter-chips] [data-filter="note"]').click();
 	await expect(list.getByText(alpha).first()).toBeVisible();
+
+	// An outside click collapses the bar, same as the item menu and launcher.
+	await page.locator('#daymark-recent-heading').click();
+	await expect(bar).toBeHidden();
+
+	// Escape closes it too, and returns focus to the search icon — even
+	// when focus was on a filter chip rather than the input itself.
+	await page.locator('[data-search-toggle]').click();
+	await expect(bar).toBeVisible();
+	await page.locator('[data-filter-chips] [data-filter="note"]').focus();
+	await page.keyboard.press('Escape');
+	await expect(bar).toBeHidden();
+	await expect(page.locator('[data-search-toggle]')).toBeFocused();
 });
 
 // Per-item delete: the ⋯ menu offers Delete, which requires an explicit
@@ -536,6 +549,19 @@ test('notifications: reply icon expands an inline box and submits', async ({ pag
 	await form.locator('[data-reply-send]').click();
 	await expect(form).toBeHidden();
 	await expect(card.locator('[data-replied]')).toBeVisible();
+
+	// The toggle still reopens the (now empty) box; an outside click and
+	// Escape dismiss it the same way search and the launcher do.
+	await card.locator('[data-reply-toggle]').click();
+	await expect(form).toBeVisible();
+	await page.locator('h1.daymark-topbar__title').click();
+	await expect(form).toBeHidden();
+
+	await card.locator('[data-reply-toggle]').click();
+	await expect(form).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(form).toBeHidden();
+	await expect(card.locator('[data-reply-toggle]')).toBeFocused();
 });
 
 // Plugins list table offers a one-click path into the app.
