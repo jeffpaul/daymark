@@ -42,7 +42,7 @@ tooling, and docs are all excluded).
 - **WordPress 7.0+** (Daymark targets the 7.0 Connectors API and AI Client)
 - **PHP 8.1+**
 - **Composer** (PHP dependencies, PHPUnit, and coding standards)
-- **Node.js 18+** (only for the Playwright E2E suite)
+- **Node.js 18+** (for the Playwright E2E suite and the block editor build)
 - A local WordPress site. [Local by Flywheel](https://localwp.com/) is what
   the plugin is developed against, but any local WP 7.0 works.
 
@@ -56,6 +56,20 @@ wp plugin activate daymark
 ```
 
 Then visit `/daymark` on a phone-sized viewport while logged in.
+
+### Block editor assets
+
+The `daymark/*` blocks' inspector UI lives in `src/index.js` and is compiled
+with `@wordpress/scripts`:
+
+```bash
+npm ci && npm run build   # once after cloning, and after any change to src/
+```
+
+The compiled bundle is **committed** (`build/index.js` + `build/index.asset.php`)
+and ships in the plugin zip, so end users never run a build — only
+contributors changing the editor UI need to. CI (`blocks-build` job) fails
+if the committed bundle is out of date with `src/`.
 
 ## Testing
 
@@ -118,7 +132,9 @@ stubbed AT Protocol API — see the setup notes at the top of
     name; it also collides with the Moment.js library bundled in core).
 - **Content model:** every Mark is a standard `post` with `_daymark_*` post
   meta — never a custom post type. Portability is a core promise.
-- **Frontend is vanilla ES2020**, no build step. Keep it framework-free.
+- **The app shell is vanilla ES2020**, no build step — keep it framework-free.
+  The block editor UI (`src/`, see [Block editor assets](#block-editor-assets))
+  is the one compiled asset; everything else stays build-free.
 - **Security checklist** for every REST endpoint and form handler:
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content

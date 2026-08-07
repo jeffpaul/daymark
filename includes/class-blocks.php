@@ -28,6 +28,13 @@ class Daymark_Blocks {
 	private const VIEWS = array( 'timeline', 'images', 'videos', 'audio', 'notes' );
 
 	/**
+	 * Script handle for the single shared block editor bundle.
+	 *
+	 * @var string
+	 */
+	private const EDITOR_SCRIPT_HANDLE = 'daymark-editor-script';
+
+	/**
 	 * Shared view renderer.
 	 *
 	 * @var Daymark_Renderer
@@ -50,6 +57,21 @@ class Daymark_Blocks {
 	 */
 	public function register(): void {
 		add_filter( 'block_categories_all', array( $this, 'register_category' ) );
+
+		// Register the shared editor bundle once. Every block.json references
+		// this handle rather than a file: path so core enqueues a single
+		// script instead of one per block (each would otherwise re-run
+		// registerBlockType() and throw "already registered" errors).
+		$asset = include DAYMARK_PLUGIN_DIR . 'build/index.asset.php';
+		$asset = is_array( $asset ) ? $asset : array();
+
+		wp_register_script(
+			self::EDITOR_SCRIPT_HANDLE,
+			DAYMARK_PLUGIN_URL . 'build/index.js',
+			isset( $asset['dependencies'] ) ? (array) $asset['dependencies'] : array(),
+			isset( $asset['version'] ) ? $asset['version'] : DAYMARK_VERSION,
+			true
+		);
 
 		foreach ( self::VIEWS as $view ) {
 			add_shortcode(

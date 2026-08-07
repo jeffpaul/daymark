@@ -61,11 +61,9 @@ composer phpcs
 npm ci && npx playwright install chromium   # once per machine
 WP_BASE_URL=http://wp70.local WP_ADMIN_USER=<user> WP_ADMIN_PASS=<pass> npx playwright test
 
-# Watch for JS changes (if build step added)
-npm run start
-
-# Production build (if build step added)
-npm run build
+# Block editor bundle (src/index.js → committed build/, shipped in the zip)
+npm ci && npm run build   # rebuild after editing src/; CI fails if committed build/ is stale
+npm run start             # watch mode while developing the block editor UI
 ```
 
 ## Phase status
@@ -92,9 +90,9 @@ Document decisions here as they are made. This is the authoritative record.
 | Content model | Standard `post` post type | Portability; standard feeds/comments/templates |
 | Custom post type | Not used | Deactivation safety; standard theme compat |
 | Route strategy | Rewrite rule + `template_include` on a `daymark_app` query var | No page dependency; full control of app-shell markup (no theme chrome); clean `/daymark` PWA scope. Section pages (`/timeline`, `/images`, `/videos`, `/audio`, `/notes`) are auto-created pages with shortcodes since those should render inside the theme. |
-| Block vs shortcode | **Both** — shortcodes as required baseline, dynamic blocks (`block.json` + `render.php`, no build step) as thin wrappers | Activation pages already embed `[daymark_*]` shortcodes; MVP spec requires both; all query/markup logic lives once in `Daymark_Renderer::render()` so both surfaces emit identical HTML |
+| Block vs shortcode | **Both** — shortcodes as required baseline, dynamic blocks (`block.json` + `render.php`) as thin wrappers around a shared editor bundle (`src/index.js` → `build/`) | Activation pages already embed `[daymark_*]` shortcodes; MVP spec requires both; all query/markup logic lives once in `Daymark_Renderer::render()` so both surfaces emit identical HTML |
 | WP 7.0 AI path | **Real** — `WordPress\AiClient\AiClient` via `wp_ai_client_prompt()`; provider Anthropic (first configured). Mock fallback when no provider is configured or any call fails. | Plugin requires WP 7.0+, so the AI Client is assumed present (no class/function existence shims). Detection: `wp_supports_ai()` + ≥1 `isProviderConfigured()`. Never throws, never blocks publishing. Legacy `WP_AI_Client` name does not exist — do not use it for calls. |
-| JS framework | Vanilla ES2020, no build step | Prototype speed; no npm required |
+| JS framework | App shell: vanilla ES2020, no build step. Block editor UI (`src/`): compiled with `@wordpress/scripts` into the committed, shipped `build/` bundle. | The app shell stays build-free ("no npm required" for end users); the block editor is the one place Gutenberg demands a compiled script, so it carries the only build step. CI (`blocks-build` job) fails if the committed bundle drifts from `src/`. |
 | Brand colors | Sunset: primary `#C93A06`, deep `#9E2A02`, light `#FFD9A8`, transparent `rgba(201, 58, 6, 0.12)` | Documented in [docs/brand.md](docs/brand.md) and applied throughout the app shell (`--daymark-accent*` custom props), views, manifest, theme-color, and icon. Banner and icon artwork carry the range as a red-to-gold gradient. |
 | Destination visibility | Only **connected** connectors are offered as publish destinations; auto-applied type defaults filter to connected too (explicit API selections honored as-is). AI Assist UI only renders when a provider `is_available()`. No demo-mode filter — the site itself is always the canonical destination. | A destination that can't publish or return replies shouldn't be offered. No connector ships in-repo; the connector interface + `daymark_register_connectors` hook is the extension point and is covered by PHPUnit (`test-syndication.php`), not E2E. Model defaults stay recorded in `_daymark_default_destinations`. |
 | Companion connectors removed | The `moment-connector-bluesky`/`-mastodon` plugins (pre-rename naming) were removed from the repo (not published to wp.org). Real syndication rides on existing ecosystem plugins instead: publicize-style plugins via `Daymark_Publish_Helpers` (awareness + per-Mark toggles) and federation plugins via `Daymark_Federated_Comments`. ATmosphere is a controllable toggle (its documented `atmosphere_disabled` opt-out meta), so Bluesky gets an in-app on/off when ATmosphere is connected and auto-publishing. | Leaner repo; aligns with the "no real social API publishing in core" non-goal. The open connector hook remains for any plugin to register a first-class destination. |
