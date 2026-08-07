@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-07
+
 ### Added
 
 - The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now expose how many recent Marks they show as a setting in the block editor, instead of requiring a hand-edit of the block markup. The count control appears under Block tab → "Number of Marks" (1–50) and the editor preview updates as you drag it. ([#56](https://github.com/jeffpaul/daymark/pull/56))
@@ -167,7 +169,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.6.1...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.7.0...HEAD
+[0.7.0]: https://github.com/jeffpaul/daymark/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/jeffpaul/daymark/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/jeffpaul/daymark/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/jeffpaul/daymark/compare/0.4.0...0.5.0
