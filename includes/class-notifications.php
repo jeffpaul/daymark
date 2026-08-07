@@ -96,7 +96,7 @@ class Daymark_Notifications {
 	 * @return array<int, array<string, mixed>> Notification items.
 	 */
 	public function get_items( array $args = array() ): array {
-		$limit = isset( $args['limit'] ) ? absint( $args['limit'] ) : self::DEFAULT_LIMIT;
+		$limit = absint( $args['limit'] ?? self::DEFAULT_LIMIT );
 
 		return $this->get_notifications( $limit > 0 ? $limit : self::DEFAULT_LIMIT );
 	}
@@ -426,10 +426,10 @@ class Daymark_Notifications {
 			}
 
 			$reference    = $external_posts[ $network ];
-			$external_url = isset( $reference['external_url'] ) ? (string) $reference['external_url'] : '';
+			$external_url = (string) ( $reference['external_url'] ?? '' );
 			$texts        = self::SAMPLE_TEXTS[ $network ] ?? array( __( 'Nice post!', 'daymark' ) );
 			$author       = self::SAMPLE_AUTHORS[ $network ] ?? '@demouser';
-			$label        = $this->get_source_label( $network, isset( $reference['label'] ) ? (string) $reference['label'] : $network );
+			$label        = $this->get_source_label( $network, (string) ( $reference['label'] ?? $network ) );
 
 			foreach ( array_slice( $texts, 0, 2 ) as $index => $text ) {
 				$reply_number = $index + 1;
@@ -517,6 +517,21 @@ class Daymark_Notifications {
 			);
 		}
 
+		// Real connector plugins can surface unverified or unmoderated
+		// replies; the default is to approve them, but a stricter site can
+		// route imports through moderation instead.
+		/**
+		 * Filters whether an imported external response is approved.
+		 *
+		 * @since 0.7.0
+		 *
+		 * @param int    $approved Approval status passed to wp_insert_comment() (1 = approved).
+		 * @param int    $post_id  Mark post ID.
+		 * @param string $network  Network ID, e.g. 'bluesky'.
+		 * @param array<string, mixed> $response The response being imported.
+		 */
+		$approved = (int) apply_filters( 'daymark_comment_import_approved', 1, $post_id, $network, $response );
+
 		$comment_id = wp_insert_comment(
 			array(
 				'comment_post_ID'      => $post_id,
@@ -524,7 +539,7 @@ class Daymark_Notifications {
 				'comment_author'       => sanitize_text_field( (string) ( $response['author'] ?? '' ) ),
 				'comment_author_email' => '',
 				'comment_author_url'   => '',
-				'comment_approved'     => 1,
+				'comment_approved'     => $approved,
 				'comment_type'         => 'comment',
 			)
 		);

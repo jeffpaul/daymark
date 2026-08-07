@@ -94,6 +94,7 @@ class Test_Backflow_Sync extends WP_UnitTestCase {
 		add_filter(
 			'daymark_import_network_responses',
 			function ( $handled ) use ( &$calls ) {
+				unset( $handled );
 				++$calls;
 
 				return array();
@@ -105,6 +106,54 @@ class Test_Backflow_Sync extends WP_UnitTestCase {
 		$sync->sync_recent_marks();
 
 		$this->assertSame( 1, $calls, 'Second sync within the cooldown must skip the post.' );
+	}
+
+	/** The cooldown lock is acquired atomically: only one caller wins. */
+	public function test_mark_cooldown_is_atomic() {
+		$post_id = $this->create_syndicated_daymark( true );
+		$sync    = new Daymark_Backflow_Sync();
+
+		$this->assertTrue( $sync->mark_cooldown( $post_id ), 'First acquire wins the lock' );
+		$this->assertFalse( $sync->mark_cooldown( $post_id ), 'Second acquire must fail' );
+		$this->assertTrue( $sync->on_cooldown( $post_id ) );
+	}
+
+	/** Manual sync of a real reference honors the shared cooldown (429). */
+	public function test_rest_sync_real_reference_honors_cooldown() {
+		$post_id = $this->create_syndicated_daymark( true );
+		wp_update_post(
+			array(
+				'ID'          => $post_id,
+				'post_author' => get_current_user_id(),
+			)
+		);
+
+		( new Daymark_Backflow_Sync() )->mark_cooldown( $post_id );
+
+		$request = new WP_REST_Request( 'POST', "/daymark/v1/marks/{$post_id}/sync-responses" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'networks', array( 'bluesky' ) );
+
+		$this->assertSame( 429, rest_do_request( $request )->get_status() );
+	}
+
+	/** Mock demo syncs stay instant: the cooldown is never enforced for them. */
+	public function test_rest_sync_mock_reference_ignores_cooldown() {
+		$post_id = $this->create_syndicated_daymark( false );
+		wp_update_post(
+			array(
+				'ID'          => $post_id,
+				'post_author' => get_current_user_id(),
+			)
+		);
+
+		( new Daymark_Backflow_Sync() )->mark_cooldown( $post_id );
+
+		$request = new WP_REST_Request( 'POST', "/daymark/v1/marks/{$post_id}/sync-responses" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'networks', array( 'bluesky' ) );
+
+		$this->assertSame( 200, rest_do_request( $request )->get_status() );
 	}
 
 	/** Viewing notifications schedules one async freshen per window. */

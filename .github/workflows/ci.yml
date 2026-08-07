@@ -47,8 +47,11 @@ jobs:
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
-      - name: Run PHPCS
+      - name: Run PHPCS (plugin)
         run: composer phpcs
+
+      - name: Run PHPCS (tests)
+        run: composer phpcs-tests
 
   asset-checks:
     name: JSON + JS syntax

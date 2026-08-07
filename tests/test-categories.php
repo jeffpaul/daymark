@@ -105,7 +105,7 @@ class Test_Categories extends WP_UnitTestCase {
 	/** Unknown / non-category term IDs are dropped, never silently created. */
 	public function test_nonexistent_terms_are_dropped() {
 		$photos    = $this->make_category( 'Photos' );
-		$tag        = (int) self::factory()->tag->create( array( 'name' => 'not-a-category' ) );
+		$tag       = (int) self::factory()->tag->create( array( 'name' => 'not-a-category' ) );
 		$publisher = new Daymark_Publisher();
 
 		$post_id = (int) $publisher->publish(

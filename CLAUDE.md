@@ -54,8 +54,10 @@ WP_TESTS_DIR=$TMPDIR/wordpress-tests-lib composer test   # macOS ($TMPDIR); /tmp
 # WP-CLI smoke suite (57 assertions) against a live site with the plugin active
 WP=/path/to/wp-cli-wrapper bash tests/smoke.sh
 
-# PHP linting (WordPress Coding Standards)
-composer phpcs
+# PHP linting (WordPress Coding Standards, incl. tests + PHP 8.1+ compat)
+composer phpcs        # plugin sources
+composer phpcs-tests  # test suite (phpcs-tests.xml.dist)
+composer phpcompat    # PHPCompatibility standard (testVersion 8.1-)
 
 # Browser E2E (Playwright; needs a live site + admin creds)
 npm ci && npx playwright install chromium   # once per machine
@@ -80,6 +82,14 @@ Update this after each phase completes. Do not mark DONE unless the phase gate p
 - [x] Phase 7: Blocks and shortcodes (gate PASSED: all 5 shortcodes + all 5 daymark/* dynamic blocks registered; /timeline page renders Marks; shortcode and block output byte-identical via shared renderer)
 - [x] Phase 8: PWA + home screen (gate PASSED: manifest reachable + valid JSON; icon-192/512 PNGs generated from icon.svg and served 200; conservative SW at assets/daymark-sw.js — caches only app.css/app.js, never REST/nonces/admin/HTML)
 - [x] Phase 9: E2E tests (gate PASSED: WP-CLI smoke suite tests/smoke.sh 57/57 against live wp70; PHPUnit scaffolded — needs WP test lib (`WP_TESTS_DIR=/tmp/wordpress-tests-lib composer test`); Playwright scaffolded, not run — needs `npm i -D @playwright/test && npx playwright install chromium`)
+
+## Post-phase hardening (0.7.0 prep)
+
+Not a phase gate — a cleanup pass run after Phase 9, before release-readiness work:
+
+- [x] **Code hygiene**: modernized legacy `isset() ?: ''` → `??`; added the PHPCompatibility standard (`composer phpcompat`), a test-suite PHPCS ruleset (`composer phpcs-tests`, `phpcs-tests.xml.dist`), and the matching CI jobs.
+- [x] **Security hardening**: `Daymark_Rate_Limiter` on AI/publish/sync REST actions; per-request upload total budget (`MAX_TOTAL_FILE_BYTES`, `daymark_upload_total_max_bytes`); `apply_alt_map` scoped to a Mark's own media (IDOR fix); shared 10-min sync cooldown for real connector references with an atomic `wp_cache_add` lock; `daymark_comment_import_approved` filter; AI prompt-injection guard; CSP header on the app shell (`daymark_app_content_security_policy`).
+- [x] **Docs**: SECURITY.md supported-version table, CHANGELOG/readme.txt regeneration, CONTRIBUTING/CLAUDE build-command + security-checklist updates, plugin-check CI now blocking, `docs/roadmap.md` added (release-readiness → 0.8.x → long-term; linked from the design record).
 
 ## Key architectural decisions
 
@@ -151,6 +161,8 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 - [ ] All output escaped with `esc_html()` / `esc_attr()` / `esc_url()`
 - [ ] No direct DB queries without `$wpdb->prepare()`
 - [ ] No unauthenticated publishing endpoints
+- [ ] Expensive endpoints rate limited via `Daymark_Rate_Limiter` (AI / publish / sync actions; filter `daymark_rate_limits`)
+- [ ] Uploads checked per file **and** per request total (`Daymark_Publisher::validate_file_list()`, `MAX_TOTAL_FILE_BYTES`; filter `daymark_upload_total_max_bytes`)
 
 ## Sub-agent directory
 

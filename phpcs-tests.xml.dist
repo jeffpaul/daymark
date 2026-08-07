@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<ruleset name="Daymark Tests">
+	<description>
+		WordPress Coding Standards for Daymark's test suite.
+
+		Same baseline as phpcs.xml.dist, with deliberate drops that the
+		WordPress test harness and PHPUnit conventions require:
+		- PrefixAllGlobals — bootstrap stubs use unprefixed $_tests_dir /
+		  polyfill constants by core convention.
+		- FileName — test-*.php is the PHPUnit/WordPress naming convention.
+		- FunctionComment / FileComment docs — WP core tests do not require
+		  a docblock on every set_up()/test_* method; style and security
+		  sniffs still run.
+	</description>
+
+	<file>tests</file>
+
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<!-- Playwright fixtures and the shell smoke suite are not PHPUnit classes. -->
+	<exclude-pattern>*/tests/e2e/*</exclude-pattern>
+	<exclude-pattern>*/tests/smoke\.sh</exclude-pattern>
+
+	<arg value="sp"/>
+	<arg name="extensions" value="php"/>
+	<arg name="parallel" value="8"/>
+
+	<config name="minimum_wp_version" value="7.0"/>
+	<config name="testVersion" value="8.1-"/>
+
+	<rule ref="WordPress">
+		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_key"/>
+		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_value"/>
+		<exclude name="WordPress.DB.SlowDBQuery.slow_db_query_meta_query"/>
+		<exclude name="Universal.Operators.DisallowShortTernary.Found"/>
+		<!-- WP test harness convention: unprefixed $_tests_dir, polyfill path. -->
+		<exclude name="WordPress.NamingConventions.PrefixAllGlobals"/>
+		<!-- test-*.php is the PHPUnit/WordPress naming convention. -->
+		<exclude name="WordPress.Files.FileName"/>
+		<!-- Test methods don't need a full docblock on every set_up/test_*. -->
+		<exclude name="Squiz.Commenting.FunctionComment"/>
+		<exclude name="Squiz.Commenting.FunctionCommentThrowTag"/>
+		<exclude name="Squiz.Commenting.FileComment"/>
+		<exclude name="Squiz.Commenting.ClassComment"/>
+		<exclude name="Squiz.Commenting.VariableComment"/>
+		<exclude name="Squiz.Commenting.InlineComment"/>
+		<exclude name="Generic.Commenting.DocComment"/>
+	</rule>
+
+	<rule ref="PHPCompatibility"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="daymark"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

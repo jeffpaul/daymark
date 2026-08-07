@@ -7,8 +7,18 @@
  * when ATmosphere is connected and auto-publishing, and translates the
  * toggle into that meta on the publish transition.
  *
+ * Curly-brace namespaces below stub ATmosphere's public API in-process so
+ * the adapter can be exercised without loading the real plugin. PHPCS
+ * forbids that syntax and mixed OO/function files; both are intentional
+ * here and scoped to this fixture only.
+ *
  * @package Daymark
  */
+
+// phpcs:disable Universal.Namespaces.DisallowCurlyBraceSyntax.Forbidden
+// phpcs:disable Universal.Namespaces.OneDeclarationPerFile.MultipleFound
+// phpcs:disable Universal.Namespaces.DisallowDeclarationWithoutName.Forbidden
+// phpcs:disable Universal.Files.SeparateFunctionsFromOO.Mixed
 
 namespace Atmosphere {
 	// Minimal stubs for ATmosphere's public API, toggled via globals.
@@ -117,3 +127,5 @@ namespace {
 		}
 	}
 }
+
+// phpcs:enable

@@ -59,6 +59,40 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertSame( 0, $second['imported_count'] );
 	}
 
+	/** The import-approval filter can route imported replies to moderation. */
+	public function test_import_approved_filter_can_hold_replies() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Held import test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		$approve_filter = function () {
+			return 0;
+		};
+		add_filter( 'daymark_comment_import_approved', $approve_filter );
+
+		$notifications = new Daymark_Notifications();
+		$result        = $notifications->import_responses( $post_id, array( 'bluesky' ) );
+		$this->assertGreaterThanOrEqual( 1, $result['imported_count'] );
+
+		remove_filter( 'daymark_comment_import_approved', $approve_filter );
+
+		$held = get_comments(
+			array(
+				'post_id' => $post_id,
+				'status'  => 'hold',
+			)
+		);
+		$this->assertNotEmpty( $held, 'A filter returning 0 must hold imported replies in moderation' );
+	}
+
 	/** Unread flag lifecycle: set by new replies, cleared by viewing. */
 	public function test_unread_state_lifecycle() {
 		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );

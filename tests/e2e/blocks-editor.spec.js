@@ -18,6 +18,11 @@ import { test, expect, devices } from '@playwright/test';
 // The block editor's settings sidebar is a desktop feature.
 test.use( { ...devices[ 'Desktop Chrome' ] } );
 
+// WordPress 7.0 renders the editor canvas inside an iframe named
+// "editor-canvas"; block content and the post title live in that frame
+// while the top bar, inserter, and settings sidebar stay at the top level.
+const canvas = ( page ) => page.frameLocator( 'iframe[name="editor-canvas"]' );
+
 const ADMIN_USER = process.env.WP_ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.WP_ADMIN_PASS || 'password';
 
@@ -25,7 +30,17 @@ const ADMIN_PASS = process.env.WP_ADMIN_PASS || 'password';
 async function loginAs( page ) {
 	await page.goto( '/wp-login.php' );
 	await page.fill( '#user_login', ADMIN_USER );
+	// On a cold, single-threaded wp server the login page can still be
+	// finishing its enhancement scripts when this first test fills the
+	// password field; a fill that lands mid-enhancement can be lost, which
+	// leaves the required field empty and the form refusing to submit.
+	// Fill, then confirm the value actually registered before submitting.
 	await page.fill( '#user_pass', ADMIN_PASS );
+	try {
+		await expect.poll( () => page.inputValue( '#user_pass' ) ).toBe( ADMIN_PASS );
+	} catch {
+		await page.fill( '#user_pass', ADMIN_PASS );
+	}
 	await page.click( '#wp-submit' );
 	await page.waitForURL( '**/wp-admin/**' );
 }
@@ -46,18 +61,35 @@ test( 'Daymark Timeline block exposes a count control that persists', async ( { 
 	await loginAs( page );
 	await page.goto( '/wp-admin/post-new.php' );
 
-	// Wait for the editor canvas.
-	await expect( page.locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible();
+	// A fresh install shows the editor's "Welcome to the editor" guide on the
+	// first post-new.php load; dismiss it if present so the canvas is visible.
+	// Its Close control is an icon button, so match by accessible name.
+	const guide = page.locator( '.components-guide, [role="dialog"]:has-text("Welcome to the editor")' ).first();
+	if ( await guide.isVisible().catch( () => false ) ) {
+		await page.getByRole( 'button', { name: 'Close' } ).click( { timeout: 3000 } )
+			.catch( () => page.keyboard.press( 'Escape' ) );
+	}
 
-	// Insert a Daymark Timeline block from the inserter.
-	await page.locator( '.block-editor-inserter__toggle' ).first().click();
-	await page.locator( '.block-editor-inserter__search input' ).fill( 'Timeline' );
-	await page.locator( '.block-editor-block-types-list button', { hasText: 'Daymark Timeline' } ).click();
+	// Wait for the editor canvas (generous: the editor is heavy and this is
+	// often the first test against a cold server). On WP 7.0 the canvas —
+	// including the post title — lives in the "editor-canvas" iframe.
+	await expect( canvas( page ).locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible( { timeout: 20000 } );
 
-	// The block is selected; its server-side preview renders in the canvas.
-	const block = page.locator( '.wp-block-daymark-timeline' );
+	// Insert a Daymark Timeline block from the inserter (top level). The
+	// toggle is a toolbar button; WP 7.0 dropped the old
+	// ".block-editor-inserter__toggle" class in favor of the ARIA name.
+	await page.getByRole( 'button', { name: 'Block Inserter' } ).first().click();
+	await page.locator( '.block-editor-inserter__search input' ).first().fill( 'Timeline' );
+	await page
+		.locator( '.block-editor-block-types-list button, .block-editor-block-list-item' )
+		.filter( { hasText: 'Daymark Timeline' } )
+		.first()
+		.click();
+
+	// The block is selected; its server-side preview renders in the canvas frame.
+	const block = canvas( page ).locator( '.wp-block-daymark-timeline' ).first();
 	await expect( block ).toBeVisible();
-	await expect( page.locator( '.daymark-view' ).first() ).toBeVisible();
+	await expect( canvas( page ).locator( '.daymark-view' ).first() ).toBeVisible();
 
 	await revealInspector( page );
 
@@ -73,18 +105,18 @@ test( 'Daymark Timeline block exposes a count control that persists', async ( { 
 	await expect( rangeInput ).toHaveValue( '20' );
 
 	// Publish, then reload the editor and check the attribute persisted.
-	await page.getByRole( 'button', { name: /^publish/i } ).first().click();
+	await page.getByRole( 'button', { name: /^publish$/i } ).first().click();
 	const panel = page.locator( '.editor-post-publish-panel' );
 	if ( await panel.isVisible().catch( () => false ) ) {
-		await panel.getByRole( 'button', { name: /^publish/i } ).click();
+		await panel.getByRole( 'button', { name: /^publish$/i } ).click();
 	}
 	await page.waitForURL( /post\.php\?post=\d+&action=edit/ );
 
 	await page.reload();
-	await expect( page.locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible();
+	await expect( canvas( page ).locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible();
 
-	await expect( page.locator( '.wp-block-daymark-timeline' ).first() ).toBeVisible();
-	await page.locator( '.wp-block-daymark-timeline' ).first().click();
+	await expect( canvas( page ).locator( '.wp-block-daymark-timeline' ).first() ).toBeVisible();
+	await canvas( page ).locator( '.wp-block-daymark-timeline' ).first().click();
 	await revealInspector( page );
 
 	await expect( page.locator( '.components-range-control input[type="number"]' ) ).toHaveValue( '20' );

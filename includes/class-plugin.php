@@ -92,6 +92,13 @@ final class Daymark_Plugin {
 	public Daymark_Notifications $notifications;
 
 	/**
+	 * Per-user rate limiter for REST actions.
+	 *
+	 * @var Daymark_Rate_Limiter
+	 */
+	public Daymark_Rate_Limiter $rate_limiter;
+
+	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
 	 * @var array<string, string>
@@ -139,6 +146,7 @@ final class Daymark_Plugin {
 		$this->notifications        = new Daymark_Notifications();
 		$this->syndication_links    = new Daymark_Syndication_Links();
 		$this->backflow_sync        = new Daymark_Backflow_Sync();
+		$this->rate_limiter         = new Daymark_Rate_Limiter();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes

@@ -68,4 +68,24 @@ class Test_App_Shell extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'wpadminbar', $html );
 		$this->assertStringNotContainsString( 'adminmenu', $html );
 	}
+
+	/** The shell emits a conservative, filterable CSP. */
+	public function test_shell_emits_content_security_policy() {
+		$captured = null;
+		$capture  = static function ( $policy ) use ( &$captured ) {
+			$captured = $policy;
+
+			return $policy;
+		};
+		add_filter( 'daymark_app_content_security_policy', $capture );
+
+		$this->render_shell();
+		remove_filter( 'daymark_app_content_security_policy', $capture );
+
+		$this->assertIsString( $captured );
+		$this->assertStringContainsString( "default-src 'self'", (string) $captured );
+		$this->assertStringContainsString( "object-src 'none'", (string) $captured );
+		$this->assertStringContainsString( "frame-ancestors 'none'", (string) $captured );
+		$this->assertStringContainsString( "script-src 'self'", (string) $captured );
+	}
 }
