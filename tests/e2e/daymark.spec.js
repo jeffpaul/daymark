@@ -201,6 +201,20 @@ test('audio Mark shows an editable optional Title field with a toggleable hint',
 	await expect(info).toHaveAttribute('aria-expanded', 'true');
 	await info.click();
 	await expect(hint).toBeHidden();
+
+	// It also dismisses the same way search and the reply box do: an
+	// outside click, or Escape with focus returned to the ⓘ button.
+	await info.click();
+	await expect(hint).toBeVisible();
+	await page.locator('#daymark-caption').click();
+	await expect(hint).toBeHidden();
+	await expect(info).toHaveAttribute('aria-expanded', 'false');
+
+	await info.click();
+	await expect(hint).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(hint).toBeHidden();
+	await expect(info).toBeFocused();
 });
 
 // The Title field is a per-type affordance: a plain note Mark never shows

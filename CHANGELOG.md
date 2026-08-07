@@ -28,6 +28,7 @@ can't act on them.
 
 - The app now only ever lives at `/daymark` (or `/daymark-app` when that slug is already taken by real site content), even on an install migrated from Moment. Since 0.6.1, a migrated install kept serving the app at its old `/moment` URL, with `/daymark` merely redirecting there — now it's the other way around: `/daymark` is the real app, and `/moment` (and any home-screen icon already pointing at it) 301s to it instead. ([#62](https://github.com/jeffpaul/daymark/pull/62))
 - Search and a notification's reply box now dismiss the same way the per-item menu and the "+ New Mark" launcher already do: tapping outside them, or pressing Escape, closes them and returns keyboard focus to their own toggle. Escape now works no matter which control inside search has focus, not only the text field itself. ([#63](https://github.com/jeffpaul/daymark/pull/63))
+- The composer's title-field "ⓘ" hint follows suit too: an outside tap or Escape closes it and returns focus to the ⓘ button. ([#65](https://github.com/jeffpaul/daymark/pull/65))
 
 ### Security
 
