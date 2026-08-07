@@ -152,6 +152,58 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertIsInt( $post_id );
 	}
 
+	/** A per-request total byte budget stops many files from bypassing the per-file cap. */
+	public function test_combined_upload_honors_total_budget() {
+		add_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+
+		$publisher = new Daymark_Publisher();
+		$result    = $publisher->publish(
+			array( 'caption' => 'Over budget' ),
+			array(
+				'files' => array(
+					'name'     => array( 'one.png', 'two.png' ),
+					'type'     => array( 'image/png', 'image/png' ),
+					'tmp_name' => array( $fixture, $fixture ),
+					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
+					'size'     => array( filesize( $fixture ), filesize( $fixture ) ),
+				),
+			)
+		);
+
+		remove_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
+
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'daymark_upload_total_too_large', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/** A single file under the total budget still uploads fine. */
+	public function test_combined_upload_within_budget_passes() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-budget-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'Under budget' ),
+			array(
+				'files' => array(
+					'name'     => 'under.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertCount( 1, (array) $media_ids );
+	}
+
 	/** Unauthenticated REST create is refused with 401. */
 	public function test_unauthenticated_rest_create_returns_401() {
 		wp_set_current_user( 0 );

@@ -194,39 +194,6 @@ class Test_Alt_Text extends WP_UnitTestCase {
 		$this->assertSame( 'Keep me', $this->alt_of( $foreign ), 'An attachment outside the Mark must be untouched' );
 	}
 
-	/** A per-request total byte budget stops many files from bypassing the cap. */
-	public function test_combined_upload_honors_total_budget() {
-		add_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
-
-		$publisher = new Daymark_Publisher();
-		$result    = $publisher->publish(
-			array(
-				'caption' => 'Over budget',
-			),
-			$this->files_array( array( $this->temp_png(), $this->temp_png() ) )
-		);
-
-		remove_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'daymark_upload_total_too_large', $result->get_error_code() );
-		$this->assertSame( 400, $result->get_error_data()['status'] );
-	}
-
-	/** A single file under the total budget still uploads fine. */
-	public function test_combined_upload_within_budget_passes() {
-		$publisher = new Daymark_Publisher();
-		$post_id   = (int) $publisher->publish(
-			array(
-				'caption' => 'Under budget',
-			),
-			$this->files_array( array( $this->temp_png() ) )
-		);
-
-		$this->assertNotWPError( $post_id );
-		$this->assertCount( 1, $this->media_ids_of( $post_id ) );
-	}
-
 	/** GET /marks/{id} exposes each image's current alt for the composer. */
 	public function test_get_daymark_media_includes_alt() {
 		$publisher = new Daymark_Publisher();
