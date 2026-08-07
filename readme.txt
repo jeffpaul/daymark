@@ -234,7 +234,7 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 == Upgrade Notice ==
 
 = 0.7.0 =
-Significant security hardening: rate limiting, an alt-text access-control fix, per-request upload caps, a stricter Content-Security-Policy, and prompt-injection defenses for AI Assist. Also ships the new Path-style "+" launcher and header/footer redesign, a fix so the app only ever lives at /daymark (even on installs migrated from Moment), and consistent outside-click/Escape dismissal across search, replies, and the title-field hint.
+Security hardening (rate limiting, an alt-text access-control fix, upload caps, a stricter CSP, AI prompt-injection defenses), a new Path-style launcher and header/footer redesign, a fix so the app only lives at /daymark on migrated installs, and consistent outside-click/Escape dismissal.
 
 = 0.6.1 =
 Fixes a 404 at /daymark on installs migrated from Moment. Also adds comment/like counts and inline audio/video/note previews to the public views, Global Styles support for the daymark/* blocks, and an auto-hiding Home footer.
