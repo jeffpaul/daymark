@@ -28,7 +28,7 @@ can't act on them.
 
 - Editing a Mark's alt text is now scoped to that Mark's own media — an ID-mapped alt edit can no longer be aimed at an image that belongs to a different post.
 - Expensive actions are now rate limited per user: AI Assist requests, publishing, and manual response syncs. Over the limit, Daymark asks you to wait a moment instead of processing (limits are configurable via the `daymark_rate_limits` filter).
-- Uploads are now capped per request as well as per file, so many files can't be combined to bypass the 50 MB per-file cap. The combined upload limit is 100 MB, filterable via `daymark_upload_total_max_bytes`.
+- Uploads are now capped per request as well as per file, so many files can't be combined to bypass the 50 MB per-file cap (itself now filterable via `daymark_upload_max_bytes`). The combined upload limit is 200 MB, filterable via `daymark_upload_total_max_bytes`.
 - Manual response syncs for real connector references now honor the same per-post cooldown as automatic backflow (with an atomic lock so overlapping syncs can't double-poll), while mocked demo syncs stay instant and repeat-safe.
 - The app shell now sends a conservative Content-Security-Policy header, filterable via `daymark_app_content_security_policy`.
 - Imported social replies can be routed through moderation: the `daymark_comment_import_approved` filter decides whether an imported reply is approved.

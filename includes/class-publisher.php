@@ -122,7 +122,7 @@ class Daymark_Publisher {
 	 *
 	 * @var int
 	 */
-	public const MAX_TOTAL_FILE_BYTES = 100 * 1024 * 1024; // 100 MB.
+	public const MAX_TOTAL_FILE_BYTES = 200 * 1024 * 1024; // 200 MB.
 
 	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
@@ -673,14 +673,22 @@ class Daymark_Publisher {
 			);
 		}
 
-		if ( (int) ( $file['size'] ?? 0 ) > self::MAX_FILE_BYTES ) {
+		/**
+		 * Filters the maximum accepted size of a single uploaded file, in bytes.
+		 *
+		 * @param int $max_bytes Defaults to Daymark_Publisher::MAX_FILE_BYTES.
+		 */
+		$max_file_bytes = (int) apply_filters( 'daymark_upload_max_bytes', self::MAX_FILE_BYTES );
+		$max_file_bytes = max( 1, $max_file_bytes );
+
+		if ( (int) ( $file['size'] ?? 0 ) > $max_file_bytes ) {
 			return new WP_Error(
 				'daymark_upload_too_large',
 				sprintf(
 					/* translators: 1: file name, 2: maximum upload size (e.g. "50 MB"). */
 					__( '"%1$s" is too large. Maximum upload size is %2$s.', 'daymark' ),
 					sanitize_text_field( (string) $file['name'] ),
-					size_format( self::MAX_FILE_BYTES )
+					size_format( $max_file_bytes )
 				),
 				array( 'status' => 400 )
 			);

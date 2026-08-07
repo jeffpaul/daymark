@@ -152,6 +152,32 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertIsInt( $post_id );
 	}
 
+	/** The per-file cap is filterable independently of the total budget. */
+	public function test_per_file_cap_is_filterable() {
+		add_filter( 'daymark_upload_max_bytes', '__return_zero' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+
+		$publisher = new Daymark_Publisher();
+		$result    = $publisher->publish(
+			array( 'caption' => 'Filtered per-file cap' ),
+			array(
+				'files' => array(
+					'name'     => 'small.png',
+					'type'     => 'image/png',
+					'tmp_name' => $fixture,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $fixture ), // Well under the real default; only the filter makes this fail.
+				),
+			)
+		);
+
+		remove_filter( 'daymark_upload_max_bytes', '__return_zero' );
+
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'daymark_upload_too_large', $result->get_error_code() );
+	}
+
 	/** A per-request total byte budget stops many files from bypassing the per-file cap. */
 	public function test_combined_upload_honors_total_budget() {
 		add_filter( 'daymark_upload_total_max_bytes', '__return_zero' );
