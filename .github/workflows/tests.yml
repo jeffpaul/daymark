@@ -6,14 +6,33 @@ on:
   pull_request:
 
 jobs:
-  # Resolves the two WordPress versions every job tests against:
-  #   stable    — the current release (X.Y from the official API)
-  #   candidate — the highest RC of the NEXT version when one exists
-  #               (release-candidate window), otherwise trunk (nightly).
+  # Resolves the three WordPress versions every job tests against, per our
+  # "latest and latest-minus-one" support policy (see also
+  # wordpress-version-checker.yml, which bumps "Requires at least"/"Tested
+  # up to" against the same policy):
+  #   minimum — our actually-declared floor, read straight from daymark.php's
+  #             "Requires at least" header (NOT independently recomputed as
+  #             "stable minus one" — the declared floor can sit above that
+  #             arithmetic result, as it does today: Daymark hard-depends on
+  #             the WP 7.0 AI Client with no existence shims, so "latest
+  #             minus one" cannot go below 7.0 while 7.0 is still current.
+  #             wordpress-version-checker.yml already owns moving this
+  #             number forward on each new WP release — this just tests
+  #             whatever it last set).
+  #   stable  — the current release (X.Y from the official API; "Tested up to")
+  #   nightly — the highest RC of the NEXT version when one exists
+  #             (release-candidate window), otherwise trunk
   # During an RC window this means every PR — including the automated
   # tested-up-to bump PR from the WordPress Version Checker — tests against
-  # the actual upcoming release, so green candidate legs mean the bump is
+  # the actual upcoming release, so a green nightly leg means the bump is
   # safe to merge ahead of the release date.
+  #
+  # Each matrix entry carries a fixed `label` (minimum/stable-or-latest/
+  # nightly) alongside the real `wp` version to install. Job names and the
+  # branch ruleset's required-check list key off `label`, which never
+  # changes — only `wp` moves as RC numbers advance (RC1 -> RC2 -> ... ->
+  # final). This is what lets nightly's actual version drift without ever
+  # requiring a ruleset update again.
   resolve:
     name: Resolve WordPress versions
     runs-on: ubuntu-latest
@@ -24,11 +43,14 @@ jobs:
       scratch-matrix: ${{ steps.resolve.outputs.scratch-matrix }}
       phpunit-matrix: ${{ steps.resolve.outputs.phpunit-matrix }}
     steps:
-      - name: Resolve stable + candidate
+      - uses: actions/checkout@v7.0.1
+
+      - name: Resolve minimum + stable + candidate
         id: resolve
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
+          import re
           import urllib.request
 
           def head_ok(url):
@@ -49,6 +71,12 @@ jobs:
           # WordPress versioning: X.9 is followed by (X+1).0.
           nxt = f'{major + 1}.0' if minor == 9 else f'{major}.{minor + 1}'
 
+          with open('daymark.php') as plugin_file:
+              match = re.search(r'Requires at least:\s*(\d+\.\d+)', plugin_file.read())
+          if not match:
+              raise SystemExit('Could not find "Requires at least" in daymark.php')
+          minimum = match.group(1)
+
           candidate = 'nightly'
           for n in range(9, 0, -1):  # highest published RC wins
               if head_ok(f'https://wordpress.org/wordpress-{nxt}-RC{n}.zip'):
@@ -57,26 +85,28 @@ jobs:
 
           print(f'stable={stable}')
           print(f'candidate={candidate}')
-          # Scratch installs use wp-cli's 'latest'; PHPUnit needs the explicit
-          # stable number to pick the matching wordpress-develop branch.
-          print(f'scratch-matrix={json.dumps(["latest", candidate])}')
-          print(f'phpunit-matrix={json.dumps([stable, candidate])}')
+          # Scratch installs use wp-cli's 'latest' for the stable leg;
+          # PHPUnit needs the explicit stable number to pick the matching
+          # wordpress-develop branch. Labels are fixed; only `wp` varies.
+          print(f'scratch-matrix={json.dumps([{"label": "minimum", "wp": minimum}, {"label": "latest", "wp": "latest"}, {"label": "nightly", "wp": candidate}])}')
+          print(f'phpunit-matrix={json.dumps([{"label": "minimum", "wp": minimum}, {"label": "stable", "wp": stable}, {"label": "nightly", "wp": candidate}])}')
           PY
           cat "$GITHUB_OUTPUT"
 
   phpunit:
-    name: PHPUnit (WP ${{ matrix.wp }}, PHP ${{ matrix.php }})
+    name: PHPUnit (WP ${{ matrix.config.label }}, PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: resolve
-    # Candidate legs (RC or trunk) are early warning for the next WordPress
-    # release: failures show on the run but do not block merges.
-    continue-on-error: ${{ matrix.wp != needs.resolve.outputs.stable }}
+    # The nightly leg (RC or trunk) is early warning for the next WordPress
+    # release: failures show on the run but do not block merges. minimum
+    # and stable are both part of our declared support policy and block.
+    continue-on-error: ${{ matrix.config.label == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
         php: ['8.2', '8.4']
-        wp: ${{ fromJSON(needs.resolve.outputs.phpunit-matrix) }}
+        config: ${{ fromJSON(needs.resolve.outputs.phpunit-matrix) }}
     services:
       mysql:
         image: mysql:8.0
@@ -99,8 +129,8 @@ jobs:
           coverage: none
           tools: composer
 
-      - name: Install WordPress test library (WP ${{ matrix.wp }})
-        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 '${{ matrix.wp }}' true
+      - name: Install WordPress test library (WP ${{ matrix.config.label }})
+        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 '${{ matrix.config.wp }}' true
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
@@ -109,16 +139,17 @@ jobs:
         run: WP_TESTS_DIR=/tmp/wordpress-tests-lib composer test
 
   smoke:
-    name: Smoke suite (WP ${{ matrix.wp }}, live install)
+    name: Smoke suite (WP ${{ matrix.config.label }}, live install)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: resolve
-    # Candidate legs (RC or trunk) are early warning; non-blocking.
-    continue-on-error: ${{ matrix.wp != 'latest' }}
+    # The nightly leg (RC or trunk) is early warning; non-blocking. minimum
+    # and latest are both part of our declared support policy and block.
+    continue-on-error: ${{ matrix.config.label == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
-        wp: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
+        config: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
     services:
       mysql:
         image: mysql:8.0
@@ -141,9 +172,9 @@ jobs:
           coverage: none
           tools: wp-cli
 
-      - name: Install scratch WordPress (${{ matrix.wp }})
+      - name: Install scratch WordPress (${{ matrix.config.label }})
         run: |
-          bash bin/download-wp.sh '${{ matrix.wp }}' /tmp/wp
+          bash bin/download-wp.sh '${{ matrix.config.wp }}' /tmp/wp
           wp config create --path=/tmp/wp --dbname=wp_smoke --dbuser=root --dbpass=root --dbhost=127.0.0.1
           wp core install --path=/tmp/wp --url=http://smoke.test --title=Smoke \
             --admin_user=admin --admin_password=admin --admin_email=admin@smoke.test --skip-email
@@ -160,16 +191,17 @@ jobs:
           WP="$RUNNER_TEMP/wpx" bash tests/smoke.sh
 
   playwright:
-    name: Browser E2E (Playwright, WP ${{ matrix.wp }})
+    name: Browser E2E (Playwright, WP ${{ matrix.config.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: resolve
-    # Candidate legs (RC or trunk) are early warning; non-blocking.
-    continue-on-error: ${{ matrix.wp != 'latest' }}
+    # The nightly leg (RC or trunk) is early warning; non-blocking. minimum
+    # and latest are both part of our declared support policy and block.
+    continue-on-error: ${{ matrix.config.label == 'nightly' }}
     strategy:
       fail-fast: false
       matrix:
-        wp: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
+        config: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
     services:
       mysql:
         image: mysql:8.0
@@ -192,9 +224,9 @@ jobs:
           coverage: none
           tools: wp-cli
 
-      - name: Install scratch WordPress (${{ matrix.wp }})
+      - name: Install scratch WordPress (${{ matrix.config.label }})
         run: |
-          bash bin/download-wp.sh '${{ matrix.wp }}' /tmp/wp
+          bash bin/download-wp.sh '${{ matrix.config.wp }}' /tmp/wp
           wp config create --path=/tmp/wp --dbname=wp_e2e --dbuser=root --dbpass=root --dbhost=127.0.0.1
           wp core install --path=/tmp/wp --url=http://127.0.0.1:8889 --title=E2E \
             --admin_user=admin --admin_password=admin --admin_email=admin@e2e.test --skip-email
@@ -255,6 +287,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-traces-${{ matrix.wp }}
+          name: playwright-traces-${{ matrix.config.label }}
           path: test-results/
           retention-days: 7
