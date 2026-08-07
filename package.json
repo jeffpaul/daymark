@@ -1,7 +1,7 @@
 {
   "name": "daymark",
   "version": "0.6.1",
-  "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests only.",
+  "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests and the block editor build only.",
   "private": true,
   "license": "GPL-2.0-or-later",
   "repository": {
@@ -9,9 +9,12 @@
     "url": "git+https://github.com/jeffpaul/daymark.git"
   },
   "scripts": {
+    "build": "wp-scripts build",
+    "start": "wp-scripts start",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.0"
+    "@playwright/test": "^1.62.0",
+    "@wordpress/scripts": "^34.0.0"
   }
 }
