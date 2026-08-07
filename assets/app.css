@@ -622,6 +622,40 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* Same stat-row look as the public views' .daymark-item-stats (views.css),
+   built on this file's custom properties instead of that file's hardcoded
+   hex — one visual vocabulary, each stylesheet's own color convention. */
+.daymark-item-stats {
+	display: flex;
+	gap: var(--daymark-spacing-sm);
+	margin-top: 2px;
+}
+
+.daymark-stat {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-stat--active {
+	color: var(--daymark-accent);
+	font-weight: 600;
+}
+
+.daymark-stat svg {
+	stroke-width: 2;
+}
+
+.daymark-stat--active svg {
+	stroke-width: 2.5;
+}
+
+.daymark-stat__count {
+	font-variant-numeric: tabular-nums;
+}
+
 .daymark-empty {
 	padding: var(--daymark-spacing-lg);
 	border: 1px dashed var(--daymark-border);

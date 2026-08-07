@@ -126,6 +126,53 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 		$this->assertSame( wp_get_attachment_image_url( $featured_id, 'medium' ), $mark['thumbnail'] );
 	}
 
+	/**
+	 * The list's comment_count/like_count mirror Daymark_Renderer's stat
+	 * row on the public views: approved comments and approved 'like'-type
+	 * comments, counted separately, with unapproved ones excluded.
+	 */
+	public function test_list_reports_approved_comment_and_like_counts() {
+		wp_set_current_user( $this->author_a );
+
+		$post_id = $this->create_mark( $this->author_a, 'note', 'publish', 'Has engagement' );
+
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 1,
+				'comment_type'     => 'comment',
+			)
+		);
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 1,
+				'comment_type'     => 'comment',
+			)
+		);
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 0,
+				'comment_type'     => 'comment',
+			)
+		);
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 1,
+				'comment_type'     => 'like',
+			)
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/marks' );
+		$marks   = rest_do_request( $request )->get_data();
+		$mark    = current( array_filter( $marks, static fn( $m ) => $m['id'] === $post_id ) );
+
+		$this->assertSame( 2, $mark['comment_count'], 'Only the 2 approved comments are counted' );
+		$this->assertSame( 1, $mark['like_count'] );
+	}
+
 	/** A temporary PNG file for attachment tests that don't care about its content. */
 	private function temp_png(): string {
 		$file = wp_tempnam( 'daymark-thumb-' ) . '.png';

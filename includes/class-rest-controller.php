@@ -1056,7 +1056,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
+			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
+			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
+		);
+	}
+
+	/**
+	 * Count approved comments of one comment_type on a Mark — mirrors
+	 * Daymark_Renderer::count_comments_of_type(), which the public views
+	 * use for the same stat. Replies (comment_type 'comment') include
+	 * on-site comments and, once backflow imports them, replies from
+	 * Bluesky/the fediverse/webmention; likes (comment_type 'like') are
+	 * populated the same way. Both are 0 for a Mark with no connected
+	 * federation plugin or no engagement yet.
+	 *
+	 * @param int    $post_id Mark post ID.
+	 * @param string $type    Comment type ('comment' or 'like').
+	 * @return int
+	 */
+	private function count_comments_of_type( int $post_id, string $type ): int {
+		return (int) get_comments(
+			array(
+				'post_id' => $post_id,
+				'type'    => $type,
+				'status'  => 'approve',
+				'count'   => true,
+			)
 		);
 	}
 
