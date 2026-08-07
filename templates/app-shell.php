@@ -36,11 +36,16 @@ if ( ! current_user_can( 'edit_posts' ) ) {
 
 // Defense-in-depth: the shell is a self-contained document with one
 // same-origin script and stylesheet, so restrict what it may load. The
-// inline bootstrap config (window.daymarkApp) is JSON_HEX-escaped server-
-// side but still requires 'unsafe-inline' in script-src.
+// inline bootstrap config (window.daymarkApp) is JSON_HEX-escaped
+// server-side and nonce-scoped (see the wp_inline_script_attributes
+// filter below) rather than relying on 'unsafe-inline' — which would
+// let ANY injected <script> tag execute, not just this one.
+// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Encoding random bytes into a CSP nonce, not obfuscating code.
+$daymark_csp_nonce = base64_encode( random_bytes( 16 ) );
+
 $daymark_csp_parts = array(
 	"default-src 'self'",
-	"script-src 'self' 'unsafe-inline'",
+	"script-src 'self' 'nonce-{$daymark_csp_nonce}'",
 	"style-src 'self' 'unsafe-inline'",
 	'img-src ' . "'self' data: blob:",
 	'media-src ' . "'self' blob:",
@@ -217,6 +222,21 @@ wp_add_inline_script(
 	'window.daymarkApp = ' . wp_json_encode( $daymark_config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';',
 	'before'
 );
+
+// Matches the script-src nonce above onto this specific inline script only
+// (id format per WP_Scripts::get_inline_script_tag(): "{handle}-js-{position}") —
+// every other inline script on the page, if any, is untouched.
+add_filter(
+	'wp_inline_script_attributes',
+	static function ( array $attributes ) use ( $daymark_csp_nonce ): array {
+		if ( isset( $attributes['id'] ) && 'daymark-app-js-before' === $attributes['id'] ) {
+			$attributes['nonce'] = $daymark_csp_nonce;
+		}
+
+		return $attributes;
+	}
+);
+
 wp_enqueue_style( 'daymark-app' );
 wp_enqueue_script( 'daymark-app' );
 ?>

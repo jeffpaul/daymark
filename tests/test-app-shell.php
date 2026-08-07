@@ -88,4 +88,38 @@ class Test_App_Shell extends WP_UnitTestCase {
 		$this->assertStringContainsString( "frame-ancestors 'none'", (string) $captured );
 		$this->assertStringContainsString( "script-src 'self'", (string) $captured );
 	}
+
+	/**
+	 * script-src carries a per-request nonce (not 'unsafe-inline', which
+	 * would let ANY injected <script> tag execute, not just the app's own),
+	 * and that exact nonce is what actually appears on the inline bootstrap
+	 * script — the property that matters, since a mismatch would mean the
+	 * browser blocks the very script the app needs to run.
+	 */
+	public function test_inline_bootstrap_script_carries_the_csp_nonce() {
+		$captured = null;
+		$capture  = static function ( $policy ) use ( &$captured ) {
+			$captured = $policy;
+
+			return $policy;
+		};
+		add_filter( 'daymark_app_content_security_policy', $capture );
+
+		$html = $this->render_shell();
+		remove_filter( 'daymark_app_content_security_policy', $capture );
+
+		preg_match( '/script-src[^;]*/', (string) $captured, $script_src_matches );
+		$script_src = $script_src_matches[0] ?? '';
+
+		$this->assertStringNotContainsString( 'unsafe-inline', $script_src, 'script-src must not fall back to unsafe-inline' );
+
+		preg_match( '/nonce-([A-Za-z0-9+\/=]+)/', $script_src, $nonce_matches );
+		$this->assertNotEmpty( $nonce_matches, 'script-src must carry a nonce' );
+
+		$this->assertStringContainsString(
+			'nonce="' . $nonce_matches[1] . '"',
+			$html,
+			'The inline bootstrap script must carry the exact nonce the CSP header allows'
+		);
+	}
 }
