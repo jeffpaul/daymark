@@ -188,6 +188,41 @@
 
 	const PLUS_GLYPH = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
 
+	// Same outline icons as the public views' stat row (Daymark_Renderer's
+	// ICON_COMMENT/ICON_HEART) — one visual vocabulary for "replies" and
+	// "likes" across both surfaces.
+	const COMMENT_GLYPH =
+		'<path d="M21 11.5a8.38 8.38 0 0 1-4.7 7.6 8.5 8.5 0 0 1-3.8.9H12a8.48 8.48 0 0 1-4-.9l-5 1 1-5a8.48 8.48 0 0 1-.9-4 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>';
+	const HEART_GLYPH =
+		'<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"></path>';
+
+	function statIcon(glyph) {
+		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
+	}
+
+	// A zero-count stat shows only its (dimmed) icon — no "0" — so the row
+	// stays quiet until there's something to report; matches
+	// Daymark_Renderer::render_stat() on the public views.
+	function renderStat(glyph, count, modifier, singular, plural) {
+		const isActive = count > 0;
+		const label = `${count} ${count === 1 ? singular : plural}`;
+		return `<span class="daymark-stat daymark-stat--${modifier}${
+			isActive ? ' daymark-stat--active' : ''
+		}" aria-label="${esc(label)}">${statIcon(glyph)}${
+			isActive ? `<span class="daymark-stat__count" aria-hidden="true">${count}</span>` : ''
+		}</span>`;
+	}
+
+	function renderItemStats(item) {
+		return `<span class="daymark-item-stats">${renderStat(
+			COMMENT_GLYPH,
+			item.comment_count || 0,
+			'comments',
+			'comment',
+			'comments'
+		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}</span>`;
+	}
+
 	// Pre-filters the composer's native file picker to match the launcher
 	// bubble that was tapped — 'note' has no entry since it skips the
 	// picker entirely (see CreateScreen.render()).
@@ -676,17 +711,40 @@
 
 			this._launcherOpen = false;
 
+			// Bubbles become clickable only once this fires — see the CSS
+			// comment on `.is-open.is-settled .daymark-launcher__bubble`
+			// for why that's driven by a JS timer rather than a CSS
+			// transition-delay on pointer-events. 650ms covers the worst
+			// case (the last bubble's own 0.2s delay + 0.42s transition,
+			// 620ms, plus a small margin) — 0 for reduced motion, since
+			// CSS already skips the travel entirely and there's nothing
+			// to wait out.
+			const prefersReducedMotion =
+				window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			const SETTLE_MS = prefersReducedMotion ? 0 : 650;
+
 			this.openLauncher = () => {
 				this._launcherOpen = true;
+				clearTimeout(this._launcherSettleTimer);
+				launcher.classList.remove('is-settled');
 				launcher.classList.add('is-open');
+				this._launcherSettleTimer = setTimeout(() => {
+					launcher.classList.add('is-settled');
+				}, SETTLE_MS);
 				btn.setAttribute('aria-expanded', 'true');
 				bubbles.forEach((bubble) => {
 					bubble.removeAttribute('tabindex');
 					bubble.removeAttribute('aria-hidden');
 				});
+				// `preventScroll` matters here: a bubble sits well within
+				// view the moment it fans out, but the browser's default
+				// focus-triggered scrollIntoView can still nudge the page —
+				// and that nudge is itself a real scroll, which trips the
+				// "a real scroll closes the launcher" listener below,
+				// closing the launcher it was just supposed to focus into.
 				const first = bubbles[0];
 				if (first) {
-					first.focus();
+					first.focus({ preventScroll: true });
 				}
 			};
 
@@ -695,7 +753,8 @@
 					return;
 				}
 				this._launcherOpen = false;
-				launcher.classList.remove('is-open');
+				clearTimeout(this._launcherSettleTimer);
+				launcher.classList.remove('is-open', 'is-settled');
 				btn.setAttribute('aria-expanded', 'false');
 				bubbles.forEach((bubble) => {
 					bubble.setAttribute('tabindex', '-1');
@@ -741,6 +800,7 @@
 			if (!footer) {
 				return;
 			}
+			const launcher = footer.querySelector('[data-launcher]');
 
 			if (this._onScroll) {
 				window.removeEventListener('scroll', this._onScroll);
@@ -777,8 +837,17 @@
 					}
 
 					// A real scroll closes the launcher too, so its bubbles
-					// never end up floating over a footer that just hid.
-					if (this.closeLauncher) {
+					// never end up floating over a footer that just hid —
+					// but only once it has actually settled. Mid fan-out,
+					// bubbles are still `pointer-events: none` (see the CSS
+					// comment on `.is-settled`), so a click there makes the
+					// browser/automation retry its own scrollIntoView against
+					// a still-animating target; that retry's scroll would
+					// otherwise land right here and close the launcher out
+					// from under itself before it ever became clickable.
+					const launcherOpenAndSettled =
+						launcher && launcher.classList.contains('is-settled');
+					if (launcherOpenAndSettled && this.closeLauncher) {
 						this.closeLauncher();
 					}
 
@@ -1305,6 +1374,7 @@
 						<span class="daymark-recent__meta">${draftChip}${esc(
 							TYPE_LABELS[item.type] || item.type || ''
 						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
+						${isDraft ? '' : renderItemStats(item)}
 					</span>
 				</a>
 				<div class="daymark-recent__actions" data-actions>

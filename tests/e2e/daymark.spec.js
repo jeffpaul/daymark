@@ -914,3 +914,45 @@ test('section page back-link returns to the app', async ({ page }) => {
 	await back.click();
 	await expect(page).toHaveURL(/\/daymark\/?(#.*)?$/);
 });
+
+// Home's Recent Marks list shows the same comment/like stat row as the
+// public Timeline card — a zero count stays a dimmed icon-only, a real
+// count shows next to a bolder icon.
+test('home Recent Marks entries show comment/like counts', async ({ page }) => {
+	const caption = `E2E stats ${RUN_ID}`;
+	const reply = `E2E nice one ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark');
+	const row = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	await expect(row.locator('.daymark-stat--comments.daymark-stat--active')).toHaveCount(0);
+	await expect(row.locator('.daymark-stat--likes.daymark-stat--active')).toHaveCount(0);
+
+	await page.evaluate(async (replyText) => {
+		const config = window.daymarkApp;
+		const listRes = await fetch(`${config.restUrl}marks?per_page=1`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const [latest] = await listRes.json();
+		await fetch('/wp-json/wp/v2/comments', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ post: latest.id, content: replyText }),
+		});
+	}, reply);
+
+	await page.goto('/daymark');
+	const rowAfter = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	const commentStat = rowAfter.locator('.daymark-stat--comments');
+	await expect(commentStat).toHaveClass(/daymark-stat--active/);
+	await expect(commentStat.locator('.daymark-stat__count')).toHaveText('1');
+});
