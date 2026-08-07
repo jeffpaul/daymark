@@ -1506,6 +1506,23 @@
 			});
 
 			this.refreshMedia();
+
+			// Close the title-field hint on an outside click or Escape,
+			// same convention as the item menu, launcher, search, and the
+			// reply box. [data-title-slot] is the stable wrapper
+			// refreshTitleField() re-renders into, so this keeps working
+			// across every type change during this screen's lifetime.
+			bindDismissible(this, [
+				{
+					selector: '[data-title-slot]',
+					close: () => this.closeTitleHint(),
+					isOpen: () => {
+						const info = root.querySelector('[data-title-info]');
+						return !!info && info.getAttribute('aria-expanded') === 'true';
+					},
+					focus: () => root.querySelector('[data-title-info]'),
+				},
+			]);
 		},
 
 		refreshMedia() {
@@ -1688,9 +1705,12 @@
 			const hint = slot.querySelector('[data-title-hint]');
 			if (info && hint) {
 				info.addEventListener('click', () => {
-					const open = info.getAttribute('aria-expanded') === 'true';
-					info.setAttribute('aria-expanded', open ? 'false' : 'true');
-					hint.hidden = open;
+					if (info.getAttribute('aria-expanded') === 'true') {
+						this.closeTitleHint();
+					} else {
+						info.setAttribute('aria-expanded', 'true');
+						hint.hidden = false;
+					}
 				});
 			}
 
@@ -1704,6 +1724,23 @@
 				!state.titleEdited
 			) {
 				this.generateTitle();
+			}
+		},
+
+		// Idempotent, matching closeSearch()/closeLauncher(): safe for the
+		// outside-click/Escape handler below to call unconditionally. Queries
+		// fresh each time rather than closing over the info/hint elements,
+		// since refreshTitleField() replaces them whenever the effective
+		// type changes.
+		closeTitleHint() {
+			const info = root.querySelector('[data-title-info]');
+			const hint = root.querySelector('[data-title-hint]');
+			if (!info || info.getAttribute('aria-expanded') !== 'true') {
+				return;
+			}
+			info.setAttribute('aria-expanded', 'false');
+			if (hint) {
+				hint.hidden = true;
 			}
 		},
 
