@@ -14,6 +14,7 @@ class Test_Routes extends WP_UnitTestCase {
 	public function set_up(): void {
 		parent::set_up();
 		delete_option( Daymark_Routes::OPTION_APP_BASE );
+		delete_option( Daymark_Routes::OPTION_LEGACY_APP_BASE );
 	}
 
 	private function registered_rule_patterns(): array {
@@ -87,18 +88,34 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( 'daymark-app', Daymark_Routes::resolve_app_base() );
 	}
 
-	/** A migrated install's legacy base gets a /daymark redirect, since nothing else lives there. */
-	public function test_migrated_base_gets_daymark_redirect() {
-		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
+	/** A migrated install's old /moment URL redirects to the real app at /daymark. */
+	public function test_legacy_base_redirects_to_daymark() {
+		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'moment' );
 
 		$rules = $this->registered_rules();
 
-		$this->assertSame( 'index.php?daymark_app=home', $rules['^moment/?$'] ?? null, 'The persisted (legacy) base keeps working' );
-		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^daymark/?$'] ?? null, 'The new brand URL redirects rather than 404ing' );
-		$this->assertSame( 'index.php?daymark_app=redirect-notifications', $rules['^daymark/notifications/?$'] ?? null );
+		$this->assertSame( 'index.php?daymark_app=home', $rules['^daymark/?$'] ?? null, 'The app itself only ever lives at /daymark' );
+		$this->assertSame( 'index.php?daymark_app=redirect-home', $rules['^moment/?$'] ?? null, 'The old brand URL redirects rather than staying a second home for the app' );
+		$this->assertSame( 'index.php?daymark_app=redirect-notifications', $rules['^moment/notifications/?$'] ?? null );
 	}
 
-	/** A slug collision must never have /daymark rewritten out from under the real content. */
+	/** A legacy-base redirect must never shadow real content that now lives at the old slug. */
+	public function test_legacy_slug_collision_gets_no_redirect() {
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'moment',
+			)
+		);
+		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'moment' );
+
+		$rules = $this->registered_rules();
+
+		$this->assertArrayHasKey( '^daymark/?$', $rules );
+		$this->assertArrayNotHasKey( '^moment/?$', $rules, 'Must not shadow the page actually living at the old slug' );
+	}
+
+	/** A slug collision at /daymark must never have /daymark rewritten out from under the real content. */
 	public function test_slug_collision_gets_no_daymark_redirect() {
 		self::factory()->post->create(
 			array(

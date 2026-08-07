@@ -25,9 +25,19 @@ class Daymark_Routes {
 
 	/**
 	 * Option storing the resolved app base path ('daymark', or 'daymark-app'
-	 * when existing site content already owns /daymark).
+	 * when existing site content already owns /daymark). Always one of
+	 * those two values — a migrated install's old Moment-era base is never
+	 * carried in here; see OPTION_LEGACY_APP_BASE.
 	 */
 	public const OPTION_APP_BASE = 'daymark_app_base';
+
+	/**
+	 * Option storing a migrated install's pre-rename base (e.g. 'moment'),
+	 * if any, purely so that old URL can 301 to wherever the app lives now.
+	 * Set once by Daymark_Migration; never treated as a valid app base
+	 * itself.
+	 */
+	public const OPTION_LEGACY_APP_BASE = 'daymark_legacy_app_base';
 
 	/**
 	 * Allowed screens for the daymark_app query var.
@@ -49,18 +59,18 @@ class Daymark_Routes {
 		add_rewrite_rule( '^' . $base . '/notifications/?$', 'index.php?' . self::QUERY_VAR . '=notifications', 'top' );
 		add_rewrite_rule( '^' . $base . '/manifest\.json$', 'index.php?' . self::QUERY_VAR . '=manifest', 'top' );
 
-		// A migrated install keeps its old base (e.g. 'moment') so a
-		// home-screen icon never breaks — but the new brand's own URL
-		// should still lead somewhere rather than 404. Redirect it to
-		// wherever the app actually lives, but only when /daymark is
-		// genuinely free: a site whose own content already lives there
-		// resolved to 'daymark-app' for exactly that reason, and must
-		// never have /daymark rewritten out from under it.
-		$needs_redirect = 'daymark' !== $base && ! self::daymark_slug_is_taken();
+		// A migrated install's old Moment-era URL (e.g. /moment) is not a
+		// second home for the app — it 301s to wherever the app actually
+		// lives now, so a stale bookmark or home-screen icon still lands
+		// somewhere real instead of a 404. Skipped when that old slug is
+		// now owned by real site content, so it's never rewritten out from
+		// under it.
+		$legacy_base    = self::legacy_app_base();
+		$needs_redirect = '' !== $legacy_base && $legacy_base !== $base && ! self::slug_is_taken( $legacy_base );
 
 		if ( $needs_redirect ) {
-			add_rewrite_rule( '^daymark/?$', 'index.php?' . self::QUERY_VAR . '=redirect-home', 'top' );
-			add_rewrite_rule( '^daymark/notifications/?$', 'index.php?' . self::QUERY_VAR . '=redirect-notifications', 'top' );
+			add_rewrite_rule( '^' . $legacy_base . '/?$', 'index.php?' . self::QUERY_VAR . '=redirect-home', 'top' );
+			add_rewrite_rule( '^' . $legacy_base . '/notifications/?$', 'index.php?' . self::QUERY_VAR . '=redirect-notifications', 'top' );
 		}
 
 		add_filter( 'query_vars', array( $this, 'register_query_var' ) );
@@ -79,14 +89,27 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * Whether /daymark is already owned by real site content (a page or
-	 * post at that slug) — the same check resolve_app_base() uses to decide
-	 * whether the app itself must step aside.
+	 * Whether the given slug is already owned by real site content (a page
+	 * or post at that path) — used both to decide whether the app itself
+	 * must step aside from /daymark, and whether a legacy-base redirect
+	 * would shadow real content at the old slug.
 	 *
+	 * @param string $slug Slug to check.
 	 * @return bool
 	 */
-	private static function daymark_slug_is_taken(): bool {
-		return get_page_by_path( 'daymark', OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
+	private static function slug_is_taken( string $slug ): bool {
+		return get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) instanceof WP_Post;
+	}
+
+	/**
+	 * A migrated install's pre-rename base (e.g. 'moment'), if any.
+	 *
+	 * @return string The legacy base, or '' when this install never had one.
+	 */
+	private static function legacy_app_base(): string {
+		$legacy = get_option( self::OPTION_LEGACY_APP_BASE, '' );
+
+		return is_string( $legacy ) ? $legacy : '';
 	}
 
 	/**
@@ -117,7 +140,7 @@ class Daymark_Routes {
 	 * @return string The resolved base.
 	 */
 	public static function resolve_app_base(): string {
-		$base = self::daymark_slug_is_taken() ? 'daymark-app' : 'daymark';
+		$base = self::slug_is_taken( 'daymark' ) ? 'daymark-app' : 'daymark';
 
 		update_option( self::OPTION_APP_BASE, $base );
 

@@ -8,9 +8,9 @@
  * shortcode markup written into the section pages, cron hooks, and
  * transients. This routine converts an existing Moment install in place so
  * nothing is stranded: content keeps rendering, preferences survive, and
- * the persisted app base is carried over (a home-screen-installed app URL
- * must never move underneath its users, so migrated installs keep /moment
- * while fresh installs get /daymark).
+ * the app moves fully to /daymark — the old base (e.g. /moment) is
+ * remembered only so Daymark_Routes can 301 it to the new URL, so a
+ * home-screen icon still lands somewhere real instead of breaking outright.
  *
  * Lifecycle: ships in 0.6.0, runs at most once (keyed on the legacy
  * `moment_version` option), and is scheduled for removal — soft-deprecated
@@ -81,16 +81,21 @@ final class Daymark_Migration {
 	}
 
 	/**
-	 * Carry options across: the section-page map and the persisted app
-	 * base keep their values under the new names; bookkeeping-only options
-	 * are dropped (activation rewrites them).
+	 * Carry options across: the section-page map keeps its value under the
+	 * new name; bookkeeping-only options are dropped (activation rewrites
+	 * them).
+	 *
+	 * The pre-rename app base is handled separately, not renamed in place:
+	 * the app now only ever lives at /daymark (or /daymark-app), even on a
+	 * migrated install, so the old value (e.g. 'moment') is remembered
+	 * under its own option purely so Daymark_Routes can 301 that old URL
+	 * to the new one — it is never treated as a valid app base itself.
 	 *
 	 * @return void
 	 */
 	private static function migrate_options(): void {
 		$renames = array(
-			'moment_pages'    => 'daymark_pages',
-			'moment_app_base' => 'daymark_app_base',
+			'moment_pages' => 'daymark_pages',
 		);
 
 		foreach ( $renames as $old => $new ) {
@@ -103,6 +108,13 @@ final class Daymark_Migration {
 			delete_option( $old );
 		}
 
+		$legacy_base = get_option( 'moment_app_base', '' );
+
+		if ( is_string( $legacy_base ) && '' !== $legacy_base && false === get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, false ) ) {
+			update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, $legacy_base );
+		}
+
+		delete_option( 'moment_app_base' );
 		delete_option( 'moment_activated' );
 	}
 

@@ -21,6 +21,7 @@ delete_option( 'daymark_activated' );
 delete_option( 'daymark_version' );
 delete_option( 'daymark_pages' );
 delete_option( 'daymark_app_base' );
+delete_option( 'daymark_legacy_app_base' );
 
 // Per-user routing/filing preferences and notification read-state,
 // across all users.

@@ -68,8 +68,11 @@ class Test_Migration extends WP_UnitTestCase {
 		// --- Migrate. ---
 		Daymark_Migration::maybe_migrate();
 
-		// Options: carried under new names, legacy names gone.
-		$this->assertSame( 'moment', get_option( 'daymark_app_base' ), 'The persisted app base keeps its value — home-screen URLs must not move' );
+		// Options: carried under new names, legacy names gone. The app base
+		// itself is NOT carried — the old Moment-era base is remembered
+		// separately, purely so Daymark_Routes can redirect it to /daymark.
+		$this->assertFalse( get_option( 'daymark_app_base' ), 'The app base is left unresolved, not carried from Moment — it resolves fresh to daymark' );
+		$this->assertSame( 'moment', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ), 'The old base is kept only so the redirect knows where to send visitors from' );
 		$this->assertSame( array( 'timeline' => $page_id ), get_option( 'daymark_pages' ) );
 		$this->assertSame( DAYMARK_VERSION, get_option( 'daymark_version' ) );
 		foreach ( array( 'moment_version', 'moment_activated', 'moment_app_base', 'moment_pages' ) as $legacy ) {
@@ -103,40 +106,41 @@ class Test_Migration extends WP_UnitTestCase {
 
 	/** Running twice is safe and changes nothing the second time. */
 	public function test_idempotent() {
-		delete_option( 'daymark_app_base' ); // See test_migrates_legacy_install.
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
 
 		Daymark_Migration::maybe_migrate();
-		$this->assertSame( 'moment', get_option( 'daymark_app_base' ) );
+		$this->assertSame( 'moment', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ) );
 
-		// A second run must not clobber post-migration state.
-		update_option( 'daymark_app_base', 'daymark' );
+		// A second run must not clobber post-migration state. moment_version
+		// is already gone at this point, so maybe_migrate() short-circuits.
+		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'daymark-app' );
 		Daymark_Migration::maybe_migrate();
-		$this->assertSame( 'daymark', get_option( 'daymark_app_base' ), 'Second run is a no-op' );
+		$this->assertSame( 'daymark-app', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ), 'Second run is a no-op' );
 	}
 
-	/** An existing daymark option is never overwritten by a legacy value. */
-	public function test_existing_new_option_wins() {
+	/** An existing legacy-base option is never overwritten by migration. */
+	public function test_existing_legacy_base_option_wins() {
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
-		update_option( 'daymark_app_base', 'daymark' );
+		update_option( Daymark_Routes::OPTION_LEGACY_APP_BASE, 'already-set' );
 
 		Daymark_Migration::maybe_migrate();
 
-		$this->assertSame( 'daymark', get_option( 'daymark_app_base' ) );
+		$this->assertSame( 'already-set', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ) );
 		$this->assertFalse( get_option( 'moment_app_base' ), 'Legacy option still removed' );
 	}
 
-	/** Full activation over a legacy install keeps the carried app base. */
-	public function test_activation_preserves_carried_app_base() {
+	/** Activation resolves the real app base fresh, even over a migrated install. */
+	public function test_activation_resolves_fresh_base_over_a_legacy_install() {
 		delete_option( 'daymark_app_base' ); // See test_migrates_legacy_install.
 		update_option( 'moment_version', '0.5.0' );
 		update_option( 'moment_app_base', 'moment' );
 
 		Daymark_Plugin::activate();
 
-		$this->assertSame( 'moment', get_option( 'daymark_app_base' ), 'Activation must not re-resolve a persisted app base' );
+		$this->assertSame( 'daymark', get_option( 'daymark_app_base' ), 'The app must claim /daymark itself, not carry the old /moment base forward' );
+		$this->assertSame( 'moment', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ), 'The old base survives only for the redirect' );
 	}
 
 	/** Section pages with shortcode markup are rewritten too. */
