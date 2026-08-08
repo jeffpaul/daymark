@@ -1041,8 +1041,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return array<string, mixed>
 	 */
 	private function prepare_mark_summary( int $post_id ): array {
-		$thumbnail = get_the_post_thumbnail_url( $post_id, 'medium' );
-
 		return array(
 			'id'                 => absint( $post_id ),
 			// Plain text: the_title filters entity-encode (&#8217; etc.) for
@@ -1057,8 +1055,67 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
-			'thumbnail'          => $thumbnail ? esc_url_raw( $thumbnail ) : '',
+			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
+			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
+			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 		);
+	}
+
+	/**
+	 * Count approved comments of one comment_type on a Mark — mirrors
+	 * Daymark_Renderer::count_comments_of_type(), which the public views
+	 * use for the same stat. Replies (comment_type 'comment') include
+	 * on-site comments and, once backflow imports them, replies from
+	 * Bluesky/the fediverse/webmention; likes (comment_type 'like') are
+	 * populated the same way. Both are 0 for a Mark with no connected
+	 * federation plugin or no engagement yet.
+	 *
+	 * @param int    $post_id Mark post ID.
+	 * @param string $type    Comment type ('comment' or 'like').
+	 * @return int
+	 */
+	private function count_comments_of_type( int $post_id, string $type ): int {
+		return (int) get_comments(
+			array(
+				'post_id' => $post_id,
+				'type'    => $type,
+				'status'  => 'approve',
+				'count'   => true,
+			)
+		);
+	}
+
+	/**
+	 * A Mark's thumbnail URL: the featured image first, then the first
+	 * attachment from _daymark_media_ids if it is an image — the same
+	 * fallback Daymark_Renderer::item_thumbnail() uses for the public
+	 * views. Without it, a Mark that never got a featured image set
+	 * (some installs migrated from Moment have this) shows no thumbnail
+	 * here even though that same fallback already finds one for the
+	 * public Timeline.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Thumbnail URL, or '' when none is available.
+	 */
+	private function mark_thumbnail_url( int $post_id ): string {
+		$attachment_id = (int) get_post_thumbnail_id( $post_id );
+
+		if ( 0 === $attachment_id ) {
+			$raw       = get_post_meta( $post_id, '_daymark_media_ids', true );
+			$media_ids = json_decode( is_string( $raw ) ? $raw : '', true );
+
+			if ( is_array( $media_ids ) && ! empty( $media_ids ) ) {
+				$attachment_id = absint( reset( $media_ids ) );
+			}
+		}
+
+		if ( 0 === $attachment_id || ! wp_attachment_is_image( $attachment_id ) ) {
+			return '';
+		}
+
+		$url = wp_get_attachment_image_url( $attachment_id, 'medium' );
+
+		return $url ? esc_url_raw( $url ) : '';
 	}
 }
