@@ -50,6 +50,68 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertEquals( 'mobile', get_post_meta( $post_id, '_daymark_created_from', true ) );
 	}
 
+	/**
+	 * A long CJK caption has no spaces, so wp_trim_words()'s normal 8-word
+	 * limit treats it as a single "word" and never trims it (issue #74).
+	 * The character-count backstop must still keep the title short and
+	 * multibyte-safe.
+	 */
+	public function test_generated_title_trims_long_space_less_caption() {
+		$caption = '今日は素晴らしい天気なので散歩に出かけます。新しい景色を見ながら写真を撮り、友人と楽しい時間を過ごしました。帰宅してから温かいお茶を飲みました。';
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => $caption,
+				'primary_type' => 'note',
+			)
+		);
+
+		$title = get_the_title( $post_id );
+		$this->assertLessThanOrEqual(
+			Daymark_Publisher::MAX_TITLE_CHARS + 1, // +1 for the appended ellipsis.
+			mb_strlen( $title ),
+			'Title must be trimmed even without word breaks'
+		);
+		$this->assertStringEndsWith( '…', $title );
+		// The trim splits on whole UTF-8 codepoints, never mid-character.
+		$this->assertSame( $title, wp_check_invalid_utf8( $title ) );
+	}
+
+	/** A normal space-delimited caption is unaffected by the character cap. */
+	public function test_generated_title_unaffected_for_normal_caption() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'A short caption that is well under the character cap threshold',
+				'primary_type' => 'note',
+			)
+		);
+
+		// Standard wp_trim_words() 8-word behavior, untouched by the new cap.
+		$this->assertSame( 'A short caption that is well under the…', get_the_title( $post_id ) );
+	}
+
+	/** The character cap is filterable, matching other Daymark_Publisher limits. */
+	public function test_title_max_chars_is_filterable() {
+		$filter = static function () {
+			return 10;
+		};
+		add_filter( 'daymark_title_max_chars', $filter );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'This caption is much longer than ten characters',
+				'primary_type' => 'note',
+			)
+		);
+
+		remove_filter( 'daymark_title_max_chars', $filter );
+
+		$this->assertLessThanOrEqual( 11, mb_strlen( get_the_title( $post_id ) ) );
+	}
+
 	/** Each Mark type gets the matching post format, not the site default. */
 	public function test_post_format_matches_type() {
 		// Simulate a site whose default post format is Aside.
