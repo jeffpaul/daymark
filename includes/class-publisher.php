@@ -125,6 +125,20 @@ class Daymark_Publisher {
 	public const MAX_TOTAL_FILE_BYTES = 200 * 1024 * 1024; // 200 MB.
 
 	/**
+	 * Character-count backstop for a generated title.
+	 *
+	 * WordPress's own `wp_trim_words()` only trims by character for a locale
+	 * whose translation marks word-count as character-based (core does this
+	 * for its own ja/zh/ko translations). On any other locale, a caption
+	 * with no spaces — e.g. Japanese typed on an English-locale site —
+	 * counts as one "word", so the normal 8-word limit never fires. This is
+	 * a second, locale-independent limit applied only when that happens.
+	 *
+	 * @var int
+	 */
+	public const MAX_TITLE_CHARS = 60;
+
+	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
 	 *
 	 * Content sniffing (finfo) reports some formats with non-canonical names (e.g. WAV).
@@ -1115,8 +1129,10 @@ class Daymark_Publisher {
 	}
 
 	/**
-	 * Generate a post title from the caption (first ~8 words) or a
-	 * timestamp fallback like "Mark — March 3, 2026 4:12 pm".
+	 * Generate a post title from the caption (first ~8 words, with a
+	 * character-count backstop for a space-less caption — see
+	 * MAX_TITLE_CHARS) or a timestamp fallback like
+	 * "Mark — March 3, 2026 4:12 pm".
 	 *
 	 * @param string $caption Caption text.
 	 * @return string Title.
@@ -1125,7 +1141,14 @@ class Daymark_Publisher {
 		$plain = trim( wp_strip_all_tags( $caption ) );
 
 		if ( '' !== $plain ) {
-			return wp_trim_words( $plain, 8, '…' );
+			$title     = wp_trim_words( $plain, 8, '…' );
+			$max_chars = (int) apply_filters( 'daymark_title_max_chars', self::MAX_TITLE_CHARS );
+
+			if ( mb_strlen( $title ) > $max_chars ) {
+				$title = $this->trim_chars( $title, $max_chars, '…' );
+			}
+
+			return $title;
 		}
 
 		return sprintf(
@@ -1134,6 +1157,30 @@ class Daymark_Publisher {
 			wp_date( get_option( 'date_format', 'F j, Y' ) ),
 			wp_date( get_option( 'time_format', 'g:i a' ) )
 		);
+	}
+
+	/**
+	 * Trim text to a character count, splitting on Unicode codepoints
+	 * (via the same `/./u` approach wp_trim_words() itself uses for its
+	 * character-based locales) so a multibyte character is never cut
+	 * mid-byte-sequence.
+	 *
+	 * Note: this splits at the codepoint level, not the full grapheme-
+	 * cluster level, so a multi-codepoint emoji could in principle still
+	 * split at the boundary — the same tradeoff WordPress core accepts
+	 * in its own equivalent CJK-trimming path, rather than requiring the
+	 * `intl` extension for a case this rare.
+	 *
+	 * @param string $text      Already-trimmed title text.
+	 * @param int    $max_chars Maximum characters to keep, before appending $more.
+	 * @param string $more      Suffix appended when trimming occurs.
+	 * @return string
+	 */
+	private function trim_chars( string $text, int $max_chars, string $more ): string {
+		preg_match_all( '/./u', $text, $matches );
+		$chars = array_slice( $matches[0], 0, $max_chars );
+
+		return implode( '', $chars ) . $more;
 	}
 
 	/**
