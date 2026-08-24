@@ -10,6 +10,171 @@
  */
 class Test_Notifications extends WP_UnitTestCase {
 
+	public function set_up(): void {
+		parent::set_up();
+
+		// The daymark_subscription table is normally created on plugin
+		// activation; tests run against a live WP install where activation
+		// hooks don't fire, so install() is called directly here (it is
+		// idempotent either way) — mirrors Test_Subscriptions::set_up().
+		Daymark_Subscriptions::install();
+	}
+
+	/**
+	 * Issue #78, "Dead feed detection": a subscription flagged
+	 * `status = 'error'` surfaces as a `dead_feed` notification item with
+	 * the expected fields, and every field is the type get_notifications()
+	 * promises (no raw/unsanitized passthrough).
+	 */
+	public function test_flagged_subscription_appears_as_dead_feed_notification() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url'   => 'https://example.com/',
+				'feed_url'   => 'https://example.com/feed/',
+				'site_title' => 'Example Site',
+			)
+		);
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertTrue(
+			$subscriptions->update(
+				$subscription_id,
+				array(
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+				)
+			)
+		);
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$dead_feed_items = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'dead_feed' === ( $item['type'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $dead_feed_items );
+
+		$item = $dead_feed_items[0];
+		$this->assertSame( $subscription_id, $item['subscription_id'] );
+		$this->assertSame( 'Example Site', $item['site_title'] );
+		$this->assertSame( 'https://example.com/', $item['site_url'] );
+		$this->assertSame( 'https://example.com/feed/', $item['feed_url'] );
+		$this->assertSame( 'error', $item['status'] );
+		$this->assertSame( 7, $item['consecutive_failure_count'] );
+		$this->assertSame( '2026-01-01 00:00:00', $item['last_checked_at'] );
+		$this->assertNotEmpty( $item['last_checked_at_relative'] );
+	}
+
+	/** An active (non-flagged) subscription never appears as a `dead_feed` item. */
+	public function test_active_subscription_does_not_appear_as_dead_feed() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://still-active.example.com/feed/' ) );
+		$this->assertIsInt( $subscription_id );
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$dead_feed_subscription_ids = array_column(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'dead_feed' === ( $item['type'] ?? '' );
+				}
+			),
+			'subscription_id'
+		);
+
+		$this->assertNotContains( $subscription_id, $dead_feed_subscription_ids );
+	}
+
+	/**
+	 * A `dead_feed` item's text fields are sanitized on the way out — a
+	 * malicious site_title/site_url stored on the row never reaches the
+	 * response unescaped.
+	 */
+	public function test_dead_feed_item_fields_are_sanitized() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url'   => 'https://sanitize-example.com/',
+				'feed_url'   => 'https://sanitize-example.com/feed/',
+				'site_title' => '<script>alert(1)</script>Evil Site',
+			)
+		);
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertTrue(
+			$subscriptions->update(
+				$subscription_id,
+				array(
+					'status'          => 'error',
+					'last_checked_at' => '2026-01-01 00:00:00',
+				)
+			)
+		);
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$dead_feed_items = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) use ( $subscription_id ) {
+					return 'dead_feed' === ( $item['type'] ?? '' ) && $subscription_id === $item['subscription_id'];
+				}
+			)
+		);
+
+		$this->assertCount( 1, $dead_feed_items );
+		$this->assertStringNotContainsString( '<script>', $dead_feed_items[0]['site_title'] );
+	}
+
+	/**
+	 * Unread lifecycle: a newly flagged dead subscription counts as
+	 * unread, the same as a new comment (has_unread()'s documented
+	 * judgment call), and viewing notifications clears it exactly the
+	 * same way.
+	 */
+	public function test_unread_reflects_newly_flagged_subscription() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$notifications = new Daymark_Notifications();
+		$this->assertFalse( $notifications->has_unread(), 'No Marks, no flagged subscriptions: no unread' );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://unread-example.com/feed/' ) );
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertFalse( $notifications->has_unread(), 'A merely active subscription is not unread' );
+
+		$subscriptions->update(
+			$subscription_id,
+			array(
+				'status'          => 'error',
+				'last_checked_at' => gmdate( 'Y-m-d H:i:s' ),
+			)
+		);
+
+		$this->assertTrue( $notifications->has_unread(), 'A newly flagged dead subscription counts as unread' );
+
+		$notifications->mark_seen();
+		$this->assertFalse( $notifications->has_unread(), 'Viewing notifications marks the dead-feed alert seen too' );
+	}
+
 	/** Scenario 8: comments on non-Mark posts are excluded. */
 	public function test_excludes_normal_post_comments() {
 		// Notifications are scoped to posts the user can edit; an editor

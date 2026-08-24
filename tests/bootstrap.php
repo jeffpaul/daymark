@@ -46,3 +46,14 @@ function _daymark_manually_load_plugin() {
 tests_add_filter( 'muplugins_loaded', '_daymark_manually_load_plugin' );
 
 require $_tests_dir . '/includes/bootstrap.php';
+
+// The daymark_subscription table is normally created on plugin activation,
+// which the WP test suite never runs (it loads the plugin directly via
+// muplugins_loaded above, not through the real activation flow). Any test
+// that ends up calling Daymark_Notifications::get_notifications()/
+// has_unread() now queries this table (issue #78, "Dead feed detection"),
+// including tests that predate Subscriptions and know nothing about it —
+// so it's installed once here for the whole suite, matching what's always
+// true on a real site post-activation, rather than requiring every such
+// test file to know to call Daymark_Subscriptions::install() itself.
+Daymark_Subscriptions::install();
