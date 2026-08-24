@@ -169,13 +169,35 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 
 The phased build (Phases 0–9) used five specialist sub-agents under `.claude/agents/`
 (`wp-php-core`, `moment-frontend`, `moment-syndication`, `moment-backflow`,
-`moment-tester` — named for the plugin's pre-0.6.0 identity). Those files were removed after 0.4.0: the phased build is complete,
-they had drifted from the shipped code, and their durable guidance (identity, security
-checklist, content model, hooks) already lives in this file and in CONTRIBUTING.md. The
-original agent definitions live in git history (in the removed build-prompt doc
-`docs/05_llm_prompt_build_prototype_claude_code.md`); the compacted design record
-summarizes the phased build in its build-history section —
+`moment-tester` — named for the plugin's pre-0.6.0 identity). Those files were removed
+after 0.4.0: the phased build was complete, they had drifted from the shipped code, and
+their durable guidance (identity, security checklist, content model, hooks) already
+lived in this file and in CONTRIBUTING.md. The original definitions live in git history
+(in the removed build-prompt doc `docs/05_llm_prompt_build_prototype_claude_code.md`);
+the compacted design record summarizes the phased build in its build-history section —
 [docs/planning/README.md](docs/planning/README.md).
+
+Scaffolding was reinstated under `.claude/agents/` for the Subscriptions & Timeline
+Following feature ([issue #78](https://github.com/jeffpaul/daymark/issues/78)), renamed
+to current identity and rewritten to avoid the original failure mode: each file now
+points to this document for anything durable rather than duplicating it, so a fact
+changing here doesn't leave a stale copy behind in five other places.
+
+- **`wp-php-core`** — REST endpoints, the publisher, the `daymark_subscription` table,
+  the public Timeline page removal, and the POSSE/microformats2 markup work.
+- **`daymark-subscriptions`** (new) — the inbound `Daymark_Subscription_Source`
+  connector interface and registry, feed autodiscovery, favicon retrieval, the
+  `daymark_subscription_post` CPT, content ingest rules, pruning, polling/refresh, and
+  dead-feed detection.
+- **`daymark-frontend`** (renamed from `moment-frontend`) — the app shell, plus the
+  subscribe-by-URL flow, subscription management screen, and Timeline pull-to-refresh.
+- **`daymark-backflow`** (renamed from `moment-backflow`) — the notifications data
+  layer, plus surfacing a dead-feed flag that `daymark-subscriptions` sets.
+- **`daymark-tester`** (renamed from `moment-tester`) — unchanged remit, applied to all
+  of the above.
+
+`moment-syndication` (outbound connectors) was not recreated — nothing in this feature
+touches outbound syndication. Add it back when work that does resumes.
 
 ## Project artifact context
 
