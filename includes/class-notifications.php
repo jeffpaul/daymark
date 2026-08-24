@@ -103,41 +103,87 @@ class Daymark_Notifications {
 
 	/**
 	 * Build the unified notifications list: on-site comments and imported
-	 * social responses, for Daymark-created posts ONLY.
+	 * social responses for Daymark-created posts, plus one `dead_feed`
+	 * alert per subscription `daymark-subscriptions` has flagged
+	 * `status = 'error'` (7 consecutive failed checks — see
+	 * Daymark_Subscription_Poller::record_failed_check(); this class does
+	 * not decide that flag, only surfaces it).
 	 *
 	 * The Daymark-only scope is enforced server-side here — comments on
 	 * normal posts created outside Daymark never enter the result set,
 	 * because the comment query is restricted to post IDs that carry
 	 * _daymark_is_mark = 1. This is not a client-side filter.
 	 *
-	 * Scoped per user: notifications are replies to Marks the current
-	 * user can edit (authors get their own posts' activity; editors and
-	 * admins get all of it) — never other authors' draft activity.
+	 * Scoped per user: comment/reply items are replies to Marks the
+	 * current user can edit (authors get their own posts' activity;
+	 * editors and admins get all of it) — never other authors' draft
+	 * activity. `dead_feed` items are not scoped per user: subscriptions
+	 * carry no author/owner field in the data model (they're a single
+	 * install-wide list, not per-user), so every `dead_feed` item is
+	 * visible to anyone who can reach this endpoint at all — the same
+	 * `edit_posts` gate the /notifications route itself already enforces.
+	 *
+	 * Comment/reply items and `dead_feed` items are merged and sorted
+	 * together, newest first, by a single timestamp per item: a comment's
+	 * `comment_date_gmt`, or a flagged subscription's `last_checked_at`.
+	 * `last_checked_at` stands in for "when this subscription became
+	 * flagged" because Daymark_Subscription_Poller::run_scheduled_poll()
+	 * only ever polls `get_active()` rows — once a subscription flips to
+	 * `error` it stops being auto-polled, so `last_checked_at` freezes at
+	 * the exact failed check that crossed the threshold (unless/until a
+	 * manual refresh runs). A dead-feed alert has no natural "post date"
+	 * of its own, so this is the most honest recency signal available for
+	 * interleaving it chronologically with dated comment activity, rather
+	 * than always pinning it to the top or the bottom of the list.
 	 *
 	 * @param int $limit Maximum items to return.
 	 * @return array<int, array<string, mixed>> Notification items, newest first.
 	 */
 	public function get_notifications( int $limit = self::DEFAULT_LIMIT ): array {
+		$limit = $limit > 0 ? $limit : self::DEFAULT_LIMIT;
+
+		$dated_items      = array();
 		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
-		if ( empty( $daymark_post_ids ) ) {
-			return array();
-		}
+		if ( ! empty( $daymark_post_ids ) ) {
+			foreach ( $this->get_comments_for_posts( $daymark_post_ids, $limit ) as $comment ) {
+				$post = get_post( (int) $comment->comment_post_ID );
 
-		$comments = $this->get_comments_for_posts( $daymark_post_ids, $limit );
-		$items    = array();
+				if ( ! $post instanceof WP_Post ) {
+					continue;
+				}
 
-		foreach ( $comments as $comment ) {
-			$post = get_post( (int) $comment->comment_post_ID );
+				$timestamp = strtotime( $comment->comment_date_gmt . ' UTC' );
 
-			if ( ! $post instanceof WP_Post ) {
-				continue;
+				$dated_items[] = array(
+					'timestamp' => false !== $timestamp ? $timestamp : 0,
+					'item'      => $this->format_comment( $comment, $post ),
+				);
 			}
-
-			$items[] = $this->format_comment( $comment, $post );
 		}
 
-		return $items;
+		foreach ( $this->get_flagged_subscriptions() as $subscription ) {
+			$dated_items[] = array(
+				'timestamp' => $this->flagged_subscription_timestamp( $subscription ),
+				'item'      => $this->format_dead_feed( $subscription ),
+			);
+		}
+
+		usort(
+			$dated_items,
+			static function ( array $a, array $b ): int {
+				return $b['timestamp'] <=> $a['timestamp'];
+			}
+		);
+
+		$items = array_map(
+			static function ( array $dated_item ) {
+				return $dated_item['item'];
+			},
+			$dated_items
+		);
+
+		return array_slice( $items, 0, $limit );
 	}
 
 	/**
@@ -149,6 +195,13 @@ class Daymark_Notifications {
 	 * Whether the current user has notifications newer than their last
 	 * visit to the notifications screen. Boolean only — no counts.
 	 *
+	 * A newly flagged dead subscription counts as unread, the same as a
+	 * new comment: it is genuinely new information the user has not seen
+	 * yet ("this subscription just stopped working"), and there is no
+	 * reason for it to sit silently until the user happens to open
+	 * Subscription management. See get_notifications()'s docblock for why
+	 * `last_checked_at` is the right timestamp to compare against `$seen`.
+	 *
 	 * @return bool
 	 */
 	public function has_unread(): bool {
@@ -158,21 +211,25 @@ class Daymark_Notifications {
 			return false;
 		}
 
-		$daymark_post_ids = $this->scoped_daymark_post_ids();
-
-		if ( empty( $daymark_post_ids ) ) {
-			return false;
-		}
-
-		$comments = $this->get_comments_for_posts( $daymark_post_ids, 1 );
-
-		if ( empty( $comments ) ) {
-			return false;
-		}
-
 		$seen = (int) get_user_meta( $user_id, self::SEEN_META, true );
 
-		return strtotime( $comments[0]->comment_date_gmt . ' UTC' ) > $seen;
+		$daymark_post_ids = $this->scoped_daymark_post_ids();
+
+		if ( ! empty( $daymark_post_ids ) ) {
+			$comments = $this->get_comments_for_posts( $daymark_post_ids, 1 );
+
+			if ( ! empty( $comments ) && strtotime( $comments[0]->comment_date_gmt . ' UTC' ) > $seen ) {
+				return true;
+			}
+		}
+
+		foreach ( $this->get_flagged_subscriptions() as $subscription ) {
+			if ( $this->flagged_subscription_timestamp( $subscription ) > $seen ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -303,6 +360,11 @@ class Daymark_Notifications {
 			: '';
 
 		return array(
+			// Explicit discriminator, matching the 'dead_feed' item type
+			// below — lets a consumer branch on `type` instead of having
+			// to guess an item's shape from which fields happen to be
+			// present.
+			'type'                  => 'comment',
 			// comment_ID is the canonical key the Daymark frontend reads;
 			// comment_id is kept as a lowercase alias.
 			'comment_ID'            => $comment_id,
@@ -343,6 +405,84 @@ class Daymark_Notifications {
 		$source = get_comment_meta( $comment_id, '_daymark_comment_source', true );
 
 		return is_string( $source ) && '' !== $source ? sanitize_key( $source ) : 'site';
+	}
+
+	/**
+	 * Get subscriptions `daymark-subscriptions` has flagged dead
+	 * (`status = 'error'`). Thin passthrough to
+	 * Daymark_Subscriptions::get_flagged() — kept as its own method so
+	 * get_notifications() and has_unread() share one lookup, and so tests
+	 * only need to reach through Daymark_Plugin::instance() in one place.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function get_flagged_subscriptions(): array {
+		return Daymark_Plugin::instance()->subscriptions->get_flagged();
+	}
+
+	/**
+	 * The recency timestamp for a flagged subscription: its
+	 * `last_checked_at`, as a Unix timestamp (UTC), or 0 when unset/
+	 * unparsable. See get_notifications()'s docblock for why
+	 * `last_checked_at` is used here.
+	 *
+	 * @param array<string, mixed> $subscription Subscription row.
+	 * @return int
+	 */
+	private function flagged_subscription_timestamp( array $subscription ): int {
+		$last_checked_at = (string) ( $subscription['last_checked_at'] ?? '' );
+
+		if ( '' === $last_checked_at ) {
+			return 0;
+		}
+
+		$timestamp = strtotime( $last_checked_at . ' UTC' );
+
+		return false !== $timestamp ? $timestamp : 0;
+	}
+
+	/**
+	 * Build a `dead_feed` notification item from a flagged subscription
+	 * row, shaped so a frontend can both render the alert and link through
+	 * to that subscription's row in subscription management (view last
+	 * error, last checked time, retry/edit/unsubscribe) — this is the data
+	 * layer for that link, not the screen it points at, so the contract is
+	 * deliberately just "the subscription id plus display context", not a
+	 * guessed URL/hash structure for a screen that doesn't exist yet.
+	 *
+	 * `site_title` falls back to `site_url` when a subscription has no
+	 * title on file (mirrors how the row itself is likely to be labeled
+	 * elsewhere once a title isn't available).
+	 *
+	 * There is no separate "last error message" stored on a subscription
+	 * row (the schema only tracks `status`/`consecutive_failure_count`/
+	 * `last_checked_at`), so this item does not fabricate one — a
+	 * subscription-management screen showing "last checked" plus the
+	 * failure count already covers the PRD's "view last error, last
+	 * checked time" ask with what's actually persisted.
+	 *
+	 * @param array<string, mixed> $subscription Subscription row (from get_flagged()).
+	 * @return array<string, mixed>
+	 */
+	private function format_dead_feed( array $subscription ): array {
+		$site_title = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$site_url   = esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) );
+		$timestamp  = $this->flagged_subscription_timestamp( $subscription );
+
+		return array(
+			'type'                      => 'dead_feed',
+			'subscription_id'           => absint( $subscription['id'] ?? 0 ),
+			'site_title'                => '' !== $site_title ? $site_title : $site_url,
+			'site_url'                  => $site_url,
+			'feed_url'                  => esc_url_raw( (string) ( $subscription['feed_url'] ?? '' ) ),
+			'status'                    => 'error',
+			'consecutive_failure_count' => absint( $subscription['consecutive_failure_count'] ?? 0 ),
+			'last_checked_at'           => sanitize_text_field( (string) ( $subscription['last_checked_at'] ?? '' ) ),
+			'last_checked_at_relative'  => $timestamp
+				/* translators: %s: human-readable time difference, e.g. "2 hours". */
+				? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
+				: '',
+		);
 	}
 
 	/**

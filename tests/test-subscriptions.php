@@ -176,6 +176,39 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertSame( 'active', $row['status'] );
 	}
 
+	/**
+	 * Scenario: get_flagged() returns only `status = 'error'` rows, and
+	 * leaves active rows out — the mirror image of get_active(). This is
+	 * the query Daymark_Notifications::get_notifications() (issue #78,
+	 * "Dead feed detection") builds `dead_feed` items from.
+	 */
+	public function test_get_flagged_returns_only_error_status() {
+		$active_id = $this->subscriptions->create( array( 'feed_url' => 'https://active-example.com/feed/' ) );
+		$this->assertIsInt( $active_id );
+
+		$flagged_id = $this->subscriptions->create( array( 'feed_url' => 'https://flagged-example.com/feed/' ) );
+		$this->assertIsInt( $flagged_id );
+		$this->assertTrue(
+			$this->subscriptions->update(
+				$flagged_id,
+				array(
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+				)
+			)
+		);
+
+		$flagged = $this->subscriptions->get_flagged();
+
+		$this->assertCount( 1, $flagged );
+		$this->assertSame( $flagged_id, (int) $flagged[0]['id'] );
+		$this->assertSame( 'error', $flagged[0]['status'] );
+
+		$flagged_ids = array_column( $flagged, 'id' );
+		$this->assertNotContains( (string) $active_id, array_map( 'strval', $flagged_ids ) );
+	}
+
 	/** Scenario: an unrecognized source_type is still accepted (future values reserved, not enum-locked). */
 	public function test_future_source_type_is_accepted() {
 		$id = $this->subscriptions->create(

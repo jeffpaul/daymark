@@ -282,6 +282,38 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * List all subscriptions flagged dead (`status` = 'error'), most
+	 * recently created first.
+	 *
+	 * Mirrors get_active()'s exact query shape, just filtering on the
+	 * opposite status value. This is a read-only accessor over a flag that
+	 * Daymark_Subscription_Poller::record_failed_check() already sets after
+	 * 7 consecutive failed checks (see DEAD_FEED_FAILURE_THRESHOLD there) —
+	 * this method does not decide when a subscription becomes flagged, it
+	 * only surfaces the ones that already are, for
+	 * Daymark_Notifications::get_notifications() to turn into
+	 * `dead_feed` notification items.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_flagged(): array {
+		global $wpdb;
+
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE status = %s ORDER BY created_at DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input.
+				'error'
+			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
 	 * Update status/failure-count/checked-at fields on an existing
 	 * subscription. Only recognized columns are written; unknown keys in
 	 * `$fields` are ignored rather than passed through to the query.
