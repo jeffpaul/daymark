@@ -4,8 +4,9 @@
  * Screen routing is hash-based within /daymark. The server-rendered
  * screen (home | notifications) arrives via window.daymarkApp.screen.
  *
- * Screens: #home, #create, #publish, #success, #notifications.
- * The AI Assist sheet is an overlay, not a routed screen.
+ * Screens: #home, #create, #publish, #success, #notifications, #timeline.
+ * The AI Assist sheet and the subscription-post detail sheet are
+ * overlays, not routed screens.
  */
 (function () {
 	'use strict';
@@ -223,6 +224,38 @@
 		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}</span>`;
 	}
 
+	// The thumbnail-or-glyph + title + meta + stats core of one Mark's card
+	// markup — shared by HomeScreen's Recent Marks list (wrapped in its own
+	// ⋯ actions menu) and the Timeline screen's merged feed (wrapped in a
+	// plain permalink link, no per-item menu). Keeping this in one place is
+	// what "reuse, don't reinvent Mark card markup" means across both
+	// screens; each caller supplies its own wrapper/link semantics.
+	function renderMarkCore(item) {
+		const title = item.title || 'Untitled Mark';
+		const thumb = item.thumbnail
+			? `<img class="daymark-recent__thumb" src="${esc(item.thumbnail)}" alt="" />`
+			: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+					(TYPE_LABELS[item.type] || 'M').charAt(0)
+			  )}</span>`;
+		// Drafts look identical to published Marks otherwise — and their
+		// permalinks are invisible to visitors — so say so. (The Timeline
+		// endpoint only ever returns published Marks, so this never fires
+		// there; Home's Recent/Drafts lists are what actually rely on it.)
+		const isDraft = item.status && 'publish' !== item.status;
+		const draftChip = isDraft
+			? '<span class="daymark-chip daymark-chip--draft">Draft</span> '
+			: '';
+		return `
+					${thumb}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta">${draftChip}${esc(
+							TYPE_LABELS[item.type] || item.type || ''
+						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
+						${isDraft ? '' : renderItemStats(item)}
+					</span>`;
+	}
+
 	// Pre-filters the composer's native file picker to match the launcher
 	// bubble that was tapped — 'note' has no entry since it skips the
 	// picker entirely (see CreateScreen.render()).
@@ -360,15 +393,28 @@
 
 	async function readError(res) {
 		let message = 'Request failed (' + res.status + ')';
+		let data = null;
 		try {
 			const body = await res.json();
 			if (body && body.message) {
 				message = body.message;
 			}
+			if (body && body.data && typeof body.data === 'object') {
+				data = body.data;
+			}
 		} catch (err) {
 			// Keep the generic message.
 		}
-		return new Error(message);
+		const error = new Error(message);
+		error.status = res.status;
+		// Some WP_Error responses (e.g. the subscription manual-refresh
+		// cooldown) attach a retry_after (seconds) — exposed here so a
+		// caller can distinguish "rate limited, try again later" from any
+		// other failure without parsing the message text.
+		if (data && typeof data.retry_after !== 'undefined') {
+			error.retryAfter = Number(data.retry_after);
+		}
+		return error;
 	}
 
 	async function apiGet(path) {
@@ -520,6 +566,7 @@
 		}
 
 		AIAssistSheet.hide(false);
+		SubscriptionPostSheet.hide(false);
 
 		const controller = SCREENS[target];
 		root.innerHTML = controller.render();
@@ -556,12 +603,14 @@
 						index === 0 ? 'true' : 'false'
 					}">${esc(filter.label)}</button>`
 			).join('');
-			const timelineUrl = pageLink('timeline');
-			const wordmark = timelineUrl
-				? `<a class="daymark-homelink" href="${esc(timelineUrl)}"><svg class="daymark-homelink__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
-						PAGE_ICONS.timeline
-				  }</svg><span>Daymark</span></a>`
-				: 'Daymark';
+			// Points at the in-app Timeline screen, not the public WP page —
+			// that page's own removal is deferred/separate, but this link's
+			// job (the merged Marks + subscriptions feed) now lives here.
+			// Unlike the public page, this is always available: it doesn't
+			// depend on a section page existing at all.
+			const wordmark = `<a class="daymark-homelink" href="#timeline"><svg class="daymark-homelink__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+					PAGE_ICONS.timeline
+			  }</svg><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
@@ -964,20 +1013,16 @@
 				}
 
 				// A full page: more may exist. Prefer infinite scroll; only fall
-				// back to a timeline link when IntersectionObserver is
+				// back to a Timeline link when IntersectionObserver is
 				// unavailable. Otherwise the link is redundant — the appended
-				// pages already show everything, and the bottom-nav Timeline
-				// icon still reaches the full timeline.
+				// pages already show everything, and the header wordmark
+				// still reaches the full (in-app) Timeline.
 				if ('IntersectionObserver' in window) {
 					this.setupObserver();
-				} else {
-					const timeline = pageLink('timeline');
-					if (more && timeline) {
-						more.innerHTML = `<a class="daymark-recent__morelink" href="${esc(
-							timeline
-						)}">View more on your timeline &rarr;</a>`;
-						more.hidden = false;
-					}
+				} else if (more) {
+					more.innerHTML =
+						'<a class="daymark-recent__morelink" href="#timeline">View more on your timeline &rarr;</a>';
+					more.hidden = false;
 				}
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
@@ -1349,33 +1394,19 @@
 		},
 
 		renderItem(item) {
-			const title = item.title || 'Untitled Mark';
-			const thumb = item.thumbnail
-				? `<img class="daymark-recent__thumb" src="${esc(item.thumbnail)}" alt="" />`
-				: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-						(TYPE_LABELS[item.type] || 'M').charAt(0)
-				  )}</span>`;
 			// Drafts look identical to published Marks otherwise — and
-			// their permalinks are invisible to visitors — so say so, and
-			// tapping one reopens the composer instead of the permalink.
+			// their permalinks are invisible to visitors — so tapping one
+			// reopens the composer instead of the permalink. (renderMarkCore()
+			// handles the visible "Draft" chip itself.)
+			const title = item.title || 'Untitled Mark';
 			const isDraft = item.status && 'publish' !== item.status;
-			const draftChip = isDraft
-				? '<span class="daymark-chip daymark-chip--draft">Draft</span> '
-				: '';
 			const href = isDraft ? '#create' : item.permalink || '#home';
 			const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 			const id = esc(String(item.id));
 			return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
-					${thumb}
-					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta">${draftChip}${esc(
-							TYPE_LABELS[item.type] || item.type || ''
-						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
-						${isDraft ? '' : renderItemStats(item)}
-					</span>
+					${renderMarkCore(item)}
 				</a>
 				<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
@@ -2017,6 +2048,594 @@
 		},
 	};
 
+	// --- Screen: Timeline ---
+
+	// Pagination unit for GET /daymark/v1/timeline — same shape/contract as
+	// RECENT_PER_PAGE for GET /marks (per_page + 1-indexed page).
+	const TIMELINE_PER_PAGE = 10;
+
+	// A subscription post's post_format is this source's equivalent of a
+	// Mark's primary_type; TYPE_LABELS already covers image/video/audio/note,
+	// this only adds the one label a Mark never has ('standard' — a plain
+	// text/link post from a feed with no richer format hint).
+	const SUBSCRIPTION_FORMAT_LABELS = Object.assign({}, TYPE_LABELS, { standard: 'Post' });
+
+	// Rich-media formats: per the PRD, a pruned card in one of these formats
+	// shows the subscription's site icon in place of its now-cleared embed.
+	const SUBSCRIPTION_RICH_MEDIA_FORMATS = ['image', 'video', 'audio'];
+
+	// Thumbnail-or-glyph for one subscription post card, mirroring
+	// renderMarkCore()'s thumbnail-or-glyph fallback for a Mark. A pruned
+	// rich-media post has no featured_image_url left, so it falls back to
+	// the subscription's own site icon (never a live fetch — both fields
+	// already arrive on the list item); a missing site icon too falls back
+	// to the same kind of glyph a thumbnail-less Mark card already shows.
+	function subscriptionPostThumb(item) {
+		if (item.featured_image_url) {
+			return `<img class="daymark-recent__thumb" src="${esc(item.featured_image_url)}" alt="" />`;
+		}
+		if (SUBSCRIPTION_RICH_MEDIA_FORMATS.includes(item.post_format) && item.site_icon_url) {
+			return `<img class="daymark-recent__thumb daymark-recent__thumb--siteicon" src="${esc(
+				item.site_icon_url
+			)}" alt="" />`;
+		}
+		const glyph = (SUBSCRIPTION_FORMAT_LABELS[item.post_format] || 'S').charAt(0);
+		return `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+			glyph
+		)}</span>`;
+	}
+
+	// One subscription-post Timeline card. A <button>, not an <a>: opening it
+	// shows the click-through detail sheet in place rather than navigating —
+	// its permalink points at the *source* site, not anywhere in this app.
+	// No comment/like stat row: those only ever exist for a Mark.
+	function renderSubscriptionPostCard(item) {
+		const title = item.title || 'Untitled post';
+		const metaParts = [];
+		if (item.author) {
+			metaParts.push(esc(item.author));
+		}
+		if (item.date) {
+			metaParts.push(esc(relativeTime(item.date)));
+		}
+		const excerpt = toPlainText(item.excerpt || '');
+		const id = esc(String(item.id));
+		return `
+				<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
+					${subscriptionPostThumb(item)}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
+							metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
+						}</span>
+						${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+					</span>
+				</button>`;
+	}
+
+	// One Mark Timeline card: the same core markup as Home's Recent Marks
+	// list, wrapped in a plain permalink link (no ⋯ actions menu — editing/
+	// deleting a Mark already lives on Home, and the Timeline endpoint only
+	// ever returns published Marks).
+	function renderMarkTimelineCard(item) {
+		return `<a class="daymark-recent__item" href="${esc(item.permalink || '#home')}">${renderMarkCore(
+			item
+		)}</a>`;
+	}
+
+	function renderTimelineItem(item) {
+		return 'subscription_post' === item.item_type
+			? renderSubscriptionPostCard(item)
+			: renderMarkTimelineCard(item);
+	}
+
+	const TimelineScreen = {
+		render() {
+			return `
+			<header class="daymark-topbar">
+				<a class="daymark-backlink" href="#home">&larr; Back</a>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Timeline</h1>
+			</header>
+			<section class="daymark-screen">
+				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
+					<span class="daymark-spinner" aria-hidden="true"></span>
+				</div>
+				<div class="daymark-timeline-headrow">
+					<h2 id="daymark-timeline-heading" class="daymark-section-heading">Following</h2>
+					<button type="button" class="daymark-btn daymark-btn--text" data-timeline-refresh>Refresh</button>
+				</div>
+				<p class="daymark-status" data-timeline-refresh-status aria-live="polite"></p>
+				<div class="daymark-recent__list" data-timeline-list aria-live="polite">
+					${skeletonRows(3)}
+					<span class="daymark-visually-hidden">Loading your timeline</span>
+				</div>
+				<div class="daymark-recent__sentinel" data-timeline-sentinel aria-hidden="true"></div>
+				<p class="daymark-recent__more" data-timeline-more hidden></p>
+			</section>`;
+		},
+
+		bindEvents() {
+			const list = root.querySelector('[data-timeline-list]');
+			if (list) {
+				list.addEventListener('click', (event) => this.onListClick(event));
+			}
+			const refreshBtn = root.querySelector('[data-timeline-refresh]');
+			if (refreshBtn) {
+				refreshBtn.addEventListener('click', () => this.pullRefresh());
+			}
+			this.bindPullGesture();
+		},
+
+		async init() {
+			this._seq = 0;
+			this.page = 1;
+			this.done = false;
+			this.loading = false;
+			this._refreshing = false;
+			// Keyed by subscription-post id (string) → the list item, so a
+			// card tap can hand the detail sheet everything it already has
+			// (title/permalink/etc.) without re-querying the DOM.
+			this._bySubId = new Map();
+			// Cache of fetched detail bodies, keyed by subscription-post id:
+			// { state: 'loading'|'done'|'error', body_content }. Persists on
+			// this singleton across re-inits (leaving and returning to
+			// #timeline) so a card already opened once never re-fetches.
+			this._detailCache = this._detailCache || new Map();
+			await this.loadFirstPage();
+		},
+
+		async loadFirstPage() {
+			const list = root.querySelector('[data-timeline-list]');
+			const more = root.querySelector('[data-timeline-more]');
+			const sentinel = root.querySelector('[data-timeline-sentinel]');
+			if (!list) {
+				return;
+			}
+			this.teardownObserver();
+			this.page = 1;
+			this.done = false;
+			this.loading = false;
+			const seq = ++this._seq;
+			if (more) {
+				more.hidden = true;
+			}
+			if (sentinel) {
+				sentinel.hidden = false;
+			}
+			try {
+				const items = await apiGet('timeline?per_page=' + TIMELINE_PER_PAGE + '&page=1');
+				if (seq !== this._seq || !list.isConnected) {
+					return;
+				}
+				const arr = Array.isArray(items) ? items : [];
+				this._bySubId.clear();
+				arr.forEach((item) => this.rememberItem(item));
+				if (!arr.length) {
+					list.innerHTML =
+						'<p class="daymark-empty">Nothing here yet. Publish a Mark or subscribe to a site to fill your timeline.</p>';
+					this.done = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+				list.innerHTML = arr.map((item) => renderTimelineItem(item)).join('');
+				if (arr.length < TIMELINE_PER_PAGE) {
+					this.done = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+				if ('IntersectionObserver' in window) {
+					this.setupObserver();
+				} else if (more) {
+					more.innerHTML =
+						'<button type="button" class="daymark-btn daymark-btn--text" data-timeline-loadmore>Load more</button>';
+					more.hidden = false;
+					const btn = more.querySelector('[data-timeline-loadmore]');
+					if (btn) {
+						btn.addEventListener('click', () => this.loadMorePage());
+					}
+				}
+			} catch (err) {
+				if (seq !== this._seq || !list.isConnected) {
+					return;
+				}
+				list.innerHTML =
+					'<p class="daymark-error" role="alert">Could not load your timeline. ' +
+					esc(err.message) +
+					'</p>';
+			}
+		},
+
+		async loadMorePage() {
+			if (this.loading || this.done) {
+				return;
+			}
+			this.loading = true;
+			const list = root.querySelector('[data-timeline-list]');
+			const sentinel = root.querySelector('[data-timeline-sentinel]');
+			if (!list || !list.isConnected) {
+				this.loading = false;
+				return;
+			}
+			const nextPage = this.page + 1;
+			try {
+				const items = await apiGet('timeline?per_page=' + TIMELINE_PER_PAGE + '&page=' + nextPage);
+				const arr = Array.isArray(items) ? items : [];
+				if (arr.length && list.isConnected) {
+					this.page = nextPage;
+					arr.forEach((item) => this.rememberItem(item));
+					list.insertAdjacentHTML('beforeend', arr.map((item) => renderTimelineItem(item)).join(''));
+				}
+				if (arr.length < TIMELINE_PER_PAGE) {
+					this.done = true;
+					this.teardownObserver();
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+				}
+			} catch (err) {
+				// Stop trying on error; keep whatever already loaded.
+				this.done = true;
+				this.teardownObserver();
+			} finally {
+				this.loading = false;
+			}
+		},
+
+		rememberItem(item) {
+			if (item && 'subscription_post' === item.item_type) {
+				this._bySubId.set(String(item.id), item);
+			}
+		},
+
+		setupObserver() {
+			if (!('IntersectionObserver' in window)) {
+				return; // The "Load more" link is the fallback path.
+			}
+			const sentinel = root.querySelector('[data-timeline-sentinel]');
+			if (!sentinel) {
+				return;
+			}
+			this.teardownObserver();
+			this.observer = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (entry.isIntersecting) {
+							this.loadMorePage();
+						}
+					}
+				},
+				{ rootMargin: '200px' }
+			);
+			this.observer.observe(sentinel);
+		},
+
+		teardownObserver() {
+			if (this.observer) {
+				this.observer.disconnect();
+				this.observer = null;
+			}
+		},
+
+		// A Mark card is a plain permalink <a> and needs no JS; only a
+		// subscription-post card (a <button>) opens the detail sheet.
+		onListClick(event) {
+			const trigger = event.target.closest('[data-subpost]');
+			if (!trigger) {
+				return;
+			}
+			const item = this._bySubId.get(trigger.getAttribute('data-subpost'));
+			if (item) {
+				SubscriptionPostSheet.show(item, this._detailCache, trigger);
+			}
+		},
+
+		// --- Pull-to-refresh: independent of the scheduled poll, and
+		// rate-limited server-side per subscription (15 minutes). Refreshes
+		// every active subscription, then reloads the merged feed so any
+		// newly ingested posts appear — never silent, and a skipped
+		// (too-recent) subscription is reported as such, not as a failure.
+
+		async refreshOneSubscription(id) {
+			try {
+				await apiPost('subscriptions/' + id + '/refresh', {});
+				return 'refreshed';
+			} catch (err) {
+				// The manual-refresh cooldown (and the endpoint's own rate
+				// limit) both respond 429 — either way this subscription was
+				// simply checked too recently, not a real failure.
+				return err && 429 === err.status ? 'skipped' : 'failed';
+			}
+		},
+
+		async pullRefresh() {
+			if (this._refreshing) {
+				return;
+			}
+			this._refreshing = true;
+			const status = root.querySelector('[data-timeline-refresh-status]');
+			const btn = root.querySelector('[data-timeline-refresh]');
+			const indicator = root.querySelector('[data-pull-indicator]');
+			if (btn) {
+				btn.disabled = true;
+			}
+			if (indicator) {
+				indicator.classList.add('is-visible', 'is-settling');
+				indicator.style.transform = 'translateY(40px)';
+			}
+			if (status) {
+				status.textContent = 'Checking your subscriptions…';
+			}
+
+			let subscriptions = [];
+			try {
+				const result = await apiGet('subscriptions');
+				subscriptions = Array.isArray(result) ? result : [];
+			} catch (err) {
+				subscriptions = []; // Still reload the merged feed below.
+			}
+
+			let refreshed = 0;
+			let skipped = 0;
+			let failed = 0;
+			if (subscriptions.length) {
+				const outcomes = await Promise.all(
+					subscriptions.map((s) => this.refreshOneSubscription(s.id))
+				);
+				outcomes.forEach((outcome) => {
+					if ('refreshed' === outcome) {
+						refreshed += 1;
+					} else if ('skipped' === outcome) {
+						skipped += 1;
+					} else {
+						failed += 1;
+					}
+				});
+			}
+
+			await this.loadFirstPage();
+
+			this._refreshing = false;
+			if (btn) {
+				btn.disabled = false;
+			}
+			if (indicator) {
+				indicator.classList.remove('is-visible', 'is-settling');
+				indicator.style.transform = '';
+			}
+			if (status) {
+				if (!subscriptions.length) {
+					status.textContent = 'No subscriptions to refresh.';
+				} else {
+					const parts = [];
+					if (refreshed) {
+						parts.push(refreshed + (1 === refreshed ? ' feed' : ' feeds') + ' updated');
+					}
+					if (skipped) {
+						parts.push(skipped + ' checked too recently, skipped');
+					}
+					if (failed) {
+						parts.push(failed + (1 === failed ? ' feed' : ' feeds') + ' failed to refresh');
+					}
+					status.textContent = parts.length ? parts.join('; ') + '.' : 'Up to date.';
+				}
+			}
+		},
+
+		// Touch-drag pull-to-refresh: only arms while the page is already
+		// scrolled to the very top (otherwise this is an ordinary scroll
+		// gesture over the list, not a pull). The Refresh button above is
+		// the same action for anyone not on a touch device.
+		bindPullGesture() {
+			const list = root.querySelector('[data-timeline-list]');
+			const indicator = root.querySelector('[data-pull-indicator]');
+			if (!list || !indicator) {
+				return;
+			}
+			const THRESHOLD = 64;
+			let startY = 0;
+			let dragging = false;
+			let armed = false;
+
+			const onStart = (event) => {
+				dragging = window.scrollY <= 0 && !this._refreshing;
+				armed = false;
+				startY = dragging ? event.touches[0].clientY : 0;
+			};
+			const onMove = (event) => {
+				if (!dragging) {
+					return;
+				}
+				const delta = event.touches[0].clientY - startY;
+				if (delta <= 0) {
+					armed = false;
+					indicator.classList.remove('is-visible', 'is-armed');
+					indicator.style.transform = '';
+					return;
+				}
+				indicator.style.transition = 'none';
+				const damped = Math.min(THRESHOLD * 1.5, delta * 0.5);
+				indicator.style.transform = 'translateY(' + damped + 'px)';
+				indicator.classList.add('is-visible');
+				armed = damped >= THRESHOLD;
+				indicator.classList.toggle('is-armed', armed);
+			};
+			const onEnd = () => {
+				if (!dragging) {
+					return;
+				}
+				dragging = false;
+				indicator.style.transition = '';
+				indicator.classList.remove('is-visible', 'is-armed');
+				indicator.style.transform = '';
+				if (armed) {
+					this.pullRefresh();
+				}
+				armed = false;
+			};
+
+			list.addEventListener('touchstart', onStart, { passive: true });
+			list.addEventListener('touchmove', onMove, { passive: true });
+			list.addEventListener('touchend', onEnd);
+			list.addEventListener('touchcancel', onEnd);
+		},
+	};
+
+	// --- Overlay: subscription-post detail sheet ---
+
+	// Shown when opening a Timeline subscription-post card. Always issues
+	// the click-through fetch (GET /subscription-posts/{id}) on first open —
+	// body_content is never present in the Timeline list response, even for
+	// a 'full' post — then caches the result on the Map handed in by
+	// TimelineScreen so re-opening the same card doesn't re-fetch it.
+	const SubscriptionPostSheet = {
+		el: null,
+		opener: null,
+		cache: null,
+		current: null,
+
+		show(item, cache, opener) {
+			this.opener = opener || null;
+			this.cache = cache;
+			this.current = item;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			this.renderShell();
+			this.onKeydown = (event) => {
+				if ('Escape' === event.key) {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			const heading = this.el.querySelector('#daymark-subpost-title');
+			if (heading) {
+				heading.focus();
+			}
+			this.load();
+		},
+
+		renderShell() {
+			const item = this.current;
+			const metaParts = [];
+			if (item.author) {
+				metaParts.push(esc(item.author));
+			}
+			if (item.date) {
+				metaParts.push(esc(relativeTime(item.date)));
+			}
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="Close"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-subpost-title">
+				<h2 class="daymark-sheet__title" id="daymark-subpost-title" tabindex="-1">${esc(
+					item.title || 'Untitled post'
+				)}</h2>
+				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
+				<div class="daymark-sheet__body" data-subpost-body aria-live="polite">
+					<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading full post&hellip;</p>
+				</div>
+			</div>`;
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+		},
+
+		async load() {
+			const item = this.current;
+			const key = String(item.id);
+			const cached = this.cache.get(key);
+			if (cached && 'done' === cached.state) {
+				this.renderBody(cached.body_content);
+				return;
+			}
+			if (cached && 'error' === cached.state) {
+				this.renderError();
+				return;
+			}
+			this.cache.set(key, { state: 'loading' });
+			try {
+				const full = await apiGet('subscription-posts/' + item.id);
+				if (!this.isShowing(key)) {
+					return;
+				}
+				const body = full && full.body_content ? String(full.body_content) : '';
+				this.cache.set(key, { state: 'done', body_content: body });
+				this.renderBody(body);
+			} catch (err) {
+				if (!this.isShowing(key)) {
+					return;
+				}
+				this.cache.set(key, { state: 'error' });
+				this.renderError();
+			}
+		},
+
+		// Whether this sheet is still open on the same card the in-flight
+		// request was made for (it may have been dismissed, or reopened on a
+		// different card, while the fetch was in flight).
+		isShowing(key) {
+			return !!this.el && !this.el.hidden && !!this.current && String(this.current.id) === key;
+		},
+
+		renderBody(html) {
+			const body = this.el.querySelector('[data-subpost-body]');
+			if (!body) {
+				return;
+			}
+			// An empty body (a 'full' fetch that genuinely had nothing to
+			// show) reads the same as a failure to the person looking at
+			// it — never leave them staring at a silently blank sheet.
+			if (!html) {
+				this.renderError();
+				return;
+			}
+			// Already wp_kses_post()-sanitized server-side and explicitly
+			// documented as safe to render as-is — not re-escaped here.
+			body.innerHTML =
+				`<div class="daymark-subpost-content">${html}</div>` + this.viewOriginalLink();
+		},
+
+		renderError() {
+			const body = this.el.querySelector('[data-subpost-body]');
+			if (!body) {
+				return;
+			}
+			body.innerHTML =
+				'<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>' +
+				this.viewOriginalLink();
+		},
+
+		viewOriginalLink() {
+			const permalink = this.current && this.current.permalink;
+			return permalink
+				? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+						permalink
+				  )}" target="_blank" rel="noopener">View original &#8599;</a></p>`
+				: '';
+		},
+
+		hide(restoreFocus = true) {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (restoreFocus && this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
+			this.current = null;
+		},
+	};
+
 	// --- Screen: Publish ---
 
 	// Why a connector can't take the current Mark type, phrased by what
@@ -2381,13 +3000,7 @@
 			</section>
 			<footer class="daymark-actionbar">
 				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
-				${
-					pageLink('timeline')
-						? `<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="${esc(
-								pageLink('timeline')
-						  )}">View Timeline &rarr;</a></p>`
-						: ''
-				}
+				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#timeline">View Timeline &rarr;</a></p>
 			</footer>`;
 		},
 
@@ -2653,6 +3266,7 @@
 		'#publish': PublishScreen,
 		'#success': SuccessScreen,
 		'#notifications': NotificationsScreen,
+		'#timeline': TimelineScreen,
 	};
 
 	window.addEventListener('hashchange', () => {
