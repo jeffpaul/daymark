@@ -291,6 +291,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscriptions/(?P<id>\d+)/refresh',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'refresh_subscription' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/(?P<comment_id>\d+)/reply',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1226,6 +1243,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'trashed_posts' => $trashed_count,
 			)
 		);
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions/{id}/refresh — manual (pull-to-refresh)
+	 * poll of one subscription, independent of the cron schedule.
+	 *
+	 * Delegates to Daymark_Subscription_Poller::manual_refresh(), which
+	 * enforces its own per-subscription 15-minute cooldown
+	 * (`daymark_subscription_manual_refresh_interval`) and returns a
+	 * distinguishable error when the window has not elapsed. This route
+	 * additionally applies the standard per-user rate limit on top of that,
+	 * since it issues an outbound request to a site the user does not
+	 * control.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function refresh_subscription( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$id     = absint( $request->get_param( 'id' ) );
+		$result = Daymark_Plugin::instance()->subscription_poller->manual_refresh( $id );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
+
+		return rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
 	}
 
 	/**
