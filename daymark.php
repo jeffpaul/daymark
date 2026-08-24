@@ -48,6 +48,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/class-connector-x.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';
 
 register_activation_hook( __FILE__, array( 'Daymark_Plugin', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'Daymark_Plugin', 'deactivate' ) );

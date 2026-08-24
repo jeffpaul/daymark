@@ -224,6 +224,7 @@ final class Daymark_Plugin {
 		// app base and section pages are in place before resolution below.
 		Daymark_Migration::maybe_migrate();
 
+		Daymark_Subscriptions::install();
 		Daymark_Backflow_Sync::schedule();
 		// Resolve the app base on first activation (respecting content at
 		// /daymark); a base that is already persisted — including one the
