@@ -69,13 +69,18 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 	/**
 	 * Register a canned 200 response for a URL.
 	 *
-	 * @param string $url  URL to mock.
-	 * @param string $body Response body.
+	 * @param string $url          URL to mock.
+	 * @param string $body         Response body.
+	 * @param string $content_type Content-Type header value. Only matters
+	 *                             for a feed-content fetch (SimplePie
+	 *                             consults this header to detect a feed);
+	 *                             defaults to a value that is harmless for
+	 *                             this file's site-HTML fetches.
 	 * @return void
 	 */
-	private function mock_response( string $url, string $body ): void {
+	private function mock_response( string $url, string $body, string $content_type = 'text/html; charset=UTF-8' ): void {
 		$this->http_responses[ $url ] = array(
-			'headers'  => array(),
+			'headers'  => array( 'content-type' => $content_type ),
 			'body'     => $body,
 			'response' => array(
 				'code'    => 200,
@@ -270,6 +275,74 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 
 		$delete = new WP_REST_Request( 'DELETE', '/daymark/v1/subscriptions/1' );
 		$this->assertSame( 401, rest_do_request( $delete )->get_status() );
+
+		$refresh = new WP_REST_Request( 'POST', '/daymark/v1/subscriptions/1/refresh' );
+		$this->assertSame( 401, rest_do_request( $refresh )->get_status() );
+	}
+
+	/** POST /subscriptions/{id}/refresh polls immediately outside the manual-refresh window. */
+	public function test_refresh_polls_and_returns_the_subscription() {
+		wp_set_current_user( $this->author_a );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed/',
+			)
+		);
+
+		// A feed with one item: Daymark_Subscription_Source_Feed::fetch()
+		// returns an empty array both for an unreachable feed and for one
+		// that is reachable but has zero items — poll_subscription()
+		// deliberately cannot distinguish the two at this interface (see
+		// Daymark_Subscription_Poller::poll_subscription()'s docblock), so a
+		// zero-item feed here would be treated as a fetch failure rather
+		// than a successful empty poll.
+		$this->mock_response(
+			'https://example.com/feed/',
+			'<?xml version="1.0"?><rss version="2.0"><channel><title>Example</title><link>https://example.com/</link>'
+			. '<item><title>A Post</title><link>https://example.com/a-post/</link><guid>https://example.com/a-post/</guid>'
+			. '<pubDate>Tue, 02 Jan 2024 03:04:05 +0000</pubDate><description>Body.</description></item>'
+			. '</channel></rss>',
+			'application/rss+xml; charset=UTF-8'
+		);
+
+		$response = rest_do_request( $this->request( 'POST', "/daymark/v1/subscriptions/{$subscription_id}/refresh" ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertSame( $subscription_id, $data['id'] );
+		$this->assertNotSame( '', $data['last_manual_refresh_at'] );
+	}
+
+	/** POST /subscriptions/{id}/refresh within the 15-minute window returns 429. */
+	public function test_refresh_too_recent_returns_429() {
+		wp_set_current_user( $this->author_a );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed/',
+			)
+		);
+		$subscriptions->update( $subscription_id, array( 'last_manual_refresh_at' => current_time( 'mysql', true ) ) );
+
+		$response = rest_do_request( $this->request( 'POST', "/daymark/v1/subscriptions/{$subscription_id}/refresh" ) );
+
+		$this->assertSame( 429, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_refresh_too_recent', $response->get_data()['code'] );
+	}
+
+	/** POST /subscriptions/{id}/refresh for a nonexistent subscription is a 404. */
+	public function test_refresh_missing_id_is_404() {
+		wp_set_current_user( $this->author_a );
+
+		$response = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/999999/refresh' ) );
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_not_found', $response->get_data()['code'] );
 	}
 
 	/**

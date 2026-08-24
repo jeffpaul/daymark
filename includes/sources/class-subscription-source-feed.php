@@ -107,15 +107,27 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * enclosures) — the shape normalize() knows how to consume, but not yet
 	 * standardized into Daymark's source-agnostic post shape.
 	 *
+	 * An empty array is a genuinely successful fetch of a feed with no
+	 * current items — distinct from a WP_Error, which means the feed itself
+	 * could not be reached or parsed. The poller's dead-feed detection
+	 * depends on this distinction: collapsing "empty" into "failed" would
+	 * mark a quiet-but-healthy blog dead after enough poll cycles.
+	 *
 	 * @param string $feed_url Feed URL to fetch.
-	 * @return array<int, array<string, mixed>> Raw items, or an empty array
-	 *                                           on a fetch/parse failure.
+	 * @return array<int, array<string, mixed>>|WP_Error Raw items (possibly
+	 *                                                    empty), or a
+	 *                                                    WP_Error when the
+	 *                                                    feed could not be
+	 *                                                    reached or parsed.
 	 */
-	public function fetch( string $feed_url ): array {
+	public function fetch( string $feed_url ): array|WP_Error {
 		$feed_url = $this->sanitize_source_url( $feed_url );
 
 		if ( '' === $feed_url ) {
-			return array();
+			return new WP_Error(
+				'daymark_subscription_invalid_feed_url',
+				__( 'Invalid feed URL.', 'daymark' )
+			);
 		}
 
 		if ( ! function_exists( 'fetch_feed' ) ) {
@@ -127,7 +139,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		$feed = fetch_feed( $feed_url );
 
 		if ( is_wp_error( $feed ) ) {
-			return array();
+			return $feed;
 		}
 
 		$items     = $feed->get_items( 0, $feed->get_item_quantity() );

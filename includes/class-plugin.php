@@ -121,6 +121,14 @@ final class Daymark_Plugin {
 	public Daymark_Subscriptions $subscriptions;
 
 	/**
+	 * Subscription polling: ingest, click-through fetch, pruning, cron
+	 * scheduling, and manual refresh.
+	 *
+	 * @var Daymark_Subscription_Poller
+	 */
+	public Daymark_Subscription_Poller $subscription_poller;
+
+	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
 	 * @var array<string, string>
@@ -172,6 +180,7 @@ final class Daymark_Plugin {
 		$this->subscription_source_registry = Daymark_Subscription_Source_Registry::instance();
 		$this->subscription_post_type       = new Daymark_Subscription_Post_Type();
 		$this->subscriptions                = new Daymark_Subscriptions();
+		$this->subscription_poller          = new Daymark_Subscription_Poller();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes
@@ -220,6 +229,7 @@ final class Daymark_Plugin {
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->subscription_post_type->register();
+		$this->subscription_poller->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
@@ -266,6 +276,7 @@ final class Daymark_Plugin {
 
 		Daymark_Subscriptions::install();
 		Daymark_Backflow_Sync::schedule();
+		Daymark_Subscription_Poller::schedule();
 		// Resolve the app base on first activation (respecting content at
 		// /daymark); a base that is already persisted — including one the
 		// migration carried over — is kept, because a home-screen-installed
@@ -293,6 +304,7 @@ final class Daymark_Plugin {
 	 */
 	public static function deactivate(): void {
 		Daymark_Backflow_Sync::unschedule();
+		Daymark_Subscription_Poller::unschedule();
 		flush_rewrite_rules();
 	}
 

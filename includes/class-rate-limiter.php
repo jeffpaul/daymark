@@ -47,24 +47,39 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIBE = 'subscribe';
 
 	/**
+	 * Manual subscription refresh (POST /subscriptions/{id}/refresh) — makes
+	 * an outbound feed fetch, same risk class as ACTION_SUBSCRIBE. This is
+	 * a per-user limiter on top of (not instead of) the per-subscription
+	 * 15-minute cooldown Daymark_Subscription_Poller::manual_refresh()
+	 * itself enforces.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIPTION_REFRESH = 'subscription_refresh';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
 	 */
 	private const DEFAULTS = array(
-		self::ACTION_AI        => array(
+		self::ACTION_AI                   => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_PUBLISH   => array(
+		self::ACTION_PUBLISH              => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SYNC      => array(
+		self::ACTION_SYNC                 => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SUBSCRIBE => array(
+		self::ACTION_SUBSCRIBE            => array(
+			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIPTION_REFRESH => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
