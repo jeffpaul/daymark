@@ -250,6 +250,47 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscriptions',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'create_subscription' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'site_url' => array(
+							'type'              => 'string',
+							'required'          => true,
+							'sanitize_callback' => 'esc_url_raw',
+						),
+					),
+				),
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_subscriptions' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::DELETABLE,
+				'callback'            => array( $this, 'delete_subscription' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/(?P<comment_id>\d+)/reply',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1032,6 +1073,183 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$response->set_status( 201 );
 
 		return $response;
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions — subscribe to a site by URL.
+	 *
+	 * Discovers the site's feed via the subscription source registry (source
+	 * agnostic, even though only the built-in RSS/Atom feed source ships
+	 * today), creates the `daymark_subscription` row, then best-effort
+	 * resolves the site's favicon. Rate limited: this issues outbound
+	 * requests to a site the user names, same risk class as manual sync.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function create_subscription( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$site_url = (string) $request->get_param( 'site_url' );
+		$scheme   = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
+
+		if ( '' === $site_url || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_url',
+				__( 'Please enter a valid site URL.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
+		$discovered = $registry->discover_feeds( $site_url );
+		$feed       = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
+		$feed_url   = isset( $feed['url'] ) ? (string) $feed['url'] : '';
+
+		if ( '' === $feed_url ) {
+			return new WP_Error(
+				'daymark_subscription_no_feed_found',
+				__( 'No feed could be found at this URL.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$created = Daymark_Plugin::instance()->subscriptions->create(
+			array(
+				'site_url'    => $site_url,
+				'feed_url'    => $feed_url,
+				'source_type' => 'feed',
+				'site_title'  => isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '',
+			)
+		);
+
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+
+		$subscription_id = (int) $created;
+
+		// Best-effort favicon lookup: a one-time enhancement, never a reason
+		// to fail the subscribe request itself.
+		$feed_source = $registry->get_source( 'feed' );
+
+		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
+			$favicon_url = $feed_source->get_favicon_url( $site_url );
+
+			if ( '' !== $favicon_url ) {
+				Daymark_Plugin::instance()->subscriptions->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
+			}
+		}
+
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+
+		$response = rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
+		$response->set_status( 201 );
+
+		return $response;
+	}
+
+	/**
+	 * GET /daymark/v1/subscriptions — active subscriptions.
+	 *
+	 * @param WP_REST_Request $request The request (no query args yet).
+	 * @return WP_REST_Response
+	 */
+	public function get_subscriptions( WP_REST_Request $request ) {
+		unset( $request );
+
+		$rows = Daymark_Plugin::instance()->subscriptions->get_active();
+
+		return rest_ensure_response( array_map( array( $this, 'prepare_subscription' ), $rows ) );
+	}
+
+	/**
+	 * DELETE /daymark/v1/subscriptions/{id} — unsubscribe.
+	 *
+	 * Trashes every cached `daymark_subscription_post` ingested from this
+	 * subscription (relying on core's normal 7-day trash retention for
+	 * eventual deletion — no custom deletion logic), then deletes the
+	 * subscription row itself.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function delete_subscription( WP_REST_Request $request ) {
+		$id            = absint( $request->get_param( 'id' ) );
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$subscription  = $subscriptions->get( $id );
+
+		if ( null === $subscription ) {
+			return new WP_Error(
+				'daymark_subscription_not_found',
+				__( 'Subscription not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$query = new WP_Query(
+			array(
+				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale unsubscribe cleanup.
+				'meta_query'     => array(
+					array(
+						'key'     => 'subscription_id',
+						'value'   => $id,
+						'compare' => '=',
+						'type'    => 'NUMERIC',
+					),
+				),
+			)
+		);
+
+		$trashed_count = 0;
+
+		foreach ( $query->posts as $post_id ) {
+			if ( wp_trash_post( (int) $post_id ) ) {
+				++$trashed_count;
+			}
+		}
+
+		$subscriptions->delete( $id );
+
+		return rest_ensure_response(
+			array(
+				'deleted'       => true,
+				'trashed_posts' => $trashed_count,
+			)
+		);
+	}
+
+	/**
+	 * Prepare a subscription row response array: cast/escape every field per
+	 * the security checklist rather than passing the raw DB row straight
+	 * through.
+	 *
+	 * @param array<string, mixed> $row A `daymark_subscription` row.
+	 * @return array<string, mixed>
+	 */
+	private function prepare_subscription( array $row ): array {
+		return array(
+			'id'                        => absint( $row['id'] ?? 0 ),
+			'site_url'                  => esc_url_raw( (string) ( $row['site_url'] ?? '' ) ),
+			'feed_url'                  => esc_url_raw( (string) ( $row['feed_url'] ?? '' ) ),
+			'source_type'               => sanitize_key( (string) ( $row['source_type'] ?? '' ) ),
+			'site_title'                => sanitize_text_field( (string) ( $row['site_title'] ?? '' ) ),
+			'site_icon_url'             => esc_url_raw( (string) ( $row['site_icon_url'] ?? '' ) ),
+			'status'                    => sanitize_key( (string) ( $row['status'] ?? '' ) ),
+			'consecutive_failure_count' => absint( $row['consecutive_failure_count'] ?? 0 ),
+			'last_checked_at'           => sanitize_text_field( (string) ( $row['last_checked_at'] ?? '' ) ),
+			'last_manual_refresh_at'    => sanitize_text_field( (string) ( $row['last_manual_refresh_at'] ?? '' ) ),
+			'created_at'                => sanitize_text_field( (string) ( $row['created_at'] ?? '' ) ),
+		);
 	}
 
 	/**

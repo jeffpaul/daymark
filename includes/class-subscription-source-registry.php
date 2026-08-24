@@ -120,4 +120,30 @@ class Daymark_Subscription_Source_Registry {
 	public function get_source( string $id ): ?Daymark_Subscription_Source {
 		return $this->sources[ $id ] ?? null;
 	}
+
+	/**
+	 * Ask every registered source to discover feed(s)/locator(s) for a site
+	 * URL, in registration order, and return the first non-empty result.
+	 *
+	 * Keeps callers (the subscribe-by-URL REST handler) source-agnostic even
+	 * though only the built-in RSS/Atom feed source ships today — a future
+	 * source (Friends, ActivityPub) registering via
+	 * `daymark_register_subscription_sources` needs no caller-side changes.
+	 *
+	 * @param string $site_url Site URL entered by the user (not a feed URL).
+	 * @return array<int|string, mixed> The first source's non-empty discover()
+	 *                                  result, or an empty array when no
+	 *                                  registered source discovers anything.
+	 */
+	public function discover_feeds( string $site_url ): array {
+		foreach ( $this->sources as $source ) {
+			$discovered = $source->discover( $site_url );
+
+			if ( ! empty( $discovered ) ) {
+				return $discovered;
+			}
+		}
+
+		return array();
+	}
 }
