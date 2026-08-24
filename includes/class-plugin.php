@@ -114,6 +114,13 @@ final class Daymark_Plugin {
 	public Daymark_Subscription_Post_Type $subscription_post_type;
 
 	/**
+	 * CRUD for the `daymark_subscription` custom DB table.
+	 *
+	 * @var Daymark_Subscriptions
+	 */
+	public Daymark_Subscriptions $subscriptions;
+
+	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
 	 * @var array<string, string>
@@ -164,6 +171,7 @@ final class Daymark_Plugin {
 		$this->rate_limiter                 = new Daymark_Rate_Limiter();
 		$this->subscription_source_registry = Daymark_Subscription_Source_Registry::instance();
 		$this->subscription_post_type       = new Daymark_Subscription_Post_Type();
+		$this->subscriptions                = new Daymark_Subscriptions();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes

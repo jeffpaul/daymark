@@ -39,20 +39,32 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SYNC = 'sync';
 
 	/**
+	 * Subscribe by URL (POST /subscriptions) — makes an outbound feed
+	 * discovery/favicon request, same risk class as ACTION_SYNC.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIBE = 'subscribe';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
 	 */
 	private const DEFAULTS = array(
-		self::ACTION_AI      => array(
+		self::ACTION_AI        => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_PUBLISH => array(
+		self::ACTION_PUBLISH   => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SYNC    => array(
+		self::ACTION_SYNC      => array(
+			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIBE => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
