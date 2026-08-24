@@ -32,6 +32,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const MAX_PER_PAGE = 50;
 
 	/**
+	 * Hard ceiling on the number of items GET /timeline's two source
+	 * queries will ever ask for in one request (`page * per_page`,
+	 * before merging/slicing). Without this, an arbitrarily deep `page`
+	 * value would size `posts_per_page` unbounded on every request —
+	 * `per_page` is capped by MAX_PER_PAGE, but nothing otherwise caps
+	 * `page` itself. 500 covers 10 pages at the max page size, generous
+	 * for genuine Timeline scrolling depth while keeping a single
+	 * request's worst-case query size bounded.
+	 *
+	 * @var int
+	 */
+	private const MAX_TIMELINE_QUERY_ITEMS = 500;
+
+	/**
 	 * Register REST routes. Hooked to rest_api_init.
 	 *
 	 * @return void
@@ -110,6 +124,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'default'           => '',
 							'sanitize_callback' => 'sanitize_text_field',
 						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/timeline',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_timeline' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'per_page' => array(
+						'type'              => 'integer',
+						'default'           => 20,
+						'sanitize_callback' => 'absint',
+					),
+					'page'     => array(
+						'type'              => 'integer',
+						'default'           => 1,
+						'sanitize_callback' => 'absint',
 					),
 				),
 			)
@@ -587,6 +623,116 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $marks );
+	}
+
+	/**
+	 * GET /daymark/v1/timeline — the merged, date-sorted Timeline: the
+	 * user's own published Marks interleaved with cached
+	 * `daymark_subscription_post` entries from active subscriptions.
+	 *
+	 * `WP_Query` cannot express this in one query: `_daymark_is_mark` meta
+	 * only exists on (and only needs to gate) the `post` post type — mixing
+	 * it into a single cross-post-type query via `meta_query` would either
+	 * wrongly exclude every subscription post (meta condition applied
+	 * globally) or wrongly include every non-Mark `post` on the site (meta
+	 * condition dropped). So this runs two separate queries and merges the
+	 * results in PHP.
+	 *
+	 * Pagination tradeoff (documented rather than silently assumed): each
+	 * source query fetches up to `page * per_page` of its own items
+	 * (sorted newest-first), the two result sets are merged and re-sorted
+	 * by date, and then the exact page window is sliced out of that merged
+	 * list. This re-fetches everything from page 1 through the requested
+	 * page on every request, which is more repeated work than a real
+	 * cursor-based cross-source pagination scheme on deep pagination — but
+	 * it is simple and always correct at this codebase's personal-site
+	 * scale, matching the "fetch what's needed, sort, then slice" precedent
+	 * already used elsewhere in Subscriptions (e.g. pruning's retention
+	 * scan). A cursor-based approach is a possible future optimization if
+	 * deep Timeline pagination ever proves too slow in practice.
+	 *
+	 * Only published items are considered from both sources: subscription
+	 * posts are always ingested as 'publish' (there is no subscription
+	 * post draft state), and Marks are restricted to 'publish' here even
+	 * though drafts are a valid Mark status elsewhere (GET /marks) — the
+	 * Timeline is a published feed, not the composer's Home Drafts row.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function get_timeline( WP_REST_Request $request ) {
+		$per_page = min( self::MAX_PER_PAGE, max( 1, absint( $request->get_param( 'per_page' ) ) ) );
+		$page     = max( 1, absint( $request->get_param( 'page' ) ) );
+		// Capped so an arbitrarily deep `page` can't size either source
+		// query unbounded — see MAX_TIMELINE_QUERY_ITEMS.
+		$limit = min( self::MAX_TIMELINE_QUERY_ITEMS, $page * $per_page );
+
+		$marks_query = new WP_Query(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'posts_per_page' => $limit,
+				'paged'          => 1,
+				'orderby'        => 'date',
+				'order'          => 'DESC',
+				'no_found_rows'  => true,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Mark lookup.
+				'meta_key'       => '_daymark_is_mark',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
+				'meta_value'     => '1',
+			)
+		);
+
+		$subscription_posts_query = new WP_Query(
+			array(
+				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status'    => 'publish',
+				'posts_per_page' => $limit,
+				'paged'          => 1,
+				'no_found_rows'  => true,
+				'orderby'        => 'meta_value',
+				// Sorts on the source's own published_at, not this site's
+				// ingestion time — matches Daymark_Subscription_Poller's
+				// pruning query, which orders the same way for the same
+				// reason. Y-m-d H:i:s (always GMT) sorts correctly as a
+				// plain string.
+				'meta_key'       => 'published_at', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Timeline merge.
+				'order'          => 'DESC',
+			)
+		);
+
+		$items = array();
+
+		foreach ( $marks_query->posts as $post ) {
+			// `item_type` is added here rather than inside
+			// prepare_mark_summary() itself, so that method's shape stays
+			// unchanged for its other callers (GET/POST /marks, GET
+			// /marks/{id}) — see prepare_subscription_post_summary()'s
+			// docblock for why the discriminator isn't named `type`.
+			$items[] = array(
+				'date' => (string) $post->post_date_gmt,
+				'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
+			);
+		}
+
+		foreach ( $subscription_posts_query->posts as $post ) {
+			$items[] = array(
+				'date' => sanitize_text_field( (string) get_post_meta( $post->ID, 'published_at', true ) ),
+				'item' => $this->prepare_subscription_post_summary( $post->ID ),
+			);
+		}
+
+		usort(
+			$items,
+			static function ( array $a, array $b ): int {
+				return strcmp( $b['date'], $a['date'] );
+			}
+		);
+
+		$offset        = ( $page - 1 ) * $per_page;
+		$page_of_items = array_slice( $items, $offset, $per_page );
+
+		return rest_ensure_response( array_column( $page_of_items, 'item' ) );
 	}
 
 	/**
@@ -1300,6 +1446,72 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'last_checked_at'           => sanitize_text_field( (string) ( $row['last_checked_at'] ?? '' ) ),
 			'last_manual_refresh_at'    => sanitize_text_field( (string) ( $row['last_manual_refresh_at'] ?? '' ) ),
 			'created_at'                => sanitize_text_field( (string) ( $row['created_at'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * Prepare a `daymark_subscription_post` Timeline item response array.
+	 *
+	 * Deliberately omits `body_content`: sending the cached full-HTML body
+	 * for every list item is wasteful when most Timeline cards only ever
+	 * render the excerpt/thumbnail, and a pruned or excerpt-only post has
+	 * no body to send anyway. A future per-item detail fetch (the same
+	 * click-through path `Daymark_Subscription_Poller::fetch_full_content()`
+	 * already serves) is the right place to return it, not this list
+	 * response.
+	 *
+	 * `site_icon_url` comes from a per-item lookup of the post's
+	 * subscription row (`Daymark_Subscriptions::get()`) rather than a
+	 * batched join — fine at this codebase's personal-site scale, and
+	 * matches how the rest of this class already reads a subscription's
+	 * row (e.g. prepare_subscription()); batching by unique subscription_id
+	 * would be a reasonable follow-up if this ever needs to scale further.
+	 *
+	 * @param int $post_id `daymark_subscription_post` ID.
+	 * @return array<string, mixed>
+	 */
+	private function prepare_subscription_post_summary( int $post_id ): array {
+		$subscription_id = absint( get_post_meta( $post_id, 'subscription_id', true ) );
+		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+		$content_state   = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
+		$published_at    = (string) get_post_meta( $post_id, 'published_at', true );
+
+		return array(
+			// Discriminator field a Timeline consumer branches on, mirroring
+			// Daymark_Notifications' item `type`. Deliberately not named
+			// `type` here: prepare_mark_summary()'s existing `type` key
+			// already means the Mark's `_daymark_primary_type`
+			// (image|video|audio|note|...), a contract several other
+			// endpoints rely on (GET/POST /marks, GET /marks/{id}) — reusing
+			// the same key for a different meaning on the same endpoint
+			// would be confusing at best. `post_format` below is this item
+			// shape's closest equivalent to a Mark's `type`.
+			'item_type'          => 'subscription_post',
+			'id'                 => absint( $post_id ),
+			'subscription_id'    => $subscription_id,
+			'title'              => html_entity_decode(
+				sanitize_text_field( get_the_title( $post_id ) ),
+				ENT_QUOTES,
+				'UTF-8'
+			),
+			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
+			'author'             => sanitize_text_field( (string) get_post_meta( $post_id, 'author', true ) ),
+			// The *source* site's URL for this post — for a future in-app
+			// "open this" action, not a link to render directly on this
+			// site (this CPT has no permalink of its own; see
+			// Daymark_Subscription_Post_Type's class docblock).
+			'permalink'          => esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) ),
+			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
+			'date'               => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
+			'post_format'        => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
+			'featured_image_url' => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
+			'content_state'      => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
+			// The subscription's cached favicon, used as a pruned
+			// rich-media post's Timeline placeholder in place of its
+			// cleared embed (per the PRD). '' when the subscription row is
+			// gone (should not normally happen while its posts still
+			// exist) or never had a favicon resolved.
+			'site_icon_url'      => esc_url_raw( (string) ( $subscription['site_icon_url'] ?? '' ) ),
 		);
 	}
 
