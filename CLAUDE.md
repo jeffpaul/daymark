@@ -30,7 +30,7 @@ The only allowed `moment` references are the migration/uninstall legacy keys and
 
 | Key | Value |
 |-----|-------|
-| WordPress version | 7.0-beta3-61869 |
+| WordPress version | 7.1 (readme.txt "Tested up to" bumped from 7.0 on WP 7.1's release — the `7.0-beta3-61869` build noted here was the local wp70 install at Phase 0 setup; reconfirm the exact installed build next time wp70 is running) |
 | PHP version | 8.2.27 (site) / 8.5.7 (CLI) |
 | WP 7.0 AI Client available | **yes** — via `ai` plugin 0.4.1: class is `WordPress\AiClient\AiClient` (namespaced; the legacy `WP_AI_Client` name does NOT exist). Anthropic/Google/OpenAI provider plugins active. |
 | Site URL | http://wp70.local |
