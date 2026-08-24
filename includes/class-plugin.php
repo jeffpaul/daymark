@@ -99,6 +99,21 @@ final class Daymark_Plugin {
 	public Daymark_Rate_Limiter $rate_limiter;
 
 	/**
+	 * Subscription source registry (inbound mirror of the syndication
+	 * registry).
+	 *
+	 * @var Daymark_Subscription_Source_Registry
+	 */
+	public Daymark_Subscription_Source_Registry $subscription_source_registry;
+
+	/**
+	 * `daymark_subscription_post` CPT registrar.
+	 *
+	 * @var Daymark_Subscription_Post_Type
+	 */
+	public Daymark_Subscription_Post_Type $subscription_post_type;
+
+	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
 	 * @var array<string, string>
@@ -136,17 +151,19 @@ final class Daymark_Plugin {
 	 * @return void
 	 */
 	private function setup(): void {
-		$this->routes               = new Daymark_Routes();
-		$this->rest_controller      = new Daymark_REST_Controller();
-		$this->publisher            = new Daymark_Publisher();
-		$this->ai_assist            = new Daymark_AI_Assist();
-		$this->renderer             = new Daymark_Renderer();
-		$this->blocks               = new Daymark_Blocks( $this->renderer );
-		$this->syndication_registry = Daymark_Syndication_Registry::instance();
-		$this->notifications        = new Daymark_Notifications();
-		$this->syndication_links    = new Daymark_Syndication_Links();
-		$this->backflow_sync        = new Daymark_Backflow_Sync();
-		$this->rate_limiter         = new Daymark_Rate_Limiter();
+		$this->routes                       = new Daymark_Routes();
+		$this->rest_controller              = new Daymark_REST_Controller();
+		$this->publisher                    = new Daymark_Publisher();
+		$this->ai_assist                    = new Daymark_AI_Assist();
+		$this->renderer                     = new Daymark_Renderer();
+		$this->blocks                       = new Daymark_Blocks( $this->renderer );
+		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
+		$this->notifications                = new Daymark_Notifications();
+		$this->syndication_links            = new Daymark_Syndication_Links();
+		$this->backflow_sync                = new Daymark_Backflow_Sync();
+		$this->rate_limiter                 = new Daymark_Rate_Limiter();
+		$this->subscription_source_registry = Daymark_Subscription_Source_Registry::instance();
+		$this->subscription_post_type       = new Daymark_Subscription_Post_Type();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes
@@ -194,6 +211,7 @@ final class Daymark_Plugin {
 		$this->syndication_links->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
+		$this->subscription_post_type->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
@@ -209,6 +227,20 @@ final class Daymark_Plugin {
 		 * @param Daymark_Syndication_Registry $registry The connector registry.
 		 */
 		do_action( 'daymark_register_connectors', $this->syndication_registry );
+
+		/**
+		 * Fires so inbound subscription sources can register themselves.
+		 *
+		 * The inbound mirror of `daymark_register_connectors`, fired at the
+		 * same point in the request lifecycle. A future built-in RSS/Atom
+		 * feed source, a Friends `friend_post` adapter, an ActivityPub
+		 * actor-post adapter, or any other source plugin can hook here to
+		 * register a Daymark_Subscription_Source implementation via
+		 * $registry->register_source( $source ), without modifying core.
+		 *
+		 * @param Daymark_Subscription_Source_Registry $registry The subscription source registry.
+		 */
+		do_action( 'daymark_register_subscription_sources', $this->subscription_source_registry );
 	}
 
 	/**
@@ -224,6 +256,7 @@ final class Daymark_Plugin {
 		// app base and section pages are in place before resolution below.
 		Daymark_Migration::maybe_migrate();
 
+		Daymark_Subscriptions::install();
 		Daymark_Backflow_Sync::schedule();
 		// Resolve the app base on first activation (respecting content at
 		// /daymark); a base that is already persisted — including one the
