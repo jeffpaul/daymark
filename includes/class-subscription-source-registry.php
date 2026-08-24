@@ -25,13 +25,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Singleton registry of inbound subscription sources.
  *
- * Unlike Daymark_Syndication_Registry, this registry ships with no
- * built-in sources at construction — the built-in RSS/Atom feed source
- * (`Daymark_Subscription_Source_Feed`) is a later task. Third-party (and,
- * later, built-in) sources register via the
- * `daymark_register_subscription_sources` action fired from
- * Daymark_Plugin::on_init(), at the same point in the request lifecycle
- * `daymark_register_connectors` fires for outbound connectors.
+ * The built-in RSS/Atom feed source (`Daymark_Subscription_Source_Feed`) is
+ * registered at construction, mirroring how Daymark_Syndication_Registry
+ * registers its own built-in connectors, so it always exists before
+ * third-party sources register. Third-party (and any future built-in)
+ * sources register via the `daymark_register_subscription_sources` action
+ * fired from Daymark_Plugin::on_init(), at the same point in the request
+ * lifecycle `daymark_register_connectors` fires for outbound connectors.
  */
 class Daymark_Subscription_Source_Registry {
 
@@ -64,8 +64,23 @@ class Daymark_Subscription_Source_Registry {
 
 	/**
 	 * Private constructor. Use instance().
+	 *
+	 * Registers the built-in RSS/Atom feed source immediately so it is
+	 * available before external sources register on `init`.
 	 */
-	private function __construct() {}
+	private function __construct() {
+		$this->register_built_in_sources();
+	}
+
+	/**
+	 * Register the one built-in source shipped in phase one: the RSS/Atom
+	 * feed reader.
+	 *
+	 * @return void
+	 */
+	private function register_built_in_sources(): void {
+		$this->register_source( new Daymark_Subscription_Source_Feed() );
+	}
 
 	/**
 	 * Register a subscription source.

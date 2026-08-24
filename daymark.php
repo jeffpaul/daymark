@@ -50,6 +50,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/sources/interface-subscription-source.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-feed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-source-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-post-type.php';
 
