@@ -517,13 +517,46 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = wp_kses_post( $body );
+		$sanitized = wp_kses_post( self::extract_body_html( $body ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
 
 		return true;
+	}
+
+	/**
+	 * Narrow a fetched page down to just its likely article markup before
+	 * wp_kses_post() sanitizes it.
+	 *
+	 * wp_kses_post() strips disallowed tags but — by design — leaves their
+	 * enclosed text behind, so a raw fetched HTML page (which routinely
+	 * carries a `<head>` full of `<title>`/`<meta>`, and `<script>`/`<style>`
+	 * blocks anywhere in the document for analytics/tracking/print styles)
+	 * would otherwise surface that JS/CSS source as visible plain text in
+	 * the click-through sheet. This does two bounded, regex-based passes
+	 * (matching this codebase's existing choice, in
+	 * Daymark_Subscription_Source_Feed, to avoid a hard DOMDocument
+	 * dependency rather than reach for full article-body extraction, which
+	 * is real, separate work): drop `<script>`/`<style>`/`<noscript>`
+	 * elements entirely (tag *and* content, since kses would only remove
+	 * the tags), then prefer `<body>`'s contents when present, since
+	 * `<head>` never carries article content. This does not attempt to
+	 * strip non-script chrome (nav/header/footer markup) — kses removes
+	 * those tags but their text remains, same as it always has.
+	 *
+	 * @param string $html Raw fetched HTML.
+	 * @return string Narrowed HTML, still to be passed through wp_kses_post().
+	 */
+	private static function extract_body_html( string $html ): string {
+		$html = (string) preg_replace( '#<(script|style|noscript)\b[^>]*>.*?</\1>#is', '', $html );
+
+		if ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $matches ) ) {
+			$html = $matches[1];
+		}
+
+		return $html;
 	}
 
 	/**

@@ -480,6 +480,42 @@ XML;
 		$this->assertNotSame( '', get_post_meta( $post_id, 'fetched_full_at', true ) );
 	}
 
+	/**
+	 * A real fetched page is a full HTML document — <head> with a <title>,
+	 * <script>/<style> blocks in both <head> and <body> for analytics/print
+	 * styles — not just the article. wp_kses_post() alone strips those tags
+	 * but leaves their enclosed text behind, so without extract_body_html()
+	 * this JS/CSS source (and the page <title>) would leak into
+	 * body_content as visible plain text in the click-through sheet.
+	 */
+	public function test_fetch_full_content_strips_head_script_and_style_noise() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/full-page/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/full-page/',
+			'<html><head><title>Page Title</title><script>var gtmDataLayerVar=1;alert("tracker");</script>'
+			. '<style>.hero{color:red;background:url(x.png)}</style></head>'
+			. '<body><nav>Skip to content</nav><article><p>The actual article text.</p></article>'
+			. '<script>console.log("inline body script");</script></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The actual article text', $body );
+		$this->assertStringNotContainsString( 'Page Title', $body, '<head> content (e.g. <title>) is dropped entirely' );
+		$this->assertStringNotContainsString( 'gtmDataLayerVar', $body, "A <head> <script> block's own text never leaks through" );
+		$this->assertStringNotContainsString( 'alert(', $body );
+		$this->assertStringNotContainsString( 'color:red', $body, "A <style> block's own text never leaks through" );
+		$this->assertStringNotContainsString( 'console.log', $body, "A <body> <script> block's own text never leaks through either" );
+	}
+
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
 	public function test_fetch_full_content_on_pruned_post_works_the_same_way() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
