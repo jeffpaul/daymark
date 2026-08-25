@@ -30,11 +30,12 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	/**
 	 * Create a published Mark post with a given GMT post date.
 	 *
-	 * @param string $date_gmt MySQL datetime (GMT), e.g. '2024-01-05 00:00:00'.
-	 * @param string $title    Post title.
+	 * @param string $date_gmt     MySQL datetime (GMT), e.g. '2024-01-05 00:00:00'.
+	 * @param string $title        Post title.
+	 * @param string $primary_type _daymark_primary_type value.
 	 * @return int
 	 */
-	private function create_mark( string $date_gmt, string $title = 'A Mark' ): int {
+	private function create_mark( string $date_gmt, string $title = 'A Mark', string $primary_type = 'note' ): int {
 		$post_id = (int) self::factory()->post->create(
 			array(
 				'post_author'   => $this->author_a,
@@ -46,7 +47,7 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 			)
 		);
 		update_post_meta( $post_id, '_daymark_is_mark', '1' );
-		update_post_meta( $post_id, '_daymark_primary_type', 'note' );
+		update_post_meta( $post_id, '_daymark_primary_type', $primary_type );
 
 		return $post_id;
 	}
@@ -80,9 +81,10 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	 *                                Timeline sorts subscription posts by.
 	 * @param string $title           Post title.
 	 * @param string $content_state   'full'|'excerpt_only'|'pruned'.
+	 * @param string $post_format     'standard'|'image'|'video'|'audio'.
 	 * @return int
 	 */
-	private function create_subscription_post( int $subscription_id, string $published_at, string $title = 'A Subscription Post', string $content_state = 'excerpt_only' ): int {
+	private function create_subscription_post( int $subscription_id, string $published_at, string $title = 'A Subscription Post', string $content_state = 'excerpt_only', string $post_format = 'standard' ): int {
 		$post_id = (int) self::factory()->post->create(
 			array(
 				'post_type'    => Daymark_Subscription_Post_Type::POST_TYPE,
@@ -96,7 +98,7 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		update_post_meta( $post_id, 'published_at', $published_at );
 		update_post_meta( $post_id, 'permalink', 'https://example.com/' . sanitize_title( $title ) . '/' );
 		update_post_meta( $post_id, 'author', 'Someone Else' );
-		update_post_meta( $post_id, 'post_format', 'standard' );
+		update_post_meta( $post_id, 'post_format', $post_format );
 		update_post_meta( $post_id, 'content_state', $content_state );
 
 		return $post_id;
@@ -257,5 +259,129 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$response = rest_do_request( new WP_REST_Request( 'GET', '/daymark/v1/timeline' ) );
 
 		$this->assertSame( 401, $response->get_status() );
+	}
+
+	/** `s` matches a Mark's title. */
+	public function test_search_matches_a_mark_title() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$matching_mark   = $this->create_mark( '2024-01-01 00:00:00', 'Unique Zebra Title' );
+		$this->create_mark( '2024-01-02 00:00:00', 'Something Else Entirely' );
+		$this->create_subscription_post( $subscription_id, '2024-01-03 00:00:00', 'Not A Match' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'Zebra' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $matching_mark ), $ids );
+	}
+
+	/** `s` matches a subscription post's title. */
+	public function test_search_matches_a_subscription_post_title() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id   = $this->create_subscription( 'https://example.com/feed/' );
+		$matching_sub_post = $this->create_subscription_post( $subscription_id, '2024-01-01 00:00:00', 'Unique Narwhal Title' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'Something Else Entirely' );
+		$this->create_mark( '2024-01-03 00:00:00', 'Not A Match' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 's', 'Narwhal' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $matching_sub_post ), $ids );
+	}
+
+	/** `type` scopes Marks to `_daymark_primary_type`. */
+	public function test_type_scopes_marks_to_primary_type() {
+		wp_set_current_user( $this->author_a );
+
+		$image_mark = $this->create_mark( '2024-01-01 00:00:00', 'Image Mark', 'image' );
+		$this->create_mark( '2024-01-02 00:00:00', 'Note Mark', 'note' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'type', 'image' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $image_mark ), $ids );
+	}
+
+	/** `type` scopes subscription posts to `post_format`. */
+	public function test_type_scopes_subscription_posts_to_post_format() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$image_sub_post  = $this->create_subscription_post( $subscription_id, '2024-01-01 00:00:00', 'Image Sub Post', 'excerpt_only', 'image' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'Standard Sub Post', 'excerpt_only', 'standard' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'type', 'image' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $image_sub_post ), $ids );
+	}
+
+	/** `mine=1` excludes all subscription posts, even ones that wouldn't match a search term either way. */
+	public function test_mine_excludes_all_subscription_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00', 'My Mark' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'Someone Else Entirely' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'mine', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $mark_id ), $ids );
+	}
+
+	/** `subscription_id` excludes Marks and excludes posts from a different subscription. */
+	public function test_subscription_id_scopes_to_one_subscription_and_excludes_marks() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_a = $this->create_subscription( 'https://example.com/feed-a/' );
+		$subscription_b = $this->create_subscription( 'https://example.com/feed-b/' );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'A Mark' );
+		$post_from_a = $this->create_subscription_post( $subscription_a, '2024-01-02 00:00:00', 'From Subscription A' );
+		$this->create_subscription_post( $subscription_b, '2024-01-03 00:00:00', 'From Subscription B' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'subscription_id', $subscription_a );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $post_from_a ), $ids );
+	}
+
+	/** `mine=1` together with `subscription_id` set still behaves as `mine` (Marks only), per documented precedence. */
+	public function test_mine_wins_over_subscription_id_when_both_are_set() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00', 'A Mark' );
+		$this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'A Subscription Post' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'mine', '1' );
+		$request->set_param( 'subscription_id', $subscription_id );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $mark_id ), $ids );
+	}
+
+	/** The existing "no filters" behavior still passes unchanged with the new params present but unset. */
+	public function test_no_filters_still_returns_everything() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00' );
+		$sub_post_id     = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$ids     = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertEqualsCanonicalizing( array( $mark_id, $sub_post_id ), $ids );
 	}
 }

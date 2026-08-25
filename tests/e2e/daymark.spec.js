@@ -657,6 +657,50 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	await expect(page.locator('[data-search-toggle]')).toBeFocused();
 });
 
+// Source filter: "My Marks" scopes the merged feed to just the user's own
+// Marks (excluding subscription posts); picking a specific subscribed site
+// scopes it to just that site's posts (excluding Marks and every other
+// subscription). Reuses ensureSubscription()'s shared, memoized subscribe +
+// refresh from earlier in this file.
+test('search: Source filter scopes results to My Marks or one subscribed site', async ({ page }) => {
+	const caption = `E2E source-filter mark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	const subscription = await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	await page.locator('[data-search-toggle]').click();
+	const sourceFilter = page.locator('[data-source-filter]');
+	const list = page.locator('[data-recent-list]');
+
+	// "My Marks": the seeded Mark shows, no subscription-post card does.
+	await sourceFilter.selectOption('mine');
+	await expect(list.getByText(caption).first()).toBeVisible();
+	await expect(list.locator('[data-subpost]')).toHaveCount(0);
+
+	// The subscribed site: a subscription-post card shows, the Mark doesn't.
+	await sourceFilter.selectOption(String(subscription.id));
+	await expect(list.getByText(caption)).toHaveCount(0);
+	await expect(list.locator('[data-subpost]').first()).toBeVisible();
+
+	// Back to "All": both are present again.
+	await sourceFilter.selectOption('');
+	await expect(list.getByText(caption).first()).toBeVisible();
+	await expect(list.locator('[data-subpost]').first()).toBeVisible();
+});
+
 // Per-item delete: the ⋯ menu offers Delete, which requires an explicit
 // confirm step. Cancel keeps the item; confirm removes it from the list.
 test('per-item menu: delete requires confirm — cancel keeps, confirm removes', async ({ page }) => {

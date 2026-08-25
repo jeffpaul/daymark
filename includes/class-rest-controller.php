@@ -137,14 +137,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'get_timeline' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'per_page' => array(
+					'per_page'        => array(
 						'type'              => 'integer',
 						'default'           => 20,
 						'sanitize_callback' => 'absint',
 					),
-					'page'     => array(
+					'page'            => array(
 						'type'              => 'integer',
 						'default'           => 1,
+						'sanitize_callback' => 'absint',
+					),
+					's'               => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'type'            => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_key',
+					),
+					'mine'            => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					'subscription_id' => array(
+						'type'              => 'integer',
+						'default'           => 0,
 						'sanitize_callback' => 'absint',
 					),
 				),
@@ -674,6 +694,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * though drafts are a valid Mark status elsewhere (GET /marks) — the
 	 * Timeline is a published feed, not the composer's Home Drafts row.
 	 *
+	 * Four optional filter params, combinable with the pagination params
+	 * above: `s` (keyword search, applied identically to both source
+	 * queries), `type` (content-type filter — `_daymark_primary_type` on
+	 * the Marks side, `post_format` on the subscription-posts side, same
+	 * enum space `GET /marks` already accepts for its own `type` param),
+	 * `mine` (Marks only — the subscription-posts query is skipped
+	 * entirely, not merely filtered to empty), and `subscription_id`
+	 * (that one subscription's posts only — the Marks query is skipped
+	 * entirely). If both `mine` and `subscription_id` are set, `mine`
+	 * wins and `subscription_id` is ignored.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -684,8 +715,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// query unbounded — see MAX_TIMELINE_QUERY_ITEMS.
 		$limit = min( self::MAX_TIMELINE_QUERY_ITEMS, $page * $per_page );
 
-		$marks_query = new WP_Query(
-			array(
+		$search          = sanitize_text_field( (string) $request->get_param( 's' ) );
+		$type            = sanitize_key( (string) $request->get_param( 'type' ) );
+		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
+		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
+
+		// `mine` takes precedence over `subscription_id` when both are set:
+		// Marks only, subscription posts skipped entirely either way.
+		$include_marks              = $mine || 0 === $subscription_id;
+		$include_subscription_posts = ! $mine;
+
+		$items = array();
+
+		if ( $include_marks ) {
+			$marks_args = array(
 				'post_type'      => 'post',
 				'post_status'    => 'publish',
 				'posts_per_page' => $limit,
@@ -697,11 +740,49 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'meta_key'       => '_daymark_is_mark',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
 				'meta_value'     => '1',
-			)
-		);
+			);
 
-		$subscription_posts_query = new WP_Query(
-			array(
+			// Optional content-type filter: narrow to one _daymark_primary_type.
+			// This adds a second meta condition, so switch to an explicit
+			// meta_query that keeps the _daymark_is_mark gate intact — mirrors
+			// get_marks()'s own type-filter handling.
+			if ( '' !== $type ) {
+				unset( $marks_args['meta_key'], $marks_args['meta_value'] );
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
+				$marks_args['meta_query'] = array(
+					'relation' => 'AND',
+					array(
+						'key'   => '_daymark_is_mark',
+						'value' => '1',
+					),
+					array(
+						'key'   => '_daymark_primary_type',
+						'value' => $type,
+					),
+				);
+			}
+
+			if ( '' !== $search ) {
+				$marks_args['s'] = $search;
+			}
+
+			$marks_query = new WP_Query( $marks_args );
+
+			foreach ( $marks_query->posts as $post ) {
+				// `item_type` is added here rather than inside
+				// prepare_mark_summary() itself, so that method's shape stays
+				// unchanged for its other callers (GET/POST /marks, GET
+				// /marks/{id}) — see prepare_subscription_post_summary()'s
+				// docblock for why the discriminator isn't named `type`.
+				$items[] = array(
+					'date' => (string) $post->post_date_gmt,
+					'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
+				);
+			}
+		}
+
+		if ( $include_subscription_posts ) {
+			$subscription_posts_args = array(
 				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
 				'post_status'    => 'publish',
 				'posts_per_page' => $limit,
@@ -715,28 +796,51 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// plain string.
 				'meta_key'       => 'published_at', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Timeline merge.
 				'order'          => 'DESC',
-			)
-		);
-
-		$items = array();
-
-		foreach ( $marks_query->posts as $post ) {
-			// `item_type` is added here rather than inside
-			// prepare_mark_summary() itself, so that method's shape stays
-			// unchanged for its other callers (GET/POST /marks, GET
-			// /marks/{id}) — see prepare_subscription_post_summary()'s
-			// docblock for why the discriminator isn't named `type`.
-			$items[] = array(
-				'date' => (string) $post->post_date_gmt,
-				'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
 			);
-		}
 
-		foreach ( $subscription_posts_query->posts as $post ) {
-			$items[] = array(
-				'date' => sanitize_text_field( (string) get_post_meta( $post->ID, 'published_at', true ) ),
-				'item' => $this->prepare_subscription_post_summary( $post->ID ),
-			);
+			// Optional scoping to one subscription and/or one content type.
+			// `meta_key`/`orderby` above (for the published_at sort) stay
+			// intact alongside this separate `meta_query` filter — WP_Query
+			// supports both together.
+			$subscription_meta_conditions = array();
+
+			if ( $subscription_id > 0 ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'subscription_id',
+					'value'   => $subscription_id,
+					'compare' => '=',
+					'type'    => 'NUMERIC',
+				);
+			}
+
+			if ( '' !== $type ) {
+				$subscription_meta_conditions[] = array(
+					'key'   => 'post_format',
+					'value' => $type,
+				);
+			}
+
+			if ( ! empty( $subscription_meta_conditions ) ) {
+				$meta_query = 1 === count( $subscription_meta_conditions )
+					? $subscription_meta_conditions
+					: array_merge( array( 'relation' => 'AND' ), $subscription_meta_conditions );
+
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Timeline filter.
+				$subscription_posts_args['meta_query'] = $meta_query;
+			}
+
+			if ( '' !== $search ) {
+				$subscription_posts_args['s'] = $search;
+			}
+
+			$subscription_posts_query = new WP_Query( $subscription_posts_args );
+
+			foreach ( $subscription_posts_query->posts as $post ) {
+				$items[] = array(
+					'date' => sanitize_text_field( (string) get_post_meta( $post->ID, 'published_at', true ) ),
+					'item' => $this->prepare_subscription_post_summary( $post->ID ),
+				);
+			}
 		}
 
 		usort(

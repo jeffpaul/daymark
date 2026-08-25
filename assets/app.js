@@ -611,7 +611,7 @@
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
-				<button type="button" class="daymark-searchbtn" data-search-toggle aria-label="Search Marks" aria-expanded="false" aria-controls="daymark-searchbar">
+				<button type="button" class="daymark-searchbtn" data-search-toggle aria-label="Search your timeline" aria-expanded="false" aria-controls="daymark-searchbar">
 					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
 				</button>
 				<a class="daymark-iconbtn" href="#notifications" aria-label="${
@@ -626,9 +626,13 @@
 				</a>
 			</header>
 			<div class="daymark-searchbar" id="daymark-searchbar" data-searchbar hidden>
-				<label class="daymark-visually-hidden" for="daymark-search-input">Search Marks</label>
-				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="Search your Marks" autocomplete="off" />
-				<div class="daymark-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
+				<label class="daymark-visually-hidden" for="daymark-search-input">Search your timeline</label>
+				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="Search your timeline" autocomplete="off" />
+				<div class="daymark-searchfilters" data-search-filters>
+					<div class="daymark-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
+					<label class="daymark-visually-hidden" for="daymark-source-filter">Filter by source</label>
+					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${this.sourceOptionsMarkup()}</select>
+				</div>
 			</div>
 			<section class="daymark-screen">
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
@@ -682,6 +686,54 @@
 			</footer>`;
 		},
 
+		// The Source filter's <option>s: "All" and "My Marks" always render
+		// immediately; the per-subscription options only appear once
+		// this._subscriptions (fetched async by loadSubscriptionsForFilter())
+		// resolves — called both from render() (empty-of-sites the first
+		// time) and again to patch just the <select>'s innerHTML once that
+		// fetch completes, matching this file's existing tolerance for
+		// async-populated UI (e.g. the AI-prefilled Title field).
+		sourceOptionsMarkup() {
+			const subscriptions = Array.isArray(this._subscriptions) ? this._subscriptions : [];
+			const subscriptionOptions = subscriptions
+				.map((sub) => {
+					const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+					return `<option value="${esc(String(sub.id))}">${esc(label)}</option>`;
+				})
+				.join('');
+			return `<option value="">All</option><option value="mine">My Marks</option>${subscriptionOptions}`;
+		},
+
+		// Fetch active subscriptions once per Home visit, purely to populate
+		// the Source filter's per-site options — same apiGet('subscriptions')
+		// call pullRefresh() already makes, just for different ends (a list
+		// to choose from here, vs. a list to refresh there). Never blocks
+		// loadRecent(); the dropdown just renders "All"/"My Marks" until this
+		// resolves, then its innerHTML is patched in place.
+		async loadSubscriptionsForFilter() {
+			// Guards against a stale fetch (from a Home visit already left
+			// behind) patching the <select> for whichever visit is current
+			// by the time it resolves — same staleness-guard shape as
+			// loadRecent()/runSearch()'s own `_searchSeq`, just its own
+			// independent counter since this fetch runs on its own timeline.
+			this._subsFetchSeq = (this._subsFetchSeq || 0) + 1;
+			const seq = this._subsFetchSeq;
+			try {
+				const result = await apiGet('subscriptions');
+				this._subscriptions = Array.isArray(result) ? result : [];
+			} catch (err) {
+				this._subscriptions = [];
+			}
+			if (seq !== this._subsFetchSeq) {
+				return;
+			}
+			const select = root.querySelector('[data-source-filter]');
+			if (select && select.isConnected) {
+				select.innerHTML = this.sourceOptionsMarkup();
+				select.value = this.searchSource;
+			}
+		},
+
 		bindEvents() {
 			this.bindLauncher();
 
@@ -714,6 +766,15 @@
 			root.querySelectorAll('[data-filter]').forEach((chip) => {
 				chip.addEventListener('click', () => this.setFilter(chip.getAttribute('data-filter')));
 			});
+
+			// --- Source filter (All / My Marks / one subscribed site) ---
+			const sourceFilter = root.querySelector('[data-source-filter]');
+			if (sourceFilter) {
+				sourceFilter.addEventListener('change', () => {
+					this.searchSource = sourceFilter.value;
+					this.applySearch();
+				});
+			}
 
 			// --- Per-item ⋯ menu (edit / delete) via list delegation ---
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
@@ -938,6 +999,7 @@
 			this.searchOpen = false;
 			this.searchQuery = '';
 			this.searchType = '';
+			this.searchSource = '';
 			this._hasDrafts = false;
 			this.recentPage = 1;
 			this.recentDone = false;
@@ -952,6 +1014,12 @@
 			// this singleton across re-inits (leaving and returning to Home)
 			// so a card already opened once never re-fetches.
 			this._detailCache = this._detailCache || new Map();
+			// Backs the Source filter's per-site <option>s; re-fetched (and
+			// the <select> patched) below by loadSubscriptionsForFilter(),
+			// which runs in parallel with — never blocking — the
+			// Drafts/Timeline fetches that follow.
+			this._subscriptions = [];
+			this.loadSubscriptionsForFilter();
 
 			const draftsSection = root.querySelector('[data-drafts-section]');
 			const draftsList = root.querySelector('[data-drafts-list]');
@@ -1181,11 +1249,16 @@
 			this.searchOpen = false;
 			this.searchQuery = '';
 			this.searchType = '';
+			this.searchSource = '';
 			const bar = root.querySelector('[data-searchbar]');
 			const toggle = root.querySelector('[data-search-toggle]');
 			const input = root.querySelector('[data-search-input]');
+			const sourceFilter = root.querySelector('[data-source-filter]');
 			if (input) {
 				input.value = '';
+			}
+			if (sourceFilter) {
+				sourceFilter.value = '';
 			}
 			this.syncFilterChips();
 			if (bar) {
@@ -1213,7 +1286,7 @@
 		},
 
 		applySearch() {
-			if ('' === this.searchQuery && '' === this.searchType) {
+			if ('' === this.searchQuery && '' === this.searchType && '' === this.searchSource) {
 				this.loadRecent();
 			} else {
 				this.runSearch();
@@ -1242,9 +1315,14 @@
 			}
 			const seq = ++this._searchSeq;
 			list.innerHTML =
-				skeletonRows(2) + '<span class="daymark-visually-hidden">Searching Marks</span>';
+				skeletonRows(2) + '<span class="daymark-visually-hidden">Searching your timeline</span>';
+			// Targets the merged Timeline endpoint (not /marks) so a search
+			// covers subscription posts too by default; the Source filter
+			// narrows that down to just Marks (`mine=1`) or just one
+			// subscription's posts (`subscription_id`). No `status` param:
+			// unlike /marks, /timeline always returns published-only from
+			// both sources already.
 			const params = new URLSearchParams();
-			params.set('status', 'publish');
 			params.set('per_page', '20');
 			if (this.searchQuery) {
 				params.set('s', this.searchQuery);
@@ -1252,17 +1330,24 @@
 			if (this.searchType) {
 				params.set('type', this.searchType);
 			}
+			if ('mine' === this.searchSource) {
+				params.set('mine', '1');
+			} else if (this.searchSource) {
+				params.set('subscription_id', this.searchSource);
+			}
 			try {
-				const items = await apiGet('marks?' + params.toString());
+				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
 				const arr = Array.isArray(items) ? items : [];
+				this._bySubId.clear();
+				arr.forEach((item) => this.rememberItem(item));
 				if (!arr.length) {
-					list.innerHTML = '<p class="daymark-empty">No Marks match your search.</p>';
+					list.innerHTML = '<p class="daymark-empty">Nothing in your timeline matches your search.</p>';
 					return;
 				}
-				list.innerHTML = arr.map((item) => this.renderItem(item)).join('');
+				list.innerHTML = arr.map((item) => this.renderFeedItem(item)).join('');
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
