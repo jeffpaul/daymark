@@ -1388,7 +1388,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		$subscription_id = (int) $created;
-		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+
+		// Best-effort initial fetch: without this, a freshly subscribed
+		// site would sit with zero cached posts until the next scheduled
+		// poll (by default once a day) — subscribe_to_site() only creates
+		// the row. A failed fetch here doesn't fail the request or change
+		// its shape; the next scheduled poll will keep trying.
+		Daymark_Plugin::instance()->subscription_poller->manual_refresh( $subscription_id );
+
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
 
 		$response = rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
 		$response->set_status( 201 );

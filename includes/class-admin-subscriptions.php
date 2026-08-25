@@ -156,9 +156,10 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$success_messages = array(
-			'subscribed'   => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
-			'unsubscribed' => __( 'Unsubscribed.', 'daymark' ),
-			'retried'      => __( 'Refresh requested.', 'daymark' ),
+			'subscribed'         => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
+			'subscribed_pending' => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
+			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
+			'retried'            => __( 'Refresh requested.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -358,6 +359,23 @@ class Daymark_Admin_Subscriptions {
 
 		if ( is_wp_error( $result ) ) {
 			$this->redirect_with_error( $result->get_error_message() );
+
+			return;
+		}
+
+		// Without this, a freshly subscribed site would sit with zero
+		// cached posts until the next scheduled poll — by default once a
+		// day (`daymark_subscription_poll_interval`) — since a subscribe
+		// only creates the row. Fetching once immediately is what makes
+		// "subscribe and see its posts in the Timeline" actually work
+		// right away rather than requiring a silent wait; best-effort, so
+		// a failed first fetch (the notice below distinguishes it) still
+		// leaves the subscription itself created — the next scheduled
+		// poll will keep trying.
+		$poll_result = Daymark_Plugin::instance()->subscription_poller->manual_refresh( (int) $result );
+
+		if ( is_wp_error( $poll_result ) ) {
+			$this->redirect( array( self::NOTICE_QUERY_VAR => 'subscribed_pending' ) );
 
 			return;
 		}
