@@ -196,6 +196,13 @@ Co-authored-by: Ada Lovelace <12345+ada@users.noreply.github.com>
 Use each person's GitHub no-reply email — `https://api.github.com/users/USERNAME`
 gives their numeric ID. Keep these lines last, with nothing after them.
 
+This includes AI assistance: if Claude Code wrote or materially helped write the
+change, credit it the same way, using whichever model actually did the work:
+
+```
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+```
+
 Most of this is automated: the **Credit contributors** workflow
 (`.github/workflows/credit-contributors.yml`) maintains a `Co-authored-by:` block at
 the end of the PR description covering everyone who commits to, reviews, or comments
