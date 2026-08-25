@@ -24,7 +24,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
 * **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
-* **Blocks and shortcodes** — timeline and per-type views are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
+* **Blocks and shortcodes** — per-type views (Images, Videos, Audio, Notes) are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
 
 = Publishing destinations =
 
@@ -45,7 +45,7 @@ This plugin was generated with Claude Code working from the Project Daymark spec
 3. Visit `https://yoursite.example/daymark` on your phone while logged in.
 4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
-Activation creates section pages (`/timeline`, `/images`, `/videos`, `/audio`, `/notes`) that render your Marks inside your theme.
+Activation creates section pages (`/images`, `/videos`, `/audio`, `/notes`) that render your Marks inside your theme. Timeline — your own Marks interleaved with subscribed sites' posts — lives in the authenticated `/daymark` app shell instead, not as a public page.
 
 == Frequently Asked Questions ==
 
@@ -79,7 +79,6 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 2. Create — pick media, add a caption, and get AI-suggested alt text for each image, editable before you publish.
 3. Publish — your site is always the destination; file the Mark under categories (remembered per type), or save as a draft.
 4. Notifications — replies from syndicated copies flow back automatically, labeled by source.
-5. Timeline — Marks rendered inside your theme, via shortcode or block.
 
 == Changelog ==
 

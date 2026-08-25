@@ -23,9 +23,13 @@ class Daymark_Blocks {
 	 *
 	 * Blocks: daymark/{view}. Shortcodes: [daymark_{view}].
 	 *
+	 * Timeline is deliberately absent (issue #78): as an interleaved,
+	 * multi-source view it only exists in the authenticated app shell now —
+	 * see Daymark_Plugin::remove_public_timeline_page().
+	 *
 	 * @var array<int, string>
 	 */
-	private const VIEWS = array( 'timeline', 'images', 'videos', 'audio', 'notes' );
+	private const VIEWS = array( 'images', 'videos', 'audio', 'notes' );
 
 	/**
 	 * Script handle for the single shared block editor bundle.

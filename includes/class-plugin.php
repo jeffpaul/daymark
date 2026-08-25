@@ -140,14 +140,19 @@ final class Daymark_Plugin {
 	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
+	 * Timeline is deliberately absent (issue #78): as an interleaved,
+	 * multi-source view (a user's own Marks plus subscribed sites' posts)
+	 * it now only makes sense in the authenticated app shell (Home), not
+	 * as a public page — see remove_public_timeline_page() for the
+	 * one-time cleanup of an existing install's page.
+	 *
 	 * @var array<string, string>
 	 */
 	private const ACTIVATION_PAGES = array(
-		'timeline' => 'daymark/timeline',
-		'images'   => 'daymark/images',
-		'videos'   => 'daymark/videos',
-		'audio'    => 'daymark/audio',
-		'notes'    => 'daymark/notes',
+		'images' => 'daymark/images',
+		'videos' => 'daymark/videos',
+		'audio'  => 'daymark/audio',
+		'notes'  => 'daymark/notes',
 	);
 
 	/**
@@ -196,6 +201,11 @@ final class Daymark_Plugin {
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes
 		// read the app base at the default priority. No-op everywhere else.
 		add_action( 'init', array( 'Daymark_Migration', 'maybe_migrate' ), 5 );
+		// Runs right after migration (same priority, registered later, so
+		// it fires second): a legacy Moment install's freshly-migrated
+		// timeline page is hard-deleted in this same request too, before
+		// anything else can render it.
+		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( DAYMARK_PLUGIN_FILE ), array( $this, 'add_action_links' ) );
@@ -289,7 +299,10 @@ final class Daymark_Plugin {
 	 * Plugin activation callback.
 	 *
 	 * Registers rewrite rules, creates the Daymark view pages, flushes
-	 * rewrite rules, and stores activation flags. Never deletes content.
+	 * rewrite rules, and stores activation flags. Never deletes user
+	 * content — the sole exception is remove_public_timeline_page(),
+	 * which hard-deletes only a page carrying Daymark's own generated
+	 * markup, never anything a site owner wrote themselves.
 	 *
 	 * @return void
 	 */
@@ -297,6 +310,7 @@ final class Daymark_Plugin {
 		// Convert a legacy Moment (≤ 0.5.0) install first, so the carried
 		// app base and section pages are in place before resolution below.
 		Daymark_Migration::maybe_migrate();
+		self::remove_public_timeline_page();
 
 		Daymark_Subscriptions::install();
 		Daymark_Backflow_Sync::schedule();
@@ -330,6 +344,50 @@ final class Daymark_Plugin {
 		Daymark_Backflow_Sync::unschedule();
 		Daymark_Subscription_Poller::unschedule();
 		flush_rewrite_rules();
+	}
+
+	/**
+	 * One-time cleanup: hard-deletes an existing install's public Timeline
+	 * page (issue #78). Timeline is no longer in ACTIVATION_PAGES, so a
+	 * fresh install never creates this page — this only cleans up a page
+	 * an earlier version already created.
+	 *
+	 * Hard-deleted rather than trashed, matching the "404, no redirect"
+	 * intent: a trashed page still resolves for a logged-in editor, and
+	 * Daymark's own non-goal here is that Timeline as an interleaved,
+	 * multi-source view only exists in the authenticated app shell now,
+	 * not as a second, differently-scoped public page under the same name.
+	 *
+	 * Only ever touches a page carrying Daymark's own generated markup
+	 * (re-verified here, the same way find_view_page() identifies one) —
+	 * never a page a site owner repurposed at that slug in the meantime.
+	 *
+	 * Self-terminating: once the 'timeline' key is gone from `daymark_pages`,
+	 * every later call is a single array lookup on an already-loaded
+	 * option, cheap enough to run unconditionally every request — the same
+	 * assumption get_daymark_pages() already makes for its own self-heal.
+	 *
+	 * @return void
+	 */
+	public static function remove_public_timeline_page(): void {
+		$map = get_option( 'daymark_pages', array() );
+
+		if ( ! is_array( $map ) || ! isset( $map['timeline'] ) ) {
+			return;
+		}
+
+		$page_id = absint( $map['timeline'] );
+
+		if ( $page_id > 0 ) {
+			$content = (string) get_post_field( 'post_content', $page_id );
+
+			if ( str_contains( $content, '<!-- wp:daymark/timeline' ) || str_contains( $content, '[daymark_timeline' ) ) {
+				wp_delete_post( $page_id, true );
+			}
+		}
+
+		unset( $map['timeline'] );
+		update_option( 'daymark_pages', $map );
 	}
 
 	/**

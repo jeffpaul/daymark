@@ -52,12 +52,12 @@ class Test_App_Shell extends WP_UnitTestCase {
 
 		$html = $this->render_shell();
 
-		$timeline_id = Daymark_Plugin::get_daymark_pages()['timeline'];
+		$images_id = Daymark_Plugin::get_daymark_pages()['images'];
 		$this->assertStringContainsString( '"pages":', $html );
 		$this->assertStringContainsString(
-			str_replace( '/', '\/', (string) get_permalink( $timeline_id ) ),
+			str_replace( '/', '\/', (string) get_permalink( $images_id ) ),
 			$html,
-			'Config must carry the timeline page permalink'
+			'Config must carry the images page permalink'
 		);
 	}
 

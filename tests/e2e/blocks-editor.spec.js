@@ -10,7 +10,7 @@
  * and the daymark plugin active. The block editor bundle is committed, so
  * no local build is needed to run this.
  *
- * Inserts a Daymark Timeline block, changes its count in the block
+ * Inserts a Daymark Images block, changes its count in the block
  * inspector, and verifies the setting survives a publish and reload.
  */
 import { test, expect, devices } from '@playwright/test';
@@ -57,7 +57,7 @@ async function revealInspector( page ) {
 	}
 }
 
-test( 'Daymark Timeline block exposes a count control that persists', async ( { page } ) => {
+test( 'Daymark Images block exposes a count control that persists', async ( { page } ) => {
 	await loginAs( page );
 	await page.goto( '/wp-admin/post-new.php' );
 
@@ -75,19 +75,19 @@ test( 'Daymark Timeline block exposes a count control that persists', async ( { 
 	// including the post title — lives in the "editor-canvas" iframe.
 	await expect( canvas( page ).locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible( { timeout: 20000 } );
 
-	// Insert a Daymark Timeline block from the inserter (top level). The
+	// Insert a Daymark Images block from the inserter (top level). The
 	// toggle is a toolbar button; WP 7.0 dropped the old
 	// ".block-editor-inserter__toggle" class in favor of the ARIA name.
 	await page.getByRole( 'button', { name: 'Block Inserter' } ).first().click();
-	await page.locator( '.block-editor-inserter__search input' ).first().fill( 'Timeline' );
+	await page.locator( '.block-editor-inserter__search input' ).first().fill( 'Images' );
 	await page
 		.locator( '.block-editor-block-types-list button, .block-editor-block-list-item' )
-		.filter( { hasText: 'Daymark Timeline' } )
+		.filter( { hasText: 'Daymark Images' } )
 		.first()
 		.click();
 
 	// The block is selected; its server-side preview renders in the canvas frame.
-	const block = canvas( page ).locator( '.wp-block-daymark-timeline' ).first();
+	const block = canvas( page ).locator( '.wp-block-daymark-images' ).first();
 	await expect( block ).toBeVisible();
 	await expect( canvas( page ).locator( '.daymark-view' ).first() ).toBeVisible();
 
@@ -115,8 +115,8 @@ test( 'Daymark Timeline block exposes a count control that persists', async ( { 
 	await page.reload();
 	await expect( canvas( page ).locator( '.block-editor-block-list__layout, .editor-post-title__input' ).first() ).toBeVisible();
 
-	await expect( canvas( page ).locator( '.wp-block-daymark-timeline' ).first() ).toBeVisible();
-	await canvas( page ).locator( '.wp-block-daymark-timeline' ).first().click();
+	await expect( canvas( page ).locator( '.wp-block-daymark-images' ).first() ).toBeVisible();
+	await canvas( page ).locator( '.wp-block-daymark-images' ).first().click();
 	await revealInspector( page );
 
 	await expect( page.locator( '.components-range-control input[type="number"]' ) ).toHaveValue( '20' );

@@ -314,7 +314,7 @@ run_eval "portability" "$PHP"
 if "$WP" plugin activate daymark >/dev/null 2>&1; then ok "plugin reactivated"; else bad "plugin reactivate failed"; fi
 
 # ---------------------------------------------------------------------------
-say "Test 10: Timeline/images/notes views contain the right Marks (scenarios 2, 3)"
+say "Test 10: Images/notes views contain the right Marks (scenarios 2, 3)"
 read -r -d '' PHP <<'PHP' || true
 $sf = getenv("DAYMARK_SMOKE_STATE");
 $state = json_decode((string) @file_get_contents($sf), true) ?: array();
@@ -322,11 +322,10 @@ $image_id = (int) ($state["image_id"] ?? 0);
 $note_id = (int) ($state["note_id"] ?? 0);
 $img_link = 'href="' . esc_url(get_permalink($image_id)) . '"';
 $note_link = 'href="' . esc_url(get_permalink($note_id)) . '"';
-$timeline = do_shortcode('[daymark_timeline count="50"]');
 $images = do_shortcode('[daymark_images count="50"]');
 $notes = do_shortcode('[daymark_notes count="50"]');
-echo false !== strpos($timeline, $img_link) ? "PASS: timeline view contains the image Mark\n" : "FAIL: image Mark missing from timeline view\n";
-echo false !== strpos($timeline, $note_link) ? "PASS: timeline view contains the note Mark\n" : "FAIL: note Mark missing from timeline view\n";
+echo !shortcode_exists("daymark_timeline") ? "PASS: [daymark_timeline] no longer registered (issue #78)\n" : "FAIL: [daymark_timeline] still registered\n";
+echo is_null(get_page_by_path("timeline", OBJECT, "page")) ? "PASS: no public /timeline page exists\n" : "FAIL: a /timeline page still exists\n";
 echo false !== strpos($images, $img_link) ? "PASS: images view contains the image Mark\n" : "FAIL: image Mark missing from images view\n";
 echo false === strpos($images, $note_link) ? "PASS: note Mark excluded from images view\n" : "FAIL: note Mark leaked into images view\n";
 echo false !== strpos($notes, $note_link) ? "PASS: notes view contains the note Mark\n" : "FAIL: note Mark missing from notes view\n";

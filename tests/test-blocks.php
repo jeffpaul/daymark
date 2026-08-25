@@ -15,7 +15,7 @@ class Test_Blocks extends WP_UnitTestCase {
 	 *
 	 * @var array<int, string>
 	 */
-	private const VIEWS = array( 'timeline', 'images', 'videos', 'audio', 'notes' );
+	private const VIEWS = array( 'images', 'videos', 'audio', 'notes' );
 
 	/**
 	 * The shared block editor script handle.
@@ -52,6 +52,18 @@ class Test_Blocks extends WP_UnitTestCase {
 			$this->assertTrue( $registry->is_registered( 'daymark/' . $view ), "daymark/$view block must register" );
 			$this->assertTrue( shortcode_exists( 'daymark_' . $view ), "daymark_$view shortcode must register" );
 		}
+	}
+
+	/**
+	 * Timeline is deliberately not one of self::VIEWS (issue #78) — as an
+	 * interleaved, multi-source view it only exists in the authenticated
+	 * app shell now, so neither the block nor the shortcode should exist.
+	 */
+	public function test_timeline_block_and_shortcode_are_not_registered() {
+		$registry = WP_Block_Type_Registry::get_instance();
+
+		$this->assertFalse( $registry->is_registered( 'daymark/timeline' ), 'daymark/timeline block must not register' );
+		$this->assertFalse( shortcode_exists( 'daymark_timeline' ), 'daymark_timeline shortcode must not register' );
 	}
 
 	/**
