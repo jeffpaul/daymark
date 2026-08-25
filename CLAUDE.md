@@ -115,6 +115,7 @@ Document decisions here as they are made. This is the authoritative record.
 | Subscriptions polling cron (issue #78) | WP-Cron, matching the existing `daymark_backflow_sync` pattern. Not Action Scheduler. | Zero new dependencies, and this exact problem shape (periodic polling over a growing external set) already works on WP-Cron for backflow. Action Scheduler is tracked as a future option in [issue #79](https://github.com/jeffpaul/daymark/issues/79) if real usage shows WP-Cron isn't holding up. |
 | Subscriptions favicon retrieval (issue #78) | Discover via `<link rel="icon">` in the site's `<head>` (the same fetch already made for feed autodiscovery), falling back to `/favicon.ico`. | Reuses a fetch that's already happening rather than adding a second request or a third-party favicon service, which would leak subscription targets to an external party. |
 | Subscriptions `rel=me` config (issue #78) | Lives on WordPress's own native profile screen (Users → Your Profile) as user meta, not a new Daymark app-shell screen. `Daymark_Renderer` reads it when rendering h-card markup. | No existing app-shell screen fits it, and building one is real UI work for a single settings field. Format validation only this phase — no reciprocal-link verification. |
+| Subscribe-by-URL + subscription management (issue #78) | A wp-admin screen (Settings → Daymark, `Daymark_Admin_Subscriptions`), not the app shell. Plain form posts (`admin_post_{action}`, POST-redirect-GET), gated on `edit_posts` like every other Daymark permission check — not the wp-admin-conventional `manage_options`. Also reachable via a "Subscriptions" action link on the Plugins list screen. Subscribe/unsubscribe logic is shared with the REST endpoints (`Daymark_Subscriptions::subscribe_to_site()`, `::unsubscribe()`) so neither surface's behavior can drift from the other. | The general principle this confirms (see the non-goals note below): the app shell is for day-to-day operational use — reading the Timeline, publishing content — while configuration/settings that are touched rarely belong in wp-admin instead. A future pass may migrate this into an in-app settings screen, but the two stay deliberately separate for now. |
 
 ## Content model quick reference
 
@@ -225,8 +226,8 @@ record is its product/vision/history companion.
 - Real social comment/reply polling or webhooks
 - Custom post type (unless hard constraint appears)
 - AI provider API key storage
-- Plugin marketplace or settings dashboard
-- wp-admin chrome or site management features in Daymark UI
+- A plugin marketplace, or a general-purpose settings dashboard built for its own sake
+- wp-admin chrome or site management features inside the Daymark app shell's own UI — the app shell stays focused on day-to-day operational use (reading the Timeline, publishing content). Infrequently-touched configuration/settings (e.g. subscription management, `rel=me`) belong in wp-admin instead, outside the app shell — see the architectural decisions table for the confirmed instances of this. Not a ban on Daymark ever having a wp-admin screen; see the row above for the current thinking on eventually migrating some of this into an in-app settings screen.
 - Multi-user or team workflows beyond standard WordPress roles
 - Full offline PWA mode (manifest + conservative service worker only)
 - Push notifications

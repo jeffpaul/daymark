@@ -104,6 +104,26 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 		return '<html><head><title>Example</title></head><body></body></html>';
 	}
 
+	/** A valid RSS 2.0 feed with a single item, for the immediate-ingest test. */
+	private function rss_with_one_item(): string {
+		return <<<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Example Feed</title>
+<link>https://example.com/</link>
+<item>
+<title>A Post</title>
+<link>https://example.com/a-post/</link>
+<guid>https://example.com/a-post/</guid>
+<pubDate>Tue, 02 Jan 2024 03:04:05 +0000</pubDate>
+<description>Some content.</description>
+</item>
+</channel>
+</rss>
+XML;
+	}
+
 	/**
 	 * Build an authenticated request carrying a valid REST nonce.
 	 *
@@ -142,6 +162,41 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 		$row           = $subscriptions->get( (int) $data['id'] );
 		$this->assertNotNull( $row, 'The row was actually persisted' );
 		$this->assertSame( 'https://example.com/feed/', $row['feed_url'] );
+	}
+
+	/**
+	 * Subscribing triggers an immediate best-effort fetch of the feed, so a
+	 * subscribed site's posts appear in the Timeline right away rather than
+	 * waiting for the next scheduled poll (by default once a day) —
+	 * subscribe_to_site() only creates the row; this response's own status
+	 * codes/shape are unaffected either way.
+	 */
+	public function test_subscribe_ingests_posts_immediately() {
+		wp_set_current_user( $this->author_a );
+
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+		$this->mock_response(
+			'https://example.com/feed/',
+			$this->rss_with_one_item(),
+			'application/rss+xml; charset=UTF-8'
+		);
+
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions' );
+		$request->set_param( 'site_url', 'https://example.com/' );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+
+		$posts = get_posts(
+			array(
+				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+			)
+		);
+
+		$this->assertCount( 1, $posts, 'The feed\'s one item was ingested immediately, not left for the next scheduled poll' );
+		$this->assertSame( 'A Post', $posts[0]->post_title );
 	}
 
 	/** Subscribing to an already-subscribed feed propagates the duplicate error as-is. */
