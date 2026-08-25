@@ -43,9 +43,50 @@ class Test_Subscription_Post_Type extends WP_UnitTestCase {
 
 		$this->assertFalse( $post_type_object->public );
 		$this->assertFalse( $post_type_object->publicly_queryable );
-		$this->assertTrue( $post_type_object->show_in_rest );
+		$this->assertFalse( $post_type_object->show_in_rest );
 		$this->assertFalse( $post_type_object->show_ui );
 		$this->assertFalse( $post_type_object->has_archive );
+	}
+
+	/**
+	 * Scenario: a cached subscription post can never be edited or deleted
+	 * through WordPress's own generic REST API. `show_in_rest => false` on
+	 * the post type means no `wp/v2/*` controller is registered for it at
+	 * all — the belt-and-suspenders check below confirms no such route
+	 * exists, then confirms directly that a DELETE against the one a
+	 * naive/default registration would have produced (the post type slug
+	 * as its own base) is a clean 404 and leaves the post untouched. Reads
+	 * still work fine through Daymark's own custom routes (GET
+	 * /daymark/v1/timeline, GET /daymark/v1/subscription-posts/{id}),
+	 * which this test does not touch.
+	 */
+	public function test_subscription_post_has_no_generic_rest_controller() {
+		$routes = array_keys( rest_get_server()->get_routes() );
+
+		foreach ( $routes as $route ) {
+			$this->assertStringNotContainsString(
+				Daymark_Subscription_Post_Type::POST_TYPE,
+				$route,
+				"No wp/v2 route should exist for this post type at all: {$route}"
+			);
+		}
+
+		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin_id );
+
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'Must Not Be Deletable Via Generic REST',
+			)
+		);
+
+		$request  = new WP_REST_Request( 'DELETE', '/wp/v2/' . Daymark_Subscription_Post_Type::POST_TYPE . '/' . $post_id );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertInstanceOf( 'WP_Post', get_post( $post_id ), 'The post must still exist — an admin could not delete it via generic REST.' );
 	}
 
 	/** Scenario: the CPT supports at least title, excerpt, and thumbnail. */
@@ -115,8 +156,9 @@ class Test_Subscription_Post_Type extends WP_UnitTestCase {
 
 	/**
 	 * Scenario: registered meta fields are present with the documented
-	 * types and are exposed to REST (needed by the authenticated app
-	 * shell).
+	 * types. `show_in_rest` on each field is schema documentation only at
+	 * this point — see test_subscription_post_has_no_generic_rest_controller()
+	 * for why it grants no actual REST access on its own.
 	 */
 	public function test_meta_fields_registered_with_expected_types() {
 		$registered = get_registered_meta_keys( 'post', Daymark_Subscription_Post_Type::POST_TYPE );

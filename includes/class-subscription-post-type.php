@@ -91,9 +91,20 @@ class Daymark_Subscription_Post_Type {
 	 *   permalink, ever — not on this site's domain.
 	 * - `show_ui` => false: no wp-admin list table; management happens in
 	 *   the Daymark app shell only.
-	 * - `show_in_rest` => true: the authenticated app shell reads/writes
-	 *   these via REST (auth is enforced the same way as every other
-	 *   Daymark endpoint — edit_posts capability + nonce).
+	 * - `show_in_rest` => false: this is a cached, read-only copy of
+	 *   someone else's content that only the poller (ingest/pruning/
+	 *   click-through fetch) ever writes — a user must never be able to
+	 *   edit or delete it. The authenticated app shell reads it through
+	 *   Daymark's own custom routes (GET /daymark/v1/timeline and GET
+	 *   /daymark/v1/subscription-posts/{id} in Daymark_REST_Controller),
+	 *   which query post meta directly and don't depend on this post type
+	 *   having a REST controller at all. Leaving `show_in_rest` true would
+	 *   auto-register a generic wp/v2/subscription-posts controller with
+	 *   full CRUD (gated only by ordinary edit_post/delete_post
+	 *   capabilities via `map_meta_cap` below) — nothing in this app uses
+	 *   it, but it would still be a real, reachable way to edit or delete
+	 *   subscription content that this post type is otherwise deliberately
+	 *   locked down against.
 	 * - `has_archive` => false, `rewrite` => false, `query_var` => false,
 	 *   `exclude_from_search` => true: belt-and-suspenders alongside
 	 *   `public`/`publicly_queryable` so nothing about this post type ever
@@ -116,8 +127,7 @@ class Daymark_Subscription_Post_Type {
 				'show_in_menu'        => false,
 				'show_in_admin_bar'   => false,
 				'show_in_nav_menus'   => false,
-				'show_in_rest'        => true,
-				'rest_base'           => 'subscription-posts',
+				'show_in_rest'        => false,
 				'has_archive'         => false,
 				'rewrite'             => false,
 				'query_var'           => false,
@@ -134,10 +144,16 @@ class Daymark_Subscription_Post_Type {
 	/**
 	 * Register post meta fields on `daymark_subscription_post`.
 	 *
-	 * All fields are exposed to REST (the authenticated app shell needs to
-	 * read/write them) with a `sanitize_callback` per the security
-	 * checklist, and an `auth_callback` requiring `edit_posts` so an
-	 * unauthenticated request can never read or write these via REST.
+	 * Each field's own `show_in_rest` is inert now that the post type
+	 * itself is `show_in_rest => false` (see register_post_type() above) —
+	 * there is no wp/v2 controller left for it to expose these on. Left
+	 * true (rather than also flipped to match) purely for schema
+	 * documentation and in case a future, narrowly-scoped read-only
+	 * exposure is ever added; it grants no REST access on its own. Each
+	 * field still gets a `sanitize_callback` per the security checklist,
+	 * and an `auth_callback` requiring `edit_posts`, so even a future
+	 * generic controller would need an explicit, deliberate opt-in rather
+	 * than silently inheriting an open one.
 	 *
 	 * Sanitization here is a schema-level safety net; `body_content` in
 	 * particular is documented to be fully `wp_kses_post()`-sanitized by
