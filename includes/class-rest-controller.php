@@ -344,6 +344,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_full_content' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/(?P<comment_id>\d+)/reply',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1423,6 +1440,54 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
 
 		return rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id} — click-through detail fetch
+	 * for one `daymark_subscription_post` Timeline item.
+	 *
+	 * Returns the same summary shape as GET /timeline's item plus
+	 * `body_content`, which that list response deliberately omits (see
+	 * prepare_subscription_post_summary()). When the post isn't already
+	 * fully cached (`content_state` !== 'full' — never fetched, or pruned),
+	 * this fetches it live via
+	 * Daymark_Subscription_Poller::fetch_full_content() first; an
+	 * already-'full' post is returned from cache without re-hitting the
+	 * source site.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_full_content( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$id = absint( $request->get_param( 'id' ) );
+
+		$content_state = get_post_meta( $id, 'content_state', true );
+
+		if ( 'full' !== $content_state ) {
+			$fetch = Daymark_Plugin::instance()->subscription_poller->fetch_full_content( $id );
+
+			if ( is_wp_error( $fetch ) ) {
+				return $fetch;
+			}
+		}
+
+		$response = array_merge(
+			$this->prepare_subscription_post_summary( $id ),
+			array(
+				// Already wp_kses_post()-sanitized by the poller; trusted raw
+				// HTML meant to be rendered as-is by the app shell, same as
+				// post_content elsewhere in this codebase — not re-escaped here.
+				'body_content' => (string) get_post_meta( $id, 'body_content', true ),
+			)
+		);
+
+		return rest_ensure_response( $response );
 	}
 
 	/**

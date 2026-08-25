@@ -58,29 +58,47 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIPTION_REFRESH = 'subscription_refresh';
 
 	/**
+	 * Per-item subscription post detail fetch
+	 * (GET /subscription-posts/{id}) — the same external-fetch risk class as
+	 * ACTION_SUBSCRIBE/ACTION_SUBSCRIPTION_REFRESH (an outbound
+	 * wp_safe_remote_get() via Daymark_Subscription_Poller::fetch_full_content()),
+	 * but this is a normal per-item read action a user triggers by opening
+	 * many individual Timeline cards while browsing, not a one-off admin
+	 * action like a manual refresh — so it gets the higher
+	 * ACTION_AI/ACTION_PUBLISH-tier ceiling of 20 rather than 10.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIPTION_POST_FETCH = 'subscription_post_fetch';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
 	 */
 	private const DEFAULTS = array(
-		self::ACTION_AI                   => array(
+		self::ACTION_AI                      => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_PUBLISH              => array(
+		self::ACTION_PUBLISH                 => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SYNC                 => array(
+		self::ACTION_SYNC                    => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SUBSCRIBE            => array(
+		self::ACTION_SUBSCRIBE               => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
-		self::ACTION_SUBSCRIPTION_REFRESH => array(
+		self::ACTION_SUBSCRIPTION_REFRESH    => array(
 			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIPTION_POST_FETCH => array(
+			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 	);
