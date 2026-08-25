@@ -244,29 +244,56 @@ changelog.
 Releases are tag-driven: pushing a version tag builds the distribution zip and
 publishes the GitHub release (`.github/workflows/release.yml`).
 
-1. **Open a release PR** that bumps the version in all four places — the
+1. **Dependency update check (pre-release).** Before running the test suite,
+   check for outdated npm and Composer dependencies:
+   - `npm outdated` and `composer outdated` — review what's behind, distinguish
+     patch/minor (generally safe) from major (review changelogs for breaking
+     changes).
+   - `npm audit` and `composer audit` — flag any known security advisories;
+     prioritize resolving these over general version bumps.
+   - Update patch/minor versions routinely; hold major bumps for a deliberate
+     look at breaking changes and a compatibility check against the plugin's
+     minimum supported WP/PHP versions (`Requires at least`/`Requires PHP` in
+     `daymark.php` and `readme.txt`).
+   - Re-run the full [test suite](#testing) after updating, before moving to
+     the bundle size check below.
+   - Note any held-back updates (and why) in the release notes or a
+     `DEPENDENCIES.md` so it is not re-litigated next release.
+2. **Bundle size check (pre-release).** Run a production build
+   (`npm run build`) and confirm the enqueued JS bundle size hasn't regressed
+   unexpectedly. Watch for accidental full-package imports (`lodash`,
+   `@wordpress/*`) that bypass tree shaking. If a bundle analyzer is configured
+   (`wp-scripts build --webpack-bundle-analyzer` works out of the box, no extra
+   dependency needed), compare against the previous release's baseline; flag
+   any increase over 20% for review. That threshold is a starting point, not a
+   settled number — the built bundle is currently under 1 KB (everything else
+   is externalized to WordPress core's own `@wordpress/*` scripts), so a small
+   absolute change can look like a large percentage change at this size.
+   Revisit once the bundle has grown enough for a percentage to mean something
+   stable.
+3. **Open a release PR** that bumps the version in all four places — the
    `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
    `readme.txt`, and `package.json`. The release workflow fails the build if
    these disagree with the tag.
-2. **Close out the changelog.** Rename `## [Unreleased]` to
+4. **Close out the changelog.** Rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD` (ISO 8601), add the version's compare link to the
    reference block at the bottom of the file, start a fresh empty
    `## [Unreleased]`, then run `bin/sync-changelog.sh` and commit the
    regenerated `readme.txt`. Add the `readme.txt` upgrade notice too — that one
    is hand-written, since it is a short wordpress.org-specific summary rather
    than a changelog.
-3. **Keep the release PR description short.** It becomes the commit message the
+5. **Keep the release PR description short.** It becomes the commit message the
    tag points at, which is what anyone browsing the tag list reads first. Put
    post-merge steps in a PR comment rather than the description — or pass an
    explicit message at merge time:
    ```bash
    gh pr merge <n> --squash --subject "Release X.Y.Z (#<n>)" --body-file notes.md
    ```
-4. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
+6. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
    `git tag -a`. GitHub shows a lightweight tag's verification from the
    underlying commit, and squash merges here are GitHub-signed, so the tag reads
    as Verified. An unsigned annotated tag reads as Unverified instead.
-5. **Push the tag.** The workflow verifies the version, builds the zip, checks
+7. **Push the tag.** The workflow verifies the version, builds the zip, checks
    that nothing untracked or dev-only leaked into it, and creates the release
    with notes from the changelog. It is safe to re-run against an existing
    release: the zip is re-uploaded and hand-written notes are left alone.
