@@ -5,7 +5,7 @@
  * Description: Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
  * Version: 0.7.0
  * Requires at least: 7.0
- * Requires PHP: 8.1
+ * Requires PHP: 8.2
  * Author: Jeff Paul
  * Author URI: https://github.com/jeffpaul
  * License: GPL-2.0-or-later

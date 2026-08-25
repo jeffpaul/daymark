@@ -54,10 +54,10 @@ WP_TESTS_DIR=$TMPDIR/wordpress-tests-lib composer test   # macOS ($TMPDIR); /tmp
 # WP-CLI smoke suite (57 assertions) against a live site with the plugin active
 WP=/path/to/wp-cli-wrapper bash tests/smoke.sh
 
-# PHP linting (WordPress Coding Standards, incl. tests + PHP 8.1+ compat)
+# PHP linting (WordPress Coding Standards, incl. tests + PHP 8.2+ compat)
 composer phpcs        # plugin sources
 composer phpcs-tests  # test suite (phpcs-tests.xml.dist)
-composer phpcompat    # PHPCompatibility standard (testVersion 8.1-)
+composer phpcompat    # PHPCompatibility standard (testVersion 8.2-)
 
 # Browser E2E (Playwright; needs a live site + admin creds)
 npm ci && npx playwright install chromium   # once per machine
