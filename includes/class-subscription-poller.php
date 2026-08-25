@@ -530,7 +530,7 @@ class Daymark_Subscription_Poller {
 	 * Narrow a fetched page down to just its likely article markup before
 	 * wp_kses_post() sanitizes it.
 	 *
-	 * wp_kses_post() strips disallowed tags but — by design — leaves their
+	 * By design, wp_kses_post() strips disallowed tags but leaves their
 	 * enclosed text behind, so a raw fetched HTML page (which routinely
 	 * carries a `<head>` full of `<title>`/`<meta>`, and `<script>`/`<style>`
 	 * blocks anywhere in the document for analytics/tracking/print styles)
