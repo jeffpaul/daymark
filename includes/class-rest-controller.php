@@ -1362,11 +1362,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * POST /daymark/v1/subscriptions — subscribe to a site by URL.
 	 *
-	 * Discovers the site's feed via the subscription source registry (source
-	 * agnostic, even though only the built-in RSS/Atom feed source ships
-	 * today), creates the `daymark_subscription` row, then best-effort
-	 * resolves the site's favicon. Rate limited: this issues outbound
-	 * requests to a site the user names, same risk class as manual sync.
+	 * Delegates the URL validation + feed discovery + row creation + favicon
+	 * resolution sequence to Daymark_Subscriptions::subscribe_to_site() (issue
+	 * #78's wp-admin Settings screen shares that same method for its
+	 * subscribe-by-URL form) — this method now only applies the REST-specific
+	 * rate limit and shapes the REST response. Rate limited: this issues
+	 * outbound requests to a site the user names, same risk class as manual
+	 * sync.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -1379,57 +1381,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		$site_url = (string) $request->get_param( 'site_url' );
-		$scheme   = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
-
-		if ( '' === $site_url || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
-			return new WP_Error(
-				'daymark_subscription_invalid_url',
-				__( 'Please enter a valid site URL.', 'daymark' ),
-				array( 'status' => 400 )
-			);
-		}
-
-		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
-		$discovered = $registry->discover_feeds( $site_url );
-		$feed       = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
-		$feed_url   = isset( $feed['url'] ) ? (string) $feed['url'] : '';
-
-		if ( '' === $feed_url ) {
-			return new WP_Error(
-				'daymark_subscription_no_feed_found',
-				__( 'No feed could be found at this URL.', 'daymark' ),
-				array( 'status' => 422 )
-			);
-		}
-
-		$created = Daymark_Plugin::instance()->subscriptions->create(
-			array(
-				'site_url'    => $site_url,
-				'feed_url'    => $feed_url,
-				'source_type' => 'feed',
-				'site_title'  => isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '',
-			)
-		);
+		$created  = Daymark_Plugin::instance()->subscriptions->subscribe_to_site( $site_url );
 
 		if ( is_wp_error( $created ) ) {
 			return $created;
 		}
 
 		$subscription_id = (int) $created;
-
-		// Best-effort favicon lookup: a one-time enhancement, never a reason
-		// to fail the subscribe request itself.
-		$feed_source = $registry->get_source( 'feed' );
-
-		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
-			$favicon_url = $feed_source->get_favicon_url( $site_url );
-
-			if ( '' !== $favicon_url ) {
-				Daymark_Plugin::instance()->subscriptions->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
-			}
-		}
-
-		$subscription = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
 
 		$response = rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
 		$response->set_status( 201 );
@@ -1454,10 +1413,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * DELETE /daymark/v1/subscriptions/{id} — unsubscribe.
 	 *
-	 * Trashes every cached `daymark_subscription_post` ingested from this
-	 * subscription (relying on core's normal 7-day trash retention for
-	 * eventual deletion — no custom deletion logic), then deletes the
-	 * subscription row itself.
+	 * Delegates to Daymark_Subscriptions::unsubscribe(), which trashes every
+	 * cached `daymark_subscription_post` ingested from this subscription
+	 * (relying on core's normal 7-day trash retention for eventual
+	 * deletion) before deleting the subscription row itself — the same
+	 * method the wp-admin Settings -> Daymark screen's Unsubscribe action
+	 * uses, so a cached copy of a site's content is never orphaned no
+	 * matter which surface removed the subscription.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -1475,39 +1437,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		$query = new WP_Query(
-			array(
-				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
-				'post_status'    => 'any',
-				'posts_per_page' => -1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale unsubscribe cleanup.
-				'meta_query'     => array(
-					array(
-						'key'     => 'subscription_id',
-						'value'   => $id,
-						'compare' => '=',
-						'type'    => 'NUMERIC',
-					),
-				),
-			)
-		);
-
-		$trashed_count = 0;
-
-		foreach ( $query->posts as $post_id ) {
-			if ( wp_trash_post( (int) $post_id ) ) {
-				++$trashed_count;
-			}
-		}
-
-		$subscriptions->delete( $id );
+		$result = $subscriptions->unsubscribe( $id );
 
 		return rest_ensure_response(
 			array(
-				'deleted'       => true,
-				'trashed_posts' => $trashed_count,
+				'deleted'       => $result['deleted'],
+				'trashed_posts' => $result['trashed_posts'],
 			)
 		);
 	}

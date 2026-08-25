@@ -201,6 +201,82 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * Subscribe to a site by URL: validate the URL, discover its feed via
+	 * the subscription source registry, create the row, then best-effort
+	 * resolve its favicon.
+	 *
+	 * Extracted from what was originally inlined in
+	 * Daymark_REST_Controller::create_subscription() (issue #78) so the
+	 * REST endpoint and the wp-admin Settings screen's subscribe-by-URL form
+	 * share one implementation. Deliberately excludes anything caller-surface
+	 * specific: no rate limiting (each caller applies its own — the REST
+	 * route and the admin-post handler use different limiter call shapes)
+	 * and no response shaping.
+	 *
+	 * Reuses the exact WP_Error codes/messages/statuses this method's REST
+	 * caller has always produced, so its contract does not change:
+	 * `daymark_subscription_invalid_url` (400), `daymark_subscription_no_feed_found`
+	 * (422), plus whatever create() itself returns for a duplicate/insert
+	 * failure.
+	 *
+	 * @param string $site_url Site URL to subscribe to (not a feed URL directly).
+	 * @return int|WP_Error New subscription row ID, or WP_Error on failure.
+	 */
+	public function subscribe_to_site( string $site_url ) {
+		$scheme = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
+
+		if ( '' === $site_url || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_url',
+				__( 'Please enter a valid site URL.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
+		$discovered = $registry->discover_feeds( $site_url );
+		$feed       = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
+		$feed_url   = isset( $feed['url'] ) ? (string) $feed['url'] : '';
+
+		if ( '' === $feed_url ) {
+			return new WP_Error(
+				'daymark_subscription_no_feed_found',
+				__( 'No feed could be found at this URL.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$created = $this->create(
+			array(
+				'site_url'    => $site_url,
+				'feed_url'    => $feed_url,
+				'source_type' => 'feed',
+				'site_title'  => isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '',
+			)
+		);
+
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+
+		$subscription_id = (int) $created;
+
+		// Best-effort favicon lookup: a one-time enhancement, never a reason
+		// to fail the subscribe request itself.
+		$feed_source = $registry->get_source( 'feed' );
+
+		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
+			$favicon_url = $feed_source->get_favicon_url( $site_url );
+
+			if ( '' !== $favicon_url ) {
+				$this->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
+			}
+		}
+
+		return $subscription_id;
+	}
+
+	/**
 	 * Get a subscription by ID.
 	 *
 	 * @param int $id Subscription ID.
@@ -275,6 +351,30 @@ class Daymark_Subscriptions {
 				"SELECT * FROM {$table} WHERE status = %s ORDER BY created_at DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input.
 				'active'
 			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * List every subscription regardless of status, most recently created
+	 * first. Mirrors get_active()'s exact query shape, minus the `WHERE`
+	 * clause — for a management screen (issue #78's wp-admin Settings
+	 * screen) that needs to show active *and* error-status rows together,
+	 * unlike get_active()/get_flagged() which each intentionally show only
+	 * one status.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_all(): array {
+		global $wpdb;
+
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API.
+		$rows = $wpdb->get_results(
+			"SELECT * FROM {$table} ORDER BY created_at DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input; no user-supplied values in this query.
 			ARRAY_A
 		);
 
@@ -443,6 +543,55 @@ class Daymark_Subscriptions {
 		);
 
 		return ! empty( $deleted );
+	}
+
+	/**
+	 * Unsubscribe: trash every cached `daymark_subscription_post` ingested
+	 * from this subscription (core's own 7-day trash retention handles
+	 * eventual deletion — no custom cleanup logic needed), then delete the
+	 * subscription row itself via delete() above.
+	 *
+	 * Shared by both surfaces that let a user unsubscribe — DELETE
+	 * /daymark/v1/subscriptions/{id} and the wp-admin Settings -> Daymark
+	 * screen — so a cached copy of a site's content is never orphaned
+	 * (left behind forever with no subscription row to prune it) no matter
+	 * which surface removed the subscription.
+	 *
+	 * @param int $id Subscription ID.
+	 * @return array{deleted: bool, trashed_posts: int}
+	 */
+	public function unsubscribe( int $id ): array {
+		$query = new WP_Query(
+			array(
+				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale unsubscribe cleanup.
+				'meta_query'     => array(
+					array(
+						'key'     => 'subscription_id',
+						'value'   => $id,
+						'compare' => '=',
+						'type'    => 'NUMERIC',
+					),
+				),
+			)
+		);
+
+		$trashed_count = 0;
+
+		foreach ( $query->posts as $post_id ) {
+			if ( wp_trash_post( (int) $post_id ) ) {
+				++$trashed_count;
+			}
+		}
+
+		return array(
+			'deleted'       => $this->delete( $id ),
+			'trashed_posts' => $trashed_count,
+		);
 	}
 
 	/**

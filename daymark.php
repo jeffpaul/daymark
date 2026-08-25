@@ -54,6 +54,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-fe
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-source-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-post-type.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 
 register_activation_hook( __FILE__, array( 'Daymark_Plugin', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'Daymark_Plugin', 'deactivate' ) );
