@@ -685,6 +685,12 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	const sourceFilter = page.locator('[data-source-filter]');
 	const list = page.locator('[data-recent-list]');
 
+	// The per-site <option>s populate asynchronously (loadSubscriptionsForFilter()
+	// patches the <select> once GET /subscriptions resolves) — wait for the
+	// one this test needs before selecting it, rather than assuming it's
+	// already there.
+	await expect(sourceFilter.locator(`option[value="${subscription.id}"]`)).toHaveCount(1);
+
 	// "My Marks": the seeded Mark shows, no subscription-post card does.
 	await sourceFilter.selectOption('mine');
 	await expect(list.getByText(caption).first()).toBeVisible();
