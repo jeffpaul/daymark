@@ -733,6 +733,8 @@ test('publish in flight disables both buttons and shows only the button loading 
 });
 
 // Timeline moved into the header as a combined icon + "Daymark" home-link.
+// It now opens the in-app #timeline screen (merged Marks + subscribed
+// posts) rather than the old public /timeline WP page.
 test('header home-link reaches the full timeline', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
@@ -741,7 +743,11 @@ test('header home-link reaches the full timeline', async ({ page }) => {
 	await expect(home).toBeVisible();
 	await expect(home).toHaveText('Daymark');
 	await expect(home.locator('svg')).toBeVisible();
-	expect(await home.getAttribute('href')).toContain('/timeline');
+	expect(await home.getAttribute('href')).toContain('#timeline');
+
+	await home.click();
+	await expect(page).toHaveURL(/#timeline$/);
+	await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible();
 });
 
 // The remaining site-views nav (Images/Videos/Audio/Notes, now flanking the
