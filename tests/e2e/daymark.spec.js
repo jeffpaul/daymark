@@ -40,6 +40,66 @@ async function openComposer(page, type = 'note') {
 	await page.locator(`[data-launcher-type="${type}"]`).click();
 }
 
+// --- Subscriptions & Timeline (issue #78) helpers ---
+//
+// Subscribing and refreshing a feed hits a real external site
+// (wordpress.org/news/, chosen because it reliably autodiscovers a feed at
+// /feed/), so this file seeds it once and shares the result across the
+// subscription tests below instead of repeating the outbound request per
+// test. Safe to memoize at module scope: this file's tests run serially in
+// a single Playwright worker (playwright.config.js: workers: 1,
+// fullyParallel: false), so whichever subscription test below runs first
+// performs the real subscribe + refresh and the others reuse the result.
+let subscriptionSetup = null;
+
+function ensureSubscription(page) {
+	if (!subscriptionSetup) {
+		subscriptionSetup = page.evaluate(async () => {
+			const config = window.daymarkApp;
+			const subRes = await fetch(`${config.restUrl}subscriptions`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ site_url: 'https://wordpress.org/news/' }),
+			});
+			const subscription = await subRes.json();
+			await fetch(`${config.restUrl}subscriptions/${subscription.id}/refresh`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+			});
+			return subscription;
+		});
+	}
+	return subscriptionSetup;
+}
+
+// Scrolls the recent list's infinite-scroll sentinel into view repeatedly
+// until at least one subscription-post card (`[data-subpost]`) shows up, or
+// the feed genuinely runs out of pages. Bounded: on a long-lived site (this
+// file's own header warns tests "do not delete" what they create) enough
+// prior E2E Marks can outrank an older real feed post by publish date and
+// push it several pages deep, but not indefinitely — see the comment on
+// the first subscription test below for why these tests sit early in this
+// file specifically to keep that depth shallow on a normal/scratch site.
+async function findSubscriptionCard(page) {
+	const list = page.locator('[data-recent-list]');
+	const card = list.locator('[data-subpost]').first();
+	const sentinel = page.locator('[data-recent-sentinel]');
+
+	for (let i = 0; i < 20; i++) {
+		if (await card.count()) {
+			return card;
+		}
+		if (await sentinel.isHidden().catch(() => true)) {
+			break; // No more pages left to load.
+		}
+		await sentinel.scrollIntoViewIfNeeded().catch(() => {});
+		await page.waitForTimeout(300);
+	}
+	return card;
+}
+
 // Scenario 1 (unauthenticated half): /daymark redirects to login.
 test('unauthenticated /daymark redirects to login', async ({ page }) => {
 	await page.goto('/daymark');
@@ -59,6 +119,125 @@ test('authenticated user sees Daymark Home without wp-admin chrome', async ({ pa
 	// (regression: author display rules once overrode [hidden]).
 	await expect(page.locator('[data-recent-list] .daymark-recent__item, [data-recent-list] .daymark-empty').first()).toBeVisible();
 	await expect(page.locator('[data-drafts-section]')).toBeHidden();
+});
+
+// --- Subscriptions & Timeline (issue #78): Home is the merged feed ---
+//
+// These three tests are placed here, right after the two tests above that
+// create no Marks, rather than at the end of this file with the rest of
+// the "coverage for changes since" additions. A subscription post's
+// `published_at` is the real source site's own publish date, not "now",
+// so — unlike a fresh Mark, which is always the newest thing on the site
+// and therefore always page one — it can be outranked and pushed several
+// pages deep by the dozens of same-run E2E Marks the tests further down
+// this file create. Running early keeps the merged feed's first page(s)
+// small enough that findSubscriptionCard() above only rarely needs to
+// scroll at all.
+
+// A subscription-post item renders in the same merged [data-recent-list]
+// as the user's own Marks — not a separate section — each via its own
+// card shape.
+test('home Timeline blends a subscribed feed post with the user’s own Mark', async ({ page }) => {
+	const caption = `E2E timeline mark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	// The Mark card: the existing <a>-based renderer, unchanged.
+	await expect(
+		page.locator('.daymark-recent__item-wrap').filter({ hasText: caption })
+	).toBeVisible();
+
+	// A subscription-post card: a <button>, not an <a>, carrying the
+	// "Subscribed" chip renderSubscriptionPostCard() renders.
+	const subCard = await findSubscriptionCard(page);
+	await expect(subCard).toBeVisible();
+	await expect(subCard).toHaveClass(/daymark-recent__item--button/);
+	await expect(subCard.locator('.daymark-chip--draft')).toHaveText('Subscribed');
+});
+
+// Clicking a subscription-post card opens the detail sheet in place — it
+// never navigates away, since its real permalink points at the source
+// site, not anywhere in this app. The external per-item content fetch can
+// plausibly fail in CI (timeout, 404, etc.), so this asserts on whichever
+// state the sheet actually reaches rather than a hard-coded outcome: both
+// SubscriptionPostSheet.renderBody() (success) and renderError() (failure)
+// append the same "View original" link pointing at the real permalink, so
+// its presence is the one assertion that holds either way — and waiting
+// for it also proves the sheet never gets stuck on its initial loading
+// state.
+test('clicking a subscription-post card opens the detail sheet with content or a graceful fallback', async ({
+	page,
+}) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const subCard = await findSubscriptionCard(page);
+	await expect(subCard).toBeVisible();
+	await subCard.click();
+
+	const sheet = page.locator('.daymark-sheet');
+	await expect(sheet).toBeVisible();
+
+	// Settles on success (`.daymark-subpost-content`) or failure
+	// (`.daymark-error`) — either way a real "View original ↗" link
+	// with a real http(s) href follows it. The external fetch has its own
+	// 15s server-side timeout, so this allows generous headroom.
+	const viewOriginal = sheet.getByRole('link', { name: /View original/ });
+	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
+	expect(await viewOriginal.getAttribute('href')).toMatch(/^https?:\/\//);
+
+	// The loading state is gone, whichever way it settled.
+	await expect(sheet.locator('.daymark-loading')).toHaveCount(0);
+});
+
+// Pull-to-refresh is independent of the cron schedule and separately
+// rate-limited per subscription (15 minutes) — exercised here by
+// refreshing right after ensureSubscription()'s own refresh, which should
+// land on the "checked too recently" outcome. The exact wording depends on
+// real network timing, so this only asserts the status settles to
+// something non-empty and the button re-enables, not a specific message.
+test('pull-to-refresh reports a status and re-enables the button', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	// A brief artificial delay on the subscriptions list fetch so the
+	// disabled/loading state is reliably observable rather than racing a
+	// refresh that can resolve in well under a frame (same technique the
+	// "publish in flight" test below uses via page.route).
+	await page.route('**/daymark/v1/subscriptions', async (route) => {
+		if ('GET' === route.request().method()) {
+			await new Promise((resolve) => setTimeout(resolve, 800));
+		}
+		await route.continue();
+	});
+
+	const btn = page.locator('[data-recent-refresh]');
+	const status = page.locator('[data-recent-refresh-status]');
+	await expect(status).toHaveText('');
+
+	await btn.click();
+	await expect(btn).toBeDisabled();
+
+	await expect(status).not.toHaveText('', { timeout: 20000 });
+	await expect(btn).toBeEnabled();
 });
 
 // Publish a note Mark to your own site and see it in the Notes view.
@@ -330,11 +509,10 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 });
 
 // With IntersectionObserver (all supported browsers) the recent list uses
-// infinite scroll, so the redundant "View more on your timeline" link is not
-// rendered — the appended pages already show everything and the header's
-// Timeline home-link still reaches the full timeline. (The link only
+// infinite scroll, so the redundant "Load more" fallback button is not
+// rendered — the appended pages already show everything. (The button only
 // appears as a no-IntersectionObserver fallback.)
-test('home does not render the redundant View more link when infinite scroll is active', async ({ page }) => {
+test('home does not render the redundant Load more button when infinite scroll is active', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
@@ -356,9 +534,8 @@ test('home does not render the redundant View more link when infinite scroll is 
 	const rows = page.locator('[data-recent-list] .daymark-recent__item');
 	await expect(rows.first()).toBeVisible();
 
-	// Infinite scroll owns "more", so no redundant timeline link is shown...
-	await expect(page.locator('.daymark-recent__morelink')).toHaveCount(0);
-	// ...and the timeline stays reachable via the header home-link.
+	// Infinite scroll owns "more", so no redundant fallback button is shown.
+	await expect(page.locator('[data-recent-loadmore]')).toHaveCount(0);
 	await expect(page.locator('.daymark-homelink')).toBeVisible();
 });
 
@@ -437,9 +614,9 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	const list = page.locator('[data-recent-list]');
 
 	// A query narrows the recent list to the matching Mark only, and the
-	// section heading switches from "Recent Marks" to "Results".
+	// section heading switches from "Timeline" to "Results".
 	const heading = page.locator('#daymark-recent-heading');
-	await expect(heading).toHaveText('Recent Marks');
+	await expect(heading).toHaveText('Timeline');
 	await page.locator('[data-search-input]').fill(alpha);
 	await expect(list.getByText(alpha).first()).toBeVisible();
 	await expect(list.getByText(bravo)).toHaveCount(0);
@@ -732,10 +909,11 @@ test('publish in flight disables both buttons and shows only the button loading 
 	await expect(page.getByText('Published to your site')).toBeVisible();
 });
 
-// Timeline moved into the header as a combined icon + "Daymark" home-link.
-// It now opens the in-app #timeline screen (merged Marks + subscribed
-// posts) rather than the old public /timeline WP page.
-test('header home-link reaches the full timeline', async ({ page }) => {
+// Home IS the merged Timeline feed (Marks + subscribed posts) now — there's
+// no separate #timeline screen to navigate to. The header wordmark is just
+// a plain "go home" link, and the merged feed's heading already reads
+// "Timeline" directly on Home.
+test('header home-link points home, and Home shows the Timeline feed', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
@@ -743,11 +921,9 @@ test('header home-link reaches the full timeline', async ({ page }) => {
 	await expect(home).toBeVisible();
 	await expect(home).toHaveText('Daymark');
 	await expect(home.locator('svg')).toBeVisible();
-	expect(await home.getAttribute('href')).toContain('#timeline');
+	expect(await home.getAttribute('href')).toContain('#home');
 
-	await home.click();
-	await expect(page).toHaveURL(/#timeline$/);
-	await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible();
+	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
 });
 
 // The remaining site-views nav (Images/Videos/Audio/Notes, now flanking the

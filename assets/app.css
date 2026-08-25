@@ -66,10 +66,9 @@ body.daymark-app {
 	 * inset. A shell padding would lift them up off the screen. */
 }
 
-/* Notifications and Timeline are screens without a pinned footer, so they
- * need their own bottom clearance above the home indicator. */
-.daymark-app--notifications .daymark-screen,
-.daymark-app--timeline .daymark-screen {
+/* Notifications is a screen without a pinned footer, so it needs its own
+ * bottom clearance above the home indicator. */
+.daymark-app--notifications .daymark-screen {
 	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
 }
 
@@ -292,17 +291,6 @@ h2[tabindex='-1']:focus {
 .daymark-recent__more {
 	margin: var(--daymark-spacing-xs) 0 0;
 	text-align: center;
-}
-
-.daymark-recent__morelink {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-height: var(--daymark-tap-min);
-	color: var(--daymark-accent);
-	font-weight: 600;
-	font-size: 14px;
-	text-decoration: none;
 }
 
 /* --- Sticky footer action bar --- */
@@ -1674,9 +1662,9 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-success);
 }
 
-/* --- Timeline --- */
+/* --- Home: merged Timeline feed --- */
 
-/* Header row for the "Following" list heading + the manual Refresh button
+/* Header row for the "Timeline" list heading + the manual Refresh button
    (the keyboard/mouse-accessible counterpart to the touch pull gesture). */
 .daymark-timeline-headrow {
 	display: flex;
