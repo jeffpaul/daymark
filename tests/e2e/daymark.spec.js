@@ -56,16 +56,35 @@ function ensureSubscription(page) {
 	if (!subscriptionSetup) {
 		subscriptionSetup = page.evaluate(async () => {
 			const config = window.daymarkApp;
+			const headers = { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' };
 			const subRes = await fetch(`${config.restUrl}subscriptions`, {
 				method: 'POST',
-				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				headers,
 				credentials: 'same-origin',
 				body: JSON.stringify({ site_url: 'https://wordpress.org/news/' }),
 			});
-			const subscription = await subRes.json();
+			let subscription = await subRes.json();
+
+			// A retried test in this same worker can re-enter this branch
+			// (subscriptionSetup only guards against concurrent calls within
+			// one module lifetime, not a fresh one after a retry) against a
+			// subscription this exact URL already created — that's a real
+			// 409, not a bug, so fall back to looking the existing row up
+			// rather than propagating a body with no `id`.
+			if (!subscription || !subscription.id) {
+				const listRes = await fetch(`${config.restUrl}subscriptions`, {
+					headers,
+					credentials: 'same-origin',
+				});
+				const list = await listRes.json();
+				subscription = (Array.isArray(list) ? list : []).find(
+					(s) => s.feed_url && s.feed_url.includes('wordpress.org')
+				);
+			}
+
 			await fetch(`${config.restUrl}subscriptions/${subscription.id}/refresh`, {
 				method: 'POST',
-				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				headers,
 				credentials: 'same-origin',
 			});
 			return subscription;
@@ -655,6 +674,61 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	await page.keyboard.press('Escape');
 	await expect(bar).toBeHidden();
 	await expect(page.locator('[data-search-toggle]')).toBeFocused();
+});
+
+// Source filter: "My Marks" scopes the merged feed to just the user's own
+// Marks (excluding subscription posts); picking a specific subscribed site
+// scopes it to just that site's posts (excluding Marks and every other
+// subscription). Reuses ensureSubscription()'s shared, memoized subscribe +
+// refresh from earlier in this file.
+test('search: Source filter scopes results to My Marks or one subscribed site', async ({ page }) => {
+	const caption = `E2E source-filter mark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	const subscription = await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	await page.locator('[data-search-toggle]').click();
+	const sourceFilter = page.locator('[data-source-filter]');
+	const list = page.locator('[data-recent-list]');
+
+	// The per-site <option>s populate asynchronously (loadSubscriptionsForFilter()
+	// patches the <select> once GET /subscriptions resolves) — wait for the
+	// one this test needs before selecting it, rather than assuming it's
+	// already there.
+	await expect(sourceFilter.locator(`option[value="${subscription.id}"]`)).toHaveCount(1);
+
+	// "My Marks": the seeded Mark shows, no subscription-post card does.
+	await sourceFilter.selectOption('mine');
+	await expect(list.getByText(caption).first()).toBeVisible();
+	await expect(list.locator('[data-subpost]')).toHaveCount(0);
+
+	// The subscribed site: a subscription-post card shows, the Mark doesn't.
+	await sourceFilter.selectOption(String(subscription.id));
+	await expect(list.getByText(caption)).toHaveCount(0);
+	await expect(list.locator('[data-subpost]').first()).toBeVisible();
+
+	// Back to "All": the Mark is present again. (Not asserting a
+	// subscription-post card reappears too here — search has no
+	// pagination, a flat per_page=20, and this file's own many
+	// Mark-creating tests can by now outnumber the WordPress.org feed's
+	// handful of older posts within that window. That's an existing,
+	// unrelated limitation of unscoped search, not something this test is
+	// about.)
+	await sourceFilter.selectOption('');
+	await expect(list.getByText(caption).first()).toBeVisible();
 });
 
 // Per-item delete: the ⋯ menu offers Delete, which requires an explicit

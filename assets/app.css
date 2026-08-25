@@ -1494,6 +1494,41 @@ h2[tabindex='-1']:focus {
 	outline-offset: 2px;
 }
 
+/* The Source filter (All / My Marks / one subscribed site) sits next to
+   the type-filter chip row, not merged into it — its own control, same
+   row. .daymark-filterchips is given room to wrap onto its own line(s)
+   first (flex: 1 1 auto) while the select stays a fixed, un-shrinking
+   pill alongside it. */
+.daymark-searchfilters {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-searchfilters .daymark-filterchips {
+	flex: 1 1 auto;
+}
+
+.daymark-sourcefilter {
+	flex-shrink: 0;
+	min-height: 36px;
+	padding: 0 var(--daymark-spacing-md);
+	border-radius: 999px;
+	border: 1px solid var(--daymark-border);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
+	font-family: var(--daymark-font);
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.daymark-sourcefilter:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
 /* --- Recent item: per-item ⋯ actions menu --- */
 .daymark-recent__item-wrap {
 	position: relative;
