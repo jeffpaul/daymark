@@ -15,51 +15,131 @@
   Ownership by Default, Portable by Design, AI Assist never AI First,
   Progressive Complexity — and must not cross the non-goals (§4 there).
 - **Non-goals stay non-goals until explicitly overturned.** Real social-API
-  publishing in core, full offline PWA, push notifications, a custom post type,
-  a settings dashboard, and multi-user team workflows are *not* planned. A
-  roadmap line that contradicts one needs a written decision first.
+  publishing in core, full offline PWA, push notifications, a custom post
+  type, and multi-user team workflows are *not* planned. A roadmap line that
+  contradicts one needs a written decision first. (A blanket "no settings
+  dashboard" used to be on this list too — narrowed after the Subscriptions
+  wp-admin screen shipped; see "Not planned" below for the current, more
+  specific wording.)
 - **When a bucket changes, update CLAUDE.md.** The architectural-decisions
   table there is the authoritative record; this file is the plan.
 
 ---
 
-## Now — release readiness (0.7.x)
+## Shipped — 0.7.0
 
-Daymark is a healthy prototype (Phases 0–9 passed; hardening landed). The 0.7.x
-series is about making it a clean, reviewable, releasable plugin — not new
-product surface.
+Daymark is a healthy prototype (Phases 0–9 passed; hardening landed). The
+0.7.0 series was about making it a clean, reviewable, releasable plugin — not
+new product surface. Released on GitHub and wordpress.org.
 
-**Done (post-Phase hardening pass):**
-
-- [x] Coding-standards suite now covers tests (`composer phpcs-tests`) and PHP
-  8.2+ compatibility (`composer phpcompat`); CI runs both.
+- [x] Coding-standards suite covers tests (`composer phpcs-tests`) and PHP
+  compatibility (`composer phpcompat`); CI runs both.
 - [x] Security hardening: rate limiting on AI/publish/sync REST actions, a
   per-request upload byte budget, the alt-text IDOR fix, an atomic backflow
   cooldown, the comment-import approval filter, an AI prompt-injection guard,
   and a CSP header on the app shell.
 - [x] Plugin Check is **blocking** in CI (was advisory).
+- [x] The Playwright E2E suite runs in CI as a blocking job (`Browser E2E` in
+  `tests.yml`, across WP minimum/stable/nightly) — no longer scaffolded-only.
 - [x] Docs refreshed: SECURITY.md support table, CHANGELOG/readme.txt, and
   contributor + project-memory build/security notes.
-- [x] The Playwright E2E suite now runs in CI as a blocking job (`Browser E2E`
-  in `tests.yml`, across WP minimum/stable/nightly), no longer scaffolded-only.
 
-**In flight / remaining:**
+**Still open from this era:**
 
-- [ ] Retire `Daymark_Migration`. Soft-deprecate it in the next minor, then
-  remove it (with `uninstall.php`'s legacy block and `tests/test-migration.php`)
-  once no supported install still ships a `moment_version` option.
-- [ ] Ship **0.7.0** on wordpress.org. This includes the changelog/readme
-  regen (already synced) and a clean Plugin Check run.
+- [ ] Retire `Daymark_Migration`. Soft-deprecated in 0.8.0 (logs
+  `_deprecated_function()` when it actually converts a legacy install);
+  remove it in 0.9.0 (with `uninstall.php`'s legacy block and
+  `tests/test_migration.php`) once no supported install still ships a
+  `moment_version` option.
 - [ ] First-party connector ecosystem docs: a worked example of
   `daymark_register_connectors` for plugin authors, published alongside the
   hooks reference.
 
 ---
 
-## Next — building on the loop (0.8.x)
+## Shipped — Subscriptions & Timeline Following (issue #78)
 
-The product's core is "fast publish, site-first". These directions deepen that
-loop without new destinations or a new social network.
+The largest body of work since 0.7.0. Home became a feed reader for the
+sites you follow, without turning WordPress into a social network.
+
+- [x] **Subscribe to any site's RSS/Atom feed** by URL, with feed
+  autodiscovery. Lives on a **wp-admin screen** (Settings → Daymark), not the
+  app shell — subscribing is infrequent, unlike day-to-day publishing/reading.
+  Subscribe/refresh/unsubscribe share their exact implementation with the
+  equivalent REST endpoints, so neither surface's behavior can drift from the
+  other. The Subscribe button shows a loading state on submit; the table
+  shows each subscription's status, when it was last fetched, and a Refresh
+  action available on every row (not just a failing one).
+- [x] **Home is the merged Timeline feed**: a user's own Marks interleaved
+  with cached posts from every active subscription, sorted by published
+  date. Rich-media formats (image/video/audio/gallery) render from embed data
+  cached at ingest time; text posts render from cached metadata and fetch
+  their full content on click-through (with an error state + link back to
+  the source post if that fetch fails). Pull-to-refresh re-polls every active
+  subscription.
+- [x] **Cross-Timeline search**, filterable by source (My Marks, or one
+  specific subscribed site) alongside the existing type chips.
+- [x] **Polling and pruning**: a global daily WP-Cron poll (filterable
+  interval) plus an independent, rate-limited (15 min, filterable) manual
+  refresh. Cached content prunes to minimal metadata once a subscription
+  exceeds its recent-post threshold (site icon shown as a placeholder for a
+  pruned rich-media post).
+- [x] **Dead-feed detection**: a subscription with 7 consecutive daily
+  failures surfaces in the notifications screen.
+- [x] **Unsubscribing** trashes every cached post ingested from that
+  subscription (relying on core's 7-day trash retention), no matter which
+  surface (REST or the wp-admin screen) removed the subscription.
+- [x] **The public `/timeline` page, block, and shortcode are gone.**
+  Timeline is now an interleaved, multi-source view that only makes sense
+  authenticated — a public page under the same name showing something
+  narrower (Marks only) was confusing and redundant. Hard-deleted on
+  upgrade: a real 404, no redirect. Individual Mark permalinks, the site's
+  own RSS/Atom feed, and the other four section pages (`/images`, `/videos`,
+  `/audio`, `/notes`) are unaffected.
+
+**Still open from this feature** (tracked on [issue #78](https://github.com/jeffpaul/daymark/issues/78), not yet split into its own issue):
+
+- [ ] Daymark's own published Marks render valid h-entry markup (`e-content`,
+  `dt-published`, `u-url`, `u-in-reply-to` where applicable, media properties
+  for rich formats), and Daymark's own profile renders valid h-card markup.
+- [ ] A user-configurable `rel=me` field on the native WordPress profile
+  screen, rendered with correct markup.
+- [ ] Markup validated against IndieWebify.me or equivalent.
+
+This is the outbound half of POSSE-quality microformats2 support — nothing
+here yet, no h-entry/h-card/`rel=me` markup exists in the codebase today.
+(*Inbound* microformats2 parsing of a *subscribed* site's markup is separate,
+out-of-scope-for-#78 work tracked on
+[issue #84](https://github.com/jeffpaul/daymark/issues/84).)
+
+A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
+stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
+than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
+method PHPUnit 10 removed, so every test run under PHPUnit 10+ fails
+regardless of anything in this plugin. Tracked on
+[issue #106](https://github.com/jeffpaul/daymark/issues/106) for whenever
+core fixes it — a diagnosed, ready-to-apply test-file rename
+(`test-*.php` → `test_*.php`, required by PHPUnit 11's stricter file/class
+matching) is documented there too.
+
+Sixteen further Subscriptions enhancements explicitly deferred out of #78's
+own scope are tracked as their own issues — see
+[#79](https://github.com/jeffpaul/daymark/issues/79) through
+[#94](https://github.com/jeffpaul/daymark/issues/94) (Action Scheduler,
+per-subscription polling interval, multi-feed/category-scoped subscriptions,
+additional source connectors, subscription grouping, keyword muting, feed
+preview, inbound microformats2 parsing, Webmention support, WebSub/PuSH,
+malformed/malicious feed hardening, OPML import/export, an admin page
+recommending complementary IndieWeb plugins, scroll-triggered rehydration of
+pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
+None of them are prioritized yet.
+
+---
+
+## Next — building on the loop
+
+The product's core is "fast publish, site-first". These directions deepen
+that loop without new destinations or a new social network.
 
 - **Routing transparency.** The type→destination model works (image→Instagram,
   note→Bluesky, per-user memory). Next: make the effective routing for a Mark
@@ -104,6 +184,12 @@ decision-table row) before it becomes "next".
   is explicitly **not** on this roadmap. It is recorded as a candidate direction,
   with its guardrails (no proprietary storage, no single-host lock-in, no single
   mandated AI provider, no CPT packaging) intact if it is ever revisited.
+- **In-app settings screen.** Subscription management lives in wp-admin today
+  (`rel=me` will too, once built — see "Not planned" below and CLAUDE.md's
+  decision table) — a deliberate choice for infrequently-touched
+  configuration, not a permanent one. A future pass may migrate some of this
+  into an in-app Daymark settings screen; the two stay deliberately separate
+  for now.
 
 ---
 
@@ -112,6 +198,15 @@ decision-table row) before it becomes "next".
 - Real social-API publishing in core — Daymark cooperates with ecosystem plugins
   instead.
 - A custom post type — Marks are standard `post`s; that is a product promise.
-- A settings dashboard, analytics dashboards, or wp-admin chrome inside Daymark.
+- wp-admin chrome **inside the Daymark app shell's own UI**. The app shell
+  stays focused on day-to-day operational use (reading the Timeline,
+  publishing content). This is *not* a blanket ban on Daymark ever having a
+  wp-admin screen — the Subscriptions settings screen (Settings → Daymark) is
+  a deliberate, confirmed exception for infrequently-touched configuration,
+  and `rel=me` is planned to land the same way (on the native WordPress
+  profile screen, not a new Daymark screen) once it's built — see "Shipped —
+  Subscriptions & Timeline Following" above for its current status.
+  See CLAUDE.md's decision table for the reasoning and "In-app settings
+  screen" above for the possible future direction.
 - Push notifications and multi-user team workflows beyond standard WordPress roles.
 - API-key storage — AI rides the WordPress 7.0 AI Client or nothing.
