@@ -15,6 +15,15 @@ class Test_Subscriptions extends WP_UnitTestCase {
 	/** @var Daymark_Subscriptions */
 	private $subscriptions;
 
+	/**
+	 * URL => canned wp_remote_get()-shaped response, consulted by
+	 * intercept_http_request(). Only subscribe_to_site() tests populate
+	 * this; every other test in this file makes no HTTP request at all.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $http_responses = array();
+
 	public function set_up(): void {
 		parent::set_up();
 
@@ -23,7 +32,69 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		// install() is called directly (it is idempotent either way).
 		Daymark_Subscriptions::install();
 
-		$this->subscriptions = new Daymark_Subscriptions();
+		$this->subscriptions  = new Daymark_Subscriptions();
+		$this->http_responses = array();
+
+		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
+	}
+
+	public function tear_down(): void {
+		remove_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10 );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * Short-circuits every HTTP request made in this file (same approach as
+	 * tests/test-rest-subscriptions.php): a mapped URL returns its canned
+	 * response, anything unmapped is blocked with a WP_Error rather than
+	 * hitting the real network.
+	 *
+	 * @param mixed  $preempt     Existing short-circuit value.
+	 * @param array  $parsed_args Request args (unused).
+	 * @param string $url         Requested URL.
+	 * @return mixed
+	 */
+	public function intercept_http_request( $preempt, $parsed_args, $url ) {
+		if ( array_key_exists( $url, $this->http_responses ) ) {
+			return $this->http_responses[ $url ];
+		}
+
+		return new WP_Error( 'daymark_test_http_blocked', 'Unmocked HTTP request blocked in test: ' . $url );
+	}
+
+	/**
+	 * Register a canned 200 response for a URL.
+	 *
+	 * @param string $url          URL to mock.
+	 * @param string $body         Response body.
+	 * @param string $content_type Content-Type header value.
+	 * @return void
+	 */
+	private function mock_response( string $url, string $body, string $content_type = 'text/html; charset=UTF-8' ): void {
+		$this->http_responses[ $url ] = array(
+			'headers'  => array( 'content-type' => $content_type ),
+			'body'     => $body,
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
+
+	/** HTML with a discoverable main feed and an explicit favicon link. */
+	private function html_with_feed_and_icon(): string {
+		return '<html><head><title>Example</title>'
+			. '<link rel="alternate" type="application/rss+xml" href="/feed/" />'
+			. '<link rel="icon" href="/icon.png" />'
+			. '</head><body></body></html>';
+	}
+
+	/** HTML with no discoverable feed at all. */
+	private function html_without_feed(): string {
+		return '<html><head><title>Example</title></head><body></body></html>';
 	}
 
 	/**
@@ -221,5 +292,148 @@ class Test_Subscriptions extends WP_UnitTestCase {
 
 		$row = $this->subscriptions->get( $id );
 		$this->assertSame( 'activitypub', $row['source_type'] );
+	}
+
+	/**
+	 * Scenario: get_all() returns every subscription regardless of status,
+	 * unlike get_active()/get_flagged() which each show only one status.
+	 */
+	public function test_get_all_returns_every_status() {
+		$active_id = $this->subscriptions->create( array( 'feed_url' => 'https://all-active.example/feed/' ) );
+		$this->assertIsInt( $active_id );
+
+		$error_id = $this->subscriptions->create( array( 'feed_url' => 'https://all-error.example/feed/' ) );
+		$this->assertIsInt( $error_id );
+		$this->assertTrue( $this->subscriptions->update( $error_id, array( 'status' => 'error' ) ) );
+
+		$all = $this->subscriptions->get_all();
+		$ids = array_map( 'intval', array_column( $all, 'id' ) );
+
+		$this->assertCount( 2, $all );
+		$this->assertContains( $active_id, $ids );
+		$this->assertContains( $error_id, $ids );
+	}
+
+	/**
+	 * Scenario: subscribe_to_site() happy path — discovers the feed, creates
+	 * the row, and best-effort resolves the favicon. This is the method the
+	 * REST subscribe endpoint and the wp-admin Settings screen's
+	 * subscribe-by-URL form both share (issue #78).
+	 */
+	public function test_subscribe_to_site_creates_row_and_resolves_favicon() {
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+
+		$result = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertIsArray( $row );
+		$this->assertSame( 'https://example.com/', $row['site_url'] );
+		$this->assertSame( 'https://example.com/feed/', $row['feed_url'] );
+		$this->assertSame( 'feed', $row['source_type'] );
+		$this->assertSame( 'active', $row['status'] );
+		$this->assertSame( 'https://example.com/icon.png', $row['site_icon_url'] );
+	}
+
+	/** Scenario: a non-http(s) site_url is rejected before any discovery is attempted. */
+	public function test_subscribe_to_site_rejects_invalid_url() {
+		$result = $this->subscriptions->subscribe_to_site( 'ftp://example.com/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+	}
+
+	/**
+	 * Scenario: a bare domain typed with no scheme (the common case for
+	 * someone typing e.g. "example.com" into the subscribe form, which
+	 * previously failed with "Please enter a valid site URL.") is assumed
+	 * to be `https://` rather than rejected.
+	 */
+	public function test_subscribe_to_site_assumes_https_for_a_bare_domain() {
+		// normalize_site_url() only prepends the scheme — it does not add a
+		// trailing slash, so the outbound fetch (and this mock) is for the
+		// exact normalized string, not a "clean" https://example.com/.
+		$this->mock_response( 'https://example.com', $this->html_with_feed_and_icon() );
+
+		$result = $this->subscriptions->subscribe_to_site( 'example.com' );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertSame( 'https://example.com', $row['site_url'] );
+	}
+
+	/** Scenario: garbage input that still has no real host after normalization is rejected cleanly. */
+	public function test_subscribe_to_site_rejects_garbage_input() {
+		$result = $this->subscriptions->subscribe_to_site( 'not a url at all' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+	}
+
+	/** Scenario: a URL with no discoverable feed fails clearly, not with a fatal. */
+	public function test_subscribe_to_site_no_feed_found() {
+		$this->mock_response( 'https://no-feed.example/', $this->html_without_feed() );
+
+		$result = $this->subscriptions->subscribe_to_site( 'https://no-feed.example/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_no_feed_found', $result->get_error_code() );
+		$this->assertSame( 422, $result->get_error_data()['status'] );
+		$this->assertSame( array(), $this->subscriptions->get_active(), 'Nothing was created' );
+	}
+
+	/** Scenario: subscribing to an already-subscribed feed propagates create()'s duplicate error as-is. */
+	public function test_subscribe_to_site_duplicate_feed() {
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+
+		$first = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+		$this->assertIsInt( $first );
+
+		$second = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+
+		$this->assertWPError( $second );
+		$this->assertSame( 'daymark_subscription_duplicate', $second->get_error_code() );
+	}
+
+	/**
+	 * Scenario: unsubscribe() trashes every cached daymark_subscription_post
+	 * ingested from this subscription and deletes the subscription row —
+	 * the shared method both DELETE /daymark/v1/subscriptions/{id} and the
+	 * wp-admin Settings -> Daymark screen's Unsubscribe action call, so
+	 * neither surface can leave an orphaned cached post behind.
+	 */
+	public function test_unsubscribe_trashes_cached_posts_and_deletes_row() {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed/',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$post_id = self::factory()->post->create(
+			array( 'post_type' => Daymark_Subscription_Post_Type::POST_TYPE )
+		);
+		update_post_meta( $post_id, 'subscription_id', $id );
+
+		$other_subscription_post_id = self::factory()->post->create(
+			array( 'post_type' => Daymark_Subscription_Post_Type::POST_TYPE )
+		);
+		update_post_meta( $other_subscription_post_id, 'subscription_id', $id + 1 );
+
+		$result = $this->subscriptions->unsubscribe( $id );
+
+		$this->assertTrue( $result['deleted'] );
+		$this->assertSame( 1, $result['trashed_posts'] );
+		$this->assertNull( $this->subscriptions->get( $id ), 'The subscription row is gone' );
+		$this->assertSame( 'trash', get_post_status( $post_id ), 'This subscription\'s cached post is trashed, not orphaned' );
+		$this->assertSame(
+			'publish',
+			get_post_status( $other_subscription_post_id ),
+			'A different subscription\'s post is untouched'
+		);
 	}
 }

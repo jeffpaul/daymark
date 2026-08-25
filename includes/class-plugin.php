@@ -129,6 +129,15 @@ final class Daymark_Plugin {
 	public Daymark_Subscription_Poller $subscription_poller;
 
 	/**
+	 * Settings -> Daymark wp-admin screen: subscribe-by-URL form and
+	 * subscription management (issue #78's deliberate exception to this
+	 * plugin's "no wp-admin chrome" non-goal — see CLAUDE.md).
+	 *
+	 * @var Daymark_Admin_Subscriptions
+	 */
+	public Daymark_Admin_Subscriptions $admin_subscriptions;
+
+	/**
 	 * Pages created on activation: slug => shortcode.
 	 *
 	 * @var array<string, string>
@@ -181,6 +190,7 @@ final class Daymark_Plugin {
 		$this->subscription_post_type       = new Daymark_Subscription_Post_Type();
 		$this->subscriptions                = new Daymark_Subscriptions();
 		$this->subscription_poller          = new Daymark_Subscription_Poller();
+		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early: converts a legacy Moment (≤ 0.5.0) install before routes
@@ -192,8 +202,9 @@ final class Daymark_Plugin {
 	}
 
 	/**
-	 * Add an "Open Daymark" action link on the Plugins list table, so the
-	 * app is one click away right after activation.
+	 * Add "Open Daymark" and "Subscriptions" action links on the Plugins
+	 * list table, so the app and the subscribe-by-URL settings screen are
+	 * both one click away right after activation.
 	 *
 	 * @param array<string, string> $links Existing action links (Deactivate, …).
 	 * @return array<string, string>
@@ -205,7 +216,19 @@ final class Daymark_Plugin {
 			esc_html__( 'Open Daymark', 'daymark' )
 		);
 
-		return array_merge( array( 'open-daymark' => $open ), $links );
+		$subscriptions = sprintf(
+			'<a href="%s">%s</a>',
+			esc_url( Daymark_Admin_Subscriptions::page_url() ),
+			esc_html__( 'Subscriptions', 'daymark' )
+		);
+
+		return array_merge(
+			array(
+				'open-daymark'          => $open,
+				'daymark-subscriptions' => $subscriptions,
+			),
+			$links
+		);
 	}
 
 	/**
@@ -230,6 +253,7 @@ final class Daymark_Plugin {
 		$this->publisher->register();
 		$this->subscription_post_type->register();
 		$this->subscription_poller->register();
+		$this->admin_subscriptions->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
