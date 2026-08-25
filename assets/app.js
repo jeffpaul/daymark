@@ -639,10 +639,7 @@
 					<div class="daymark-recent__list" data-drafts-list></div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
-					<div class="daymark-timeline-headrow">
-						<h2 id="daymark-recent-heading" class="daymark-section-heading">Timeline</h2>
-						<button type="button" class="daymark-btn daymark-btn--text" data-recent-refresh>Refresh</button>
-					</div>
+					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">Timeline</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
 					<div class="daymark-recent__list" data-recent-list aria-live="polite">
 						${skeletonRows(3)}
@@ -722,10 +719,8 @@
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
 				list.addEventListener('click', (event) => this.onListClick(event));
 			});
-			const refreshBtn = root.querySelector('[data-recent-refresh]');
-			if (refreshBtn) {
-				refreshBtn.addEventListener('click', () => this.pullRefresh());
-			}
+			// Pull-to-refresh is gesture-only now — Home is assumed to be
+			// the Timeline, so there's no separate "Refresh" link/button.
 			this.bindPullGesture();
 			// Close any open item menu, the launcher, or search on an
 			// outside click or Escape (with focus returned to the launcher
@@ -1512,11 +1507,7 @@
 			}
 			this._refreshing = true;
 			const status = root.querySelector('[data-recent-refresh-status]');
-			const btn = root.querySelector('[data-recent-refresh]');
 			const indicator = root.querySelector('[data-pull-indicator]');
-			if (btn) {
-				btn.disabled = true;
-			}
 			if (indicator) {
 				indicator.classList.add('is-visible', 'is-settling');
 				indicator.style.transform = 'translateY(40px)';
@@ -1554,9 +1545,6 @@
 			await this.loadRecent();
 
 			this._refreshing = false;
-			if (btn) {
-				btn.disabled = false;
-			}
 			if (indicator) {
 				indicator.classList.remove('is-visible', 'is-settling');
 				indicator.style.transform = '';
@@ -1582,8 +1570,8 @@
 
 		// Touch-drag pull-to-refresh: only arms while the page is already
 		// scrolled to the very top (otherwise this is an ordinary scroll
-		// gesture over the list, not a pull). The Refresh button above is
-		// the same action for anyone not on a touch device.
+		// gesture over the list, not a pull). Gesture-only, by design — no
+		// separate "Refresh" link/button on Home.
 		bindPullGesture() {
 			const list = root.querySelector('[data-recent-list]');
 			const indicator = root.querySelector('[data-pull-indicator]');

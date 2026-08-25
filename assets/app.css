@@ -1664,19 +1664,6 @@ h2[tabindex='-1']:focus {
 
 /* --- Home: merged Timeline feed --- */
 
-/* Header row for the "Timeline" list heading + the manual Refresh button
-   (the keyboard/mouse-accessible counterpart to the touch pull gesture). */
-.daymark-timeline-headrow {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: var(--daymark-spacing-sm);
-}
-
-.daymark-timeline-headrow .daymark-section-heading {
-	margin: 0;
-}
-
 /* Subscription-post cards are <button>s (opening the detail sheet), not
    <a>s — reset the button chrome the browser would otherwise add, while
    keeping the exact same .daymark-recent__item look as a Mark card. */

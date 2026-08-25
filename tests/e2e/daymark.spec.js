@@ -206,22 +206,24 @@ test('clicking a subscription-post card opens the detail sheet with content or a
 	await expect(sheet.locator('.daymark-loading')).toHaveCount(0);
 });
 
-// Pull-to-refresh is independent of the cron schedule and separately
-// rate-limited per subscription (15 minutes) — exercised here by
-// refreshing right after ensureSubscription()'s own refresh, which should
-// land on the "checked too recently" outcome. The exact wording depends on
-// real network timing, so this only asserts the status settles to
-// something non-empty and the button re-enables, not a specific message.
-test('pull-to-refresh reports a status and re-enables the button', async ({ page }) => {
+// Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
+// button on Home (Home is assumed to be the Timeline). Independent of the
+// cron schedule and separately rate-limited per subscription (15 minutes);
+// exercised here by refreshing right after ensureSubscription()'s own
+// refresh, which should land on the "checked too recently" outcome. The
+// exact status wording depends on real network timing, so this only
+// asserts the pull indicator shows while in flight and the status settles
+// to something non-empty afterward, not a specific message.
+test('pull-to-refresh (touch drag) shows the pull indicator and reports a status', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
 	// A brief artificial delay on the subscriptions list fetch so the
-	// disabled/loading state is reliably observable rather than racing a
-	// refresh that can resolve in well under a frame (same technique the
-	// "publish in flight" test below uses via page.route).
+	// in-flight state is reliably observable rather than racing a refresh
+	// that can resolve in well under a frame (same technique the "publish
+	// in flight" test below uses via page.route).
 	await page.route('**/daymark/v1/subscriptions', async (route) => {
 		if ('GET' === route.request().method()) {
 			await new Promise((resolve) => setTimeout(resolve, 800));
@@ -229,15 +231,25 @@ test('pull-to-refresh reports a status and re-enables the button', async ({ page
 		await route.continue();
 	});
 
-	const btn = page.locator('[data-recent-refresh]');
+	const indicator = page.locator('[data-pull-indicator]');
 	const status = page.locator('[data-recent-refresh-status]');
 	await expect(status).toHaveText('');
 
-	await btn.click();
-	await expect(btn).toBeDisabled();
+	// Simulate the drag gesture bindPullGesture() listens for: a touchstart
+	// at the top of an already-scrolled-to-top page, a touchmove more than
+	// THRESHOLD (64px, damped by 0.5x) below that, then touchend — which is
+	// what actually calls pullRefresh().
+	await page.evaluate(() => {
+		const list = document.querySelector('[data-recent-list]');
+		const touchAt = (clientY) => new Touch({ identifier: 1, target: list, clientX: 40, clientY });
+		list.dispatchEvent(new TouchEvent('touchstart', { touches: [touchAt(100)], bubbles: true }));
+		list.dispatchEvent(new TouchEvent('touchmove', { touches: [touchAt(260)], bubbles: true }));
+		list.dispatchEvent(new TouchEvent('touchend', { touches: [], bubbles: true }));
+	});
 
+	await expect(indicator).toHaveClass(/is-settling/);
 	await expect(status).not.toHaveText('', { timeout: 20000 });
-	await expect(btn).toBeEnabled();
+	await expect(indicator).not.toHaveClass(/is-settling/);
 });
 
 // Publish a note Mark to your own site and see it in the Notes view.
@@ -632,7 +644,7 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	await expect(list.getByText(alpha).first()).toBeVisible();
 
 	// An outside click collapses the bar, same as the item menu and launcher.
-	await page.locator('#daymark-recent-heading').click();
+	await page.locator('.daymark-screen').click({ position: { x: 10, y: 10 } });
 	await expect(bar).toBeHidden();
 
 	// Escape closes it too, and returns focus to the search icon — even
