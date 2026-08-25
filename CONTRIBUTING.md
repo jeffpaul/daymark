@@ -40,7 +40,7 @@ tooling, and docs are all excluded).
 ### Requirements
 
 - **WordPress 7.0+** (Daymark targets the 7.0 Connectors API and AI Client)
-- **PHP 8.1+**
+- **PHP 8.2+**
 - **Composer** (PHP dependencies, PHPUnit, and coding standards)
 - **Node.js 18+** (for the Playwright E2E suite and the block editor build)
 - A local WordPress site. [Local by Flywheel](https://localwp.com/) is what
@@ -93,7 +93,7 @@ WP_TESTS_DIR=$TMPDIR/wordpress-tests-lib composer test
 composer phpcs        # report violations
 composer phpcs:fix    # auto-fix what phpcbf can
 composer phpcs-tests  # the same standards against the test suite
-composer phpcompat    # PHP 8.1+ compatibility (PHPCompatibility standard)
+composer phpcompat    # PHP 8.2+ compatibility (PHPCompatibility standard)
 ```
 
 The ruleset is `phpcs.xml.dist`; the test-suite run uses `phpcs-tests.xml.dist`,
