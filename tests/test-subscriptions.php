@@ -345,6 +345,34 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertSame( 400, $result->get_error_data()['status'] );
 	}
 
+	/**
+	 * Scenario: a bare domain typed with no scheme (the common case for
+	 * someone typing e.g. "example.com" into the subscribe form, which
+	 * previously failed with "Please enter a valid site URL.") is assumed
+	 * to be `https://` rather than rejected.
+	 */
+	public function test_subscribe_to_site_assumes_https_for_a_bare_domain() {
+		// normalize_site_url() only prepends the scheme — it does not add a
+		// trailing slash, so the outbound fetch (and this mock) is for the
+		// exact normalized string, not a "clean" https://example.com/.
+		$this->mock_response( 'https://example.com', $this->html_with_feed_and_icon() );
+
+		$result = $this->subscriptions->subscribe_to_site( 'example.com' );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertSame( 'https://example.com', $row['site_url'] );
+	}
+
+	/** Scenario: garbage input that still has no real host after normalization is rejected cleanly. */
+	public function test_subscribe_to_site_rejects_garbage_input() {
+		$result = $this->subscriptions->subscribe_to_site( 'not a url at all' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+	}
+
 	/** Scenario: a URL with no discoverable feed fails clearly, not with a fatal. */
 	public function test_subscribe_to_site_no_feed_found() {
 		$this->mock_response( 'https://no-feed.example/', $this->html_without_feed() );

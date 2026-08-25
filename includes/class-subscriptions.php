@@ -223,9 +223,11 @@ class Daymark_Subscriptions {
 	 * @return int|WP_Error New subscription row ID, or WP_Error on failure.
 	 */
 	public function subscribe_to_site( string $site_url ) {
-		$scheme = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
+		$site_url = $this->normalize_site_url( $site_url );
+		$scheme   = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
+		$host     = (string) wp_parse_url( $site_url, PHP_URL_HOST );
 
-		if ( '' === $site_url || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+		if ( '' === $host || false !== strpos( $host, ' ' ) || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
 			return new WP_Error(
 				'daymark_subscription_invalid_url',
 				__( 'Please enter a valid site URL.', 'daymark' ),
@@ -274,6 +276,31 @@ class Daymark_Subscriptions {
 		}
 
 		return $subscription_id;
+	}
+
+	/**
+	 * Assume `https://` for a site URL typed without a scheme (e.g.
+	 * `example.com`) rather than reject it outright — the common case for
+	 * someone typing a bare domain into the subscribe form, same as most
+	 * browsers' own address bars. Anything that already has a scheme
+	 * (`http://`, `https://`, or otherwise) is returned unchanged;
+	 * subscribe_to_site()'s own scheme/host validation right after this
+	 * call is what actually rejects a still-invalid result (e.g. a
+	 * non-http(s) scheme, or input that never had a real host to begin
+	 * with) — this method only fills in a missing scheme, it does not
+	 * validate.
+	 *
+	 * @param string $site_url Raw input from the subscribe form.
+	 * @return string
+	 */
+	private function normalize_site_url( string $site_url ): string {
+		$site_url = trim( $site_url );
+
+		if ( '' !== $site_url && ! preg_match( '#^[a-zA-Z][a-zA-Z0-9+.-]*://#', $site_url ) ) {
+			$site_url = 'https://' . $site_url;
+		}
+
+		return $site_url;
 	}
 
 	/**

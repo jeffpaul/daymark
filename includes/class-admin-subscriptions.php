@@ -187,13 +187,13 @@ class Daymark_Admin_Subscriptions {
 					<td>
 						<input
 							name="daymark_site_url"
-							type="url"
+							type="text"
 							id="daymark_site_url"
 							class="regular-text"
-							placeholder="https://example.com/"
+							placeholder="example.com"
 							required="required"
 						/>
-						<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address.', 'daymark' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address. The scheme (https://) is optional — assumed when left off.', 'daymark' ); ?></p>
 					</td>
 				</tr>
 			</table>
