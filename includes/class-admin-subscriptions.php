@@ -9,7 +9,9 @@
  * mobile-first app shell. This is the first admin-facing class in this
  * codebase — plain wp-admin form posts (POST-redirect-GET via the standard
  * `admin_post_{action}` hook pattern, with query-string status notices on
- * redirect back). No REST, no JS/AJAX.
+ * redirect back). No REST, no AJAX — a small enqueued script only gives the
+ * Subscribe button a loading state on submit; it doesn't change the request
+ * model.
  *
  * Gated on `edit_posts`, not the wp-admin-conventional `manage_options`:
  * every existing Daymark permission check in this codebase
@@ -30,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Registers the Settings -> Daymark page and its three admin-post form
- * handlers: subscribe, retry, unsubscribe.
+ * handlers: subscribe, refresh, unsubscribe.
  */
 class Daymark_Admin_Subscriptions {
 
@@ -72,8 +74,9 @@ class Daymark_Admin_Subscriptions {
 	 */
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_post_daymark_subscribe', array( $this, 'handle_subscribe' ) );
-		add_action( 'admin_post_daymark_subscription_retry', array( $this, 'handle_retry' ) );
+		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 	}
 
@@ -89,6 +92,26 @@ class Daymark_Admin_Subscriptions {
 			self::CAPABILITY,
 			self::PAGE_SLUG,
 			array( $this, 'render_page' )
+		);
+	}
+
+	/**
+	 * Enqueue this screen's own script, and only on this screen.
+	 *
+	 * @param string $hook_suffix The current admin page's hook suffix.
+	 * @return void
+	 */
+	public function enqueue_assets( string $hook_suffix ): void {
+		if ( 'settings_page_' . self::PAGE_SLUG !== $hook_suffix ) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'daymark-admin-subscriptions',
+			DAYMARK_PLUGIN_URL . 'assets/admin-subscriptions.js',
+			array(),
+			DAYMARK_VERSION,
+			true
 		);
 	}
 
@@ -159,7 +182,7 @@ class Daymark_Admin_Subscriptions {
 			'subscribed'         => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
 			'subscribed_pending' => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
 			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
-			'retried'            => __( 'Refresh requested.', 'daymark' ),
+			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -198,7 +221,15 @@ class Daymark_Admin_Subscriptions {
 					</td>
 				</tr>
 			</table>
-			<?php submit_button( __( 'Subscribe', 'daymark' ) ); ?>
+			<?php
+			submit_button(
+				__( 'Subscribe', 'daymark' ),
+				'primary',
+				'daymark-subscribe-submit',
+				true,
+				array( 'data-daymark-loading-label' => __( 'Subscribing…', 'daymark' ) )
+			);
+			?>
 		</form>
 		<?php
 	}
@@ -222,6 +253,7 @@ class Daymark_Admin_Subscriptions {
 				<tr>
 					<th scope="col"><?php esc_html_e( 'Site', 'daymark' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Status', 'daymark' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Last fetched', 'daymark' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
 				</tr>
 			</thead>
@@ -235,8 +267,8 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's row: site title/URL, status, and its
-	 * Retry (only when failing) / Unsubscribe actions.
+	 * Render one subscription's row: site title/URL, status, when it was
+	 * last fetched, and its Refresh / Unsubscribe actions.
 	 *
 	 * @param array<string, mixed> $subscription A `daymark_subscription` row.
 	 * @return void
@@ -262,10 +294,11 @@ class Daymark_Admin_Subscriptions {
 				<?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?>
 			</td>
 			<td>
+				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>
+			</td>
+			<td>
 				<?php
-				if ( $is_error ) {
-					$this->render_retry_form( $id );
-				}
+				$this->render_refresh_form( $id );
 
 				$this->render_unsubscribe_form( $id, $row_label );
 				?>
@@ -275,20 +308,49 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's Retry form (shown only when it is failing).
+	 * Render one subscription's Refresh form. Shown on every row, not only
+	 * a failing one — it fetches on demand instead of waiting for the next
+	 * scheduled poll, and doubles as the retry action when status is
+	 * 'error'. Delegates to the same Daymark_Subscription_Poller::manual_refresh()
+	 * as the REST refresh endpoint, including its per-subscription cooldown.
 	 *
 	 * @param int $id Subscription ID.
 	 * @return void
 	 */
-	private function render_retry_form( int $id ): void {
+	private function render_refresh_form( int $id ): void {
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-right:6px;">
-			<input type="hidden" name="action" value="daymark_subscription_retry" />
+			<input type="hidden" name="action" value="daymark_subscription_refresh" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
-			<?php wp_nonce_field( 'daymark_subscription_retry_' . $id, 'daymark_subscription_retry_nonce' ); ?>
-			<?php submit_button( __( 'Retry', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			<?php wp_nonce_field( 'daymark_subscription_refresh_' . $id, 'daymark_subscription_refresh_nonce' ); ?>
+			<?php submit_button( __( 'Refresh', 'daymark' ), 'secondary small', 'submit', false ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Format a `last_checked_at` value (UTC MySQL datetime, or empty when
+	 * never checked) for display, e.g. "5 minutes ago".
+	 *
+	 * @param string $last_checked_at UTC MySQL datetime string, or ''.
+	 * @return string
+	 */
+	private function format_last_checked( string $last_checked_at ): string {
+		if ( '' === $last_checked_at ) {
+			return __( 'Never', 'daymark' );
+		}
+
+		$timestamp = strtotime( $last_checked_at . ' +00:00' );
+
+		if ( false === $timestamp ) {
+			return __( 'Never', 'daymark' );
+		}
+
+		return sprintf(
+			/* translators: %s: human-readable time difference, e.g. "5 minutes". */
+			__( '%s ago', 'daymark' ),
+			human_time_diff( $timestamp, time() )
+		);
 	}
 
 	/**
@@ -384,7 +446,7 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Handle the Retry form (admin_post_daymark_subscription_retry).
+	 * Handle the Refresh form (admin_post_daymark_subscription_refresh).
 	 *
 	 * Delegates to Daymark_Subscription_Poller::manual_refresh(), which
 	 * enforces its own per-subscription 15-minute cooldown independent of
@@ -393,14 +455,14 @@ class Daymark_Admin_Subscriptions {
 	 *
 	 * @return void
 	 */
-	public function handle_retry(): void {
+	public function handle_refresh(): void {
 		if ( ! current_user_can( self::CAPABILITY ) ) {
 			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
 		}
 
 		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
 
-		check_admin_referer( 'daymark_subscription_retry_' . $id, 'daymark_subscription_retry_nonce' );
+		check_admin_referer( 'daymark_subscription_refresh_' . $id, 'daymark_subscription_refresh_nonce' );
 
 		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH );
 
@@ -418,7 +480,7 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'retried' ) );
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'refreshed' ) );
 	}
 
 	/**
