@@ -653,6 +653,12 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
+.daymark-empty a {
+	color: inherit;
+	font-weight: 600;
+	text-decoration: underline;
+}
+
 .daymark-error {
 	padding: var(--daymark-spacing-md);
 	border-radius: var(--daymark-radius-sm);

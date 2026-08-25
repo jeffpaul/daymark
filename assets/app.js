@@ -1007,7 +1007,7 @@
 				arr.forEach((item) => this.rememberItem(item));
 				if (!arr.length) {
 					list.innerHTML =
-						'<p class="daymark-empty">Nothing here yet. Publish a Mark or subscribe to a site to fill your timeline.</p>';
+						'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
 					this.recentDone = true;
 					if (sentinel) {
 						sentinel.hidden = true;
@@ -1440,7 +1440,7 @@
 					more.hidden = true;
 				}
 				list.innerHTML =
-					'<p class="daymark-empty">Nothing here yet. Publish a Mark or subscribe to a site to fill your timeline.</p>';
+					'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
 			}
 		},
 
