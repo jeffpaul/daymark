@@ -339,7 +339,7 @@ test('categories: File under picker files the Mark and remembers the choice per 
 });
 
 // Image Mark via the file picker: per-image alt field, correct article
-// on the publish screen, and it lands in the timeline + images views.
+// on the publish screen, and it lands in the images view.
 test('image Mark: alt field, correct article, appears in image views', async ({ page }) => {
 	const caption = `E2E image ${RUN_ID}`;
 
@@ -364,11 +364,9 @@ test('image Mark: alt field, correct article, appears in image views', async ({ 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	// Standard post visible in wp-admin, and in the timeline + images views.
+	// Standard post visible in wp-admin, and in the images view.
 	await page.goto('/wp-admin/edit.php');
 	await expect(page.locator('.row-title').filter({ hasText: caption }).first()).toBeVisible();
-	await page.goto('/timeline/');
-	await expect(page.getByText(caption)).toBeVisible();
 	await page.goto('/images/');
 	await expect(page.getByText(caption)).toBeVisible();
 });
@@ -878,7 +876,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
 	// Not publicly visible while a draft.
-	await page.goto('/timeline/');
+	await page.goto('/notes/');
 	await expect(page.getByText(caption)).toHaveCount(0);
 
 	// Home shows the Drafts row; the row is chip-marked.
@@ -900,7 +898,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	// Draft row entry is gone; the published Mark is public.
 	await page.goto('/daymark');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
-	await page.goto('/timeline/');
+	await page.goto('/notes/');
 	await expect(page.getByText(finished)).toBeVisible();
 });
 
@@ -1172,7 +1170,7 @@ test('connected connector: destination toggle publishes and is remembered per ty
 // of their own — the back-link is the one way in from there to the app.
 test('section page back-link returns to the app', async ({ page }) => {
 	await loginAs(page);
-	await page.goto('/timeline/');
+	await page.goto('/images/');
 
 	const back = page.locator('.daymark-view-backlink');
 	await expect(back).toBeVisible();
@@ -1181,6 +1179,14 @@ test('section page back-link returns to the app', async ({ page }) => {
 
 	await back.click();
 	await expect(page).toHaveURL(/\/daymark\/?(#.*)?$/);
+});
+
+// Timeline is an interleaved, multi-source view now (issue #78) — it only
+// exists inside the authenticated app (Home), never as a public page.
+test('the public /timeline page is gone (404, no redirect)', async ({ page }) => {
+	const response = await page.goto('/timeline/');
+	expect(response.status()).toBe(404);
+	await expect(page).toHaveURL(/\/timeline\/?$/);
 });
 
 // Home's Recent Marks list shows the same comment/like stat row as the

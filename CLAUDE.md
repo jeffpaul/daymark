@@ -99,7 +99,7 @@ Document decisions here as they are made. This is the authoritative record.
 |----------|-------|-----------|
 | Content model | Standard `post` post type | Portability; standard feeds/comments/templates |
 | Custom post type | Not used | Deactivation safety; standard theme compat |
-| Route strategy | Rewrite rule + `template_include` on a `daymark_app` query var | No page dependency; full control of app-shell markup (no theme chrome); clean `/daymark` PWA scope. Section pages (`/timeline`, `/images`, `/videos`, `/audio`, `/notes`) are auto-created pages with shortcodes since those should render inside the theme. |
+| Route strategy | Rewrite rule + `template_include` on a `daymark_app` query var | No page dependency; full control of app-shell markup (no theme chrome); clean `/daymark` PWA scope. Section pages (`/images`, `/videos`, `/audio`, `/notes`) are auto-created pages with shortcodes since those should render inside the theme. There is no public Timeline page — see the "Public Timeline page removed" row. |
 | Block vs shortcode | **Both** — shortcodes as required baseline, dynamic blocks (`block.json` + `render.php`) as thin wrappers around a shared editor bundle (`src/index.js` → `build/`) | Activation pages already embed `[daymark_*]` shortcodes; MVP spec requires both; all query/markup logic lives once in `Daymark_Renderer::render()` so both surfaces emit identical HTML |
 | WP 7.0 AI path | **Real** — `WordPress\AiClient\AiClient` via `wp_ai_client_prompt()`; provider Anthropic (first configured). Mock fallback when no provider is configured or any call fails. | Plugin requires WP 7.0+, so the AI Client is assumed present (no class/function existence shims). Detection: `wp_supports_ai()` + ≥1 `isProviderConfigured()`. Never throws, never blocks publishing. Legacy `WP_AI_Client` name does not exist — do not use it for calls. |
 | JS framework | App shell: vanilla ES2020, no build step. Block editor UI (`src/`): compiled with `@wordpress/scripts` into the committed, shipped `build/` bundle. | The app shell stays build-free ("no npm required" for end users); the block editor is the one place Gutenberg demands a compiled script, so it carries the only build step. CI (`blocks-build` job) fails if the committed bundle drifts from `src/`. |
@@ -115,6 +115,7 @@ Document decisions here as they are made. This is the authoritative record.
 | Subscriptions polling cron (issue #78) | WP-Cron, matching the existing `daymark_backflow_sync` pattern. Not Action Scheduler. | Zero new dependencies, and this exact problem shape (periodic polling over a growing external set) already works on WP-Cron for backflow. Action Scheduler is tracked as a future option in [issue #79](https://github.com/jeffpaul/daymark/issues/79) if real usage shows WP-Cron isn't holding up. |
 | Subscriptions favicon retrieval (issue #78) | Discover via `<link rel="icon">` in the site's `<head>` (the same fetch already made for feed autodiscovery), falling back to `/favicon.ico`. | Reuses a fetch that's already happening rather than adding a second request or a third-party favicon service, which would leak subscription targets to an external party. |
 | Subscriptions `rel=me` config (issue #78) | Lives on WordPress's own native profile screen (Users → Your Profile) as user meta, not a new Daymark app-shell screen. `Daymark_Renderer` reads it when rendering h-card markup. | No existing app-shell screen fits it, and building one is real UI work for a single settings field. Format validation only this phase — no reciprocal-link verification. |
+| Public Timeline page removed (issue #78) | The `/timeline` section page, the `daymark/timeline` block, and the `[daymark_timeline]` shortcode no longer exist. `Daymark_Plugin::ACTIVATION_PAGES` no longer includes `timeline`; `Daymark_Plugin::remove_public_timeline_page()` (hooked on `init`, alongside `Daymark_Migration::maybe_migrate()`) hard-deletes an existing install's page — a genuine, deliberate exception to "never deletes user content," scoped to a page verified to still carry Daymark's own generated markup. Real 404, no redirect. Individual Mark permalinks and the site's own RSS/Atom feed are unaffected; the other four section pages (`/images`, `/videos`, `/audio`, `/notes`) are unaffected. | Timeline is now an interleaved, multi-source view (a user's own Marks plus subscribed sites' posts) — see "Subscriptions data model" above — and that concept only makes sense inside the authenticated app shell (Home). A public page under the same name showing something narrower (Marks only, no subscribed content) was confusing and redundant now that Home covers the real thing. |
 | Subscribe-by-URL + subscription management (issue #78) | A wp-admin screen (Settings → Daymark, `Daymark_Admin_Subscriptions`), not the app shell. Plain form posts (`admin_post_{action}`, POST-redirect-GET), gated on `edit_posts` like every other Daymark permission check — not the wp-admin-conventional `manage_options`. Also reachable via a "Subscriptions" action link on the Plugins list screen. Subscribe/unsubscribe logic is shared with the REST endpoints (`Daymark_Subscriptions::subscribe_to_site()`, `::unsubscribe()`) so neither surface's behavior can drift from the other. | The general principle this confirms (see the non-goals note below): the app shell is for day-to-day operational use — reading the Timeline, publishing content — while configuration/settings that are touched rarely belong in wp-admin instead. A future pass may migrate this into an in-app settings screen, but the two stay deliberately separate for now. |
 
 ## Content model quick reference
@@ -189,13 +190,16 @@ points to this document for anything durable rather than duplicating it, so a fa
 changing here doesn't leave a stale copy behind in five other places.
 
 - **`wp-php-core`** — REST endpoints, the publisher, the `daymark_subscription` table,
-  the public Timeline page removal, and the POSSE/microformats2 markup work.
+  and the POSSE/microformats2 markup work. (The public Timeline page removal is done —
+  see the architectural decisions table.)
 - **`daymark-subscriptions`** (new) — the inbound `Daymark_Subscription_Source`
   connector interface and registry, feed autodiscovery, favicon retrieval, the
   `daymark_subscription_post` CPT, content ingest rules, pruning, polling/refresh, and
   dead-feed detection.
-- **`daymark-frontend`** (renamed from `moment-frontend`) — the app shell, plus the
-  subscribe-by-URL flow, subscription management screen, and Timeline pull-to-refresh.
+- **`daymark-frontend`** (renamed from `moment-frontend`) — the app shell, plus Home's
+  pull-to-refresh over every active subscription. (Subscribe-by-URL and subscription
+  management ended up as a wp-admin screen instead — see the architectural decisions
+  table — so that work isn't this agent's after all.)
 - **`daymark-backflow`** (renamed from `moment-backflow`) — the notifications data
   layer, plus surfacing a dead-feed flag that `daymark-subscriptions` sets.
 - **`daymark-tester`** (renamed from `moment-tester`) — unchanged remit, applied to all

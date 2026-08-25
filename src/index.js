@@ -4,7 +4,7 @@ import { ServerSideRender } from '@wordpress/server-side-render';
 import { PanelBody, RangeControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 
-const VIEWS = ['timeline', 'images', 'videos', 'audio', 'notes'];
+const VIEWS = ['images', 'videos', 'audio', 'notes'];
 const MIN_COUNT = 1;
 const MAX_COUNT = 50;
 
