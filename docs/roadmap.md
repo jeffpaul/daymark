@@ -32,7 +32,7 @@ product surface.
 **Done (post-Phase hardening pass):**
 
 - [x] Coding-standards suite now covers tests (`composer phpcs-tests`) and PHP
-  8.1+ compatibility (`composer phpcompat`); CI runs both.
+  8.2+ compatibility (`composer phpcompat`); CI runs both.
 - [x] Security hardening: rate limiting on AI/publish/sync REST actions, a
   per-request upload byte budget, the alt-text IDOR fix, an atomic backflow
   cooldown, the comment-import approval filter, an AI prompt-injection guard,
@@ -40,12 +40,11 @@ product surface.
 - [x] Plugin Check is **blocking** in CI (was advisory).
 - [x] Docs refreshed: SECURITY.md support table, CHANGELOG/readme.txt, and
   contributor + project-memory build/security notes.
+- [x] The Playwright E2E suite now runs in CI as a blocking job (`Browser E2E`
+  in `tests.yml`, across WP minimum/stable/nightly), no longer scaffolded-only.
 
 **In flight / remaining:**
 
-- [ ] Run the Playwright E2E suite in CI. It is scaffolded but not executed —
-  today only the WP-CLI smoke suite and PHPUnit gate on a live site. (Needs
-  the site+credentials story solved for CI before it can be a blocking job.)
 - [ ] Retire `Daymark_Migration`. Soft-deprecate it in the next minor, then
   remove it (with `uninstall.php`'s legacy block and `tests/test-migration.php`)
   once no supported install still ships a `moment_version` option.
