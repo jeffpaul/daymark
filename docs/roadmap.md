@@ -43,14 +43,15 @@ new product surface. Released on GitHub and wordpress.org.
   `tests.yml`, across WP minimum/stable/nightly) — no longer scaffolded-only.
 - [x] Docs refreshed: SECURITY.md support table, CHANGELOG/readme.txt, and
   contributor + project-memory build/security notes.
+- [x] **Retire `Daymark_Migration`.** Soft-deprecated in 0.7.0 (logged
+  `_deprecated_function()` when it actually converted a legacy install), then
+  removed in 0.9.0 along with `uninstall.php`'s legacy `moment_*` cleanup
+  block and `tests/test-migration.php` ([#36](https://github.com/jeffpaul/daymark/issues/36)).
+  A site still on Moment (≤ 0.5.0) must now upgrade through an intermediate
+  0.6.x–0.8.x release before jumping to 0.9.0 or later.
 
 **Still open from this era:**
 
-- [ ] Retire `Daymark_Migration`. Soft-deprecated in 0.8.0 (logs
-  `_deprecated_function()` when it actually converts a legacy install);
-  remove it in 0.9.0 (with `uninstall.php`'s legacy block and
-  `tests/test_migration.php`) once no supported install still ships a
-  `moment_version` option.
 - [ ] First-party connector ecosystem docs: a worked example of
   `daymark_register_connectors` for plugin authors, published alongside the
   hooks reference.

@@ -206,13 +206,9 @@ final class Daymark_Plugin {
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
-		// Early: converts a legacy Moment (≤ 0.5.0) install before routes
-		// read the app base at the default priority. No-op everywhere else.
-		add_action( 'init', array( 'Daymark_Migration', 'maybe_migrate' ), 5 );
-		// Runs right after migration (same priority, registered later, so
-		// it fires second): a legacy Moment install's freshly-migrated
-		// timeline page is hard-deleted in this same request too, before
-		// anything else can render it.
+		// Early, at priority 5: routes and rewrite resolution read
+		// daymark_pages at the default priority, so the deleted key must be
+		// gone from that option before then.
 		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
@@ -316,9 +312,8 @@ final class Daymark_Plugin {
 	 * @return void
 	 */
 	public static function activate(): void {
-		// Convert a legacy Moment (≤ 0.5.0) install first, so the carried
-		// app base and section pages are in place before resolution below.
-		Daymark_Migration::maybe_migrate();
+		// Runs first, so daymark_pages no longer carries the deleted
+		// 'timeline' key before the app base and section pages resolve below.
 		self::remove_public_timeline_page();
 
 		Daymark_Subscriptions::install();

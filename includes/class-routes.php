@@ -34,8 +34,8 @@ class Daymark_Routes {
 	/**
 	 * Option storing a migrated install's pre-rename base (e.g. 'moment'),
 	 * if any, purely so that old URL can 301 to wherever the app lives now.
-	 * Set once by Daymark_Migration; never treated as a valid app base
-	 * itself.
+	 * Set once, by a one-time migration that has since been removed; never
+	 * treated as a valid app base itself.
 	 */
 	public const OPTION_LEGACY_APP_BASE = 'daymark_legacy_app_base';
 
@@ -130,13 +130,13 @@ class Daymark_Routes {
 	 * The app's base path. Resolves and persists on first use.
 	 *
 	 * Self-heals a stale pre-rename value: an install that migrated before
-	 * Daymark_Migration stopped carrying the old Moment-era base into this
-	 * option (see its class docblock) has it permanently stuck at e.g.
-	 * 'moment' otherwise — this option is deliberately never re-resolved
-	 * once set, so nothing else would ever correct it. The old value is
-	 * captured into OPTION_LEGACY_APP_BASE first, same as a fresh migration
-	 * does, so register()'s redirect still 301s it to wherever the app
-	 * actually resolves to now.
+	 * an earlier version of the one-time Moment-to-Daymark migration stopped
+	 * carrying the old Moment-era base into this option has it permanently
+	 * stuck at e.g. 'moment' otherwise — this option is deliberately never
+	 * re-resolved once set, so nothing else would ever correct it. The old
+	 * value is captured into OPTION_LEGACY_APP_BASE first, same as that
+	 * migration did, so register()'s redirect still 301s it to wherever the
+	 * app actually resolves to now.
 	 *
 	 * @return string 'daymark', or 'daymark-app' when /daymark is owned by
 	 *                existing site content.

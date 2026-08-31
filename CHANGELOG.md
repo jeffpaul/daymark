@@ -25,6 +25,10 @@ can't act on them.
 - For developers: `uninstall.php` now cleans up everything the Subscriptions feature and the POSSE microformats2 work added — the `daymark_subscriptions` table, cached `daymark_sub_post` content, the subscription poller's cron event, the `daymark_redirect_rule_added`/`daymark_subscriptions_db_version` options, the `daymark_rel_me_url` user meta, and rate-limiter transients. It previously only covered what existed before those features shipped.
 - For developers: the SPA router now tears down the previous screen's outside-click/Escape dismiss listeners before rendering the next one, instead of leaving them attached to `document` and firing against whichever screen loads next. Not user-visible today (every current dismiss action is a no-op once its own screen is gone), but closes off the failure mode for a future one that isn't. ([#64](https://github.com/jeffpaul/daymark/issues/64))
 
+### Removed
+
+- `Daymark_Migration`, the one-time storage conversion from the plugin's previous identity, Moment (≤ 0.5.0), to Daymark. It has been deprecated since 0.7.0. **If your site still runs Moment (≤ 0.5.0), you must upgrade through an intermediate 0.6.x–0.8.x release first — jumping straight to this version will not convert your old Moment data.** ([#36](https://github.com/jeffpaul/daymark/issues/36))
+
 ## [0.8.0] - 2026-08-31
 
 ### Added
