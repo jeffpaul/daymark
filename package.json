@@ -1,6 +1,6 @@
 {
   "name": "daymark",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests and the block editor build only.",
   "private": true,
   "license": "GPL-2.0-or-later",
