@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- For developers: the SPA router now tears down the previous screen's outside-click/Escape dismiss listeners before rendering the next one, instead of leaving them attached to `document` and firing against whichever screen loads next. Not user-visible today (every current dismiss action is a no-op once its own screen is gone), but closes off the failure mode for a future one that isn't. ([#64](https://github.com/jeffpaul/daymark/issues/64))
+
 ## [0.8.0] - 2026-08-31
 
 ### Added
