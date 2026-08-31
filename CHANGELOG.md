@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-31
+
 ### Added
 
 - Home is now the merged Timeline feed: the user's own Marks interleaved with cached posts from subscribed sites, replacing what was a Recent Marks list of only their own Marks. Opening a subscribed post fetches and shows its full content in place; pulling down from the top of the list refreshes every active subscription. ([#102](https://github.com/jeffpaul/daymark/pull/102), part of [#78](https://github.com/jeffpaul/daymark/issues/78))
@@ -37,6 +39,7 @@ can't act on them.
 - For developers: `Requires PHP` is now 8.2 (was 8.1) — PHP 8.1 stopped receiving security fixes. `phpunit/phpunit` stays on `^9.6` rather than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a method PHPUnit 10 removed, so every test run under PHPUnit 10+ fails regardless of anything in this plugin. Tracked in [#106](https://github.com/jeffpaul/daymark/issues/106) for whenever core fixes it.
 - For developers: `CONTRIBUTING.md`'s crediting-contributors section now says explicitly that Claude Code gets a `Co-Authored-By:` trailer too, alongside human contributors, when it wrote or materially helped write a change. ([#108](https://github.com/jeffpaul/daymark/pull/108))
 - For developers: `CONTRIBUTING.md`'s release checklist now opens with a dependency update check (`npm`/`composer outdated` and `audit`, patch/minor routinely, majors held for a deliberate compatibility review) and a bundle size/tree-shaking check, before opening the release PR. ([#105](https://github.com/jeffpaul/daymark/pull/105))
+- For developers: this release's dependency check found nothing to update — `npm outdated` and `composer outdated --direct` are clean apart from the already-tracked `phpunit/phpunit` hold-back (see above). `npm audit` reports 32 advisories, all in `webpack-dev-server`'s transitive chain under the `@wordpress/scripts` devDependency (local build/watch tooling only — the plugin ships no npm `dependencies` and none of this reaches the distribution zip); `composer audit` is clean. Bundle size unchanged at 778 bytes.
 
 ### Fixed
 
@@ -204,7 +207,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.7.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.8.0...HEAD
+[0.8.0]: https://github.com/jeffpaul/daymark/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/jeffpaul/daymark/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/jeffpaul/daymark/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/jeffpaul/daymark/compare/0.5.0...0.6.0
