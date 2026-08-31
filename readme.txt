@@ -272,7 +272,7 @@ Partially. A conservative service worker caches only the app's static CSS and JS
 == Upgrade Notice ==
 
 = 0.8.0 =
-Home is now a merged Timeline feed: subscribe to any site's RSS/Atom feed by URL (Settings → Daymark) and its posts interleave with your own Marks, searchable together. The public /timeline page is removed (real 404, no redirect). Marks now carry outbound h-entry/h-card microformats2 markup, with a rel=me profile field.
+Home is now a merged Timeline: subscribe to any site's RSS/Atom feed by URL (Settings → Daymark), interleaved with your own Marks and searchable together. The public /timeline page is removed. Marks now carry outbound h-entry/h-card markup, plus a rel=me profile field.
 
 = 0.7.0 =
 Security hardening (rate limiting, an alt-text access-control fix, upload caps, a stricter CSP, AI prompt-injection defenses), a new Path-style launcher and header/footer redesign, a fix so the app only lives at /daymark on migrated installs, and consistent outside-click/Escape dismissal.
