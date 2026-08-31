@@ -50,6 +50,13 @@ final class Daymark_Plugin {
 	public Daymark_Syndication_Links $syndication_links;
 
 	/**
+	 * POSSE-quality outbound microformats2 markup (h-entry, h-card, rel=me).
+	 *
+	 * @var Daymark_Microformats
+	 */
+	public Daymark_Microformats $microformats;
+
+	/**
 	 * Automatic backflow sync (cron + on-view freshening).
 	 *
 	 * @var Daymark_Backflow_Sync
@@ -189,6 +196,7 @@ final class Daymark_Plugin {
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
 		$this->syndication_links            = new Daymark_Syndication_Links();
+		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
 		$this->rate_limiter                 = new Daymark_Rate_Limiter();
 		$this->subscription_source_registry = Daymark_Subscription_Source_Registry::instance();
@@ -259,6 +267,7 @@ final class Daymark_Plugin {
 		$this->routes->register();
 		$this->blocks->register();
 		$this->syndication_links->register();
+		$this->microformats->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->subscription_post_type->register();
