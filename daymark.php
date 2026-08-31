@@ -35,6 +35,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-blocks.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-renderer.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-federated-comments.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-links.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-microformats.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-backflow-sync.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/interface-syndication-connector.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/class-connector-base.php';

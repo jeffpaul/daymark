@@ -198,6 +198,12 @@ Daymark also renders IndieWeb `u-syndication` markup on Mark posts
 to backfeed replies from those copies as webmentions — so publicize-style
 syndication and webmention backfeed compose.
 
+Every Mark's own permalink page carries full outbound `h-entry`/`h-card`
+microformats2 markup too, and Users → Your Profile has a `rel=me` field
+that renders as a `rel="me"` link next to your h-card — so IndieWeb tools
+(readers, IndieAuth, Bridgy) can read a Mark correctly without any of this
+plugin's own APIs.
+
 ### I already run a social auto-poster (Jetpack Social, XPoster, …). Does it work with Daymark?
 
 Yes, automatically — because a Mark is a standard WordPress post.
