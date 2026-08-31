@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- For developers: `uninstall.php` now cleans up everything the Subscriptions feature and the POSSE microformats2 work added — the `daymark_subscriptions` table, cached `daymark_sub_post` content, the subscription poller's cron event, the `daymark_redirect_rule_added`/`daymark_subscriptions_db_version` options, the `daymark_rel_me_url` user meta, and rate-limiter transients. It previously only covered what existed before those features shipped.
+
 ## [0.8.0] - 2026-08-31
 
 ### Added
