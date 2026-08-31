@@ -3,14 +3,14 @@ name: wp-php-core
 description: >
   WordPress PHP specialist for Daymark. Delegate here for: plugin bootstrap
   and activation, REST API endpoint implementation, the Daymark_Publisher
-  class (post creation + media upload), the AI Assist adapter, and WP-CLI
-  verification commands. For the Subscriptions feature (issue #78): the
-  daymark_subscription custom DB table (schema, CRUD, migrations), the
-  public Timeline page removal and routing changes, and the POSSE-quality
-  microformats2 markup work (h-entry/h-card in Daymark_Renderer, rel=me
-  output). Does NOT touch the subscription ingest connector or registry
-  (daymark-subscriptions), frontend CSS/JS (daymark-frontend), or the
-  notifications data layer (daymark-backflow).
+  class (post creation + media upload), the AI Assist adapter, WP-CLI
+  verification commands, and outbound POSSE-quality microformats2 markup
+  (h-entry/h-card/rel=me in Daymark_Microformats — shipped, see below). For
+  the Subscriptions feature (issue #78): the daymark_subscription custom DB
+  table (schema, CRUD, migrations) and the public Timeline page removal and
+  routing changes. Does NOT touch the subscription ingest connector or
+  registry (daymark-subscriptions), frontend CSS/JS (daymark-frontend), or
+  the notifications data layer (daymark-backflow).
 tools: [Read, Write, Edit, Bash]
 ---
 
@@ -50,25 +50,26 @@ Individual Mark permalinks and the site's own RSS/Atom feed output stay
 public and untouched. The aggregate, interleaved Timeline view now only
 ever renders inside the authenticated app shell.
 
-### POSSE-quality microformats2 markup
+### POSSE-quality microformats2 markup — done
 
-Independent of the ingest work above — no dependency on it, can start
-immediately. Lives in `Daymark_Renderer`, since Daymark's own app shell
-bypasses the active theme entirely, so plugins that add mf2 markup via
-theme template hooks never reach it.
+Shipped in `Daymark_Microformats`, not `Daymark_Renderer` — a Mark's own
+permalink page is theme-rendered, not built by `Daymark_Renderer` (which
+only covers the aggregate `/images`, `/videos`, `/audio`, `/notes`, and
+app-shell views), so this hooks `post_class`/`the_title`/`the_content` the
+same way `Daymark_Syndication_Links` already does for that same
+theme-rendered path.
 
-- **h-entry** on every published Mark: `e-content`, `p-name` (or
-  `p-summary` for terse/status-style Marks), `dt-published`, `u-url`,
-  `u-photo`/`u-video`/`u-audio` for rich media, `u-in-reply-to` where a
-  Mark is a reply.
-- **h-card** for the author, referenced from each Mark via `p-author`:
-  `p-name`, `u-photo`, `u-url`, `u-email` where applicable.
-- **`rel=me`**: settled decision — this is a native WordPress
-  Users → Your Profile field (user meta), not new Daymark app-shell UI.
-  Read that meta and render `rel="me"` links on the h-card. Format
-  validation only; no reciprocal-link verification this phase.
-- Verify against [IndieWebify.me](https://indiewebify.me/) or an
-  equivalent validator before calling this done.
-
-Full spec: `daymark-subscriptions-prd.md`, "POSSE-quality outbound markup"
-section. Acceptance criteria: [issue #78](https://github.com/jeffpaul/daymark/issues/78).
+- **h-entry** on every published Mark: `e-content`, `p-name` (`p-summary`
+  for a note, whose auto-generated title just echoes its caption),
+  `dt-published`, `u-url`, `u-photo`/`u-video`/`u-audio` for rich media.
+  `u-in-reply-to` isn't rendered — nothing in the Mark data model records a
+  parent post today, so it's never applicable yet.
+- **h-card** for the author, referenced via `p-author`: `p-name`,
+  `u-photo`. No `u-email` — a WordPress account email isn't meant to be
+  public, and it's optional in the h-card spec.
+- **`rel=me`**: a native WordPress Users → Your Profile field (user meta
+  `daymark_rel_me_url`), rendered as a `rel="me"` link on the h-card.
+  Format validation only; no reciprocal-link verification.
+- Verified against a live-rendered Mark's actual HTML, not just PHPUnit —
+  that live check caught a real bug (`post_class`'s filter signature has
+  three arguments, `($classes, $class, $post_id)`, not two).

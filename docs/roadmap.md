@@ -97,18 +97,21 @@ sites you follow, without turning WordPress into a social network.
   own RSS/Atom feed, and the other four section pages (`/images`, `/videos`,
   `/audio`, `/notes`) are unaffected.
 
-**Still open from this feature** (tracked on [issue #78](https://github.com/jeffpaul/daymark/issues/78), not yet split into its own issue):
+- [x] **POSSE-quality outbound microformats2 markup.** Every published
+  Mark's own permalink page renders valid `h-entry` markup (`e-content`,
+  `p-name`/`p-summary`, `dt-published`, `u-url`, and `u-photo`/`u-video`/
+  `u-audio` for rich media) and an author `h-card` (`p-author`, `p-name`,
+  `u-photo`). A user-configurable `rel=me` field on the native WordPress
+  profile screen renders as a `rel="me"` link next to the h-card. Verified
+  against a live-rendered Mark's actual HTML output, not just unit tests —
+  that live check is what caught a real bug (`post_class`'s filter
+  signature has three arguments, not the two the first pass assumed).
+  `u-in-reply-to` isn't rendered: nothing in the Mark data model records a
+  parent post today, so the property is never applicable yet.
 
-- [ ] Daymark's own published Marks render valid h-entry markup (`e-content`,
-  `dt-published`, `u-url`, `u-in-reply-to` where applicable, media properties
-  for rich formats), and Daymark's own profile renders valid h-card markup.
-- [ ] A user-configurable `rel=me` field on the native WordPress profile
-  screen, rendered with correct markup.
-- [ ] Markup validated against IndieWebify.me or equivalent.
-
-This is the outbound half of POSSE-quality microformats2 support — nothing
-here yet, no h-entry/h-card/`rel=me` markup exists in the codebase today.
-(*Inbound* microformats2 parsing of a *subscribed* site's markup is separate,
+This was the outbound half of POSSE-quality microformats2 support, the one
+piece of issue #78 that shipped without it at the time. (*Inbound*
+microformats2 parsing of a *subscribed* site's markup is separate,
 out-of-scope-for-#78 work tracked on
 [issue #84](https://github.com/jeffpaul/daymark/issues/84).)
 
