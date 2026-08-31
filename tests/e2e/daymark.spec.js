@@ -1230,3 +1230,117 @@ test('home Recent Marks entries show comment/like counts', async ({ page }) => {
 	await expect(commentStat).toHaveClass(/daymark-stat--active/);
 	await expect(commentStat.locator('.daymark-stat__count')).toHaveText('1');
 });
+
+// --- Router listener teardown (issue #64) ---
+//
+// bindDismissible() is the only source in app.js of capture-phase
+// document-level click/keydown listeners, so counting those two specifically
+// is a direct, DOM-level probe for the leak the issue describes — not just
+// an indirect behavioral proxy for it. Instrumenting document.addEventListener/
+// removeEventListener from an init script (installed before any app code
+// runs) lets the assertions below catch the exact regression: under the
+// pre-fix code, each screen controller that calls bindDismissible() (Home,
+// Create, Notifications) only ever cleaned up its *own* previous pair, so
+// the first hash-routed visit to a second such screen left the first
+// screen's pair still attached, permanently, alongside the second's.
+async function trackDismissListeners(page) {
+	await page.addInitScript(() => {
+		window.__dismissCounts = { click: 0, keydown: 0 };
+		const originalAdd = document.addEventListener.bind(document);
+		const originalRemove = document.removeEventListener.bind(document);
+		const isCapture = (options) => options === true || (options && options.capture);
+		document.addEventListener = (type, handler, options) => {
+			if (isCapture(options) && (type === 'click' || type === 'keydown')) {
+				window.__dismissCounts[type] += 1;
+			}
+			return originalAdd(type, handler, options);
+		};
+		document.removeEventListener = (type, handler, options) => {
+			if (isCapture(options) && (type === 'click' || type === 'keydown')) {
+				window.__dismissCounts[type] -= 1;
+			}
+			return originalRemove(type, handler, options);
+		};
+	});
+}
+
+test('switching screens tears down the previous screen’s dismiss listeners instead of leaking them', async ({
+	page,
+}) => {
+	const caption = `E2E leak check ${RUN_ID}`;
+	const reply = `E2E leak reply ${RUN_ID}`;
+
+	await trackDismissListeners(page);
+	await loginAs(page);
+
+	// A Mark with a reply so Notifications' own bindDismissible() call (which
+	// only fires once its list has at least one item) actually re-arms on
+	// every visit, rather than trivially passing on an empty list.
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.evaluate(async (replyText) => {
+		const config = window.daymarkApp;
+		const listRes = await fetch(`${config.restUrl}marks?per_page=1`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const [latest] = await listRes.json();
+		await fetch('/wp-json/wp/v2/comments', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ post: latest.id, content: replyText }),
+		});
+	}, reply);
+
+	await page.goto('/daymark');
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+
+	const counts = () => page.evaluate(() => window.__dismissCounts);
+
+	// Home's own bindEvents() runs once on this load and registers exactly
+	// one click+keydown capture pair (the item menu, launcher, and search
+	// share it).
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+
+	// Hash-routed switches (showScreen(), not a full page load) across every
+	// screen that calls bindDismissible() — Notifications and Create — and
+	// back to Home again. The count must stay at exactly one pair throughout:
+	// under the pre-fix code the very first switch below already left it at
+	// two (Home's pair never removed, Notifications' pair added alongside).
+	await page.locator('.daymark-iconbtn').click(); // -> #notifications
+	await expect(page.getByText(reply).first()).toBeVisible();
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+
+	await page.locator('.daymark-backlink').click(); // -> #home
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+
+	await openComposer(page); // -> #create
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+
+	await page.locator('.daymark-backlink').click(); // -> #home
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+
+	// Escape on Notifications only ever closes its own reply box, never a
+	// leftover disclosure from a screen that isn't showing anymore.
+	await page.locator('.daymark-iconbtn').click(); // -> #notifications
+	const card = page.locator('.daymark-note-card').filter({ hasText: reply }).first();
+	await card.locator('[data-reply-toggle]').click();
+	await expect(card.locator('[data-reply-form]')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(card.locator('[data-reply-form]')).toBeHidden();
+	await expect.poll(async () => (await counts()).click).toBe(1);
+	await expect.poll(async () => (await counts()).keydown).toBe(1);
+});

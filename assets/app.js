@@ -490,8 +490,15 @@
 	 * number of open disclosures on an outside click or Escape — the
 	 * convention already used by the per-item menu and the launcher, now
 	 * shared with search and the reply box. Call again on re-render; a
-	 * previous pair registered on `owner` is removed first so listeners
-	 * never stack across repeated renders of the same view.
+	 * previous pair is removed first so listeners never stack across
+	 * repeated renders of the same view.
+	 *
+	 * The current pair lives in module-level state (`dismissClickHandler` /
+	 * `dismissKeyHandler`), not on `owner` — only one screen is ever showing
+	 * at a time, so only one pair should ever be attached to `document` at a
+	 * time. `showScreen()` clears that same state before swapping screens,
+	 * which is what keeps an outgoing screen's pair from outliving its own
+	 * markup; see the router section below.
 	 *
 	 * Each item's `close` must be idempotent (safe to call whether or not
 	 * it's currently open) — an outside click calls every item's `close`
@@ -504,18 +511,17 @@
 	 * something that was already closed, since `focus()` is skipped
 	 * entirely when `isOpen()` is false.
 	 *
-	 * @param {object} owner Object to stash the listener refs on (a view controller).
+	 * @param {object} owner Unused by this function itself; kept in the call
+	 *   signature so each call site still reads as "this view's disclosures"
+	 *   at a glance.
 	 * @param {Array<{selector: string, close: Function, isOpen?: Function, focus?: Function}>} items
 	 *   `selector` marks the disclosure's own trigger + panel — a click inside it is
 	 *   never treated as "outside".
 	 */
 	function bindDismissible(owner, items) {
-		if (owner._onDismissClick) {
-			document.removeEventListener('click', owner._onDismissClick, true);
-			document.removeEventListener('keydown', owner._onDismissKey, true);
-		}
+		clearDismissible();
 
-		owner._onDismissClick = (event) => {
+		dismissClickHandler = (event) => {
 			items.forEach((item) => {
 				if (!event.target.closest || !event.target.closest(item.selector)) {
 					item.close();
@@ -523,7 +529,7 @@
 			});
 		};
 
-		owner._onDismissKey = (event) => {
+		dismissKeyHandler = (event) => {
 			if ('Escape' !== event.key) {
 				return;
 			}
@@ -537,13 +543,37 @@
 			});
 		};
 
-		document.addEventListener('click', owner._onDismissClick, true);
-		document.addEventListener('keydown', owner._onDismissKey, true);
+		document.addEventListener('click', dismissClickHandler, true);
+		document.addEventListener('keydown', dismissKeyHandler, true);
+	}
+
+	/**
+	 * Removes the currently-attached `bindDismissible()` pair, if any. Safe
+	 * to call with nothing attached — every screen's `close()` needs its own
+	 * subtree to exist to do anything, so a stale pair left running against
+	 * the wrong screen is a landmine (see issue #64), not just noise.
+	 */
+	function clearDismissible() {
+		if (dismissClickHandler) {
+			document.removeEventListener('click', dismissClickHandler, true);
+			document.removeEventListener('keydown', dismissKeyHandler, true);
+		}
+		dismissClickHandler = null;
+		dismissKeyHandler = null;
 	}
 
 	// --- Screen router ---
 
 	let SCREENS = {};
+
+	// The one `bindDismissible()` listener pair currently attached to
+	// `document`, or `null`/`null` when nothing is. Shared across every
+	// screen (not stashed per-controller) precisely because only one
+	// screen is ever showing at a time — see `bindDismissible()` above for
+	// why, and `showScreen()` below for where this gets cleared on every
+	// screen swap.
+	let dismissClickHandler = null;
+	let dismissKeyHandler = null;
 
 	function navigate(hash) {
 		if (window.location.hash === hash) {
@@ -566,6 +596,12 @@
 
 		AIAssistSheet.hide(false);
 		SubscriptionPostSheet.hide(false);
+		// The outgoing screen's `bindDismissible()` pair (if it registered
+		// one at all) targets DOM that's about to be replaced wholesale
+		// below — clear it unconditionally so it never keeps firing against
+		// whichever screen loads next (issue #64). The next screen re-arms
+		// its own pair, if it needs one, from its own `bindEvents()`/`init()`.
+		clearDismissible();
 
 		const controller = SCREENS[target];
 		root.innerHTML = controller.render();
