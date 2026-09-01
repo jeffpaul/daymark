@@ -39,6 +39,18 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SYNC = 'sync';
 
 	/**
+	 * Composer autosave (POST /marks or PUT /marks/{id} with `autosave=1`) —
+	 * a background, non-user-initiated save of in-progress composer state,
+	 * distinct from ACTION_PUBLISH so frequent autosave activity can never
+	 * exhaust the budget for the user's own deliberate Publish/Save as Draft
+	 * tap. Generous relative to the expected debounce cadence (a save at
+	 * most every few seconds while actively composing).
+	 *
+	 * @var string
+	 */
+	public const ACTION_AUTOSAVE = 'autosave';
+
+	/**
 	 * Subscribe by URL (POST /subscriptions) — makes an outbound feed
 	 * discovery/favicon request, same risk class as ACTION_SYNC.
 	 *
@@ -87,6 +99,10 @@ class Daymark_Rate_Limiter {
 		),
 		self::ACTION_SYNC                    => array(
 			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_AUTOSAVE                => array(
+			'limit'  => 40,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 		self::ACTION_SUBSCRIBE               => array(

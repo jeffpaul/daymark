@@ -20,10 +20,15 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Composer autosave: your in-progress Mark (caption, media, alt text, destination and category choices) now saves automatically to a real draft as you compose, well before you tap Publish or Save as Draft. Close the tab, take a call, or switch apps mid-caption and your work is waiting under Drafts on Home — no manual save step needed. Still requires an internet connection, the same as the existing manual Save as Draft. A typed-but-unsent Notifications reply is similarly protected against being lost when you switch to another reply or navigate back to Notifications.
+
 ### Developer
 
 - Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
 - Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
+- Composer autosave requests (`autosave=1` on `POST /marks` / `PUT /marks/{id}`) use a new, independent `Daymark_Rate_Limiter::ACTION_AUTOSAVE` bucket rather than `ACTION_PUBLISH`, so frequent background autosave activity can never exhaust the budget for a real Publish/Save as Draft tap.
 
 ### Changed
 

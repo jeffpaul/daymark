@@ -179,10 +179,15 @@ stubbed AT Protocol API — see the setup notes at the top of
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content
   (not the extension), and no unauthenticated publishing endpoints.
-- **Rate-limit expensive endpoints.** AI calls, publish, and manual sync
-  actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the REST
-  controller); a new expensive endpoint should, too. Uploads carry a per-file
-  and a per-request total byte budget (`Daymark_Publisher::validate_file_list()`).
+- **Rate-limit expensive endpoints.** AI calls, publish, autosave, and manual
+  sync actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the
+  REST controller); a new expensive endpoint should, too. Composer autosave
+  uses its own bucket (`Daymark_Rate_Limiter::ACTION_AUTOSAVE`), separate
+  from a real Publish/Save as Draft, so frequent background autosave activity
+  can never exhaust the budget for the user's own deliberate action — follow
+  that pattern for any other automatic/background write. Uploads carry a
+  per-file and a per-request total byte budget
+  (`Daymark_Publisher::validate_file_list()`).
 
 ## Hook documentation
 
