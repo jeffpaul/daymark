@@ -27,7 +27,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
 * **Blocks and shortcodes** — per-type views (Images, Videos, Audio, Notes) are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
 
-= Design principles =
+= Product principles =
 
 Daymark is built around a few clear ideas:
 
