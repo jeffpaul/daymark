@@ -66,6 +66,11 @@ constraint is the feature."*
 > portability, AI-assists-not-replaces, progressive disclosure); the new list
 > adds an explicit media-first-class principle and a concrete "under 30
 > seconds" publishing target.
+>
+> Those principles decide *what wins*. For *what it should feel like* while
+> winning — the specific products Daymark borrows a feeling from (Path, Day
+> One, WordPress, modern PWAs) and the part of each it deliberately leaves
+> behind — see **[docs/design-principles.md](../design-principles.md)**.
 
 ## 3. Target users
 

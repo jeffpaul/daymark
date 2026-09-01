@@ -221,6 +221,14 @@ single design record after 0.4.0:
   visual/PWA intent. It flags where the original docs went stale vs shipped
   (connector removal, namespaced AI client, federation labeling) and maps each
   original doc to its new home. The 18 originals are in git history.
+- **[docs/design-principles.md](docs/design-principles.md)** — the Path / Day
+  One / WordPress / modern-PWA rubric for what Daymark should *feel* like: what
+  each of those four products lends and what part of each stays deliberately
+  left behind (social feed mechanics, journal-app privacy model, platform
+  lock-in, native chrome). Read it alongside the six product principles in
+  planning §2 when judging a new feature or UI direction — this file's own
+  Non-goals below are the enforced boundary; the design-principles doc is the
+  rubric for staying in the right *feel* inside that boundary.
 
 This file (CLAUDE.md) remains the authoritative **technical** record; the design
 record is its product/vision/history companion.

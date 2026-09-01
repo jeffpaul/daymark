@@ -32,6 +32,15 @@ that isn't touched often belongs in wp-admin, not the app shell (principle
 format (principle 8). A PR that trades one of these off should say so
 explicitly in its description.
 
+Before proposing a new screen, extension point, or UI direction, also read
+**[docs/design-principles.md](docs/design-principles.md)** — the rubric for
+what Daymark should *feel* like (borrowing from Path, Day One, WordPress, and
+modern PWAs, while deliberately leaving the rest of each behind). Where the
+eight principles above decide *what wins*, this rubric decides *what it
+should feel like while winning*. A PR that drifts toward social-feed
+mechanics, native app chrome, or wp-admin chrome inside the app shell is
+likely to be asked to change direction even if it works correctly.
+
 ## Ways to contribute
 
 - **Report a bug or request a feature** via
