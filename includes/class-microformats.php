@@ -3,11 +3,11 @@
  * POSSE-quality outbound microformats2 markup (issue #78).
  *
  * WordPress's active theme renders a Mark's own permalink page — the app
- * shell and Daymark_Renderer only cover the aggregate views, so any plugin
- * adding mf2 markup through theme template hooks never reaches those
- * aggregate views, but a theme-rendered singular page is exactly where
- * IndieWeb tooling (readers, Bridgy, Webmention senders) looks for h-entry
- * markup. This class adds that markup the same way Daymark_Syndication_Links
+ * shell covers only Timeline/Explore/Search/Me, so any plugin adding mf2
+ * markup through theme template hooks never reaches those app-shell views,
+ * but a theme-rendered singular page is exactly where IndieWeb tooling
+ * (readers, Bridgy, Webmention senders) looks for h-entry markup. This
+ * class adds that markup the same way Daymark_Syndication_Links
  * already does: filters on post_class, the_title, and the_content, guarded
  * so they only touch a Mark's own singular main-query render.
  *
@@ -174,9 +174,9 @@ class Daymark_Microformats {
 	/**
 	 * Build u-photo/u-video/u-audio markup from a Mark's attached media.
 	 *
-	 * Reads _daymark_media_ids — the same meta key Daymark_Renderer and
-	 * Daymark_Publisher already use — rather than parsing the rendered
-	 * block HTML, which would be theme- and block-markup-dependent.
+	 * Reads _daymark_media_ids — the same meta key Daymark_Publisher already
+	 * uses — rather than parsing the rendered block HTML, which would be
+	 * theme- and block-markup-dependent.
 	 *
 	 * @param int $post_id Mark post ID.
 	 * @return string Escaped HTML, or '' when there is no attached media.

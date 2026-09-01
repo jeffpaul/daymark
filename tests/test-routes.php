@@ -15,6 +15,8 @@ class Test_Routes extends WP_UnitTestCase {
 		parent::set_up();
 		delete_option( Daymark_Routes::OPTION_APP_BASE );
 		delete_option( Daymark_Routes::OPTION_LEGACY_APP_BASE );
+		delete_option( 'daymark_legacy_content_pages' );
+		delete_option( 'daymark_nav_routes_added' );
 	}
 
 	private function registered_rule_patterns(): array {
@@ -235,6 +237,39 @@ class Test_Routes extends WP_UnitTestCase {
 		foreach ( $manifest['icons'] as $icon ) {
 			$this->assertStringNotContainsString( '.svg', $icon['src'] );
 		}
+	}
+
+	/** Explore/Search/Me are real routes under the app base, same as notifications already was. */
+	public function test_nav_destinations_get_real_routes() {
+		$patterns = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=explore', $patterns['^daymark/explore/?$'] ?? null );
+		$this->assertSame( 'index.php?daymark_app=search', $patterns['^daymark/search/?$'] ?? null );
+		$this->assertSame( 'index.php?daymark_app=me', $patterns['^daymark/me/?$'] ?? null );
+	}
+
+	/** A bookmarked URL for a retired content-type page redirects to Explore. */
+	public function test_legacy_content_page_slug_redirects_to_explore() {
+		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );
+
+		$rules = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=redirect-explore', $rules['^notes/?$'] ?? null );
+	}
+
+	/** A legacy content-page redirect must never shadow real content now living at that slug. */
+	public function test_legacy_content_page_slug_collision_gets_no_redirect() {
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'notes',
+			)
+		);
+		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );
+
+		$rules = $this->registered_rules();
+
+		$this->assertArrayNotHasKey( '^notes/?$', $rules, 'Must not shadow the page actually living at /notes' );
 	}
 
 	/** Falls back to Daymark's bundled PNG when the site has no Site Icon. */

@@ -1,35 +1,40 @@
 <?php
 /**
- * Activation page content tests.
+ * Legacy page migration tests (issue: bottom nav rework).
+ *
+ * A fresh install creates no pages of its own anymore — Timeline, Explore,
+ * Search, and Me all live inside the authenticated app shell. These tests
+ * cover the two one-time migrations that retire a pre-existing install's
+ * generated pages: the public Timeline page (hard-deleted) and the
+ * Images/Videos/Audio/Notes section pages (trashed).
  *
  * @package Daymark
  */
 
 /**
- * Section pages are created with dynamic block markup (block-theme
- * native), and blocks render identically to their shortcode twins.
+ * Both migrations only ever act on a page confidently identified as
+ * Daymark-managed (carrying the view's own block or shortcode markup) —
+ * never a page a site owner repurposed at that slug in the meantime.
  */
 class Test_Activation_Pages extends WP_UnitTestCase {
 
-	public function test_activation_creates_block_based_pages() {
-		Daymark_Plugin::activate();
-
-		foreach ( array( 'images', 'videos', 'audio', 'notes' ) as $slug ) {
-			$page = get_page_by_path( $slug, OBJECT, 'page' );
-
-			$this->assertInstanceOf( WP_Post::class, $page, "Page /{$slug} should exist" );
-			$this->assertStringContainsString( "<!-- wp:daymark/{$slug} /-->", $page->post_content );
-			$this->assertStringNotContainsString( 'wp:shortcode', $page->post_content );
-			$this->assertTrue( has_blocks( $page ), 'Page content must parse as blocks' );
-		}
+	public function set_up(): void {
+		parent::set_up();
+		delete_option( 'daymark_pages' );
+		delete_option( 'daymark_legacy_content_pages' );
 	}
 
-	/** Timeline is no longer one of the auto-created section pages (issue #78). */
-	public function test_activation_does_not_create_a_timeline_page() {
+	/** Activation creates no pages of its own on a fresh install. */
+	public function test_activation_creates_no_pages() {
 		Daymark_Plugin::activate();
 
-		$this->assertNull( get_page_by_path( 'timeline', OBJECT, 'page' ) );
-		$this->assertArrayNotHasKey( 'timeline', Daymark_Plugin::get_daymark_pages() );
+		foreach ( array( 'images', 'videos', 'audio', 'notes', 'timeline' ) as $slug ) {
+			$this->assertNull(
+				get_page_by_path( $slug, OBJECT, 'page' ),
+				"Activation must not create a page at /{$slug}"
+			);
+		}
+		$this->assertFalse( get_option( 'daymark_pages', false ), 'daymark_pages must not exist for a fresh install' );
 	}
 
 	/** An existing install's Daymark-authored Timeline page is hard-deleted, not just unmapped. */
@@ -70,101 +75,97 @@ class Test_Activation_Pages extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'timeline', get_option( 'daymark_pages' ), 'The stale map entry is still cleared either way.' );
 	}
 
-	/** A user page occupying a view slug is preserved; ours gets a prefixed slug. */
-	public function test_slug_collision_falls_back_to_prefixed_slug() {
-		$user_page = (int) self::factory()->post->create(
+	/** A Daymark-managed content-type page is trashed, not hard-deleted, and its slug remembered for the Explore redirect. */
+	public function test_content_type_page_is_trashed_on_upgrade() {
+		$page_id = (int) self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
+				'post_status'  => 'publish',
 				'post_name'    => 'notes',
-				'post_title'   => 'My Personal Notes',
-				'post_content' => 'Nothing to do with Daymark.',
+				'post_content' => '<!-- wp:daymark/notes /-->',
 			)
 		);
 
-		Daymark_Plugin::activate();
+		update_option( 'daymark_pages', array( 'notes' => $page_id ) );
 
-		$this->assertSame( 'Nothing to do with Daymark.', get_post( $user_page )->post_content, 'User page must be untouched' );
+		Daymark_Plugin::migrate_content_type_pages();
 
-		$fallback = get_page_by_path( 'daymark-notes', OBJECT, 'page' );
-		$this->assertInstanceOf( WP_Post::class, $fallback );
-		$this->assertStringContainsString( '<!-- wp:daymark/notes /-->', $fallback->post_content );
-
-		$map = Daymark_Plugin::get_daymark_pages();
-		$this->assertSame( $fallback->ID, $map['notes'], 'Mapping must point at the fallback page' );
+		$this->assertSame( 'trash', get_post_status( $page_id ), 'A retired content-type page is trashed, giving a way back — never hard-deleted.' );
+		$this->assertSame(
+			'<!-- wp:daymark/notes /-->',
+			get_post( $page_id )->post_content,
+			'The trashed page keeps its content exactly as it was.'
+		);
+		$this->assertArrayHasKey( 'notes', get_option( 'daymark_legacy_content_pages' ), 'The old slug must be remembered so its URL can redirect to Explore.' );
+		$this->assertArrayNotHasKey( 'notes', get_option( 'daymark_pages', array() ) );
 	}
 
-	/** Both candidate slugs taken by user content → view maps to 0 (link hidden). */
-	public function test_both_slugs_taken_maps_view_to_zero() {
-		foreach ( array( 'images', 'daymark-images' ) as $slug ) {
-			self::factory()->post->create(
+	/** The shortcode-authored era of a content-type page is recognized too. */
+	public function test_shortcode_authored_content_type_page_is_trashed() {
+		$page_id = (int) self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_name'    => 'images',
+				'post_content' => '<!-- wp:shortcode -->[daymark_images]<!-- /wp:shortcode -->',
+			)
+		);
+
+		update_option( 'daymark_pages', array( 'images' => $page_id ) );
+
+		Daymark_Plugin::migrate_content_type_pages();
+
+		$this->assertSame( 'trash', get_post_status( $page_id ) );
+	}
+
+	/** A page the map points at that doesn't actually carry Daymark markup (e.g. a stale/mismatched mapping) is left alone. */
+	public function test_unrelated_page_at_a_legacy_slug_is_preserved() {
+		$page_id = (int) self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_name'    => 'audio',
+				'post_content' => 'A site owner\'s own page about audio gear, nothing to do with Daymark.',
+			)
+		);
+
+		update_option( 'daymark_pages', array( 'audio' => $page_id ) );
+
+		Daymark_Plugin::migrate_content_type_pages();
+
+		$this->assertSame( 'publish', get_post_status( $page_id ), 'A page not carrying Daymark markup must never be trashed.' );
+		$this->assertArrayNotHasKey( 'audio', get_option( 'daymark_pages', array() ), 'The stale map entry is still cleared either way.' );
+	}
+
+	/** Once every legacy key is gone, the whole daymark_pages option is removed rather than left as an empty array. */
+	public function test_daymark_pages_option_is_removed_once_empty() {
+		$ids = array();
+		foreach ( array( 'images', 'videos', 'audio', 'notes' ) as $slug ) {
+			$ids[ $slug ] = (int) self::factory()->post->create(
 				array(
 					'post_type'    => 'page',
+					'post_status'  => 'publish',
 					'post_name'    => $slug,
-					'post_content' => 'User content.',
+					'post_content' => '<!-- wp:daymark/' . $slug . ' /-->',
 				)
 			);
 		}
+		update_option( 'daymark_pages', $ids );
 
-		Daymark_Plugin::activate();
+		Daymark_Plugin::migrate_content_type_pages();
 
-		$map = Daymark_Plugin::get_daymark_pages();
-		$this->assertSame( 0, $map['images'] );
-		$this->assertGreaterThan( 0, $map['notes'], 'Uncontested views still get pages' );
-	}
-
-	/** Installs predating the mapping adopt their existing Mark pages. */
-	public function test_mapping_self_heals_by_adopting_marked_pages() {
-		$legacy = (int) self::factory()->post->create(
-			array(
-				'post_type'    => 'page',
-				'post_name'    => 'notes',
-				'post_content' => '<!-- wp:shortcode -->[daymark_notes]<!-- /wp:shortcode -->',
-			)
-		);
-
-		delete_option( 'daymark_pages' );
-
-		$map = Daymark_Plugin::get_daymark_pages();
-		$this->assertSame( $legacy, $map['notes'], 'Shortcode-era page must be adopted, not shadowed' );
-	}
-
-	/**
-	 * The block's outer wrapper additionally carries whatever
-	 * get_block_wrapper_attributes() generates (the auto wp-block-daymark-*
-	 * class, plus any color/typography/spacing Global Styles selection) —
-	 * that is how the block participates in those supports, which the
-	 * shortcode has no mechanism to opt into. Everything else must still
-	 * match byte-for-byte.
-	 */
-	public function test_block_and_shortcode_render_identically() {
-		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
-		wp_set_current_user( $user_id );
-
-		$publisher = new Daymark_Publisher();
-		$publisher->publish( array( 'caption' => 'Parity check note' ) );
-
-		foreach ( array( 'images', 'notes' ) as $view ) {
-			$shortcode_html = do_shortcode( "[daymark_{$view}]" );
-			$block_html     = do_blocks( "<!-- wp:daymark/{$view} /-->" );
-
-			$shortcode_inner = preg_replace( '/^<div[^>]*>/', '', $shortcode_html );
-			$block_inner     = preg_replace( '/^<div[^>]*>/', '', $block_html );
-
-			$this->assertSame(
-				$shortcode_inner,
-				$block_inner,
-				"daymark/{$view} block content must render identically to [daymark_{$view}], aside from the block-supports wrapper"
-			);
-			$this->assertStringContainsString(
-				'wp-block-daymark-' . $view,
-				$block_html,
-				"daymark/{$view} block wrapper must carry its block-supports class"
-			);
-			$this->assertStringContainsString(
-				'daymark-view daymark-view--' . $view,
-				$block_html,
-				"daymark/{$view} block wrapper must keep the plugin's own view class"
-			);
+		$this->assertFalse( get_option( 'daymark_pages', false ), 'An empty map is deleted outright, not left as [].' );
+		$legacy = get_option( 'daymark_legacy_content_pages', array() );
+		foreach ( array( 'images', 'videos', 'audio', 'notes' ) as $slug ) {
+			$this->assertArrayHasKey( $slug, $legacy );
 		}
+	}
+
+	/** Running the migration again once nothing is left is a cheap no-op. */
+	public function test_content_type_migration_is_idempotent() {
+		Daymark_Plugin::migrate_content_type_pages();
+		Daymark_Plugin::migrate_content_type_pages();
+
+		$this->assertFalse( get_option( 'daymark_pages', false ) );
 	}
 }

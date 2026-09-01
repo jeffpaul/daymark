@@ -2,9 +2,10 @@
 /**
  * Front-end route handling for the Daymark app shell.
  *
- * Route strategy (committed): rewrite rules mapping /daymark and
- * /daymark/notifications to the `daymark_app` query var, with a
- * template_include filter that loads templates/app-shell.php.
+ * Route strategy (committed): rewrite rules mapping /daymark and its
+ * /notifications, /explore, /search, and /me sub-routes to the
+ * `daymark_app` query var, with a template_include filter that loads
+ * templates/app-shell.php.
  *
  * @package Daymark
  */
@@ -42,9 +43,15 @@ class Daymark_Routes {
 	/**
 	 * Allowed screens for the daymark_app query var.
 	 *
+	 * Explore/Search/Me are real server routes (not just client-side hash
+	 * states) so a direct link or a browser refresh lands correctly and
+	 * WordPress's own permalink handling applies — the same reason
+	 * 'notifications' already worked this way. Create/Publish/Success stay
+	 * pure client-side states layered on top of 'home', same as before.
+	 *
 	 * @var string[]
 	 */
-	private const SCREENS = array( 'home', 'notifications' );
+	private const SCREENS = array( 'home', 'notifications', 'explore', 'search', 'me' );
 
 	/**
 	 * Register rewrite rules and hooks. Called on init.
@@ -59,7 +66,20 @@ class Daymark_Routes {
 
 		add_rewrite_rule( '^' . $base . '/?$', 'index.php?' . self::QUERY_VAR . '=home', 'top' );
 		add_rewrite_rule( '^' . $base . '/notifications/?$', 'index.php?' . self::QUERY_VAR . '=notifications', 'top' );
+		add_rewrite_rule( '^' . $base . '/explore/?$', 'index.php?' . self::QUERY_VAR . '=explore', 'top' );
+		add_rewrite_rule( '^' . $base . '/search/?$', 'index.php?' . self::QUERY_VAR . '=search', 'top' );
+		add_rewrite_rule( '^' . $base . '/me/?$', 'index.php?' . self::QUERY_VAR . '=me', 'top' );
 		add_rewrite_rule( '^' . $base . '/manifest\.json$', 'index.php?' . self::QUERY_VAR . '=manifest', 'top' );
+
+		// A bookmarked/indexed URL for a retired Images/Videos/Audio/Notes
+		// section page (see Daymark_Plugin::migrate_content_type_pages())
+		// redirects to Explore — the closest living equivalent to "browse by
+		// media type" — rather than a bare 404. Skipped, like the legacy app
+		// base redirect below, when the old slug is now owned by real site
+		// content the migration correctly left untouched.
+		foreach ( self::legacy_content_redirect_slugs() as $legacy_content_slug ) {
+			add_rewrite_rule( '^' . $legacy_content_slug . '/?$', 'index.php?' . self::QUERY_VAR . '=redirect-explore', 'top' );
+		}
 
 		// A migrated install's old Moment-era URL (e.g. /moment) is not a
 		// second home for the app — it 301s to wherever the app actually
@@ -85,11 +105,41 @@ class Daymark_Routes {
 		// existed, or before app_base() started self-healing a stale
 		// pre-rename value (see app_base()), need the same one-time flush,
 		// so the new /daymark rule actually takes effect without a manual
-		// permalink resave.
-		if ( $base_was_unresolved || $base_was_self_healed || ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) ) ) {
+		// permalink resave. An install upgrading into the Explore/Search/Me
+		// routes (and any legacy content-page redirect) needs the same
+		// one-time flush for the same reason — daymark_nav_routes_added
+		// covers both, added together in the same release.
+		if (
+			$base_was_unresolved
+			|| $base_was_self_healed
+			|| ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) )
+			|| ! get_option( 'daymark_nav_routes_added' )
+		) {
 			update_option( 'daymark_redirect_rule_added', 1 );
+			update_option( 'daymark_nav_routes_added', 1 );
 			flush_rewrite_rules( false );
 		}
+	}
+
+	/**
+	 * Slugs of retired content-type pages that still need a redirect to
+	 * Explore — every daymark_legacy_content_pages entry not currently
+	 * shadowing real site content.
+	 *
+	 * @return string[]
+	 */
+	private static function legacy_content_redirect_slugs(): array {
+		$slugs = get_option( 'daymark_legacy_content_pages', array() );
+		$slugs = is_array( $slugs ) ? $slugs : array();
+
+		return array_values(
+			array_filter(
+				array_map( 'strval', array_keys( $slugs ) ),
+				static function ( string $slug ): bool {
+					return '' !== $slug && ! self::slug_is_taken( $slug );
+				}
+			)
+		);
 	}
 
 	/**
@@ -316,9 +366,16 @@ class Daymark_Routes {
 
 		// /daymark on a migrated install (base still the legacy value):
 		// send visitors to wherever the app actually lives, rather than a
-		// hard 404 on the new brand's own URL.
-		if ( 'redirect-home' === $screen || 'redirect-notifications' === $screen ) {
-			$target = 'redirect-notifications' === $screen ? self::app_url( 'notifications' ) : self::app_url();
+		// hard 404 on the new brand's own URL. A retired Images/Videos/
+		// Audio/Notes section page's old slug lands on Explore instead.
+		if ( 'redirect-home' === $screen || 'redirect-notifications' === $screen || 'redirect-explore' === $screen ) {
+			if ( 'redirect-notifications' === $screen ) {
+				$target = self::app_url( 'notifications' );
+			} elseif ( 'redirect-explore' === $screen ) {
+				$target = self::app_url( 'explore' );
+			} else {
+				$target = self::app_url();
+			}
 			wp_safe_redirect( $target, 301 );
 			exit;
 		}

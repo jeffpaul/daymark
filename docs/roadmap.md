@@ -94,9 +94,11 @@ sites you follow, without turning WordPress into a social network.
   Timeline is now an interleaved, multi-source view that only makes sense
   authenticated — a public page under the same name showing something
   narrower (Marks only) was confusing and redundant. Hard-deleted on
-  upgrade: a real 404, no redirect. Individual Mark permalinks, the site's
-  own RSS/Atom feed, and the other four section pages (`/images`, `/videos`,
-  `/audio`, `/notes`) are unaffected.
+  upgrade: a real 404, no redirect. Individual Mark permalinks and the
+  site's own RSS/Atom feed are unaffected. (The other four section pages —
+  `/images`, `/videos`, `/audio`, `/notes` — were unaffected *at the time*;
+  they were removed in a later bottom-nav rework — see CLAUDE.md's
+  "Content-type & Timeline pages removed" and "Bottom navigation" rows.)
 
 - [x] **POSSE-quality outbound microformats2 markup.** Every published
   Mark's own permalink page renders valid `h-entry` markup (`e-content`,
@@ -137,6 +139,47 @@ malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
 None of them are prioritized yet.
+
+---
+
+## Shipped — Bottom navigation rework
+
+Replaced the app shell's Images/Videos/Audio/Notes content-type pages and
+their flanking nav links with a persistent bottom nav — **Timeline, Explore,
++New, Search, Me** — and laid the foundation (routes, screens, shared
+rendering) for the last three to grow into real destinations later. See
+CLAUDE.md's "Content-type & Timeline pages removed" and "Bottom navigation"
+decision rows for the full technical record.
+
+- [x] **Bottom nav**: Timeline/Explore/+New/Search/Me, icon-only links with
+  accessible labels, `aria-current`/`is-active` state, +New centered and
+  never mistaken for a tab. Real routes for all four non-+New destinations.
+- [x] **Content-type pages retired.** The Images/Videos/Audio/Notes section
+  pages, their `daymark/*` blocks, `[daymark_*]` shortcodes, `Daymark_Renderer`,
+  and the block-editor build system they were the only consumer of are gone.
+  An existing install's pages are trashed (not hard-deleted) on upgrade, and
+  the old URL 301s to Explore.
+- [x] **Search** promoted from a collapsible bar on Home into its own screen,
+  reusing the existing REST search/filtering rather than a second
+  implementation.
+- [x] **Explore v1**: "Browse by type" and "Following" — real, working
+  sections built entirely on data the plugin already exposed. Deliberately
+  not a second Timeline, and deliberately not further than that yet.
+- [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
+  a view-only Drafts list, and links out to Notifications, wp-admin
+  Subscriptions, and WordPress's own profile/logout.
+
+**Still open from this era:**
+
+- [ ] Explore beyond "Browse by type"/"Following" — memories, highlights,
+  collections, favorites, recently-popular, and suggested accounts/content
+  all need their own supporting data before they can be real sections.
+- [ ] Search filters beyond type and source — author, date, tag, and
+  location all need their own REST support first.
+- [ ] Me beyond its current links — published-content browsing beyond "all
+  your Marks", drafts management (edit/delete) inline on Me instead of
+  pointing back to Home, and any of "connected services"/notifications
+  summarized in place rather than linked out.
 
 ---
 

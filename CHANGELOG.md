@@ -20,6 +20,13 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A persistent bottom navigation — **Timeline, Explore, +New, Search, Me** — replacing the site-views links (Images/Videos/Audio/Notes) that used to flank the +New launcher. Explore, Search, and Me are new destinations with real `/daymark/explore`, `/daymark/search`, and `/daymark/me` routes (like `/daymark/notifications` already had), so a direct link or a browser refresh lands correctly, and each shows as the active tab (`aria-current="page"`) while the +New launcher never picks up that styling.
+- **Explore**: a first, deliberately non-chronological browsing destination — not a second Timeline. "Browse by type" (Image/Video/Audio/Note) and "Following" (your active subscriptions) both hand a preset off to Search rather than duplicating its results view, and are built entirely on data/endpoints the plugin already had. Memories, highlights, collections, favorites, and suggested content are future sections, not implied by what ships here.
+- **Search**: promoted out of Home's old collapsible header search bar into its own screen and nav destination, reusing the same keyword/type/source query. Home no longer has an inline search UI.
+- **Me**: a minimal personal-identity screen — avatar and display name, a link into Search scoped to your own Marks, a view-only Drafts list (tap to resume editing), and links out to Notifications, the wp-admin Subscriptions screen, and WordPress's own profile/logout screens.
+
 ### Changed
 
 - For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.
@@ -32,6 +39,7 @@ can't act on them.
 ### Removed
 
 - `Daymark_Migration`, the one-time storage conversion from the plugin's previous identity, Moment (≤ 0.5.0), to Daymark. It has been deprecated since 0.7.0. **If your site still runs Moment (≤ 0.5.0), you must upgrade through an intermediate 0.6.x–0.8.x release first — jumping straight to this version will not convert your old Moment data.** ([#36](https://github.com/jeffpaul/daymark/issues/36))
+- The Images, Videos, Audio, and Notes section pages, their `daymark/*` blocks, `[daymark_*]` shortcodes, `Daymark_Renderer`, and the `@wordpress/scripts` block-editor build (`src/`, `build/`) that existed only to power them — superseded by Explore's "Browse by type" section. **An existing install's pages are moved to Trash (not hard-deleted) on upgrade**, and a bookmarked or indexed old URL now 301s to `/daymark/explore` instead of a bare 404.
 
 ## [0.8.0] - 2026-08-31
 

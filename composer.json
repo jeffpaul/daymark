@@ -16,7 +16,7 @@
         "phpcs": "phpcs",
         "phpcs:fix": "phpcbf",
         "phpcs-tests": "phpcs --standard=phpcs-tests.xml.dist",
-        "phpcompat": "phpcs --standard=PHPCompatibility --runtime-set testVersion 8.2- daymark.php uninstall.php includes blocks templates"
+        "phpcompat": "phpcs --standard=PHPCompatibility --runtime-set testVersion 8.2- daymark.php uninstall.php includes templates"
     },
     "config": {
         "allow-plugins": {

@@ -46,18 +46,16 @@ class Test_App_Shell extends WP_UnitTestCase {
 		);
 	}
 
-	/** The bootstrap config carries real section-page URLs. */
-	public function test_config_carries_section_page_urls() {
-		Daymark_Plugin::activate();
-
+	/** The bootstrap config carries the current user's identity and the wp-admin Subscriptions link, for the Me/Explore screens. */
+	public function test_config_carries_me_and_subscriptions_links() {
 		$html = $this->render_shell();
 
-		$images_id = Daymark_Plugin::get_daymark_pages()['images'];
-		$this->assertStringContainsString( '"pages":', $html );
+		$this->assertStringContainsString( '"currentUser":', $html );
+		$this->assertStringContainsString( '"adminSubscriptionsUrl":', $html );
 		$this->assertStringContainsString(
-			str_replace( '/', '\/', (string) get_permalink( $images_id ) ),
+			str_replace( '/', '\/', Daymark_Admin_Subscriptions::page_url() ),
 			$html,
-			'Config must carry the images page permalink'
+			'Config must carry the wp-admin Subscriptions screen URL'
 		);
 	}
 

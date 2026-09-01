@@ -71,20 +71,6 @@ final class Daymark_Plugin {
 	public Daymark_AI_Assist $ai_assist;
 
 	/**
-	 * Block registrar.
-	 *
-	 * @var Daymark_Blocks
-	 */
-	public Daymark_Blocks $blocks;
-
-	/**
-	 * View renderer.
-	 *
-	 * @var Daymark_Renderer
-	 */
-	public Daymark_Renderer $renderer;
-
-	/**
 	 * Syndication connector registry.
 	 *
 	 * @var Daymark_Syndication_Registry
@@ -145,17 +131,17 @@ final class Daymark_Plugin {
 	public Daymark_Admin_Subscriptions $admin_subscriptions;
 
 	/**
-	 * Pages created on activation: slug => shortcode.
-	 *
-	 * Timeline is deliberately absent (issue #78): as an interleaved,
-	 * multi-source view (a user's own Marks plus subscribed sites' posts)
-	 * it now only makes sense in the authenticated app shell (Home), not
-	 * as a public page — see remove_public_timeline_page() for the
-	 * one-time cleanup of an existing install's page.
+	 * The four content-type section pages a pre-Unreleased install may still
+	 * have lying around: slug => the block/shortcode markup that identifies
+	 * a page as Daymark-managed (never created for a fresh install — see
+	 * migrate_content_type_pages()). Kept only to recognize and safely
+	 * retire an existing install's pages; nothing creates pages at these
+	 * slugs anymore. Timeline's equivalent map lived here too before it was
+	 * retired the same way — see remove_public_timeline_page().
 	 *
 	 * @var array<string, string>
 	 */
-	private const ACTIVATION_PAGES = array(
+	private const CONTENT_TYPE_PAGES = array(
 		'images' => 'daymark/images',
 		'videos' => 'daymark/videos',
 		'audio'  => 'daymark/audio',
@@ -191,8 +177,6 @@ final class Daymark_Plugin {
 		$this->rest_controller              = new Daymark_REST_Controller();
 		$this->publisher                    = new Daymark_Publisher();
 		$this->ai_assist                    = new Daymark_AI_Assist();
-		$this->renderer                     = new Daymark_Renderer();
-		$this->blocks                       = new Daymark_Blocks( $this->renderer );
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
 		$this->syndication_links            = new Daymark_Syndication_Links();
@@ -206,10 +190,11 @@ final class Daymark_Plugin {
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
-		// Early, at priority 5: routes and rewrite resolution read
-		// daymark_pages at the default priority, so the deleted key must be
-		// gone from that option before then.
+		// Early, at priority 5: routes read daymark_legacy_content_pages (and
+		// the now-fully-retired daymark_pages option) at the default
+		// priority, so both migrations must run before that.
 		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
+		add_action( 'init', array( __CLASS__, 'migrate_content_type_pages' ), 5 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( DAYMARK_PLUGIN_FILE ), array( $this, 'add_action_links' ) );
@@ -261,7 +246,6 @@ final class Daymark_Plugin {
 	 */
 	public function on_init(): void {
 		$this->routes->register();
-		$this->blocks->register();
 		$this->syndication_links->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();
@@ -303,18 +287,21 @@ final class Daymark_Plugin {
 	/**
 	 * Plugin activation callback.
 	 *
-	 * Registers rewrite rules, creates the Daymark view pages, flushes
-	 * rewrite rules, and stores activation flags. Never deletes user
-	 * content — the sole exception is remove_public_timeline_page(),
-	 * which hard-deletes only a page carrying Daymark's own generated
-	 * markup, never anything a site owner wrote themselves.
+	 * Registers rewrite rules, flushes rewrite rules, and stores activation
+	 * flags. A fresh install creates no pages of its own anymore — Timeline,
+	 * Explore, Search, and Me all live inside the authenticated app shell.
+	 * Never deletes user content: the two migrations below only ever act on
+	 * a page confidently identified as carrying Daymark's own generated
+	 * markup, and the content-type migration trashes (never hard-deletes)
+	 * what it finds — see migrate_content_type_pages().
 	 *
 	 * @return void
 	 */
 	public static function activate(): void {
-		// Runs first, so daymark_pages no longer carries the deleted
-		// 'timeline' key before the app base and section pages resolve below.
+		// Run first, so daymark_pages/daymark_legacy_content_pages are
+		// settled before the app base and rewrite rules resolve below.
 		self::remove_public_timeline_page();
+		self::migrate_content_type_pages();
 
 		Daymark_Subscriptions::install();
 		Daymark_Backflow_Sync::schedule();
@@ -327,8 +314,6 @@ final class Daymark_Plugin {
 		Daymark_Routes::app_base();
 		$routes = new Daymark_Routes();
 		$routes->register();
-
-		self::create_pages();
 
 		flush_rewrite_rules();
 
@@ -352,9 +337,9 @@ final class Daymark_Plugin {
 
 	/**
 	 * One-time cleanup: hard-deletes an existing install's public Timeline
-	 * page (issue #78). Timeline is no longer in ACTIVATION_PAGES, so a
-	 * fresh install never creates this page — this only cleans up a page
-	 * an earlier version already created.
+	 * page (issue #78). A fresh install never creates this page (or any
+	 * other section page — see CONTENT_TYPE_PAGES) — this only cleans up a
+	 * page an earlier version already created.
 	 *
 	 * Hard-deleted rather than trashed, matching the "404, no redirect"
 	 * intent: a trashed page still resolves for a logged-in editor, and
@@ -363,13 +348,13 @@ final class Daymark_Plugin {
 	 * not as a second, differently-scoped public page under the same name.
 	 *
 	 * Only ever touches a page carrying Daymark's own generated markup
-	 * (re-verified here, the same way find_view_page() identifies one) —
-	 * never a page a site owner repurposed at that slug in the meantime.
+	 * (re-verified here) — never a page a site owner repurposed at that
+	 * slug in the meantime.
 	 *
 	 * Self-terminating: once the 'timeline' key is gone from `daymark_pages`,
 	 * every later call is a single array lookup on an already-loaded
 	 * option, cheap enough to run unconditionally every request — the same
-	 * assumption get_daymark_pages() already makes for its own self-heal.
+	 * assumption migrate_content_type_pages() makes for its own four keys.
 	 *
 	 * @return void
 	 */
@@ -395,109 +380,74 @@ final class Daymark_Plugin {
 	}
 
 	/**
-	 * Create the Daymark view pages if pages with those slugs do not exist.
+	 * One-time cleanup: retires an existing install's Images/Videos/Audio/
+	 * Notes section pages (Unreleased — bottom nav rework). A fresh install
+	 * never creates these, so this only ever finds something on an install
+	 * that ran an earlier version.
+	 *
+	 * Unlike remove_public_timeline_page(), these are trashed rather than
+	 * hard-deleted: WordPress's own trash-and-retention lifecycle gives a
+	 * site owner a way back if the removal is unwelcome, which fits a
+	 * conservative migration better than an irreversible delete. The old
+	 * slug is recorded in daymark_legacy_content_pages so Daymark_Routes can
+	 * 301 a bookmarked/indexed URL to Explore instead of leaving a bare 404.
+	 *
+	 * Only ever acts on a page confidently identified as Daymark-managed
+	 * (carrying the view's own block or shortcode markup) — a site owner's
+	 * own page that merely happens to occupy the same slug is never touched,
+	 * matching remove_public_timeline_page()'s same guarantee.
+	 *
+	 * Self-terminating: once daymark_pages carries none of the four legacy
+	 * keys, every later call is a single array lookup on an already-loaded
+	 * option, the same assumption remove_public_timeline_page() makes.
 	 *
 	 * @return void
 	 */
-	private static function create_pages(): void {
-		$map = array();
-
-		foreach ( self::ACTIVATION_PAGES as $slug => $block ) {
-			$page_id = self::find_view_page( $slug, $block );
-
-			if ( ! $page_id ) {
-				// Preferred slug first; if the site already has an
-				// unrelated page there, fall back to a daymark- prefix.
-				// Existing content is never overwritten.
-				foreach ( array( $slug, 'daymark-' . $slug ) as $path ) {
-					if ( get_page_by_path( $path, OBJECT, 'page' ) instanceof WP_Post ) {
-						continue;
-					}
-
-					// Dynamic block markup, not a shortcode: block themes
-					// edit it natively, and both surfaces share
-					// Daymark_Renderer anyway.
-					$page_id = (int) wp_insert_post(
-						array(
-							'post_type'    => 'page',
-							'post_status'  => 'publish',
-							'post_name'    => $path,
-							'post_title'   => ucfirst( $slug ),
-							'post_content' => '<!-- wp:' . $block . ' /-->',
-						)
-					);
-					break;
-				}
-			}
-
-			// 0 = both candidate slugs are taken by non-Mark content;
-			// the app hides that view's link rather than mislink.
-			$map[ $slug ] = $page_id;
-		}
-
-		update_option( 'daymark_pages', $map );
-	}
-
-	/**
-	 * Find an existing page that renders the given Daymark view — one whose
-	 * content carries the view's block or shortcode — at either candidate
-	 * slug. Distinguishes our pages from unrelated user pages that merely
-	 * occupy the slug.
-	 *
-	 * @param string $slug  View slug (e.g. 'timeline').
-	 * @param string $block Block name (e.g. 'daymark/timeline').
-	 * @return int Page ID, or 0 when no Daymark view page exists.
-	 */
-	private static function find_view_page( string $slug, string $block ): int {
-		foreach ( array( $slug, 'daymark-' . $slug ) as $path ) {
-			$page = get_page_by_path( $path, OBJECT, 'page' );
-
-			if ( ! $page instanceof WP_Post ) {
-				continue;
-			}
-
-			if (
-				str_contains( $page->post_content, '<!-- wp:' . $block )
-				|| str_contains( $page->post_content, '[daymark_' . $slug )
-			) {
-				return (int) $page->ID;
-			}
-		}
-
-		return 0;
-	}
-
-	/**
-	 * Map of view slug => page ID for the Daymark section pages.
-	 *
-	 * Self-heals for installs that predate the mapping (or whose pages
-	 * changed) by adopting pages that carry the view's block or shortcode.
-	 * A view maps to 0 when its slugs are occupied by non-Mark content —
-	 * consumers hide that view's link.
-	 *
-	 * @return array<string, int>
-	 */
-	public static function get_daymark_pages(): array {
+	public static function migrate_content_type_pages(): void {
 		$map = get_option( 'daymark_pages', array() );
 		$map = is_array( $map ) ? $map : array();
 
-		$dirty = false;
+		$has_legacy_key = false;
+		foreach ( self::CONTENT_TYPE_PAGES as $slug => $block ) {
+			if ( isset( $map[ $slug ] ) ) {
+				$has_legacy_key = true;
+				break;
+			}
+		}
 
-		foreach ( self::ACTIVATION_PAGES as $slug => $block ) {
-			$page_id = isset( $map[ $slug ] ) ? absint( $map[ $slug ] ) : null;
+		if ( ! $has_legacy_key ) {
+			return;
+		}
 
-			if ( null !== $page_id && ( 0 === $page_id || 'publish' === get_post_status( $page_id ) ) ) {
+		$legacy_slugs = get_option( 'daymark_legacy_content_pages', array() );
+		$legacy_slugs = is_array( $legacy_slugs ) ? $legacy_slugs : array();
+
+		foreach ( self::CONTENT_TYPE_PAGES as $slug => $block ) {
+			if ( ! isset( $map[ $slug ] ) ) {
 				continue;
 			}
 
-			$map[ $slug ] = self::find_view_page( $slug, $block );
-			$dirty        = true;
+			$page_id = absint( $map[ $slug ] );
+			$page    = $page_id > 0 ? get_post( $page_id ) : null;
+
+			if ( $page instanceof WP_Post && 'trash' !== $page->post_status ) {
+				$content = (string) $page->post_content;
+
+				if ( str_contains( $content, '<!-- wp:' . $block ) || str_contains( $content, '[daymark_' . $slug ) ) {
+					wp_trash_post( $page_id );
+					$legacy_slugs[ $page->post_name ] = true;
+				}
+			}
+
+			unset( $map[ $slug ] );
 		}
 
-		if ( $dirty ) {
+		update_option( 'daymark_legacy_content_pages', $legacy_slugs );
+
+		if ( empty( $map ) ) {
+			delete_option( 'daymark_pages' );
+		} else {
 			update_option( 'daymark_pages', $map );
 		}
-
-		return $map;
 	}
 }

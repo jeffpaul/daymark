@@ -7,9 +7,11 @@
  * subscriptions table, and cached subscription content.
  *
  * Marks are deliberately preserved. They are standard WordPress posts, and
- * their meta, comments, and the section pages created on activation all
- * remain intact and readable after the plugin is deleted — that is the
- * plugin's core portability promise. The subscriptions table and cached
+ * their meta and comments remain intact and readable after the plugin is
+ * deleted — that is the plugin's core portability promise. (Any trashed
+ * Images/Videos/Audio/Notes section page from a pre-Unreleased install is
+ * left exactly as WordPress's own trash lifecycle already has it — this
+ * file only forgets which slugs those were.) The subscriptions table and cached
  * `daymark_sub_post` content are different: they hold plugin-owned config
  * and copies of other sites' content, not the user's own work, so this
  * file removes both outright instead of preserving them.
@@ -24,9 +26,11 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 delete_option( 'daymark_activated' );
 delete_option( 'daymark_version' );
 delete_option( 'daymark_pages' );
+delete_option( 'daymark_legacy_content_pages' );
 delete_option( 'daymark_app_base' );
 delete_option( 'daymark_legacy_app_base' );
 delete_option( 'daymark_redirect_rule_added' );
+delete_option( 'daymark_nav_routes_added' );
 delete_option( 'daymark_subscriptions_db_version' );
 
 // Per-user routing/filing preferences, notification read-state, and the

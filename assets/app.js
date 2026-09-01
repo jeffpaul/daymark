@@ -125,26 +125,12 @@
 		return (config.siteUrl || '/').replace(/\/$/, '') + '/' + path.replace(/^\//, '');
 	}
 
-	// Section-page URL for a view, or '' when the site has no Daymark page
-	// for it (slug collision at activation) — callers hide the link.
-	function pageLink(view) {
-		return (config.pages && config.pages[view]) || '';
-	}
-
-	const PAGE_LABELS = {
-		timeline: 'Timeline',
-		images: 'Images',
-		videos: 'Videos',
-		audio: 'Audio',
-		notes: 'Notes',
-	};
-
 	// Home's merged Timeline feed page size — the infinite-scroll unit. A
 	// page shorter than this means there is nothing more to load.
 	const RECENT_PER_PAGE = 5;
 
-	// Header search: the type-filter chips, mapped to _daymark_primary_type
-	// values ('' = every type). Wired to GET /marks?s=&type=.
+	// Search's type-filter chips, mapped to _daymark_primary_type values
+	// ('' = every type). Wired to GET /timeline?s=&type=.
 	const SEARCH_FILTERS = [
 		{ type: '', label: 'All' },
 		{ type: 'image', label: 'Images' },
@@ -153,24 +139,22 @@
 		{ type: 'note', label: 'Notes' },
 	];
 
-	// Feather-style icon glyphs (inner SVG markup) for the site-views nav,
-	// matching the app's other inline icons. Text stays as the accessible
-	// name and hover title.
-	const PAGE_ICONS = {
-		timeline:
-			'<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline>',
-		images:
-			'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>',
-		videos:
-			'<polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>',
-		audio:
-			'<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>',
-		notes:
-			'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline>',
-	};
+	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
+	// nav, matching the app's other inline icons. Text stays as the
+	// accessible name and hover title — see NAV_TABS/navFooterMarkup().
+	const TIMELINE_GLYPH =
+		'<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline>';
+	const EXPLORE_GLYPH =
+		'<circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>';
+	const SEARCH_GLYPH =
+		'<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>';
+	const ME_GLYPH =
+		'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>';
 
-	function pageNavIcon(glyph) {
-		return `<svg class="daymark-bottomnav__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
+	// Generic 22x22 outline icon — the bottom nav's tabs, Explore's
+	// "Browse by type" buttons, and Me's fallback avatar glyph all share it.
+	function navIcon(glyph) {
+		return `<svg class="daymark-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
 
 	// The 4 Mark types the Home launcher offers — Gallery isn't its own
@@ -178,20 +162,23 @@
 	// file picker (detectType() already upgrades image → gallery for you).
 	const LAUNCHER_TYPES = ['image', 'video', 'audio', 'note'];
 
-	// Reuses the same glyphs as the site-views nav so "Images" and "New
-	// Image Mark" share one visual vocabulary.
+	// Kept as their own constant (not derived from the bottom nav's icons —
+	// there is no per-type nav destination anymore) so the launcher's visual
+	// vocabulary survives independently of whatever the nav tabs use.
 	const TYPE_ICONS = {
-		image: PAGE_ICONS.images,
-		video: PAGE_ICONS.videos,
-		audio: PAGE_ICONS.audio,
-		note: PAGE_ICONS.notes,
+		image:
+			'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>',
+		video:
+			'<polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>',
+		audio:
+			'<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>',
+		note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline>',
 	};
 
 	const PLUS_GLYPH = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
 
-	// Same outline icons as the public views' stat row (Daymark_Renderer's
-	// ICON_COMMENT/ICON_HEART) — one visual vocabulary for "replies" and
-	// "likes" across both surfaces.
+	// Outline icons for the comment/like stat row shown on Mark cards
+	// throughout the app shell (Home, Search).
 	const COMMENT_GLYPH =
 		'<path d="M21 11.5a8.38 8.38 0 0 1-4.7 7.6 8.5 8.5 0 0 1-3.8.9H12a8.48 8.48 0 0 1-4-.9l-5 1 1-5a8.48 8.48 0 0 1-.9-4 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>';
 	const HEART_GLYPH =
@@ -202,8 +189,7 @@
 	}
 
 	// A zero-count stat shows only its (dimmed) icon — no "0" — so the row
-	// stays quiet until there's something to report; matches
-	// Daymark_Renderer::render_stat() on the public views.
+	// stays quiet until there's something to report.
 	function renderStat(glyph, count, modifier, singular, plural) {
 		const isActive = count > 0;
 		const label = `${count} ${count === 1 ? singular : plural}`;
@@ -625,31 +611,552 @@
 		}
 	}
 
-	// --- Screen: Home ---
+	// --- Shared: persistent bottom nav, feed-list rendering ---
+	//
+	// Timeline (Home), Explore, Search, and Me all share one footer: four
+	// nav tabs flanking the +New launcher. Extracted here — rather than
+	// left as HomeScreen methods — so every screen that needs it (not just
+	// Home) can bind the same launcher/auto-hide/dismiss behavior against
+	// its own screen object.
+
+	// A one-shot filter handed from Explore/Me to Search right before
+	// navigate('#search') — e.g. "browse by type" or "your Marks" — the
+	// same pattern state.pendingType already uses for the Create composer.
+	// SearchScreen.init() consumes and clears it.
+	let searchPreset = null;
+
+	const NAV_TABS = [
+		{ key: 'home', hash: '#home', label: 'Timeline', glyph: TIMELINE_GLYPH },
+		{ key: 'explore', hash: '#explore', label: 'Explore', glyph: EXPLORE_GLYPH },
+		{ key: 'search', hash: '#search', label: 'Search', glyph: SEARCH_GLYPH },
+		{ key: 'me', hash: '#me', label: 'Me', glyph: ME_GLYPH },
+	];
+
+	// The persistent footer: Timeline/Explore flank one side of the +New
+	// launcher, Search/Me the other — the launcher stays the visual and
+	// structural center, never part of the tab list itself, so active-tab
+	// styling can never land on it by accident.
+	function navFooterMarkup(active) {
+		const navLink = (tab) =>
+			`<a class="daymark-bottomnav__link${
+				tab.key === active ? ' is-active' : ''
+			}" href="${esc(tab.hash)}" title="${esc(tab.label)}"${
+				tab.key === active ? ' aria-current="page"' : ''
+			}>${navIcon(tab.glyph)}<span class="daymark-visually-hidden">${esc(
+				tab.label
+			)}</span></a>`;
+		const before = NAV_TABS.slice(0, 2).map(navLink).join('');
+		const after = NAV_TABS.slice(2).map(navLink).join('');
+		const bubbles = LAUNCHER_TYPES.map(
+			(type) =>
+				`<button type="button" class="daymark-launcher__bubble" data-launcher-type="${type}" tabindex="-1" aria-hidden="true" aria-label="New ${esc(
+					TYPE_LABELS[type]
+				)} Mark">${launcherIcon(TYPE_ICONS[type])}</button>`
+		).join('');
+		const launcher = `<div class="daymark-launcher" data-launcher>
+			<div class="daymark-launcher__scrim" aria-hidden="true"></div>
+			<div class="daymark-launcher__bubbles" data-launcher-bubbles>${bubbles}</div>
+			<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="New Mark" aria-expanded="false">${launcherIcon(
+				PLUS_GLYPH
+			)}</button>
+		</div>`;
+		return `<footer class="daymark-homefooter"><nav class="daymark-bottomnav" aria-label="Daymark">${before}${launcher}${after}</nav></footer>`;
+	}
+
+	// The Home launcher: tapping "+ New Mark" fans out Image/Video/Audio/
+	// Note bubbles (icon-only arc); tapping a bubble seeds the composer's
+	// pendingType and jumps to #create. `screen` is whichever screen object
+	// owns the footer currently on the page (Home/Explore/Search/Me all
+	// call this from their own bindEvents()) — its openLauncher/closeLauncher
+	// and _launcherOpen get attached here, same as bindFooterAutoHide()
+	// below and the per-item ⋯ menu convention (aria-expanded,
+	// focus-first-item on open).
+	function bindLauncher(screen) {
+		const launcher = root.querySelector('[data-launcher]');
+		if (!launcher) {
+			return;
+		}
+		const btn = launcher.querySelector('[data-action="new-mark"]');
+		const bubbles = launcher.querySelectorAll('[data-launcher-type]');
+		const scrim = launcher.querySelector('.daymark-launcher__scrim');
+
+		screen._launcherOpen = false;
+
+		// Bubbles become clickable only once this fires — see the CSS
+		// comment on `.is-open.is-settled .daymark-launcher__bubble`
+		// for why that's driven by a JS timer rather than a CSS
+		// transition-delay on pointer-events. 650ms covers the worst
+		// case (the last bubble's own 0.2s delay + 0.42s transition,
+		// 620ms, plus a small margin) — 0 for reduced motion, since
+		// CSS already skips the travel entirely and there's nothing
+		// to wait out.
+		const prefersReducedMotion =
+			window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const SETTLE_MS = prefersReducedMotion ? 0 : 650;
+
+		screen.openLauncher = () => {
+			screen._launcherOpen = true;
+			clearTimeout(screen._launcherSettleTimer);
+			launcher.classList.remove('is-settled');
+			launcher.classList.add('is-open');
+			screen._launcherSettleTimer = setTimeout(() => {
+				launcher.classList.add('is-settled');
+			}, SETTLE_MS);
+			btn.setAttribute('aria-expanded', 'true');
+			bubbles.forEach((bubble) => {
+				bubble.removeAttribute('tabindex');
+				bubble.removeAttribute('aria-hidden');
+			});
+			// `preventScroll` matters here: a bubble sits well within
+			// view the moment it fans out, but the browser's default
+			// focus-triggered scrollIntoView can still nudge the page —
+			// and that nudge is itself a real scroll, which trips the
+			// "a real scroll closes the launcher" listener below,
+			// closing the launcher it was just supposed to focus into.
+			const first = bubbles[0];
+			if (first) {
+				first.focus({ preventScroll: true });
+			}
+		};
+
+		screen.closeLauncher = () => {
+			if (!screen._launcherOpen) {
+				return;
+			}
+			screen._launcherOpen = false;
+			clearTimeout(screen._launcherSettleTimer);
+			launcher.classList.remove('is-open', 'is-settled');
+			btn.setAttribute('aria-expanded', 'false');
+			bubbles.forEach((bubble) => {
+				bubble.setAttribute('tabindex', '-1');
+				bubble.setAttribute('aria-hidden', 'true');
+			});
+		};
+
+		btn.addEventListener('click', () => {
+			if (screen._launcherOpen) {
+				screen.closeLauncher();
+			} else {
+				screen.openLauncher();
+			}
+		});
+
+		// The scrim sits inside [data-launcher] (for stacking), so the
+		// shared outside-click handler's closest() check treats a tap on
+		// it as "inside" and leaves it alone — it needs its own listener.
+		// `pointer-events: none` while closed keeps this scoped to only
+		// when the scrim is actually showing.
+		if (scrim) {
+			scrim.addEventListener('click', () => screen.closeLauncher());
+		}
+
+		bubbles.forEach((bubble) => {
+			bubble.addEventListener('click', () => {
+				const type = bubble.getAttribute('data-launcher-type');
+				screen.closeLauncher();
+				resetComposer();
+				state.pendingType = type;
+				navigate('#create');
+			});
+		});
+	}
+
+	// Slide the footer (nav + launcher) out of view while scrolling down
+	// through a screen's list, back in on scroll-up — reclaiming its height
+	// for content without losing the controls. Removing the previous
+	// listener first keeps these from stacking across repeated renders of
+	// the same screen, same as the document click/keydown pair in
+	// bindDismissible()/clearDismissible().
+	function bindFooterAutoHide(screen) {
+		const footer = root.querySelector('.daymark-homefooter');
+		if (!footer) {
+			return;
+		}
+		const launcher = footer.querySelector('[data-launcher]');
+
+		if (screen._onScroll) {
+			window.removeEventListener('scroll', screen._onScroll);
+		}
+		if (screen._onFooterFocusIn) {
+			footer.removeEventListener('focusin', screen._onFooterFocusIn);
+		}
+
+		let lastY = window.scrollY;
+		let ticking = false;
+
+		screen._onScroll = () => {
+			if (ticking) {
+				return;
+			}
+			ticking = true;
+			window.requestAnimationFrame(() => {
+				const y = window.scrollY;
+				const delta = y - lastY;
+
+				// Always show it near the top, regardless of direction.
+				if (y < 80) {
+					footer.classList.remove('is-footer-hidden');
+					lastY = y;
+					ticking = false;
+					return;
+				}
+
+				// Ignore small jitters either direction so the footer
+				// doesn't flicker mid-scroll.
+				if (Math.abs(delta) < 8) {
+					ticking = false;
+					return;
+				}
+
+				// A real scroll closes the launcher too, so its bubbles
+				// never end up floating over a footer that just hid —
+				// but only once it has actually settled. Mid fan-out,
+				// bubbles are still `pointer-events: none` (see the CSS
+				// comment on `.is-settled`), so a click there makes the
+				// browser/automation retry its own scrollIntoView against
+				// a still-animating target; that retry's scroll would
+				// otherwise land right here and close the launcher out
+				// from under itself before it ever became clickable.
+				const launcherOpenAndSettled =
+					launcher && launcher.classList.contains('is-settled');
+				if (launcherOpenAndSettled && screen.closeLauncher) {
+					screen.closeLauncher();
+				}
+
+				footer.classList.toggle('is-footer-hidden', delta > 0);
+				lastY = y;
+				ticking = false;
+			});
+		};
+
+		// A keyboard user tabbing to the CTA or a nav link must always
+		// find it visible, regardless of scroll position — the footer is
+		// never aria-hidden, so this just keeps sight in sync with focus.
+		screen._onFooterFocusIn = () => {
+			footer.classList.remove('is-footer-hidden');
+		};
+
+		window.addEventListener('scroll', screen._onScroll, { passive: true });
+		footer.addEventListener('focusin', screen._onFooterFocusIn);
+	}
+
+	// The one dismissible entry every nav-footer screen needs (outside
+	// click/Escape closes the launcher, focus returns to its trigger) — a
+	// screen with its own additional dismissible items (Home's item ⋯
+	// menus) spreads this into its own bindDismissible() array alongside
+	// them, since bindDismissible() replaces the whole set on each call.
+	function navFooterDismissEntry(screen) {
+		return {
+			selector: '[data-launcher]',
+			close: () => screen.closeLauncher(),
+			isOpen: () => screen._launcherOpen,
+			focus: () => root.querySelector('[data-action="new-mark"]'),
+		};
+	}
+
+	// Wires the launcher and the footer's scroll auto-hide for a screen
+	// that has nothing else to add to bindDismissible() — Explore/Search/Me.
+	// Home calls bindLauncher()/bindFooterAutoHide() directly instead, so it
+	// can merge navFooterDismissEntry() into its own larger dismissible list.
+	function bindNavFooter(screen) {
+		bindLauncher(screen);
+		bindFooterAutoHide(screen);
+	}
+
+	// The Source filter's <option>s: "All" and "My Marks" always render
+	// immediately; the per-subscription options only appear once the
+	// subscriptions fetch below resolves.
+	function sourceOptionsMarkup(subscriptions) {
+		const list = Array.isArray(subscriptions) ? subscriptions : [];
+		const subscriptionOptions = list
+			.map((sub) => {
+				const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+				return `<option value="${esc(String(sub.id))}">${esc(label)}</option>`;
+			})
+			.join('');
+		return `<option value="">All</option><option value="mine">My Marks</option>${subscriptionOptions}`;
+	}
+
+	// Active subscriptions, for the Source filter and Explore's Following
+	// section — never throws; an empty list just means those UIs show
+	// nothing extra rather than failing.
+	async function fetchSubscriptions() {
+		try {
+			const result = await apiGet('subscriptions');
+			return Array.isArray(result) ? result : [];
+		} catch (err) {
+			return [];
+		}
+	}
+
+	// Wires "tap a draft to resume editing it" for any list of drafts —
+	// Home's Drafts row and Me's. Doesn't touch this/state beyond the
+	// container handed in, so both screens share it as-is.
+	function bindDraftTaps(container) {
+		container.querySelectorAll('[data-edit-draft]').forEach((row) => {
+			row.addEventListener('click', (event) => {
+				event.preventDefault();
+				row.setAttribute('aria-busy', 'true');
+				openDraft(row.getAttribute('data-edit-draft')).catch(() => {
+					row.removeAttribute('aria-busy');
+				});
+			});
+		});
+	}
+
+	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
+	// core (renderMarkCore()) wrapped in its own permalink/resume-draft link
+	// plus the shared ⋯ edit/delete actions menu. Used everywhere a Mark
+	// appears in a list: Home's Recent/Drafts, Search's results.
+	function renderMarkItem(item) {
+		// Drafts look identical to published Marks otherwise — and
+		// their permalinks are invisible to visitors — so tapping one
+		// reopens the composer instead of the permalink. (renderMarkCore()
+		// handles the visible "Draft" chip itself.)
+		const title = item.title || 'Untitled Mark';
+		const isDraft = item.status && 'publish' !== item.status;
+		const href = isDraft ? '#create' : item.permalink || '#home';
+		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
+		const id = esc(String(item.id));
+		return `
+			<div class="daymark-recent__item-wrap" data-item="${id}">
+				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
+					${renderMarkCore(item)}
+				</a>
+				<div class="daymark-recent__actions" data-actions>
+					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
+						title
+					)}">
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
+					</button>
+					<div class="daymark-menu" data-menu role="menu" aria-label="Mark actions" hidden>
+						<div class="daymark-menu__actions" data-menu-actions>
+							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">Edit</button>
+							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">Delete</button>
+						</div>
+						<div class="daymark-menu__confirm" data-menu-confirm hidden>
+							<p class="daymark-menu__confirmtext">Delete this Mark? It&rsquo;ll move to Trash.</p>
+							<div class="daymark-menu__confirmactions">
+								<button type="button" class="daymark-btn daymark-btn--danger" data-menu-delete-confirm>Delete</button>
+								<button type="button" class="daymark-btn daymark-btn--secondary" data-menu-delete-cancel>Cancel</button>
+							</div>
+							<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
+						</div>
+					</div>
+				</div>
+			</div>`;
+	}
+
+	// Dispatch one merged-feed item to the right card renderer: a
+	// subscription post gets its own card (renderSubscriptionPostCard);
+	// everything else (item_type 'mark', or a plain /marks item from a
+	// Drafts list) is prepare_mark_summary()'s exact shape, so
+	// renderMarkItem() — with its ⋯ edit/delete menu — works unchanged.
+	function renderFeedItem(item) {
+		return 'subscription_post' === item.item_type
+			? renderSubscriptionPostCard(item)
+			: renderMarkItem(item);
+	}
+
+	// Track subscription-post items by id so a card tap can hand the
+	// detail sheet everything it already has without re-querying the DOM
+	// (a Mark item needs no such tracking — its card is a plain
+	// permalink/edit link, not a detail-sheet trigger). `screen` owns the
+	// Map (Home and Search each keep their own).
+	function rememberItem(screen, item) {
+		if (item && 'subscription_post' === item.item_type) {
+			screen._bySubId.set(String(item.id), item);
+		}
+	}
+
+	// --- Per-item ⋯ menu (edit / delete), shared by every feed-list screen ---
+
+	function closeItemMenus() {
+		root.querySelectorAll('[data-menu]').forEach((menu) => {
+			menu.hidden = true;
+			const actions = menu.querySelector('[data-menu-actions]');
+			const confirm = menu.querySelector('[data-menu-confirm]');
+			if (actions) {
+				actions.hidden = false;
+			}
+			if (confirm) {
+				confirm.hidden = true;
+			}
+			const toggle = menu.parentElement
+				? menu.parentElement.querySelector('[data-menu-toggle]')
+				: null;
+			if (toggle) {
+				toggle.setAttribute('aria-expanded', 'false');
+			}
+		});
+	}
+
+	function onFeedListClick(screen, event) {
+		const target = event.target;
+
+		// A subscription-post card is a <button>, not a Mark's plain
+		// permalink/⋯-menu item — opening it shows the click-through
+		// detail sheet in place rather than navigating.
+		const subTrigger = target.closest('[data-subpost]');
+		if (subTrigger) {
+			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
+			if (item) {
+				SubscriptionPostSheet.show(item, screen._detailCache, subTrigger);
+			}
+			return;
+		}
+
+		const toggle = target.closest('[data-menu-toggle]');
+		if (toggle) {
+			event.preventDefault();
+			const menu = toggle.parentElement.querySelector('[data-menu]');
+			const wasOpen = menu && !menu.hidden;
+			closeItemMenus();
+			if (menu && !wasOpen) {
+				menu.hidden = false;
+				toggle.setAttribute('aria-expanded', 'true');
+				const first = menu.querySelector('[data-menu-edit]');
+				if (first) {
+					first.focus();
+				}
+			}
+			return;
+		}
+
+		const edit = target.closest('[data-menu-edit]');
+		if (edit) {
+			event.preventDefault();
+			const wrap = edit.closest('[data-item]');
+			closeItemMenus();
+			if (wrap) {
+				openDraft(wrap.getAttribute('data-item')).catch(() => {});
+			}
+			return;
+		}
+
+		const del = target.closest('[data-menu-delete]');
+		if (del) {
+			event.preventDefault();
+			const menu = del.closest('[data-menu]');
+			const actions = menu.querySelector('[data-menu-actions]');
+			const confirm = menu.querySelector('[data-menu-confirm]');
+			if (actions) {
+				actions.hidden = true;
+			}
+			if (confirm) {
+				confirm.hidden = false;
+				// Focus lands on Cancel so a stray Enter is non-destructive.
+				const cancel = confirm.querySelector('[data-menu-delete-cancel]');
+				if (cancel) {
+					cancel.focus();
+				}
+			}
+			return;
+		}
+
+		const cancel = target.closest('[data-menu-delete-cancel]');
+		if (cancel) {
+			event.preventDefault();
+			const menu = cancel.closest('[data-menu]');
+			const actions = menu.querySelector('[data-menu-actions]');
+			const confirm = menu.querySelector('[data-menu-confirm]');
+			if (confirm) {
+				confirm.hidden = true;
+			}
+			if (actions) {
+				actions.hidden = false;
+			}
+			const del2 = menu.querySelector('[data-menu-delete]');
+			if (del2) {
+				del2.focus();
+			}
+			return;
+		}
+
+		const confirmDel = target.closest('[data-menu-delete-confirm]');
+		if (confirmDel) {
+			event.preventDefault();
+			deleteItem(screen, confirmDel);
+		}
+	}
+
+	async function deleteItem(screen, confirmBtn) {
+		const wrap = confirmBtn.closest('[data-item]');
+		const menu = confirmBtn.closest('[data-menu]');
+		if (!wrap || !menu) {
+			return;
+		}
+		const id = wrap.getAttribute('data-item');
+		const cancelBtn = menu.querySelector('[data-menu-delete-cancel]');
+		const status = menu.querySelector('[data-menu-status]');
+		confirmBtn.disabled = true;
+		if (cancelBtn) {
+			cancelBtn.disabled = true;
+		}
+		confirmBtn.textContent = 'Deleting…';
+		if (status) {
+			status.textContent = '';
+		}
+		try {
+			await apiDelete('marks/' + id);
+			const parentList = wrap.parentElement;
+			wrap.remove();
+			reflectEmptied(screen, parentList);
+		} catch (err) {
+			confirmBtn.disabled = false;
+			if (cancelBtn) {
+				cancelBtn.disabled = false;
+			}
+			confirmBtn.textContent = 'Delete';
+			if (status) {
+				status.textContent = 'Could not delete. ' + err.message;
+			}
+		}
+	}
+
+	// After a delete, keep the emptied region honest: hide an empty Drafts
+	// section, or show the right empty state for whichever list this was.
+	function reflectEmptied(screen, list) {
+		if (!list || list.querySelector('[data-item]')) {
+			return;
+		}
+		if (list.hasAttribute('data-drafts-list')) {
+			const section = root.querySelector('[data-drafts-section]');
+			if (section) {
+				section.hidden = true;
+			}
+			screen._hasDrafts = false;
+		} else if (list.hasAttribute('data-search-results')) {
+			list.innerHTML = '<p class="daymark-empty">Nothing matches. Try a different search or filter.</p>';
+		} else if (list.hasAttribute('data-recent-list')) {
+			screen.teardownObserver();
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (sentinel) {
+				sentinel.hidden = true;
+			}
+			const more = root.querySelector('[data-recent-more]');
+			if (more) {
+				more.hidden = true;
+			}
+			list.innerHTML =
+				'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
+		}
+	}
+
+	// --- Screen: Home (Timeline) ---
 
 	const HomeScreen = {
 		render() {
 			const hasUnread = config.notifications && config.notifications.hasUnread;
-			const filterChips = SEARCH_FILTERS.map(
-				(filter, index) =>
-					`<button type="button" class="daymark-filterchip${
-						index === 0 ? ' is-active' : ''
-					}" data-filter="${esc(filter.type)}" aria-pressed="${
-						index === 0 ? 'true' : 'false'
-					}">${esc(filter.label)}</button>`
-			).join('');
 			// Home itself is the merged Marks + subscriptions feed now, so
 			// this is just a plain "go home" link — no separate screen to
 			// point at.
 			const wordmark = `<a class="daymark-homelink" href="#home"><svg class="daymark-homelink__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
-					PAGE_ICONS.timeline
+					TIMELINE_GLYPH
 			  }</svg><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
-				<button type="button" class="daymark-searchbtn" data-search-toggle aria-label="Search your timeline" aria-expanded="false" aria-controls="daymark-searchbar">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-				</button>
 				<a class="daymark-iconbtn" href="#notifications" aria-label="${
 					hasUnread ? 'Notifications — unread replies' : 'Notifications'
 				}">
@@ -661,15 +1168,6 @@
 					}
 				</a>
 			</header>
-			<div class="daymark-searchbar" id="daymark-searchbar" data-searchbar hidden>
-				<label class="daymark-visually-hidden" for="daymark-search-input">Search your timeline</label>
-				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="Search your timeline" autocomplete="off" />
-				<div class="daymark-searchfilters" data-search-filters>
-					<div class="daymark-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
-					<label class="daymark-visually-hidden" for="daymark-source-filter">Filter by source</label>
-					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${this.sourceOptionsMarkup()}</select>
-				</div>
-			</div>
 			<section class="daymark-screen">
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
 					<span class="daymark-spinner" aria-hidden="true"></span>
@@ -689,353 +1187,32 @@
 					<p class="daymark-recent__more" data-recent-more hidden></p>
 				</section>
 			</section>
-			<footer class="daymark-homefooter">
-				${(() => {
-					const navLink = (view) =>
-						`<a class="daymark-bottomnav__link" href="${esc(pageLink(view))}" title="${esc(
-							PAGE_LABELS[view]
-						)}">${pageNavIcon(PAGE_ICONS[view])}<span class="daymark-visually-hidden">${esc(
-							PAGE_LABELS[view]
-						)}</span></a>`;
-					// Timeline moved to the header home-link; the remaining 4
-					// site views flank the launcher, 2 a side.
-					const views = Object.keys(PAGE_LABELS).filter(
-						(view) => 'timeline' !== view && pageLink(view)
-					);
-					const before = views.slice(0, 2).map(navLink).join('');
-					const after = views.slice(2).map(navLink).join('');
-					const bubbles = LAUNCHER_TYPES.map(
-						(type) =>
-							`<button type="button" class="daymark-launcher__bubble" data-launcher-type="${type}" tabindex="-1" aria-hidden="true" aria-label="New ${esc(
-								TYPE_LABELS[type]
-							)} Mark">${launcherIcon(TYPE_ICONS[type])}</button>`
-					).join('');
-					const launcher = `<div class="daymark-launcher" data-launcher>
-						<div class="daymark-launcher__scrim" aria-hidden="true"></div>
-						<div class="daymark-launcher__bubbles" data-launcher-bubbles>${bubbles}</div>
-						<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="New Mark" aria-expanded="false">${launcherIcon(
-							PLUS_GLYPH
-						)}</button>
-					</div>`;
-					return `<nav class="daymark-bottomnav" aria-label="Site views">${before}${launcher}${after}</nav>`;
-				})()}
-			</footer>`;
-		},
-
-		// The Source filter's <option>s: "All" and "My Marks" always render
-		// immediately; the per-subscription options only appear once
-		// this._subscriptions (fetched async by loadSubscriptionsForFilter())
-		// resolves — called both from render() (empty-of-sites the first
-		// time) and again to patch just the <select>'s innerHTML once that
-		// fetch completes, matching this file's existing tolerance for
-		// async-populated UI (e.g. the AI-prefilled Title field).
-		sourceOptionsMarkup() {
-			const subscriptions = Array.isArray(this._subscriptions) ? this._subscriptions : [];
-			const subscriptionOptions = subscriptions
-				.map((sub) => {
-					const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
-					return `<option value="${esc(String(sub.id))}">${esc(label)}</option>`;
-				})
-				.join('');
-			return `<option value="">All</option><option value="mine">My Marks</option>${subscriptionOptions}`;
-		},
-
-		// Fetch active subscriptions once per Home visit, purely to populate
-		// the Source filter's per-site options — same apiGet('subscriptions')
-		// call pullRefresh() already makes, just for different ends (a list
-		// to choose from here, vs. a list to refresh there). Never blocks
-		// loadRecent(); the dropdown just renders "All"/"My Marks" until this
-		// resolves, then its innerHTML is patched in place.
-		async loadSubscriptionsForFilter() {
-			// Guards against a stale fetch (from a Home visit already left
-			// behind) patching the <select> for whichever visit is current
-			// by the time it resolves — same staleness-guard shape as
-			// loadRecent()/runSearch()'s own `_searchSeq`, just its own
-			// independent counter since this fetch runs on its own timeline.
-			this._subsFetchSeq = (this._subsFetchSeq || 0) + 1;
-			const seq = this._subsFetchSeq;
-			try {
-				const result = await apiGet('subscriptions');
-				this._subscriptions = Array.isArray(result) ? result : [];
-			} catch (err) {
-				this._subscriptions = [];
-			}
-			if (seq !== this._subsFetchSeq) {
-				return;
-			}
-			const select = root.querySelector('[data-source-filter]');
-			if (select && select.isConnected) {
-				select.innerHTML = this.sourceOptionsMarkup();
-				select.value = this.searchSource;
-			}
+			${navFooterMarkup('home')}`;
 		},
 
 		bindEvents() {
-			this.bindLauncher();
-
-			// --- Search (collapsible header bar + type-filter chips) ---
-			const searchToggle = root.querySelector('[data-search-toggle]');
-			const searchInput = root.querySelector('[data-search-input]');
-			if (searchToggle) {
-				searchToggle.addEventListener('click', () => this.toggleSearch());
-			}
-			if (searchInput) {
-				const runDebounced = debounce(() => this.applySearch(), 250);
-				searchInput.addEventListener('input', () => {
-					this.searchQuery = searchInput.value.trim();
-					runDebounced();
-				});
-				// The native clear (✕) / an emptied field fires 'search' with an
-				// empty value — collapse back to the icon, per the spec.
-				searchInput.addEventListener('search', () => {
-					if ('' === searchInput.value) {
-						this.closeSearch();
-						if (searchToggle) {
-							searchToggle.focus();
-						}
-					}
-				});
-				// Escape is handled once, for the whole bar, by the shared
-				// dismissible wiring below — it fires regardless of which
-				// control inside the bar (input or a filter chip) has focus.
-			}
-			root.querySelectorAll('[data-filter]').forEach((chip) => {
-				chip.addEventListener('click', () => this.setFilter(chip.getAttribute('data-filter')));
-			});
-
-			// --- Source filter (All / My Marks / one subscribed site) ---
-			const sourceFilter = root.querySelector('[data-source-filter]');
-			if (sourceFilter) {
-				sourceFilter.addEventListener('change', () => {
-					this.searchSource = sourceFilter.value;
-					this.applySearch();
-				});
-			}
-
 			// --- Per-item ⋯ menu (edit / delete) via list delegation ---
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
-				list.addEventListener('click', (event) => this.onListClick(event));
+				list.addEventListener('click', (event) => onFeedListClick(this, event));
 			});
 			// Pull-to-refresh is gesture-only now — Home is assumed to be
 			// the Timeline, so there's no separate "Refresh" link/button.
 			this.bindPullGesture();
-			// Close any open item menu, the launcher, or search on an
-			// outside click or Escape (with focus returned to the launcher
-			// or search's own trigger — the item menu never took focus in
-			// the first place, so it has nothing to return).
+			// Close any open item menu or the launcher on an outside click
+			// or Escape (with focus returned to the launcher's own trigger —
+			// the item menu never took focus in the first place, so it has
+			// nothing to return).
 			bindDismissible(this, [
-				{ selector: '[data-actions]', close: () => this.closeItemMenus() },
-				{
-					selector: '[data-launcher]',
-					close: () => this.closeLauncher(),
-					isOpen: () => this._launcherOpen,
-					focus: () => root.querySelector('[data-action="new-mark"]'),
-				},
-				{
-					selector: '[data-search-toggle], [data-searchbar]',
-					close: () => this.closeSearch(),
-					isOpen: () => this.searchOpen,
-					focus: () => root.querySelector('[data-search-toggle]'),
-				},
+				{ selector: '[data-actions]', close: () => closeItemMenus() },
+				navFooterDismissEntry(this),
 			]);
 
-			this.bindFooterAutoHide();
-		},
-
-		// The Home launcher: tapping "+ New Mark" fans out Image/Video/Audio/
-		// Note bubbles (icon-only arc); tapping a bubble seeds the composer's
-		// pendingType and jumps to #create. Reuses the same open/close
-		// conventions as the per-item ⋯ menu (aria-expanded, focus-first-item
-		// on open) — the bubbles can't use `hidden` like that menu does,
-		// since `hidden` elements can't be CSS-animated, so tabindex/
-		// aria-hidden are toggled by hand instead to keep them out of the
-		// tab order and AT tree while closed.
-		bindLauncher() {
-			const launcher = root.querySelector('[data-launcher]');
-			if (!launcher) {
-				return;
-			}
-			const btn = launcher.querySelector('[data-action="new-mark"]');
-			const bubbles = launcher.querySelectorAll('[data-launcher-type]');
-			const scrim = launcher.querySelector('.daymark-launcher__scrim');
-
-			this._launcherOpen = false;
-
-			// Bubbles become clickable only once this fires — see the CSS
-			// comment on `.is-open.is-settled .daymark-launcher__bubble`
-			// for why that's driven by a JS timer rather than a CSS
-			// transition-delay on pointer-events. 650ms covers the worst
-			// case (the last bubble's own 0.2s delay + 0.42s transition,
-			// 620ms, plus a small margin) — 0 for reduced motion, since
-			// CSS already skips the travel entirely and there's nothing
-			// to wait out.
-			const prefersReducedMotion =
-				window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-			const SETTLE_MS = prefersReducedMotion ? 0 : 650;
-
-			this.openLauncher = () => {
-				this._launcherOpen = true;
-				clearTimeout(this._launcherSettleTimer);
-				launcher.classList.remove('is-settled');
-				launcher.classList.add('is-open');
-				this._launcherSettleTimer = setTimeout(() => {
-					launcher.classList.add('is-settled');
-				}, SETTLE_MS);
-				btn.setAttribute('aria-expanded', 'true');
-				bubbles.forEach((bubble) => {
-					bubble.removeAttribute('tabindex');
-					bubble.removeAttribute('aria-hidden');
-				});
-				// `preventScroll` matters here: a bubble sits well within
-				// view the moment it fans out, but the browser's default
-				// focus-triggered scrollIntoView can still nudge the page —
-				// and that nudge is itself a real scroll, which trips the
-				// "a real scroll closes the launcher" listener below,
-				// closing the launcher it was just supposed to focus into.
-				const first = bubbles[0];
-				if (first) {
-					first.focus({ preventScroll: true });
-				}
-			};
-
-			this.closeLauncher = () => {
-				if (!this._launcherOpen) {
-					return;
-				}
-				this._launcherOpen = false;
-				clearTimeout(this._launcherSettleTimer);
-				launcher.classList.remove('is-open', 'is-settled');
-				btn.setAttribute('aria-expanded', 'false');
-				bubbles.forEach((bubble) => {
-					bubble.setAttribute('tabindex', '-1');
-					bubble.setAttribute('aria-hidden', 'true');
-				});
-			};
-
-			btn.addEventListener('click', () => {
-				if (this._launcherOpen) {
-					this.closeLauncher();
-				} else {
-					this.openLauncher();
-				}
-			});
-
-			// The scrim sits inside [data-launcher] (for stacking), so the
-			// shared outside-click handler's closest() check treats a tap on
-			// it as "inside" and leaves it alone — it needs its own listener.
-			// `pointer-events: none` while closed keeps this scoped to only
-			// when the scrim is actually showing.
-			if (scrim) {
-				scrim.addEventListener('click', () => this.closeLauncher());
-			}
-
-			bubbles.forEach((bubble) => {
-				bubble.addEventListener('click', () => {
-					const type = bubble.getAttribute('data-launcher-type');
-					this.closeLauncher();
-					resetComposer();
-					state.pendingType = type;
-					navigate('#create');
-				});
-			});
-		},
-
-		// Slide the footer (CTA + site nav) out of view while scrolling down
-		// through the list, back in on scroll-up — reclaiming its height for
-		// content without losing the controls. Removing the previous listener
-		// first keeps these from stacking across repeated Home renders, same
-		// as the document click/keydown pair above.
-		bindFooterAutoHide() {
-			const footer = root.querySelector('.daymark-homefooter');
-			if (!footer) {
-				return;
-			}
-			const launcher = footer.querySelector('[data-launcher]');
-
-			if (this._onScroll) {
-				window.removeEventListener('scroll', this._onScroll);
-			}
-			if (this._onFooterFocusIn) {
-				footer.removeEventListener('focusin', this._onFooterFocusIn);
-			}
-
-			let lastY = window.scrollY;
-			let ticking = false;
-
-			this._onScroll = () => {
-				if (ticking) {
-					return;
-				}
-				ticking = true;
-				window.requestAnimationFrame(() => {
-					const y = window.scrollY;
-					const delta = y - lastY;
-
-					// Always show it near the top, regardless of direction.
-					if (y < 80) {
-						footer.classList.remove('is-footer-hidden');
-						lastY = y;
-						ticking = false;
-						return;
-					}
-
-					// Ignore small jitters either direction so the footer
-					// doesn't flicker mid-scroll.
-					if (Math.abs(delta) < 8) {
-						ticking = false;
-						return;
-					}
-
-					// A real scroll closes the launcher too, so its bubbles
-					// never end up floating over a footer that just hid —
-					// but only once it has actually settled. Mid fan-out,
-					// bubbles are still `pointer-events: none` (see the CSS
-					// comment on `.is-settled`), so a click there makes the
-					// browser/automation retry its own scrollIntoView against
-					// a still-animating target; that retry's scroll would
-					// otherwise land right here and close the launcher out
-					// from under itself before it ever became clickable.
-					const launcherOpenAndSettled =
-						launcher && launcher.classList.contains('is-settled');
-					if (launcherOpenAndSettled && this.closeLauncher) {
-						this.closeLauncher();
-					}
-
-					footer.classList.toggle('is-footer-hidden', delta > 0);
-					lastY = y;
-					ticking = false;
-				});
-			};
-
-			// A keyboard user tabbing to the CTA or a nav link must always
-			// find it visible, regardless of scroll position — the footer is
-			// never aria-hidden, so this just keeps sight in sync with focus.
-			this._onFooterFocusIn = () => {
-				footer.classList.remove('is-footer-hidden');
-			};
-
-			window.addEventListener('scroll', this._onScroll, { passive: true });
-			footer.addEventListener('focusin', this._onFooterFocusIn);
-		},
-
-		bindDraftTaps(container) {
-			container.querySelectorAll('[data-edit-draft]').forEach((row) => {
-				row.addEventListener('click', (event) => {
-					event.preventDefault();
-					row.setAttribute('aria-busy', 'true');
-					openDraft(row.getAttribute('data-edit-draft')).catch(() => {
-						row.removeAttribute('aria-busy');
-					});
-				});
-			});
+			bindLauncher(this);
+			bindFooterAutoHide(this);
 		},
 
 		async init() {
 			this._searchSeq = 0;
-			this.searchOpen = false;
-			this.searchQuery = '';
-			this.searchType = '';
-			this.searchSource = '';
 			this._hasDrafts = false;
 			this.recentPage = 1;
 			this.recentDone = false;
@@ -1050,12 +1227,6 @@
 			// this singleton across re-inits (leaving and returning to Home)
 			// so a card already opened once never re-fetches.
 			this._detailCache = this._detailCache || new Map();
-			// Backs the Source filter's per-site <option>s; re-fetched (and
-			// the <select> patched) below by loadSubscriptionsForFilter(),
-			// which runs in parallel with — never blocking — the
-			// Drafts/Timeline fetches that follow.
-			this._subscriptions = [];
-			this.loadSubscriptionsForFilter();
 
 			const draftsSection = root.querySelector('[data-drafts-section]');
 			const draftsList = root.querySelector('[data-drafts-list]');
@@ -1066,10 +1237,10 @@
 				const drafts = await apiGet('marks?status=draft&per_page=10');
 				const draftItems = Array.isArray(drafts) ? drafts : [];
 				if (draftItems.length && draftsSection && draftsList && draftsList.isConnected) {
-					draftsList.innerHTML = draftItems.map((item) => this.renderItem(item)).join('');
+					draftsList.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
 					draftsSection.hidden = false;
 					this._hasDrafts = true;
-					this.bindDraftTaps(draftsList);
+					bindDraftTaps(draftsList);
 				}
 			} catch (err) {
 				// A drafts failure never blocks the recent list below.
@@ -1108,7 +1279,7 @@
 				}
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
-				arr.forEach((item) => this.rememberItem(item));
+				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
 						'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
@@ -1118,7 +1289,7 @@
 					}
 					return;
 				}
-				list.innerHTML = arr.map((item) => this.renderFeedItem(item)).join('');
+				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 
 				if (arr.length < RECENT_PER_PAGE) {
 					// A short first page means there is nothing more to load.
@@ -1173,10 +1344,10 @@
 				const arr = Array.isArray(items) ? items : [];
 				if (arr.length && list.isConnected) {
 					this.recentPage = nextPage;
-					arr.forEach((item) => this.rememberItem(item));
+					arr.forEach((item) => rememberItem(this, item));
 					list.insertAdjacentHTML(
 						'beforeend',
-						arr.map((item) => this.renderFeedItem(item)).join('')
+						arr.map((item) => renderFeedItem(item)).join('')
 					);
 				}
 				if (arr.length < RECENT_PER_PAGE) {
@@ -1222,386 +1393,6 @@
 				this.observer.disconnect();
 				this.observer = null;
 			}
-		},
-
-		// Dispatch one merged-feed item to the right card renderer: a
-		// subscription post gets its own card (renderSubscriptionPostCard);
-		// everything else (item_type 'mark', or a plain /marks item from the
-		// Drafts list) is prepare_mark_summary()'s exact shape, so the
-		// existing Mark renderer — with its ⋯ edit/delete menu — works
-		// unchanged.
-		renderFeedItem(item) {
-			return 'subscription_post' === item.item_type
-				? renderSubscriptionPostCard(item)
-				: this.renderItem(item);
-		},
-
-		// Track subscription-post items by id so a card tap can hand the
-		// detail sheet everything it already has without re-querying the DOM
-		// (a Mark item needs no such tracking — its card is a plain
-		// permalink/edit link, not a detail-sheet trigger).
-		rememberItem(item) {
-			if (item && 'subscription_post' === item.item_type) {
-				this._bySubId.set(String(item.id), item);
-			}
-		},
-
-		// --- Search behaviour ---
-
-		toggleSearch() {
-			if (this.searchOpen) {
-				this.closeSearch();
-				const toggle = root.querySelector('[data-search-toggle]');
-				if (toggle) {
-					toggle.focus();
-				}
-			} else {
-				this.openSearch();
-			}
-		},
-
-		openSearch() {
-			this.searchOpen = true;
-			const bar = root.querySelector('[data-searchbar]');
-			const toggle = root.querySelector('[data-search-toggle]');
-			const input = root.querySelector('[data-search-input]');
-			if (bar) {
-				bar.hidden = false;
-			}
-			if (toggle) {
-				toggle.setAttribute('aria-expanded', 'true');
-			}
-			if (input) {
-				input.focus();
-			}
-		},
-
-		closeSearch() {
-			// Idempotent: an outside click or Escape calls this
-			// unconditionally, whether or not search is actually open.
-			if (!this.searchOpen) {
-				return;
-			}
-			this.searchOpen = false;
-			this.searchQuery = '';
-			this.searchType = '';
-			this.searchSource = '';
-			const bar = root.querySelector('[data-searchbar]');
-			const toggle = root.querySelector('[data-search-toggle]');
-			const input = root.querySelector('[data-search-input]');
-			const sourceFilter = root.querySelector('[data-source-filter]');
-			if (input) {
-				input.value = '';
-			}
-			if (sourceFilter) {
-				sourceFilter.value = '';
-			}
-			this.syncFilterChips();
-			if (bar) {
-				bar.hidden = true;
-			}
-			if (toggle) {
-				toggle.setAttribute('aria-expanded', 'false');
-			}
-			// Restore the ordinary paginated recent list.
-			this.loadRecent();
-		},
-
-		setFilter(type) {
-			this.searchType = type || '';
-			this.syncFilterChips();
-			this.applySearch();
-		},
-
-		syncFilterChips() {
-			root.querySelectorAll('[data-filter]').forEach((chip) => {
-				const active = (chip.getAttribute('data-filter') || '') === this.searchType;
-				chip.classList.toggle('is-active', active);
-				chip.setAttribute('aria-pressed', active ? 'true' : 'false');
-			});
-		},
-
-		applySearch() {
-			if ('' === this.searchQuery && '' === this.searchType && '' === this.searchSource) {
-				this.loadRecent();
-			} else {
-				this.runSearch();
-			}
-		},
-
-		async runSearch() {
-			const list = root.querySelector('[data-recent-list]');
-			const more = root.querySelector('[data-recent-more]');
-			const sentinel = root.querySelector('[data-recent-sentinel]');
-			if (!list) {
-				return;
-			}
-			const heading = root.querySelector('#daymark-recent-heading');
-			if (heading) {
-				heading.textContent = 'Results';
-			}
-			// Search overrides the paginated list: stop infinite scroll and
-			// hide the timeline shortcut while a query/filter is active.
-			this.teardownObserver();
-			if (more) {
-				more.hidden = true;
-			}
-			if (sentinel) {
-				sentinel.hidden = true;
-			}
-			const seq = ++this._searchSeq;
-			list.innerHTML =
-				skeletonRows(2) + '<span class="daymark-visually-hidden">Searching your timeline</span>';
-			// Targets the merged Timeline endpoint (not /marks) so a search
-			// covers subscription posts too by default; the Source filter
-			// narrows that down to just Marks (`mine=1`) or just one
-			// subscription's posts (`subscription_id`). No `status` param:
-			// unlike /marks, /timeline always returns published-only from
-			// both sources already.
-			const params = new URLSearchParams();
-			params.set('per_page', '20');
-			if (this.searchQuery) {
-				params.set('s', this.searchQuery);
-			}
-			if (this.searchType) {
-				params.set('type', this.searchType);
-			}
-			if ('mine' === this.searchSource) {
-				params.set('mine', '1');
-			} else if (this.searchSource) {
-				params.set('subscription_id', this.searchSource);
-			}
-			try {
-				const items = await apiGet('timeline?' + params.toString());
-				if (seq !== this._searchSeq || !list.isConnected) {
-					return;
-				}
-				const arr = Array.isArray(items) ? items : [];
-				this._bySubId.clear();
-				arr.forEach((item) => this.rememberItem(item));
-				if (!arr.length) {
-					list.innerHTML = '<p class="daymark-empty">Nothing in your timeline matches your search.</p>';
-					return;
-				}
-				list.innerHTML = arr.map((item) => this.renderFeedItem(item)).join('');
-			} catch (err) {
-				if (seq !== this._searchSeq || !list.isConnected) {
-					return;
-				}
-				list.innerHTML =
-					'<p class="daymark-error" role="alert">Search failed. ' + esc(err.message) + '</p>';
-			}
-		},
-
-		// --- Per-item ⋯ menu (edit / delete) ---
-
-		closeItemMenus() {
-			root.querySelectorAll('[data-menu]').forEach((menu) => {
-				menu.hidden = true;
-				const actions = menu.querySelector('[data-menu-actions]');
-				const confirm = menu.querySelector('[data-menu-confirm]');
-				if (actions) {
-					actions.hidden = false;
-				}
-				if (confirm) {
-					confirm.hidden = true;
-				}
-				const toggle = menu.parentElement
-					? menu.parentElement.querySelector('[data-menu-toggle]')
-					: null;
-				if (toggle) {
-					toggle.setAttribute('aria-expanded', 'false');
-				}
-			});
-		},
-
-		onListClick(event) {
-			const target = event.target;
-
-			// A subscription-post card is a <button>, not a Mark's plain
-			// permalink/⋯-menu item — opening it shows the click-through
-			// detail sheet in place rather than navigating.
-			const subTrigger = target.closest('[data-subpost]');
-			if (subTrigger) {
-				const item = this._bySubId.get(subTrigger.getAttribute('data-subpost'));
-				if (item) {
-					SubscriptionPostSheet.show(item, this._detailCache, subTrigger);
-				}
-				return;
-			}
-
-			const toggle = target.closest('[data-menu-toggle]');
-			if (toggle) {
-				event.preventDefault();
-				const menu = toggle.parentElement.querySelector('[data-menu]');
-				const wasOpen = menu && !menu.hidden;
-				this.closeItemMenus();
-				if (menu && !wasOpen) {
-					menu.hidden = false;
-					toggle.setAttribute('aria-expanded', 'true');
-					const first = menu.querySelector('[data-menu-edit]');
-					if (first) {
-						first.focus();
-					}
-				}
-				return;
-			}
-
-			const edit = target.closest('[data-menu-edit]');
-			if (edit) {
-				event.preventDefault();
-				const wrap = edit.closest('[data-item]');
-				this.closeItemMenus();
-				if (wrap) {
-					openDraft(wrap.getAttribute('data-item')).catch(() => {});
-				}
-				return;
-			}
-
-			const del = target.closest('[data-menu-delete]');
-			if (del) {
-				event.preventDefault();
-				const menu = del.closest('[data-menu]');
-				const actions = menu.querySelector('[data-menu-actions]');
-				const confirm = menu.querySelector('[data-menu-confirm]');
-				if (actions) {
-					actions.hidden = true;
-				}
-				if (confirm) {
-					confirm.hidden = false;
-					// Focus lands on Cancel so a stray Enter is non-destructive.
-					const cancel = confirm.querySelector('[data-menu-delete-cancel]');
-					if (cancel) {
-						cancel.focus();
-					}
-				}
-				return;
-			}
-
-			const cancel = target.closest('[data-menu-delete-cancel]');
-			if (cancel) {
-				event.preventDefault();
-				const menu = cancel.closest('[data-menu]');
-				const actions = menu.querySelector('[data-menu-actions]');
-				const confirm = menu.querySelector('[data-menu-confirm]');
-				if (confirm) {
-					confirm.hidden = true;
-				}
-				if (actions) {
-					actions.hidden = false;
-				}
-				const del2 = menu.querySelector('[data-menu-delete]');
-				if (del2) {
-					del2.focus();
-				}
-				return;
-			}
-
-			const confirmDel = target.closest('[data-menu-delete-confirm]');
-			if (confirmDel) {
-				event.preventDefault();
-				this.deleteItem(confirmDel);
-			}
-		},
-
-		async deleteItem(confirmBtn) {
-			const wrap = confirmBtn.closest('[data-item]');
-			const menu = confirmBtn.closest('[data-menu]');
-			if (!wrap || !menu) {
-				return;
-			}
-			const id = wrap.getAttribute('data-item');
-			const cancelBtn = menu.querySelector('[data-menu-delete-cancel]');
-			const status = menu.querySelector('[data-menu-status]');
-			confirmBtn.disabled = true;
-			if (cancelBtn) {
-				cancelBtn.disabled = true;
-			}
-			confirmBtn.textContent = 'Deleting…';
-			if (status) {
-				status.textContent = '';
-			}
-			try {
-				await apiDelete('marks/' + id);
-				const parentList = wrap.parentElement;
-				wrap.remove();
-				this.reflectEmptied(parentList);
-			} catch (err) {
-				confirmBtn.disabled = false;
-				if (cancelBtn) {
-					cancelBtn.disabled = false;
-				}
-				confirmBtn.textContent = 'Delete';
-				if (status) {
-					status.textContent = 'Could not delete. ' + err.message;
-				}
-			}
-		},
-
-		// After a delete, keep the emptied region honest: hide an empty Drafts
-		// section, or show the empty state in the recent list.
-		reflectEmptied(list) {
-			if (!list || list.querySelector('[data-item]')) {
-				return;
-			}
-			if (list.hasAttribute('data-drafts-list')) {
-				const section = root.querySelector('[data-drafts-section]');
-				if (section) {
-					section.hidden = true;
-				}
-				this._hasDrafts = false;
-			} else if (list.hasAttribute('data-recent-list')) {
-				this.teardownObserver();
-				const sentinel = root.querySelector('[data-recent-sentinel]');
-				if (sentinel) {
-					sentinel.hidden = true;
-				}
-				const more = root.querySelector('[data-recent-more]');
-				if (more) {
-					more.hidden = true;
-				}
-				list.innerHTML =
-					'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
-			}
-		},
-
-		renderItem(item) {
-			// Drafts look identical to published Marks otherwise — and
-			// their permalinks are invisible to visitors — so tapping one
-			// reopens the composer instead of the permalink. (renderMarkCore()
-			// handles the visible "Draft" chip itself.)
-			const title = item.title || 'Untitled Mark';
-			const isDraft = item.status && 'publish' !== item.status;
-			const href = isDraft ? '#create' : item.permalink || '#home';
-			const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
-			const id = esc(String(item.id));
-			return `
-			<div class="daymark-recent__item-wrap" data-item="${id}">
-				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
-					${renderMarkCore(item)}
-				</a>
-				<div class="daymark-recent__actions" data-actions>
-					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
-						title
-					)}">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
-					</button>
-					<div class="daymark-menu" data-menu role="menu" aria-label="Mark actions" hidden>
-						<div class="daymark-menu__actions" data-menu-actions>
-							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">Edit</button>
-							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">Delete</button>
-						</div>
-						<div class="daymark-menu__confirm" data-menu-confirm hidden>
-							<p class="daymark-menu__confirmtext">Delete this Mark? It&rsquo;ll move to Trash.</p>
-							<div class="daymark-menu__confirmactions">
-								<button type="button" class="daymark-btn daymark-btn--danger" data-menu-delete-confirm>Delete</button>
-								<button type="button" class="daymark-btn daymark-btn--secondary" data-menu-delete-cancel>Cancel</button>
-							</div>
-							<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
-						</div>
-					</div>
-				</div>
-			</div>`;
 		},
 
 		// --- Pull-to-refresh: independent of the scheduled poll, and
@@ -1745,6 +1536,396 @@
 			list.addEventListener('touchmove', onMove, { passive: true });
 			list.addEventListener('touchend', onEnd);
 			list.addEventListener('touchcancel', onEnd);
+		},
+	};
+
+	// --- Screen: Search ---
+	//
+	// Universal search across Daymark content: the same GET /timeline query
+	// (keyword, type, source) Home's search bar used to run in place, now
+	// its own nav destination and route instead of a collapsible header bar
+	// — reachable, and refreshable, from anywhere in the app. Shares its
+	// result-list rendering and item interactions (⋯ edit/delete, the
+	// subscription-post detail sheet) with Home via the functions above,
+	// rather than reimplementing them.
+
+	const SearchScreen = {
+		render() {
+			const filterChips = SEARCH_FILTERS.map(
+				(filter, index) =>
+					`<button type="button" class="daymark-filterchip${
+						index === 0 ? ' is-active' : ''
+					}" data-filter="${esc(filter.type)}" aria-pressed="${
+						index === 0 ? 'true' : 'false'
+					}">${esc(filter.label)}</button>`
+			).join('');
+			return `
+			<header class="daymark-topbar">
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Search</h1>
+			</header>
+			<div class="daymark-searchbar daymark-searchbar--screen">
+				<label class="daymark-visually-hidden" for="daymark-search-input">Search Daymark</label>
+				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="Search your Marks and the sites you follow" autocomplete="off" />
+				<div class="daymark-searchfilters" data-search-filters>
+					<div class="daymark-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
+					<label class="daymark-visually-hidden" for="daymark-source-filter">Filter by source</label>
+					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
+						this._subscriptions
+					)}</select>
+				</div>
+			</div>
+			<section class="daymark-screen">
+				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
+					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">Results</h2>
+					<div class="daymark-recent__list" data-search-results aria-live="polite">
+						${skeletonRows(3)}
+						<span class="daymark-visually-hidden">Loading</span>
+					</div>
+				</section>
+			</section>
+			${navFooterMarkup('search')}`;
+		},
+
+		bindEvents() {
+			root.querySelectorAll('[data-filter]').forEach((chip) => {
+				chip.addEventListener('click', () => this.setFilter(chip.getAttribute('data-filter')));
+			});
+
+			const sourceFilter = root.querySelector('[data-source-filter]');
+			if (sourceFilter) {
+				sourceFilter.addEventListener('change', () => {
+					this.searchSource = sourceFilter.value;
+					this.runSearch();
+				});
+			}
+
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				const runDebounced = debounce(() => this.runSearch(), 250);
+				input.addEventListener('input', () => {
+					this.searchQuery = input.value.trim();
+					runDebounced();
+				});
+			}
+
+			const list = root.querySelector('[data-search-results]');
+			if (list) {
+				list.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
+
+			bindDismissible(this, [
+				{ selector: '[data-actions]', close: () => closeItemMenus() },
+				navFooterDismissEntry(this),
+			]);
+
+			bindNavFooter(this);
+		},
+
+		async init() {
+			this._searchSeq = 0;
+			this.searchQuery = '';
+			this.searchType = '';
+			this.searchSource = '';
+			this._bySubId = new Map();
+			this._detailCache = this._detailCache || new Map();
+			this._subscriptions = [];
+
+			// A preset handed from Explore/Me ("browse by type", "your
+			// Marks", "Following") right before navigate('#search') — the
+			// same one-shot pattern state.pendingType already uses for the
+			// composer.
+			if (searchPreset) {
+				this.searchType = searchPreset.type || '';
+				this.searchSource = searchPreset.source || '';
+				this.searchQuery = searchPreset.query || '';
+				searchPreset = null;
+			}
+
+			this.syncFilterChips();
+			const input = root.querySelector('[data-search-input]');
+			if (input && this.searchQuery) {
+				input.value = this.searchQuery;
+			}
+
+			this.loadSubscriptionsForFilter();
+			await this.runSearch();
+		},
+
+		syncFilterChips() {
+			root.querySelectorAll('[data-filter]').forEach((chip) => {
+				const active = (chip.getAttribute('data-filter') || '') === this.searchType;
+				chip.classList.toggle('is-active', active);
+				chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+			});
+		},
+
+		setFilter(type) {
+			this.searchType = type || '';
+			this.syncFilterChips();
+			this.runSearch();
+		},
+
+		// Fetch active subscriptions once per visit, purely to populate the
+		// Source filter's per-site options. Never blocks the search itself;
+		// the dropdown just renders "All"/"My Marks" until this resolves.
+		async loadSubscriptionsForFilter() {
+			this._subscriptions = await fetchSubscriptions();
+			const select = root.querySelector('[data-source-filter]');
+			if (select && select.isConnected) {
+				select.innerHTML = sourceOptionsMarkup(this._subscriptions);
+				select.value = this.searchSource;
+			}
+		},
+
+		async runSearch() {
+			const list = root.querySelector('[data-search-results]');
+			if (!list) {
+				return;
+			}
+			const seq = ++this._searchSeq;
+			list.innerHTML =
+				skeletonRows(2) + '<span class="daymark-visually-hidden">Searching</span>';
+			// Targets the merged Timeline endpoint (not /marks) so a search
+			// covers subscription posts too by default; the Source filter
+			// narrows that down to just Marks (`mine=1`) or just one
+			// subscription's posts (`subscription_id`). No `status` param:
+			// unlike /marks, /timeline always returns published-only from
+			// both sources already. An empty query with no filters still
+			// runs — it's "everything", the same default Home's own first
+			// page shows.
+			const params = new URLSearchParams();
+			params.set('per_page', '20');
+			if (this.searchQuery) {
+				params.set('s', this.searchQuery);
+			}
+			if (this.searchType) {
+				params.set('type', this.searchType);
+			}
+			if ('mine' === this.searchSource) {
+				params.set('mine', '1');
+			} else if (this.searchSource) {
+				params.set('subscription_id', this.searchSource);
+			}
+			try {
+				const items = await apiGet('timeline?' + params.toString());
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				const arr = Array.isArray(items) ? items : [];
+				this._bySubId.clear();
+				arr.forEach((item) => rememberItem(this, item));
+				if (!arr.length) {
+					list.innerHTML =
+						'<p class="daymark-empty">Nothing matches. Try a different search or filter.</p>';
+					return;
+				}
+				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
+			} catch (err) {
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				list.innerHTML =
+					'<p class="daymark-error" role="alert">Search failed. ' + esc(err.message) + '</p>';
+			}
+		},
+	};
+
+	// --- Screen: Explore ---
+	//
+	// A first, deliberately non-chronological browsing destination — never
+	// a second Timeline. Both sections here are real, built entirely on
+	// data the plugin already exposes (Mark type filtering, active
+	// subscriptions): "Browse by type" and "Following" hand a preset off to
+	// Search rather than duplicating its results rendering. Memories,
+	// highlights, collections, favorites, and suggested content are future
+	// sections on this same screen, not implied by anything rendered here.
+
+	const ExploreScreen = {
+		render() {
+			const typeButtons = LAUNCHER_TYPES.map(
+				(type) =>
+					`<button type="button" class="daymark-exploretype" data-explore-type="${type}">${navIcon(
+						TYPE_ICONS[type]
+					)}<span>${esc(TYPE_LABELS[type])}</span></button>`
+			).join('');
+			return `
+			<header class="daymark-topbar">
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Explore</h1>
+			</header>
+			<section class="daymark-screen">
+				<section class="daymark-recent" aria-labelledby="daymark-explore-types-heading">
+					<h2 id="daymark-explore-types-heading" class="daymark-section-heading">Browse by type</h2>
+					<div class="daymark-exploretypes">${typeButtons}</div>
+				</section>
+				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
+					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">Following</h2>
+					<div class="daymark-recent__list" data-explore-following>
+						${skeletonRows(2)}
+						<span class="daymark-visually-hidden">Loading</span>
+					</div>
+				</section>
+			</section>
+			${navFooterMarkup('explore')}`;
+		},
+
+		bindEvents() {
+			root.querySelectorAll('[data-explore-type]').forEach((btn) => {
+				btn.addEventListener('click', () => {
+					searchPreset = { type: btn.getAttribute('data-explore-type') };
+					navigate('#search');
+				});
+			});
+
+			const following = root.querySelector('[data-explore-following]');
+			if (following) {
+				following.addEventListener('click', (event) => {
+					const trigger = event.target.closest('[data-explore-subscription]');
+					if (!trigger) {
+						return;
+					}
+					searchPreset = { source: trigger.getAttribute('data-explore-subscription') };
+					navigate('#search');
+				});
+			}
+
+			bindDismissible(this, [navFooterDismissEntry(this)]);
+			bindNavFooter(this);
+		},
+
+		async init() {
+			const list = root.querySelector('[data-explore-following]');
+			if (!list) {
+				return;
+			}
+			const subscriptions = await fetchSubscriptions();
+			if (!list.isConnected) {
+				return;
+			}
+			if (!subscriptions.length) {
+				list.innerHTML = `<p class="daymark-empty">You're not following any sites yet. <a href="${esc(
+					config.adminSubscriptionsUrl || '#'
+				)}">Subscribe to one</a> to see its posts here.</p>`;
+				return;
+			}
+			list.innerHTML = subscriptions
+				.map((sub) => {
+					const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+					const icon = sub.site_icon_url
+						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
+						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+								label.charAt(0).toUpperCase()
+						  )}</span>`;
+					return `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
+						String(sub.id)
+					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
+						label
+					)}</span></span></button>`;
+				})
+				.join('');
+		},
+	};
+
+	// --- Screen: Me ---
+	//
+	// A minimal foundation for the user's own Daymark identity: who they
+	// are, their drafts, and the surfaces that already exist elsewhere
+	// (Notifications, Subscriptions in wp-admin, their WordPress profile).
+	// Deliberately doesn't duplicate WordPress's own account settings —
+	// Edit profile and Log out link out to WordPress rather than
+	// reimplementing them.
+
+	const MeScreen = {
+		render() {
+			const user = config.currentUser || {};
+			const avatar = user.avatarUrl
+				? `<img class="daymark-meavatar" src="${esc(user.avatarUrl)}" alt="" />`
+				: `<span class="daymark-meavatar daymark-meavatar--glyph" aria-hidden="true">${navIcon(
+						ME_GLYPH
+				  )}</span>`;
+			return `
+			<header class="daymark-topbar">
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Me</h1>
+			</header>
+			<section class="daymark-screen">
+				<div class="daymark-meprofile">
+					${avatar}
+					<span class="daymark-mename">${esc(user.displayName || '')}</span>
+				</div>
+				<nav class="daymark-melinks" aria-label="Your Daymark">
+					<button type="button" class="daymark-melink" data-me-mymarks>Your Marks</button>
+					<a class="daymark-melink" href="#notifications">Notifications</a>
+					${
+						config.adminSubscriptionsUrl
+							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">Subscriptions</a>`
+							: ''
+					}
+					${
+						user.profileEditUrl
+							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}">Edit profile</a>`
+							: ''
+					}
+					${
+						user.logoutUrl
+							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}">Log out</a>`
+							: ''
+					}
+				</nav>
+				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
+					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">Drafts</h2>
+					<div class="daymark-recent__list" data-me-drafts>
+						${skeletonRows(2)}
+						<span class="daymark-visually-hidden">Loading</span>
+					</div>
+				</section>
+			</section>
+			${navFooterMarkup('me')}`;
+		},
+
+		bindEvents() {
+			const myMarks = root.querySelector('[data-me-mymarks]');
+			if (myMarks) {
+				myMarks.addEventListener('click', () => {
+					searchPreset = { source: 'mine' };
+					navigate('#search');
+				});
+			}
+
+			bindDismissible(this, [navFooterDismissEntry(this)]);
+			bindNavFooter(this);
+		},
+
+		async init() {
+			const list = root.querySelector('[data-me-drafts]');
+			if (!list) {
+				return;
+			}
+			try {
+				const drafts = await apiGet('marks?status=draft&per_page=10');
+				const draftItems = Array.isArray(drafts) ? drafts : [];
+				if (!list.isConnected) {
+					return;
+				}
+				if (!draftItems.length) {
+					list.innerHTML = '<p class="daymark-empty">No drafts. <a href="#create">Start one</a>.</p>';
+					return;
+				}
+				// View-only here (tap to resume editing) — full Edit/Delete
+				// management stays on Home's own Drafts row.
+				list.innerHTML = draftItems
+					.map(
+						(item) =>
+							`<a class="daymark-recent__item" href="#create" data-edit-draft="${esc(
+								String(item.id)
+							)}">${renderMarkCore(item)}</a>`
+					)
+					.join('');
+				bindDraftTaps(list);
+			} catch (err) {
+				if (list.isConnected) {
+					list.innerHTML =
+						'<p class="daymark-error" role="alert">Could not load drafts. ' + esc(err.message) + '</p>';
+				}
+			}
 		},
 	};
 
@@ -3211,15 +3392,24 @@
 		'#publish': PublishScreen,
 		'#success': SuccessScreen,
 		'#notifications': NotificationsScreen,
+		'#explore': ExploreScreen,
+		'#search': SearchScreen,
+		'#me': MeScreen,
 	};
 
 	window.addEventListener('hashchange', () => {
 		showScreen(window.location.hash);
 	});
 
+	// Explore/Search/Me are real server routes (Daymark_Routes), same as
+	// notifications already was — a direct load or refresh at
+	// /daymark/{screen} arrives here via window.daymarkApp.screen so the
+	// SPA boots straight into the right tab instead of always landing on
+	// Timeline first.
+	const SERVER_ROUTED_SCREENS = ['notifications', 'explore', 'search', 'me'];
 	const initialHash =
 		window.location.hash ||
-		(config.screen === 'notifications' ? '#notifications' : '#home');
+		(SERVER_ROUTED_SCREENS.includes(config.screen) ? '#' + config.screen : '#home');
 	showScreen(initialHash);
 
 	// --- Service worker (PWA, Phase 8) ---
