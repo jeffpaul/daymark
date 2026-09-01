@@ -3089,9 +3089,10 @@
 				<ul class="daymark-tags__list" data-tag-list></ul>
 				<div class="daymark-tags__addrow">
 					<label class="daymark-visually-hidden" for="daymark-ai-newtag">Add a tag</label>
-					<input type="text" id="daymark-ai-newtag" class="daymark-input" placeholder="Add a tag" />
+					<input type="text" id="daymark-ai-newtag" class="daymark-input" placeholder="Add a tag" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-tag-suggest" />
 					<button type="button" class="daymark-btn daymark-btn--secondary" data-tag-add>+ Add</button>
 				</div>
+				<ul class="daymark-tags__suggest" id="daymark-tag-suggest" data-tag-suggest hidden></ul>
 			</fieldset>
 			<div class="daymark-sheet__actions">
 				<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-accept>Accept All</button>
@@ -3102,16 +3103,49 @@
 		bindForm() {
 			this.renderTags();
 
-			this.el.querySelector('[data-tag-add]').addEventListener('click', () => {
-				const input = this.el.querySelector('#daymark-ai-newtag');
-				const value = input.value.trim();
-				if (value && !this.tags.includes(value)) {
-					this.tags.push(value);
+			const input = this.el.querySelector('#daymark-ai-newtag');
+			const suggestList = this.el.querySelector('[data-tag-suggest]');
+
+			const addTag = (value) => {
+				const tag = value.trim();
+				if (tag && !this.tags.includes(tag)) {
+					this.tags.push(tag);
 					this.renderTags();
 				}
 				input.value = '';
 				input.focus();
+				this.hideTagSuggestions();
+			};
+
+			this.el.querySelector('[data-tag-add]').addEventListener('click', () => addTag(input.value));
+
+			// Existing-tag autocomplete: fewer characters typed when the site
+			// already has the tag, per the "minimal text entry" product
+			// principle — tap a suggestion instead of typing the full name.
+			const runTagSearch = debounce((query) => {
+				if (!query) {
+					this.hideTagSuggestions();
+					return;
+				}
+				apiGet('tags?search=' + encodeURIComponent(query))
+					.then((results) => this.renderTagSuggestions(Array.isArray(results) ? results : [], addTag))
+					.catch(() => this.hideTagSuggestions());
+			}, 250);
+
+			input.addEventListener('input', () => runTagSearch(input.value.trim()));
+			input.addEventListener('keydown', (event) => {
+				if (event.key === 'Escape') {
+					this.hideTagSuggestions();
+				} else if (event.key === 'Enter') {
+					event.preventDefault();
+					addTag(input.value);
+				}
 			});
+			input.addEventListener('blur', () => {
+				// Let a suggestion tap register before the list disappears.
+				setTimeout(() => this.hideTagSuggestions(), 150);
+			});
+			suggestList.hidden = true;
 
 			this.el.querySelector('[data-sheet-accept]').addEventListener('click', () => {
 				state.caption = this.el.querySelector('#daymark-ai-caption').value;
@@ -3152,6 +3186,48 @@
 					this.renderTags();
 				});
 			});
+		},
+
+		renderTagSuggestions(results, addTag) {
+			const list = this.el && this.el.querySelector('[data-tag-suggest]');
+			const input = this.el && this.el.querySelector('#daymark-ai-newtag');
+			if (!list || !input) {
+				return;
+			}
+			const options = results.filter((tag) => tag && !this.tags.includes(tag.name));
+			if (!options.length) {
+				this.hideTagSuggestions();
+				return;
+			}
+			list.innerHTML = options
+				.map(
+					(tag) =>
+						`<li><button type="button" class="daymark-tags__suggestitem" data-tag-suggest-pick="${esc(
+							tag.name
+						)}">${esc(tag.name)}</button></li>`
+				)
+				.join('');
+			list.hidden = false;
+			input.setAttribute('aria-expanded', 'true');
+			list.querySelectorAll('[data-tag-suggest-pick]').forEach((button) => {
+				button.addEventListener('mousedown', (event) => {
+					// mousedown (not click) fires before the input's blur handler.
+					event.preventDefault();
+					addTag(button.getAttribute('data-tag-suggest-pick'));
+				});
+			});
+		},
+
+		hideTagSuggestions() {
+			const list = this.el && this.el.querySelector('[data-tag-suggest]');
+			const input = this.el && this.el.querySelector('#daymark-ai-newtag');
+			if (list) {
+				list.hidden = true;
+				list.innerHTML = '';
+			}
+			if (input) {
+				input.setAttribute('aria-expanded', 'false');
+			}
 		},
 
 		hide(restoreFocus = true) {

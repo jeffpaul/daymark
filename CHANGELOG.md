@@ -29,12 +29,14 @@ can't act on them.
 - Composer autosave: your in-progress Mark (caption, media, alt text, destination and category choices) now saves automatically to a real draft as you compose, well before you tap Publish or Save as Draft. Close the tab, take a call, or switch apps mid-caption and your work is waiting under Drafts on Home — no manual save step needed. Still requires an internet connection, the same as the existing manual Save as Draft. A typed-but-unsent Notifications reply is similarly protected against being lost when you switch to another reply or navigate back to Notifications.
 - Every Timeline item now shows its own site icon (a Mark's own avatar, or a subscribed site's icon) as its own leading element, separate from the item's thumbnail. Tapping it is a single click straight to the same Source filter Search already offers — no menu, no separate "visit the site" option. A Note Mark or a subscription post with no real photo no longer shows a second, type-initial icon next to it — that placeholder is gone, so title and caption text run further before wrapping.
 - Offline-first creation: compose, publish, or save a draft with no connection at all — Daymark saves it on your device and shows the same success screen as if you were online. It publishes or syncs itself automatically the moment you're back online, no manual retry, and a new Pending section on Home shows what's still waiting. Composer autosave now falls back to the same offline saving, so it protects your work whether or not you have a connection. Covers a session already open when you go offline (or start one offline) — loading `/daymark` itself for the very first time still needs a connection.
+- The AI Assist sheet's "Add a tag" field now suggests matching tags already used on your site as you type — tap one to add it instead of typing the full name.
 
 ### Developer
 
 - Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
 - Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
 - Composer autosave requests (`autosave=1` on `POST /marks` / `PUT /marks/{id}`) use a new, independent `Daymark_Rate_Limiter::ACTION_AUTOSAVE` bucket rather than `ACTION_PUBLISH`, so frequent background autosave activity can never exhaust the budget for a real Publish/Save as Draft tap.
+- Audited the app shell against "gesture-friendly, large touch targets, comfortable thumb reach, minimal text entry" and documented it as a named commitment (CLAUDE.md, docs/design-principles.md, docs/roadmap.md) rather than only an implicit effect of other principles. Added `GET /daymark/v1/tags` (existing `post_tag` terms matching a search string) backing the new tag autocomplete.
 
 ### Changed
 
@@ -44,6 +46,7 @@ can't act on them.
 
 - For developers: `uninstall.php` now cleans up everything the Subscriptions feature and the POSSE microformats2 work added — the `daymark_subscriptions` table, cached `daymark_sub_post` content, the subscription poller's cron event, the `daymark_redirect_rule_added`/`daymark_subscriptions_db_version` options, the `daymark_rel_me_url` user meta, and rate-limiter transients. It previously only covered what existed before those features shipped.
 - For developers: the SPA router now tears down the previous screen's outside-click/Escape dismiss listeners before rendering the next one, instead of leaving them attached to `document` and firing against whichever screen loads next. Not user-visible today (every current dismiss action is a no-op once its own screen is gone), but closes off the failure mode for a future one that isn't. ([#64](https://github.com/jeffpaul/daymark/issues/64))
+- Several tappable controls were sized below the app shell's own documented 44px minimum tap target: the Timeline item's ⋯ menu trigger, the site icon filter button, the tag remove ("×") button, the Notifications reply screen's Send button, the ⋯ menu's delete-confirmation buttons, and the Search screen's filter chips. All now size off the shared `--daymark-tap-min` token.
 
 ### Removed
 

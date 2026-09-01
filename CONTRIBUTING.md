@@ -182,6 +182,14 @@ stubbed AT Protocol API — see the setup notes at the top of
   replay all use; a new composer field belongs in that mapping, not
   duplicated into a second one. See CLAUDE.md's "Offline-first creation"
   decision row for the full design.
+- **Every tappable element is sized off `var(--daymark-tap-min)`** (44px, in
+  `assets/app.css`), never a hardcoded pixel value — a new button, icon
+  button, chip, or menu item should use the token even where the visual
+  glyph inside it stays smaller. Gestures are additive, never the only path
+  to an action: pull-to-refresh (`bindPullGesture()` on Home) is the one
+  deliberate exception, and a new gesture should keep an equivalent tap
+  affordance rather than replace one — see CLAUDE.md's "Touch-target /
+  thumb-reach / gesture / text-entry audit" decision row.
 
 ## Hook documentation
 

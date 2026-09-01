@@ -218,6 +218,38 @@ full technical record.
 
 ---
 
+## Shipped — Touch-target / thumb-reach / gesture / text-entry audit
+
+"Gesture-friendly. Large touch targets. Comfortable thumb reach. Minimal
+text entry." An audit against these four found the app shell mostly already
+compliant — the `--daymark-tap-min: 44px` token, and every primary CTA
+already bottom-pinned — and fixed the gaps. See CLAUDE.md's "Touch-target /
+thumb-reach / gesture / text-entry audit" decision row for the full
+technical record.
+
+- [x] **Touch targets.** Six controls sized below the plugin's own 44px
+  minimum (the Timeline ⋯ menu trigger, the site-icon filter button, the
+  tag-chip remove button, the reply Send button, the ⋯ menu's
+  delete-confirmation buttons, and the Search screen's filter chips) now
+  size off `var(--daymark-tap-min)` instead of a hardcoded, smaller value.
+- [x] **Minimal text entry.** Existing-tag autocomplete (`GET
+  /daymark/v1/tags`) lets the composer's tag field offer a tap-to-pick
+  suggestion instead of requiring the full name to be typed every time.
+- [x] **Documented, not just enforced.** Gesture-friendliness (pull-to-refresh
+  as the one deliberate exception to "tap-first") and minimal text entry are
+  now named commitments in docs/design-principles.md, not only implicit
+  side effects of other principles.
+
+**Considered and declined:**
+
+- [ ] **Swipe-to-delete** on the Timeline's ⋯ menu was considered and
+  declined — the existing tap-based delete flow is already the required
+  single-pointer alternative a swipe gesture would need to keep anyway, so
+  adding one would only add a hidden, undiscoverable second path rather
+  than remove a step.
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen

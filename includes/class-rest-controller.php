@@ -412,6 +412,65 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				),
 			)
 		);
+
+		register_rest_route(
+			$this->namespace,
+			'/tags',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_tags' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'search' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * GET /tags — existing post_tag terms matching a search string, so the
+	 * composer's tag field can offer a tap-to-pick suggestion instead of
+	 * requiring the full name to be typed every time (product principle:
+	 * minimal text entry).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function get_tags( WP_REST_Request $request ) {
+		$search = (string) $request->get_param( 'search' );
+
+		if ( '' === trim( $search ) ) {
+			return new WP_REST_Response( array() );
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => 'post_tag',
+				'search'     => $search,
+				'number'     => 10,
+				'orderby'    => 'count',
+				'order'      => 'DESC',
+				'hide_empty' => false,
+			)
+		);
+
+		if ( is_wp_error( $terms ) || ! is_array( $terms ) ) {
+			return new WP_REST_Response( array() );
+		}
+
+		$results = array();
+		foreach ( $terms as $term ) {
+			$results[] = array(
+				'id'   => $term->term_id,
+				'name' => $term->name,
+			);
+		}
+
+		return new WP_REST_Response( $results );
 	}
 
 	/**
