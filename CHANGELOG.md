@@ -30,6 +30,7 @@ can't act on them.
 - Every Timeline item now shows its own site icon (a Mark's own avatar, or a subscribed site's icon) as its own leading element, separate from the item's thumbnail. Tapping it is a single click straight to the same Source filter Search already offers — no menu, no separate "visit the site" option. A Note Mark or a subscription post with no real photo no longer shows a second, type-initial icon next to it — that placeholder is gone, so title and caption text run further before wrapping.
 - Offline-first creation: compose, publish, or save a draft with no connection at all — Daymark saves it on your device and shows the same success screen as if you were online. It publishes or syncs itself automatically the moment you're back online, no manual retry, and a new Pending section on Home shows what's still waiting. Composer autosave now falls back to the same offline saving, so it protects your work whether or not you have a connection. Covers a session already open when you go offline (or start one offline) — loading `/daymark` itself for the very first time still needs a connection.
 - The AI Assist sheet's "Add a tag" field now suggests matching tags already used on your site as you type — tap one to add it instead of typing the full name.
+- Optimistic publishing: tapping Publish or Save as Draft no longer waits for the upload to finish — you're back on the confirmation screen immediately, and the Mark uploads and syndicates in the background, which matters most for a large video, a podcast episode, or a big gallery. A Pending row on Home shows it in progress and clears once it's done; the confirmation screen fills in the permalink and syndication status once the background upload confirms.
 
 ### Developer
 
@@ -37,6 +38,7 @@ can't act on them.
 - Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
 - Composer autosave requests (`autosave=1` on `POST /marks` / `PUT /marks/{id}`) use a new, independent `Daymark_Rate_Limiter::ACTION_AUTOSAVE` bucket rather than `ACTION_PUBLISH`, so frequent background autosave activity can never exhaust the budget for a real Publish/Save as Draft tap.
 - Audited the app shell against "gesture-friendly, large touch targets, comfortable thumb reach, minimal text entry" and documented it as a named commitment (CLAUDE.md, docs/design-principles.md, docs/roadmap.md) rather than only an implicit effect of other principles. Added `GET /daymark/v1/tags` (existing `post_tag` terms matching a search string) backing the new tag autocomplete.
+- `publishInBackground()`/`syncPendingMark()` extend the offline-first-creation IndexedDB pending queue (`assets/app.js`) to a queue-first, always-on mechanism for the deliberate Publish/Save-as-Draft tap, rather than only a connectivity-failure fallback; the pending-record schema gained a `status` field (`uploading`/`queued`/`error`) so `renderPendingItem()` can show which is true instead of every pending item saying "Offline". No server/PHP changes — same REST endpoints and payload shape as before.
 
 ### Changed
 
