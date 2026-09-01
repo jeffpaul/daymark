@@ -862,6 +862,32 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* Camera-first: the primary picker action is a <button> (opens the device
+   camera/mic directly via `capture`), not the <label> the neutral,
+   untyped picker still uses — reset button chrome while keeping the same
+   .daymark-picker__zone box look either way. */
+.daymark-picker__zone--button {
+	width: 100%;
+	appearance: none;
+	-webkit-appearance: none;
+	font: inherit;
+	color: inherit;
+}
+
+.daymark-picker__zone--button:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+/* Secondary, lower-emphasis action below the camera-first zone — still one
+   tap away for an already-taken photo/clip, just not the default. */
+.daymark-picker__library {
+	display: block;
+	width: 100%;
+	margin-top: var(--daymark-spacing-xs);
+	text-align: center;
+}
+
 /* --- Create: preview grid --- */
 .daymark-preview {
 	display: flex;

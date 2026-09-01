@@ -264,6 +264,20 @@ class Daymark_Routes {
 				self::icon_descriptor( 192 ),
 				self::icon_descriptor( 512 ),
 			),
+			// Camera-first: a long-press on the installed home-screen icon
+			// jumps straight to the composer (CreateScreen renders fine cold
+			// — no prior Home visit or app state required), skipping Home and
+			// the +New launcher tap entirely for the "standing somewhere,
+			// want to publish right now" case.
+			'shortcuts'        => array(
+				array(
+					'name'        => 'New Mark',
+					'short_name'  => 'New Mark',
+					'description' => 'Jump straight to the composer.',
+					'url'         => self::app_url() . '#create',
+					'icons'       => array( self::icon_descriptor( 192 ) ),
+				),
+			),
 		);
 	}
 

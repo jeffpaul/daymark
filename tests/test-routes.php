@@ -239,6 +239,29 @@ class Test_Routes extends WP_UnitTestCase {
 		}
 	}
 
+	/**
+	 * Camera-first: a home-screen shortcut jumps straight to the composer,
+	 * and its URL tracks the resolved app base the same as start_url/scope.
+	 */
+	public function test_manifest_new_mark_shortcut_tracks_base() {
+		self::factory()->post->create(
+			array(
+				'post_type' => 'page',
+				'post_name' => 'daymark',
+			)
+		);
+		Daymark_Routes::resolve_app_base();
+
+		$manifest = Daymark_Routes::build_manifest();
+
+		$this->assertArrayHasKey( 'shortcuts', $manifest );
+		$this->assertCount( 1, $manifest['shortcuts'] );
+		$this->assertSame(
+			home_url( '/daymark-app#create' ),
+			$manifest['shortcuts'][0]['url']
+		);
+	}
+
 	/** Explore/Search/Me are real routes under the app base, same as notifications already was. */
 	public function test_nav_destinations_get_real_routes() {
 		$patterns = $this->registered_rules();

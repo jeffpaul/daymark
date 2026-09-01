@@ -164,6 +164,7 @@ server-side.
 | AI | Optional, never blocks publish, no key storage; "WP 7.0 AI Client" (generic) | ✅ optional/non-blocking; **specifically** the namespaced `WordPress\AiClient\AiClient` via `wp_ai_client_prompt()` + `wp_supports_ai()` detection (legacy `WP_AI_Client` name does **not** exist) |
 | Backflow | Replies as WP comments | ✅ + read-time labeling of push federation comments |
 | PWA | Best-effort, scoped to `/moment`; never cache REST/nonces/admin/private media | ✅ conservative SW caches only `app.css` / `app.js` |
+| Media entry | "picks camera-roll media" (§4 MVP scope, above) | ✅ + **camera-first**: a typed composer entry's primary picker action opens the device camera/mic directly (the HTML `capture` attribute), not a gallery picker — "choose from library" is a secondary, lower-emphasis action, not the default. See CLAUDE.md's "Camera-first capture" decision. |
 
 ## 9. Visual & brand / PWA
 

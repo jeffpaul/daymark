@@ -386,6 +386,38 @@ test('image Mark: alt field, correct article, findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// Camera-first: "assume I'm standing somewhere and want to publish." A
+// typed launcher entry's picker offers camera/mic capture as the primary
+// action (requesting it via the `capture` attribute), with a lower-emphasis
+// "Choose from library" fallback that clears it — so an already-taken photo
+// stays reachable without being the default.
+test('camera-first: the Image picker offers capture first, with a library fallback', async ({
+	page,
+}) => {
+	// Any file chooser a trigger button opens is resolved immediately with
+	// nothing selected — this test only checks the `capture` attribute the
+	// buttons set/clear, not an actual file selection through them.
+	page.on('filechooser', (chooser) => chooser.setFiles([]));
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+
+	const input = page.locator('#daymark-file-input');
+	const captureBtn = page.locator('[data-picker-capture]');
+	const libraryBtn = page.locator('[data-picker-library]');
+
+	await expect(captureBtn).toContainText('Take Photo');
+	await expect(libraryBtn).toContainText('Choose from library');
+	await expect(input).not.toHaveAttribute('capture');
+
+	await captureBtn.click();
+	await expect(input).toHaveAttribute('capture', 'environment');
+
+	await libraryBtn.click();
+	await expect(input).not.toHaveAttribute('capture');
+});
+
 // Optional Title field: audio/video Marks surface an editable, optionally
 // AI-pre-filled Title field with a ⓘ tap-to-reveal hint; note Marks do not.
 test('audio Mark shows an editable optional Title field with a toggleable hint', async ({ page }) => {
@@ -1003,6 +1035,10 @@ test('manifest serves directly with app start_url', async ({ request }) => {
 	const manifest = await res.json();
 	expect(manifest.start_url).toContain('/daymark');
 	expect(manifest.scope).toContain('/daymark');
+	// Camera-first: a home-screen shortcut jumps straight to the composer.
+	expect(manifest.shortcuts).toHaveLength(1);
+	expect(manifest.shortcuts[0].url).toContain('/daymark');
+	expect(manifest.shortcuts[0].url).toContain('#create');
 });
 
 // Save as Draft → Drafts row → resume editing → publish (running the

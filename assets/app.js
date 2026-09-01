@@ -255,6 +255,32 @@
 		audio: 'audio/*',
 	};
 
+	// Camera-first: "assume I'm standing somewhere and want to publish," not
+	// sitting at a desktop picking a file. For a typed launcher entry (image/
+	// video/audio), the primary picker action opens the device's camera or
+	// mic directly via the `capture` attribute — a secondary "Choose from
+	// library" action clears it first, so an already-taken photo/clip stays
+	// one tap away rather than disappearing. 'environment' (rear camera) is
+	// ignored for audio capture direction but harmless — presence of the
+	// attribute is what matters there.
+	const CAPTURE_BY_TYPE = {
+		image: 'environment',
+		video: 'environment',
+		audio: 'environment',
+	};
+
+	const CAPTURE_LABEL_BY_TYPE = {
+		image: 'Take Photo',
+		video: 'Record Video',
+		audio: 'Record Audio',
+	};
+
+	const CAPTURE_HINT_BY_TYPE = {
+		image: 'Opens your camera',
+		video: 'Opens your camera',
+		audio: 'Opens your microphone',
+	};
+
 	function launcherIcon(glyph) {
 		return `<svg class="daymark-launcher__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
@@ -2692,10 +2718,29 @@
 					// hiding it here loses no real capability.
 					'note' === state.pendingType && !state.files.length && !editing
 						? ''
-						: `<div class="daymark-picker">
+						: ACCEPT_BY_TYPE[state.pendingType]
+						? // A typed launcher entry (Image/Video/Audio): camera-first
+						  // — the primary action opens the device's camera/mic
+						  // directly, a secondary, lower-emphasis action still
+						  // reaches an already-taken file. Same single input both
+						  // ways; bindEvents() toggles its `capture` attribute per
+						  // button before opening it.
+						  `<div class="daymark-picker">
 					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="${esc(
-						ACCEPT_BY_TYPE[state.pendingType] || 'image/*,video/*,audio/*'
-					)}" multiple />
+						ACCEPT_BY_TYPE[state.pendingType]
+					)}" multiple tabindex="-1" />
+					<button type="button" class="daymark-picker__zone daymark-picker__zone--button" data-picker-capture>
+						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+						<span>${esc(CAPTURE_LABEL_BY_TYPE[state.pendingType])}</span>
+						<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[state.pendingType])}</span>
+					</button>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>Choose from library instead</button>
+				</div>`
+						: // Untyped entry (e.g. a Drafts/Explore empty-state link) —
+						  // the intended capture mode isn't known yet, so this stays
+						  // the original neutral, non-capture picker.
+						  `<div class="daymark-picker">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*,audio/*" multiple />
 					<label for="daymark-file-input" class="daymark-picker__zone">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
 						<span>Tap to choose media</span>
@@ -2730,6 +2775,25 @@
 			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
 			const caption = root.querySelector('#daymark-caption');
+
+			// Camera-first two-button picker (typed entries only — see
+			// render()): each tap sets or clears `capture` on the one shared
+			// input right before opening it, so the same change handler below
+			// runs either way.
+			const captureBtn = root.querySelector('[data-picker-capture]');
+			if (captureBtn && input) {
+				captureBtn.addEventListener('click', () => {
+					input.setAttribute('capture', CAPTURE_BY_TYPE[state.pendingType] || 'environment');
+					input.click();
+				});
+			}
+			const libraryBtn = root.querySelector('[data-picker-library]');
+			if (libraryBtn && input) {
+				libraryBtn.addEventListener('click', () => {
+					input.removeAttribute('capture');
+					input.click();
+				});
+			}
 
 			if (input) {
 				input.addEventListener('change', () => {

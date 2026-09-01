@@ -12,13 +12,14 @@ Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks 
 
 == Description ==
 
-Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, picks media from the camera roll, adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
+Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, taps to capture a photo, video, or voice recording (or picks one already on their device), adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
 
 WordPress does not need to become a social network. Daymark makes your own site the starting point for social-shaped content: publish once on your domain, syndicate outward, and let the conversation flow back.
 
 = What you get =
 
-* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach.
+* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach. A home-screen shortcut (long-press the icon) jumps straight into the composer.
+* **Camera-first** — tap Image, Video, or Audio and Daymark opens your camera or microphone directly, ready to capture. Already have the photo or clip? "Choose from library" is right there too, just not the default.
 * **Standard WordPress posts** — every Mark is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Daymark never strands your content.
 * **Syndication routing** — choose which networks each Mark also publishes to. Daymark remembers your routing habits per content type and only offers destinations that are actually connected.
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.

@@ -199,6 +199,13 @@ stubbed AT Protocol API — see the setup notes at the top of
   right pattern for a background save nothing is waiting on — autosave and
   `flushOfflineQueue()`'s own retries keep using it unchanged. See CLAUDE.md's
   "Optimistic publishing" decision row for the full design.
+- **Assume "I'm standing somewhere and want to publish," not "sitting at a
+  desktop."** A new media-capable Mark type's picker should default to
+  requesting the device's camera/mic directly (the HTML `capture`
+  attribute) rather than a generic file chooser — camera-*first*, not
+  camera-*only*: keep an equally-reachable "choose from library" action
+  alongside it, following the pattern in `CreateScreen` (`assets/app.js`).
+  See CLAUDE.md's "Camera-first capture" decision row.
 
 ## Hook documentation
 

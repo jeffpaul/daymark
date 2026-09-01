@@ -94,9 +94,15 @@ term"), plus optimistic publishing (CLAUDE.md's "Optimistic publishing"
 decision row): tapping Publish never waits on the network — the Mark queues
 locally and the real request, including any media upload, finishes in the
 background regardless of connectivity, the same "background sync" concept
-this row names. Share sheet integration is the one item on this list still
-open roadmap territory, not shipped; when it lands, it should extend this
-same restraint rather than pull in native-style chrome.
+this row names. A home-screen shortcut straight to the composer (also
+CLAUDE.md's "Camera-first capture" row) is the *outbound* half of "instant
+startup" for someone who already knows they want to publish. Share sheet
+integration — specifically *receiving* a shared photo from the OS camera or
+another app (`share_target`) — is the one item on this list still open
+roadmap territory, deliberately scoped out of that same pass and tracked in
+[issue #131](https://github.com/jeffpaul/daymark/issues/131) rather than
+folded in; when it lands, it should extend this same restraint rather than
+pull in native-style chrome.
 
 "Responsive, thumb-friendly interactions" is deliberately gesture-*friendly*,
 not gesture-*first*: Home's pull-to-refresh (`bindPullGesture()`) is the app
