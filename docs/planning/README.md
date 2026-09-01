@@ -58,6 +58,11 @@ constraint is the feature."*
 5. **AI Assist, never AI First** — AI never sits between the person and the publish button.
 6. **Progressive Complexity** — start with one tap; grow into full WordPress later.
 
+> These six decide *what wins*. For *what it should feel like* while
+> winning — the specific products Daymark borrows a feeling from (Path, Day
+> One, WordPress, modern PWAs) and the part of each it deliberately leaves
+> behind — see **[docs/design-principles.md](../design-principles.md)**.
+
 ## 3. Target users
 
 - **Primary:** mobile-first creators who don't (yet) think of themselves as

@@ -7,6 +7,16 @@ reports, fixes, tests, docs, and new connectors.
 This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); by
 participating, you are expected to uphold it.
 
+Before proposing a new screen, extension point, or UI direction, read
+**[docs/design-principles.md](docs/design-principles.md)** — the rubric for
+what Daymark should feel like (borrowing from Path, Day One, WordPress, and
+modern PWAs, while deliberately leaving the rest of each behind) — alongside
+the six product principles in
+[docs/planning/README.md §2](docs/planning/README.md#2-principles). A PR that
+drifts toward social-feed mechanics, native app chrome, or wp-admin chrome
+inside the app shell is likely to be asked to change direction even if it
+works correctly.
+
 ## Ways to contribute
 
 - **Report a bug or request a feature** via
