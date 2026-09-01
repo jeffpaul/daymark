@@ -28,6 +28,15 @@ the essence worth keeping.
 
 ## 1. Vision & positioning
 
+> ⚠️ **Superseded (September 2026):** the authoritative, actively-maintained
+> mission statement — *"Make publishing to your own WordPress site feel as
+> joyful, immediate, and effortless as posting to the best mobile social apps,
+> while ensuring everything you create remains yours."* — lives in
+> **[CLAUDE.md → Mission](../../CLAUDE.md)**, alongside the eight product
+> principles it grounds. The spirit carries forward unchanged from the
+> section below; CLAUDE.md wins on overlap, per this file's own scope note
+> above.
+
 Publishing to your own site *feels like work*; posting to social is effortless —
 so social won attention and the open web lost. Moment closes that gap: a
 **phone-first "personal site publisher" mode** for WordPress that makes posting

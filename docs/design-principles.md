@@ -1,14 +1,15 @@
 # Daymark — Design Principles
 
-> Companion to **[docs/planning/README.md §2](planning/README.md#2-principles)**,
-> which sets the six *product* principles (Publish First, Mobile First,
-> Ownership by Default, Portable by Design, AI Assist never AI First,
-> Progressive Complexity). Those answer *what Daymark optimizes for*. This
-> document answers a different question: *which existing products' feel is
-> Daymark allowed to borrow from, and what part of each is explicitly left
-> behind?* Use both together when judging a new feature, a UI direction, or a
-> PR: the six principles say what wins; this rubric says what it should feel
-> like while winning.
+> Companion to **[CLAUDE.md → Mission](../CLAUDE.md)** and the eight product
+> principles just below it, which answer *what Daymark optimizes for* (the
+> historical six-item list this file once pointed to, in
+> [docs/planning/README.md §2](planning/README.md#2-principles), is now
+> superseded — see that section). This document answers a different
+> question: *which existing products' feel is Daymark allowed to borrow
+> from, and what part of each is explicitly left behind?* Use both together
+> when judging a new feature, a UI direction, or a PR: the Mission and
+> principles say what wins; this rubric says what it should feel like while
+> winning.
 
 Daymark sits at the intersection of four influences. From each, it borrows a
 specific *feeling* — never the whole product, and never the parts that would
