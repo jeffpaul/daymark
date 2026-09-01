@@ -55,6 +55,24 @@ class Test_AI_Assist extends WP_UnitTestCase {
 		$this->assertSame( $first, $second );
 	}
 
+	/**
+	 * Mock transcript generation returns an empty string, not a fabricated
+	 * placeholder — inventing plausible-looking speech would be actively
+	 * misleading in a field the author may publish verbatim, unlike the
+	 * other mocks' generic labels (e.g. mock alt text's "Audio file").
+	 */
+	public function test_mock_transcript_suggestion_is_empty_not_fabricated() {
+		$ai         = new Daymark_AI_Assist();
+		$suggestion = $ai->get_transcript_suggestion( '/nonexistent/path.mp3' );
+
+		$this->assertArrayHasKey( 'transcript', $suggestion );
+		$this->assertArrayHasKey( 'is_mocked', $suggestion );
+		$this->assertArrayHasKey( 'provider_label', $suggestion );
+		$this->assertSame( '', $suggestion['transcript'] );
+		$this->assertTrue( $suggestion['is_mocked'] );
+		$this->assertSame( 'Demo Mode', $suggestion['provider_label'] );
+	}
+
 	/** Publishing never requires AI. */
 	public function test_publishing_does_not_require_ai() {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
@@ -100,6 +118,50 @@ class Test_AI_Assist extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( '<user_content>A nice walk</user_content>', $description );
 		$this->assertStringContainsString( '<user_content>walk.png</user_content>', $description );
+	}
+
+	/**
+	 * "Summarize podcast" is satisfied by describe_context() embedding the
+	 * transcript as grounding for suggest_caption()/suggest_title() — not a
+	 * separate summary capability. Also wrapped in the <user_content>
+	 * boundary, same as draft text and filename.
+	 */
+	public function test_describe_context_embeds_transcript_as_grounding() {
+		$ai     = new Daymark_AI_Assist();
+		$method = new ReflectionMethod( $ai, 'describe_context' );
+
+		$description = $method->invoke(
+			$ai,
+			array(
+				'text'        => '',
+				'media_count' => 1,
+				'media_types' => array( 'audio' ),
+				'filename'    => '',
+				'type'        => 'audio',
+				'transcript'  => 'Today we talk about testing.',
+			)
+		);
+
+		$this->assertStringContainsString( '<user_content>Today we talk about testing.</user_content>', $description );
+	}
+
+	/** A context array with no transcript key at all (the pre-transcript call shape) doesn't warn or fail. */
+	public function test_describe_context_tolerates_missing_transcript_key() {
+		$ai     = new Daymark_AI_Assist();
+		$method = new ReflectionMethod( $ai, 'describe_context' );
+
+		$description = $method->invoke(
+			$ai,
+			array(
+				'text'        => 'A nice walk',
+				'media_count' => 0,
+				'media_types' => array(),
+				'filename'    => '',
+				'type'        => 'note',
+			)
+		);
+
+		$this->assertStringNotContainsString( 'Transcript excerpt', $description );
 	}
 
 	/** Text trying to fake a closing tag can't break out of the <user_content> boundary. */

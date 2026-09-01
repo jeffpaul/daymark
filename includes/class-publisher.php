@@ -139,6 +139,17 @@ class Daymark_Publisher {
 	public const MAX_TITLE_CHARS = 60;
 
 	/**
+	 * Character-count cap on a stored transcript (AI-generated or
+	 * hand-typed/edited). Generous relative to the AI adapter's own
+	 * generation cap (Daymark_AI_Assist::MAX_TRANSCRIPT_CHARS) since an
+	 * author editing a transcript by hand isn't bound by that limit — this
+	 * is purely a sanity backstop against unbounded post meta.
+	 *
+	 * @var int
+	 */
+	public const MAX_TRANSCRIPT_CHARS = 8000;
+
+	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
 	 *
 	 * Content sniffing (finfo) reports some formats with non-canonical names (e.g. WAV).
@@ -151,6 +162,20 @@ class Daymark_Publisher {
 		'audio/mp3'   => 'audio/mpeg',
 		'video/x-m4v' => 'video/mp4',
 	);
+
+	/**
+	 * Map a content-sniffed (or extension-checked) MIME type to its
+	 * canonical ALLOWED_MIME_TYPES form, so any caller checking a sniffed
+	 * MIME against that list (this class's own validate_uploaded_file(),
+	 * and Daymark_REST_Controller::ai_transcript()) sees the same aliases
+	 * resolved the same way, rather than each maintaining its own list.
+	 *
+	 * @param string $mime Sniffed or checked MIME type.
+	 * @return string Canonical MIME type.
+	 */
+	public static function canonical_mime( string $mime ): string {
+		return self::MIME_ALIASES[ $mime ] ?? $mime;
+	}
 
 	/**
 	 * Publish a Mark.
@@ -167,7 +192,8 @@ class Daymark_Publisher {
 	 * @return int|WP_Error Post ID on success.
 	 */
 	public function publish( array $data, array $files = array() ) {
-		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
 		$file_list = $this->normalize_files( $files );
 
@@ -318,6 +344,7 @@ class Daymark_Publisher {
 		// Raw caption, so editing can reopen the composer losslessly
 		// (post_content is derived block markup, post_excerpt is trimmed).
 		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_transcript', $transcript );
 		update_post_meta( $post_id, '_daymark_primary_type', $type );
 		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( array_map( 'intval', $media_ids ) ) );
 		update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
@@ -423,7 +450,8 @@ class Daymark_Publisher {
 			);
 		}
 
-		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
@@ -514,6 +542,7 @@ class Daymark_Publisher {
 		}
 
 		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_transcript', $transcript );
 		update_post_meta( $post_id, '_daymark_primary_type', $type );
 		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( $media_ids ) );
 
@@ -711,7 +740,7 @@ class Daymark_Publisher {
 		// 1) Content-based MIME sniff.
 		$finfo        = new finfo( FILEINFO_MIME_TYPE );
 		$content_mime = (string) $finfo->file( $file['tmp_name'] );
-		$content_mime = self::MIME_ALIASES[ $content_mime ] ?? $content_mime;
+		$content_mime = self::canonical_mime( $content_mime );
 
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
@@ -724,7 +753,7 @@ class Daymark_Publisher {
 		// 2) WordPress filename/extension cross-check.
 		$check      = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
 		$check_mime = (string) ( $check['type'] ?? '' );
-		$check_mime = self::MIME_ALIASES[ $check_mime ] ?? $check_mime;
+		$check_mime = self::canonical_mime( $check_mime );
 
 		if ( '' === $check_mime || ! in_array( $check_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(

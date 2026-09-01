@@ -338,7 +338,11 @@ that loop without new destinations or a new social network.
 - **Publish-loop polish.** Larger media sources (photo picker, drag-and-drop on
   desktop), gallery reordering, and draft → publish continuation are all
   candidates — each judged by whether it makes publishing faster (Publish First),
-  not more powerful.
+  not more powerful. Gallery reordering is also the prerequisite for an
+  AI-assisted ordering suggestion (CLAUDE.md's "AI as an assistant" decision;
+  tracked as [#134](https://github.com/jeffpaul/daymark/issues/134)) — the
+  manual override surface needs to exist before an AI proposes anything on
+  top of it.
 - **i18n readiness.** The plugin is en_US-only today. Wire the text domain into
   a translation scaffold so translators can work before a multilingual release,
   without changing any shipped strings' behavior.
