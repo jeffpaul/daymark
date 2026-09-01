@@ -25,7 +25,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
-* **Autosave** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home.
+* **Autosave, online or off** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home. No connection at all? Compose and publish anyway — Daymark saves it on your device and syncs it automatically the moment you're back online.
 
 = Product principles =
 
@@ -85,11 +85,15 @@ No. Every Mark is a standard post with post meta, so your content is fully porta
 
 = What happens if I close the app or lose connection while composing? =
 
-Your work is already safe in most cases: the composer autosaves your caption, media, alt text, and destination choices to a real draft as you go, so a closed tab, a phone call, or switching apps doesn't lose it — reopen Daymark and it's waiting under Drafts on Home. Autosave still needs an internet connection, the same as manually tapping Save as Draft; it does not work while your device is fully offline (see the next question).
+Your work is always safe. The composer autosaves your caption, media, alt text, and destination choices as you go, so a closed tab, a phone call, or switching apps doesn't lose it. With a connection, it saves straight to a real draft on your site — reopen Daymark and it's waiting under Drafts on Home. Without one, it saves to your device instead, shows up under Pending on Home, and publishes or saves itself automatically the moment you're back online — you don't need to do anything.
+
+= Can I create a Mark while offline? =
+
+Yes. Compose, add media, and tap Publish (or Save as Draft) with no connection at all — Daymark saves it on your device and shows "Saved offline," the same success screen either way. It publishes automatically as soon as you're back online; until then you'll find it under Pending on Home. This covers a session already open when you go offline (or start one offline); loading `/daymark` for the very first time with zero connectivity doesn't work yet — that needs a network for the initial page load.
 
 = Does it work offline? =
 
-Partially. A conservative service worker caches only the app's static CSS and JS for fast loading. It never caches REST responses, nonces, HTML, or media, and there is no offline publishing or autosave mode — both require a connection.
+Mostly, for the part that matters most: creating a Mark works fully offline once the app is open (see the previous question). A conservative service worker also caches the app's static CSS and JS for fast loading. What doesn't work offline: loading `/daymark` for the first time with no connection, and reading your Timeline, notifications, or other people's content — those still need a connection, and REST responses, nonces, HTML, and media are never cached.
 
 == Screenshots ==
 

@@ -1019,6 +1019,51 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 	await expect(page.getByText('Published to your site')).toBeVisible();
 });
 
+// Offline-first creation (issue #121): composing and saving while offline
+// queues the Mark locally (IndexedDB) instead of failing, and it syncs to a
+// real draft automatically once connectivity returns — no manual retry.
+// Only covers a session already open when connectivity drops; a cold load
+// of /daymark itself with zero connectivity is a documented non-goal (see
+// CLAUDE.md), so this test only ever toggles offline after the app has
+// already loaded, and navigates within the SPA (hash routes, no network)
+// rather than reloading while offline.
+test('offline: composing while offline queues locally and syncs when back online', async ({
+	page,
+}) => {
+	const caption = `E2E offline ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+
+	await page.context().setOffline(true);
+	try {
+		await page.locator('[data-action="next"]').click();
+		await page.locator('[data-action="save-draft"]').click();
+		await expect(page.getByText('Saved offline')).toBeVisible();
+
+		// Queued locally, not yet a real draft — reachable via the in-app
+		// link (client-side hash navigation; a real page load would fail
+		// while offline, per the documented scope above).
+		await page.locator('a.daymark-success__link[href="#home"]').click();
+		const pendingRow = page.locator('[data-resume-pending]').filter({ hasText: caption });
+		await expect(pendingRow).toBeVisible();
+		await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
+	} finally {
+		await page.context().setOffline(false);
+	}
+
+	// The 'online' event triggers an automatic flush; give it a moment,
+	// then reload (now safely online) to confirm the sync stuck.
+	await expect(page.locator('[data-resume-pending]').filter({ hasText: caption })).toHaveCount(
+		0,
+		{ timeout: 10000 }
+	);
+	await page.reload();
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
+});
+
 // Unread indicator: set by a new reply, cleared by viewing notifications —
 // client-side and across a full reload.
 test('unread dot appears for a new reply and clears after viewing', async ({ page }) => {
