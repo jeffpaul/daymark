@@ -164,6 +164,20 @@ class Daymark_Publisher {
 	);
 
 	/**
+	 * Map a content-sniffed (or extension-checked) MIME type to its
+	 * canonical ALLOWED_MIME_TYPES form, so any caller checking a sniffed
+	 * MIME against that list (this class's own validate_uploaded_file(),
+	 * and Daymark_REST_Controller::ai_transcript()) sees the same aliases
+	 * resolved the same way, rather than each maintaining its own list.
+	 *
+	 * @param string $mime Sniffed or checked MIME type.
+	 * @return string Canonical MIME type.
+	 */
+	public static function canonical_mime( string $mime ): string {
+		return self::MIME_ALIASES[ $mime ] ?? $mime;
+	}
+
+	/**
 	 * Publish a Mark.
 	 *
 	 * Validates and sideloads media, detects the primary Mark type,
@@ -726,7 +740,7 @@ class Daymark_Publisher {
 		// 1) Content-based MIME sniff.
 		$finfo        = new finfo( FILEINFO_MIME_TYPE );
 		$content_mime = (string) $finfo->file( $file['tmp_name'] );
-		$content_mime = self::MIME_ALIASES[ $content_mime ] ?? $content_mime;
+		$content_mime = self::canonical_mime( $content_mime );
 
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
@@ -739,7 +753,7 @@ class Daymark_Publisher {
 		// 2) WordPress filename/extension cross-check.
 		$check      = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
 		$check_mime = (string) ( $check['type'] ?? '' );
-		$check_mime = self::MIME_ALIASES[ $check_mime ] ?? $check_mime;
+		$check_mime = self::canonical_mime( $check_mime );
 
 		if ( '' === $check_mime || ! in_array( $check_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(

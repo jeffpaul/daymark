@@ -1148,8 +1148,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		// Validate from content, not the extension — audio or video only.
+		// canonical_mime() resolves content-sniffing aliases (e.g. a WAV
+		// file reported as audio/x-wav) the same way Daymark_Publisher's
+		// own upload validation already does, so the two never disagree.
 		$finfo = new finfo( FILEINFO_MIME_TYPE );
-		$mime  = (string) $finfo->file( $media['tmp_name'] );
+		$mime  = Daymark_Publisher::canonical_mime( (string) $finfo->file( $media['tmp_name'] ) );
 
 		$is_transcribable = str_starts_with( $mime, 'audio/' ) || str_starts_with( $mime, 'video/' );
 
