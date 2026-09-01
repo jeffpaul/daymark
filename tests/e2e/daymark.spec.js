@@ -729,14 +729,18 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	await expect(list.getByText(caption).first()).toBeVisible();
 });
 
-// Avatar menu: tapping a Timeline item's site icon/avatar offers "filter
-// Timeline to just this source" (primary — keeps the reader in the app) or
-// "visit the site" (secondary, explicitly less-promoted since it leaves the
-// app). Covers both card shapes — a Mark's own avatar ("your site") and a
-// subscription post's site icon — and reuses ensureSubscription()'s shared,
-// memoized subscribe + refresh from earlier in this file.
-test('avatar menu: filter to this source (primary) or visit the site (secondary)', async ({ page }) => {
-	const caption = `E2E avatar mark ${RUN_ID}`;
+// Site icon: tapping a Timeline item's site icon is a single click that
+// filters Timeline down to just that source — no popover, no "visit the
+// site" action. (A live product review of the earlier two-action popover
+// version asked for exactly this: drop "visit site" entirely, and stop
+// overlapping the icon on the thumbnail's corner like a circular badge, in
+// favor of its own separate, non-circular layout element — see the CSS
+// comment on .daymark-recent__siteicon.) Covers both card shapes — a
+// Mark's own icon ("your Marks") and a subscription post's site icon — and
+// reuses ensureSubscription()'s shared, memoized subscribe + refresh from
+// earlier in this file.
+test('site icon: a single click filters Timeline to that source', async ({ page }) => {
+	const caption = `E2E siteicon mark ${RUN_ID}`;
 
 	await loginAs(page);
 	await page.goto('/daymark');
@@ -754,28 +758,20 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	// --- The user's own Mark: "See only your Marks" / "Visit your site" ---
+	// --- The user's own Mark's site icon ---
 	const markCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(markCard).toBeVisible();
-	await markCard.locator('[data-avatarwrap] [data-menu-toggle]').click();
+	const markIcon = markCard.locator('[data-filter-site="mine"]');
+	await expect(markIcon).toBeVisible();
+	// No menu markup left to reuse — the icon itself carries the
+	// filter action directly, and has its own accessible name since there's
+	// no popover left to label a menu item inside.
+	await expect(markIcon).toHaveAttribute('aria-label', 'Filter Timeline to your Marks');
+	await expect(markCard.locator('[data-menu]')).toHaveCount(1); // only the ⋯ menu
 
-	const markMenu = markCard.locator('[data-avatarwrap] [data-menu]');
-	await expect(markMenu).toBeVisible();
-	const markFilterBtn = markMenu.locator('[data-filter-site="mine"]');
-	const markVisitBtn = markMenu.locator('[data-visit-site]');
-	await expect(markFilterBtn).toHaveText('See only your Marks');
-	await expect(markVisitBtn).toContainText('Visit your site');
-
-	// The secondary action's target: the app's own site URL, read straight
-	// off the attribute the click handler reads from — no navigation, no
-	// popup, so this stays on the test's own page.
-	const siteUrl = await page.evaluate(() => window.daymarkApp.siteUrl);
-	expect(await markVisitBtn.getAttribute('data-visit-site')).toBe(siteUrl);
-
-	// The primary action jumps straight to Search with "My Marks" already
-	// applied — one tap, rather than opening Search and picking the Source
-	// filter by hand (see the Source-filter test above).
-	await markFilterBtn.click();
+	// One click — no menu-open step first — jumps straight to Search with
+	// "My Marks" already applied.
+	await markIcon.click();
 	await expect(page).toHaveURL(/#search$/);
 	const sourceFilter = page.locator('[data-source-filter]');
 	const results = page.locator('[data-search-results]');
@@ -783,15 +779,15 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	await expect(results.getByText(caption).first()).toBeVisible();
 	await expect(results.locator('[data-subpost]')).toHaveCount(0);
 
-	// --- A subscription post: "See only posts from {site}" / "Visit {site}" ---
-	// Still on Search: switch the Source filter straight to this subscription
-	// (its id is the option value — same value a subscription-post card's own
-	// avatar menu uses for data-filter-site) rather than clearing back to
-	// "All". Search has no pagination (a flat per_page=20 fetch), so on a
-	// long-lived site "All" can be pushed past page 1 by other E2E-created
-	// Marks; filtering directly to this subscription guarantees a
-	// subscription-post card shows up. It renders the same avatar menu
-	// Home's own cards do, one shared implementation.
+	// --- A subscription post's site icon ---
+	// Still on Search: switch the Source filter straight to this
+	// subscription (its id is the option value — same value a
+	// subscription-post card's own site icon uses for data-filter-site)
+	// rather than clearing back to "All". Search has no pagination (a flat
+	// per_page=20 fetch), so on a long-lived site "All" can be pushed past
+	// page 1 by other E2E-created Marks; filtering directly to this
+	// subscription guarantees a subscription-post card shows up. It renders
+	// the same site icon Home's own cards do, one shared implementation.
 	const subscription = await ensureSubscription(page);
 	await sourceFilter.selectOption(String(subscription.id));
 	const subCard = results.locator('[data-subpost]').first();
@@ -800,24 +796,17 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 		.locator('.daymark-recent__item-wrap')
 		.filter({ has: page.locator('[data-subpost]') })
 		.first();
-	await subWrap.locator('[data-avatarwrap] [data-menu-toggle]').click();
-
-	const subMenu = subWrap.locator('[data-avatarwrap] [data-menu]');
-	await expect(subMenu).toBeVisible();
-	const subFilterBtn = subMenu.locator('[data-filter-site]');
-	const subVisitBtn = subMenu.locator('[data-visit-site]');
+	const subIcon = subWrap.locator('[data-filter-site]');
+	await expect(subIcon).toBeVisible();
 	// The exact site title is real, external data (the subscribed site's
-	// own), so only the fixed wording either label wraps around it is
+	// own), so only the fixed wording the label wraps around it is
 	// asserted here — same tolerance the Source-filter test above already
 	// applies to this same subscription.
-	await expect(subFilterBtn).toContainText('See only posts from');
-	await expect(subVisitBtn).toContainText('Visit');
-	const subVisitUrl = await subVisitBtn.getAttribute('data-visit-site');
-	expect(subVisitUrl).toMatch(/^https?:\/\//);
+	expect(await subIcon.getAttribute('aria-label')).toContain('Filter Timeline to posts from');
 
-	// The primary action re-applies the Source filter to just this one
-	// subscribed site, still on Search.
-	await subFilterBtn.click();
+	// One click re-applies the Source filter to just this one subscribed
+	// site, still on Search.
+	await subIcon.click();
 	await expect(sourceFilter).not.toHaveValue('');
 	await expect(results.getByText(caption)).toHaveCount(0);
 	await expect(results.locator('[data-subpost]').first()).toBeVisible();
@@ -843,11 +832,11 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 	await page.goto('/daymark');
 
 	// Scope every action to this Mark's own card, and within it to the ⋯
-	// actions menu specifically ([data-actions]) rather than the card as a
-	// whole — the card's separate avatar menu reuses the same
-	// data-menu-toggle/data-menu-actions attributes (both share the generic
-	// open/close machinery in renderMarkItem()), so an unscoped card.locator()
-	// for either would match two elements.
+	// actions menu specifically ([data-actions]) — its own site icon
+	// (data-filter-site) is a plain sibling button now, not a second user of
+	// this same data-menu-toggle/data-menu-actions machinery, so there's no
+	// collision to guard against there; [data-actions] is still the correct,
+	// explicit scope regardless.
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
 	const menu = card.locator('[data-actions]');
