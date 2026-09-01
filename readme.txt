@@ -26,6 +26,19 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
 
+= Product principles =
+
+Daymark is built around a few clear ideas:
+
+* **Publishing comes before editing.** Getting a Mark out the door comes first; refining it is optional and never blocks the Publish button.
+* **Your site is the source of truth.** Your site is always the destination that matters — social networks are additive, never a replacement.
+* **Mobile is the primary creation experience.** Daymark is designed one-handed, for a phone, first.
+* **Media is first-class.** Images, video, audio, and notes each get handling suited to them, not one-size-fits-all.
+* **Everything should be publishable in under 30 seconds.** Smart defaults do the work so you don't have to.
+* **AI assists the creator, never replaces them.** Every AI suggestion is optional and editable, and Daymark works exactly the same without one.
+* **Progressive disclosure.** Simple by default; more control is there when you want it, without cluttering the common case.
+* **Every Mark is portable and future-proof.** It's a standard WordPress post — it outlives Daymark itself.
+
 = Publishing destinations =
 
 Your site itself is always the primary destination — social networks are strictly additive. Daymark works with the publishing plugins you already use (Jetpack Social, Share on Mastodon, ATmosphere, and more): it detects them and, where a plugin exposes a per-post control, adds an in-app on/off toggle per Mark. Replies delivered by federation plugins are recognized and labeled in notifications. An open connector interface lets any plugin register a first-class destination without changing Daymark.

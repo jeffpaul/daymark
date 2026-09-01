@@ -27,6 +27,11 @@ can't act on them.
 - **Search**: promoted out of Home's old collapsible header search bar into its own screen and nav destination, reusing the same keyword/type/source query. Home no longer has an inline search UI.
 - **Me**: a minimal personal-identity screen — avatar and display name, a link into Search scoped to your own Marks, a view-only Drafts list (tap to resume editing), and links out to Notifications, the wp-admin Subscriptions screen, and WordPress's own profile/logout screens.
 
+### Developer
+
+- Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
+- Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
+
 ### Changed
 
 - For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.

@@ -7,6 +7,40 @@ reports, fixes, tests, docs, and new connectors.
 This project follows a [Code of Conduct](CODE_OF_CONDUCT.md); by
 participating, you are expected to uphold it.
 
+## Product principles
+
+Daymark is built around eight product principles — the authoritative,
+implication-mapped list is in
+[CLAUDE.md → Product principles](CLAUDE.md#product-principles). Read them
+before proposing a feature or a connector; in short, for anyone extending the
+plugin:
+
+1. Publishing comes before editing.
+2. Your site is the source of truth.
+3. Mobile is the primary creation experience.
+4. Media is first-class.
+5. Everything should be publishable in under 30 seconds.
+6. AI assists the creator, never replaces them.
+7. Progressive disclosure: simple by default, powerful when needed.
+8. Every daymark is portable and future-proof.
+
+In practice this means: don't add a step or required field to the publish
+flow without weighing it against principle 5; a connector or AI integration
+must never block or gate publishing (principles 1 and 6); new configuration
+that isn't touched often belongs in wp-admin, not the app shell (principle
+7); and a Mark stays a standard `post` — no custom post type, no proprietary
+format (principle 8). A PR that trades one of these off should say so
+explicitly in its description.
+
+Before proposing a new screen, extension point, or UI direction, also read
+**[docs/design-principles.md](docs/design-principles.md)** — the rubric for
+what Daymark should *feel* like (borrowing from Path, Day One, WordPress, and
+modern PWAs, while deliberately leaving the rest of each behind). Where the
+eight principles above decide *what wins*, this rubric decides *what it
+should feel like while winning*. A PR that drifts toward social-feed
+mechanics, native app chrome, or wp-admin chrome inside the app shell is
+likely to be asked to change direction even if it works correctly.
+
 ## Ways to contribute
 
 - **Report a bug or request a feature** via

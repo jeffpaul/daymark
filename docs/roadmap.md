@@ -13,7 +13,10 @@
 - **Principles bind it.** Anything proposed must serve the six principles in
   [planning §2](planning/README.md#2-principles) — Publish First, Mobile First,
   Ownership by Default, Portable by Design, AI Assist never AI First,
-  Progressive Complexity — and must not cross the non-goals (§4 there).
+  Progressive Complexity — and must not cross the non-goals (§4 there). It
+  should also read against [docs/design-principles.md](design-principles.md) —
+  the Path / Day One / WordPress / modern-PWA rubric for what a proposal
+  should *feel* like, and which parts of those influences stay left behind.
 - **Non-goals stay non-goals until explicitly overturned.** Real social-API
   publishing in core, full offline PWA, push notifications, a custom post
   type, and multi-user team workflows are *not* planned. A roadmap line that
