@@ -784,12 +784,16 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	await expect(results.locator('[data-subpost]')).toHaveCount(0);
 
 	// --- A subscription post: "See only posts from {site}" / "Visit {site}" ---
-	// Still on Search: clear the filter back to "All" so a subscription-post
-	// card is available — it renders the same avatar menu Home's own cards
-	// do, one shared implementation. Search has no pagination (a flat
-	// per_page=20 fetch), so — unlike Home — no scrolling is needed for one
-	// to show up.
-	await sourceFilter.selectOption('');
+	// Still on Search: switch the Source filter straight to this subscription
+	// (its id is the option value — same value a subscription-post card's own
+	// avatar menu uses for data-filter-site) rather than clearing back to
+	// "All". Search has no pagination (a flat per_page=20 fetch), so on a
+	// long-lived site "All" can be pushed past page 1 by other E2E-created
+	// Marks; filtering directly to this subscription guarantees a
+	// subscription-post card shows up. It renders the same avatar menu
+	// Home's own cards do, one shared implementation.
+	const subscription = await ensureSubscription(page);
+	await sourceFilter.selectOption(String(subscription.id));
 	const subCard = results.locator('[data-subpost]').first();
 	await expect(subCard).toBeVisible();
 	const subWrap = results
