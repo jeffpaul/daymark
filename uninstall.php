@@ -95,29 +95,3 @@ foreach ( $daymark_subscription_post_ids as $daymark_subscription_post_id ) {
 // so uninstall drops it outright.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time removal of the plugin's own table.
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}daymark_subscriptions" );
-
-// Legacy Moment (≤ 0.5.0) bookkeeping, in case the plugin is uninstalled
-// before its one-time migration ever ran. Remove this block together with
-// includes/class-migration.php.
-delete_option( 'moment_activated' );
-delete_option( 'moment_version' );
-delete_option( 'moment_pages' );
-delete_option( 'moment_app_base' );
-delete_metadata( 'user', 0, 'moment_destination_prefs', '', true );
-delete_metadata( 'user', 0, 'moment_category_prefs', '', true );
-delete_metadata( 'user', 0, 'moment_notifications_seen', '', true );
-wp_clear_scheduled_hook( 'moment_backflow_sync' );
-wp_clear_scheduled_hook( 'moment_backflow_sync_now' );
-delete_transient( 'moment_backflow_freshened' );
-
-// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
-$daymark_legacy_cooldowns = $wpdb->get_col(
-	$wpdb->prepare(
-		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
-		$wpdb->esc_like( '_transient_moment_backflow_cooldown_' ) . '%'
-	)
-);
-
-foreach ( $daymark_legacy_cooldowns as $daymark_legacy_option_name ) {
-	delete_transient( str_replace( '_transient_', '', $daymark_legacy_option_name ) );
-}

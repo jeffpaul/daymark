@@ -100,10 +100,11 @@ class Test_Routes extends WP_UnitTestCase {
 	}
 
 	/**
-	 * An install that migrated before Daymark_Migration stopped carrying the
-	 * Moment-era base into daymark_app_base has it stuck there permanently —
-	 * app_base() must self-heal that on the next resolution rather than
-	 * trusting it forever, the way it does for a genuinely valid base.
+	 * An install that migrated before an earlier version of the one-time
+	 * Moment-to-Daymark migration stopped carrying the Moment-era base into
+	 * daymark_app_base has it stuck there permanently — app_base() must
+	 * self-heal that on the next resolution rather than trusting it forever,
+	 * the way it does for a genuinely valid base.
 	 */
 	public function test_stale_app_base_self_heals_to_daymark() {
 		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
@@ -131,7 +132,7 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( 'already-set', get_option( Daymark_Routes::OPTION_LEGACY_APP_BASE ) );
 	}
 
-	/** The self-healed base gets the exact same /daymark route + old-slug redirect as a fresh migration would. */
+	/** The self-healed base gets the exact same /daymark route + old-slug redirect a fresh migration once did. */
 	public function test_stale_app_base_self_heal_registers_redirect() {
 		update_option( Daymark_Routes::OPTION_APP_BASE, 'moment' );
 
