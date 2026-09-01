@@ -1624,12 +1624,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// gone (should not normally happen while its posts still
 			// exist) or never had a favicon resolved.
 			'site_icon_url'      => esc_url_raw( (string) ( $subscription['site_icon_url'] ?? '' ) ),
-			// The subscribed site's own URL and title, for a tap on this
-			// item's avatar to offer "visit this site" and "show only this
-			// site's posts" — both read from the row already fetched above,
-			// no extra lookup.
-			'site_url'           => esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) ),
-			'site_title'         => sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) ),
 		);
 	}
 

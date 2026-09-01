@@ -197,7 +197,6 @@ $daymark_config = array(
 	'currentUser'         => array(
 		'id'          => (int) $daymark_user->ID,
 		'displayName' => $daymark_user->display_name,
-		'avatarUrl'   => get_avatar_url( $daymark_user->ID ),
 	),
 );
 
