@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Developer
+
+- Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
+
 ### Changed
 
 - For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.
