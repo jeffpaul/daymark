@@ -26,12 +26,14 @@ can't act on them.
 - **Explore**: a first, deliberately non-chronological browsing destination — not a second Timeline. "Browse by type" (Image/Video/Audio/Note) and "Following" (your active subscriptions) both hand a preset off to Search rather than duplicating its results view, and are built entirely on data/endpoints the plugin already had. Memories, highlights, collections, favorites, and suggested content are future sections, not implied by what ships here.
 - **Search**: promoted out of Home's old collapsible header search bar into its own screen and nav destination, reusing the same keyword/type/source query. Home no longer has an inline search UI.
 - **Me**: a minimal personal-identity screen — avatar and display name, a link into Search scoped to your own Marks, a view-only Drafts list (tap to resume editing), and links out to Notifications, the wp-admin Subscriptions screen, and WordPress's own profile/logout screens.
-- Tapping a Timeline item's avatar/site icon now offers to filter down to just that source ("See only your Marks" / "See only posts from {site}") or visit the site directly. Filtering is the primary, more prominent action — it jumps straight to Search with that Source filter already applied, one tap away instead of opening Search and picking it by hand; visiting the site is secondary, since it leaves the app.
+- Composer autosave: your in-progress Mark (caption, media, alt text, destination and category choices) now saves automatically to a real draft as you compose, well before you tap Publish or Save as Draft. Close the tab, take a call, or switch apps mid-caption and your work is waiting under Drafts on Home — no manual save step needed. Still requires an internet connection, the same as the existing manual Save as Draft. A typed-but-unsent Notifications reply is similarly protected against being lost when you switch to another reply or navigate back to Notifications.
+- Tapping a Timeline item's avatar/site icon now offers to filter Timeline down to just that source ("See only your Marks" / "See only posts from {site}") or visit the site directly. Filtering is the primary, more prominent action — it's the same Source filter already reachable through search, just one tap away instead of requiring the search bar; visiting the site is secondary, since it leaves the app.
 
 ### Developer
 
 - Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
 - Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
+- Composer autosave requests (`autosave=1` on `POST /marks` / `PUT /marks/{id}`) use a new, independent `Daymark_Rate_Limiter::ACTION_AUTOSAVE` bucket rather than `ACTION_PUBLISH`, so frequent background autosave activity can never exhaust the budget for a real Publish/Save as Draft tap.
 
 ### Changed
 
