@@ -70,6 +70,7 @@ class Daymark_Routes {
 		add_rewrite_rule( '^' . $base . '/search/?$', 'index.php?' . self::QUERY_VAR . '=search', 'top' );
 		add_rewrite_rule( '^' . $base . '/me/?$', 'index.php?' . self::QUERY_VAR . '=me', 'top' );
 		add_rewrite_rule( '^' . $base . '/manifest\.json$', 'index.php?' . self::QUERY_VAR . '=manifest', 'top' );
+		add_rewrite_rule( '^' . $base . '/share/?$', 'index.php?' . self::QUERY_VAR . '=share', 'top' );
 
 		// A bookmarked/indexed URL for a retired Images/Videos/Audio/Notes
 		// section page (see Daymark_Plugin::migrate_content_type_pages())
@@ -278,6 +279,27 @@ class Daymark_Routes {
 					'icons'       => array( self::icon_descriptor( 192 ) ),
 				),
 			),
+			// "Share -> Daymark" from the OS share sheet — the installed
+			// app's own /share route (Daymark_Share_Target) receives the
+			// POST and creates a draft. `media[]` (not `media`) so PHP
+			// transposes more than one shared file into an array the same
+			// way the composer's own files[] upload field already does.
+			'share_target'     => array(
+				'action'  => self::app_url( 'share' ),
+				'method'  => 'POST',
+				'enctype' => 'multipart/form-data',
+				'params'  => array(
+					'title' => 'title',
+					'text'  => 'text',
+					'url'   => 'url',
+					'files' => array(
+						array(
+							'name'   => 'media[]',
+							'accept' => array( 'image/*', 'video/*', 'audio/*' ),
+						),
+					),
+				),
+			),
 		);
 	}
 
@@ -376,6 +398,14 @@ class Daymark_Routes {
 			header( 'Content-Type: application/manifest+json; charset=utf-8' );
 			echo wp_json_encode( self::build_manifest() );
 			exit;
+		}
+
+		// The OS share sheet's POST target (see build_manifest()'s
+		// share_target) — not an app screen either. Daymark_Share_Target
+		// always exits (a redirect into the app, or a wp_die() on a real
+		// failure), so nothing after this point ever runs for this screen.
+		if ( 'share' === $screen ) {
+			Daymark_Plugin::instance()->share_target->handle();
 		}
 
 		// /daymark on a migrated install (base still the legacy value):

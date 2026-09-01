@@ -198,6 +198,12 @@ $daymark_config = array(
 	// management" decision. Explore's Following section and Me both link
 	// out to it rather than duplicating it in-app.
 	'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
+	// Set only right after Daymark_Share_Target redirects here from a
+	// successful OS share-sheet POST — the app boots straight into that
+	// draft's composer instead of Home. GET /marks/{id} (which openDraft()
+	// uses) already enforces edit_post on this id, so a tampered value just
+	// fails that fetch harmlessly rather than needing a second check here.
+	'pendingDraftId'        => isset( $_GET['daymark_draft'] ) ? absint( wp_unslash( $_GET['daymark_draft'] ) ) : 0, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
 );
 
 /*

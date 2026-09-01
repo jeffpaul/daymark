@@ -293,13 +293,29 @@ record.
   entry lets a long-press on the installed home-screen icon skip Home and
   the +New launcher tap entirely.
 
-**Considered and deferred:**
+---
 
-- [ ] **`share_target`** — receiving a shared photo from the OS camera app or
-  another app's share sheet, so Daymark never needs to be opened first at
-  all. Needs a deliberate service-worker scope-widening decision, not a
-  quick add-on; tracked in
-  [issue #131](https://github.com/jeffpaul/daymark/issues/131).
+## Shipped — Share sheet integration
+
+"Share -> Daymark" on iOS/Android: sharing a photo, link, or text from any
+app creates a Daymark draft directly, without opening the app first — "one
+of the best ways to get content into WordPress." Originally scoped out of
+Camera-first capture (tracked as issue #131) on the assumption it would need
+a service-worker scope-widening decision; it turned out not to. See
+CLAUDE.md's "Share sheet integration" decision row for the full technical
+record.
+
+- [x] **A real `share_target`.** The PWA manifest declares it; a new
+  `{base}/share` server route (`Daymark_Share_Target`) receives the POST
+  directly — no service worker involved at all, since a share-target
+  delivery is a real top-level navigation the server can just handle like
+  any other form submission.
+- [x] **Always a draft.** Reuses `Daymark_Publisher::publish()` directly —
+  same content model, same default destinations/categories, same
+  drafts-never-syndicate guarantee every other draft already has.
+- [x] **Lands you right where you'd expect.** A successful share redirects
+  straight into that draft's composer (skipping Home entirely), with the
+  shared photo and any shared text already there.
 
 ---
 

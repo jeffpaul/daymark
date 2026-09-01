@@ -20,6 +20,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 
 * **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach. A home-screen shortcut (long-press the icon) jumps straight into the composer.
 * **Camera-first** — tap Image, Video, or Audio and Daymark opens your camera or microphone directly, ready to capture. Already have the photo or clip? "Choose from library" is right there too, just not the default.
+* **Share sheet integration** — on your phone, share a photo, link, or text straight to Daymark from any app (Photos, Safari, wherever). It creates a draft and opens right into the composer, ready for a caption. No need to open Daymark first.
 * **Standard WordPress posts** — every Mark is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Daymark never strands your content.
 * **Syndication routing** — choose which networks each Mark also publishes to. Daymark remembers your routing habits per content type and only offers destinations that are actually connected.
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
@@ -92,6 +93,10 @@ Your work is always safe. The composer autosaves your caption, media, alt text, 
 = Why doesn't Publish make me wait for a big video or gallery to finish uploading? =
 
 It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. A Pending row on Home shows it while that's still in progress, and it moves into your normal Recent Marks (or Drafts) the moment it's done — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
+
+= Can I share a photo to Daymark from another app? =
+
+Yes, once you've added Daymark to your home screen (required for the share sheet to offer it as an app to share to). Share a photo, video, a link, or selected text from Photos, Safari, or almost any other app, and pick Daymark — it creates a draft with whatever you shared and opens straight into the composer so you can add a caption and publish. You need to be logged in already; the share sheet has no way to log you in first.
 
 = Can I create a Mark while offline? =
 

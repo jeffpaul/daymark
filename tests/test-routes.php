@@ -271,6 +271,13 @@ class Test_Routes extends WP_UnitTestCase {
 		$this->assertSame( 'index.php?daymark_app=me', $patterns['^daymark/me/?$'] ?? null );
 	}
 
+	/** The Web Share Target's action URL (the manifest's share_target.action) is a registered route. */
+	public function test_share_target_route_registered() {
+		$patterns = $this->registered_rules();
+
+		$this->assertSame( 'index.php?daymark_app=share', $patterns['^daymark/share/?$'] ?? null );
+	}
+
 	/** A bookmarked URL for a retired content-type page redirects to Explore. */
 	public function test_legacy_content_page_slug_redirects_to_explore() {
 		update_option( 'daymark_legacy_content_pages', array( 'notes' => true ) );

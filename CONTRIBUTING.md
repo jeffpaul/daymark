@@ -206,6 +206,16 @@ stubbed AT Protocol API — see the setup notes at the top of
   camera-*only*: keep an equally-reachable "choose from library" action
   alongside it, following the pattern in `CreateScreen` (`assets/app.js`).
   See CLAUDE.md's "Camera-first capture" decision row.
+- **A route the OS itself POSTs to (no page of Daymark's own involved)
+  can't carry a REST nonce.** `Daymark_Share_Target` is the example: it
+  leans on WordPress's SameSite=Lax auth cookie (never attached to a
+  cross-site POST) plus a `Sec-Fetch-Site` check that only rejects
+  `cross-site`/`same-site` values, not `same-origin`/`none`/absent — a
+  same-origin browser-initiated delivery is not reliably `same-origin`
+  itself. A future endpoint in the same shape (no page to embed a nonce
+  into) should follow this pattern rather than skipping nonce
+  verification with no replacement. See CLAUDE.md's "Share sheet
+  integration" decision row.
 
 ## Hook documentation
 
