@@ -12,6 +12,8 @@ Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks 
 
 == Description ==
 
+**Mission:** Make publishing to your own WordPress site feel as joyful, immediate, and effortless as posting to the best mobile social apps, while ensuring everything you create remains yours.
+
 Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, taps to capture a photo, video, or voice recording (or picks one already on their device), adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
 
 WordPress does not need to become a social network. Daymark makes your own site the starting point for social-shaped content: publish once on your domain, syndicate outward, and let the conversation flow back.

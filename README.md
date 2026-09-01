@@ -13,6 +13,10 @@
 
 > Personal Site Publisher Mode for WordPress.
 
+**Mission:** Make publishing to your own WordPress site feel as joyful,
+immediate, and effortless as posting to the best mobile social apps, while
+ensuring everything you create remains yours.
+
 ## Overview
 
 Daymark is a phone-first publishing experience for WordPress — a "Personal Site

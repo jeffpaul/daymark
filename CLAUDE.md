@@ -3,6 +3,21 @@
 # Place this file in your WordPress installation root (same level as wp-config.php).
 # Update bracketed values after Phase 0 environment checks.
 
+## Mission
+
+> Make publishing to your own WordPress site feel as joyful, immediate, and
+> effortless as posting to the best mobile social apps, while ensuring
+> everything you create remains yours.
+
+This is the lens for every product and design decision in this repo — weigh a
+new feature, a UI direction, or a PR against this sentence before anything
+else. The eight product principles below are how it gets operationalized in
+the codebase; the Path/Day One/WordPress/modern-PWA rubric in
+[docs/design-principles.md](docs/design-principles.md) is how it gets
+operationalized in *feel*; the Non-goals list is its enforced boundary. The
+"Strategic line" at the end of this file is the same idea compressed into a
+competitive-positioning tagline, not a separate or competing statement.
+
 ## Plugin identity
 
 | Key | Value |
@@ -252,7 +267,9 @@ record is its product/vision/history companion.
 Codified September 2026; supersedes the six-item list in
 [docs/planning/README.md §2](docs/planning/README.md). This is the authoritative
 list — use it as the lens for future product decisions, and cite the relevant
-principle in a decision's rationale when it applies.
+principle in a decision's rationale when it applies. Each principle is the
+Mission statement above (also September 2026) broken into a concrete
+implication for the codebase.
 
 1. **Publishing comes before editing.** The composer's job is to get a Mark
    published, not to be a content editor. Refinement (per-image alt text,
@@ -305,3 +322,7 @@ principle in a decision's rationale when it applies.
 
 WordPress does not need to become a social network.
 It needs to become the best place for social-shaped content to begin.
+
+The Mission statement at the top of this file is the same idea, stated as a
+product goal rather than a competitive position — use that one as the lens
+for evaluating new work.
