@@ -556,6 +556,11 @@ h2[tabindex='-1']:focus {
 	border-color: currentColor;
 }
 
+.daymark-chip--danger {
+	color: var(--daymark-error);
+	border-color: currentColor;
+}
+
 /* --- Home: recent Marks --- */
 .daymark-recent {
 	display: flex;

@@ -89,9 +89,13 @@ away in wp-admin's advanced editor — never inline in the fast-publish path.
 pretending to be a native app or reimplementing OS-level navigation
 patterns. Today this is the manifest + conservative service worker (Phase 8:
 caches `app.css`/`app.js` only, never REST/nonces/admin/private media — full
-offline mode and background sync are explicit non-goals, see CLAUDE.md and
-roadmap "Longer term"). Share sheet integration and background uploads are
-open roadmap territory, not shipped; when they land, they should extend this
+offline mode is an explicit non-goal, see CLAUDE.md and roadmap "Longer
+term"), plus optimistic publishing (CLAUDE.md's "Optimistic publishing"
+decision row): tapping Publish never waits on the network — the Mark queues
+locally and the real request, including any media upload, finishes in the
+background regardless of connectivity, the same "background sync" concept
+this row names. Share sheet integration is the one item on this list still
+open roadmap territory, not shipped; when it lands, it should extend this
 same restraint rather than pull in native-style chrome.
 
 "Responsive, thumb-friendly interactions" is deliberately gesture-*friendly*,

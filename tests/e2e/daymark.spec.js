@@ -1096,7 +1096,7 @@ test('offline: composing while offline queues locally and syncs when back online
 	try {
 		await page.locator('[data-action="next"]').click();
 		await page.locator('[data-action="save-draft"]').click();
-		await expect(page.getByText('Saved offline')).toBeVisible();
+		await expect(page.getByText('Saved as draft')).toBeVisible();
 
 		// Queued locally, not yet a real draft — reachable via the in-app
 		// link (client-side hash navigation; a real page load would fail
@@ -1183,16 +1183,27 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	await expect(page.locator('.daymark-iconbtn__dot')).toHaveCount(0);
 });
 
-// While a publish is in flight: both buttons disabled, the button shows
-// the loading state, and there is no separate "Publishing…" message.
-test('publish in flight disables both buttons and shows only the button loading state', async ({ page }) => {
+// Optimistic publishing: "Tap Publish. Immediately appears in your
+// timeline. Uploads continue in the background." Publish never waits on
+// the network — it queues the Mark locally and moves on to Success right
+// away, well before an artificially slow create request resolves. While
+// that request is still in flight, Home's Pending section shows it as
+// actively uploading (not the generic "Offline" wording used for a
+// genuine connectivity failure); once the request confirms, the Success
+// screen upgrades in place with the real "Published to your site" detail
+// and the Pending row clears.
+test('publish is optimistic: Success shows immediately and upgrades once the upload confirms', async ({
+	page,
+}) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 	await openComposer(page);
-	await page.fill('#daymark-caption', `E2E loading ${RUN_ID}`);
+	await page.fill('#daymark-caption', `E2E optimistic ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 
-	// Hold the create request so the in-flight UI is observable.
+	// Hold the create request so the "still uploading" window is
+	// observable — long enough to assert against, short enough to keep the
+	// test fast.
 	await page.route('**/daymark/v1/marks', async (route) => {
 		await new Promise((resolve) => setTimeout(resolve, 1500));
 		await route.continue();
@@ -1200,14 +1211,20 @@ test('publish in flight disables both buttons and shows only the button loading 
 
 	await page.locator('[data-action="publish"]').click();
 
-	const publishBtn = page.locator('[data-action="publish"]');
-	const draftBtn = page.locator('[data-action="save-draft"]');
-	await expect(publishBtn).toBeDisabled();
-	await expect(draftBtn).toBeDisabled();
-	await expect(publishBtn).toHaveText('Publishing…');
-	await expect(page.locator('[data-publish-status]')).toHaveText('');
+	// Success shows immediately, from client-known data only — well before
+	// the delayed request could have resolved.
+	await expect(page.getByText('Uploading in the background')).toBeVisible({ timeout: 800 });
+	await expect(page.getByText('Published to your site')).toHaveCount(0);
 
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	// Home's Pending section reflects the in-flight upload distinctly from
+	// a genuine offline queue.
+	await page.locator('a.daymark-success__link[href="#home"]').click();
+	await expect(page.locator('[data-pending-section]')).toBeVisible();
+	await expect(page.locator('[data-pending-section]').getByText('Uploading', { exact: true })).toBeVisible();
+
+	// Once the delayed request resolves, the Pending section clears on its
+	// own — no manual refresh needed.
+	await expect(page.locator('[data-pending-section]')).toBeHidden({ timeout: 5000 });
 });
 
 // Home IS the merged Timeline feed (Marks + subscribed posts) now — there's

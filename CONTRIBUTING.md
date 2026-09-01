@@ -190,6 +190,15 @@ stubbed AT Protocol API — see the setup notes at the top of
   deliberate exception, and a new gesture should keep an equivalent tap
   affordance rather than replace one — see CLAUDE.md's "Touch-target /
   thumb-reach / gesture / text-entry audit" decision row.
+- **The deliberate Publish/Save-as-Draft tap never waits on the network.**
+  `publishInBackground()`/`syncPendingMark()` in `assets/app.js` queue the
+  Mark locally first (fast, local IndexedDB) and run the real request
+  afterward, in the background — `PublishScreen.publish()` navigates to
+  Success without awaiting it. This is deliberately queue-first, unlike
+  `submitOrQueue()` (network-first, offline-only fallback), which stays the
+  right pattern for a background save nothing is waiting on — autosave and
+  `flushOfflineQueue()`'s own retries keep using it unchanged. See CLAUDE.md's
+  "Optimistic publishing" decision row for the full design.
 
 ## Hook documentation
 

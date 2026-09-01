@@ -26,6 +26,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it. Typing a tag also suggests matching tags already used on your site — tap one instead of typing the full name.
 * **Autosave, online or off** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home. No connection at all? Compose and publish anyway — Daymark saves it on your device and syncs it automatically the moment you're back online.
+* **Tap Publish, don't wait** — Publish and Save as Draft never make you sit and watch a spinner. Your Mark is safe and you're back on Home right away; the upload finishes in the background, which matters most for a large video, a podcast episode, or a big gallery. A Pending row on Home shows what's still uploading, and disappears on its own once it's done.
 
 = Product principles =
 
@@ -87,9 +88,13 @@ No. Every Mark is a standard post with post meta, so your content is fully porta
 
 Your work is always safe. The composer autosaves your caption, media, alt text, and destination choices as you go, so a closed tab, a phone call, or switching apps doesn't lose it. With a connection, it saves straight to a real draft on your site — reopen Daymark and it's waiting under Drafts on Home. Without one, it saves to your device instead, shows up under Pending on Home, and publishes or saves itself automatically the moment you're back online — you don't need to do anything.
 
+= Why doesn't Publish make me wait for a big video or gallery to finish uploading? =
+
+It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. A Pending row on Home shows it while that's still in progress, and it moves into your normal Recent Marks (or Drafts) the moment it's done — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
+
 = Can I create a Mark while offline? =
 
-Yes. Compose, add media, and tap Publish (or Save as Draft) with no connection at all — Daymark saves it on your device and shows "Saved offline," the same success screen either way. It publishes automatically as soon as you're back online; until then you'll find it under Pending on Home. This covers a session already open when you go offline (or start one offline); loading `/daymark` for the very first time with zero connectivity doesn't work yet — that needs a network for the initial page load.
+Yes. Compose, add media, and tap Publish (or Save as Draft) with no connection at all — Daymark saves it on your device and shows the same confirmation screen either way. It publishes automatically as soon as you're back online; until then you'll find it under Pending on Home. This covers a session already open when you go offline (or start one offline); loading `/daymark` for the very first time with zero connectivity doesn't work yet — that needs a network for the initial page load.
 
 = Does it work offline? =
 

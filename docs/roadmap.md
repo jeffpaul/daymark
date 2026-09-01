@@ -250,6 +250,31 @@ technical record.
 
 ---
 
+## Shipped — Optimistic publishing
+
+"Tap Publish. Immediately appears in your timeline. Uploads continue in the
+background. Background sync. Especially useful for large videos, audio
+(podcasts), galleries. Don't make users wait." Publish/Save as Draft no
+longer blocks on the network at all — see CLAUDE.md's "Optimistic
+publishing" decision row for the full technical record.
+
+- [x] **Queue-first Publish.** A tap queues the Mark locally (a fast
+  IndexedDB write, reusing the same store the offline queue already had)
+  and moves on to the Success screen immediately; the real request —
+  including the full media upload for a large video/podcast/gallery — runs
+  afterward, in the background, regardless of connectivity.
+- [x] **Immediately appears.** Home's Pending section shows the Mark right
+  away, distinguishing three states for the first time (previously every
+  pending item said "Offline" regardless of why): actively uploading,
+  queued for connectivity, or a real failure that needs a retry.
+- [x] **Don't make users wait, but don't lose detail either.** The Success
+  screen shows an immediate confirmation from client-known data alone, then
+  upgrades in place with the real permalink/syndication status once the
+  background request confirms — the one place in the app that shows
+  per-connector syndication status, kept rather than dropped.
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen

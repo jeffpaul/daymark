@@ -428,20 +428,33 @@
 		});
 	}
 
-	async function queuePendingMark(targetId, payload) {
+	// `status` distinguishes *why* a record is still local-only, so the
+	// Pending section (renderPendingItem()) can show something accurate
+	// instead of always saying "Offline": 'uploading' (a real request is
+	// running right now — the default the moment Publish is tapped, if
+	// there's connectivity at all), 'queued' (no connectivity, waiting for
+	// the 'online' event), or 'error' (a real, non-connectivity failure —
+	// needs the user to look at it). Defaults to 'queued' so every existing
+	// caller (submitOrQueue()'s offline fallback) keeps its exact current
+	// meaning without having to pass it explicitly.
+	async function queuePendingMark(targetId, payload, status = 'queued') {
 		const db = await openOfflineDB();
 		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
 		const now = Date.now();
-		return idbRequest(store.add({ targetId, payload, createdAt: now, updatedAt: now }));
+		return idbRequest(store.add({ targetId, payload, status, createdAt: now, updatedAt: now }));
 	}
 
-	async function updatePendingMark(id, targetId, payload) {
+	async function updatePendingMark(id, targetId, payload, status = 'queued') {
 		const db = await openOfflineDB();
 		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
 		const existing = await idbRequest(store.get(id));
 		const record = existing || { id, createdAt: Date.now() };
 		record.targetId = targetId;
 		record.payload = payload;
+		record.status = status;
+		if (status !== 'error') {
+			delete record.errorMessage;
+		}
 		record.updatedAt = Date.now();
 		await idbRequest(store.put(record));
 		return id;
@@ -450,17 +463,33 @@
 	// Creates a new pending record, or overwrites the one this composer
 	// session already queued — never both, so editing further while still
 	// offline never piles up duplicate copies of the same in-progress Mark.
-	async function queueOrUpdatePending(existingId, targetId, payload) {
+	async function queueOrUpdatePending(existingId, targetId, payload, status = 'queued') {
 		if (existingId) {
-			return updatePendingMark(existingId, targetId, payload);
+			return updatePendingMark(existingId, targetId, payload, status);
 		}
-		return queuePendingMark(targetId, payload);
+		return queuePendingMark(targetId, payload, status);
 	}
 
 	async function deletePendingMark(id) {
 		const db = await openOfflineDB();
 		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
 		return idbRequest(store.delete(id));
+	}
+
+	// Flags a pending record as failed for a real (non-connectivity) reason
+	// — renderPendingItem() surfaces this as "Couldn't publish" rather than
+	// silently leaving it looking identical to a plain offline-queued item.
+	async function markPendingError(id, message) {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
+		const existing = await idbRequest(store.get(id));
+		if (!existing) {
+			return;
+		}
+		existing.status = 'error';
+		existing.errorMessage = message;
+		existing.updatedAt = Date.now();
+		await idbRequest(store.put(existing));
 	}
 
 	async function getPendingMark(id) {
@@ -583,6 +612,50 @@
 		return { queued: true, id };
 	}
 
+	// "Tap Publish. Immediately appears in your timeline. Uploads continue
+	// in the background." — queue-first, unlike submitOrQueue() above:
+	// the deliberate Publish/Save-as-Draft tap queues the Mark locally
+	// (fast — local IndexedDB, not a network round trip) and returns
+	// immediately, so PublishScreen.publish() can navigate to Success
+	// without ever waiting on the real request, no matter how large the
+	// media or how slow the connection turns out to be. The real request
+	// then runs via syncPendingMark(), fired here but deliberately not
+	// awaited by the caller.
+	async function publishInBackground(path, targetId, payload, existingQueueId) {
+		const status = navigator.onLine ? 'uploading' : 'queued';
+		const pendingId = await queueOrUpdatePending(existingQueueId, targetId, payload, status);
+		syncPendingMark(pendingId, path, targetId, payload);
+		return pendingId;
+	}
+
+	// The background half of publishInBackground(): attempts the real
+	// request for an already-queued record. A connectivity-shaped failure
+	// just downgrades it to 'queued' — the 'online' listener/
+	// flushOfflineQueue() below will retry it same as any other offline
+	// save. A real failure is flagged so the Pending section can surface it
+	// rather than retrying forever in silence. Success removes the local
+	// record and, if the user is still looking at the Success screen this
+	// exact publish produced, upgrades it in place with the real server
+	// data (permalink, syndication status) it couldn't have shown yet.
+	async function syncPendingMark(pendingId, path, targetId, payload) {
+		if (!navigator.onLine) {
+			return; // Left 'queued' — nothing to attempt right now.
+		}
+		try {
+			const response = await apiUpload(path, payloadToFormData(payload));
+			await deletePendingMark(pendingId);
+			SuccessScreen.upgrade(pendingId, response);
+		} catch (err) {
+			if (err instanceof TypeError) {
+				await updatePendingMark(pendingId, targetId, payload, 'queued');
+			} else {
+				await markPendingError(pendingId, err.message).catch(() => {});
+			}
+		} finally {
+			refreshPendingSection();
+		}
+	}
+
 	// Replays every queued Mark through the same REST endpoints a live
 	// Publish/Save as Draft/autosave uses. Triggered on the 'online' event
 	// and once at boot (in case connectivity is already back from a
@@ -615,8 +688,11 @@
 					if (err instanceof TypeError || !navigator.onLine) {
 						break; // Still offline (or just dropped) — retry next trigger.
 					}
-					// A real server error on this one item: leave it queued,
-					// keep going so it doesn't block the rest.
+					// A real server error on this one item: flag it (so the
+					// Pending section stops implying it just needs
+					// connectivity) and keep going so it doesn't block the
+					// rest.
+					await markPendingError(record.id, err.message).catch(() => {});
 				}
 			}
 		} finally {
@@ -1682,7 +1758,11 @@
 	// One locally-queued (not yet synced to the server) Mark's card
 	// markup — deliberately simpler than renderMarkItem()/renderMarkCore():
 	// there is no server id yet, so no permalink, stats, or edit/delete
-	// menu, just enough to recognize the item and resume it.
+	// menu, just enough to recognize the item and (for 'queued'/'error'
+	// records) resume it. A record actively 'uploading' right now has
+	// nothing useful to resume — it's transient and will resolve on its
+	// own within moments — so it renders as a plain, non-interactive row
+	// instead of a link.
 	function renderPendingItem(record) {
 		const payload = record.payload || {};
 		const title = (payload.caption || '').trim() || 'Untitled Mark';
@@ -1697,18 +1777,26 @@
 				thumb = '';
 			}
 		}
-		return `
-			<div class="daymark-recent__item-wrap">
-				<a class="daymark-recent__item" href="#create" data-resume-pending="${esc(
-					String(record.id)
-				)}">
+		const status = record.status || 'queued';
+		const meta =
+			status === 'error'
+				? `<span class="daymark-chip daymark-chip--danger">Couldn't publish</span> Tap to review and retry`
+				: status === 'uploading'
+				? `<span class="daymark-chip daymark-chip--muted">Uploading</span> Publishing now&hellip;`
+				: `<span class="daymark-chip daymark-chip--draft">Offline</span> Will sync when you're back online`;
+		const inner = `
 					${thumb}
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Offline</span> Will sync when you're back online</span>
-					</span>
-				</a>
-			</div>`;
+						<span class="daymark-recent__meta">${meta}</span>
+					</span>`;
+		const item =
+			status === 'uploading'
+				? `<span class="daymark-recent__item" aria-live="polite">${inner}</span>`
+				: `<a class="daymark-recent__item" href="#create" data-resume-pending="${esc(
+						String(record.id)
+				  )}">${inner}</a>`;
+		return `<div class="daymark-recent__item-wrap">${item}</div>`;
 	}
 
 	// Wires "tap a pending item to resume it" — the offline-queue
@@ -3726,68 +3814,97 @@
 			const targetId = state.editing ? state.editing.id : null;
 
 			try {
-				const result = await submitOrQueue(path, targetId, payload, state.offlineQueueId);
-				if (result.queued) {
+				// Queue-first: this resolves as soon as the Mark is safely on
+				// this device (a fast, local IndexedDB write), not once it's
+				// actually reached the server — the real request keeps going
+				// in the background via syncPendingMark(). See
+				// publishInBackground()'s own comment for why.
+				const pendingId = await publishInBackground(path, targetId, payload, state.offlineQueueId);
+				state.lastPublish = {
+					pendingId,
+					wasDraft: isDraft,
+					targets: state.targets.slice(),
+					type: state.primaryType,
+					response: null,
+				};
+				resetComposer();
+				navigate('#success');
+			} catch (err) {
+				// Queuing itself failed (IndexedDB unavailable — old Safari
+				// private mode, storage disabled, …). Fall back to waiting on
+				// the real request directly rather than risk losing the Mark.
+				try {
+					const response = await apiUpload(path, payloadToFormData(payload));
 					state.lastPublish = {
-						queued: true,
+						response,
 						wasDraft: isDraft,
 						targets: state.targets.slice(),
 						type: state.primaryType,
 					};
-				} else {
-					state.lastPublish = {
-						response: result.response,
-						targets: state.targets.slice(),
-						type: state.primaryType,
-					};
+					resetComposer();
+					navigate('#success');
+				} catch (err2) {
+					button.disabled = false;
+					if (otherButton) {
+						otherButton.disabled = false;
+					}
+					button.textContent = isDraft ? 'Save as Draft' : 'Publish Now';
+					status.textContent = (isDraft ? 'Save failed: ' : 'Publish failed: ') + err2.message;
 				}
-				resetComposer();
-				navigate('#success');
-			} catch (err) {
-				button.disabled = false;
-				if (otherButton) {
-					otherButton.disabled = false;
-				}
-				button.textContent = isDraft ? 'Save as Draft' : 'Publish Now';
-				status.textContent = (isDraft ? 'Save failed: ' : 'Publish failed: ') + err.message;
 			}
 		},
 	};
 
 	// --- Screen: Success ---
 
+	// "Tap Publish. Immediately appears in your timeline. Uploads continue
+	// in the background." This screen renders from whatever's known right
+	// now: state.lastPublish.response is null the moment PublishScreen
+	// navigates here (the real request is still running via
+	// syncPendingMark()) unless the IndexedDB fallback above had to wait
+	// for it directly. If the background request resolves while the user
+	// is still looking at this exact screen, upgrade() patches the detail
+	// in place with the real permalink/syndication status instead of
+	// making the user wait for it before ever seeing a success screen.
 	const SuccessScreen = {
 		render() {
-			const publish = state.lastPublish || { response: {}, targets: [], type: 'note' };
+			const publish = state.lastPublish || { targets: [], type: 'note', wasDraft: false, response: null };
+			return `
+			<header class="daymark-topbar">
+				<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>${
+					publish.wasDraft ? 'Draft saved' : 'Published'
+				}</h1>
+			</header>
+			<section class="daymark-screen daymark-success">
+				<span class="daymark-success__icon">
+					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+				</span>
+				<div data-success-detail aria-live="polite">${this.renderDetail(publish)}</div>
+				<a class="daymark-success__link" href="#home">View Timeline &rarr;</a>
+			</section>
+			<footer class="daymark-actionbar">
+				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
+				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">View Timeline &rarr;</a></p>
+			</footer>`;
+		},
 
-			if (publish.queued) {
+		renderDetail(publish) {
+			const response = publish.response;
+
+			if (!response) {
 				return `
-				<header class="daymark-topbar">
-					<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>Saved</h1>
-				</header>
-				<section class="daymark-screen daymark-success">
-					<span class="daymark-success__icon">
-						<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-					</span>
-					<h2 class="daymark-screen__heading">Saved offline</h2>
-					<p class="daymark-note-card__meta">${
-						publish.wasDraft
-							? "You're offline right now — this draft is saved on this device and will sync to your site as soon as you're back online."
-							: "You're offline right now — this Mark is saved on this device and will publish automatically as soon as you're back online."
-					}</p>
-					<a class="daymark-success__link" href="#home">View Pending on Home &rarr;</a>
-				</section>
-				<footer class="daymark-actionbar">
-					<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
-					<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">View Timeline &rarr;</a></p>
-				</footer>`;
+				<h2 class="daymark-screen__heading">${publish.wasDraft ? 'Saved as draft' : 'Published'}</h2>
+				<p class="daymark-note-card__meta">${
+					publish.wasDraft
+						? "Saving in the background — you'll find it under Drafts on Home once it's done."
+						: "Uploading in the background — it'll appear in Recent Marks as soon as it's done."
+				}</p>`;
 			}
 
-			const permalink = publish.response && publish.response.permalink;
-
+			const permalink = response.permalink;
 			const rows = publish.targets
 				.map((id) => {
-					const status = this.externalStatus(publish.response, id);
+					const status = this.externalStatus(response, id);
 					return `
 				<li class="daymark-syndication__row">
 					<span>${esc(connectorLabel(id))}</span>
@@ -3796,47 +3913,48 @@
 				})
 				.join('');
 
-			const isDraft = publish.response && 'publish' !== publish.response.status;
-
 			return `
-			<header class="daymark-topbar">
-				<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>${
-					isDraft ? 'Draft saved' : 'Published'
-				}</h1>
-			</header>
-			<section class="daymark-screen daymark-success">
-				<span class="daymark-success__icon">
-					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
-				</span>
-				<h2 class="daymark-screen__heading">${
-					isDraft ? 'Saved as draft' : 'Published to your site'
-				}${
-					!isDraft && permalink
-						? ` <a class="daymark-success__viewlink" href="${esc(
-								permalink
-						  )}" target="_blank" rel="noopener">(view)</a>`
+			<h2 class="daymark-screen__heading">${
+				publish.wasDraft ? 'Saved as draft' : 'Published to your site'
+			}${
+				!publish.wasDraft && permalink
+					? ` <a class="daymark-success__viewlink" href="${esc(
+							permalink
+					  )}" target="_blank" rel="noopener">(view)</a>`
+					: ''
+			}</h2>
+			${
+				publish.wasDraft
+					? '<p class="daymark-note-card__meta">Finish it any time from Recent Marks on Home.</p>'
+					: ''
+			}
+			${
+				publish.wasDraft
+					? publish.targets.length
+						? '<p class="daymark-note-card__meta">Selected destinations will publish when this Mark goes live.</p>'
 						: ''
-				}</h2>
-				${
-					isDraft
-						? '<p class="daymark-note-card__meta">Finish it any time from Recent Marks on Home.</p>'
-						: ''
-				}
-				<a class="daymark-success__link" href="#home">View all marks &rarr;</a>
-				${
-					isDraft
-						? publish.targets.length
-							? '<p class="daymark-note-card__meta">Selected destinations will publish when this Mark goes live.</p>'
-							: ''
-						: rows
-						? `<ul class="daymark-syndication" aria-label="Syndication status">${rows}</ul>`
-						: '<p class="daymark-note-card__meta">No social destinations selected.</p>'
-				}
-			</section>
-			<footer class="daymark-actionbar">
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
-				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">View Timeline &rarr;</a></p>
-			</footer>`;
+					: rows
+					? `<ul class="daymark-syndication" aria-label="Syndication status">${rows}</ul>`
+					: '<p class="daymark-note-card__meta">No social destinations selected.</p>'
+			}`;
+		},
+
+		// Called by syncPendingMark() once the background request for this
+		// exact publish resolves. A no-op if the user has since navigated
+		// away or started another publish (pendingId no longer matches) —
+		// state.lastPublish itself is still updated either way.
+		upgrade(pendingId, response) {
+			if (!state.lastPublish || state.lastPublish.pendingId !== pendingId) {
+				return;
+			}
+			state.lastPublish.response = response;
+			if (window.location.hash !== '#success') {
+				return;
+			}
+			const slot = root.querySelector('[data-success-detail]');
+			if (slot) {
+				slot.innerHTML = this.renderDetail(state.lastPublish);
+			}
 		},
 
 		externalStatus(response, connectorId) {
@@ -4165,7 +4283,21 @@
 	window.addEventListener('online', () => {
 		flushOfflineQueue().catch(() => {});
 	});
-	flushOfflineQueue().catch(() => {});
+	// A record still marked 'uploading' at boot means the page that started
+	// it was closed or reloaded before the request finished — nothing is
+	// actually in flight anymore, so it's downgraded to plain 'queued'
+	// before the first flush, rather than showing a stale "Uploading" chip
+	// for a request that isn't running.
+	getAllPendingMarks()
+		.then((pending) =>
+			Promise.all(
+				pending
+					.filter((record) => record.status === 'uploading')
+					.map((record) => updatePendingMark(record.id, record.targetId, record.payload, 'queued'))
+			)
+		)
+		.catch(() => {})
+		.then(() => flushOfflineQueue().catch(() => {}));
 
 	// --- Service worker (PWA, Phase 8) ---
 	//
