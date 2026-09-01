@@ -4333,7 +4333,17 @@
 	const initialHash =
 		window.location.hash ||
 		(SERVER_ROUTED_SCREENS.includes(config.screen) ? '#' + config.screen : '#home');
-	showScreen(initialHash);
+	// A share-sheet draft (Daymark_Share_Target) redirects here with
+	// pendingDraftId set — open straight into that draft's composer instead
+	// of rendering the normal initial screen first and only then swapping
+	// it out once the fetch resolves (which would flash an empty composer
+	// in between). A failed fetch (tampered id, network hiccup) falls back
+	// to the ordinary boot instead of leaving the shell blank.
+	if (config.pendingDraftId) {
+		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
+	} else {
+		showScreen(initialHash);
+	}
 
 	// --- Offline queue: sync triggers ---
 	//

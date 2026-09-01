@@ -131,6 +131,16 @@ final class Daymark_Plugin {
 	public Daymark_Admin_Subscriptions $admin_subscriptions;
 
 	/**
+	 * Web Share Target handler — lets Daymark appear in the OS share sheet
+	 * ("Share -> Daymark" on iOS/Android), creating a draft from whatever
+	 * was shared. Invoked directly by Daymark_Routes::maybe_load_app_shell()
+	 * on a POST to the /share route; no hooks of its own to register.
+	 *
+	 * @var Daymark_Share_Target
+	 */
+	public Daymark_Share_Target $share_target;
+
+	/**
 	 * The four content-type section pages a pre-Unreleased install may still
 	 * have lying around: slug => the block/shortcode markup that identifies
 	 * a page as Daymark-managed (never created for a fresh install — see
@@ -188,6 +198,7 @@ final class Daymark_Plugin {
 		$this->subscriptions                = new Daymark_Subscriptions();
 		$this->subscription_poller          = new Daymark_Subscription_Poller();
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
+		$this->share_target                 = new Daymark_Share_Target();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and

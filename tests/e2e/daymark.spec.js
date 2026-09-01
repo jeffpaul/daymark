@@ -15,6 +15,7 @@
  * PHPUnit suite, not here.
  */
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 const ADMIN_USER = process.env.WP_ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.WP_ADMIN_PASS || 'password';
@@ -416,6 +417,52 @@ test('camera-first: the Image picker offers capture first, with a library fallba
 
 	await libraryBtn.click();
 	await expect(input).not.toHaveAttribute('capture');
+});
+
+// Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
+// Safari, any other app) posts straight to /daymark/share, which creates a
+// draft and redirects into the composer with it already loaded — no need
+// to open Daymark first and pick media manually.
+test('share target: sharing a photo creates a draft that opens straight into the composer', async ({
+	page,
+}) => {
+	const caption = `E2E share ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// The OS share sheet's POST — same session cookies as the logged-in
+	// page. Inspecting the redirect ourselves (rather than following it)
+	// keeps the query string/fragment split unambiguous.
+	const shareRes = await page.request.post('/daymark/share', {
+		multipart: {
+			title: caption,
+			'media[]': {
+				name: 'test-image.png',
+				mimeType: 'image/png',
+				buffer: readFileSync('tests/e2e/fixtures/test-image.png'),
+			},
+		},
+		maxRedirects: 0,
+	});
+
+	expect(shareRes.status()).toBe(302);
+	const location = shareRes.headers()['location'];
+	expect(location).toContain('daymark_draft=');
+	expect(location).toContain('#create');
+
+	// A real browser navigation (not the API context) so the fragment is
+	// honored and the app boots straight into that draft's composer. The
+	// shared photo was already sideloaded server-side, so it shows as
+	// existing (not freshly-picked) media, same as resuming any other draft
+	// with an attachment already on it.
+	await page.goto(location);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('.daymark-editmedia__thumb')).toBeVisible();
+
+	// It's a draft — findable via Drafts on Home, not published/syndicated.
+	await page.goto('/daymark');
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
 });
 
 // Optional Title field: audio/video Marks surface an editable, optionally
