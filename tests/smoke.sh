@@ -345,8 +345,13 @@ echo in_array($note_id, $note_ids, true) ? "PASS: GET /marks?type=note contains 
 
 // The new bottom-nav destinations are real server routes (like
 // /daymark/notifications already was), not just client-side hash states.
+// extra_rules_top (not wp_rewrite_rules(), which reads the *persisted*
+// rewrite_rules option and can be stale within a single request) is what
+// Daymark_Routes::register() — already run once via the init hook that
+// bootstrapped this process — actually populated; same technique
+// Test_Routes::registered_rules() uses in the PHPUnit suite.
 global $wp_rewrite;
-$rules = (array) $wp_rewrite->wp_rewrite_rules();
+$rules = (array) $wp_rewrite->extra_rules_top;
 $has_route = static function ($screen) use ($rules) {
   foreach ($rules as $query) {
     if (false !== strpos($query, "daymark_app={$screen}")) { return true; }
