@@ -20,9 +20,9 @@ can't act on them.
 
 ## [Unreleased]
 
-### Added
+### Developer
 
-- For developers: added the eight codified Product Principles to `CLAUDE.md`, `CONTRIBUTING.md`, and `readme.txt`, superseding the six-item list in `docs/planning/README.md`.
+- Added product principles documentation.
 
 ### Changed
 
