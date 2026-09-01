@@ -26,6 +26,7 @@ WordPress does not need to become a social network. Daymark makes your own site 
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
 * **Blocks and shortcodes** — per-type views (Images, Videos, Audio, Notes) are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
+* **Autosave** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home.
 
 = Product principles =
 
@@ -83,9 +84,13 @@ Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini),
 
 No. Every Mark is a standard post with post meta, so your content is fully portable and remains intact and readable if you deactivate the plugin.
 
+= What happens if I close the app or lose connection while composing? =
+
+Your work is already safe in most cases: the composer autosaves your caption, media, alt text, and destination choices to a real draft as you go, so a closed tab, a phone call, or switching apps doesn't lose it — reopen Daymark and it's waiting under Drafts on Home. Autosave still needs an internet connection, the same as manually tapping Save as Draft; it does not work while your device is fully offline (see the next question).
+
 = Does it work offline? =
 
-Partially. A conservative service worker caches only the app's static CSS and JS for fast loading. It never caches REST responses, nonces, HTML, or media, and there is no offline publishing mode.
+Partially. A conservative service worker caches only the app's static CSS and JS for fast loading. It never caches REST responses, nonces, HTML, or media, and there is no offline publishing or autosave mode — both require a connection.
 
 == Screenshots ==
 
