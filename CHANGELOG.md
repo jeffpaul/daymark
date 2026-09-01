@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Eight codified Product Principles (publishing comes before editing; your site is the source of truth; mobile is the primary creation experience; media is first-class; everything should be publishable in under 30 seconds; AI assists the creator, never replaces them; progressive disclosure; every Mark is portable and future-proof), documented for site owners in `readme.txt`, for contributors in `CONTRIBUTING.md`, and authoritatively (with implications for the codebase) in `CLAUDE.md`. Supersedes the six-item principles list in `docs/planning/README.md`, which now points to `CLAUDE.md` as canonical.
+
 ### Changed
 
 - For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.

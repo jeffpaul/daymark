@@ -225,6 +225,46 @@ single design record after 0.4.0:
 This file (CLAUDE.md) remains the authoritative **technical** record; the design
 record is its product/vision/history companion.
 
+## Product principles
+
+Codified September 2026; supersedes the six-item list in
+[docs/planning/README.md §2](docs/planning/README.md). This is the authoritative
+list — use it as the lens for future product decisions, and cite the relevant
+principle in a decision's rationale when it applies.
+
+1. **Publishing comes before editing.** The composer's job is to get a Mark
+   published, not to be a content editor. Refinement (per-image alt text,
+   captions, titles) is available but never blocks or gates the publish action.
+2. **Your site is the source of truth.** The site is always the canonical,
+   required destination; every other destination is additive syndication, never
+   a replacement — see "Destination visibility" and the content model above.
+3. **Mobile is the primary creation experience.** The app shell is designed
+   one-handed, phone-first, touch-first — vanilla ES2020 with no build step,
+   generous tap targets, no wp-admin chrome. Desktop/tablet use works but isn't
+   the design target.
+4. **Media is first-class.** Images, video, audio, galleries, and notes are
+   equal citizens with type-specific handling (per-image alt text, type-based
+   destination routing, MIME validation, upload budgets) — not an attachment
+   bolted onto a text post.
+5. **Everything should be publishable in under 30 seconds.** Defaults do the
+   work: type-based destination preselection, remembered destination
+   preferences, minimal required fields, no forced onboarding. Every new
+   required field or step is a cost to be justified against this.
+6. **AI assists the creator, never replaces them.** AI Assist is optional,
+   additive, and never blocks publishing — no configured provider means no AI
+   UI at all, every suggestion is editable before it ships, and the mock
+   fallback keeps the flow identical either way.
+7. **Progressive disclosure: simple by default, powerful when needed.** The
+   common path (one image, one tap) stays uncluttered; less-common power
+   (destination overrides, categories, block editor settings, subscription
+   management) surfaces only when relevant, or is pushed to wp-admin rather
+   than crowding the app shell — see the non-goals note below.
+8. **Every daymark is portable and future-proof.** A Mark is always a standard
+   `post` with meta — never a bespoke format — so it survives the plugin,
+   theme, or host being removed. This is why Marks specifically stay off
+   custom post types even though `daymark_subscription_post` (someone else's
+   cached content, not a Mark) is the deliberate exception.
+
 ## Non-goals (never build these in the prototype)
 
 - Real social API publishing
