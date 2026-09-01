@@ -729,6 +729,110 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	await expect(list.getByText(caption).first()).toBeVisible();
 });
 
+// Avatar menu: tapping a Timeline item's site icon/avatar offers "filter
+// Timeline to just this source" (primary — keeps the reader in the app) or
+// "visit the site" (secondary, explicitly less-promoted since it leaves the
+// app). Covers both card shapes — a Mark's own avatar ("your site") and a
+// subscription post's site icon — and reuses ensureSubscription()'s shared,
+// memoized subscribe + refresh from earlier in this file.
+test('avatar menu: filter to this source (primary) or visit the site (secondary)', async ({ page }) => {
+	const caption = `E2E avatar mark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const list = page.locator('[data-recent-list]');
+	const sourceFilter = page.locator('[data-source-filter]');
+
+	// --- The user's own Mark: "See only your Marks" / "Visit your site" ---
+	const markCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
+	await expect(markCard).toBeVisible();
+	await markCard.locator('[data-avatarwrap] [data-menu-toggle]').click();
+
+	const markMenu = markCard.locator('[data-avatarwrap] [data-menu]');
+	await expect(markMenu).toBeVisible();
+	const markFilterBtn = markMenu.locator('[data-filter-site="mine"]');
+	const markVisitBtn = markMenu.locator('[data-visit-site]');
+	await expect(markFilterBtn).toHaveText('See only your Marks');
+	await expect(markVisitBtn).toContainText('Visit your site');
+
+	// The secondary action's target: the app's own site URL, read straight
+	// off the attribute the click handler reads from — no navigation, no
+	// popup, so this stays on the test's own page.
+	const siteUrl = await page.evaluate(() => window.daymarkApp.siteUrl);
+	expect(await markVisitBtn.getAttribute('data-visit-site')).toBe(siteUrl);
+
+	// The primary action: filters the merged feed down to "My Marks" —
+	// exactly what picking that same option by hand does (see the Source
+	// filter test above) — without ever leaving Home.
+	await markFilterBtn.click();
+	await expect(sourceFilter).toHaveValue('mine');
+	await expect(list.getByText(caption).first()).toBeVisible();
+	await expect(list.locator('[data-subpost]')).toHaveCount(0);
+
+	// Back to "All" before checking the subscription-post card's own menu.
+	// Not asserting a subscription-post card is visible immediately here —
+	// same reason the Source-filter test above doesn't either: search has
+	// no pagination, a flat per_page=20, and this file's own many
+	// Mark-creating tests can by now outnumber the WordPress.org feed's
+	// handful of older posts within that window. findSubscriptionCard()
+	// below handles that by scrolling until one turns up.
+	await sourceFilter.selectOption('');
+
+	// applySourceFilter() opened search to apply the "mine" filter above, and
+	// nothing since has closed it. Search staying open is correct app
+	// behavior on its own, but the subscription card's avatar-menu toggle
+	// below is a click outside the search bar — bindDismissible's existing,
+	// correct "outside click closes search" handling would otherwise close
+	// search (and re-render the list) as a side effect of that very click,
+	// tearing down the menu the same click just opened. Close search
+	// explicitly first so the next interaction isn't racing that teardown.
+	await page.locator('[data-search-toggle]').click();
+	await expect(page.locator('[data-searchbar]')).toBeHidden();
+
+	// --- A subscription post: "See only posts from {site}" / "Visit {site}" ---
+	const subCard = await findSubscriptionCard(page);
+	await expect(subCard).toBeVisible();
+	const subWrap = page
+		.locator('.daymark-recent__item-wrap')
+		.filter({ has: page.locator('[data-subpost]') })
+		.first();
+	await subWrap.locator('[data-avatarwrap] [data-menu-toggle]').click();
+
+	const subMenu = subWrap.locator('[data-avatarwrap] [data-menu]');
+	await expect(subMenu).toBeVisible();
+	const subFilterBtn = subMenu.locator('[data-filter-site]');
+	const subVisitBtn = subMenu.locator('[data-visit-site]');
+	// The exact site title is real, external data (the subscribed site's
+	// own), so only the fixed wording either label wraps around it is
+	// asserted here — same tolerance the Source-filter test above already
+	// applies to this same subscription.
+	await expect(subFilterBtn).toContainText('See only posts from');
+	await expect(subVisitBtn).toContainText('Visit');
+	const subVisitUrl = await subVisitBtn.getAttribute('data-visit-site');
+	expect(subVisitUrl).toMatch(/^https?:\/\//);
+
+	// The primary action: filters the merged feed down to just this one
+	// subscribed site.
+	await subFilterBtn.click();
+	await expect(sourceFilter).not.toHaveValue('');
+	await expect(list.getByText(caption)).toHaveCount(0);
+	await expect(list.locator('[data-subpost]').first()).toBeVisible();
+});
+
 // Per-item delete: the ⋯ menu offers Delete, which requires an explicit
 // confirm step. Cancel keeps the item; confirm removes it from the list.
 test('per-item menu: delete requires confirm — cancel keeps, confirm removes', async ({ page }) => {
@@ -748,27 +852,33 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 
 	await page.goto('/daymark');
 
-	// Scope every action to this Mark's own card.
+	// Scope every action to this Mark's own card, and within it to the ⋯
+	// actions menu specifically ([data-actions]) rather than the card as a
+	// whole — the card's separate avatar menu reuses the same
+	// data-menu-toggle/data-menu-actions attributes (both share the generic
+	// open/close machinery in HomeScreen.renderItem()), so an unscoped
+	// card.locator() for either would match two elements.
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
+	const menu = card.locator('[data-actions]');
 
 	// Open the ⋯ menu and start a delete — a confirm step must appear first.
-	await card.locator('[data-menu-toggle]').click();
-	await card.locator('[data-menu-delete]').click();
-	const confirm = card.locator('[data-menu-confirm]');
+	await menu.locator('[data-menu-toggle]').click();
+	await menu.locator('[data-menu-delete]').click();
+	const confirm = menu.locator('[data-menu-confirm]');
 	await expect(confirm).toBeVisible();
 	await expect(confirm).toContainText('move to Trash');
 
 	// Cancel returns to the action list and keeps the Mark.
-	await card.locator('[data-menu-delete-cancel]').click();
+	await menu.locator('[data-menu-delete-cancel]').click();
 	await expect(confirm).toBeHidden();
-	await expect(card.locator('[data-menu-actions]')).toBeVisible();
+	await expect(menu.locator('[data-menu-actions]')).toBeVisible();
 	await expect(card).toBeVisible();
 
 	// Delete again and confirm — this time it is removed from the list.
-	await card.locator('[data-menu-delete]').click();
+	await menu.locator('[data-menu-delete]').click();
 	await expect(confirm).toBeVisible();
-	await card.locator('[data-menu-delete-confirm]').click();
+	await menu.locator('[data-menu-delete-confirm]').click();
 	await expect(
 		page.locator('.daymark-recent__item-wrap').filter({ hasText: caption })
 	).toHaveCount(0);

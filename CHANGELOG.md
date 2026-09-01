@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Tapping a Timeline item's avatar/site icon now offers to filter Timeline down to just that source ("See only your Marks" / "See only posts from {site}") or visit the site directly. Filtering is the primary, more prominent action — it's the same Source filter already reachable through search, just one tap away instead of requiring the search bar; visiting the site is secondary, since it leaves the app.
+
 ### Developer
 
 - Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
