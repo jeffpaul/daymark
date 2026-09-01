@@ -62,18 +62,25 @@ jobs:
           // the wp-admin Subscribe form and its background poller make;
           // is_wp_error() is checked (not thrown on) so one unreachable site
           // doesn't stop the others from being preset.
-          const presetPhp = `<?php
-require_once '/wordpress/wp-load.php';
-
-$plugin = Daymark_Plugin::instance();
-
-foreach ( ${JSON.stringify(presetSites)} as $site_url ) {
-	$result = $plugin->subscriptions->subscribe_to_site( $site_url );
-	if ( ! is_wp_error( $result ) ) {
-		$plugin->subscription_poller->poll_subscription( (int) $result );
-	}
-}
-`;
+          //
+          // Built as a joined array (not a multi-line template literal) so
+          // every line of source here stays indented inside this run: |
+          // block scalar — a raw embedded newline would dedent to column 0
+          // and break the surrounding YAML.
+          const presetPhp = [
+            '<?php',
+            "require_once '/wordpress/wp-load.php';",
+            '',
+            '$plugin = Daymark_Plugin::instance();',
+            '',
+            `foreach ( ${JSON.stringify(presetSites)} as $site_url ) {`,
+            '\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );',
+            '\tif ( ! is_wp_error( $result ) ) {',
+            '\t\t$plugin->subscription_poller->poll_subscription( (int) $result );',
+            '\t}',
+            '}',
+            '',
+          ].join('\n');
 
           const blueprint = {
             preferredVersions: {
