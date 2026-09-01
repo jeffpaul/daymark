@@ -125,6 +125,15 @@ test('unauthenticated /daymark redirects to login', async ({ page }) => {
 	await expect(page).toHaveURL(/wp-login/);
 });
 
+// The new nav destinations get the same unauthenticated treatment as Home
+// and Notifications already did — a logged-out visitor never sees them.
+test('unauthenticated Explore/Search/Me redirect to login too', async ({ page }) => {
+	for (const path of ['/daymark/explore', '/daymark/search', '/daymark/me']) {
+		await page.goto(path);
+		await expect(page).toHaveURL(/wp-login/);
+	}
+});
+
 // Scenario 1: focused Daymark home, no wp-admin chrome.
 test('authenticated user sees Daymark Home without wp-admin chrome', async ({ page }) => {
 	await loginAs(page);
@@ -273,7 +282,7 @@ test('pull-to-refresh (touch drag) shows the pull indicator and reports a status
 
 // Publish a note Mark to your own site and see it in the Notes view.
 // With nothing connected, "Your Site" is the only destination.
-test('note Mark publishes to your site and appears in the notes view', async ({ page }) => {
+test('note Mark publishes to your site and is findable via Search', async ({ page }) => {
 	const caption = `E2E note ${RUN_ID}`;
 
 	await loginAs(page);
@@ -290,7 +299,10 @@ test('note Mark publishes to your site and appears in the notes view', async ({ 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	await page.goto('/notes/');
+	// The Notes section page is gone; the same per-type filtering now lives
+	// in Search.
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="note"]').click();
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
@@ -340,7 +352,7 @@ test('categories: File under picker files the Mark and remembers the choice per 
 
 // Image Mark via the file picker: per-image alt field, correct article
 // on the publish screen, and it lands in the images view.
-test('image Mark: alt field, correct article, appears in image views', async ({ page }) => {
+test('image Mark: alt field, correct article, findable via Search', async ({ page }) => {
 	const caption = `E2E image ${RUN_ID}`;
 
 	await loginAs(page);
@@ -364,10 +376,13 @@ test('image Mark: alt field, correct article, appears in image views', async ({ 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	// Standard post visible in wp-admin, and in the images view.
+	// Standard post visible in wp-admin, and findable via Search — the
+	// Images section page is gone; the same per-type filtering now lives
+	// there.
 	await page.goto('/wp-admin/edit.php');
 	await expect(page.locator('.row-title').filter({ hasText: caption }).first()).toBeVisible();
-	await page.goto('/images/');
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="image"]').click();
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
@@ -606,9 +621,10 @@ test('infinite scroll appends more recent Marks as the sentinel enters view', as
 	await expect(page.locator('.daymark-bottomnav')).toBeVisible();
 });
 
-// Search: the header search icon expands an inline bar with type-filter
-// chips; a query narrows the list, and a type filter narrows it too.
-test('search: header icon expands the bar and query + type filter narrow the list', async ({ page }) => {
+// Search: its own bottom-nav destination and route (not a collapsible
+// header bar on Home anymore) — a query narrows the results, and a type
+// filter narrows them too.
+test('search: the Search tab shows a query + type filter that narrow the results', async ({ page }) => {
 	const tag = `${RUN_ID}srch`;
 	const alpha = `E2E searchable ${tag} alphaword`;
 	const bravo = `E2E searchable ${tag} bravoword`;
@@ -633,23 +649,21 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	);
 
 	await page.goto('/daymark');
+	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	await expect(page).toHaveURL(/#search$/);
+	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Search');
+	await expect(page.locator('h1', { hasText: 'Search' })).toBeVisible();
 
-	// The search bar is collapsed until the icon is tapped.
-	const bar = page.locator('[data-searchbar]');
-	await expect(bar).toBeHidden();
-	await page.locator('[data-search-toggle]').click();
-	await expect(bar).toBeVisible();
+	const list = page.locator('[data-search-results]');
 
-	const list = page.locator('[data-recent-list]');
+	// Landing on Search with no query/filter shows everything by default.
+	await expect(list.getByText(alpha).first()).toBeVisible();
+	await expect(list.getByText(bravo).first()).toBeVisible();
 
-	// A query narrows the recent list to the matching Mark only, and the
-	// section heading switches from "Timeline" to "Results".
-	const heading = page.locator('#daymark-recent-heading');
-	await expect(heading).toHaveText('Timeline');
+	// A query narrows the results to the matching Mark only.
 	await page.locator('[data-search-input]').fill(alpha);
 	await expect(list.getByText(alpha).first()).toBeVisible();
 	await expect(list.getByText(bravo)).toHaveCount(0);
-	await expect(heading).toHaveText('Results');
 
 	// A type filter narrows too: "Images" excludes these note Marks.
 	await page.locator('[data-search-input]').fill('');
@@ -659,24 +673,11 @@ test('search: header icon expands the bar and query + type filter narrow the lis
 	// Back to "Notes" surfaces them again.
 	await page.locator('[data-filter-chips] [data-filter="note"]').click();
 	await expect(list.getByText(alpha).first()).toBeVisible();
-
-	// An outside click collapses the bar, same as the item menu and launcher.
-	await page.locator('.daymark-screen').click({ position: { x: 10, y: 10 } });
-	await expect(bar).toBeHidden();
-
-	// Escape closes it too, and returns focus to the search icon — even
-	// when focus was on a filter chip rather than the input itself.
-	await page.locator('[data-search-toggle]').click();
-	await expect(bar).toBeVisible();
-	await page.locator('[data-filter-chips] [data-filter="note"]').focus();
-	await page.keyboard.press('Escape');
-	await expect(bar).toBeHidden();
-	await expect(page.locator('[data-search-toggle]')).toBeFocused();
 });
 
-// Source filter: "My Marks" scopes the merged feed to just the user's own
-// Marks (excluding subscription posts); picking a specific subscribed site
-// scopes it to just that site's posts (excluding Marks and every other
+// Source filter: "My Marks" scopes results to just the user's own Marks
+// (excluding subscription posts); picking a specific subscribed site scopes
+// it to just that site's posts (excluding Marks and every other
 // subscription). Reuses ensureSubscription()'s shared, memoized subscribe +
 // refresh from earlier in this file.
 test('search: Source filter scopes results to My Marks or one subscribed site', async ({ page }) => {
@@ -696,11 +697,10 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	}, caption);
 
 	const subscription = await ensureSubscription(page);
-	await page.goto('/daymark');
+	await page.goto('/daymark/search');
 
-	await page.locator('[data-search-toggle]').click();
 	const sourceFilter = page.locator('[data-source-filter]');
-	const list = page.locator('[data-recent-list]');
+	const list = page.locator('[data-search-results]');
 
 	// The per-site <option>s populate asynchronously (loadSubscriptionsForFilter()
 	// patches the <select> once GET /subscriptions resolves) — wait for the
@@ -754,9 +754,6 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	const list = page.locator('[data-recent-list]');
-	const sourceFilter = page.locator('[data-source-filter]');
-
 	// --- The user's own Mark: "See only your Marks" / "Visit your site" ---
 	const markCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(markCard).toBeVisible();
@@ -775,38 +772,31 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	const siteUrl = await page.evaluate(() => window.daymarkApp.siteUrl);
 	expect(await markVisitBtn.getAttribute('data-visit-site')).toBe(siteUrl);
 
-	// The primary action: filters the merged feed down to "My Marks" —
-	// exactly what picking that same option by hand does (see the Source
-	// filter test above) — without ever leaving Home.
+	// The primary action jumps straight to Search with "My Marks" already
+	// applied — one tap, rather than opening Search and picking the Source
+	// filter by hand (see the Source-filter test above).
 	await markFilterBtn.click();
+	await expect(page).toHaveURL(/#search$/);
+	const sourceFilter = page.locator('[data-source-filter]');
+	const results = page.locator('[data-search-results]');
 	await expect(sourceFilter).toHaveValue('mine');
-	await expect(list.getByText(caption).first()).toBeVisible();
-	await expect(list.locator('[data-subpost]')).toHaveCount(0);
-
-	// Back to "All" before checking the subscription-post card's own menu.
-	// Not asserting a subscription-post card is visible immediately here —
-	// same reason the Source-filter test above doesn't either: search has
-	// no pagination, a flat per_page=20, and this file's own many
-	// Mark-creating tests can by now outnumber the WordPress.org feed's
-	// handful of older posts within that window. findSubscriptionCard()
-	// below handles that by scrolling until one turns up.
-	await sourceFilter.selectOption('');
-
-	// applySourceFilter() opened search to apply the "mine" filter above, and
-	// nothing since has closed it. Search staying open is correct app
-	// behavior on its own, but the subscription card's avatar-menu toggle
-	// below is a click outside the search bar — bindDismissible's existing,
-	// correct "outside click closes search" handling would otherwise close
-	// search (and re-render the list) as a side effect of that very click,
-	// tearing down the menu the same click just opened. Close search
-	// explicitly first so the next interaction isn't racing that teardown.
-	await page.locator('[data-search-toggle]').click();
-	await expect(page.locator('[data-searchbar]')).toBeHidden();
+	await expect(results.getByText(caption).first()).toBeVisible();
+	await expect(results.locator('[data-subpost]')).toHaveCount(0);
 
 	// --- A subscription post: "See only posts from {site}" / "Visit {site}" ---
-	const subCard = await findSubscriptionCard(page);
+	// Still on Search: switch the Source filter straight to this subscription
+	// (its id is the option value — same value a subscription-post card's own
+	// avatar menu uses for data-filter-site) rather than clearing back to
+	// "All". Search has no pagination (a flat per_page=20 fetch), so on a
+	// long-lived site "All" can be pushed past page 1 by other E2E-created
+	// Marks; filtering directly to this subscription guarantees a
+	// subscription-post card shows up. It renders the same avatar menu
+	// Home's own cards do, one shared implementation.
+	const subscription = await ensureSubscription(page);
+	await sourceFilter.selectOption(String(subscription.id));
+	const subCard = results.locator('[data-subpost]').first();
 	await expect(subCard).toBeVisible();
-	const subWrap = page
+	const subWrap = results
 		.locator('.daymark-recent__item-wrap')
 		.filter({ has: page.locator('[data-subpost]') })
 		.first();
@@ -825,12 +815,12 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	const subVisitUrl = await subVisitBtn.getAttribute('data-visit-site');
 	expect(subVisitUrl).toMatch(/^https?:\/\//);
 
-	// The primary action: filters the merged feed down to just this one
-	// subscribed site.
+	// The primary action re-applies the Source filter to just this one
+	// subscribed site, still on Search.
 	await subFilterBtn.click();
 	await expect(sourceFilter).not.toHaveValue('');
-	await expect(list.getByText(caption)).toHaveCount(0);
-	await expect(list.locator('[data-subpost]').first()).toBeVisible();
+	await expect(results.getByText(caption)).toHaveCount(0);
+	await expect(results.locator('[data-subpost]').first()).toBeVisible();
 });
 
 // Per-item delete: the ⋯ menu offers Delete, which requires an explicit
@@ -856,8 +846,8 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 	// actions menu specifically ([data-actions]) rather than the card as a
 	// whole — the card's separate avatar menu reuses the same
 	// data-menu-toggle/data-menu-actions attributes (both share the generic
-	// open/close machinery in HomeScreen.renderItem()), so an unscoped
-	// card.locator() for either would match two elements.
+	// open/close machinery in renderMarkItem()), so an unscoped card.locator()
+	// for either would match two elements.
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
 	const menu = card.locator('[data-actions]');
@@ -985,10 +975,6 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
-	// Not publicly visible while a draft.
-	await page.goto('/notes/');
-	await expect(page.getByText(caption)).toHaveCount(0);
-
 	// Home shows the Drafts row; the row is chip-marked.
 	await page.goto('/daymark');
 	await expect(page.getByRole('heading', { name: 'Drafts' })).toBeVisible();
@@ -1005,11 +991,11 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	// Draft row entry is gone; the published Mark is public.
+	// Draft row entry is gone; the published Mark is findable via Search.
 	await page.goto('/daymark');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
-	await page.goto('/notes/');
-	await expect(page.getByText(finished)).toBeVisible();
+	await page.goto('/daymark/search');
+	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
 });
 
 // Autosave: "nothing gets lost" even without tapping Save as Draft.
@@ -1152,24 +1138,85 @@ test('header home-link points home, and Home shows the Timeline feed', async ({ 
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
 });
 
-// The remaining site-views nav (Images/Videos/Audio/Notes, now flanking the
-// launcher) renders as icon links: an SVG glyph, the label as the
-// accessible name (role+name) and as the hover title, no visible text.
-test('site-views nav shows icons with accessible labels', async ({ page }) => {
+// The persistent bottom nav (Timeline, Explore, +New, Search, Me) renders
+// as icon links in that exact order flanking the launcher: an SVG glyph,
+// the label as the accessible name (role+name) and as the hover title, no
+// visible text — plus an active-tab indicator for whichever screen is
+// current, and the launcher never picks that styling up by mistake.
+test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessible labels, and active state', async ({
+	page,
+}) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
 	const nav = page.locator('.daymark-bottomnav');
-	const images = nav.getByRole('link', { name: 'Images' });
-	await expect(images).toBeVisible();
-	await expect(images).toHaveAttribute('title', 'Images');
-	await expect(images.locator('svg.daymark-bottomnav__icon')).toBeVisible();
-	expect(await images.getAttribute('href')).toContain('/images');
 
-	// Timeline moved to the header, so the row now holds 4 view links.
+	for (const label of ['Timeline', 'Explore', 'Search', 'Me']) {
+		// exact: true matters here — getByRole's name match is substring by
+		// default, and "Me" is a substring of "Timeline".
+		const link = nav.getByRole('link', { name: label, exact: true });
+		await expect(link).toBeVisible();
+		await expect(link).toHaveAttribute('title', label);
+		await expect(link.locator('svg.daymark-icon')).toBeVisible();
+	}
 	await expect(page.locator('.daymark-bottomnav__link svg')).toHaveCount(4);
-	// The label text is present for assistive tech but visually hidden.
-	await expect(nav.getByRole('link', { name: 'Notes' })).toBeVisible();
+
+	// Required order: Timeline, Explore, +New (center), Search, Me — the
+	// launcher <div> has no title attribute, so it stands out from the tabs.
+	const tabOrder = await nav.evaluate((el) =>
+		Array.from(el.children).map((child) => child.getAttribute('title') || 'launcher')
+	);
+	expect(tabOrder).toEqual(['Timeline', 'Explore', 'launcher', 'Search', 'Me']);
+
+	// Timeline is the default landing destination and shows as active.
+	const timeline = nav.getByRole('link', { name: 'Timeline', exact: true });
+	await expect(timeline).toHaveClass(/is-active/);
+	await expect(timeline).toHaveAttribute('aria-current', 'page');
+
+	// The +New launcher sits between the tabs and never picks up active-tab
+	// styling itself.
+	await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
+
+	// Navigating to another destination moves the active indicator.
+	await nav.getByRole('link', { name: 'Explore', exact: true }).click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(nav.getByRole('link', { name: 'Explore', exact: true })).toHaveClass(/is-active/);
+	await expect(timeline).not.toHaveClass(/is-active/);
+});
+
+// +New works identically from every nav destination, not just Home — and
+// never mistakes itself for the active tab on any of them.
+test('+New launcher works from Explore, Search, and Me, not just Timeline', async ({ page }) => {
+	await loginAs(page);
+
+	for (const hash of ['#explore', '#search', '#me']) {
+		await page.goto('/daymark' + hash);
+		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
+		await page.locator('[data-action="new-mark"]').click();
+		await page.locator('[data-launcher-type="note"]').click();
+		await expect(page).toHaveURL(/#create$/);
+		await expect(page.getByText('New Mark')).toBeVisible();
+	}
+});
+
+// Direct navigation and a hard refresh both land correctly on each new
+// destination — they are real server routes (Daymark_Routes), not just
+// client-side hash states.
+test('Explore, Search, and Me are directly linkable and survive a refresh', async ({ page }) => {
+	await loginAs(page);
+
+	for (const { path, heading } of [
+		{ path: '/daymark/explore', heading: 'Explore' },
+		{ path: '/daymark/search', heading: 'Search' },
+		{ path: '/daymark/me', heading: 'Me' },
+	]) {
+		await page.goto(path);
+		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
+		await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText(heading);
+
+		await page.reload();
+		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
+	}
 });
 
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles
@@ -1310,17 +1357,18 @@ test('connected connector: destination toggle publishes and is remembered per ty
 
 // Section pages render inside the theme with no Daymark-controlled chrome
 // of their own — the back-link is the one way in from there to the app.
-test('section page back-link returns to the app', async ({ page }) => {
-	await loginAs(page);
-	await page.goto('/images/');
-
-	const back = page.locator('.daymark-view-backlink');
-	await expect(back).toBeVisible();
-	await expect(back).toHaveText('← Daymark');
-	expect(await back.getAttribute('href')).toContain('/daymark');
-
-	await back.click();
-	await expect(page).toHaveURL(/\/daymark\/?(#.*)?$/);
+// Content-type pages are retired: /images (like /videos, /audio, /notes)
+// no longer renders the old Daymark view. A fresh install never created
+// it, so it 404s; an upgraded install's old page redirects to Explore
+// instead of a bare 404 (Daymark_Routes' legacy-content-page redirect) —
+// either way, the old view itself is gone.
+test('the retired /images content-type page no longer renders the old Daymark view', async ({ page }) => {
+	const response = await page.goto('/images/');
+	if (response && 404 === response.status()) {
+		return;
+	}
+	await expect(page).toHaveURL(/\/daymark\/explore\/?$/);
+	await expect(page.locator('.daymark-view-backlink')).toHaveCount(0);
 });
 
 // Timeline is an interleaved, multi-source view now (issue #78) — it only

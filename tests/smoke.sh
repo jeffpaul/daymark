@@ -314,24 +314,55 @@ run_eval "portability" "$PHP"
 if "$WP" plugin activate daymark >/dev/null 2>&1; then ok "plugin reactivated"; else bad "plugin reactivate failed"; fi
 
 # ---------------------------------------------------------------------------
-say "Test 10: Images/notes views contain the right Marks (scenarios 2, 3)"
+say "Test 10: content-type pages/shortcodes retired; REST type filtering + nav routes still work (scenarios 2, 3; nav rework)"
 read -r -d '' PHP <<'PHP' || true
 $sf = getenv("DAYMARK_SMOKE_STATE");
 $state = json_decode((string) @file_get_contents($sf), true) ?: array();
 $image_id = (int) ($state["image_id"] ?? 0);
 $note_id = (int) ($state["note_id"] ?? 0);
-$img_link = 'href="' . esc_url(get_permalink($image_id)) . '"';
-$note_link = 'href="' . esc_url(get_permalink($note_id)) . '"';
-$images = do_shortcode('[daymark_images count="50"]');
-$notes = do_shortcode('[daymark_notes count="50"]');
+
 echo !shortcode_exists("daymark_timeline") ? "PASS: [daymark_timeline] no longer registered (issue #78)\n" : "FAIL: [daymark_timeline] still registered\n";
+echo !shortcode_exists("daymark_images") ? "PASS: [daymark_images] no longer registered (content-type pages retired)\n" : "FAIL: [daymark_images] still registered\n";
 echo is_null(get_page_by_path("timeline", OBJECT, "page")) ? "PASS: no public /timeline page exists\n" : "FAIL: a /timeline page still exists\n";
-echo false !== strpos($images, $img_link) ? "PASS: images view contains the image Mark\n" : "FAIL: image Mark missing from images view\n";
-echo false === strpos($images, $note_link) ? "PASS: note Mark excluded from images view\n" : "FAIL: note Mark leaked into images view\n";
-echo false !== strpos($notes, $note_link) ? "PASS: notes view contains the note Mark\n" : "FAIL: note Mark missing from notes view\n";
-echo false === strpos($notes, $img_link) ? "PASS: image Mark excluded from notes view\n" : "FAIL: image Mark leaked into notes view\n";
+
+// The pages/blocks/shortcodes are gone, but the underlying per-type
+// filtering they used to expose is shared with the REST API and must
+// still work — that's what Explore's future "browse by type" section
+// will build on.
+wp_set_current_user(1);
+$nonce = wp_create_nonce("wp_rest");
+$req = new WP_REST_Request("GET", "/daymark/v1/marks");
+$req->set_header("X-WP-Nonce", $nonce);
+$req->set_param("type", "image");
+$image_ids = wp_list_pluck(rest_do_request($req)->get_data(), "id");
+$req2 = new WP_REST_Request("GET", "/daymark/v1/marks");
+$req2->set_header("X-WP-Nonce", $nonce);
+$req2->set_param("type", "note");
+$note_ids = wp_list_pluck(rest_do_request($req2)->get_data(), "id");
+echo in_array($image_id, $image_ids, true) ? "PASS: GET /marks?type=image contains the image Mark\n" : "FAIL: image Mark missing from type=image results\n";
+echo !in_array($note_id, $image_ids, true) ? "PASS: note Mark excluded from type=image results\n" : "FAIL: note Mark leaked into type=image results\n";
+echo in_array($note_id, $note_ids, true) ? "PASS: GET /marks?type=note contains the note Mark\n" : "FAIL: note Mark missing from type=note results\n";
+
+// The new bottom-nav destinations are real server routes (like
+// /daymark/notifications already was), not just client-side hash states.
+// extra_rules_top (not wp_rewrite_rules(), which reads the *persisted*
+// rewrite_rules option and can be stale within a single request) is what
+// Daymark_Routes::register() — already run once via the init hook that
+// bootstrapped this process — actually populated; same technique
+// Test_Routes::registered_rules() uses in the PHPUnit suite.
+global $wp_rewrite;
+$rules = (array) $wp_rewrite->extra_rules_top;
+$has_route = static function ($screen) use ($rules) {
+  foreach ($rules as $query) {
+    if (false !== strpos($query, "daymark_app={$screen}")) { return true; }
+  }
+  return false;
+};
+foreach (array("explore", "search", "me") as $screen) {
+  echo $has_route($screen) ? "PASS: /daymark/{$screen} rewrite rule registered\n" : "FAIL: no rewrite rule maps to daymark_app={$screen}\n";
+}
 PHP
-run_eval "views" "$PHP"
+run_eval "content-type pages retired" "$PHP"
 
 # ---------------------------------------------------------------------------
 say "Summary"

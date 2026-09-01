@@ -83,8 +83,7 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 	/**
 	 * A Mark with no featured image (e.g. one migrated from Moment, which
 	 * never set one) still gets a thumbnail from its own media in the
-	 * GET /marks list Home reads from, matching the fallback
-	 * Daymark_Renderer already uses for the public views.
+	 * GET /marks list Home reads from.
 	 */
 	public function test_list_thumbnail_falls_back_to_media_ids_without_featured_image() {
 		wp_set_current_user( $this->author_a );
@@ -127,9 +126,9 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The list's comment_count/like_count mirror Daymark_Renderer's stat
-	 * row on the public views: approved comments and approved 'like'-type
-	 * comments, counted separately, with unapproved ones excluded.
+	 * The list's comment_count/like_count reflect the app shell's stat row:
+	 * approved comments and approved 'like'-type comments, counted
+	 * separately, with unapproved ones excluded.
 	 */
 	public function test_list_reports_approved_comment_and_like_counts() {
 		wp_set_current_user( $this->author_a );

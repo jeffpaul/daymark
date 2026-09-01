@@ -18,14 +18,13 @@ WordPress does not need to become a social network. Daymark makes your own site 
 
 = What you get =
 
-* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome.
+* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach.
 * **Standard WordPress posts** — every Mark is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Daymark never strands your content.
 * **Syndication routing** — choose which networks each Mark also publishes to. Daymark remembers your routing habits per content type and only offers destinations that are actually connected.
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
 * **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
 * **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it.
-* **Blocks and shortcodes** — per-type views (Images, Videos, Audio, Notes) are available as both `[daymark_*]` shortcodes and `daymark/*` blocks, rendering identical output. The blocks' count is editable in the block editor (Block tab → "Number of Marks", 1–50), so you can show 20 recent Marks without touching block markup.
 * **Autosave** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home.
 
 = Product principles =
@@ -60,7 +59,7 @@ This plugin was generated with Claude Code working from the Project Daymark spec
 3. Visit `https://yoursite.example/daymark` on your phone while logged in.
 4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
-Activation creates section pages (`/images`, `/videos`, `/audio`, `/notes`) that render your Marks inside your theme. Timeline — your own Marks interleaved with subscribed sites' posts — lives in the authenticated `/daymark` app shell instead, not as a public page.
+Activation creates no public pages of its own. Timeline, Explore, Search, and Me all live inside the authenticated `/daymark` app shell.
 
 == Frequently Asked Questions ==
 

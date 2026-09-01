@@ -1684,9 +1684,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * Count approved comments of one comment_type on a Mark — mirrors
-	 * Daymark_Renderer::count_comments_of_type(), which the public views
-	 * use for the same stat. Replies (comment_type 'comment') include
+	 * Count approved comments of one comment_type on a Mark, for the app
+	 * shell's comment/like stat row. Replies (comment_type 'comment') include
 	 * on-site comments and, once backflow imports them, replies from
 	 * Bluesky/the fediverse/webmention; likes (comment_type 'like') are
 	 * populated the same way. Both are 0 for a Mark with no connected
@@ -1709,12 +1708,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * A Mark's thumbnail URL: the featured image first, then the first
-	 * attachment from _daymark_media_ids if it is an image — the same
-	 * fallback Daymark_Renderer::item_thumbnail() uses for the public
-	 * views. Without it, a Mark that never got a featured image set
-	 * (some installs migrated from Moment have this) shows no thumbnail
-	 * here even though that same fallback already finds one for the
-	 * public Timeline.
+	 * attachment from _daymark_media_ids if it is an image. Without this
+	 * fallback, a Mark that never got a featured image set (some installs
+	 * migrated from Moment have this) would show no thumbnail in the app
+	 * shell's Timeline even though it has a perfectly good image attached.
 	 *
 	 * @param int $post_id Mark post ID.
 	 * @return string Thumbnail URL, or '' when none is available.

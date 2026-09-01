@@ -5,7 +5,6 @@
 	<file>daymark.php</file>
 	<file>uninstall.php</file>
 	<file>includes</file>
-	<file>blocks</file>
 	<file>templates</file>
 
 	<exclude-pattern>*/vendor/*</exclude-pattern>

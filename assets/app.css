@@ -712,8 +712,113 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-accent-wash);
 }
 
-.daymark-bottomnav__icon {
+/* The current screen's tab — distinct from hover/focus so a keyboard or
+   pointer user can always tell "where I am" from "what I'm touching". */
+.daymark-bottomnav__link.is-active {
+	color: var(--daymark-accent);
+	font-weight: 600;
+}
+
+.daymark-bottomnav__link.is-active .daymark-icon {
+	stroke-width: 2.5;
+}
+
+/* Generic 22x22 outline icon, shared by the bottom nav, Explore's "Browse
+   by type" buttons, and Me's fallback avatar glyph. */
+.daymark-icon {
 	display: block;
+}
+
+/* --- Explore --- */
+.daymark-exploretypes {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-exploretype {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--daymark-spacing-xs);
+	min-height: 72px;
+	padding: var(--daymark-spacing-sm);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.daymark-exploretype:hover,
+.daymark-exploretype:focus-visible {
+	color: var(--daymark-accent);
+	border-color: var(--daymark-accent-light);
+	background: var(--daymark-accent-wash);
+}
+
+/* --- Me --- */
+.daymark-meprofile {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-md);
+}
+
+.daymark-meavatar {
+	width: 56px;
+	height: 56px;
+	border-radius: 50%;
+	object-fit: cover;
+	background: var(--daymark-surface);
+}
+
+.daymark-meavatar--glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-mename {
+	font-size: 18px;
+	font-weight: 700;
+}
+
+.daymark-melinks {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	overflow: hidden;
+}
+
+.daymark-melink {
+	display: flex;
+	align-items: center;
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
+	border: none;
+	border-bottom: 1px solid var(--daymark-border);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	font-size: 15px;
+	font-family: inherit;
+	text-align: left;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.daymark-melink:last-child {
+	border-bottom: none;
+}
+
+.daymark-melink:hover,
+.daymark-melink:focus-visible {
+	color: var(--daymark-accent);
+	background: var(--daymark-accent-wash);
 }
 
 /* --- Create: media picker --- */
@@ -1447,30 +1552,18 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Header search (collapsible) --- */
-.daymark-searchbtn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-height: var(--daymark-tap-min);
-	min-width: var(--daymark-tap-min);
-	border: 1px solid var(--daymark-border);
-	border-radius: var(--daymark-radius);
-	background: var(--daymark-bg);
-	color: var(--daymark-text-primary);
-	cursor: pointer;
-}
-
-.daymark-searchbtn:hover,
-.daymark-searchbtn:focus-visible {
-	color: var(--daymark-accent);
-	border-color: var(--daymark-accent-light);
-}
-
 .daymark-searchbar {
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-sm);
 	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-md);
+}
+
+/* On its own Search screen (not a collapsible bar under Home's topbar
+   anymore) the search field earns a bit more breathing room below the
+   header and above the results. */
+.daymark-searchbar--screen {
+	padding-top: var(--daymark-spacing-sm);
 }
 
 .daymark-searchbar .daymark-input {

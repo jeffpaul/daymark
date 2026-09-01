@@ -160,45 +160,44 @@ $daymark_awareness_helpers    = array_values(
 	)
 );
 
-// Section-page links resolve to the real pages (collision-aware slugs);
-// a view without a live Daymark page gets '' and the app hides its link.
-$daymark_pages = array();
-foreach ( Daymark_Plugin::get_daymark_pages() as $daymark_view => $daymark_page_id ) {
-	$daymark_pages[ $daymark_view ] = $daymark_page_id && 'publish' === get_post_status( $daymark_page_id )
-		? esc_url_raw( (string) get_permalink( $daymark_page_id ) )
-		: '';
-}
-
 $daymark_config = array(
-	'restUrl'             => esc_url_raw( rest_url( 'daymark/v1/' ) ),
-	'assetsUrl'           => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
-	'nonce'               => wp_create_nonce( 'wp_rest' ),
-	'siteUrl'             => esc_url_raw( home_url( '/' ) ),
-	'screen'              => $daymark_screen,
-	'connectors'          => $daymark_connectors,
-	'defaults'            => $daymark_type_defaults,
-	'categories'          => $daymark_categories,
-	'categoryDefaults'    => $daymark_category_defaults,
-	'titlePolicy'         => $daymark_title_policy,
-	'defaultCategory'     => (int) get_option( 'default_category' ),
-	'pages'               => $daymark_pages,
-	'ai'                  => array(
+	'restUrl'               => esc_url_raw( rest_url( 'daymark/v1/' ) ),
+	'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
+	'nonce'                 => wp_create_nonce( 'wp_rest' ),
+	'siteUrl'               => esc_url_raw( home_url( '/' ) ),
+	'screen'                => $daymark_screen,
+	'connectors'            => $daymark_connectors,
+	'defaults'              => $daymark_type_defaults,
+	'categories'            => $daymark_categories,
+	'categoryDefaults'      => $daymark_category_defaults,
+	'titlePolicy'           => $daymark_title_policy,
+	'defaultCategory'       => (int) get_option( 'default_category' ),
+	'ai'                    => array(
 		'available'     => $daymark_ai->is_available(),
 		'providerLabel' => $daymark_ai->get_provider_label(),
 	),
-	'notifications'       => array(
+	'notifications'         => array(
 		'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
 	),
 	// Controllable third-party helpers get a per-Mark toggle; the rest
 	// of the detected publishing plugins stay awareness-only (Daymark does
 	// not drive those).
-	'controllableHelpers' => $daymark_controllable_helpers,
-	'publishHelpers'      => $daymark_awareness_helpers,
-	'currentUser'         => array(
-		'id'          => (int) $daymark_user->ID,
-		'displayName' => $daymark_user->display_name,
-		'avatarUrl'   => get_avatar_url( $daymark_user->ID ),
+	'controllableHelpers'   => $daymark_controllable_helpers,
+	'publishHelpers'        => $daymark_awareness_helpers,
+	'currentUser'           => array(
+		'id'             => (int) $daymark_user->ID,
+		'displayName'    => $daymark_user->display_name,
+		'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $daymark_user->ID, array( 'size' => 96 ) ) ),
+		// The Me screen links out to WordPress's own profile/logout rather
+		// than duplicating account settings — see CLAUDE.md's non-goals.
+		'profileEditUrl' => esc_url_raw( get_edit_profile_url( $daymark_user->ID ) ),
+		'logoutUrl'      => esc_url_raw( wp_logout_url( Daymark_Routes::app_url( 'me' ) ) ),
 	),
+	// Subscription management lives in wp-admin (Settings -> Daymark), not
+	// the app shell — see CLAUDE.md's "Subscribe-by-URL + subscription
+	// management" decision. Explore's Following section and Me both link
+	// out to it rather than duplicating it in-app.
+	'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
 );
 
 /*

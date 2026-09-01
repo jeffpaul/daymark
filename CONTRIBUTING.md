@@ -61,7 +61,7 @@ the repo is symlinked into a WordPress install as `wp-content/plugins/daymark`.
 
 | Path | What it is |
 |---|---|
-| `daymark.php`, `includes/`, `templates/`, `assets/`, `blocks/` | The Daymark plugin itself |
+| `daymark.php`, `includes/`, `templates/`, `assets/` | The Daymark plugin itself |
 | `tests/` | PHPUnit tests, the WP-CLI smoke suite (`tests/smoke.sh`), and Playwright E2E (`tests/e2e/`) |
 | `wp-hooks-docs/` | Docusaurus site for the generated hook reference |
 | `docs/` | Product/spec documents (excluded from the distributed plugin) |
@@ -76,7 +76,7 @@ tooling, and docs are all excluded).
 - **WordPress 7.0+** (Daymark targets the 7.0 Connectors API and AI Client)
 - **PHP 8.2+**
 - **Composer** (PHP dependencies, PHPUnit, and coding standards)
-- **Node.js 18+** (for the Playwright E2E suite and the block editor build)
+- **Node.js 18+** (for the Playwright E2E suite)
 - A local WordPress site. [Local by Flywheel](https://localwp.com/) is what
   the plugin is developed against, but any local WP 7.0 works.
 
@@ -90,20 +90,6 @@ wp plugin activate daymark
 ```
 
 Then visit `/daymark` on a phone-sized viewport while logged in.
-
-### Block editor assets
-
-The `daymark/*` blocks' inspector UI lives in `src/index.js` and is compiled
-with `@wordpress/scripts`:
-
-```bash
-npm ci && npm run build   # once after cloning, and after any change to src/
-```
-
-The compiled bundle is **committed** (`build/index.js` + `build/index.asset.php`)
-and ships in the plugin zip, so end users never run a build — only
-contributors changing the editor UI need to. CI (`blocks-build` job) fails
-if the committed bundle is out of date with `src/`.
 
 ## Testing
 
@@ -172,9 +158,7 @@ stubbed AT Protocol API — see the setup notes at the top of
     name; it also collides with the Moment.js library bundled in core).
 - **Content model:** every Mark is a standard `post` with `_daymark_*` post
   meta — never a custom post type. Portability is a core promise.
-- **The app shell is vanilla ES2020**, no build step — keep it framework-free.
-  The block editor UI (`src/`, see [Block editor assets](#block-editor-assets))
-  is the one compiled asset; everything else stays build-free.
+- **The app shell is vanilla ES2020**, no build step, no framework.
 - **Security checklist** for every REST endpoint and form handler:
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content
@@ -301,45 +285,32 @@ publishes the GitHub release (`.github/workflows/release.yml`).
      look at breaking changes and a compatibility check against the plugin's
      minimum supported WP/PHP versions (`Requires at least`/`Requires PHP` in
      `daymark.php` and `readme.txt`).
-   - Re-run the full [test suite](#testing) after updating, before moving to
-     the bundle size check below.
+   - Re-run the full [test suite](#testing) after updating.
    - Note any held-back updates (and why) in the release notes or a
      `DEPENDENCIES.md` so it is not re-litigated next release.
-2. **Bundle size check (pre-release).** Run a production build
-   (`npm run build`) and confirm the enqueued JS bundle size hasn't regressed
-   unexpectedly. Watch for accidental full-package imports (`lodash`,
-   `@wordpress/*`) that bypass tree shaking. If a bundle analyzer is configured
-   (`wp-scripts build --webpack-bundle-analyzer` works out of the box, no extra
-   dependency needed), compare against the previous release's baseline; flag
-   any increase over 20% for review. That threshold is a starting point, not a
-   settled number — the built bundle is currently under 1 KB (everything else
-   is externalized to WordPress core's own `@wordpress/*` scripts), so a small
-   absolute change can look like a large percentage change at this size.
-   Revisit once the bundle has grown enough for a percentage to mean something
-   stable.
-3. **Open a release PR** that bumps the version in all four places — the
+2. **Open a release PR** that bumps the version in all four places — the
    `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
    `readme.txt`, and `package.json`. The release workflow fails the build if
    these disagree with the tag.
-4. **Close out the changelog.** Rename `## [Unreleased]` to
+3. **Close out the changelog.** Rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD` (ISO 8601), add the version's compare link to the
    reference block at the bottom of the file, start a fresh empty
    `## [Unreleased]`, then run `bin/sync-changelog.sh` and commit the
    regenerated `readme.txt`. Add the `readme.txt` upgrade notice too — that one
    is hand-written, since it is a short wordpress.org-specific summary rather
    than a changelog.
-5. **Keep the release PR description short.** It becomes the commit message the
+4. **Keep the release PR description short.** It becomes the commit message the
    tag points at, which is what anyone browsing the tag list reads first. Put
    post-merge steps in a PR comment rather than the description — or pass an
    explicit message at merge time:
    ```bash
    gh pr merge <n> --squash --subject "Release X.Y.Z (#<n>)" --body-file notes.md
    ```
-6. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
+5. **Tag the merge commit lightweight** — `git tag X.Y.Z <sha>`, never
    `git tag -a`. GitHub shows a lightweight tag's verification from the
    underlying commit, and squash merges here are GitHub-signed, so the tag reads
    as Verified. An unsigned annotated tag reads as Unverified instead.
-7. **Push the tag.** The workflow verifies the version, builds the zip, checks
+6. **Push the tag.** The workflow verifies the version, builds the zip, checks
    that nothing untracked or dev-only leaked into it, and creates the release
    with notes from the changelog. It is safe to re-run against an existing
    release: the zip is re-uploaded and hand-written notes are left alone.
