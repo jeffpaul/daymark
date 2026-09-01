@@ -1636,11 +1636,21 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Recent item: per-item ⋯ actions menu --- */
+/* A flex row: the site icon column (.daymark-recent__siteicon, below) sits
+   first, then the card's own thumbnail/title/meta content takes the
+   remaining space — position: relative is kept only so
+   .daymark-recent__actions (the ⋯ button) can still pin itself to the
+   wrap's right edge, absolutely, same as before. */
 .daymark-recent__item-wrap {
 	position: relative;
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
 }
 
 .daymark-recent__item-wrap .daymark-recent__item {
+	flex: 1;
+	min-width: 0;
 	/* Room for the ⋯ button pinned to the right edge. */
 	padding-right: 56px;
 }
@@ -1922,63 +1932,62 @@ h2[tabindex='-1']:focus {
 	z-index: 30;
 }
 
-/* --- Recent item: site avatar (filter/visit) menu --- */
-/* A small circular badge overlapping the thumbnail's bottom-right corner —
-   tapping it opens the same .daymark-menu popover the ⋯ button already
-   uses (see the JS comment on renderSiteAvatarMenu()), offering "filter
-   Timeline to this source" (primary) or "visit the site" (secondary). Sits
-   on every Timeline item except a Draft. Stacking above later cards while
-   its menu is open is already covered by the existing, class-agnostic
-   :has(.daymark-menu:not([hidden])) rule above — no change needed there. */
-.daymark-recent__avatarwrap {
-	position: absolute;
-	left: 42px;
-	top: 34px;
+/* --- Recent item: site icon (filter) column --- */
+/* A distinct leading-column element in .daymark-recent__item-wrap's own
+   flex row (see above) — not a small circular badge stacked over the
+   thumbnail's corner. A live product review of that earlier version said
+   it read as a false "circular target" floating on the thumbnail; this
+   version is its own sibling column instead, deliberately independent of
+   whatever the rest of a given card looks like, since future Daymark
+   content types are expected to render that part differently. A single
+   click is the only interaction (data-filter-site, read by
+   onFeedListClick()) — no popover, so no chrome (border/background/
+   box-shadow) beyond what's needed to make the icon itself a real tap
+   target. Sits on every Timeline item except a Draft. */
+.daymark-recent__siteicon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
 }
 
-/* .daymark-menu's own right: 0 assumes its trigger sits at the item's right
-   edge (true for the ⋯ menu, expanding leftward to stay on the card). This
-   badge sits at the opposite (left) edge instead, so its popover overrides
-   just that one rule to expand rightward, for the same reason. Everything
-   else about .daymark-menu — size, shadow, menu items, focus/hover — applies
-   unchanged: two plain menu items need none of the ⋯ menu's own
-   delete-confirm sub-structure. */
-.daymark-recent__avatarwrap .daymark-menu {
-	left: 0;
-	right: auto;
-}
-
-.daymark-recent__avatarbtn {
+.daymark-recent__siteiconbtn {
 	display: block;
-	width: 22px;
-	height: 22px;
+	width: 32px;
+	height: 32px;
 	padding: 0;
-	border: 2px solid var(--daymark-bg);
-	border-radius: 50%;
-	background: var(--daymark-surface);
-	overflow: hidden;
+	border: none;
+	background: none;
 	cursor: pointer;
 }
 
-.daymark-recent__avatarbtn:hover,
-.daymark-recent__avatarbtn:focus-visible {
-	border-color: var(--daymark-accent-light);
+.daymark-recent__siteiconbtn:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
 }
 
-.daymark-recent__avatar {
+.daymark-recent__siteiconbtn:hover .daymark-recent__siteiconimg,
+.daymark-recent__siteiconbtn:focus-visible .daymark-recent__siteiconimg {
+	opacity: 0.8;
+}
+
+/* No border-radius: 50% here on purpose — a real site icon/favicon is
+   square-ish, and cropping it to a circle was the earlier "circular
+   target" look this replaces. */
+.daymark-recent__siteiconimg {
 	display: block;
 	width: 100%;
 	height: 100%;
-	object-fit: cover;
+	object-fit: contain;
+	border-radius: var(--daymark-radius-sm);
 }
 
 /* Thumbnail-less fallback, matching .daymark-recent__thumb--glyph's own
    thumbnail-or-glyph convention: a single initial on the accent wash. */
-.daymark-recent__avatar--glyph {
+.daymark-recent__siteiconimg--glyph {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	font-size: 11px;
+	font-size: 13px;
 	font-weight: 700;
 	line-height: 1;
 	color: var(--daymark-accent-deep);

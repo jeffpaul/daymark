@@ -1059,18 +1059,20 @@
 	}
 
 	// The dismissible entry every feed-list screen (Home, Search) needs: an
-	// outside click or Escape closes whichever ⋯ actions menu or avatar menu
-	// is open. Both menu kinds share the same [data-menu] show/hide
-	// machinery, so one closeItemMenus() call handles either.
+	// outside click or Escape closes whichever ⋯ actions menu is open. A
+	// Mark's or subscription post's site icon has no popover of its own to
+	// close (see renderSiteIconButton() below) — a plain click fires
+	// applySourceFilter() straight away — so this only ever needs to guard
+	// the one [data-menu] show/hide machinery the ⋯ menu still uses.
 	function itemMenusDismissEntry() {
-		return { selector: '[data-actions], [data-avatarwrap]', close: () => closeItemMenus() };
+		return { selector: '[data-actions]', close: () => closeItemMenus() };
 	}
 
-	// The avatar/site-icon menu's primary action, shared by a Mark's own
-	// avatar and a subscription post's site icon: filter Timeline down to
-	// just that source. Hands the same source value the Source filter's
-	// <select> already uses ('mine' or a subscription id) to Search via the
-	// same one-shot searchPreset handoff Explore/Me use, rather than
+	// The site icon's one action, shared by a Mark's own icon and a
+	// subscription post's site icon: filter Timeline down to just that
+	// source. Hands the same source value the Source filter's <select>
+	// already uses ('mine' or a subscription id) to Search via the same
+	// one-shot searchPreset handoff Explore/Me use, rather than
 	// reaching into a search bar that (unlike before the bottom-nav rework)
 	// no longer lives on the calling screen.
 	function applySourceFilter(value) {
@@ -1138,47 +1140,33 @@
 		return 'this site';
 	}
 
-	// The avatar/site-icon button + its popover menu that sits on every
-	// Timeline item except a Draft: "filter Timeline to just this source" is
-	// the primary action (it keeps the reader inside Daymark), "visit the
-	// site" is secondary and deliberately less-promoted, since it leaves the
-	// app. Shared by a Mark's own avatar (renderMarkItem()) and a
-	// subscription post's site icon (renderSubscriptionPostCard()) so the two
-	// menus can never drift apart. Reuses the ⋯ menu's exact data-menu-toggle
-	// / data-menu / role="menu" / menuitem machinery (see onFeedListClick()
-	// and closeItemMenus()) — the only new wiring is the two new action
-	// attributes this menu's items carry.
-	function renderSiteAvatarMenu({
-		avatarSrc,
-		avatarAlt,
-		ariaLabel,
-		filterValue,
-		filterLabel,
-		visitUrl,
-		visitLabel,
-	}) {
-		const avatar = avatarSrc
-			? `<img class="daymark-recent__avatar" src="${esc(avatarSrc)}" alt="" />`
-			: `<span class="daymark-recent__avatar daymark-recent__avatar--glyph" aria-hidden="true">${esc(
-					(avatarAlt || '?').charAt(0).toUpperCase()
+	// The site icon that sits on every Timeline item except a Draft, as its
+	// own leading-column element — not a small circular badge overlapping
+	// the thumbnail's corner. A single click is the only interaction: it
+	// filters Timeline down to just that source (applySourceFilter(), via
+	// the data-filter-site attribute onFeedListClick() reads), no popover
+	// menu and no separate "visit the site" action (a live product review
+	// asked for both simplifications — the popover read as a false circular
+	// tap target, and "visit" left the app for a use case that didn't earn
+	// its own menu). Shared by a Mark's own icon (renderMarkItem()) and a
+	// subscription post's site icon (renderSubscriptionPostCard()) so the
+	// two can never drift apart. Kept as its own sibling element in the
+	// card's flex layout (not nested inside the card's own link/button) so
+	// a future Daymark content type can render its own card differently
+	// without this icon's placement following along.
+	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue }) {
+		const icon = iconSrc
+			? `<img class="daymark-recent__siteiconimg" src="${esc(iconSrc)}" alt="" />`
+			: `<span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(
+					(iconAlt || '?').charAt(0).toUpperCase()
 			  )}</span>`;
 		return `
-			<div class="daymark-recent__avatarwrap" data-avatarwrap>
-				<button type="button" class="daymark-recent__avatarbtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="${esc(
-					ariaLabel
-				)}">
-					${avatar}
+			<div class="daymark-recent__siteicon">
+				<button type="button" class="daymark-recent__siteiconbtn" data-filter-site="${esc(
+					filterValue
+				)}" aria-label="${esc(ariaLabel)}">
+					${icon}
 				</button>
-				<div class="daymark-menu" data-menu role="menu" aria-label="${esc(ariaLabel)}" hidden>
-					<div class="daymark-menu__actions" data-menu-actions>
-						<button type="button" class="daymark-menu__item" role="menuitem" data-filter-site="${esc(
-							filterValue
-						)}">${esc(filterLabel)}</button>
-						<button type="button" class="daymark-menu__item" role="menuitem" data-visit-site="${esc(
-							visitUrl
-						)}">${esc(visitLabel)} &#8599;</button>
-					</div>
-				</div>
 			</div>`;
 	}
 
@@ -1197,25 +1185,22 @@
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
 		// A Draft is always the author's own unpublished work — there is no
-		// separate site to filter to or visit, so it's the one item that
-		// skips the avatar menu.
-		const avatarMenu = isDraft
+		// separate site to filter to, so it's the one item that skips the
+		// site icon.
+		const siteIcon = isDraft
 			? ''
-			: renderSiteAvatarMenu({
-					avatarSrc: (config.currentUser && config.currentUser.avatarUrl) || '',
-					avatarAlt: (config.currentUser && config.currentUser.displayName) || 'You',
-					ariaLabel: 'Filter or visit your site',
+			: renderSiteIconButton({
+					iconSrc: (config.currentUser && config.currentUser.avatarUrl) || '',
+					iconAlt: (config.currentUser && config.currentUser.displayName) || 'You',
+					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
-					filterLabel: 'See only your Marks',
-					visitUrl: config.siteUrl || '',
-					visitLabel: 'Visit your site',
 			  });
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
+				${siteIcon}
 				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
 					${renderMarkCore(item)}
 				</a>
-				${avatarMenu}
 				<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
 						title
@@ -1316,26 +1301,14 @@
 			return;
 		}
 
-		// The avatar menu's primary action: filter Timeline down to just
-		// this source, without ever leaving the app.
+		// The site icon's one action: filter Timeline down to just this
+		// source, without ever leaving the app. A plain click on the icon
+		// itself — no menu-open step first.
 		const filterSite = target.closest('[data-filter-site]');
 		if (filterSite) {
 			event.preventDefault();
 			closeItemMenus();
 			applySourceFilter(filterSite.getAttribute('data-filter-site'));
-			return;
-		}
-
-		// The avatar menu's secondary, deliberately less-promoted action:
-		// leave the app and visit the source site directly.
-		const visitSite = target.closest('[data-visit-site]');
-		if (visitSite) {
-			event.preventDefault();
-			closeItemMenus();
-			const url = visitSite.getAttribute('data-visit-site');
-			if (url) {
-				window.open(url, '_blank', 'noopener');
-			}
 			return;
 		}
 
@@ -2917,13 +2890,18 @@
 		const excerpt = toPlainText(item.excerpt || '');
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
-		// existing subscription-post button (unchanged below) becomes the
-		// first child of a wrapper div instead, matching the Mark item's own
-		// wrapper shape, so the avatar menu can sit alongside it as a sibling
-		// rather than nested inside it.
+		// existing subscription-post button (unchanged below) becomes a
+		// sibling of the site icon inside a wrapper div instead, matching
+		// the Mark item's own wrapper shape.
 		const siteLabel = subscriptionSiteLabel(item);
 		return `
 				<div class="daymark-recent__item-wrap">
+					${renderSiteIconButton({
+						iconSrc: item.site_icon_url || '',
+						iconAlt: siteLabel,
+						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
+						filterValue: String(item.subscription_id),
+					})}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
 						${subscriptionPostThumb(item)}
 						<span class="daymark-recent__body">
@@ -2934,15 +2912,6 @@
 							${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
 					</button>
-					${renderSiteAvatarMenu({
-						avatarSrc: item.site_icon_url || '',
-						avatarAlt: siteLabel,
-						ariaLabel: 'Filter or visit ' + siteLabel,
-						filterValue: String(item.subscription_id),
-						filterLabel: 'See only posts from ' + siteLabel,
-						visitUrl: item.site_url || '',
-						visitLabel: 'Visit ' + siteLabel,
-					})}
 				</div>`;
 	}
 
