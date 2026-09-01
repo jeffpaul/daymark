@@ -1833,15 +1833,6 @@ h2[tabindex='-1']:focus {
 	cursor: pointer;
 }
 
-/* A pruned rich-media subscription post shows the subscription's own
-   favicon in place of its cleared embed — contained and padded rather
-   than cropped/stretched to fill the tile like a real thumbnail. */
-.daymark-recent__thumb--siteicon {
-	object-fit: contain;
-	padding: 8px;
-	background: var(--daymark-surface);
-}
-
 .daymark-recent__excerpt {
 	font-size: 13px;
 	color: var(--daymark-text-secondary);

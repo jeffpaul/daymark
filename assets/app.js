@@ -210,18 +210,22 @@
 		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}</span>`;
 	}
 
-	// The thumbnail-or-glyph + title + meta + stats core of one Mark's card
-	// markup — used by every Mark item any feed-list screen renders (Home's
+	// The thumbnail + title + meta + stats core of one Mark's card markup —
+	// used by every Mark item any feed-list screen renders (Home's
 	// Drafts/Timeline, Search's results), always wrapped in the same ⋯
 	// actions menu (see renderMarkItem()). Keeping this in one place is what
 	// "reuse, don't reinvent Mark card markup" means.
+	//
+	// No glyph fallback when there's no real thumbnail (a Note Mark, mainly):
+	// every card already carries its own leading site icon (see
+	// renderSiteIconButton()), so a second, type-initial icon sitting right
+	// next to it read as a duplicate rather than useful content — a Note's
+	// card just runs title/meta straight to the edge instead now.
 	function renderMarkCore(item) {
 		const title = item.title || 'Untitled Mark';
 		const thumb = item.thumbnail
 			? `<img class="daymark-recent__thumb" src="${esc(item.thumbnail)}" alt="" />`
-			: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-					(TYPE_LABELS[item.type] || 'M').charAt(0)
-			  )}</span>`;
+			: '';
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so say so. (The Timeline
 		// endpoint only ever returns published Marks, so this never fires
@@ -2847,31 +2851,19 @@
 	// Mark's primary_type; TYPE_LABELS already covers image/video/audio/note,
 	// this only adds the one label a Mark never has ('standard' — a plain
 	// text/link post from a feed with no richer format hint).
-	const SUBSCRIPTION_FORMAT_LABELS = Object.assign({}, TYPE_LABELS, { standard: 'Post' });
-
-	// Rich-media formats: per the PRD, a pruned card in one of these formats
-	// shows the subscription's site icon in place of its now-cleared embed.
-	const SUBSCRIPTION_RICH_MEDIA_FORMATS = ['image', 'video', 'audio'];
-
-	// Thumbnail-or-glyph for one subscription post card, mirroring
-	// renderMarkCore()'s thumbnail-or-glyph fallback for a Mark. A pruned
-	// rich-media post has no featured_image_url left, so it falls back to
-	// the subscription's own site icon (never a live fetch — both fields
-	// already arrive on the list item); a missing site icon too falls back
-	// to the same kind of glyph a thumbnail-less Mark card already shows.
+	// Thumbnail for one subscription post card: only ever a real
+	// featured_image_url. A pruned rich-media post (its embed cleared) used
+	// to fall back to the subscription's own site icon here, and a post
+	// with no image at all fell back to a type-initial glyph — but every
+	// card already carries that same site icon in its own leading column
+	// (see renderSiteIconButton()), so showing it a second time inside the
+	// card (or a same-shaped glyph standing in for it) read as a duplicate
+	// rather than useful content. No image left just runs title/meta
+	// straight to the edge, same as a Note Mark's card now.
 	function subscriptionPostThumb(item) {
-		if (item.featured_image_url) {
-			return `<img class="daymark-recent__thumb" src="${esc(item.featured_image_url)}" alt="" />`;
-		}
-		if (SUBSCRIPTION_RICH_MEDIA_FORMATS.includes(item.post_format) && item.site_icon_url) {
-			return `<img class="daymark-recent__thumb daymark-recent__thumb--siteicon" src="${esc(
-				item.site_icon_url
-			)}" alt="" />`;
-		}
-		const glyph = (SUBSCRIPTION_FORMAT_LABELS[item.post_format] || 'S').charAt(0);
-		return `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-			glyph
-		)}</span>`;
+		return item.featured_image_url
+			? `<img class="daymark-recent__thumb" src="${esc(item.featured_image_url)}" alt="" />`
+			: '';
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
