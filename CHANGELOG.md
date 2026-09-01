@@ -26,6 +26,7 @@ can't act on them.
 
 ### Developer
 
+- Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
 - Added design principles documentation. ([#119](https://github.com/jeffpaul/daymark/pull/119))
 
 ### Changed

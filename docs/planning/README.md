@@ -58,7 +58,16 @@ constraint is the feature."*
 5. **AI Assist, never AI First** — AI never sits between the person and the publish button.
 6. **Progressive Complexity** — start with one tap; grow into full WordPress later.
 
-> These six decide *what wins*. For *what it should feel like* while
+> ⚠️ **Superseded (September 2026):** this six-item list is now historical. The
+> canonical, actively-maintained product principles — eight of them, each tied
+> to concrete implications for the codebase — live in
+> **[CLAUDE.md → Product principles](../../CLAUDE.md)**. The spirit carries
+> forward unchanged (publish-first, mobile-first, site-as-source-of-truth,
+> portability, AI-assists-not-replaces, progressive disclosure); the new list
+> adds an explicit media-first-class principle and a concrete "under 30
+> seconds" publishing target.
+>
+> Those principles decide *what wins*. For *what it should feel like* while
 > winning — the specific products Daymark borrows a feeling from (Path, Day
 > One, WordPress, modern PWAs) and the part of each it deliberately leaves
 > behind — see **[docs/design-principles.md](../design-principles.md)**.
