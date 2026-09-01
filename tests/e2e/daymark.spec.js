@@ -784,8 +784,13 @@ test('avatar menu: filter to this source (primary) or visit the site (secondary)
 	await expect(list.locator('[data-subpost]')).toHaveCount(0);
 
 	// Back to "All" before checking the subscription-post card's own menu.
+	// Not asserting a subscription-post card is visible immediately here —
+	// same reason the Source-filter test above doesn't either: search has
+	// no pagination, a flat per_page=20, and this file's own many
+	// Mark-creating tests can by now outnumber the WordPress.org feed's
+	// handful of older posts within that window. findSubscriptionCard()
+	// below handles that by scrolling until one turns up.
 	await sourceFilter.selectOption('');
-	await expect(list.locator('[data-subpost]').first()).toBeVisible();
 
 	// applySourceFilter() opened search to apply the "mine" filter above, and
 	// nothing since has closed it. Search staying open is correct app
@@ -847,27 +852,33 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 
 	await page.goto('/daymark');
 
-	// Scope every action to this Mark's own card.
+	// Scope every action to this Mark's own card, and within it to the ⋯
+	// actions menu specifically ([data-actions]) rather than the card as a
+	// whole — the card's separate avatar menu reuses the same
+	// data-menu-toggle/data-menu-actions attributes (both share the generic
+	// open/close machinery in HomeScreen.renderItem()), so an unscoped
+	// card.locator() for either would match two elements.
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
+	const menu = card.locator('[data-actions]');
 
 	// Open the ⋯ menu and start a delete — a confirm step must appear first.
-	await card.locator('[data-menu-toggle]').click();
-	await card.locator('[data-menu-delete]').click();
-	const confirm = card.locator('[data-menu-confirm]');
+	await menu.locator('[data-menu-toggle]').click();
+	await menu.locator('[data-menu-delete]').click();
+	const confirm = menu.locator('[data-menu-confirm]');
 	await expect(confirm).toBeVisible();
 	await expect(confirm).toContainText('move to Trash');
 
 	// Cancel returns to the action list and keeps the Mark.
-	await card.locator('[data-menu-delete-cancel]').click();
+	await menu.locator('[data-menu-delete-cancel]').click();
 	await expect(confirm).toBeHidden();
-	await expect(card.locator('[data-menu-actions]')).toBeVisible();
+	await expect(menu.locator('[data-menu-actions]')).toBeVisible();
 	await expect(card).toBeVisible();
 
 	// Delete again and confirm — this time it is removed from the list.
-	await card.locator('[data-menu-delete]').click();
+	await menu.locator('[data-menu-delete]').click();
 	await expect(confirm).toBeVisible();
-	await card.locator('[data-menu-delete-confirm]').click();
+	await menu.locator('[data-menu-delete-confirm]').click();
 	await expect(
 		page.locator('.daymark-recent__item-wrap').filter({ hasText: caption })
 	).toHaveCount(0);
