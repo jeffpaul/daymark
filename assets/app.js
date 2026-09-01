@@ -211,10 +211,10 @@
 	}
 
 	// The thumbnail-or-glyph + title + meta + stats core of one Mark's card
-	// markup — used by every Mark item HomeScreen renders (Drafts, and every
-	// Mark item in the merged Timeline feed), always wrapped in the same ⋯
-	// actions menu (see HomeScreen.renderItem()). Keeping this in one place
-	// is what "reuse, don't reinvent Mark card markup" means.
+	// markup — used by every Mark item any feed-list screen renders (Home's
+	// Drafts/Timeline, Search's results), always wrapped in the same ⋯
+	// actions menu (see renderMarkItem()). Keeping this in one place is what
+	// "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item) {
 		const title = item.title || 'Untitled Mark';
 		const thumb = item.thumbnail
@@ -863,6 +863,26 @@
 		bindFooterAutoHide(screen);
 	}
 
+	// The dismissible entry every feed-list screen (Home, Search) needs: an
+	// outside click or Escape closes whichever ⋯ actions menu or avatar menu
+	// is open. Both menu kinds share the same [data-menu] show/hide
+	// machinery, so one closeItemMenus() call handles either.
+	function itemMenusDismissEntry() {
+		return { selector: '[data-actions], [data-avatarwrap]', close: () => closeItemMenus() };
+	}
+
+	// The avatar/site-icon menu's primary action, shared by a Mark's own
+	// avatar and a subscription post's site icon: filter Timeline down to
+	// just that source. Hands the same source value the Source filter's
+	// <select> already uses ('mine' or a subscription id) to Search via the
+	// same one-shot searchPreset handoff Explore/Me use, rather than
+	// reaching into a search bar that (unlike before the bottom-nav rework)
+	// no longer lives on the calling screen.
+	function applySourceFilter(value) {
+		searchPreset = { source: value };
+		navigate('#search');
+	}
+
 	// The Source filter's <option>s: "All" and "My Marks" always render
 	// immediately; the per-subscription options only appear once the
 	// subscriptions fetch below resolves.
@@ -904,6 +924,69 @@
 		});
 	}
 
+	// A subscription post's own display label: its title, or — falling back —
+	// the bare hostname of its site (never the full URL). Falls further back
+	// to a generic phrase only when even that can't be parsed (a malformed or
+	// missing site_url), so a card's avatar menu never reads with a blank
+	// name in it.
+	function subscriptionSiteLabel(item) {
+		if (item.site_title && item.site_title.trim()) {
+			return item.site_title.trim();
+		}
+		if (item.site_url) {
+			try {
+				return new URL(item.site_url).hostname;
+			} catch (err) {
+				// Falls through to the generic label below.
+			}
+		}
+		return 'this site';
+	}
+
+	// The avatar/site-icon button + its popover menu that sits on every
+	// Timeline item except a Draft: "filter Timeline to just this source" is
+	// the primary action (it keeps the reader inside Daymark), "visit the
+	// site" is secondary and deliberately less-promoted, since it leaves the
+	// app. Shared by a Mark's own avatar (renderMarkItem()) and a
+	// subscription post's site icon (renderSubscriptionPostCard()) so the two
+	// menus can never drift apart. Reuses the ⋯ menu's exact data-menu-toggle
+	// / data-menu / role="menu" / menuitem machinery (see onFeedListClick()
+	// and closeItemMenus()) — the only new wiring is the two new action
+	// attributes this menu's items carry.
+	function renderSiteAvatarMenu({
+		avatarSrc,
+		avatarAlt,
+		ariaLabel,
+		filterValue,
+		filterLabel,
+		visitUrl,
+		visitLabel,
+	}) {
+		const avatar = avatarSrc
+			? `<img class="daymark-recent__avatar" src="${esc(avatarSrc)}" alt="" />`
+			: `<span class="daymark-recent__avatar daymark-recent__avatar--glyph" aria-hidden="true">${esc(
+					(avatarAlt || '?').charAt(0).toUpperCase()
+			  )}</span>`;
+		return `
+			<div class="daymark-recent__avatarwrap" data-avatarwrap>
+				<button type="button" class="daymark-recent__avatarbtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="${esc(
+					ariaLabel
+				)}">
+					${avatar}
+				</button>
+				<div class="daymark-menu" data-menu role="menu" aria-label="${esc(ariaLabel)}" hidden>
+					<div class="daymark-menu__actions" data-menu-actions>
+						<button type="button" class="daymark-menu__item" role="menuitem" data-filter-site="${esc(
+							filterValue
+						)}">${esc(filterLabel)}</button>
+						<button type="button" class="daymark-menu__item" role="menuitem" data-visit-site="${esc(
+							visitUrl
+						)}">${esc(visitLabel)} &#8599;</button>
+					</div>
+				</div>
+			</div>`;
+	}
+
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
 	// core (renderMarkCore()) wrapped in its own permalink/resume-draft link
 	// plus the shared ⋯ edit/delete actions menu. Used everywhere a Mark
@@ -918,11 +1001,26 @@
 		const href = isDraft ? '#create' : item.permalink || '#home';
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
+		// A Draft is always the author's own unpublished work — there is no
+		// separate site to filter to or visit, so it's the one item that
+		// skips the avatar menu.
+		const avatarMenu = isDraft
+			? ''
+			: renderSiteAvatarMenu({
+					avatarSrc: (config.currentUser && config.currentUser.avatarUrl) || '',
+					avatarAlt: (config.currentUser && config.currentUser.displayName) || 'You',
+					ariaLabel: 'Filter or visit your site',
+					filterValue: 'mine',
+					filterLabel: 'See only your Marks',
+					visitUrl: config.siteUrl || '',
+					visitLabel: 'Visit your site',
+			  });
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
 					${renderMarkCore(item)}
 				</a>
+				${avatarMenu}
 				<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
 						title
@@ -1019,6 +1117,29 @@
 				if (first) {
 					first.focus();
 				}
+			}
+			return;
+		}
+
+		// The avatar menu's primary action: filter Timeline down to just
+		// this source, without ever leaving the app.
+		const filterSite = target.closest('[data-filter-site]');
+		if (filterSite) {
+			event.preventDefault();
+			closeItemMenus();
+			applySourceFilter(filterSite.getAttribute('data-filter-site'));
+			return;
+		}
+
+		// The avatar menu's secondary, deliberately less-promoted action:
+		// leave the app and visit the source site directly.
+		const visitSite = target.closest('[data-visit-site]');
+		if (visitSite) {
+			event.preventDefault();
+			closeItemMenus();
+			const url = visitSite.getAttribute('data-visit-site');
+			if (url) {
+				window.open(url, '_blank', 'noopener');
 			}
 			return;
 		}
@@ -1202,10 +1323,7 @@
 			// or Escape (with focus returned to the launcher's own trigger —
 			// the item menu never took focus in the first place, so it has
 			// nothing to return).
-			bindDismissible(this, [
-				{ selector: '[data-actions]', close: () => closeItemMenus() },
-				navFooterDismissEntry(this),
-			]);
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 
 			bindLauncher(this);
 			bindFooterAutoHide(this);
@@ -1613,10 +1731,7 @@
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
 
-			bindDismissible(this, [
-				{ selector: '[data-actions]', close: () => closeItemMenus() },
-				navFooterDismissEntry(this),
-			]);
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 
 			bindNavFooter(this);
 		},
@@ -2597,17 +2712,34 @@
 		}
 		const excerpt = toPlainText(item.excerpt || '');
 		const id = esc(String(item.id));
+		// A <button> can't contain another interactive <button> — the
+		// existing subscription-post button (unchanged below) becomes the
+		// first child of a wrapper div instead, matching the Mark item's own
+		// wrapper shape, so the avatar menu can sit alongside it as a sibling
+		// rather than nested inside it.
+		const siteLabel = subscriptionSiteLabel(item);
 		return `
-				<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
-					${subscriptionPostThumb(item)}
-					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
-							metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
-						}</span>
-						${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
-					</span>
-				</button>`;
+				<div class="daymark-recent__item-wrap">
+					<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
+						${subscriptionPostThumb(item)}
+						<span class="daymark-recent__body">
+							<span class="daymark-recent__title">${esc(title)}</span>
+							<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
+								metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
+							}</span>
+							${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						</span>
+					</button>
+					${renderSiteAvatarMenu({
+						avatarSrc: item.site_icon_url || '',
+						avatarAlt: siteLabel,
+						ariaLabel: 'Filter or visit ' + siteLabel,
+						filterValue: String(item.subscription_id),
+						filterLabel: 'See only posts from ' + siteLabel,
+						visitUrl: item.site_url || '',
+						visitLabel: 'Visit ' + siteLabel,
+					})}
+				</div>`;
 	}
 
 	// --- Overlay: subscription-post detail sheet ---

@@ -26,6 +26,7 @@ can't act on them.
 - **Explore**: a first, deliberately non-chronological browsing destination — not a second Timeline. "Browse by type" (Image/Video/Audio/Note) and "Following" (your active subscriptions) both hand a preset off to Search rather than duplicating its results view, and are built entirely on data/endpoints the plugin already had. Memories, highlights, collections, favorites, and suggested content are future sections, not implied by what ships here.
 - **Search**: promoted out of Home's old collapsible header search bar into its own screen and nav destination, reusing the same keyword/type/source query. Home no longer has an inline search UI.
 - **Me**: a minimal personal-identity screen — avatar and display name, a link into Search scoped to your own Marks, a view-only Drafts list (tap to resume editing), and links out to Notifications, the wp-admin Subscriptions screen, and WordPress's own profile/logout screens.
+- Tapping a Timeline item's avatar/site icon now offers to filter down to just that source ("See only your Marks" / "See only posts from {site}") or visit the site directly. Filtering is the primary, more prominent action — it jumps straight to Search with that Source filter already applied, one tap away instead of opening Search and picking it by hand; visiting the site is secondary, since it leaves the app.
 
 ### Developer
 
