@@ -515,6 +515,19 @@ h2[tabindex='-1']:focus {
 	border: 2px solid var(--daymark-bg);
 }
 
+/* Autosave status ("Saving…" / "Saved" / "Not saved yet — will retry") at
+   the top of the composer. Empty (and so invisible — no reserved height)
+   until the first autosave attempt. */
+.daymark-autosave-status {
+	margin: 0 0 var(--daymark-spacing-sm);
+	font-size: 12px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-autosave-status:empty {
+	display: none;
+}
+
 /* Editing-a-draft banner at the top of the composer. */
 .daymark-editbanner {
 	display: flex;

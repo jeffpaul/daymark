@@ -305,7 +305,17 @@
 		return Array.isArray(defaults) ? defaults.map(Number) : [];
 	}
 
+	// Bumped by resetComposer(), so an autosave response that arrives after
+	// the composer has moved on to something else (a new Mark, a different
+	// draft) can recognize it's stale and leave `state` alone instead of
+	// clobbering whatever the composer is doing now.
+	let composerGeneration = 0;
+
 	function resetComposer() {
+		composerGeneration += 1;
+		clearTimeout(autosaveState.timer);
+		autosaveState.timer = null;
+		autosaveState.pendingRetry = false;
 		state.files.forEach((entry) => {
 			if (entry.url) {
 				URL.revokeObjectURL(entry.url);
@@ -324,6 +334,191 @@
 		state.aiAssistUsed = false;
 		state.editing = null;
 		state.helpers = [];
+	}
+
+	// Abandon the composer's in-progress work (starting a new Mark, or
+	// opening a different draft) without losing it: fire a best-effort
+	// autosave first — its FormData is built synchronously from the current
+	// `state` before this function returns, so the save captures the final
+	// state even though resetComposer() below wipes it immediately after.
+	// See runAutosave()'s composerGeneration check for why the (possibly
+	// slow) response can never corrupt whatever the composer does next.
+	function abandonComposer() {
+		runAutosave().catch(() => {});
+		resetComposer();
+	}
+
+	// --- Autosave ---
+	//
+	// "Autosave everything. Nothing gets lost." The composer periodically
+	// (and on every meaningful edit) saves in-progress work to a real
+	// server-side draft, reusing the exact same create/update Mark REST
+	// endpoints and publisher logic as an explicit "Save as Draft" tap —
+	// autosave only ever sends status=draft, and only differs by the
+	// `autosave=1` flag that routes it to its own, more generous rate-limit
+	// bucket (Daymark_Rate_Limiter::ACTION_AUTOSAVE) so background autosave
+	// activity can never exhaust the budget for the user's own deliberate
+	// Publish/Save as Draft tap. This protects against a closed tab, a
+	// backgrounded/reclaimed app, or an accidental navigation — as long as
+	// there's connectivity; it is not an offline mode (see CLAUDE.md's
+	// non-goals and issue #121 for the tracked offline-capable follow-up).
+	const AUTOSAVE_DEBOUNCE_MS = 2500;
+
+	const autosaveState = {
+		timer: null,
+		saving: false,
+		pendingRetry: false,
+	};
+
+	function setAutosaveStatus(kind) {
+		const el = root.querySelector('[data-autosave-status]');
+		if (!el) {
+			return;
+		}
+		if (kind === 'saving') {
+			el.textContent = 'Saving…';
+		} else if (kind === 'saved') {
+			el.textContent = 'Saved';
+		} else if (kind === 'error') {
+			el.textContent = 'Not saved yet — will retry';
+		} else {
+			el.textContent = '';
+		}
+	}
+
+	// Builds the exact FormData both a real Publish/Save as Draft and a
+	// background autosave send — the two must never drift apart, or an
+	// autosave could silently save a Mark that publishing would not.
+	function buildMarkFormData(status, opts) {
+		opts = opts || {};
+		const formData = new FormData();
+		formData.append('caption', state.caption);
+		formData.append('primary_type', state.primaryType);
+		formData.append('status', status);
+		if (titleFieldShown()) {
+			formData.append('title', state.title || '');
+		}
+		formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
+		state.targets.forEach((target) => formData.append('targets[]', target));
+		state.categories.forEach((id) => formData.append('categories[]', id));
+		if (Array.isArray(config.controllableHelpers) && config.controllableHelpers.length) {
+			formData.append('publish_helpers', JSON.stringify(state.helpers));
+		}
+		// Only files never previously autosaved go up as fresh uploads; a
+		// file autosave already uploaded carries `uploadedId` and is folded
+		// into existing_alt below instead, so it's never sent (and never
+		// attached to the Mark) twice.
+		state.files
+			.filter((entry) => !entry.uploadedId)
+			.forEach((entry) => {
+				formData.append('files[]', entry.file, entry.file.name);
+				formData.append('alt[]', entry.kind === 'image' ? entry.alt || '' : '');
+			});
+		const existingAlt = {};
+		if (state.editing && Array.isArray(state.editing.media)) {
+			state.editing.media.forEach((m) => {
+				if (m.kind === 'image') {
+					existingAlt[m.id] = m.alt || '';
+				}
+			});
+		}
+		state.files
+			.filter((entry) => entry.uploadedId)
+			.forEach((entry) => {
+				if (entry.kind === 'image') {
+					existingAlt[entry.uploadedId] = entry.alt || '';
+				}
+			});
+		if (Object.keys(existingAlt).length) {
+			formData.append('existing_alt', JSON.stringify(existingAlt));
+		}
+		state.tags.forEach((tag) => formData.append('tags[]', tag));
+		if (opts.autosave) {
+			formData.append('autosave', '1');
+		}
+		return formData;
+	}
+
+	// Save now, bypassing the debounce timer — used right after picking
+	// media (protect the actual bytes as soon as possible) and right before
+	// abandonComposer() wipes in-progress work.
+	async function runAutosave() {
+		clearTimeout(autosaveState.timer);
+		autosaveState.timer = null;
+
+		if (autosaveState.saving) {
+			autosaveState.pendingRetry = true;
+			return;
+		}
+		if (!state.caption.trim() && !state.files.length && !state.editing) {
+			return; // Nothing yet worth protecting.
+		}
+
+		const generation = composerGeneration;
+		const newFileCount = state.files.filter((entry) => !entry.uploadedId).length;
+		const formData = buildMarkFormData('draft', { autosave: true });
+		const path = state.editing ? 'marks/' + state.editing.id : 'marks';
+
+		autosaveState.saving = true;
+		setAutosaveStatus('saving');
+		try {
+			const response = await apiUpload(path, formData);
+			if (generation !== composerGeneration) {
+				return; // The composer has moved on; drop this stale response.
+			}
+			if (!state.editing) {
+				state.editing = { id: response.id, type: response.type || state.primaryType, media: [] };
+			}
+			if (newFileCount > 0) {
+				// The file(s) are already attached server-side at this point
+				// (the upload above succeeded) — this follow-up GET only
+				// learns their attachment IDs so buildMarkFormData() never
+				// re-sends them. Kept in its own try/catch: if just this GET
+				// fails, the save itself still succeeded and shouldn't be
+				// reported as an error. A file left without an uploadedId
+				// here is retried as a fresh upload next time, which is safe
+				// (nothing lost) but can attach it twice in the rare case
+				// this GET is what fails right after a successful upload.
+				try {
+					// The publisher appends newly uploaded attachments in the
+					// same order files[] was sent (the same invariant
+					// apply_positional_alt() relies on server-side) — so the
+					// last newFileCount entries of a fresh GET are, in order,
+					// the files just autosaved.
+					const fresh = await apiGet('marks/' + state.editing.id);
+					if (generation !== composerGeneration) {
+						return;
+					}
+					const media = Array.isArray(fresh.media) ? fresh.media : [];
+					const uploaded = media.slice(media.length - newFileCount);
+					let cursor = 0;
+					state.files.forEach((entry) => {
+						if (!entry.uploadedId && uploaded[cursor]) {
+							entry.uploadedId = uploaded[cursor].id;
+							cursor += 1;
+						}
+					});
+				} catch (err) {
+					// The upload succeeded; only this ID lookup failed.
+				}
+			}
+			setAutosaveStatus('saved');
+		} catch (err) {
+			if (generation === composerGeneration) {
+				setAutosaveStatus('error');
+			}
+		} finally {
+			autosaveState.saving = false;
+			if (autosaveState.pendingRetry) {
+				autosaveState.pendingRetry = false;
+				runAutosave();
+			}
+		}
+	}
+
+	function scheduleAutosave() {
+		clearTimeout(autosaveState.timer);
+		autosaveState.timer = setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
 	}
 
 	// Effective Mark type: new files win; otherwise an edited draft's
@@ -361,7 +556,7 @@
 	// Load a draft into the composer for continued editing.
 	async function openDraft(id) {
 		const mark = await apiGet('marks/' + id);
-		resetComposer();
+		abandonComposer();
 		state.editing = {
 			id: mark.id,
 			type: mark.type || 'note',
@@ -936,7 +1131,7 @@
 				bubble.addEventListener('click', () => {
 					const type = bubble.getAttribute('data-launcher-type');
 					this.closeLauncher();
-					resetComposer();
+					abandonComposer();
 					state.pendingType = type;
 					navigate('#create');
 				});
@@ -1850,6 +2045,7 @@
 				}</h1>
 			</header>
 			<section class="daymark-screen">
+				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
 				${
 					editing
 						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">Draft</span> Changes save to this Mark — new media is added alongside what’s attached.</p>'
@@ -1936,11 +2132,15 @@
 					});
 					input.value = '';
 					this.refreshMedia();
+					// Protect the actual picked media as soon as possible —
+					// don't wait for Publish/Save as Draft to upload it.
+					runAutosave();
 				});
 			}
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
+				scheduleAutosave();
 			});
 
 			// Alt edits on media already attached to a draft, keyed by ID.
@@ -1951,6 +2151,7 @@
 					const item = media.find((m) => String(m.id) === String(id));
 					if (item) {
 						item.alt = field.value;
+						scheduleAutosave();
 					}
 				});
 			});
@@ -2074,6 +2275,7 @@
 					if (entry) {
 						entry.alt = field.value;
 						entry.altEdited = true; // Stop a late AI result from overwriting.
+						scheduleAutosave();
 					}
 				});
 			});
@@ -2174,6 +2376,7 @@
 				input.addEventListener('input', () => {
 					state.title = input.value;
 					state.titleEdited = true; // Stop a late AI result from overwriting.
+					scheduleAutosave();
 				});
 			}
 
@@ -2375,6 +2578,7 @@
 					captionField.value = state.caption;
 				}
 				this.hide();
+				runAutosave();
 			});
 
 			this.el.querySelector('[data-sheet-skip]').addEventListener('click', () => this.hide());
@@ -2912,6 +3116,7 @@
 					} else {
 						state.targets = state.targets.filter((t) => t !== id);
 					}
+					scheduleAutosave();
 				});
 			});
 
@@ -2925,6 +3130,7 @@
 					} else {
 						state.categories = state.categories.filter((c) => c !== id);
 					}
+					scheduleAutosave();
 				});
 			});
 
@@ -2938,6 +3144,7 @@
 					} else {
 						state.helpers = state.helpers.filter((h) => h !== id);
 					}
+					scheduleAutosave();
 				});
 			});
 
@@ -2968,44 +3175,12 @@
 			button.textContent = isDraft ? 'Saving…' : 'Publishing…';
 			status.textContent = '';
 
-			const formData = new FormData();
-			formData.append('caption', state.caption);
-			formData.append('primary_type', state.primaryType);
-			formData.append('status', postStatus);
-			// Include the optional title only when the field is shown for this
-			// type; when hidden, omit it so the publisher keeps deriving the
-			// title from the caption/timestamp.
-			if (titleFieldShown()) {
-				formData.append('title', state.title || '');
-			}
-			formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
-			state.targets.forEach((target) => formData.append('targets[]', target));
-			state.categories.forEach((id) => formData.append('categories[]', id));
-			// When controllable helpers exist, send the selection (as JSON so
-			// an empty choice is authoritative "none"); omit entirely when
-			// there are none, leaving those plugins' own defaults untouched.
-			if (Array.isArray(config.controllableHelpers) && config.controllableHelpers.length) {
-				formData.append('publish_helpers', JSON.stringify(state.helpers));
-			}
-			// Append each file with its per-image alt in the same order, so
-			// the server can map alt[] positionally onto the new attachments.
-			state.files.forEach((entry) => {
-				formData.append('files[]', entry.file, entry.file.name);
-				formData.append('alt[]', entry.kind === 'image' ? entry.alt || '' : '');
-			});
-			// Editing: alt edits on already-attached images, keyed by ID.
-			if (state.editing && Array.isArray(state.editing.media)) {
-				const existingAlt = {};
-				state.editing.media.forEach((m) => {
-					if (m.kind === 'image') {
-						existingAlt[m.id] = m.alt || '';
-					}
-				});
-				if (Object.keys(existingAlt).length) {
-					formData.append('existing_alt', JSON.stringify(existingAlt));
-				}
-			}
-			state.tags.forEach((tag) => formData.append('tags[]', tag));
+			// A real Publish/Save as Draft supersedes any pending autosave —
+			// cancel it so it can't fire mid-request against the same draft.
+			clearTimeout(autosaveState.timer);
+			autosaveState.timer = null;
+
+			const formData = buildMarkFormData(postStatus);
 
 			try {
 				// Editing a draft updates it in place; otherwise create.
@@ -3120,6 +3295,12 @@
 
 	// --- Screen: Notifications ---
 
+	// Reply text a user has started typing, keyed by comment ID — kept in
+	// memory (not sent anywhere) so switching between replies, closing and
+	// reopening the same one, or navigating back to Notifications never
+	// silently discards an unsent reply. Cleared on send or explicit Cancel.
+	const replyDrafts = {};
+
 	const NotificationsScreen = {
 		render() {
 			return `
@@ -3160,6 +3341,9 @@
 				// Reply interactions are delegated on the list so appended /
 				// re-rendered cards stay wired.
 				list.addEventListener('click', (event) => this.onReplyClick(event));
+				// Track in-progress reply text so it survives switching between
+				// cards, closing/reopening the same one, or navigating back here.
+				list.addEventListener('input', (event) => this.onReplyInput(event));
 				// Close the open reply box (there's only ever one) on an
 				// outside click or Escape, returning focus to its own
 				// toggle — same convention as the item menu, launcher, and
@@ -3235,7 +3419,7 @@
 					commentId
 						? `<div class="daymark-reply" id="${replyId}" data-reply-form hidden>
 						<label class="daymark-visually-hidden" for="${replyId}-input">Your reply</label>
-						<textarea id="${replyId}-input" class="daymark-textarea daymark-reply__input" data-reply-input rows="2" placeholder="Write a reply&hellip;"></textarea>
+						<textarea id="${replyId}-input" class="daymark-textarea daymark-reply__input" data-reply-input rows="2" placeholder="Write a reply&hellip;">${esc(replyDrafts[commentId] || '')}</textarea>
 						<div class="daymark-reply__actions">
 							<button type="button" class="daymark-btn daymark-btn--primary" data-reply-send>Send reply</button>
 							<button type="button" class="daymark-btn daymark-btn--text" data-reply-cancel>Cancel</button>
@@ -3292,6 +3476,11 @@
 
 			const cancel = target.closest('[data-reply-cancel]');
 			if (cancel) {
+				const card = cancel.closest('.daymark-note-card');
+				const commentId = card && card.getAttribute('data-comment-id');
+				if (commentId) {
+					delete replyDrafts[commentId]; // Explicit discard.
+				}
 				this.closeAllReplies(list);
 				return;
 			}
@@ -3299,6 +3488,23 @@
 			const send = target.closest('[data-reply-send]');
 			if (send) {
 				this.submitReply(send);
+			}
+		},
+
+		onReplyInput(event) {
+			const field = event.target.closest('[data-reply-input]');
+			if (!field) {
+				return;
+			}
+			const card = field.closest('.daymark-note-card');
+			const commentId = card && card.getAttribute('data-comment-id');
+			if (!commentId) {
+				return;
+			}
+			if (field.value) {
+				replyDrafts[commentId] = field.value;
+			} else {
+				delete replyDrafts[commentId];
 			}
 		},
 
@@ -3323,6 +3529,7 @@
 			status.textContent = '';
 			try {
 				await apiPost('notifications/' + commentId + '/reply', { content });
+				delete replyDrafts[commentId];
 				input.value = '';
 				form.hidden = true;
 				const toggle = card.querySelector('[data-reply-toggle]');

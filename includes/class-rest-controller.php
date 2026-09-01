@@ -91,6 +91,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'type'              => 'boolean',
 							'sanitize_callback' => 'rest_sanitize_boolean',
 						),
+						'autosave'             => array(
+							'type'              => 'boolean',
+							'default'           => false,
+							'description'       => __( 'Marks this as a background autosave rather than a user-initiated action, for rate-limiting purposes only.', 'daymark' ),
+							'sanitize_callback' => 'rest_sanitize_boolean',
+						),
 					),
 				),
 				array(
@@ -246,19 +252,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'callback'            => array( $this, 'update_daymark' ),
 					'permission_callback' => array( $this, 'permissions_check_post' ),
 					'args'                => array(
-						'id'      => array(
+						'id'       => array(
 							'type'              => 'integer',
 							'required'          => true,
 							'sanitize_callback' => 'absint',
 						),
-						'caption' => array(
+						'caption'  => array(
 							'type'              => 'string',
 							'sanitize_callback' => 'wp_kses_post',
 						),
-						'status'  => array(
+						'status'   => array(
 							'type'              => 'string',
 							'enum'              => array( 'publish', 'draft' ),
 							'sanitize_callback' => 'sanitize_key',
+						),
+						'autosave' => array(
+							'type'              => 'boolean',
+							'default'           => false,
+							'description'       => __( 'Marks this as a background autosave rather than a user-initiated action, for rate-limiting purposes only.', 'daymark' ),
+							'sanitize_callback' => 'rest_sanitize_boolean',
 						),
 					),
 				),
@@ -524,13 +536,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * POST /daymark/v1/marks — create a Mark.
 	 *
 	 * Accepts multipart file uploads plus caption/type/target fields and
-	 * delegates to Daymark_Publisher.
+	 * delegates to Daymark_Publisher. The composer's autosave also calls this
+	 * (with `status=draft` and `autosave=1`, the latter only changing which
+	 * rate-limit bucket applies) to create the first draft snapshot of an
+	 * in-progress Mark before the user taps Publish or Save as Draft.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function create_mark( WP_REST_Request $request ) {
-		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_PUBLISH );
+		$is_autosave = rest_sanitize_boolean( $request->get_param( 'autosave' ) );
+		$rate        = $this->rate_limit( $is_autosave ? Daymark_Rate_Limiter::ACTION_AUTOSAVE : Daymark_Rate_Limiter::ACTION_PUBLISH );
 
 		if ( is_wp_error( $rate ) ) {
 			return $rate;
@@ -1160,11 +1176,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * POST/PUT /daymark/v1/marks/{id} — update a Mark from the composer.
 	 *
+	 * The composer's autosave also calls this (with `autosave=1`, which only
+	 * changes which rate-limit bucket applies) on every subsequent save of an
+	 * in-progress Mark once autosave has created its first draft via
+	 * create_mark().
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function update_daymark( WP_REST_Request $request ) {
-		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_PUBLISH );
+		$is_autosave = rest_sanitize_boolean( $request->get_param( 'autosave' ) );
+		$rate        = $this->rate_limit( $is_autosave ? Daymark_Rate_Limiter::ACTION_AUTOSAVE : Daymark_Rate_Limiter::ACTION_PUBLISH );
 
 		if ( is_wp_error( $rate ) ) {
 			return $rate;

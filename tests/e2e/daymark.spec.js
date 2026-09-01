@@ -1012,6 +1012,38 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.getByText(finished)).toBeVisible();
 });
 
+// Autosave: "nothing gets lost" even without tapping Save as Draft.
+// Typing a caption and abandoning the composer (navigating straight back to
+// Home, the way a closed tab or a killed app would) still leaves a
+// resumable draft behind, because the composer autosaves it in the
+// background — no explicit save action required.
+test('autosave: an abandoned composition survives without Save as Draft', async ({ page }) => {
+	const caption = `E2E autosave ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+
+	// Autosave debounces ~2.5s after the last edit, then reports success.
+	await expect(page.locator('[data-autosave-status]')).toHaveText('Saved', { timeout: 10000 });
+
+	// Abandon the composition exactly like a closed tab would: navigate
+	// straight to Home, never tapping Publish or Save as Draft.
+	await page.goto('/daymark');
+
+	const row = page.locator('[data-edit-draft]').filter({ hasText: caption }).first();
+	await expect(row).toBeVisible();
+	await expect(row.locator('.daymark-chip--draft')).toBeVisible();
+
+	// Resuming shows the autosaved caption, and the draft publishes normally.
+	await row.click();
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+});
+
 // Unread indicator: set by a new reply, cleared by viewing notifications —
 // client-side and across a full reload.
 test('unread dot appears for a new reply and clears after viewing', async ({ page }) => {

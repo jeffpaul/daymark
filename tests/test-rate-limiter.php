@@ -147,4 +147,83 @@ class Test_Rate_Limiter extends WP_UnitTestCase {
 		$response = rest_do_request( $request );
 		$this->assertSame( 429, $response->get_status(), 'The next request hits the limit' );
 	}
+
+	/**
+	 * Composer autosave (`autosave=1`) is a separate bucket from a real
+	 * Publish/Save as Draft: exhausting one must never block the other, so
+	 * background autosave activity can't stop the user's own deliberate
+	 * publish tap, and a spent publish budget doesn't stop autosave from
+	 * quietly protecting in-progress work.
+	 */
+	public function test_autosave_and_publish_have_independent_budgets() {
+		$this->set_limits( 'publish', 1, 5 * MINUTE_IN_SECONDS );
+		$this->set_limits( 'autosave', 1, 5 * MINUTE_IN_SECONDS );
+		wp_set_current_user( $this->user_id );
+
+		// Spend the publish budget with a real Save as Draft.
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'caption', 'Uses the publish budget' );
+		$request->set_param( 'status', 'draft' );
+		$this->assertSame( 201, rest_do_request( $request )->get_status() );
+
+		// A real publish is now rate limited...
+		$blocked = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$blocked->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$blocked->set_param( 'caption', 'Blocked' );
+		$blocked->set_param( 'status', 'draft' );
+		$this->assertSame( 429, rest_do_request( $blocked )->get_status() );
+
+		// ...but an autosave, on its own separate budget, still goes through.
+		$autosave = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$autosave->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$autosave->set_param( 'caption', 'Autosaved despite the spent publish budget' );
+		$autosave->set_param( 'status', 'draft' );
+		$autosave->set_param( 'autosave', '1' );
+		$this->assertSame( 201, rest_do_request( $autosave )->get_status() );
+
+		// Exhaust the (separately limited) autosave budget too...
+		$blocked_autosave = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$blocked_autosave->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$blocked_autosave->set_param( 'caption', 'Also blocked' );
+		$blocked_autosave->set_param( 'status', 'draft' );
+		$blocked_autosave->set_param( 'autosave', '1' );
+		$this->assertSame( 429, rest_do_request( $blocked_autosave )->get_status() );
+
+		// ...which must never affect a real publish once its own window is
+		// reset — proving the two budgets are tracked independently rather
+		// than one silently borrowing from the other.
+		$limiter = new Daymark_Rate_Limiter();
+		$this->assertSame( 0, $limiter->remaining( 'autosave', $this->user_id ) );
+		$this->assertSame( 0, $limiter->remaining( 'publish', $this->user_id ) );
+	}
+
+	/** PUT /marks/{id} with autosave=1 also uses the autosave bucket. */
+	public function test_update_autosave_uses_autosave_bucket() {
+		$this->set_limits( 'publish', 5, 5 * MINUTE_IN_SECONDS );
+		$this->set_limits( 'autosave', 5, 5 * MINUTE_IN_SECONDS );
+		wp_set_current_user( $this->user_id );
+
+		$create = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$create->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$create->set_param( 'caption', 'A draft to autosave into' );
+		$create->set_param( 'status', 'draft' );
+		$post_id = rest_do_request( $create )->get_data()['id'];
+
+		$limiter = new Daymark_Rate_Limiter();
+		// The create above had no autosave=1 flag, so it spent the publish
+		// budget, not the autosave one.
+		$this->assertSame( 4, $limiter->remaining( 'publish', $this->user_id ) );
+		$this->assertSame( 5, $limiter->remaining( 'autosave', $this->user_id ) );
+
+		$update = new WP_REST_Request( 'PUT', '/daymark/v1/marks/' . $post_id );
+		$update->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$update->set_param( 'caption', 'Autosaved edit' );
+		$update->set_param( 'status', 'draft' );
+		$update->set_param( 'autosave', '1' );
+		$this->assertSame( 200, rest_do_request( $update )->get_status() );
+
+		$this->assertSame( 4, $limiter->remaining( 'autosave', $this->user_id ), 'The update consumed the autosave budget' );
+		$this->assertSame( 4, $limiter->remaining( 'publish', $this->user_id ), 'The publish budget is untouched by the autosave update' );
+	}
 }

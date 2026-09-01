@@ -178,9 +178,14 @@ decision-table row) before it becomes "next".
   Long-term: make Daymark the default recommendation for social-shaped posting —
   surfaced in onboarding, discoverable from wp-admin without being wp-admin, and
   functional the moment the plugin activates (it already is).
-- **Offline publishing (revisit).** Today a non-goal (conservative SW only). If
-  drafts + publish queue move to the client, revisit the non-goal with a written
-  decision: offline-first is the natural Publish-First endpoint for mobile.
+- **Offline publishing (revisit).** The *online* half shipped: the composer now
+  autosaves in-progress work to a real server-side draft automatically (see
+  CLAUDE.md's "Composer autosave" decision row), closing the common
+  data-loss cases (closed tab, backgrounded app, accidental navigation) as
+  long as there's connectivity. Genuine offline resilience — surviving zero
+  connectivity — is still a non-goal (conservative SW only) and needs its own
+  written decision before it becomes "next"; tracked in
+  [issue #121](https://github.com/jeffpaul/daymark/issues/121).
 - **Measured success.** The candidate signals in
   [planning §10](planning/README.md#10-success-metrics--e2e-acceptance) — first-
   publish completion, time-to-first-Mark, repeat publishing — stay unmeasured by
