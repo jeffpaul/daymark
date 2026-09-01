@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Tapping a Timeline item's avatar/site icon now offers to filter Timeline down to just that source ("See only your Marks" / "See only posts from {site}") or visit the site directly. Filtering is the primary, more prominent action — it's the same Source filter already reachable through search, just one tap away instead of requiring the search bar; visiting the site is secondary, since it leaves the app.
+
 ### Changed
 
 - For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.
