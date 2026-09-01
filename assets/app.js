@@ -44,6 +44,7 @@
 		fileCounter: 0,
 		editing: null, // { id, type, media: [{id, kind, thumbnail, filename}] } while editing a draft
 		helpers: [], // enabled controllable third-party publishing helper ids
+		offlineQueueId: null, // IndexedDB id while this composition is queued offline (see submitOrQueue())
 	};
 
 	const TYPE_LABELS = {
@@ -324,15 +325,17 @@
 		state.aiAssistUsed = false;
 		state.editing = null;
 		state.helpers = [];
+		state.offlineQueueId = null;
 	}
 
 	// Abandon the composer's in-progress work (starting a new Mark, or
 	// opening a different draft) without losing it: fire a best-effort
-	// autosave first — its FormData is built synchronously from the current
-	// `state` before this function returns, so the save captures the final
-	// state even though resetComposer() below wipes it immediately after.
-	// See runAutosave()'s composerGeneration check for why the (possibly
-	// slow) response can never corrupt whatever the composer does next.
+	// autosave first — its payload is built synchronously from the current
+	// `state` before this function returns, so the save (online or queued
+	// offline) captures the final state even though resetComposer() below
+	// wipes it immediately after. See runAutosave()'s composerGeneration
+	// check for why the (possibly slow) response can never corrupt
+	// whatever the composer does next.
 	function abandonComposer() {
 		runAutosave().catch(() => {});
 		resetComposer();
@@ -349,9 +352,9 @@
 	// bucket (Daymark_Rate_Limiter::ACTION_AUTOSAVE) so background autosave
 	// activity can never exhaust the budget for the user's own deliberate
 	// Publish/Save as Draft tap. This protects against a closed tab, a
-	// backgrounded/reclaimed app, or an accidental navigation — as long as
-	// there's connectivity; it is not an offline mode (see CLAUDE.md's
-	// non-goals and issue #121 for the tracked offline-capable follow-up).
+	// backgrounded/reclaimed app, or an accidental navigation whenever
+	// there's connectivity; when there isn't, submitOrQueue() below falls
+	// back to the offline queue instead.
 	const AUTOSAVE_DEBOUNCE_MS = 2500;
 
 	const autosaveState = {
@@ -369,6 +372,8 @@
 			el.textContent = 'Saving…';
 		} else if (kind === 'saved') {
 			el.textContent = 'Saved';
+		} else if (kind === 'offline') {
+			el.textContent = 'Saved offline — will sync automatically';
 		} else if (kind === 'error') {
 			el.textContent = 'Not saved yet — will retry';
 		} else {
@@ -376,34 +381,110 @@
 		}
 	}
 
-	// Builds the exact FormData both a real Publish/Save as Draft and a
-	// background autosave send — the two must never drift apart, or an
-	// autosave could silently save a Mark that publishing would not.
-	function buildMarkFormData(status, opts) {
+	// --- Offline queue (issue #121: "Creating while offline. Publish
+	// later. Users shouldn't care.") ---
+	//
+	// Scope: this covers a composer session that's already open when
+	// connectivity drops (or never had it) — the realistic "in a dead zone
+	// mid-caption" case. It does NOT cover a cold load of /daymark itself
+	// with zero connectivity: the service worker's scope is deliberately
+	// restricted to the plugin assets directory (see daymark-sw.js) so it
+	// can never cache the app-shell HTML or its per-request CSP nonce —
+	// widening that is a separate, security-sensitive decision, tracked
+	// on its own in issue #121, not assumed here.
+	//
+	// A Mark composed or edited offline is stored whole (including picked
+	// media, as real Blobs — IndexedDB natively supports this) in IndexedDB
+	// as a "pending" record, keyed by a local auto-incrementing id. It is
+	// replayed through the exact same REST endpoints a live Publish/Save as
+	// Draft/autosave already uses the moment connectivity returns, so the
+	// server never sees a different code path for offline-originated work.
+	const OFFLINE_DB_NAME = 'daymark-offline';
+	const OFFLINE_DB_VERSION = 1;
+	const OFFLINE_STORE = 'pending';
+
+	function openOfflineDB() {
+		return new Promise((resolve, reject) => {
+			if (!('indexedDB' in window)) {
+				reject(new Error('IndexedDB unavailable'));
+				return;
+			}
+			const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+			request.onupgradeneeded = () => {
+				const db = request.result;
+				if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
+					db.createObjectStore(OFFLINE_STORE, { keyPath: 'id', autoIncrement: true });
+				}
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+	}
+
+	function idbRequest(request) {
+		return new Promise((resolve, reject) => {
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => reject(request.error);
+		});
+	}
+
+	async function queuePendingMark(targetId, payload) {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
+		const now = Date.now();
+		return idbRequest(store.add({ targetId, payload, createdAt: now, updatedAt: now }));
+	}
+
+	async function updatePendingMark(id, targetId, payload) {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
+		const existing = await idbRequest(store.get(id));
+		const record = existing || { id, createdAt: Date.now() };
+		record.targetId = targetId;
+		record.payload = payload;
+		record.updatedAt = Date.now();
+		await idbRequest(store.put(record));
+		return id;
+	}
+
+	// Creates a new pending record, or overwrites the one this composer
+	// session already queued — never both, so editing further while still
+	// offline never piles up duplicate copies of the same in-progress Mark.
+	async function queueOrUpdatePending(existingId, targetId, payload) {
+		if (existingId) {
+			return updatePendingMark(existingId, targetId, payload);
+		}
+		return queuePendingMark(targetId, payload);
+	}
+
+	async function deletePendingMark(id) {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
+		return idbRequest(store.delete(id));
+	}
+
+	async function getPendingMark(id) {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE);
+		return idbRequest(store.get(Number(id)));
+	}
+
+	async function getAllPendingMarks() {
+		const db = await openOfflineDB();
+		const store = db.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE);
+		const all = await idbRequest(store.getAll());
+		return Array.isArray(all) ? all : [];
+	}
+
+	// The current composer state as a plain, structured-cloneable object —
+	// serializable to IndexedDB, and the single source of truth
+	// payloadToFormData() turns into the multipart body either a live
+	// request or a queued replay sends. Picked-but-not-yet-uploaded files
+	// carry their real Blob (IndexedDB stores these natively); a file this
+	// same session already uploaded (has entry.uploadedId) is folded into
+	// existingAlt instead.
+	function buildMarkPayload(status, opts) {
 		opts = opts || {};
-		const formData = new FormData();
-		formData.append('caption', state.caption);
-		formData.append('primary_type', state.primaryType);
-		formData.append('status', status);
-		if (titleFieldShown()) {
-			formData.append('title', state.title || '');
-		}
-		formData.append('ai_assist_used', state.aiAssistUsed ? '1' : '0');
-		state.targets.forEach((target) => formData.append('targets[]', target));
-		state.categories.forEach((id) => formData.append('categories[]', id));
-		if (Array.isArray(config.controllableHelpers) && config.controllableHelpers.length) {
-			formData.append('publish_helpers', JSON.stringify(state.helpers));
-		}
-		// Only files never previously autosaved go up as fresh uploads; a
-		// file autosave already uploaded carries `uploadedId` and is folded
-		// into existing_alt below instead, so it's never sent (and never
-		// attached to the Mark) twice.
-		state.files
-			.filter((entry) => !entry.uploadedId)
-			.forEach((entry) => {
-				formData.append('files[]', entry.file, entry.file.name);
-				formData.append('alt[]', entry.kind === 'image' ? entry.alt || '' : '');
-			});
 		const existingAlt = {};
 		if (state.editing && Array.isArray(state.editing.media)) {
 			state.editing.media.forEach((m) => {
@@ -412,21 +493,175 @@
 				}
 			});
 		}
-		state.files
-			.filter((entry) => entry.uploadedId)
-			.forEach((entry) => {
+		const newFiles = [];
+		state.files.forEach((entry) => {
+			if (entry.uploadedId) {
 				if (entry.kind === 'image') {
 					existingAlt[entry.uploadedId] = entry.alt || '';
 				}
+				return;
+			}
+			newFiles.push({
+				blob: entry.file,
+				name: entry.file.name,
+				kind: entry.kind,
+				alt: entry.kind === 'image' ? entry.alt || '' : '',
 			});
-		if (Object.keys(existingAlt).length) {
-			formData.append('existing_alt', JSON.stringify(existingAlt));
+		});
+		return {
+			status,
+			autosave: !!opts.autosave,
+			caption: state.caption,
+			primaryType: state.primaryType,
+			title: titleFieldShown() ? state.title || '' : null,
+			aiAssistUsed: !!state.aiAssistUsed,
+			targets: state.targets.slice(),
+			categories: state.categories.slice(),
+			tags: state.tags.slice(),
+			helpers:
+				Array.isArray(config.controllableHelpers) && config.controllableHelpers.length
+					? state.helpers.slice()
+					: null,
+			newFiles,
+			existingAlt,
+		};
+	}
+
+	// The exact FormData a real Publish/Save as Draft, a live autosave, and
+	// an offline-queue replay all send — one mapping, so none of the three
+	// can drift apart.
+	function payloadToFormData(payload) {
+		const formData = new FormData();
+		formData.append('caption', payload.caption);
+		formData.append('primary_type', payload.primaryType);
+		formData.append('status', payload.status);
+		if (payload.title !== null) {
+			formData.append('title', payload.title);
 		}
-		state.tags.forEach((tag) => formData.append('tags[]', tag));
-		if (opts.autosave) {
+		formData.append('ai_assist_used', payload.aiAssistUsed ? '1' : '0');
+		payload.targets.forEach((target) => formData.append('targets[]', target));
+		payload.categories.forEach((id) => formData.append('categories[]', id));
+		if (payload.helpers !== null) {
+			formData.append('publish_helpers', JSON.stringify(payload.helpers));
+		}
+		payload.newFiles.forEach((f) => {
+			formData.append('files[]', f.blob, f.name);
+			formData.append('alt[]', f.kind === 'image' ? f.alt : '');
+		});
+		if (Object.keys(payload.existingAlt).length) {
+			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
+		}
+		payload.tags.forEach((tag) => formData.append('tags[]', tag));
+		if (payload.autosave) {
 			formData.append('autosave', '1');
 		}
 		return formData;
+	}
+
+	// Tries the real request first; falls back to the offline queue only
+	// when the failure looks like a connectivity problem (navigator.onLine
+	// already false, or fetch itself threw — the TypeError browsers use for
+	// a request that never reached a server — as opposed to a well-formed
+	// HTTP error response, which always carries `.status` via readError()
+	// and is rethrown so the caller's normal error handling still applies).
+	async function submitOrQueue(path, targetId, payload, existingQueueId) {
+		if (navigator.onLine) {
+			try {
+				const response = await apiUpload(path, payloadToFormData(payload));
+				if (existingQueueId) {
+					deletePendingMark(existingQueueId).catch(() => {});
+				}
+				return { queued: false, response };
+			} catch (err) {
+				if (!(err instanceof TypeError)) {
+					throw err;
+				}
+				// Network-level failure despite navigator.onLine — queue below.
+			}
+		}
+		const id = await queueOrUpdatePending(existingQueueId, targetId, payload);
+		return { queued: true, id };
+	}
+
+	// Replays every queued Mark through the same REST endpoints a live
+	// Publish/Save as Draft/autosave uses. Triggered on the 'online' event
+	// and once at boot (in case connectivity is already back from a
+	// previous offline session). Stops at the first still-offline failure
+	// rather than hammering every remaining item; a genuine server error on
+	// one item (e.g. validation) is left queued and the rest still get a
+	// chance, so one bad item can't block the others.
+	let offlineFlushInFlight = false;
+	async function flushOfflineQueue() {
+		if (offlineFlushInFlight || !navigator.onLine) {
+			return;
+		}
+		offlineFlushInFlight = true;
+		try {
+			const pending = await getAllPendingMarks();
+			for (const record of pending) {
+				// Actively open in the composer right now: let its own
+				// autosave/publish path sync it (both already retry on the
+				// next debounce/tap now that navigator.onLine is true)
+				// rather than racing a background flush against in-memory
+				// edits newer than what was last written to IndexedDB.
+				if (record.id === state.offlineQueueId) {
+					continue;
+				}
+				try {
+					const path = record.targetId ? 'marks/' + record.targetId : 'marks';
+					await apiUpload(path, payloadToFormData(record.payload));
+					await deletePendingMark(record.id);
+				} catch (err) {
+					if (err instanceof TypeError || !navigator.onLine) {
+						break; // Still offline (or just dropped) — retry next trigger.
+					}
+					// A real server error on this one item: leave it queued,
+					// keep going so it doesn't block the rest.
+				}
+			}
+		} finally {
+			offlineFlushInFlight = false;
+			refreshPendingSection();
+		}
+	}
+
+	// Loads a Mark that's still only queued locally (never reached the
+	// server) back into the composer — the offline counterpart to
+	// openDraft(), rehydrating picked media from the stored Blobs instead
+	// of fetching an already-published attachment list.
+	async function openPendingMark(id) {
+		const record = await getPendingMark(Number(id));
+		if (!record) {
+			return;
+		}
+		abandonComposer();
+		const payload = record.payload;
+		if (record.targetId) {
+			state.editing = { id: record.targetId, type: payload.primaryType, media: [] };
+		}
+		state.offlineQueueId = record.id;
+		state.caption = payload.caption || '';
+		state.title = payload.title || '';
+		state.titleStatus = 'done';
+		state.titleEdited = false;
+		state.targets = Array.isArray(payload.targets) ? payload.targets.slice() : [];
+		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
+		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : [];
+		state.tags = Array.isArray(payload.tags) ? payload.tags.slice() : [];
+		state.primaryType = payload.primaryType || 'note';
+		state.files = (payload.newFiles || []).map((f) => {
+			state.fileCounter += 1;
+			return {
+				id: 'f' + state.fileCounter,
+				file: f.blob,
+				url: f.kind === 'image' ? URL.createObjectURL(f.blob) : '',
+				kind: f.kind,
+				alt: f.alt || '',
+				altStatus: 'idle',
+				altEdited: true, // Already-typed alt: never overwrite with a fresh AI suggestion.
+			};
+		});
+		navigate('#create');
 	}
 
 	// Save now, bypassing the debounce timer — used right after picking
@@ -446,23 +681,31 @@
 
 		const generation = composerGeneration;
 		const newFileCount = state.files.filter((entry) => !entry.uploadedId).length;
-		const formData = buildMarkFormData('draft', { autosave: true });
+		const payload = buildMarkPayload('draft', { autosave: true });
 		const path = state.editing ? 'marks/' + state.editing.id : 'marks';
+		const targetId = state.editing ? state.editing.id : null;
 
 		autosaveState.saving = true;
 		setAutosaveStatus('saving');
 		try {
-			const response = await apiUpload(path, formData);
+			const result = await submitOrQueue(path, targetId, payload, state.offlineQueueId);
 			if (generation !== composerGeneration) {
 				return; // The composer has moved on; drop this stale response.
 			}
+			if (result.queued) {
+				state.offlineQueueId = result.id;
+				setAutosaveStatus('offline');
+				return;
+			}
+			state.offlineQueueId = null;
+			const response = result.response;
 			if (!state.editing) {
 				state.editing = { id: response.id, type: response.type || state.primaryType, media: [] };
 			}
 			if (newFileCount > 0) {
 				// The file(s) are already attached server-side at this point
 				// (the upload above succeeded) — this follow-up GET only
-				// learns their attachment IDs so buildMarkFormData() never
+				// learns their attachment IDs so payloadToFormData() never
 				// re-sends them. Kept in its own try/catch: if just this GET
 				// fails, the save itself still succeeded and shouldn't be
 				// reported as an error. A file left without an uploadedId
@@ -1436,6 +1679,88 @@
 		}
 	}
 
+	// One locally-queued (not yet synced to the server) Mark's card
+	// markup — deliberately simpler than renderMarkItem()/renderMarkCore():
+	// there is no server id yet, so no permalink, stats, or edit/delete
+	// menu, just enough to recognize the item and resume it.
+	function renderPendingItem(record) {
+		const payload = record.payload || {};
+		const title = (payload.caption || '').trim() || 'Untitled Mark';
+		const firstFile = Array.isArray(payload.newFiles) ? payload.newFiles[0] : null;
+		let thumb = '';
+		if (firstFile && firstFile.kind === 'image') {
+			try {
+				thumb = `<img class="daymark-recent__thumb" src="${esc(
+					URL.createObjectURL(firstFile.blob)
+				)}" alt="" />`;
+			} catch (err) {
+				thumb = '';
+			}
+		}
+		return `
+			<div class="daymark-recent__item-wrap">
+				<a class="daymark-recent__item" href="#create" data-resume-pending="${esc(
+					String(record.id)
+				)}">
+					${thumb}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Offline</span> Will sync when you're back online</span>
+					</span>
+				</a>
+			</div>`;
+	}
+
+	// Wires "tap a pending item to resume it" — the offline-queue
+	// counterpart to bindDraftTaps(), reopening via openPendingMark()
+	// (a local IndexedDB read) instead of openDraft()'s REST fetch.
+	function bindPendingTaps(container) {
+		container.querySelectorAll('[data-resume-pending]').forEach((row) => {
+			row.addEventListener('click', (event) => {
+				event.preventDefault();
+				row.setAttribute('aria-busy', 'true');
+				openPendingMark(row.getAttribute('data-resume-pending')).catch(() => {
+					row.removeAttribute('aria-busy');
+				});
+			});
+		});
+	}
+
+	// (Re)loads Home's Pending section from the local offline queue. Called
+	// on Home init, and after anything that changes the queue (a fresh
+	// offline save, or flushOfflineQueue() syncing items back out) — a no-op
+	// if Home isn't the screen currently mounted, so callers never need to
+	// know or care whether it's showing.
+	async function refreshPendingSection() {
+		const section = root.querySelector('[data-pending-section]');
+		const list = root.querySelector('[data-pending-list]');
+		if (!section || !list) {
+			return;
+		}
+		try {
+			const pending = await getAllPendingMarks();
+			if (!list.isConnected) {
+				return;
+			}
+			if (!pending.length) {
+				section.hidden = true;
+				list.innerHTML = '';
+				return;
+			}
+			// Most recently touched first, so an item still being edited offline
+			// stays at the top.
+			pending.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+			list.innerHTML = pending.map((record) => renderPendingItem(record)).join('');
+			section.hidden = false;
+			bindPendingTaps(list);
+		} catch (err) {
+			// IndexedDB unavailable (old browser, private-mode restrictions, …):
+			// the offline queue itself already degrades to "queue attempt
+			// fails, error surfaces like any other failed save" — nothing to
+			// show here either.
+		}
+	}
+
 	// --- Screen: Home (Timeline) ---
 
 	const HomeScreen = {
@@ -1465,6 +1790,10 @@
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
 					<span class="daymark-spinner" aria-hidden="true"></span>
 				</div>
+				<section class="daymark-recent" data-pending-section hidden aria-labelledby="daymark-pending-heading">
+					<h2 id="daymark-pending-heading" class="daymark-section-heading">Pending</h2>
+					<div class="daymark-recent__list" data-pending-list></div>
+				</section>
 				<section class="daymark-recent" data-drafts-section hidden aria-labelledby="daymark-drafts-heading">
 					<h2 id="daymark-drafts-heading" class="daymark-section-heading">Drafts</h2>
 					<div class="daymark-recent__list" data-drafts-list></div>
@@ -1517,6 +1846,8 @@
 			// this singleton across re-inits (leaving and returning to Home)
 			// so a card already opened once never re-fetches.
 			this._detailCache = this._detailCache || new Map();
+
+			await refreshPendingSection();
 
 			const draftsSection = root.querySelector('[data-drafts-section]');
 			const draftsList = root.querySelector('[data-drafts-list]');
@@ -3313,17 +3644,27 @@
 			clearTimeout(autosaveState.timer);
 			autosaveState.timer = null;
 
-			const formData = buildMarkFormData(postStatus);
+			const payload = buildMarkPayload(postStatus);
+			// Editing a draft updates it in place; otherwise create.
+			const path = state.editing ? 'marks/' + state.editing.id : 'marks';
+			const targetId = state.editing ? state.editing.id : null;
 
 			try {
-				// Editing a draft updates it in place; otherwise create.
-				const path = state.editing ? 'marks/' + state.editing.id : 'marks';
-				const response = await apiUpload(path, formData);
-				state.lastPublish = {
-					response,
-					targets: state.targets.slice(),
-					type: state.primaryType,
-				};
+				const result = await submitOrQueue(path, targetId, payload, state.offlineQueueId);
+				if (result.queued) {
+					state.lastPublish = {
+						queued: true,
+						wasDraft: isDraft,
+						targets: state.targets.slice(),
+						type: state.primaryType,
+					};
+				} else {
+					state.lastPublish = {
+						response: result.response,
+						targets: state.targets.slice(),
+						type: state.primaryType,
+					};
+				}
 				resetComposer();
 				navigate('#success');
 			} catch (err) {
@@ -3342,6 +3683,30 @@
 	const SuccessScreen = {
 		render() {
 			const publish = state.lastPublish || { response: {}, targets: [], type: 'note' };
+
+			if (publish.queued) {
+				return `
+				<header class="daymark-topbar">
+					<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>Saved</h1>
+				</header>
+				<section class="daymark-screen daymark-success">
+					<span class="daymark-success__icon">
+						<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+					</span>
+					<h2 class="daymark-screen__heading">Saved offline</h2>
+					<p class="daymark-note-card__meta">${
+						publish.wasDraft
+							? "You're offline right now — this draft is saved on this device and will sync to your site as soon as you're back online."
+							: "You're offline right now — this Mark is saved on this device and will publish automatically as soon as you're back online."
+					}</p>
+					<a class="daymark-success__link" href="#home">View Pending on Home &rarr;</a>
+				</section>
+				<footer class="daymark-actionbar">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
+					<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">View Timeline &rarr;</a></p>
+				</footer>`;
+			}
+
 			const permalink = publish.response && publish.response.permalink;
 
 			const rows = publish.targets
@@ -3711,6 +4076,20 @@
 		window.location.hash ||
 		(SERVER_ROUTED_SCREENS.includes(config.screen) ? '#' + config.screen : '#home');
 	showScreen(initialHash);
+
+	// --- Offline queue: sync triggers ---
+	//
+	// Catches connectivity returning while the app is already open (the
+	// composer's own submitOrQueue()/runAutosave() calls handle the moment
+	// a save is attempted while offline; this is the other half — actually
+	// sending what's queued once there's a network again). Also flushed
+	// once at boot, in case items are still pending from a previous
+	// offline session and connectivity is already back by the time this
+	// load happens.
+	window.addEventListener('online', () => {
+		flushOfflineQueue().catch(() => {});
+	});
+	flushOfflineQueue().catch(() => {});
 
 	// --- Service worker (PWA, Phase 8) ---
 	//

@@ -18,12 +18,13 @@
   the Path / Day One / WordPress / modern-PWA rubric for what a proposal
   should *feel* like, and which parts of those influences stay left behind.
 - **Non-goals stay non-goals until explicitly overturned.** Real social-API
-  publishing in core, full offline PWA, push notifications, a custom post
-  type, and multi-user team workflows are *not* planned. A roadmap line that
+  publishing in core, push notifications, a custom post type, and
+  multi-user team workflows are *not* planned. A roadmap line that
   contradicts one needs a written decision first. (A blanket "no settings
   dashboard" used to be on this list too — narrowed after the Subscriptions
-  wp-admin screen shipped; see "Not planned" below for the current, more
-  specific wording.)
+  wp-admin screen shipped, and a blanket "no offline PWA" narrowed the same
+  way after offline-first creation shipped; see "Not planned" below and
+  CLAUDE.md's non-goals for the current, precise wording of each.)
 - **When a bucket changes, update CLAUDE.md.** The architectural-decisions
   table there is the authoritative record; this file is the plan.
 
@@ -186,6 +187,37 @@ decision rows for the full technical record.
 
 ---
 
+## Shipped — Offline-first creation (issue #121)
+
+"Creating while offline. Publish later. Users shouldn't care." Composing,
+editing, and saving a Mark now works the same whether or not there's a
+network — see CLAUDE.md's "Offline-first creation" decision row for the
+full technical record.
+
+- [x] **Offline queue.** A Mark composed or edited while offline (or that
+  hits a network-level failure despite `navigator.onLine`) is stored whole
+  — including picked media, as real Blobs — in IndexedDB instead of
+  failing. It's replayed through the exact same `POST /marks` / `PUT
+  /marks/{id}` endpoints a live Publish/Save as Draft/autosave already
+  uses the moment connectivity returns (on the `online` event, and once at
+  boot), so the server never sees a different code path for
+  offline-originated work.
+- [x] **Users shouldn't care.** Publishing or saving a draft while offline
+  shows the same success screen as the online path ("Saved offline — will
+  publish/sync automatically"), not an error. A Pending section on Home
+  shows what's still queued, and it empties on its own as items sync.
+- [x] **Autosave works offline too.** The composer's autosave (previously
+  online-only) now falls back to the same offline queue, so "nothing gets
+  lost" holds even when a session starts or goes offline mid-composition.
+
+**Still open from this era:**
+
+- [ ] **Cold app-shell load while offline** is explicitly out of scope here
+  — see "Offline app-shell load (revisit)" under Longer term and
+  [issue #126](https://github.com/jeffpaul/daymark/issues/126).
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen
@@ -221,14 +253,16 @@ decision-table row) before it becomes "next".
   Long-term: make Daymark the default recommendation for social-shaped posting —
   surfaced in onboarding, discoverable from wp-admin without being wp-admin, and
   functional the moment the plugin activates (it already is).
-- **Offline publishing (revisit).** The *online* half shipped: the composer now
-  autosaves in-progress work to a real server-side draft automatically (see
-  CLAUDE.md's "Composer autosave" decision row), closing the common
-  data-loss cases (closed tab, backgrounded app, accidental navigation) as
-  long as there's connectivity. Genuine offline resilience — surviving zero
-  connectivity — is still a non-goal (conservative SW only) and needs its own
-  written decision before it becomes "next"; tracked in
-  [issue #121](https://github.com/jeffpaul/daymark/issues/121).
+- **Offline app-shell load (revisit).** Composing and publishing while
+  offline shipped (see "Shipped — Offline-first creation" below) for a
+  session already open when connectivity drops. A *cold* load of `/daymark`
+  itself with zero connectivity still doesn't work: the service worker's
+  scope is deliberately restricted to the plugin assets directory so it can
+  never cache the app-shell HTML or its per-request CSP nonce. Widening
+  that scope (and handling the nonce safely) is a separate,
+  security-sensitive decision, tracked in
+  [issue #126](https://github.com/jeffpaul/daymark/issues/126) rather than
+  assumed as part of the creation work.
 - **Measured success.** The candidate signals in
   [planning §10](planning/README.md#10-success-metrics--e2e-acceptance) — first-
   publish completion, time-to-first-Mark, repeat publishing — stay unmeasured by

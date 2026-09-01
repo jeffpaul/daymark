@@ -172,6 +172,16 @@ stubbed AT Protocol API — see the setup notes at the top of
   that pattern for any other automatic/background write. Uploads carry a
   per-file and a per-request total byte budget
   (`Daymark_Publisher::validate_file_list()`).
+- **A write the composer makes should degrade to the offline queue, not an
+  error.** `submitOrQueue()` in `assets/app.js` is the pattern: try the real
+  request, and only on a connectivity-shaped failure (`navigator.onLine`
+  false, or `fetch()`'s `TypeError`) fall back to IndexedDB instead of
+  surfacing a "failed" message — a genuine server/validation error still
+  throws and surfaces normally. `buildMarkPayload()`/`payloadToFormData()`
+  are the one shared field-mapping a live request, autosave, and a queued
+  replay all use; a new composer field belongs in that mapping, not
+  duplicated into a second one. See CLAUDE.md's "Offline-first creation"
+  decision row for the full design.
 
 ## Hook documentation
 
