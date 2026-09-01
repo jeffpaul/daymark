@@ -185,15 +185,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'ai_suggestions' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'caption' => array(
+					'caption'    => array(
 						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_textarea_field',
 					),
-					'type'    => array(
+					'type'       => array(
 						'type'              => 'string',
 						'default'           => 'note',
 						'sanitize_callback' => 'sanitize_key',
+					),
+					'transcript' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_textarea_field',
 					),
 				),
 			)
@@ -207,15 +212,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'ai_title' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'caption' => array(
+					'caption'    => array(
 						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_textarea_field',
 					),
-					'type'    => array(
+					'type'       => array(
 						'type'              => 'string',
 						'default'           => 'note',
 						'sanitize_callback' => 'sanitize_key',
+					),
+					'transcript' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_textarea_field',
 					),
 				),
 			)
@@ -227,6 +237,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'ai_alt_text' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/ai/transcript',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'ai_transcript' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 			)
 		);
@@ -641,6 +661,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Per-image alt: positional array aligned to files[] order.
 			'alt'                  => $request->get_param( 'alt' ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
+			'transcript'           => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -950,14 +971,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// Canonical request fields are `text` and `primary_type`; accept the
 		// older `caption`/`type` names as fallbacks.
-		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
-		$type    = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+		$caption    = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
+		$type       = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+		$transcript = sanitize_textarea_field( (string) $request->get_param( 'transcript' ) );
 
 		if ( ! in_array( $type, Daymark_Publisher::PRIMARY_TYPES, true ) ) {
 			$type = 'note';
 		}
 
-		$suggestions = Daymark_Plugin::instance()->ai_assist->get_suggestions( $caption, $type );
+		// A transcript (when the composer has one) grounds the suggestion in
+		// what the recording actually says — "summarize podcast" via
+		// Daymark_AI_Assist::describe_context() rather than a separate call.
+		$suggestions = Daymark_Plugin::instance()->ai_assist->get_suggestions(
+			array(
+				'text'       => $caption,
+				'transcript' => $transcript,
+			),
+			$type
+		);
 
 		return rest_ensure_response( $suggestions );
 	}
@@ -984,8 +1015,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// Canonical request fields are `text` and `primary_type`; accept the
 		// older `caption`/`type` names as fallbacks (matches /ai/suggestions).
-		$caption = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
-		$type    = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+		$caption    = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
+		$type       = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+		$transcript = sanitize_textarea_field( (string) $request->get_param( 'transcript' ) );
 
 		if ( ! in_array( $type, Daymark_Publisher::PRIMARY_TYPES, true ) ) {
 			$type = 'note';
@@ -994,8 +1026,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$ai    = Daymark_Plugin::instance()->ai_assist;
 		$title = $ai->suggest_title(
 			array(
-				'text' => $caption,
-				'type' => $type,
+				'text'       => $caption,
+				'type'       => $type,
+				'transcript' => $transcript,
 			)
 		);
 
@@ -1059,11 +1092,76 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		$context = array(
-			'text' => sanitize_textarea_field( (string) $request->get_param( 'text' ) ),
-			'type' => 'image',
+			'text'         => sanitize_textarea_field( (string) $request->get_param( 'text' ) ),
+			'type'         => 'image',
+			// Present only for the composer's manual "Improve with AI" tap —
+			// asks the provider to refine this value rather than describe
+			// the image from scratch. Absent on the automatic first-pick pass.
+			'existing_alt' => sanitize_text_field( (string) $request->get_param( 'existing_alt' ) ),
 		);
 
 		$suggestion = Daymark_Plugin::instance()->ai_assist->get_image_alt_suggestion( (string) $image['tmp_name'], $context );
+
+		return rest_ensure_response( $suggestion );
+	}
+
+	/**
+	 * POST /daymark/v1/ai/transcript — transcribe one uploaded audio/video
+	 * file for the composer's Transcript field.
+	 *
+	 * Manual and author-triggered (the composer never calls this
+	 * automatically on file pick, unlike /ai/alt-text) — a recording can be
+	 * large, so it is only ever sent to the provider when the author taps
+	 * "Generate transcript". Reads the uploaded file from the temp upload
+	 * (no attachment is created) and falls back to an empty transcript when
+	 * no provider is configured or the call fails; never blocks publishing.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function ai_transcript( WP_REST_Request $request ) {
+		if ( ! current_user_can( 'upload_files' ) ) {
+			return new WP_Error(
+				'rest_cannot_upload',
+				__( 'You are not allowed to upload media.', 'daymark' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_AI );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$files = $request->get_file_params();
+		$media = isset( $files['media'] ) && is_array( $files['media'] ) ? $files['media'] : null;
+
+		if ( ! $media || empty( $media['tmp_name'] ) || ! is_readable( $media['tmp_name'] ) ) {
+			return new WP_Error(
+				'daymark_no_media',
+				__( 'No readable audio or video file was provided.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// Validate from content, not the extension — audio or video only.
+		$finfo = new finfo( FILEINFO_MIME_TYPE );
+		$mime  = (string) $finfo->file( $media['tmp_name'] );
+
+		$is_transcribable = str_starts_with( $mime, 'audio/' ) || str_starts_with( $mime, 'video/' );
+
+		if ( ! $is_transcribable || ! in_array( $mime, Daymark_Publisher::ALLOWED_MIME_TYPES, true ) ) {
+			return new WP_Error(
+				'daymark_not_transcribable',
+				__( 'A transcript can only be generated from an audio or video file.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$suggestion = Daymark_Plugin::instance()->ai_assist->get_transcript_suggestion( (string) $media['tmp_name'] );
 
 		return rest_ensure_response( $suggestion );
 	}
@@ -1224,6 +1322,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$payload               = $this->prepare_mark_summary( $post_id );
 		$payload['caption']    = $caption;
+		$payload['transcript'] = (string) get_post_meta( $post_id, '_daymark_transcript', true );
 		$payload['media']      = $media;
 		$payload['targets']    = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
 		$payload['helpers']    = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
@@ -1278,6 +1377,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
 			'tags'                => $request->get_param( 'tags' ),
+			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 		);
 
 		if ( null !== $request->get_param( 'publish_helpers' ) ) {

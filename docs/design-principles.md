@@ -118,7 +118,10 @@ on exactly this ground (its tap-based delete flow already exists and stays
 the only path). The same audit is where "minimal text entry" (AI Assist
 pre-filling caption/title/alt text, tap-to-pick tag autocomplete instead of
 typing full tag names) lives as a named commitment rather than an implicit
-side effect of the AI Assist principle.
+side effect of the AI Assist principle. Generating a transcript for an
+audio/video Mark (CLAUDE.md's "AI as an assistant" decision) extends the same
+commitment to the one field that would otherwise mean typing out an entire
+recording by hand.
 
 ## How to use this rubric
 

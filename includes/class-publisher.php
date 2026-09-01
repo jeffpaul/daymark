@@ -139,6 +139,17 @@ class Daymark_Publisher {
 	public const MAX_TITLE_CHARS = 60;
 
 	/**
+	 * Character-count cap on a stored transcript (AI-generated or
+	 * hand-typed/edited). Generous relative to the AI adapter's own
+	 * generation cap (Daymark_AI_Assist::MAX_TRANSCRIPT_CHARS) since an
+	 * author editing a transcript by hand isn't bound by that limit — this
+	 * is purely a sanity backstop against unbounded post meta.
+	 *
+	 * @var int
+	 */
+	public const MAX_TRANSCRIPT_CHARS = 8000;
+
+	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
 	 *
 	 * Content sniffing (finfo) reports some formats with non-canonical names (e.g. WAV).
@@ -167,7 +178,8 @@ class Daymark_Publisher {
 	 * @return int|WP_Error Post ID on success.
 	 */
 	public function publish( array $data, array $files = array() ) {
-		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
 		$file_list = $this->normalize_files( $files );
 
@@ -318,6 +330,7 @@ class Daymark_Publisher {
 		// Raw caption, so editing can reopen the composer losslessly
 		// (post_content is derived block markup, post_excerpt is trimmed).
 		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_transcript', $transcript );
 		update_post_meta( $post_id, '_daymark_primary_type', $type );
 		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( array_map( 'intval', $media_ids ) ) );
 		update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
@@ -423,7 +436,8 @@ class Daymark_Publisher {
 			);
 		}
 
-		$caption = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
+		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
@@ -514,6 +528,7 @@ class Daymark_Publisher {
 		}
 
 		update_post_meta( $post_id, '_daymark_caption', $caption );
+		update_post_meta( $post_id, '_daymark_transcript', $transcript );
 		update_post_meta( $post_id, '_daymark_primary_type', $type );
 		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( $media_ids ) );
 

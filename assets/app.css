@@ -1014,6 +1014,14 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
+/* "Improve with AI"/"Suggest with AI": a compact text-style action, not a
+   full-width button — .daymark-btn--text already gives it the shared
+   44px tap-min height. */
+.daymark-alt__improve {
+	align-self: flex-start;
+	padding: 0;
+}
+
 /* Editable media list when reopening a draft: thumbnail + alt field. */
 .daymark-editmedia {
 	list-style: none;
@@ -1113,6 +1121,13 @@ h2[tabindex='-1']:focus {
 
 .daymark-titlefield__hint[hidden] {
 	display: none;
+}
+
+/* Optional Transcript field (audio/video): "Generate transcript" is a
+   compact text-style action under the textarea, not a full-width button. */
+.daymark-transcriptfield__action {
+	align-self: flex-start;
+	padding: 0;
 }
 
 .daymark-textarea,
