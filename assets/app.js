@@ -1019,7 +1019,10 @@
 			// or search's own trigger — the item menu never took focus in
 			// the first place, so it has nothing to return).
 			bindDismissible(this, [
-				{ selector: '[data-actions]', close: () => this.closeItemMenus() },
+				{
+					selector: '[data-actions], [data-avatarwrap]',
+					close: () => this.closeItemMenus(),
+				},
 				{
 					selector: '[data-launcher]',
 					close: () => this.closeLauncher(),
@@ -1524,6 +1527,25 @@
 			}
 		},
 
+		// Programmatic equivalent of picking a Source filter option by hand —
+		// the avatar menu's "See only…" action. Opens search first when it
+		// isn't already open (the Source filter lives inside the search bar),
+		// then drives the same searchSource + applySearch() the <select>'s
+		// own change handler already uses, so the two paths can never drift
+		// apart. `value` is 'mine' or a subscription id, as a string — same
+		// contract runSearch() already expects.
+		applySourceFilter(value) {
+			if (!this.searchOpen) {
+				this.openSearch();
+			}
+			const select = root.querySelector('[data-source-filter]');
+			if (select) {
+				select.value = value;
+			}
+			this.searchSource = value;
+			this.applySearch();
+		},
+
 		async runSearch() {
 			const list = root.querySelector('[data-recent-list]');
 			const more = root.querySelector('[data-recent-more]');
@@ -1638,6 +1660,29 @@
 					if (first) {
 						first.focus();
 					}
+				}
+				return;
+			}
+
+			// The avatar menu's primary action: filter Timeline down to just
+			// this source, without ever leaving the app.
+			const filterSite = target.closest('[data-filter-site]');
+			if (filterSite) {
+				event.preventDefault();
+				this.closeItemMenus();
+				this.applySourceFilter(filterSite.getAttribute('data-filter-site'));
+				return;
+			}
+
+			// The avatar menu's secondary, deliberately less-promoted action:
+			// leave the app and visit the source site directly.
+			const visitSite = target.closest('[data-visit-site]');
+			if (visitSite) {
+				event.preventDefault();
+				this.closeItemMenus();
+				const url = visitSite.getAttribute('data-visit-site');
+				if (url) {
+					window.open(url, '_blank', 'noopener');
 				}
 				return;
 			}
@@ -1770,11 +1815,26 @@
 			const href = isDraft ? '#create' : item.permalink || '#home';
 			const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 			const id = esc(String(item.id));
+			// A Draft is always the author's own unpublished work — there is
+			// no separate site to filter to or visit, so it's the one
+			// Timeline item that skips the avatar menu.
+			const avatarMenu = isDraft
+				? ''
+				: renderSiteAvatarMenu({
+						avatarSrc: (config.currentUser && config.currentUser.avatarUrl) || '',
+						avatarAlt: (config.currentUser && config.currentUser.displayName) || 'You',
+						ariaLabel: 'Filter or visit your site',
+						filterValue: 'mine',
+						filterLabel: 'See only your Marks',
+						visitUrl: config.siteUrl || '',
+						visitLabel: 'Visit your site',
+				  });
 			return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
 					${renderMarkCore(item)}
 				</a>
+				${avatarMenu}
 				<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
 						title
@@ -2584,6 +2644,70 @@
 	// shows the subscription's site icon in place of its now-cleared embed.
 	const SUBSCRIPTION_RICH_MEDIA_FORMATS = ['image', 'video', 'audio'];
 
+	// A subscription post's own display label: its title, or — falling back —
+	// the bare hostname of its site (never the full URL). Falls further back
+	// to a generic phrase only when even that can't be parsed (a malformed or
+	// missing site_url), so a card's avatar menu never reads with a blank
+	// name in it.
+	function subscriptionSiteLabel(item) {
+		if (item.site_title && item.site_title.trim()) {
+			return item.site_title.trim();
+		}
+		if (item.site_url) {
+			try {
+				return new URL(item.site_url).hostname;
+			} catch (err) {
+				// Falls through to the generic label below.
+			}
+		}
+		return 'this site';
+	}
+
+	// The avatar/site-icon button + its popover menu that sits on every
+	// Timeline item except a Draft: "filter Timeline to just this source" is
+	// the primary action (the product owner's strongly preferred one, since
+	// it keeps the reader inside Daymark), "visit the site" is secondary and
+	// deliberately less-promoted, since it leaves the app. Shared by a Mark's
+	// own avatar (HomeScreen.renderItem()) and a subscription post's site
+	// icon (renderSubscriptionPostCard()) so the two menus can never drift
+	// apart. Reuses the ⋯ menu's exact data-menu-toggle / data-menu /
+	// role="menu" / menuitem machinery (see onListClick() and
+	// closeItemMenus()) — the only new wiring is the two new action
+	// attributes this menu's items carry.
+	function renderSiteAvatarMenu({
+		avatarSrc,
+		avatarAlt,
+		ariaLabel,
+		filterValue,
+		filterLabel,
+		visitUrl,
+		visitLabel,
+	}) {
+		const avatar = avatarSrc
+			? `<img class="daymark-recent__avatar" src="${esc(avatarSrc)}" alt="" />`
+			: `<span class="daymark-recent__avatar daymark-recent__avatar--glyph" aria-hidden="true">${esc(
+					(avatarAlt || '?').charAt(0).toUpperCase()
+			  )}</span>`;
+		return `
+				<div class="daymark-recent__avatarwrap" data-avatarwrap>
+					<button type="button" class="daymark-recent__avatarbtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="${esc(
+						ariaLabel
+					)}">
+						${avatar}
+					</button>
+					<div class="daymark-menu" data-menu role="menu" aria-label="${esc(ariaLabel)}" hidden>
+						<div class="daymark-menu__actions" data-menu-actions>
+							<button type="button" class="daymark-menu__item" role="menuitem" data-filter-site="${esc(
+								filterValue
+							)}">${esc(filterLabel)}</button>
+							<button type="button" class="daymark-menu__item" role="menuitem" data-visit-site="${esc(
+								visitUrl
+							)}">${esc(visitLabel)} &#8599;</button>
+						</div>
+					</div>
+				</div>`;
+	}
+
 	// Thumbnail-or-glyph for one subscription post card, mirroring
 	// renderMarkCore()'s thumbnail-or-glyph fallback for a Mark. A pruned
 	// rich-media post has no featured_image_url left, so it falls back to
@@ -2620,17 +2744,34 @@
 		}
 		const excerpt = toPlainText(item.excerpt || '');
 		const id = esc(String(item.id));
+		// A <button> can't contain another interactive <button> — the
+		// existing subscription-post button (unchanged below) becomes the
+		// first child of a wrapper div instead, matching the Mark item's own
+		// wrapper shape, so the avatar menu can sit alongside it as a sibling
+		// rather than nested inside it.
+		const siteLabel = subscriptionSiteLabel(item);
 		return `
-				<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
-					${subscriptionPostThumb(item)}
-					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
-							metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
-						}</span>
-						${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
-					</span>
-				</button>`;
+				<div class="daymark-recent__item-wrap">
+					<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
+						${subscriptionPostThumb(item)}
+						<span class="daymark-recent__body">
+							<span class="daymark-recent__title">${esc(title)}</span>
+							<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
+								metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
+							}</span>
+							${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						</span>
+					</button>
+					${renderSiteAvatarMenu({
+						avatarSrc: item.site_icon_url || '',
+						avatarAlt: siteLabel,
+						ariaLabel: 'Filter or visit ' + siteLabel,
+						filterValue: String(item.subscription_id),
+						filterLabel: 'See only posts from ' + siteLabel,
+						visitUrl: item.site_url || '',
+						visitLabel: 'Visit ' + siteLabel,
+					})}
+				</div>`;
 	}
 
 	// --- Overlay: subscription-post detail sheet ---
