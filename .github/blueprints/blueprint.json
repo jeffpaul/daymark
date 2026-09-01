@@ -29,6 +29,10 @@
       "options": {
         "activate": true
       }
+    },
+    {
+      "step": "runPHP",
+      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n$plugin = Daymark_Plugin::instance();\n\nforeach ( [ 'https://jeffpaul.com', 'https://jondesrosiers.com', 'https://aaron.jorb.in' ] as $site_url ) {\n\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );\n\tif ( ! is_wp_error( $result ) ) {\n\t\t$plugin->subscription_poller->poll_subscription( (int) $result );\n\t}\n}\n"
     }
   ]
 }

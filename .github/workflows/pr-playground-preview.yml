@@ -44,6 +44,44 @@ jobs:
             throw new Error('REPO_URL and HEAD_REF are required');
           }
 
+          // Preset a few real, publicly-syndicating sites as subscriptions
+          // so a reviewer lands in a Timeline that already has content to
+          // scroll, search, and click into — not an empty "subscribe to
+          // your first site" state.
+          const presetSites = [
+            'https://jeffpaul.com',
+            'https://jondesrosiers.com',
+            'https://aaron.jorb.in',
+          ];
+
+          // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
+          // first, same as Playground's own documented examples. By this
+          // point the preceding installPlugin step has already activated
+          // Daymark, so Daymark_Plugin::instance() is fully wired up.
+          // subscribe_to_site()/poll_subscription() are the same two calls
+          // the wp-admin Subscribe form and its background poller make;
+          // is_wp_error() is checked (not thrown on) so one unreachable site
+          // doesn't stop the others from being preset.
+          //
+          // Built as a joined array (not a multi-line template literal) so
+          // every line of source here stays indented inside this run: |
+          // block scalar — a raw embedded newline would dedent to column 0
+          // and break the surrounding YAML.
+          const presetPhp = [
+            '<?php',
+            "require_once '/wordpress/wp-load.php';",
+            '',
+            '$plugin = Daymark_Plugin::instance();',
+            '',
+            `foreach ( ${JSON.stringify(presetSites)} as $site_url ) {`,
+            '\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );',
+            '\tif ( ! is_wp_error( $result ) ) {',
+            '\t\t$plugin->subscription_poller->poll_subscription( (int) $result );',
+            '\t}',
+            '}',
+            '',
+          ].join('\n');
+
           const blueprint = {
             preferredVersions: {
               // WP 7.0+ required; 'latest' is 7.0 as of May 2026 (Armstrong).
@@ -73,6 +111,10 @@ jobs:
                 options: {
                   activate: true,
                 },
+              },
+              {
+                step: 'runPHP',
+                code: presetPhp,
               },
             ],
           };
