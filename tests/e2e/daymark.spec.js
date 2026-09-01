@@ -863,6 +863,61 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 	).toHaveCount(0);
 });
 
+// Touch-target audit: every tappable control sizes off the app shell's own
+// --daymark-tap-min (44px) token, not a hardcoded smaller value. Covers the
+// controls the audit found under that minimum before being fixed.
+test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => {
+	const caption = `E2E taptarget mark ${RUN_ID}`;
+	const TAP_MIN = 44;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	await page.goto('/daymark');
+	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
+	await expect(card).toBeVisible();
+
+	// Per-item ⋯ menu trigger.
+	const menuToggle = card.locator('[data-menu-toggle]');
+	let box = await menuToggle.boundingBox();
+	expect(box.width).toBeGreaterThanOrEqual(TAP_MIN);
+	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
+
+	// Site icon filter button.
+	const siteIcon = card.locator('[data-filter-site]');
+	box = await siteIcon.boundingBox();
+	expect(box.width).toBeGreaterThanOrEqual(TAP_MIN);
+	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
+
+	// Delete-confirmation buttons inside the ⋯ menu.
+	const menu = card.locator('[data-actions]');
+	await menuToggle.click();
+	await menu.locator('[data-menu-delete]').click();
+	for (const name of ['data-menu-delete-cancel', 'data-menu-delete-confirm']) {
+		box = await menu.locator(`[${name}]`).boundingBox();
+		expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
+	}
+	await menu.locator('[data-menu-delete-cancel]').click();
+	await menuToggle.click(); // close the menu
+
+	// Search screen: type filter chip and Source filter select.
+	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	await expect(page).toHaveURL(/#search$/);
+	box = await page.locator('[data-filter-chips] [data-filter="note"]').boundingBox();
+	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
+	box = await page.locator('[data-source-filter]').boundingBox();
+	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
+});
+
 // Per-notification reply: a reply icon reveals an inline box for that
 // notification; submitting posts the reply and collapses the box.
 test('notifications: reply icon expands an inline box and submits', async ({ page }) => {

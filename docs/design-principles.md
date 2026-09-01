@@ -28,7 +28,10 @@ ranking, no engagement loop. Daymark's publish flow should feel like Path's
 This is the visual/interaction half of **Publish First**: fast is necessary
 but not sufficient, it also has to feel good. See
 [docs/brand.md](brand.md) for the sunset palette this feeling is built on,
-and the app shell's large tap targets / minimal chrome (Phase 3, CLAUDE.md).
+and the app shell's large tap targets — every interactive element sized off
+a single `--daymark-tap-min: 44px` token, audited against hardcoded
+smaller values (CLAUDE.md's "Touch-target / thumb-reach / gesture /
+text-entry audit" decision) — and minimal chrome (Phase 3, CLAUDE.md).
 
 ## Day One — a sense of personal history
 
@@ -90,6 +93,20 @@ offline mode and background sync are explicit non-goals, see CLAUDE.md and
 roadmap "Longer term"). Share sheet integration and background uploads are
 open roadmap territory, not shipped; when they land, they should extend this
 same restraint rather than pull in native-style chrome.
+
+"Responsive, thumb-friendly interactions" is deliberately gesture-*friendly*,
+not gesture-*first*: Home's pull-to-refresh (`bindPullGesture()`) is the app
+shell's one real touch gesture — a deliberate exception, with no separate
+Refresh button, because pulling down on a feed is an established enough
+mobile convention to stand on its own. Everywhere else, a gesture is
+considered only as a bonus layered on top of an existing tap-based action,
+never as a hidden replacement for one: see the audit decision in CLAUDE.md
+for why swipe-to-delete on the Timeline's ⋯ menu was considered and declined
+on exactly this ground (its tap-based delete flow already exists and stays
+the only path). The same audit is where "minimal text entry" (AI Assist
+pre-filling caption/title/alt text, tap-to-pick tag autocomplete instead of
+typing full tag names) lives as a named commitment rather than an implicit
+side effect of the AI Assist principle.
 
 ## How to use this rubric
 

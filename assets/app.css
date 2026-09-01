@@ -403,8 +403,8 @@ h2[tabindex='-1']:focus {
 	z-index: 2;
 	left: 50%;
 	bottom: 100%;
-	width: 44px;
-	height: 44px;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
 	border: 1.5px solid var(--daymark-accent);
 	border-radius: 50%;
 	background: var(--daymark-bg);
@@ -1259,8 +1259,8 @@ h2[tabindex='-1']:focus {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 32px;
-	height: 32px;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
 	border: none;
 	border-radius: 50%;
 	background: none;
@@ -1276,6 +1276,40 @@ h2[tabindex='-1']:focus {
 
 .daymark-tags__addrow .daymark-input {
 	flex: 1;
+}
+
+/* Existing-tag autocomplete dropdown, shown under the "Add a tag" input
+   while typing — tapping an item avoids typing the full tag name. */
+.daymark-tags__suggest {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin: var(--daymark-spacing-xs) 0 0;
+	padding: var(--daymark-spacing-xs);
+	list-style: none;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-bg);
+}
+
+.daymark-tags__suggestitem {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-sm);
+	border: none;
+	border-radius: var(--daymark-radius-sm);
+	background: none;
+	color: var(--daymark-text-primary);
+	font-size: 14px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.daymark-tags__suggestitem:hover,
+.daymark-tags__suggestitem:focus-visible {
+	background: var(--daymark-accent-wash);
 }
 
 .daymark-tags__addrow .daymark-btn--secondary {
@@ -1577,7 +1611,7 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-filterchip {
-	min-height: 36px;
+	min-height: var(--daymark-tap-min);
 	padding: 0 var(--daymark-spacing-md);
 	border-radius: 999px;
 	border: 1px solid var(--daymark-border);
@@ -1618,7 +1652,7 @@ h2[tabindex='-1']:focus {
 
 .daymark-sourcefilter {
 	flex-shrink: 0;
-	min-height: 36px;
+	min-height: var(--daymark-tap-min);
 	padding: 0 var(--daymark-spacing-md);
 	border-radius: 999px;
 	border: 1px solid var(--daymark-border);
@@ -1666,8 +1700,8 @@ h2[tabindex='-1']:focus {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 40px;
-	height: 40px;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius-sm);
 	background: var(--daymark-bg);
@@ -1744,7 +1778,7 @@ h2[tabindex='-1']:focus {
 .daymark-menu__confirmactions .daymark-btn {
 	width: auto;
 	flex: 1;
-	min-height: 40px;
+	min-height: var(--daymark-tap-min);
 	padding: 0 var(--daymark-spacing-md);
 }
 
@@ -1805,7 +1839,7 @@ h2[tabindex='-1']:focus {
 .daymark-reply__actions .daymark-btn--primary {
 	width: auto;
 	flex: 1;
-	min-height: 40px;
+	min-height: var(--daymark-tap-min);
 }
 
 .daymark-reply__status:not(:empty) {
@@ -1942,9 +1976,11 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-recent__siteiconbtn {
-	display: block;
-	width: 32px;
-	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
 	padding: 0;
 	border: none;
 	background: none;
@@ -1966,8 +2002,8 @@ h2[tabindex='-1']:focus {
    target" look this replaces. */
 .daymark-recent__siteiconimg {
 	display: block;
-	width: 100%;
-	height: 100%;
+	width: 32px;
+	height: 32px;
 	object-fit: contain;
 	border-radius: var(--daymark-radius-sm);
 }
