@@ -275,6 +275,34 @@ publishing" decision row for the full technical record.
 
 ---
 
+## Shipped — Camera-first capture
+
+"Assume 'I'm standing somewhere and want to publish.' Not 'I'm sitting at my
+desktop writing.'" An audit found the composer's file picker had no `capture`
+attribute anywhere — every media type opened a generic photo/file chooser,
+and the docs themselves described the flow as picking "camera-roll media."
+See CLAUDE.md's "Camera-first capture" decision row for the full technical
+record.
+
+- [x] **Capture-first picker.** A typed launcher entry (Image/Video/Audio)
+  now offers "Take Photo"/"Record Video"/"Record Audio" as the primary
+  picker action — it opens the device's camera or mic directly. "Choose from
+  library instead" stays one tap away as a secondary action, so an
+  already-taken photo is never harder to publish than before.
+- [x] **A shortcut straight to the composer.** A PWA manifest `shortcuts`
+  entry lets a long-press on the installed home-screen icon skip Home and
+  the +New launcher tap entirely.
+
+**Considered and deferred:**
+
+- [ ] **`share_target`** — receiving a shared photo from the OS camera app or
+  another app's share sheet, so Daymark never needs to be opened first at
+  all. Needs a deliberate service-worker scope-widening decision, not a
+  quick add-on; tracked in
+  [issue #131](https://github.com/jeffpaul/daymark/issues/131).
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen
