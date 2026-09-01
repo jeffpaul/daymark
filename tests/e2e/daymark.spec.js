@@ -1020,7 +1020,9 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 	const nav = page.locator('.daymark-bottomnav');
 
 	for (const label of ['Timeline', 'Explore', 'Search', 'Me']) {
-		const link = nav.getByRole('link', { name: label });
+		// exact: true matters here — getByRole's name match is substring by
+		// default, and "Me" is a substring of "Timeline".
+		const link = nav.getByRole('link', { name: label, exact: true });
 		await expect(link).toBeVisible();
 		await expect(link).toHaveAttribute('title', label);
 		await expect(link.locator('svg.daymark-icon')).toBeVisible();
@@ -1035,7 +1037,7 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 	expect(tabOrder).toEqual(['Timeline', 'Explore', 'launcher', 'Search', 'Me']);
 
 	// Timeline is the default landing destination and shows as active.
-	const timeline = nav.getByRole('link', { name: 'Timeline' });
+	const timeline = nav.getByRole('link', { name: 'Timeline', exact: true });
 	await expect(timeline).toHaveClass(/is-active/);
 	await expect(timeline).toHaveAttribute('aria-current', 'page');
 
@@ -1044,9 +1046,9 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 	await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
 
 	// Navigating to another destination moves the active indicator.
-	await nav.getByRole('link', { name: 'Explore' }).click();
+	await nav.getByRole('link', { name: 'Explore', exact: true }).click();
 	await expect(page).toHaveURL(/#explore$/);
-	await expect(nav.getByRole('link', { name: 'Explore' })).toHaveClass(/is-active/);
+	await expect(nav.getByRole('link', { name: 'Explore', exact: true })).toHaveClass(/is-active/);
 	await expect(timeline).not.toHaveClass(/is-active/);
 });
 
