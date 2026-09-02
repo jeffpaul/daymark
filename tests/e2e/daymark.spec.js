@@ -1481,7 +1481,23 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		// closes that race regardless of what triggered it.
 		await page.evaluate(() => window.scrollTo(0, 0));
 		await expect(page.locator('.daymark-homefooter')).not.toHaveClass(/is-footer-hidden/);
-		await page.locator('[data-action="new-mark"]').click();
+		// A plain `.click()` here still failed in CI even with every guard
+		// above satisfied — Playwright's own logs showed it re-running
+		// scrollIntoViewIfNeeded() on every retry (and, once, flagging the
+		// target itself as "not stable"): a known category of flakiness
+		// where scrollIntoViewIfNeeded() miscomputes against a
+		// `position: sticky` element (the footer) by scoring its static,
+		// unstuck flow position rather than its actual visual one, so it
+		// keeps re-scrolling without ever settling and briefly exposes
+		// whatever real content sits underneath. Activating the button via
+		// keyboard sidesteps that geometric hit-test/scroll machinery
+		// entirely — Enter on a focused <button> fires the same `click`
+		// event a real tap would, so this still exercises the launcher's
+		// real behavior, just without routing through the sticky-element
+		// scroll quirk to get there.
+		const launcherBtn = page.locator('[data-action="new-mark"]');
+		await launcherBtn.focus();
+		await page.keyboard.press('Enter');
 		await page.locator('[data-launcher-type="note"]').click();
 		await expect(page).toHaveURL(/#create$/);
 		await expect(page.getByText('New Mark')).toBeVisible();
