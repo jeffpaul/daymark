@@ -45,14 +45,14 @@ The only allowed `moment` references are the migration/uninstall legacy keys and
 
 | Key | Value |
 |-----|-------|
-| WordPress version | 7.1 (readme.txt "Tested up to" bumped from 7.0 on WP 7.1's release — the `7.0-beta3-61869` build noted here was the local wp70 install at Phase 0 setup; reconfirm the exact installed build next time wp70 is running) |
+| WordPress version | 7.1 (readme.txt "Tested up to" bumped from 7.0 on WP 7.1's release — the `7.0-beta3-61869` build noted here was the local wp70 install at Phase 0 setup; reconfirm the exact installed build next time the wp71 site is running) |
 | PHP version | 8.2.27 (site) / 8.5.7 (CLI) |
 | WP 7.0 AI Client available | **yes** — via `ai` plugin 0.4.1: class is `WordPress\AiClient\AiClient` (namespaced; the legacy `WP_AI_Client` name does NOT exist). Anthropic/Google/OpenAI provider plugins active. |
-| Site URL | http://wp70.local |
-| Plugin path | ~/Local Sites/wp70/app/public/wp-content/plugins/daymark (symlink → ~/GitHub/jeffpaul/daymark) |
-| Local environment | Local by Flywheel (site: wp70) |
+| Site URL | https://wp71.local (HTTP redirects to HTTPS) |
+| Plugin path | ~/Local Sites/wp71/app/public/wp-content/plugins/daymark (symlink → ~/GitHub/jeffpaul/daymark) |
+| Local environment | Local by Flywheel (site: wp71 — renamed from wp70 after Phase 0 setup) |
 
-**Repo layout note:** This repo root IS the plugin. `daymark.php` lives at the repo root, and the repo is symlinked into the wp70 site's plugins directory as `daymark/`. The `docs/` directory and `.claude/` are excluded from distribution via `.distignore`. Runtime gates (`wp plugin activate`, `wp eval`) run from `~/Local Sites/wp70/app/public` and require the wp70 site to be started in Local.
+**Repo layout note:** This repo root IS the plugin. `daymark.php` lives at the repo root, and the repo is symlinked into the wp71 site's plugins directory as `daymark/`. The `docs/` directory and `.claude/` are excluded from distribution via `.distignore`. Runtime gates (`wp plugin activate`, `wp eval`) run from `~/Local Sites/wp71/app/public` and require the wp71 site to be started in Local.
 
 ## Build commands
 
@@ -76,7 +76,7 @@ composer phpcompat    # PHPCompatibility standard (testVersion 8.2-)
 
 # Browser E2E (Playwright; needs a live site + admin creds)
 npm ci && npx playwright install chromium   # once per machine
-WP_BASE_URL=http://wp70.local WP_ADMIN_USER=<user> WP_ADMIN_PASS=<pass> npx playwright test
+WP_BASE_URL=https://wp71.local WP_ADMIN_USER=<user> WP_ADMIN_PASS=<pass> npx playwright test
 
 # Block editor bundle (src/index.js → committed build/, shipped in the zip)
 npm ci && npm run build   # rebuild after editing src/; CI fails if committed build/ is stale
