@@ -229,41 +229,6 @@
 		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}</span>`;
 	}
 
-	// The thumbnail + title + meta + stats core of one Mark's card markup —
-	// used by every Mark item any feed-list screen renders (Home's
-	// Drafts/Timeline, Search's results), always wrapped in the same ⋯
-	// actions menu (see renderMarkItem()). Keeping this in one place is what
-	// "reuse, don't reinvent Mark card markup" means.
-	//
-	// No glyph fallback when there's no real thumbnail (a Note Mark, mainly):
-	// every card already carries its own leading site icon (see
-	// renderSiteIconButton()), so a second, type-initial icon sitting right
-	// next to it read as a duplicate rather than useful content — a Note's
-	// card just runs title/meta straight to the edge instead now.
-	function renderMarkCore(item) {
-		const title = item.title || 'Untitled Mark';
-		const thumb = item.thumbnail
-			? `<img class="daymark-recent__thumb" src="${esc(item.thumbnail)}" alt="" />`
-			: '';
-		// Drafts look identical to published Marks otherwise — and their
-		// permalinks are invisible to visitors — so say so. (The Timeline
-		// endpoint only ever returns published Marks, so this never fires
-		// there; Home's Recent/Drafts lists are what actually rely on it.)
-		const isDraft = item.status && 'publish' !== item.status;
-		const draftChip = isDraft
-			? '<span class="daymark-chip daymark-chip--draft">Draft</span> '
-			: '';
-		return `
-					${thumb}
-					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta">${draftChip}${esc(
-							TYPE_LABELS[item.type] || item.type || ''
-						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
-						${isDraft ? '' : renderItemStats(item)}
-					</span>`;
-	}
-
 	// Pre-filters the composer's native file picker to match the launcher
 	// bubble that was tapped — 'note' has no entry since it skips the
 	// picker entirely (see CreateScreen.render()).
@@ -1613,6 +1578,7 @@
 		const href = isDraft ? '#create' : item.permalink || '#home';
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
+		const kind = resolveCardKind(item);
 		// A Draft is always the author's own unpublished work — there is no
 		// separate site to filter to, so it's the one item that skips the
 		// site icon.
@@ -1627,7 +1593,8 @@
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				${siteIcon}
-				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
+				${renderTypeIcon(kind)}
+				<a class="daymark-recent__item daymark-recent__item--${esc(kind)}" href="${esc(href)}"${editAttr}>
 					${renderMarkCore(item)}
 				</a>
 				<div class="daymark-recent__actions" data-actions>
@@ -2726,7 +2693,9 @@
 				list.innerHTML = draftItems
 					.map(
 						(item) =>
-							`<a class="daymark-recent__item" href="#create" data-edit-draft="${esc(
+							`<a class="daymark-recent__item daymark-recent__item--${esc(
+								resolveCardKind(item)
+							)}" href="#create" data-edit-draft="${esc(
 								String(item.id)
 							)}">${renderMarkCore(item)}</a>`
 					)
@@ -3628,91 +3597,240 @@
 		},
 	};
 
-	// --- Merged Timeline feed: subscription-post card + supporting glyphs ---
+	// --- Timeline card kinds: shared type-icon rail + per-kind bodies ---
 	//
 	// Home's Recent Marks list is the merged Timeline feed (GET
-	// /daymark/v1/timeline): a Mark item renders with the existing
-	// renderItem()/renderMarkCore() (⋯ edit/delete menu intact), while a
-	// subscription-post item gets its own card below.
+	// /daymark/v1/timeline): a Mark item and a subscription-post item each
+	// render their own card shape, but both resolve to one shared set of
+	// content "kinds" here — a Mark's own `type`
+	// (note/image/gallery/video/audio/mixed) and a subscription post's
+	// `post_format` are already the same vocabulary in spirit
+	// (Daymark_Subscription_Source_Feed::normalize() maps a subscribed
+	// feed's content onto exactly this set, not raw WordPress post
+	// formats) — so one icon set, one media-slot renderer, and one meta-line
+	// renderer serve every Timeline item regardless of source, while each
+	// kind still gets its own visual weight (image/video/gallery/mixed get
+	// a media-dominant banner, audio a compact artwork row, note pure
+	// typography, and a subscription post's 'standard' format further
+	// splits into 'article'/'link' below). 'article' and 'link' only ever
+	// apply to a subscription post — a Mark is never "an article."
 
-	// A subscription post's post_format is this source's equivalent of a
-	// Mark's primary_type; TYPE_LABELS already covers image/video/audio/note,
-	// this only adds the one label a Mark never has ('standard' — a plain
-	// text/link post from a feed with no richer format hint).
-	const SUBSCRIPTION_FORMAT_LABELS = Object.assign({}, TYPE_LABELS, { standard: 'Post' });
-
-	// Small format-indicator badge overlaid on a subscription card's
-	// thumbnail — video/audio/gallery aren't obvious from a static image
-	// alone the way 'image' already is from its own thumbnail, so a glance
-	// at the badge is enough to know what a tap leads to. Reuses TYPE_ICONS'
-	// own glyphs for video/audio so the same shape means the same thing
-	// everywhere in the app; gallery needs its own shape since a Mark never
-	// shows its own launcher bubble for it (detectType() silently upgrades
-	// image -> gallery instead of offering a separate picker entry).
-	// 'image' and 'standard' render no badge: the thumbnail (or its
-	// absence) already says everything a badge would.
-	const SUBSCRIPTION_BADGE_ICONS = {
-		video: TYPE_ICONS.video,
-		audio: TYPE_ICONS.audio,
+	// Icons for the rail's type-indicator column and a media-dominant
+	// card's placeholder panel (see renderCardMedia()). Reuses TYPE_ICONS'
+	// own image/video/audio/note glyphs so the same shape means the same
+	// thing everywhere in the app; the other four kinds have no
+	// composer-launcher equivalent, so they're defined here instead of
+	// extending TYPE_ICONS itself.
+	const CARD_KIND_ICONS = Object.assign({}, TYPE_ICONS, {
 		gallery:
 			'<rect x="7" y="7" width="14" height="14" rx="2"></rect><path d="M3 15V5a2 2 0 0 1 2-2h10"></path>',
-	};
+		mixed:
+			'<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>',
+		article:
+			'<line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="17" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line>',
+		link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>',
+	});
 
-	function subscriptionFormatBadge(item) {
-		const glyph = SUBSCRIPTION_BADGE_ICONS[item.post_format];
-		if (!glyph) {
-			return '';
+	// Display labels for the same kind vocabulary — TYPE_LABELS covers a
+	// Mark's own 6, this adds the 2 a Mark never has.
+	const CARD_KIND_LABELS = Object.assign({}, TYPE_LABELS, { article: 'Article', link: 'Link' });
+
+	// Kinds that get the media-dominant layout — a full-width band above
+	// the caption, not a small thumb beside it — the ones a real
+	// photo/poster frame is the point of. Audio gets its own compact
+	// artwork-beside-text treatment instead (see MEDIA_DOMINANT_KINDS'
+	// absence of 'audio'): Path's own audio moments show a small square,
+	// not a banner, and a podcast episode's cover art is square by
+	// convention anyway.
+	const MEDIA_DOMINANT_KINDS = ['image', 'gallery', 'video', 'mixed'];
+
+	// Kinds a small rich-media badge overlays on their own artwork (see
+	// cardKindBadge()) — 'image' doesn't need one (the photo itself already
+	// says "image"), and neither does a kind with no media slot at all
+	// (note/link).
+	// 'video' isn't included: its own dedicated centered play button (see
+	// renderCardMedia()'s playButton) already says "tap to play" more
+	// directly than a small corner badge duplicating the rail's own
+	// video-camera icon would.
+	const BADGED_KINDS = ['audio', 'gallery', 'mixed'];
+
+	// Audio's own badge is a play triangle rather than a second music-note
+	// icon (the rail's own type icon already identifies "audio" from a
+	// distance) — this is the compact "tap to listen" affordance the brief
+	// asks a podcast/audio card's artwork to carry.
+	const AUDIO_BADGE_ICON =
+		'<polygon points="6 4 20 12 6 20 6 4"></polygon>';
+
+	// A subscription post's 'standard' format (no richer signal from the
+	// feed itself) splits into 'article' or 'link' by a word-count
+	// heuristic: the excerpt server-side is always a fixed
+	// wp_trim_words(..., 40) regardless of the source post's real length
+	// (see Daymark_Subscription_Source_Feed::normalize()) — there's no
+	// length-preserving signal yet to tell "this genuinely was short" apart
+	// from "this got truncated," so a short excerpt with no image is
+	// treated as link-like; anything longer, or carrying an image, reads as
+	// an article. A deliberate approximation until the feed source captures
+	// real content length — see this change's summary for the follow-up
+	// this implies.
+	const CARD_KIND_LINK_WORD_THRESHOLD = 20;
+
+	function resolveCardKind(item) {
+		if ('subscription_post' !== item.item_type) {
+			return item.type || 'note';
 		}
-		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+		if (item.post_format && 'standard' !== item.post_format) {
+			return item.post_format;
+		}
+		const words = toPlainText(item.excerpt || '')
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean).length;
+		return !item.featured_image_url && words > 0 && words < CARD_KIND_LINK_WORD_THRESHOLD
+			? 'link'
+			: 'article';
 	}
 
-	// Thumbnail-or-glyph for one subscription post card, mirroring
-	// renderMarkCore()'s own thumbnail-or-glyph fallback: a real
-	// featured_image_url first, then the subscription's own site icon when
-	// there's no image to show, then a plain format-initial glyph when
-	// neither is available — "one or the other always appears" rather than
-	// running title/meta straight to the edge the way a thumbnail-less Mark
-	// (or, before this, every non-illustrated subscription post) does.
-	// A broken image at either tier — a 404'd favicon guess is common, see
-	// fallback_favicon_url() server-side — degrades to that same glyph via
-	// imgWithFallback()'s shared error handling, instead of a broken-image
-	// icon.
-	function subscriptionPostThumb(item) {
-		const glyph = (SUBSCRIPTION_FORMAT_LABELS[item.post_format] || 'S').charAt(0);
-		const src = item.featured_image_url || item.site_icon_url;
-		if (!src) {
-			return `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
-				glyph
-			)}</span>`;
+	// The rail column every card carries between its site icon and its own
+	// body — a quiet, muted indicator of what kind of thing this is,
+	// visually threaded to the item above and below by a thin connecting
+	// line (see .daymark-recent__typeicon::before in app.css) so a scan
+	// down the list reads as one continuous chronological flow, the way
+	// Path's own timeline spine does. Deliberately not a tap target — it
+	// carries no interaction of its own, just a glance-able signal — so it
+	// stays out of the touch-target audit entirely.
+	function renderTypeIcon(kind) {
+		const glyph = CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note;
+		const label = CARD_KIND_LABELS[kind] || 'Post';
+		return `<span class="daymark-recent__typeicon" aria-hidden="true" title="${esc(
+			label
+		)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+	}
+
+	// Small badge overlaid on a card's own artwork — video/audio/gallery/
+	// mixed aren't obvious from a static image alone the way 'image'
+	// already is from its own thumbnail, so a glance at the badge is
+	// enough to know what a tap leads to before opening it.
+	function cardKindBadge(kind) {
+		if (!BADGED_KINDS.includes(kind)) {
+			return '';
 		}
-		const cssClass =
-			'daymark-recent__thumb' + (item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
-		return `<span class="daymark-recent__thumbwrap">${imgWithFallback(
-			src,
-			cssClass,
-			glyph
-		)}${subscriptionFormatBadge(item)}</span>`;
+		const glyph = 'audio' === kind ? AUDIO_BADGE_ICON : CARD_KIND_ICONS[kind];
+		const fill = 'audio' === kind ? 'currentColor' : 'none';
+		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+	}
+
+	// One card's media slot: a real image — a Mark's own thumbnail, a
+	// subscription post's featured_image_url, or (only when there's no
+	// post image at all) the subscription's own site icon — when there is
+	// one; a type-glyph placeholder panel when there isn't (a video/audio
+	// Mark very often has neither: Daymark's publisher only ever sets a
+	// featured image for an image/gallery Mark — see attach_media() in
+	// class-publisher.php — so the placeholder keeps the media slot's own
+	// visual promise instead of collapsing to nothing); or no slot at all
+	// for a kind with none (note/link). A broken image degrades to the
+	// same placeholder via imgWithFallback()'s shared error handling.
+	function renderCardMedia(item, kind) {
+		if ('note' === kind || 'link' === kind) {
+			return '';
+		}
+		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
+		const wrapClass = isMedia ? 'daymark-recent__thumbwrap daymark-recent__thumbwrap--media' : 'daymark-recent__thumbwrap';
+		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;
+		const glyph = (CARD_KIND_LABELS[kind] || 'S').charAt(0);
+		const playButton =
+			'video' === kind
+				? '<span class="daymark-recent__thumbplay" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg></span>'
+				: '';
+		if (src) {
+			const thumbClass =
+				'daymark-recent__thumb' +
+				(item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
+			return `<span class="${wrapClass}">${imgWithFallback(
+				src,
+				thumbClass,
+				glyph
+			)}${cardKindBadge(kind)}${playButton}</span>`;
+		}
+		const iconSize = isMedia ? 32 : 20;
+		return `<span class="${wrapClass} daymark-recent__thumb--placeholder" aria-hidden="true"><svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${
+			CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note
+		}</svg></span>${playButton}`;
+	}
+
+	// The meta line every card kind shares: an optional leading chip
+	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
+	// post), the author when there is one (a subscription post only — a
+	// Mark's author is implicitly config.currentUser, shown via its own
+	// site icon instead), and a relative timestamp. Deliberately doesn't
+	// repeat the kind as a text label the way this line used to for a Mark
+	// (TYPE_LABELS[item.type]) — the rail's own type icon (see
+	// renderTypeIcon()) already says that now, so the text stays free for
+	// what the icon can't show.
+	function renderCardMeta(item, chipHtml) {
+		const parts = [];
+		if (chipHtml) {
+			parts.push(chipHtml);
+		}
+		if (item.author) {
+			parts.push(esc(item.author));
+		}
+		if (item.date) {
+			parts.push(esc(relativeTime(item.date)));
+		}
+		return parts.join(' &middot; ');
+	}
+
+	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
+	// one Mark's card markup — used by every Mark item any feed-list screen
+	// renders (Home's Recent/Drafts, Search's results), always wrapped in
+	// the same ⋯ actions menu (see renderMarkItem()). Keeping this in one
+	// place is what "reuse, don't reinvent Mark card markup" means.
+	function renderMarkCore(item) {
+		const kind = resolveCardKind(item);
+		const title = item.title || 'Untitled Mark';
+		// Drafts look identical to published Marks otherwise — and their
+		// permalinks are invisible to visitors — so say so. (The Timeline
+		// endpoint only ever returns published Marks, so this never fires
+		// there; Home's Recent/Drafts lists are what actually rely on it.)
+		const isDraft = item.status && 'publish' !== item.status;
+		const chip = isDraft ? '<span class="daymark-chip daymark-chip--draft">Draft</span>' : '';
+		// A caption longer than generate_title()'s own 8-word title trim
+		// (class-publisher.php) carries real content beyond the title —
+		// show it as a secondary line; a short caption's title already
+		// *is* the whole caption, so repeating it as an "excerpt" would
+		// just be noise.
+		const excerpt = toPlainText(item.excerpt || '');
+		const showExcerpt = excerpt && excerpt !== title;
+		return `
+					${renderCardMedia(item, kind)}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
+						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						${isDraft ? '' : renderItemStats(item)}
+					</span>`;
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
 	// shows the click-through detail sheet in place rather than navigating —
 	// its permalink points at the *source* site, not anywhere in this app.
-	// No comment/like stat row: those only ever exist for a Mark.
+	// No comment/like stat row: those only ever exist for a Mark — Daymark
+	// doesn't (and, for someone else's post, can't cheaply) track
+	// engagement data of its own for a subscription post.
 	function renderSubscriptionPostCard(item) {
+		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
-		const metaParts = [];
-		if (item.author) {
-			metaParts.push(esc(item.author));
-		}
-		if (item.date) {
-			metaParts.push(esc(relativeTime(item.date)));
-		}
 		const excerpt = toPlainText(item.excerpt || '');
+		// Every kind but the media-dominant ones shows its excerpt — an
+		// image/video/gallery/mixed card already carries the point in its
+		// own banner, so a caption stays secondary the same way a Mark's
+		// own excerpt does; article/link/audio/note all lean on the text.
+		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind);
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
-		// sibling of the site icon inside a wrapper div instead, matching
-		// the Mark item's own wrapper shape.
+		// sibling of the site icon and type icon inside a wrapper div
+		// instead, matching the Mark item's own wrapper shape.
 		const siteLabel = subscriptionSiteLabel(item);
 		return `
 				<div class="daymark-recent__item-wrap">
@@ -3722,14 +3840,18 @@
 						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
 						filterValue: String(item.subscription_id),
 					})}
-					<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
-						${subscriptionPostThumb(item)}
+					${renderTypeIcon(kind)}
+					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+						kind
+					)}" data-subpost="${id}">
+						${renderCardMedia(item, kind)}
 						<span class="daymark-recent__body">
 							<span class="daymark-recent__title">${esc(title)}</span>
-							<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
-								metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
-							}</span>
-							${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+							<span class="daymark-recent__meta">${renderCardMeta(
+								item,
+								'<span class="daymark-chip daymark-chip--draft">Subscribed</span>'
+							)}</span>
+							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
 					</button>
 				</div>`;

@@ -387,6 +387,56 @@ test('image Mark: alt field, correct article, findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// Timeline cards get a differentiated visual treatment per content kind
+// (issue: Timeline/card improvements) — an image Mark's card is the
+// media-dominant layout (a full-width banner above the caption, not a
+// small thumb beside it), while a Note Mark's stays the compact,
+// typography-first row it always was. Both still carry the shared rail's
+// type-indicator icon between the site icon and the card itself.
+test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays compact', async ({
+	page,
+}) => {
+	const imageCaption = `E2E card kind image ${RUN_ID}`;
+	const noteCaption = `E2E card kind note ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page, 'image');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	const altField = page.locator('[data-alt-for]').first();
+	await expect(altField).toBeVisible();
+	await altField.fill(`E2E alt ${RUN_ID}`);
+	await page.fill('#daymark-caption', imageCaption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, noteCaption);
+
+	await page.goto('/daymark');
+
+	const imageCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: imageCaption });
+	await expect(imageCard).toBeVisible();
+	await expect(imageCard.locator('.daymark-recent__typeicon')).toHaveCount(1);
+	await expect(imageCard.locator('.daymark-recent__item--image')).toHaveCount(1);
+	await expect(imageCard.locator('.daymark-recent__thumbwrap--media')).toHaveCount(1);
+
+	const noteCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: noteCaption });
+	await expect(noteCard).toBeVisible();
+	await expect(noteCard.locator('.daymark-recent__typeicon')).toHaveCount(1);
+	await expect(noteCard.locator('.daymark-recent__item--image')).toHaveCount(0);
+	await expect(noteCard.locator('.daymark-recent__thumbwrap--media')).toHaveCount(0);
+});
+
 // Camera-first: "assume I'm standing somewhere and want to publish." A
 // typed launcher entry's picker offers camera/mic capture as the primary
 // action (requesting it via the `capture` attribute), with a lower-emphasis

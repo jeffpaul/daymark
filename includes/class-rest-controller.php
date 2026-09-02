@@ -1837,6 +1837,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
 			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			// The 24-word-trimmed caption Daymark_Publisher already stores as
+			// this post's own post_excerpt (see class-publisher.php) — not
+			// previously exposed here, so a Timeline card had no way to show
+			// a Note Mark's actual text, only its (often timestamp-fallback)
+			// title.
+			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),

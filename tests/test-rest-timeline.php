@@ -175,6 +175,36 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A Mark's card has no other way to show its own caption text — its
+	 * title is often just a timestamp fallback (see
+	 * Daymark_Publisher::publish()) — so the Timeline endpoint has to
+	 * expose the same 24-word-trimmed post_excerpt the publisher already
+	 * stores, not just the title.
+	 */
+	public function test_mark_items_carry_their_excerpt() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = (int) self::factory()->post->create(
+			array(
+				'post_author'   => $this->author_a,
+				'post_status'   => 'publish',
+				'post_title'    => 'A Note Mark',
+				'post_excerpt'  => 'A short caption for this Note Mark.',
+				'post_date_gmt' => '2024-01-01 00:00:00',
+				'post_date'     => get_date_from_gmt( '2024-01-01 00:00:00' ),
+			)
+		);
+		update_post_meta( $mark_id, '_daymark_is_mark', '1' );
+		update_post_meta( $mark_id, '_daymark_primary_type', 'note' );
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+		$items    = $response->get_data();
+
+		$this->assertSame( $mark_id, $items[0]['id'] );
+		$this->assertSame( 'A short caption for this Note Mark.', $items[0]['excerpt'] );
+	}
+
+	/**
 	 * Pagination is correct across a page boundary that spans both sources:
 	 * page 1 and page 2 together contain every item exactly once, in the
 	 * right overall order, even though the boundary falls mid-merge.
