@@ -759,17 +759,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /daymark/v1/timeline — the merged, date-sorted Timeline: the
-	 * user's own published Marks interleaved with cached
-	 * `daymark_subscription_post` entries from active subscriptions.
+	 * GET /daymark/v1/timeline — the merged, date-sorted Timeline: every
+	 * published post on this site (a Daymark Mark or an ordinary post
+	 * written directly in the block editor — see the Marks query below)
+	 * interleaved with cached `daymark_subscription_post` entries from
+	 * active subscriptions.
 	 *
-	 * `WP_Query` cannot express this in one query: `_daymark_is_mark` meta
-	 * only exists on (and only needs to gate) the `post` post type — mixing
-	 * it into a single cross-post-type query via `meta_query` would either
-	 * wrongly exclude every subscription post (meta condition applied
-	 * globally) or wrongly include every non-Mark `post` on the site (meta
-	 * condition dropped). So this runs two separate queries and merges the
-	 * results in PHP.
+	 * `WP_Query` cannot express this in one query: `daymark_subscription_post`
+	 * is a different post type entirely, so mixing the two sources into a
+	 * single query isn't possible regardless of Mark-gating. So this runs
+	 * two separate queries and merges the results in PHP.
 	 *
 	 * Pagination tradeoff (documented rather than silently assumed): each
 	 * source query fetches up to `page * per_page` of its own items
@@ -786,9 +785,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 *
 	 * Only published items are considered from both sources: subscription
 	 * posts are always ingested as 'publish' (there is no subscription
-	 * post draft state), and Marks are restricted to 'publish' here even
-	 * though drafts are a valid Mark status elsewhere (GET /marks) — the
-	 * Timeline is a published feed, not the composer's Home Drafts row.
+	 * post draft state), and the Marks side is restricted to 'publish'
+	 * here even though drafts are a valid Mark status elsewhere (GET
+	 * /marks) — the Timeline is a published feed, not the composer's Home
+	 * Drafts row. This also means the Marks side never needs a
+	 * `post_status = 'draft'` clause to exclude a plain draft blog post
+	 * being written in the block editor — 'publish' alone already does.
+	 *
+	 * The Marks side query is NOT gated on `_daymark_is_mark`: every
+	 * published `post`-type post shows up, whether it was created through
+	 * Daymark's own composer or written directly in the block editor —
+	 * this site is the canonical, portable source of truth (Product
+	 * Principle 2), and a site owner publishing some content one way and
+	 * some the other shouldn't mean half of it is invisible on their own
+	 * Timeline. A post with no `_daymark_primary_type` meta (never
+	 * touched by Daymark) simply comes back with `type` as `''` in
+	 * prepare_mark_summary() below — the app shell infers a reasonable
+	 * card kind from what it actually has (a real featured image, a real
+	 * excerpt) instead. The one exception is the `type` filter itself
+	 * (below): narrowing to one specific `_daymark_primary_type` value
+	 * only ever matches true Marks, since a plain post has no such meta to
+	 * match against — Explore's "browse by type" and Search's type chips
+	 * stay scoped to Daymark's own type vocabulary, not a guess at an
+	 * arbitrary post's content.
 	 *
 	 * Four optional filter params, combinable with the pagination params
 	 * above: `s` (keyword search, applied identically to both source
@@ -824,6 +843,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$items = array();
 
 		if ( $include_marks ) {
+			// Deliberately NOT gated on _daymark_is_mark — every published
+			// `post` on the site belongs on its own Timeline, whether it
+			// came from Daymark's composer or the block editor directly
+			// (see this method's own docblock above). The `type` filter
+			// below is the one case that still requires a true Mark, since
+			// a plain post has no _daymark_primary_type to filter on.
 			$marks_args = array(
 				'post_type'      => 'post',
 				'post_status'    => 'publish',
@@ -832,18 +857,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'orderby'        => 'date',
 				'order'          => 'DESC',
 				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Mark lookup.
-				'meta_key'       => '_daymark_is_mark',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
-				'meta_value'     => '1',
 			);
 
-			// Optional content-type filter: narrow to one _daymark_primary_type.
-			// This adds a second meta condition, so switch to an explicit
-			// meta_query that keeps the _daymark_is_mark gate intact — mirrors
-			// get_marks()'s own type-filter handling.
+			// Optional content-type filter: narrow to one
+			// _daymark_primary_type — only a true Mark carries this meta,
+			// so this is the one Marks-query path that still requires
+			// _daymark_is_mark (mirrors get_marks()'s own type-filter
+			// handling).
 			if ( '' !== $type ) {
-				unset( $marks_args['meta_key'], $marks_args['meta_value'] );
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 				$marks_args['meta_query'] = array(
 					'relation' => 'AND',

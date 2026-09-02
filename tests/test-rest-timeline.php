@@ -205,6 +205,71 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The Timeline's Marks query is deliberately NOT gated on
+	 * _daymark_is_mark (see get_timeline()'s own docblock,
+	 * class-rest-controller.php) — a site owner publishing some content
+	 * through Daymark's composer and some directly in the block editor
+	 * shouldn't mean half of it is invisible on their own Timeline.
+	 */
+	public function test_ordinary_block_editor_post_appears_on_timeline() {
+		wp_set_current_user( $this->author_a );
+
+		$ordinary_post_id = (int) self::factory()->post->create(
+			array(
+				'post_author'   => $this->author_a,
+				'post_status'   => 'publish',
+				'post_title'    => 'An Ordinary Blog Post',
+				'post_excerpt'  => 'Written straight in the block editor, never touching Daymark.',
+				'post_date_gmt' => '2024-01-01 00:00:00',
+				'post_date'     => get_date_from_gmt( '2024-01-01 00:00:00' ),
+			)
+		);
+		// Deliberately no _daymark_is_mark / _daymark_primary_type meta —
+		// this is the whole point of the test.
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+		$items    = $response->get_data();
+
+		$this->assertSame( $ordinary_post_id, $items[0]['id'] );
+		$this->assertSame( 'mark', $items[0]['item_type'] );
+		// No _daymark_primary_type meta means an empty type — the app
+		// shell infers a reasonable card kind client-side from what it
+		// actually has (thumbnail/excerpt) rather than the server
+		// guessing one.
+		$this->assertSame( '', $items[0]['type'] );
+		$this->assertSame( 'Written straight in the block editor, never touching Daymark.', $items[0]['excerpt'] );
+	}
+
+	/**
+	 * The one exception to the above: narrowing to one specific
+	 * _daymark_primary_type value only ever matches true Marks, since an
+	 * ordinary block-editor post has no such meta to match against.
+	 * Explore's "browse by type" and Search's type chips stay scoped to
+	 * Daymark's own type vocabulary rather than guessing at arbitrary
+	 * post content.
+	 */
+	public function test_type_filter_excludes_ordinary_block_editor_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$image_mark_id = $this->create_mark( '2024-01-01 00:00:00', 'A Real Image Mark', 'image' );
+		self::factory()->post->create(
+			array(
+				'post_author'   => $this->author_a,
+				'post_status'   => 'publish',
+				'post_title'    => 'An Ordinary Post With A Featured Image',
+				'post_date_gmt' => '2024-01-02 00:00:00',
+				'post_date'     => get_date_from_gmt( '2024-01-02 00:00:00' ),
+			)
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'type', 'image' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $image_mark_id ), $ids );
+	}
+
+	/**
 	 * Pagination is correct across a page boundary that spans both sources:
 	 * page 1 and page 2 together contain every item exactly once, in the
 	 * right overall order, even though the boundary falls mid-merge.

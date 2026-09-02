@@ -1848,7 +1848,17 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item-wrap .daymark-recent__item {
 	flex: 1;
 	min-width: 0;
-	/* Room for the ⋯ button pinned to the right edge. */
+}
+
+/* Room for the ⋯ button pinned to the right edge — only reserved when
+   there's actually one there. A subscription-post card never has one
+   (renderSubscriptionPostCard() never renders .daymark-recent__actions),
+   and a Mark-shaped item that turns out to be an ordinary block-editor
+   post rather than a true Mark doesn't get one either (see the
+   isRealMark check in renderMarkItem(), app.js) — either way, reserving
+   the space anyway would leave a pointless empty gap down the card's own
+   right edge. */
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item {
 	padding-right: 56px;
 }
 

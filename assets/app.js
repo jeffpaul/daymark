@@ -1579,6 +1579,18 @@
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
 		const kind = resolveCardKind(item);
+		// A Draft always came through Daymark's own composer (GET /marks
+		// only ever lists true Marks, unlike the Timeline's own Marks
+		// query — see get_timeline()'s docblock, class-rest-controller.php)
+		// — real, so it always gets the ⋯ menu. A published item's `type`
+		// (_daymark_primary_type) is only ever set by that same composer,
+		// so an empty one means this is an ordinary post published
+		// straight through the block editor, not a Mark — GET/PUT/DELETE
+		// /marks/{id} already 404 for it server-side (get_daymark(),
+		// delete_daymark() both gate on _daymark_is_mark independently of
+		// this), so offering Edit/Delete here would just be a dead end;
+		// simplest and most honest is to not offer them at all.
+		const isRealMark = isDraft || Boolean(item.type);
 		// A Draft is always the author's own unpublished work — there is no
 		// separate site to filter to, so it's the one item that skips the
 		// site icon.
@@ -1590,14 +1602,9 @@
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
 			  });
-		return `
-			<div class="daymark-recent__item-wrap" data-item="${id}">
-				${siteIcon}
-				${renderTypeIcon(kind)}
-				<a class="daymark-recent__item daymark-recent__item--${esc(kind)}" href="${esc(href)}"${editAttr}>
-					${renderMarkCore(item)}
-				</a>
-				<div class="daymark-recent__actions" data-actions>
+		const actions = !isRealMark
+			? ''
+			: `<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
 						title
 					)}">
@@ -1617,7 +1624,15 @@
 							<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
 						</div>
 					</div>
-				</div>
+				</div>`;
+		return `
+			<div class="daymark-recent__item-wrap" data-item="${id}">
+				${siteIcon}
+				${renderTypeIcon(kind)}
+				<a class="daymark-recent__item daymark-recent__item--${esc(kind)}" href="${esc(href)}"${editAttr}>
+					${renderMarkCore(item)}
+				</a>
+				${actions}
 			</div>`;
 	}
 
@@ -3676,7 +3691,25 @@
 
 	function resolveCardKind(item) {
 		if ('subscription_post' !== item.item_type) {
-			return item.type || 'note';
+			if (item.type) {
+				return item.type;
+			}
+			// GET /timeline's Marks side isn't gated on _daymark_is_mark
+			// (see get_timeline()'s own docblock, class-rest-controller.php)
+			// — an ordinary post published straight through the block
+			// editor shows up here too, with no _daymark_primary_type meta
+			// at all to report as `type`. Infer a reasonable kind from
+			// what the post actually has instead of collapsing every
+			// non-Daymark post to the same bare note row: a real featured
+			// image gets the same media-dominant treatment a real Image
+			// Mark does, and any real excerpt otherwise reads as an
+			// article — the same inference a subscription's own
+			// 'standard' format gets just below.
+			if (item.thumbnail) {
+				return 'image';
+			}
+			const plainExcerpt = toPlainText(item.excerpt || '').trim();
+			return plainExcerpt ? 'article' : 'note';
 		}
 		if (item.post_format && 'standard' !== item.post_format) {
 			return item.post_format;
