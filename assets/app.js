@@ -79,6 +79,21 @@
 	}
 
 	/**
+	 * An <img> whose src isn't fully trusted to resolve (a subscription's
+	 * favicon guess is the common case — see fallback_favicon_url()
+	 * server-side, an unverified `/favicon.ico` URL that 404s more often
+	 * than not) wired to degrade to a glyph span in the same visual slot on
+	 * load failure, rather than the browser's broken-image icon. Pairs with
+	 * the single delegated 'error' listener registered at boot below.
+	 */
+	function imgWithFallback(src, cssClass, glyph) {
+		const root = cssClass.split(' ')[0];
+		return `<img class="${esc(cssClass)}" src="${esc(src)}" alt="" data-img-fallback="${esc(
+			glyph
+		)}" data-img-fallback-class="${esc(root)} ${esc(root)}--glyph" />`;
+	}
+
+	/**
 	 * Reduce an HTML string (e.g. comment content) to plain text.
 	 */
 	function toPlainText(html) {
@@ -1568,10 +1583,11 @@
 	// a future Daymark content type can render its own card differently
 	// without this icon's placement following along.
 	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue }) {
+		const glyph = (iconAlt || '?').charAt(0).toUpperCase();
 		const icon = iconSrc
-			? `<img class="daymark-recent__siteiconimg" src="${esc(iconSrc)}" alt="" />`
+			? imgWithFallback(iconSrc, 'daymark-recent__siteiconimg', glyph)
 			: `<span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(
-					(iconAlt || '?').charAt(0).toUpperCase()
+					glyph
 			  )}</span>`;
 		return `
 			<div class="daymark-recent__siteicon">
@@ -3623,19 +3639,59 @@
 	// Mark's primary_type; TYPE_LABELS already covers image/video/audio/note,
 	// this only adds the one label a Mark never has ('standard' — a plain
 	// text/link post from a feed with no richer format hint).
-	// Thumbnail for one subscription post card: only ever a real
-	// featured_image_url. A pruned rich-media post (its embed cleared) used
-	// to fall back to the subscription's own site icon here, and a post
-	// with no image at all fell back to a type-initial glyph — but every
-	// card already carries that same site icon in its own leading column
-	// (see renderSiteIconButton()), so showing it a second time inside the
-	// card (or a same-shaped glyph standing in for it) read as a duplicate
-	// rather than useful content. No image left just runs title/meta
-	// straight to the edge, same as a Note Mark's card now.
+	const SUBSCRIPTION_FORMAT_LABELS = Object.assign({}, TYPE_LABELS, { standard: 'Post' });
+
+	// Small format-indicator badge overlaid on a subscription card's
+	// thumbnail — video/audio/gallery aren't obvious from a static image
+	// alone the way 'image' already is from its own thumbnail, so a glance
+	// at the badge is enough to know what a tap leads to. Reuses TYPE_ICONS'
+	// own glyphs for video/audio so the same shape means the same thing
+	// everywhere in the app; gallery needs its own shape since a Mark never
+	// shows its own launcher bubble for it (detectType() silently upgrades
+	// image -> gallery instead of offering a separate picker entry).
+	// 'image' and 'standard' render no badge: the thumbnail (or its
+	// absence) already says everything a badge would.
+	const SUBSCRIPTION_BADGE_ICONS = {
+		video: TYPE_ICONS.video,
+		audio: TYPE_ICONS.audio,
+		gallery:
+			'<rect x="7" y="7" width="14" height="14" rx="2"></rect><path d="M3 15V5a2 2 0 0 1 2-2h10"></path>',
+	};
+
+	function subscriptionFormatBadge(item) {
+		const glyph = SUBSCRIPTION_BADGE_ICONS[item.post_format];
+		if (!glyph) {
+			return '';
+		}
+		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+	}
+
+	// Thumbnail-or-glyph for one subscription post card, mirroring
+	// renderMarkCore()'s own thumbnail-or-glyph fallback: a real
+	// featured_image_url first, then the subscription's own site icon when
+	// there's no image to show, then a plain format-initial glyph when
+	// neither is available — "one or the other always appears" rather than
+	// running title/meta straight to the edge the way a thumbnail-less Mark
+	// (or, before this, every non-illustrated subscription post) does.
+	// A broken image at either tier — a 404'd favicon guess is common, see
+	// fallback_favicon_url() server-side — degrades to that same glyph via
+	// imgWithFallback()'s shared error handling, instead of a broken-image
+	// icon.
 	function subscriptionPostThumb(item) {
-		return item.featured_image_url
-			? `<img class="daymark-recent__thumb" src="${esc(item.featured_image_url)}" alt="" />`
-			: '';
+		const glyph = (SUBSCRIPTION_FORMAT_LABELS[item.post_format] || 'S').charAt(0);
+		const src = item.featured_image_url || item.site_icon_url;
+		if (!src) {
+			return `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
+				glyph
+			)}</span>`;
+		}
+		const cssClass =
+			'daymark-recent__thumb' + (item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
+		return `<span class="daymark-recent__thumbwrap">${imgWithFallback(
+			src,
+			cssClass,
+			glyph
+		)}${subscriptionFormatBadge(item)}</span>`;
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
@@ -4541,6 +4597,29 @@
 	window.addEventListener('hashchange', () => {
 		showScreen(window.location.hash);
 	});
+
+	// A broken `data-img-fallback`-carrying <img> (see imgWithFallback()
+	// above) degrades to a glyph span in its place instead of the browser's
+	// broken-image icon. One delegated listener for the whole app rather
+	// than a per-screen binding, since the failure this guards against
+	// (an unverified favicon guess 404ing) can happen on any screen that
+	// renders a subscription's site icon or post thumbnail. The `error`
+	// event doesn't bubble, so this has to listen on the capturing phase.
+	window.addEventListener(
+		'error',
+		(event) => {
+			const img = event.target;
+			if (!(img instanceof HTMLImageElement) || !img.dataset.imgFallback) {
+				return;
+			}
+			const span = document.createElement('span');
+			span.className = img.dataset.imgFallbackClass || '';
+			span.setAttribute('aria-hidden', 'true');
+			span.textContent = img.dataset.imgFallback;
+			img.replaceWith(span);
+		},
+		true
+	);
 
 	// Explore/Search/Me are real server routes (Daymark_Routes), same as
 	// notifications already was — a direct load or refresh at

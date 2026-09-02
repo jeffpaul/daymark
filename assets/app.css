@@ -602,12 +602,48 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-surface);
 }
 
+/* A subscription card's thumbnail slot falls back to the subscription's
+   own site icon when the post has no featured image of its own (see
+   subscriptionPostThumb() in app.js) — a favicon is rarely a clean 48x48
+   square the way a real featured image is, so `cover` would crop it
+   awkwardly; `contain` (plus the base rule's surface-color background as
+   letterboxing) keeps the whole icon visible instead. */
+.daymark-recent__thumb--siteicon {
+	object-fit: contain;
+	padding: 8px;
+}
+
 .daymark-recent__thumb--glyph {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 20px;
 	color: var(--daymark-text-muted);
+}
+
+/* A subscription post's thumbnail, when it needs a format badge overlaid
+   on its bottom-right corner (see subscriptionFormatBadge() in app.js) —
+   shrinks to the thumbnail's own size so the badge's absolute position
+   anchors to it, not the wider card. */
+.daymark-recent__thumbwrap {
+	position: relative;
+	flex-shrink: 0;
+	display: inline-flex;
+}
+
+.daymark-recent__thumbbadge {
+	position: absolute;
+	right: -4px;
+	bottom: -4px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	box-shadow: 0 0 0 2px var(--daymark-bg);
 }
 
 .daymark-recent__body {
