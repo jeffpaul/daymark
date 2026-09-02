@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-02
+
 ### Added
 
 - A persistent bottom navigation — **Timeline, Explore, +New, Search, Me** — replacing the site-views links (Images/Videos/Audio/Notes) that used to flank the +New launcher. Explore, Search, and Me are new destinations with real `/daymark/explore`, `/daymark/search`, and `/daymark/me` routes (like `/daymark/notifications` already had), so a direct link or a browser refresh lands correctly, and each shows as the active tab (`aria-current="page"`) while the +New launcher never picks up that styling.
@@ -258,7 +260,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.8.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.9.0...HEAD
+[0.9.0]: https://github.com/jeffpaul/daymark/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/jeffpaul/daymark/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/jeffpaul/daymark/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/jeffpaul/daymark/compare/0.6.0...0.6.1
