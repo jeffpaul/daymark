@@ -623,6 +623,20 @@ h2[tabindex='-1']:focus {
 	height: 176px;
 }
 
+/* A genuinely photo-first Mark — a single image or a gallery of them, the
+   two kinds where the photo itself *is* the content rather than a poster
+   frame for something else (video) or one element among several (mixed) —
+   gets a taller banner than the other media-dominant kinds. The Mission's
+   "everything you create remains yours" and Product Principle 4 ("Media is
+   first-class") both argue for the image being shown clearly rather than
+   cropped down to a modest strip; content over engagement means the photo,
+   not the caption or stats below it, is what a scan down the Timeline
+   should register first. */
+.daymark-recent__item--image .daymark-recent__thumbwrap--media,
+.daymark-recent__item--gallery .daymark-recent__thumbwrap--media {
+	height: 320px;
+}
+
 .daymark-recent__thumbwrap--media .daymark-recent__thumb {
 	width: 100%;
 	height: 100%;
