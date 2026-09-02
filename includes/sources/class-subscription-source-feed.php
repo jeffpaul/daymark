@@ -403,6 +403,38 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	}
 
 	/**
+	 * Resolve a site's plain name from its own `<title>` tag — used to
+	 * refine a subscription's site_title beyond the feed autodiscovery
+	 * `<link>` tag's title attribute, which often carries WordPress's
+	 * default "{Site Name} » Feed" suffix (or a category/tag name) rather
+	 * than just the site's name.
+	 *
+	 * Reuses the same site-HTML fetch discover()/get_favicon_url() would
+	 * make for the same URL rather than issuing a second request.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param string $site_url Site URL.
+	 * @return string Plain site title, or '' when the site URL is invalid,
+	 *                unreachable, or has no `<title>` tag.
+	 */
+	public function get_site_title( string $site_url ): string {
+		$site_url = $this->sanitize_source_url( $site_url );
+
+		if ( '' === $site_url ) {
+			return '';
+		}
+
+		$html = $this->fetch_html( $site_url );
+
+		if ( '' === $html ) {
+			return '';
+		}
+
+		return $this->extract_site_title( $html );
+	}
+
+	/**
 	 * Build the raw, SimplePie-shaped item array fetch() returns per item.
 	 *
 	 * @param SimplePie_Item $item A parsed feed item.
@@ -625,6 +657,28 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		}
 
 		return (bool) preg_match( '/\x{00BB}\s*Feed\s*$/iu', $title );
+	}
+
+	/**
+	 * Extract the plain text of a document's `<title>` tag, e.g. "Jeff
+	 * Paul" — deliberately not the feed autodiscovery `<link>` tag's title
+	 * attribute (is_default_feed_title() above), which carries WordPress's
+	 * "{Site Name} » Feed" convention or a category/tag name instead of
+	 * just the site's own name.
+	 *
+	 * @since 0.8.0
+	 *
+	 * @param string $html Fetched HTML.
+	 * @return string Plain-text title, or '' when no `<title>` tag is found.
+	 */
+	private function extract_site_title( string $html ): string {
+		if ( ! preg_match( '#<title[^>]*>(.*?)</title>#is', $this->extract_head_section( $html ), $matches ) ) {
+			return '';
+		}
+
+		$title = html_entity_decode( wp_strip_all_tags( $matches[1] ), ENT_QUOTES );
+
+		return sanitize_text_field( trim( $title ) );
 	}
 
 	/**

@@ -1736,6 +1736,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'feed_url'                  => esc_url_raw( (string) ( $row['feed_url'] ?? '' ) ),
 			'source_type'               => sanitize_key( (string) ( $row['source_type'] ?? '' ) ),
 			'site_title'                => sanitize_text_field( (string) ( $row['site_title'] ?? '' ) ),
+			'feed_title'                => sanitize_text_field( (string) ( $row['feed_title'] ?? '' ) ),
 			'site_icon_url'             => esc_url_raw( (string) ( $row['site_icon_url'] ?? '' ) ),
 			'status'                    => sanitize_key( (string) ( $row['status'] ?? '' ) ),
 			'consecutive_failure_count' => absint( $row['consecutive_failure_count'] ?? 0 ),

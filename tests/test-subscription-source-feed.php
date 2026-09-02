@@ -506,6 +506,49 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		);
 	}
 
+	/** Scenario: get_site_title() reads the page's own plain <title>. */
+	public function test_get_site_title_reads_title_tag() {
+		$this->mock_response( 'https://example.com/', $this->html_with_links( array() ) );
+
+		$this->assertSame( 'Example', $this->source->get_site_title( 'https://example.com/' ) );
+	}
+
+	/**
+	 * Scenario: the site's <title> is deliberately not the feed <link>'s
+	 * own title attribute — get_site_title() must never pick up WordPress's
+	 * "{Site Name} » Feed" convention from a <link> tag.
+	 */
+	public function test_get_site_title_ignores_feed_link_title() {
+		$html = '<html><head><title>Example</title>'
+			. '<link rel="alternate" type="application/rss+xml" title="Example » Feed" href="/feed/" />'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame( 'Example', $this->source->get_site_title( 'https://example.com/' ) );
+	}
+
+	/** Scenario: no <title> tag at all → empty string, not a fatal. */
+	public function test_get_site_title_returns_empty_when_no_title_tag() {
+		$this->mock_response( 'https://example.com/', '<html><head></head><body></body></html>' );
+
+		$this->assertSame( '', $this->source->get_site_title( 'https://example.com/' ) );
+	}
+
+	/** Scenario: an unreachable site returns an empty string, not a fatal. */
+	public function test_get_site_title_returns_empty_when_site_unreachable() {
+		$this->assertSame( '', $this->source->get_site_title( 'https://unreachable.example/' ) );
+	}
+
+	/** Scenario: HTML entities and surrounding whitespace in <title> are cleaned up. */
+	public function test_get_site_title_decodes_entities_and_trims() {
+		$html = "<html><head><title>\n  Jack &amp; Jill's Blog  \n</title></head><body></body></html>";
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame( "Jack & Jill's Blog", $this->source->get_site_title( 'https://example.com/' ) );
+	}
+
 	/**
 	 * Scenario: discover() and get_favicon_url() for the same site share one
 	 * HTTP fetch rather than each issuing their own request.

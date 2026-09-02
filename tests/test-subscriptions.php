@@ -98,6 +98,17 @@ class Test_Subscriptions extends WP_UnitTestCase {
 	}
 
 	/**
+	 * HTML whose feed `<link>` carries WordPress's default "{Site Name} »
+	 * Feed" title convention — the case site_title must NOT inherit
+	 * verbatim (that belongs in feed_title instead).
+	 */
+	private function html_with_default_feed_title(): string {
+		return '<html><head><title>Example</title>'
+			. '<link rel="alternate" type="application/rss+xml" title="Example » Feed" href="/feed/" />'
+			. '</head><body></body></html>';
+	}
+
+	/**
 	 * Scenario: install() creates a table with the expected columns.
 	 *
 	 * Verified via DESCRIBE rather than SHOW TABLES: the WP core test suite
@@ -119,6 +130,7 @@ class Test_Subscriptions extends WP_UnitTestCase {
 				'feed_url',
 				'source_type',
 				'site_title',
+				'feed_title',
 				'site_icon_url',
 				'status',
 				'consecutive_failure_count',
@@ -138,6 +150,7 @@ class Test_Subscriptions extends WP_UnitTestCase {
 				'feed_url'      => 'https://example.com/feed/',
 				'source_type'   => 'feed',
 				'site_title'    => 'Example Site',
+				'feed_title'    => 'Example Site » Feed',
 				'site_icon_url' => 'https://example.com/favicon.ico',
 			)
 		);
@@ -151,6 +164,7 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertSame( 'https://example.com/feed/', $row['feed_url'] );
 		$this->assertSame( 'feed', $row['source_type'] );
 		$this->assertSame( 'Example Site', $row['site_title'] );
+		$this->assertSame( 'Example Site » Feed', $row['feed_title'] );
 		$this->assertSame( 'active', $row['status'] );
 		$this->assertSame( '0', (string) $row['consecutive_failure_count'] );
 		$this->assertNotEmpty( $row['created_at'] );
@@ -183,6 +197,17 @@ class Test_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertTrue( $this->subscriptions->delete( $id ) );
 		$this->assertNull( $this->subscriptions->get( $id ) );
+	}
+
+	/** Scenario: update() writes feed_title, same as it already does site_title. */
+	public function test_update_writes_feed_title() {
+		$id = $this->subscriptions->create( array( 'feed_url' => 'https://example.net/feed/' ) );
+		$this->assertIsInt( $id );
+
+		$this->assertTrue( $this->subscriptions->update( $id, array( 'feed_title' => 'Example » Category Feed' ) ) );
+
+		$row = $this->subscriptions->get( $id );
+		$this->assertSame( 'Example » Category Feed', $row['feed_title'] );
 	}
 
 	/** Scenario: consecutive_failure_count increments and resets. */
@@ -334,6 +359,29 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertSame( 'feed', $row['source_type'] );
 		$this->assertSame( 'active', $row['status'] );
 		$this->assertSame( 'https://example.com/icon.png', $row['site_icon_url'] );
+		// The fixture's <title> is the plain site name — the feed <link>
+		// carries no title attribute at all here, so this also confirms
+		// site_title comes from the page title, not an empty feed title.
+		$this->assertSame( 'Example', $row['site_title'] );
+	}
+
+	/**
+	 * Scenario: site_title captures just the plain site name from the
+	 * page's own <title> tag — not the feed <link>'s default "{Site Name}
+	 * » Feed" title convention, which is kept separately as feed_title so
+	 * a future multi-feed-per-site subscription has something to tell
+	 * otherwise-identical rows apart by.
+	 */
+	public function test_subscribe_to_site_separates_site_title_from_feed_title() {
+		$this->mock_response( 'https://example.com/', $this->html_with_default_feed_title() );
+
+		$result = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertSame( 'Example', $row['site_title'] );
+		$this->assertSame( 'Example » Feed', $row['feed_title'] );
 	}
 
 	/** Scenario: a non-http(s) site_url is rejected before any discovery is attempted. */
