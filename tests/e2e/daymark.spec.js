@@ -1444,6 +1444,22 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 
 	for (const hash of ['#explore', '#search', '#me']) {
 		await page.goto('/daymark' + hash);
+		// These three URLs differ only by hash fragment, so the browser
+		// treats each `goto()` as a same-document navigation — the app's
+		// own `hashchange` listener (assets/app.js) picks it up and
+		// re-renders asynchronously, and `goto()` can resolve before that
+		// re-render actually happens. The launcher itself is a useless
+		// signal to wait on here: it never carries `is-active` on ANY
+		// screen (by design, so it never reads as a nav tab), so checking
+		// it proves nothing about whether THIS iteration's screen has
+		// rendered yet — the click could still land on the previous
+		// iteration's still-present content underneath. Wait for this
+		// screen's own nav tab to confirm it's current instead; that can
+		// only be true once showScreen() has actually replaced the DOM
+		// for this hash.
+		await expect(page.locator(`a.daymark-bottomnav__link[href="${hash}"]`)).toHaveClass(
+			/is-active/
+		);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
 		// Explore's Following list and Search's results both render a
 		// `.daymark-skeleton` placeholder synchronously, then replace it
