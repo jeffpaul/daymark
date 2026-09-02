@@ -1498,7 +1498,23 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		const launcherBtn = page.locator('[data-action="new-mark"]');
 		await launcherBtn.focus();
 		await page.keyboard.press('Enter');
-		await page.locator('[data-launcher-type="note"]').click();
+		// Same story one level deeper: a bubble is deliberately
+		// `pointer-events: none` until openLauncher()'s JS settle timer
+		// (650ms; see the CSS comment on `.is-open.is-settled
+		// .daymark-launcher__bubble` in assets/app.css) adds `is-settled` —
+		// every bubble's fan-out path crosses the others', so nothing is
+		// coordinate-safe to tap until the whole sequence has settled. A
+		// geometric `.click()` here hit the exact same sticky-footer
+		// scrollIntoView churn as the launcher button itself (CI showed the
+		// scrim, and even the bare `.daymark-screen`, intercepting instead
+		// of the bubble). `.focus()` targets this button by DOM identity,
+		// not screen coordinates, so it's immune to both problems at once:
+		// pointer-events doesn't affect programmatic/keyboard focus at all,
+		// and there's no coordinate ambiguity for the settle timer to guard
+		// against in the first place.
+		const noteBubble = page.locator('[data-launcher-type="note"]');
+		await noteBubble.focus();
+		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/#create$/);
 		await expect(page.getByText('New Mark')).toBeVisible();
 	}
