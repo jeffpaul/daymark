@@ -105,15 +105,26 @@
 	/**
 	 * Human relative timestamp. Accepts ISO 8601 or MySQL datetime strings.
 	 */
-	function relativeTime(value) {
+	/**
+	 * Parse an ISO 8601 or MySQL datetime string into a Date, or null if it
+	 * doesn't parse as either. Shared by relativeTime() and
+	 * renderCardTimestamp() so they can never drift on what counts as a
+	 * valid date.
+	 */
+	function parseDate(value) {
 		if (!value) {
-			return '';
+			return null;
 		}
 		let date = new Date(value);
 		if (Number.isNaN(date.getTime()) && typeof value === 'string') {
 			date = new Date(value.replace(' ', 'T'));
 		}
-		if (Number.isNaN(date.getTime())) {
+		return Number.isNaN(date.getTime()) ? null : date;
+	}
+
+	function relativeTime(value) {
+		const date = parseDate(value);
+		if (!date) {
 			return '';
 		}
 		const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -133,6 +144,27 @@
 			return days + 'd ago';
 		}
 		return date.toLocaleDateString();
+	}
+
+	/**
+	 * A Timeline card's own timestamp: relativeTime()'s display (relative
+	 * for the first week, then a plain date), wrapped in a real <time
+	 * datetime> element whose title is the full date and time — so the
+	 * exact moment is always one hover/screen-reader-announcement away,
+	 * not just available after the 7-day cutover to an absolute date.
+	 */
+	function renderCardTimestamp(value) {
+		const date = parseDate(value);
+		if (!date) {
+			return '';
+		}
+		const full =
+			date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) +
+			' at ' +
+			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
+			relativeTime(value)
+		)}</time>`;
 	}
 
 	function connectorLabel(id) {
@@ -3808,7 +3840,7 @@
 			parts.push(esc(item.author));
 		}
 		if (item.date) {
-			parts.push(esc(relativeTime(item.date)));
+			parts.push(renderCardTimestamp(item.date));
 		}
 		return parts.join(' &middot; ');
 	}
