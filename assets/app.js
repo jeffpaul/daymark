@@ -30,6 +30,9 @@
 		title: '', // optional Title field value (audio/video by policy)
 		titleStatus: 'idle', // idle | loading | done — AI prefill lifecycle
 		titleEdited: false, // author typed a title: never overwrite it
+		transcript: '', // optional Transcript field value (audio/video only)
+		transcriptStatus: 'idle', // idle | loading | done — manual generation lifecycle
+		transcriptEdited: false, // author typed/edited it: don't clobber on a later manual generation
 		tags: [],
 		primaryType: 'note',
 		// Set by the Home launcher before navigating to #create so the
@@ -255,6 +258,32 @@
 		audio: 'audio/*',
 	};
 
+	// Camera-first: "assume I'm standing somewhere and want to publish," not
+	// sitting at a desktop picking a file. For a typed launcher entry (image/
+	// video/audio), the primary picker action opens the device's camera or
+	// mic directly via the `capture` attribute — a secondary "Choose from
+	// library" action clears it first, so an already-taken photo/clip stays
+	// one tap away rather than disappearing. 'environment' (rear camera) is
+	// ignored for audio capture direction but harmless — presence of the
+	// attribute is what matters there.
+	const CAPTURE_BY_TYPE = {
+		image: 'environment',
+		video: 'environment',
+		audio: 'environment',
+	};
+
+	const CAPTURE_LABEL_BY_TYPE = {
+		image: 'Take Photo',
+		video: 'Record Video',
+		audio: 'Record Audio',
+	};
+
+	const CAPTURE_HINT_BY_TYPE = {
+		image: 'Opens your camera',
+		video: 'Opens your camera',
+		audio: 'Opens your microphone',
+	};
+
 	function launcherIcon(glyph) {
 		return `<svg class="daymark-launcher__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
@@ -317,6 +346,9 @@
 		state.title = '';
 		state.titleStatus = 'idle';
 		state.titleEdited = false;
+		state.transcript = '';
+		state.transcriptStatus = 'idle';
+		state.transcriptEdited = false;
 		state.tags = [];
 		state.primaryType = 'note';
 		state.pendingType = null;
@@ -550,6 +582,7 @@
 			caption: state.caption,
 			primaryType: state.primaryType,
 			title: titleFieldShown() ? state.title || '' : null,
+			transcript: transcriptFieldShown() ? state.transcript || '' : null,
 			aiAssistUsed: !!state.aiAssistUsed,
 			targets: state.targets.slice(),
 			categories: state.categories.slice(),
@@ -573,6 +606,9 @@
 		formData.append('status', payload.status);
 		if (payload.title !== null) {
 			formData.append('title', payload.title);
+		}
+		if (payload.transcript !== null) {
+			formData.append('transcript', payload.transcript);
 		}
 		formData.append('ai_assist_used', payload.aiAssistUsed ? '1' : '0');
 		payload.targets.forEach((target) => formData.append('targets[]', target));
@@ -727,6 +763,9 @@
 		state.title = payload.title || '';
 		state.titleStatus = 'done';
 		state.titleEdited = false;
+		state.transcript = payload.transcript || '';
+		state.transcriptStatus = state.transcript ? 'done' : 'idle';
+		state.transcriptEdited = false;
 		state.targets = Array.isArray(payload.targets) ? payload.targets.slice() : [];
 		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
 		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : [];
@@ -889,6 +928,27 @@
 		return titlePolicyFor(effectiveType()) === 'optional';
 	}
 
+	// Whether the composer should surface the Transcript field. Unlike the
+	// Title field there's no server-side policy to consult — a transcript
+	// only ever makes sense for a Mark carrying a spoken audio track, so
+	// this is a direct type check.
+	function transcriptFieldShown() {
+		const type = effectiveType();
+		return type === 'audio' || type === 'video';
+	}
+
+	// The picked audio/video file "Generate transcript" would transcribe, or
+	// null when there isn't one. entry.file (the real Blob) stays available
+	// client-side for the whole composer session regardless of whether
+	// autosave has already uploaded it (autosave only ever adds
+	// entry.uploadedId, never clears entry.file — see runAutosave()), so
+	// this works the same whether or not the file has been autosaved yet.
+	// Editing an existing Mark with no newly picked file has no local bytes
+	// left to send — its already-published attachment isn't a candidate.
+	function transcriptSourceEntry() {
+		return state.files.find((entry) => entry.kind === 'audio' || entry.kind === 'video') || null;
+	}
+
 	// Load a draft into the composer for continued editing.
 	async function openDraft(id) {
 		const mark = await apiGet('marks/' + id);
@@ -904,6 +964,9 @@
 		state.title = mark.title || '';
 		state.titleStatus = 'done';
 		state.titleEdited = false;
+		state.transcript = mark.transcript || '';
+		state.transcriptStatus = state.transcript ? 'done' : 'idle';
+		state.transcriptEdited = false;
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
 		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : [];
@@ -2719,10 +2782,29 @@
 					// hiding it here loses no real capability.
 					'note' === state.pendingType && !state.files.length && !editing
 						? ''
-						: `<div class="daymark-picker">
+						: ACCEPT_BY_TYPE[state.pendingType]
+						? // A typed launcher entry (Image/Video/Audio): camera-first
+						  // — the primary action opens the device's camera/mic
+						  // directly, a secondary, lower-emphasis action still
+						  // reaches an already-taken file. Same single input both
+						  // ways; bindEvents() toggles its `capture` attribute per
+						  // button before opening it.
+						  `<div class="daymark-picker">
 					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="${esc(
-						ACCEPT_BY_TYPE[state.pendingType] || 'image/*,video/*,audio/*'
-					)}" multiple />
+						ACCEPT_BY_TYPE[state.pendingType]
+					)}" multiple tabindex="-1" />
+					<button type="button" class="daymark-picker__zone daymark-picker__zone--button" data-picker-capture>
+						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+						<span>${esc(CAPTURE_LABEL_BY_TYPE[state.pendingType])}</span>
+						<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[state.pendingType])}</span>
+					</button>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>Choose from library instead</button>
+				</div>`
+						: // Untyped entry (e.g. a Drafts/Explore empty-state link) —
+						  // the intended capture mode isn't known yet, so this stays
+						  // the original neutral, non-capture picker.
+						  `<div class="daymark-picker">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*,audio/*" multiple />
 					<label for="daymark-file-input" class="daymark-picker__zone">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
 						<span>Tap to choose media</span>
@@ -2741,6 +2823,7 @@
 					)}</textarea>
 				</div>
 				<div data-title-slot></div>
+				<div data-transcript-slot></div>
 				${
 					config.ai && config.ai.available
 						? '<button type="button" class="daymark-btn daymark-btn--secondary" data-action="ai-assist">AI Assist</button>'
@@ -2757,6 +2840,25 @@
 			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
 			const caption = root.querySelector('#daymark-caption');
+
+			// Camera-first two-button picker (typed entries only — see
+			// render()): each tap sets or clears `capture` on the one shared
+			// input right before opening it, so the same change handler below
+			// runs either way.
+			const captureBtn = root.querySelector('[data-picker-capture]');
+			if (captureBtn && input) {
+				captureBtn.addEventListener('click', () => {
+					input.setAttribute('capture', CAPTURE_BY_TYPE[state.pendingType] || 'environment');
+					input.click();
+				});
+			}
+			const libraryBtn = root.querySelector('[data-picker-library]');
+			if (libraryBtn && input) {
+				libraryBtn.addEventListener('click', () => {
+					input.removeAttribute('capture');
+					input.click();
+				});
+			}
 
 			if (input) {
 				input.addEventListener('change', () => {
@@ -2874,6 +2976,10 @@
 			// The Title field's visibility tracks the effective type, so
 			// re-render its slot whenever the media (and thus the type) shifts.
 			this.refreshTitleField();
+			// Same for the Transcript field (audio/video only), and its
+			// "Generate transcript" button needs to reflect newly picked or
+			// cleared files either way.
+			this.refreshTranscriptField();
 			if (!state.files.length) {
 				preview.innerHTML = '';
 				return;
@@ -2938,9 +3044,29 @@
 					}
 				});
 			});
+
+			// "Improve with AI"/"Suggest with AI" — a manual re-run that, unlike
+			// the automatic first-pick pass, always applies its result (even
+			// over a hand-typed value) since the author explicitly asked for
+			// it, and sends the current text so the provider refines it rather
+			// than describing the image from scratch.
+			preview.querySelectorAll('[data-alt-improve]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const entry = state.files.find((f) => f.id === button.getAttribute('data-alt-improve'));
+					if (!entry || entry.altStatus === 'loading') {
+						return;
+					}
+					const field = root.querySelector('[data-alt-for="' + entry.id + '"]');
+					if (field) {
+						entry.alt = field.value;
+					}
+					this.generateAltFor(entry, { force: true, existingAlt: entry.alt });
+				});
+			});
 		},
 
-		// Alt-text field for one image entry, with a hint reflecting AI state.
+		// Alt-text field for one image entry, with a hint reflecting AI state
+		// and a manual "Improve with AI"/"Suggest with AI" re-run button.
 		altFieldMarkup(entry) {
 			const hint =
 				entry.altStatus === 'loading'
@@ -2948,6 +3074,12 @@
 					: entry.altStatus === 'done'
 					? '<span class="daymark-alt__hint">AI-suggested — edit as needed</span>'
 					: '';
+			const canImprove = config.ai && config.ai.available && entry.altStatus !== 'loading';
+			const improveButton = canImprove
+				? `<button type="button" class="daymark-btn daymark-btn--text daymark-alt__improve" data-alt-improve="${esc(
+						entry.id
+				  )}">${entry.alt ? 'Improve with AI' : 'Suggest with AI'}</button>`
+				: '';
 			return `
 				<div class="daymark-alt">
 					<label class="daymark-alt__label" for="daymark-alt-${esc(entry.id)}">Alt text</label>
@@ -2957,21 +3089,44 @@
 				entry.altStatus === 'loading' ? 'aria-busy="true"' : ''
 			} />
 					${hint}
+					${improveButton}
 				</div>`;
 		},
 
-		// Ask the provider to describe one image, then drop the suggestion
-		// into its alt field unless the author has already typed one. Patches
-		// just this entry's field in place so a late result never disrupts
-		// text the author is typing into another image's field.
-		async generateAltFor(entry) {
+		// Ask the provider to describe (or, with opts.existingAlt, improve) one
+		// image, then drop the result into its alt field. Patches just this
+		// entry's field in place so a late result never disrupts text the
+		// author is typing into another image's field. On the automatic
+		// first-pick pass (no opts), a result never overwrites text the author
+		// already typed; opts.force (the manual "Improve with AI" button)
+		// always applies its result, since that's an explicit request.
+		async generateAltFor(entry, opts) {
+			opts = opts || {};
+			entry.altStatus = 'loading';
+			// Reflect "loading" immediately for a manual re-run (the field
+			// already exists in the DOM); on the automatic first-pick call
+			// there's nothing to patch yet — the entry's initial altStatus
+			// already renders as loading once the caller's own refreshMedia()
+			// runs.
+			const startField = root.querySelector('[data-alt-for="' + entry.id + '"]');
+			if (startField) {
+				startField.setAttribute('aria-busy', 'true');
+			}
+			const startButton = root.querySelector('[data-alt-improve="' + entry.id + '"]');
+			if (startButton) {
+				startButton.disabled = true;
+			}
 			try {
 				const formData = new FormData();
 				formData.append('image', entry.file, entry.file.name);
 				formData.append('text', state.caption || '');
+				if (opts.existingAlt) {
+					formData.append('existing_alt', opts.existingAlt);
+				}
 				const result = await apiUpload('ai/alt-text', formData);
-				if (!entry.altEdited && result && result.alt_text) {
+				if ((opts.force || !entry.altEdited) && result && result.alt_text) {
 					entry.alt = String(result.alt_text);
+					entry.altEdited = false; // An AI-refreshed value is current, not a stale hand-typed edit.
 				}
 				entry.altStatus = 'done';
 			} catch (err) {
@@ -2992,6 +3147,11 @@
 			const hint = field.parentElement.querySelector('.daymark-alt__hint');
 			if (hint) {
 				hint.textContent = entry.altStatus === 'done' ? 'AI-suggested — edit as needed' : '';
+			}
+			const improveButton = field.parentElement.querySelector('.daymark-alt__improve');
+			if (improveButton) {
+				improveButton.disabled = false;
+				improveButton.textContent = entry.alt ? 'Improve with AI' : 'Suggest with AI';
 			}
 		},
 
@@ -3092,6 +3252,7 @@
 				const result = await apiPost('ai/title', {
 					text: state.caption || '',
 					primary_type: effectiveType(),
+					transcript: state.transcript || '',
 				});
 				if (!state.titleEdited && result && result.title) {
 					state.title = String(result.title);
@@ -3109,6 +3270,94 @@
 				field.value = state.title;
 			}
 			field.removeAttribute('aria-busy');
+		},
+
+		// Markup for the optional Transcript field, or '' when the current
+		// type isn't audio/video. "Generate transcript" is manual, author
+		// triggered — unlike alt text this never auto-fires on file pick, so
+		// a large recording is only ever sent to the provider when asked for.
+		transcriptFieldMarkup() {
+			if (!transcriptFieldShown()) {
+				return '';
+			}
+			const hasCandidate = !!transcriptSourceEntry();
+			const isLoading = state.transcriptStatus === 'loading';
+			const showButton = config.ai && config.ai.available && (hasCandidate || isLoading);
+			const buttonLabel = isLoading
+				? 'Generating transcript…'
+				: state.transcript
+				? 'Regenerate transcript'
+				: 'Generate transcript';
+			return `
+				<div class="daymark-field daymark-transcriptfield">
+					<label class="daymark-field__label" for="daymark-transcript">Transcript (optional)</label>
+					<textarea id="daymark-transcript" class="daymark-textarea" rows="4" placeholder="Add a transcript, or generate one with AI"${
+						isLoading ? ' aria-busy="true"' : ''
+					} data-transcript-input>${esc(state.transcript)}</textarea>
+					${
+						showButton
+							? `<button type="button" class="daymark-btn daymark-btn--text daymark-transcriptfield__action" data-action="generate-transcript"${
+									isLoading || !hasCandidate ? ' disabled' : ''
+							  }>${esc(buttonLabel)}</button>`
+							: ''
+					}
+				</div>`;
+		},
+
+		// Render (or clear) the Transcript-field slot in place, matching
+		// refreshTitleField()'s pattern — called on every media change so the
+		// field appears/disappears as the effective type shifts, and its
+		// "Generate transcript" button updates as files are picked/cleared.
+		refreshTranscriptField() {
+			const slot = root.querySelector('[data-transcript-slot]');
+			if (!slot) {
+				return;
+			}
+			slot.innerHTML = this.transcriptFieldMarkup();
+			if (!transcriptFieldShown()) {
+				return;
+			}
+
+			const textarea = slot.querySelector('[data-transcript-input]');
+			if (textarea) {
+				textarea.addEventListener('input', () => {
+					state.transcript = textarea.value;
+					state.transcriptEdited = true;
+					scheduleAutosave();
+				});
+			}
+
+			const button = slot.querySelector('[data-action="generate-transcript"]');
+			if (button) {
+				button.addEventListener('click', () => this.generateTranscript());
+			}
+		},
+
+		// Ask the provider to transcribe the picked audio/video file, then
+		// drop the result into the Transcript field. Manual, author
+		// triggered (see transcriptFieldMarkup()) — never blocks publishing,
+		// and a failure just leaves the field for manual entry.
+		async generateTranscript() {
+			const entry = transcriptSourceEntry();
+			if (!entry || state.transcriptStatus === 'loading') {
+				return;
+			}
+			state.transcriptStatus = 'loading';
+			this.refreshTranscriptField();
+			try {
+				const formData = new FormData();
+				formData.append('media', entry.file, entry.file.name);
+				const result = await apiUpload('ai/transcript', formData);
+				if (result && typeof result.transcript === 'string' && result.transcript) {
+					state.transcript = result.transcript;
+					state.transcriptEdited = false;
+					scheduleAutosave();
+				}
+			} catch (err) {
+				// Non-blocking: leave the field for manual entry.
+			}
+			state.transcriptStatus = 'done';
+			this.refreshTranscriptField();
 		},
 	};
 
@@ -3157,6 +3406,7 @@
 					text: state.caption,
 					media_ids: [],
 					primary_type: effectiveType(),
+					transcript: state.transcript || '',
 				});
 				if (!this.el || this.el.hidden) {
 					return;
@@ -4301,7 +4551,17 @@
 	const initialHash =
 		window.location.hash ||
 		(SERVER_ROUTED_SCREENS.includes(config.screen) ? '#' + config.screen : '#home');
-	showScreen(initialHash);
+	// A share-sheet draft (Daymark_Share_Target) redirects here with
+	// pendingDraftId set — open straight into that draft's composer instead
+	// of rendering the normal initial screen first and only then swapping
+	// it out once the fetch resolves (which would flash an empty composer
+	// in between). A failed fetch (tampered id, network hiccup) falls back
+	// to the ordinary boot instead of leaving the shell blank.
+	if (config.pendingDraftId) {
+		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
+	} else {
+		showScreen(initialHash);
+	}
 
 	// --- Offline queue: sync triggers ---
 	//

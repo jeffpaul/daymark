@@ -12,19 +12,23 @@ Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks 
 
 == Description ==
 
-Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, picks media from the camera roll, adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
+**Mission:** Make publishing to your own WordPress site feel as joyful, immediate, and effortless as posting to the best mobile social apps, while ensuring everything you create remains yours.
+
+Daymark is a phone-first publishing experience for WordPress. A logged-in user visits `/daymark`, taps to capture a photo, video, or voice recording (or picks one already on their device), adds a caption, and publishes a standard WordPress post — the site stays the canonical source of truth.
 
 WordPress does not need to become a social network. Daymark makes your own site the starting point for social-shaped content: publish once on your domain, syndicate outward, and let the conversation flow back.
 
 = What you get =
 
-* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach.
+* **A phone app feel** — visit `/daymark`, add it to your home screen, and publish images, videos, audio, and notes from a focused, mobile-first app shell with none of the wp-admin chrome. A persistent bottom nav gets you to Timeline, Explore, Search, and Me, with a prominent +New button always in reach. A home-screen shortcut (long-press the icon) jumps straight into the composer.
+* **Camera-first** — tap Image, Video, or Audio and Daymark opens your camera or microphone directly, ready to capture. Already have the photo or clip? "Choose from library" is right there too, just not the default.
+* **Share sheet integration** — on your phone, share a photo, link, or text straight to Daymark from any app (Photos, Safari, wherever). It creates a draft and opens right into the composer, ready for a caption. No need to open Daymark first.
 * **Standard WordPress posts** — every Mark is a regular post with block markup. Your feeds, themes, comments, and export tools all keep working, and deactivating Daymark never strands your content.
 * **Syndication routing** — choose which networks each Mark also publishes to. Daymark remembers your routing habits per content type and only offers destinations that are actually connected.
 * **Conversation backflow** — replies from syndicated copies come back to your site as native WordPress comments, automatically (hourly background sync plus an opportunistic refresh when you view notifications). No manual sync step.
 * **Federation friendly** — replies delivered by the ActivityPub, ATmosphere, or Webmention plugins are recognized and labeled in Daymark notifications, and Daymark renders IndieWeb `u-syndication` markup so Bridgy backfeed works out of the box.
 * **POSSE-quality markup** — every Mark's own permalink page carries outbound `h-entry`/`h-card` microformats2 markup, and a `rel=me` field on your WordPress profile renders as a `rel="me"` link, so IndieWeb readers and tools recognize your site without needing Daymark's own APIs.
-* **Optional AI Assist** — caption, alt text, and tag suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it. Typing a tag also suggests matching tags already used on your site — tap one instead of typing the full name.
+* **Optional AI Assist** — caption, title, alt text, tag, and transcript suggestions through the WordPress 7.0 AI Client. Any configured AI provider plugin powers all of it; no provider, no AI UI, and publishing never depends on it. Generate a transcript for an audio or video Mark and its AI-suggested caption/title read as a summary of what's actually said. "Improve with AI" refines existing alt text instead of only describing an image from scratch. Typing a tag also suggests matching tags already used on your site — tap one instead of typing the full name.
 * **Autosave, online or off** — the composer saves your in-progress Mark automatically as you write, well before you tap Publish or Save as Draft. Close the tab, get a phone call, or switch apps mid-caption and your work is already waiting for you under Drafts on Home. No connection at all? Compose and publish anyway — Daymark saves it on your device and syncs it automatically the moment you're back online.
 * **Tap Publish, don't wait** — Publish and Save as Draft never make you sit and watch a spinner. Your Mark is safe and you're back on Home right away; the upload finishes in the background, which matters most for a large video, a podcast episode, or a big gallery. A Pending row on Home shows what's still uploading, and disappears on its own once it's done.
 
@@ -78,7 +82,7 @@ If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deli
 
 = Which AI providers work with AI Assist? =
 
-Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Daymark never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, alt text, and tag suggestions. Without a configured provider, the AI Assist UI simply does not appear.
+Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Daymark never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, title, alt text, tag, and transcript suggestions. Without a configured provider, the AI Assist UI simply does not appear.
 
 = Does Daymark create a custom post type? =
 
@@ -91,6 +95,10 @@ Your work is always safe. The composer autosaves your caption, media, alt text, 
 = Why doesn't Publish make me wait for a big video or gallery to finish uploading? =
 
 It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. A Pending row on Home shows it while that's still in progress, and it moves into your normal Recent Marks (or Drafts) the moment it's done — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
+
+= Can I share a photo to Daymark from another app? =
+
+Yes, once you've added Daymark to your home screen (required for the share sheet to offer it as an app to share to). Share a photo, video, a link, or selected text from Photos, Safari, or almost any other app, and pick Daymark — it creates a draft with whatever you shared and opens straight into the composer so you can add a caption and publish. You need to be logged in already; the share sheet has no way to log you in first.
 
 = Can I create a Mark while offline? =
 

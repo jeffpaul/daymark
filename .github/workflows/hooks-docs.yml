@@ -3,20 +3,18 @@ name: Hooks Docs
 # Builds the hooks reference site (wp-hooks-documentor → Docusaurus) and
 # deploys it to GitHub Pages: https://jeffpaul.github.io/daymark/
 #
-# Pull requests run the build job only, to catch a broken docs build (e.g.
-# MDX-hostile syntax in a hook docblock) before it reaches main. Pushes to
-# main build AND deploy. Pages requires a public repo (or a paid plan) —
-# until then the deploy job skips gracefully and the build still validates.
+# Push-to-main only — not on pull requests. This is a publishing step (the
+# point where hook docs actually go live), not a per-commit correctness
+# check: the one way it can fail is MDX-hostile syntax in a hook docblock
+# (see CONTRIBUTING.md's "Hook documentation" section), which is rare and
+# cheap to fix in a follow-up commit if it ever happens — not worth the
+# ~4 minutes of Node/PHP/Docusaurus setup on every PHP-touching PR. Pages
+# requires a public repo (or a paid plan) — until then the deploy job skips
+# gracefully and the build still validates.
 
 on:
   push:
     branches: [main]
-    paths:
-      - '**.php'
-      - 'wp-hooks-doc.json'
-      - '.github/workflows/hooks-docs.yml'
-      - '.github/hooks-docs/**'
-  pull_request:
     paths:
       - '**.php'
       - 'wp-hooks-doc.json'
@@ -70,14 +68,11 @@ jobs:
           test -f build/index.html
 
       - name: Upload Pages artifact
-        # PRs validate the build only — no artifact, no deploy.
-        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: wp-hooks-docs/build
 
       - name: Check whether GitHub Pages is enabled
-        if: github.event_name != 'pull_request'
         id: pages-check
         env:
           GH_TOKEN: ${{ github.token }}
@@ -92,7 +87,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    if: github.event_name != 'pull_request' && needs.build.outputs.pages-enabled == 'true'
+    if: needs.build.outputs.pages-enabled == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

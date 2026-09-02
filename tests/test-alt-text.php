@@ -276,4 +276,80 @@ class Test_Alt_Text extends WP_UnitTestCase {
 
 		$this->assertSame( 400, rest_do_request( $request )->get_status() );
 	}
+
+	/** The composer's manual "Improve with AI" tap sends the current alt text along. */
+	public function test_rest_alt_text_accepts_existing_alt_for_improve_mode() {
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/alt-text' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'existing_alt', 'A door' );
+		$request->set_file_params(
+			array(
+				'image' => array(
+					'name'     => 'shot.png',
+					'type'     => 'image/png',
+					'tmp_name' => $this->temp_png(),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => (int) filesize( $this->fixture ),
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertArrayHasKey( 'alt_text', $response->get_data() );
+	}
+
+	/** POST /ai/transcript returns the mock (empty) transcript for an uploaded audio file. */
+	public function test_rest_transcript_returns_mock_for_audio() {
+		$audio = __DIR__ . '/e2e/fixtures/test-audio.wav';
+		$tmp   = wp_tempnam( 'daymark-transcript-' ) . '.wav';
+		copy( $audio, $tmp );
+
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/transcript' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_file_params(
+			array(
+				'media' => array(
+					'name'     => 'clip.wav',
+					'type'     => 'audio/wav',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => (int) filesize( $tmp ),
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertArrayHasKey( 'transcript', $data );
+		$this->assertTrue( $data['is_mocked'] );
+	}
+
+	/** An image upload to /ai/transcript is rejected — audio/video only. */
+	public function test_rest_transcript_rejects_non_media() {
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/transcript' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_file_params(
+			array(
+				'media' => array(
+					'name'     => 'shot.png',
+					'type'     => 'image/png',
+					'tmp_name' => $this->temp_png(),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => (int) filesize( $this->fixture ),
+				),
+			)
+		);
+
+		$this->assertSame( 400, rest_do_request( $request )->get_status() );
+	}
+
+	/** A missing media file is a 400. */
+	public function test_rest_transcript_requires_media() {
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/ai/transcript' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		$this->assertSame( 400, rest_do_request( $request )->get_status() );
+	}
 }

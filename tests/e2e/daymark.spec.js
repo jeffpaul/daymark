@@ -15,6 +15,7 @@
  * PHPUnit suite, not here.
  */
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 
 const ADMIN_USER = process.env.WP_ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.WP_ADMIN_PASS || 'password';
@@ -384,6 +385,84 @@ test('image Mark: alt field, correct article, findable via Search', async ({ pag
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="image"]').click();
 	await expect(page.getByText(caption)).toBeVisible();
+});
+
+// Camera-first: "assume I'm standing somewhere and want to publish." A
+// typed launcher entry's picker offers camera/mic capture as the primary
+// action (requesting it via the `capture` attribute), with a lower-emphasis
+// "Choose from library" fallback that clears it — so an already-taken photo
+// stays reachable without being the default.
+test('camera-first: the Image picker offers capture first, with a library fallback', async ({
+	page,
+}) => {
+	// Any file chooser a trigger button opens is resolved immediately with
+	// nothing selected — this test only checks the `capture` attribute the
+	// buttons set/clear, not an actual file selection through them.
+	page.on('filechooser', (chooser) => chooser.setFiles([]));
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+
+	const input = page.locator('#daymark-file-input');
+	const captureBtn = page.locator('[data-picker-capture]');
+	const libraryBtn = page.locator('[data-picker-library]');
+
+	await expect(captureBtn).toContainText('Take Photo');
+	await expect(libraryBtn).toContainText('Choose from library');
+	await expect(input).not.toHaveAttribute('capture');
+
+	await captureBtn.click();
+	await expect(input).toHaveAttribute('capture', 'environment');
+
+	await libraryBtn.click();
+	await expect(input).not.toHaveAttribute('capture');
+});
+
+// Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
+// Safari, any other app) posts straight to /daymark/share, which creates a
+// draft and redirects into the composer with it already loaded — no need
+// to open Daymark first and pick media manually.
+test('share target: sharing a photo creates a draft that opens straight into the composer', async ({
+	page,
+}) => {
+	const caption = `E2E share ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// The OS share sheet's POST — same session cookies as the logged-in
+	// page. Inspecting the redirect ourselves (rather than following it)
+	// keeps the query string/fragment split unambiguous.
+	const shareRes = await page.request.post('/daymark/share', {
+		multipart: {
+			title: caption,
+			'media[]': {
+				name: 'test-image.png',
+				mimeType: 'image/png',
+				buffer: readFileSync('tests/e2e/fixtures/test-image.png'),
+			},
+		},
+		maxRedirects: 0,
+	});
+
+	expect(shareRes.status()).toBe(302);
+	const location = shareRes.headers()['location'];
+	expect(location).toContain('daymark_draft=');
+	expect(location).toContain('#create');
+
+	// A real browser navigation (not the API context) so the fragment is
+	// honored and the app boots straight into that draft's composer. The
+	// shared photo was already sideloaded server-side, so it shows as
+	// existing (not freshly-picked) media, same as resuming any other draft
+	// with an attachment already on it.
+	await page.goto(location);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('.daymark-editmedia__thumb')).toBeVisible();
+
+	// It's a draft — findable via Drafts on Home, not published/syndicated.
+	await page.goto('/daymark');
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
 });
 
 // Optional Title field: audio/video Marks surface an editable, optionally
@@ -1003,6 +1082,10 @@ test('manifest serves directly with app start_url', async ({ request }) => {
 	const manifest = await res.json();
 	expect(manifest.start_url).toContain('/daymark');
 	expect(manifest.scope).toContain('/daymark');
+	// Camera-first: a home-screen shortcut jumps straight to the composer.
+	expect(manifest.shortcuts).toHaveLength(1);
+	expect(manifest.shortcuts[0].url).toContain('/daymark');
+	expect(manifest.shortcuts[0].url).toContain('#create');
 });
 
 // Save as Draft → Drafts row → resume editing → publish (running the

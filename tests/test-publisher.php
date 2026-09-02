@@ -160,6 +160,58 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( 'image', get_post_format( $post_id ) );
 	}
 
+	/**
+	 * A transcript (AI-generated or hand-typed) is stored on the Mark and
+	 * carried through an edit, matching how _daymark_caption already
+	 * behaves. Not gated to audio/video at the storage layer — the
+	 * composer decides when the field is shown; the publisher just stores
+	 * whatever it's given.
+	 */
+	public function test_publish_and_update_store_transcript_meta() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'A podcast episode',
+				'primary_type' => 'audio',
+				'transcript'   => 'Welcome to the show.',
+			)
+		);
+
+		$this->assertSame( 'Welcome to the show.', get_post_meta( $post_id, '_daymark_transcript', true ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'A podcast episode',
+				'primary_type' => 'audio',
+				'transcript'   => 'Welcome to the show. Today we discuss testing.',
+			)
+		);
+
+		$this->assertSame(
+			'Welcome to the show. Today we discuss testing.',
+			get_post_meta( $post_id, '_daymark_transcript', true )
+		);
+	}
+
+	/** A transcript longer than MAX_TRANSCRIPT_CHARS is truncated, not rejected. */
+	public function test_transcript_is_truncated_to_max_chars() {
+		$publisher = new Daymark_Publisher();
+		$long      = str_repeat( 'a', Daymark_Publisher::MAX_TRANSCRIPT_CHARS + 500 );
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Long transcript',
+				'primary_type' => 'audio',
+				'transcript'   => $long,
+			)
+		);
+
+		$this->assertSame(
+			Daymark_Publisher::MAX_TRANSCRIPT_CHARS,
+			mb_strlen( get_post_meta( $post_id, '_daymark_transcript', true ) )
+		);
+	}
+
 	/** A Mark with no media and no caption is rejected. */
 	public function test_empty_daymark_rejected() {
 		$publisher = new Daymark_Publisher();

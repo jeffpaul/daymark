@@ -122,6 +122,24 @@ microformats2 parsing of a *subscribed* site's markup is separate,
 out-of-scope-for-#78 work tracked on
 [issue #84](https://github.com/jeffpaul/daymark/issues/84).)
 
+- [x] **Subscription content-type inference: closes the inline-media gap.**
+  `Daymark_Subscription_Source_Feed::normalize()` already derived a
+  subscribed post's `post_format` from RSS enclosures; it now also sniffs
+  the item's own content/description HTML (`WP_HTML_Tag_Processor`, no new
+  dependency) when enclosures carry no signal — the common case of an
+  ordinary post with an inline `<img>`/`<video>`/`<audio>` and no
+  `<enclosure>` at all. A microformats2 `u-photo`/`u-video`/`u-audio` class
+  counts regardless of surrounding text length; a bare `<img>` only counts
+  when the accompanying text is short, so a long article's header image
+  doesn't get misclassified as a photo post. See CLAUDE.md's "Subscription
+  content-type inference" decision. Three larger, adjacent options from the
+  same discussion stay separate: a full mf2 h-entry connector
+  ([#84](https://github.com/jeffpaul/daymark/issues/84)), preferring the
+  WordPress REST API's real `format` field for WP-to-WP subscriptions
+  ([#137](https://github.com/jeffpaul/daymark/issues/137)), and following a
+  site via ActivityPub/Microsub for structured content
+  ([#88](https://github.com/jeffpaul/daymark/issues/88)).
+
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
 than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
@@ -142,7 +160,9 @@ preview, inbound microformats2 parsing, Webmention support, WebSub/PuSH,
 malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
-None of them are prioritized yet.
+None of them are prioritized yet, aside from
+[#137](https://github.com/jeffpaul/daymark/issues/137) (WordPress REST API
+preference for WP-to-WP subscriptions), targeting the 0.10.0 release.
 
 ---
 
@@ -275,6 +295,50 @@ publishing" decision row for the full technical record.
 
 ---
 
+## Shipped — Camera-first capture
+
+"Assume 'I'm standing somewhere and want to publish.' Not 'I'm sitting at my
+desktop writing.'" An audit found the composer's file picker had no `capture`
+attribute anywhere — every media type opened a generic photo/file chooser,
+and the docs themselves described the flow as picking "camera-roll media."
+See CLAUDE.md's "Camera-first capture" decision row for the full technical
+record.
+
+- [x] **Capture-first picker.** A typed launcher entry (Image/Video/Audio)
+  now offers "Take Photo"/"Record Video"/"Record Audio" as the primary
+  picker action — it opens the device's camera or mic directly. "Choose from
+  library instead" stays one tap away as a secondary action, so an
+  already-taken photo is never harder to publish than before.
+- [x] **A shortcut straight to the composer.** A PWA manifest `shortcuts`
+  entry lets a long-press on the installed home-screen icon skip Home and
+  the +New launcher tap entirely.
+
+---
+
+## Shipped — Share sheet integration
+
+"Share -> Daymark" on iOS/Android: sharing a photo, link, or text from any
+app creates a Daymark draft directly, without opening the app first — "one
+of the best ways to get content into WordPress." Originally scoped out of
+Camera-first capture (tracked as issue #131) on the assumption it would need
+a service-worker scope-widening decision; it turned out not to. See
+CLAUDE.md's "Share sheet integration" decision row for the full technical
+record.
+
+- [x] **A real `share_target`.** The PWA manifest declares it; a new
+  `{base}/share` server route (`Daymark_Share_Target`) receives the POST
+  directly — no service worker involved at all, since a share-target
+  delivery is a real top-level navigation the server can just handle like
+  any other form submission.
+- [x] **Always a draft.** Reuses `Daymark_Publisher::publish()` directly —
+  same content model, same default destinations/categories, same
+  drafts-never-syndicate guarantee every other draft already has.
+- [x] **Lands you right where you'd expect.** A successful share redirects
+  straight into that draft's composer (skipping Home entirely), with the
+  shared photo and any shared text already there.
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen
@@ -294,7 +358,11 @@ that loop without new destinations or a new social network.
 - **Publish-loop polish.** Larger media sources (photo picker, drag-and-drop on
   desktop), gallery reordering, and draft → publish continuation are all
   candidates — each judged by whether it makes publishing faster (Publish First),
-  not more powerful.
+  not more powerful. Gallery reordering is also the prerequisite for an
+  AI-assisted ordering suggestion (CLAUDE.md's "AI as an assistant" decision;
+  tracked as [#134](https://github.com/jeffpaul/daymark/issues/134)) — the
+  manual override surface needs to exist before an AI proposes anything on
+  top of it.
 - **i18n readiness.** The plugin is en_US-only today. Wire the text domain into
   a translation scaffold so translators can work before a multilingual release,
   without changing any shipped strings' behavior.

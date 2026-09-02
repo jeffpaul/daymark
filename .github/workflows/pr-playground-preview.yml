@@ -16,7 +16,11 @@ name: PR Playground Preview
 # repo the button appears but the instance cannot load the plugin.
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # No `synchronize`: the blueprint points at the PR's branch name, not a
+    # commit SHA, and Playground fetches live from that branch at click-time
+    # — so the comment's content can never change across pushes. Re-running
+    # (and re-posting) on every commit would burn a job for no difference.
+    types: [opened, reopened]
 
 # Disable permissions for all available scopes by default.
 # Any needed permissions should be configured at the job level.

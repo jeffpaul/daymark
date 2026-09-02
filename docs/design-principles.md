@@ -1,14 +1,15 @@
 # Daymark — Design Principles
 
-> Companion to **[docs/planning/README.md §2](planning/README.md#2-principles)**,
-> which sets the six *product* principles (Publish First, Mobile First,
-> Ownership by Default, Portable by Design, AI Assist never AI First,
-> Progressive Complexity). Those answer *what Daymark optimizes for*. This
-> document answers a different question: *which existing products' feel is
-> Daymark allowed to borrow from, and what part of each is explicitly left
-> behind?* Use both together when judging a new feature, a UI direction, or a
-> PR: the six principles say what wins; this rubric says what it should feel
-> like while winning.
+> Companion to **[CLAUDE.md → Mission](../CLAUDE.md)** and the eight product
+> principles just below it, which answer *what Daymark optimizes for* (the
+> historical six-item list this file once pointed to, in
+> [docs/planning/README.md §2](planning/README.md#2-principles), is now
+> superseded — see that section). This document answers a different
+> question: *which existing products' feel is Daymark allowed to borrow
+> from, and what part of each is explicitly left behind?* Use both together
+> when judging a new feature, a UI direction, or a PR: the Mission and
+> principles say what wins; this rubric says what it should feel like while
+> winning.
 
 Daymark sits at the intersection of four influences. From each, it borrows a
 specific *feeling* — never the whole product, and never the parts that would
@@ -94,9 +95,17 @@ term"), plus optimistic publishing (CLAUDE.md's "Optimistic publishing"
 decision row): tapping Publish never waits on the network — the Mark queues
 locally and the real request, including any media upload, finishes in the
 background regardless of connectivity, the same "background sync" concept
-this row names. Share sheet integration is the one item on this list still
-open roadmap territory, not shipped; when it lands, it should extend this
-same restraint rather than pull in native-style chrome.
+this row names. A home-screen shortcut straight to the composer (also
+CLAUDE.md's "Camera-first capture" row) is the *outbound* half of "instant
+startup" for someone who already knows they want to publish. Share sheet
+integration itself (CLAUDE.md's "Share sheet integration" row) is the
+*inbound* half — "Share -> Daymark" from the OS share sheet creates a draft
+without opening the app first — and it's the proof this restraint holds
+even where it looked hardest to keep: the feature could have meant widening
+the deliberately narrow service worker to intercept and stash a share
+POST, but a `share_target` delivery turned out to be a plain top-level
+navigation the server already knows how to handle, so the service worker's
+scope never had to move at all.
 
 "Responsive, thumb-friendly interactions" is deliberately gesture-*friendly*,
 not gesture-*first*: Home's pull-to-refresh (`bindPullGesture()`) is the app
@@ -110,7 +119,10 @@ on exactly this ground (its tap-based delete flow already exists and stays
 the only path). The same audit is where "minimal text entry" (AI Assist
 pre-filling caption/title/alt text, tap-to-pick tag autocomplete instead of
 typing full tag names) lives as a named commitment rather than an implicit
-side effect of the AI Assist principle.
+side effect of the AI Assist principle. Generating a transcript for an
+audio/video Mark (CLAUDE.md's "AI as an assistant" decision) extends the same
+commitment to the one field that would otherwise mean typing out an entire
+recording by hand.
 
 ## How to use this rubric
 

@@ -199,6 +199,23 @@ stubbed AT Protocol API — see the setup notes at the top of
   right pattern for a background save nothing is waiting on — autosave and
   `flushOfflineQueue()`'s own retries keep using it unchanged. See CLAUDE.md's
   "Optimistic publishing" decision row for the full design.
+- **Assume "I'm standing somewhere and want to publish," not "sitting at a
+  desktop."** A new media-capable Mark type's picker should default to
+  requesting the device's camera/mic directly (the HTML `capture`
+  attribute) rather than a generic file chooser — camera-*first*, not
+  camera-*only*: keep an equally-reachable "choose from library" action
+  alongside it, following the pattern in `CreateScreen` (`assets/app.js`).
+  See CLAUDE.md's "Camera-first capture" decision row.
+- **A route the OS itself POSTs to (no page of Daymark's own involved)
+  can't carry a REST nonce.** `Daymark_Share_Target` is the example: it
+  leans on WordPress's SameSite=Lax auth cookie (never attached to a
+  cross-site POST) plus a `Sec-Fetch-Site` check that only rejects
+  `cross-site`/`same-site` values, not `same-origin`/`none`/absent — a
+  same-origin browser-initiated delivery is not reliably `same-origin`
+  itself. A future endpoint in the same shape (no page to embed a nonce
+  into) should follow this pattern rather than skipping nonce
+  verification with no replacement. See CLAUDE.md's "Share sheet
+  integration" decision row.
 
 ## Hook documentation
 
@@ -209,11 +226,16 @@ clear docblock — and **avoid curly braces `{ }` in hook docblock prose**, as
 MDX parses them as JavaScript and will break the docs build. (Describe array
 shapes in words rather than `array{...}` syntax in hook docblocks.)
 
+The Hooks Docs workflow builds and deploys the site on push to `main` only —
+not on pull requests. It's a publishing step, not a per-commit correctness
+check, so a docblock mistake here won't fail your PR's CI; it'll surface
+after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
+
 ## Pull requests
 
 1. **Branch off `main`** and open your PR against `main`.
-2. **Keep CI green.** Every PR runs CI, Tests, Plugin Check, and Hooks Docs;
-   all must pass before merge.
+2. **Keep CI green.** Every PR runs CI, Tests, and Plugin Check; all must
+   pass before merge. (Hooks Docs runs after merge — see above.)
 3. **Add or update tests** alongside behavior changes (PHPUnit for
    PHP/REST, Playwright for user-facing flows).
 4. **Write clear commit messages** with an imperative subject line
