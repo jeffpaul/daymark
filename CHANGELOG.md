@@ -20,10 +20,6 @@ can't act on them.
 
 ## [Unreleased]
 
-### Developer
-
-- Past releases' changelog sections listed their `###` category headings in whatever order they happened to be written, not a consistent one. Reordered every existing section (0.1.0 through 0.9.0) to the one true order — Added, Changed, Deprecated, Removed, Fixed, Security, Developer — content unchanged, and documented that order in CONTRIBUTING.md so it stays consistent going forward.
-
 ## [0.9.0] - 2026-09-02
 
 ### Added
