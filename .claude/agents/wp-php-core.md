@@ -32,7 +32,10 @@ Mark itself.
 
 A **custom DB table**, not a CPT — settled decision, don't revisit it.
 Columns: `id`, `site_url`, `feed_url`, `source_type` (enum: `feed` now;
-reserve `friends`, `activitypub`, `custom`), `site_title`, `site_icon_url`,
+reserve `friends`, `activitypub`, `custom`), `site_title` (plain site name),
+`feed_title` (the feed's own title, e.g. WordPress's "{Site Name} » Feed"
+convention — kept separate so a future multi-feed-per-site subscription has
+something to tell otherwise-identical rows apart by), `site_icon_url`,
 `status` (`active`, `error`), `consecutive_failure_count`,
 `last_checked_at`, `last_manual_refresh_at`, `created_at`.
 

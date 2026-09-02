@@ -28,7 +28,7 @@ class Daymark_Subscriptions {
 	 *
 	 * @var string
 	 */
-	private const DB_VERSION = '1.0.0';
+	private const DB_VERSION = '1.1.0';
 
 	/**
 	 * Option name storing the currently installed schema version.
@@ -103,6 +103,12 @@ class Daymark_Subscriptions {
 	 * `source_type` is a short string, not an ENUM, so future values
 	 * (`friends`, `activitypub`, `custom`) never require a schema change.
 	 *
+	 * `feed_title` (added in 1.1.0) is the feed's own title — e.g. the
+	 * autodiscovery `<link>` tag's title attribute, often "{Site Name} »
+	 * Feed" or a category/tag-scoped feed's own name — kept distinct from
+	 * `site_title` (the plain site name) so a future multi-feed-per-site
+	 * subscription has something to tell otherwise-identical rows apart by.
+	 *
 	 * @return string
 	 */
 	private static function get_schema_sql(): string {
@@ -118,6 +124,7 @@ class Daymark_Subscriptions {
 			feed_url varchar(191) NOT NULL DEFAULT '',
 			source_type varchar(32) NOT NULL DEFAULT 'feed',
 			site_title varchar(255) NOT NULL DEFAULT '',
+			feed_title varchar(255) NOT NULL DEFAULT '',
 			site_icon_url varchar(255) NOT NULL DEFAULT '',
 			status varchar(20) NOT NULL DEFAULT 'active',
 			consecutive_failure_count int(10) unsigned NOT NULL DEFAULT 0,
@@ -141,8 +148,8 @@ class Daymark_Subscriptions {
 	 * than a fatal either way.
 	 *
 	 * Recognized `$args` keys: `site_url`, `feed_url` (required),
-	 * `source_type` (default `feed`), `site_title`, `site_icon_url`,
-	 * `status` (default `active`).
+	 * `source_type` (default `feed`), `site_title`, `feed_title`,
+	 * `site_icon_url`, `status` (default `active`).
 	 *
 	 * @param array $args Subscription fields.
 	 * @return int|WP_Error New row ID, or WP_Error on failure.
@@ -173,6 +180,7 @@ class Daymark_Subscriptions {
 			'feed_url'                  => $feed_url,
 			'source_type'               => $this->sanitize_source_type( $args['source_type'] ?? 'feed' ),
 			'site_title'                => isset( $args['site_title'] ) ? sanitize_text_field( (string) $args['site_title'] ) : '',
+			'feed_title'                => isset( $args['feed_title'] ) ? sanitize_text_field( (string) $args['feed_title'] ) : '',
 			'site_icon_url'             => isset( $args['site_icon_url'] ) ? esc_url_raw( (string) $args['site_icon_url'] ) : '',
 			'status'                    => $this->sanitize_status( $args['status'] ?? 'active' ),
 			'consecutive_failure_count' => 0,
@@ -183,7 +191,7 @@ class Daymark_Subscriptions {
 		$inserted = $wpdb->insert(
 			self::table_name(),
 			$data,
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s' )
 		);
 
 		if ( false === $inserted ) {
@@ -248,12 +256,21 @@ class Daymark_Subscriptions {
 			);
 		}
 
+		// The feed's own title (often WordPress's default "{Site Name} »
+		// Feed" convention, or a category/tag-scoped feed's own name) is
+		// kept as feed_title — distinct from site_title, the plain site
+		// name a reviewer actually wants to see on the Settings screen and
+		// Timeline. Used as site_title's own initial value too, so there is
+		// still a reasonable label if the plain-title lookup below fails.
+		$feed_title = isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '';
+
 		$created = $this->create(
 			array(
 				'site_url'    => $site_url,
 				'feed_url'    => $feed_url,
 				'source_type' => 'feed',
-				'site_title'  => isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '',
+				'site_title'  => $feed_title,
+				'feed_title'  => $feed_title,
 			)
 		);
 
@@ -263,8 +280,8 @@ class Daymark_Subscriptions {
 
 		$subscription_id = (int) $created;
 
-		// Best-effort favicon lookup: a one-time enhancement, never a reason
-		// to fail the subscribe request itself.
+		// Best-effort enhancements: never a reason to fail the subscribe
+		// request itself.
 		$feed_source = $registry->get_source( 'feed' );
 
 		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
@@ -272,6 +289,17 @@ class Daymark_Subscriptions {
 
 			if ( '' !== $favicon_url ) {
 				$this->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
+			}
+
+			// Refines site_title from the feed_title placeholder above to
+			// the site's own plain <title> — e.g. "Jeff Paul" rather than
+			// "Jeff Paul » Feed". Reuses get_favicon_url()'s already-fetched
+			// site HTML (both call fetch_html() against the same $site_url,
+			// which caches per instance) — no extra request.
+			$site_title = $feed_source->get_site_title( $site_url );
+
+			if ( '' !== $site_title ) {
+				$this->update( $subscription_id, array( 'site_title' => $site_title ) );
 			}
 		}
 
@@ -447,7 +475,7 @@ class Daymark_Subscriptions {
 	 *
 	 * Recognized `$fields` keys: `status`, `consecutive_failure_count`,
 	 * `last_checked_at`, `last_manual_refresh_at`, `site_title`,
-	 * `site_icon_url`.
+	 * `feed_title`, `site_icon_url`.
 	 *
 	 * @param int   $id     Subscription ID.
 	 * @param array $fields Fields to update.
@@ -488,6 +516,11 @@ class Daymark_Subscriptions {
 
 		if ( array_key_exists( 'site_title', $fields ) ) {
 			$data['site_title'] = sanitize_text_field( (string) $fields['site_title'] );
+			$format[]           = '%s';
+		}
+
+		if ( array_key_exists( 'feed_title', $fields ) ) {
+			$data['feed_title'] = sanitize_text_field( (string) $fields['feed_title'] );
 			$format[]           = '%s';
 		}
 

@@ -1444,9 +1444,77 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 
 	for (const hash of ['#explore', '#search', '#me']) {
 		await page.goto('/daymark' + hash);
+		// These three URLs differ only by hash fragment, so the browser
+		// treats each `goto()` as a same-document navigation — the app's
+		// own `hashchange` listener (assets/app.js) picks it up and
+		// re-renders asynchronously, and `goto()` can resolve before that
+		// re-render actually happens. The launcher itself is a useless
+		// signal to wait on here: it never carries `is-active` on ANY
+		// screen (by design, so it never reads as a nav tab), so checking
+		// it proves nothing about whether THIS iteration's screen has
+		// rendered yet — the click could still land on the previous
+		// iteration's still-present content underneath. Wait for this
+		// screen's own nav tab to confirm it's current instead; that can
+		// only be true once showScreen() has actually replaced the DOM
+		// for this hash.
+		await expect(page.locator(`a.daymark-bottomnav__link[href="${hash}"]`)).toHaveClass(
+			/is-active/
+		);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
-		await page.locator('[data-action="new-mark"]').click();
-		await page.locator('[data-launcher-type="note"]').click();
+		// Explore's Following list and Search's results both render a
+		// `.daymark-skeleton` placeholder synchronously, then replace it
+		// once their async fetch resolves (subscriptions, then a search
+		// results page) — real content of a different size than the
+		// placeholder can reflow the screen under the fixed launcher right
+		// as this loop taps it. Wait for the skeletons to clear first, or
+		// the click can land on the shifting content underneath instead of
+		// the launcher.
+		await expect(page.locator('.daymark-skeleton')).toHaveCount(0);
+		// bindFooterAutoHide() (assets/app.js) hides the persistent footer
+		// — the launcher lives inside it — on any scroll-down past 80px,
+		// and only guarantees it back on scroll-up or focus. A reflow from
+		// the async content above (or the browser's own scroll-anchoring
+		// compensating for it) can trip that listener before this loop
+		// ever scrolls on purpose, sliding the launcher out from under
+		// its own click. Forcing scrollY back to 0 — and waiting for the
+		// footer to actually confirm it's not hidden — before each tap
+		// closes that race regardless of what triggered it.
+		await page.evaluate(() => window.scrollTo(0, 0));
+		await expect(page.locator('.daymark-homefooter')).not.toHaveClass(/is-footer-hidden/);
+		// A plain `.click()` here still failed in CI even with every guard
+		// above satisfied — Playwright's own logs showed it re-running
+		// scrollIntoViewIfNeeded() on every retry (and, once, flagging the
+		// target itself as "not stable"): a known category of flakiness
+		// where scrollIntoViewIfNeeded() miscomputes against a
+		// `position: sticky` element (the footer) by scoring its static,
+		// unstuck flow position rather than its actual visual one, so it
+		// keeps re-scrolling without ever settling and briefly exposes
+		// whatever real content sits underneath. Activating the button via
+		// keyboard sidesteps that geometric hit-test/scroll machinery
+		// entirely — Enter on a focused <button> fires the same `click`
+		// event a real tap would, so this still exercises the launcher's
+		// real behavior, just without routing through the sticky-element
+		// scroll quirk to get there.
+		const launcherBtn = page.locator('[data-action="new-mark"]');
+		await launcherBtn.focus();
+		await page.keyboard.press('Enter');
+		// Same story one level deeper: a bubble is deliberately
+		// `pointer-events: none` until openLauncher()'s JS settle timer
+		// (650ms; see the CSS comment on `.is-open.is-settled
+		// .daymark-launcher__bubble` in assets/app.css) adds `is-settled` —
+		// every bubble's fan-out path crosses the others', so nothing is
+		// coordinate-safe to tap until the whole sequence has settled. A
+		// geometric `.click()` here hit the exact same sticky-footer
+		// scrollIntoView churn as the launcher button itself (CI showed the
+		// scrim, and even the bare `.daymark-screen`, intercepting instead
+		// of the bubble). `.focus()` targets this button by DOM identity,
+		// not screen coordinates, so it's immune to both problems at once:
+		// pointer-events doesn't affect programmatic/keyboard focus at all,
+		// and there's no coordinate ambiguity for the settle timer to guard
+		// against in the first place.
+		const noteBubble = page.locator('[data-launcher-type="note"]');
+		await noteBubble.focus();
+		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/#create$/);
 		await expect(page.getByText('New Mark')).toBeVisible();
 	}
