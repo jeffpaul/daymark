@@ -2119,9 +2119,11 @@ h2[tabindex='-1']:focus {
 
 /* --- Home: merged Timeline feed --- */
 
-/* Subscription-post cards are <button>s (opening the detail sheet), not
-   <a>s — reset the button chrome the browser would otherwise add, while
-   keeping the exact same .daymark-recent__item look as a Mark card. */
+/* Every published card — a Mark, an ordinary post, or a subscription
+   post — is a <button> (expanding its content inline), not an <a>; only an
+   unpublished Draft still uses a real link (back into the composer). Reset
+   the button chrome the browser would otherwise add, while keeping the
+   exact same .daymark-recent__item look either way. */
 .daymark-recent__item--button {
 	width: 100%;
 	appearance: none;
@@ -2208,29 +2210,49 @@ h2[tabindex='-1']:focus {
 	border-top-color: var(--daymark-accent-deep);
 }
 
-/* Rendered body of a subscription post's click-through detail sheet
-   (already-sanitized HTML from the server, per Daymark_Subscription_Poller
-   — rendered as-is, styled here purely for readability/containment). */
-.daymark-subpost-content {
+/* Rendered body of a Timeline card's inline-expand panel (see
+   .daymark-recent__expand below) — already-sanitized HTML from the server
+   either way (a Mark/ordinary post's own the_content, or a subscription
+   post's click-through-fetched body_content, per Daymark_Subscription_Poller)
+   — rendered as-is, styled here purely for readability/containment. */
+.daymark-expand-content {
 	font-size: 15px;
 	line-height: 1.6;
 	color: var(--daymark-text-primary);
 }
 
-.daymark-subpost-content p {
+.daymark-expand-content p {
 	margin: 0 0 var(--daymark-spacing-md);
 }
 
-.daymark-subpost-content p:last-child {
+.daymark-expand-content p:last-child {
 	margin-bottom: 0;
 }
 
-.daymark-subpost-content img,
-.daymark-subpost-content video,
-.daymark-subpost-content iframe {
+.daymark-expand-content img,
+.daymark-expand-content video,
+.daymark-expand-content iframe {
 	max-width: 100%;
 	height: auto;
 	border-radius: var(--daymark-radius-sm);
+}
+
+/* A Timeline card's inline-expand panel — a Mark/ordinary post's own
+   content, or a subscription post's click-through-fetched content — drops
+   onto its own full-width row below the card (site icon, type icon, card
+   body, ⋯ menu) rather than sitting inline as another flex column; hidden
+   by default (toggleExpand() in app.js flips it), so a collapsed card
+   costs nothing in layout. */
+.daymark-recent__item-wrap {
+	flex-wrap: wrap;
+}
+
+.daymark-recent__expand {
+	flex-basis: 100%;
+	width: 100%;
+	margin-top: var(--daymark-spacing-sm);
+	padding-top: var(--daymark-spacing-sm);
+	border-top: 1px solid var(--daymark-border);
 }
 
 /* --- Reduced motion --- */

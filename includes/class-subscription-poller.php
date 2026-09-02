@@ -446,10 +446,13 @@ class Daymark_Subscription_Poller {
 	 * post from one that was simply never fetched in full; both take the
 	 * identical path.
 	 *
-	 * The response body is sanitized with wp_kses_post() as-is; this phase
-	 * does not attempt article-body extraction (stripping navigation/
-	 * header/footer markup from the fetched page) — flagged for review, see
-	 * the "before you finish" note in this task's write-up.
+	 * The response body is narrowed with extract_body_html() (semantic
+	 * chrome and a comments/reply section dropped, the page's own
+	 * <article> preferred over its whole <body> when present) before
+	 * wp_kses_post() sanitizes what's left — a bounded, regex-based
+	 * approximation of article-body extraction, not full Readability
+	 * parity; see that method's own docblock for what it does and doesn't
+	 * catch.
 	 *
 	 * @param int $post_id `daymark_subscription_post` ID.
 	 * @return true|WP_Error True once body_content/content_state/fetched_full_at
@@ -528,33 +531,63 @@ class Daymark_Subscription_Poller {
 
 	/**
 	 * Narrow a fetched page down to just its likely article markup before
-	 * wp_kses_post() sanitizes it.
+	 * wp_kses_post() sanitizes it — the click-through sheet's whole point is
+	 * showing the post someone tapped into, not the rest of its page's
+	 * chrome (nav, header, footer, sidebar, comments) around it.
 	 *
 	 * By design, wp_kses_post() strips disallowed tags but leaves their
 	 * enclosed text behind, so a raw fetched HTML page (which routinely
-	 * carries a `<head>` full of `<title>`/`<meta>`, and `<script>`/`<style>`
-	 * blocks anywhere in the document for analytics/tracking/print styles)
-	 * would otherwise surface that JS/CSS source as visible plain text in
-	 * the click-through sheet. This does two bounded, regex-based passes
-	 * (matching this codebase's existing choice, in
+	 * carries a `<head>` full of `<title>`/`<meta>`, `<script>`/`<style>`
+	 * blocks anywhere in the document, and a theme's own nav/header/footer/
+	 * comments markup around the actual post) would otherwise surface all
+	 * of that as visible content. This does four bounded, regex-based
+	 * passes (matching this codebase's existing choice, in
 	 * Daymark_Subscription_Source_Feed, to avoid a hard DOMDocument
-	 * dependency rather than reach for full article-body extraction, which
-	 * is real, separate work): drop `<script>`/`<style>`/`<noscript>`
-	 * elements entirely (tag *and* content, since kses would only remove
-	 * the tags), then prefer `<body>`'s contents when present, since
-	 * `<head>` never carries article content. This does not attempt to
-	 * strip non-script chrome (nav/header/footer markup) — kses removes
-	 * those tags but their text remains, same as it always has.
+	 * dependency rather than reach for full Readability-style article
+	 * extraction, which is real, separate work — see the mf2 h-entry
+	 * connector tracked in issue #84):
+	 *
+	 * 1. Drop `<script>`/`<style>`/`<noscript>` elements entirely (tag
+	 *    *and* content, since kses would only remove the tags).
+	 * 2. Drop `<nav>`/`<header>`/`<footer>`/`<aside>` elements entirely,
+	 *    wherever they appear — a reliable signal on any HTML5-structured
+	 *    page (WordPress or not), not a WordPress-specific guess.
+	 * 3. Prefer the page's own `<article>` element over the whole `<body>`
+	 *    when present (first non-greedy match, so a later "related posts"
+	 *    section built from its own `<article>` cards is never reached).
+	 *    `<article>` is the near-universal single-post convention —
+	 *    WordPress's own `post_class()` included — and, unlike `<body>`,
+	 *    it's also what actually excludes a theme's comments section for
+	 *    the common case: comments are almost always a sibling rendered
+	 *    *after* `</article>`, not nested inside it.
+	 * 4. As a second, defensive pass over whatever step 3 left: some
+	 *    themes do nest their comments list or reply form inside the same
+	 *    `<article>` as the post content, each conventionally carrying a
+	 *    recognizable `id="comments"`/`id="respond"` — drop everything
+	 *    from that point onward rather than trying to balance the
+	 *    container's own closing tag (which a plain regex can't do
+	 *    reliably against arbitrary nested markup).
+	 *
+	 * None of this is exact against arbitrary, unknown page markup — an
+	 * unusual theme that skips `<article>` and/or gives its comments
+	 * section no recognizable id can still leak some chrome through, same
+	 * as the pre-existing script/style stripping already accepted that
+	 * risk for its own narrower case.
 	 *
 	 * @param string $html Raw fetched HTML.
 	 * @return string Narrowed HTML, still to be passed through wp_kses_post().
 	 */
 	private static function extract_body_html( string $html ): string {
 		$html = (string) preg_replace( '#<(script|style|noscript)\b[^>]*>.*?</\1>#is', '', $html );
+		$html = (string) preg_replace( '#<(nav|header|footer|aside)\b[^>]*>.*?</\1>#is', '', $html );
 
-		if ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $matches ) ) {
+		if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
+			$html = $matches[1];
+		} elseif ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $matches ) ) {
 			$html = $matches[1];
 		}
+
+		$html = (string) preg_replace( '#<[^>]+\bid=["\'](?:comments|respond)["\'][^>]*>.*$#is', '', $html );
 
 		return $html;
 	}

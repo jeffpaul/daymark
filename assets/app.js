@@ -1201,7 +1201,6 @@
 		}
 
 		AIAssistSheet.hide(false);
-		SubscriptionPostSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
 		// below — clear it unconditionally so it never keeps firing against
@@ -1597,17 +1596,20 @@
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
-	// core (renderMarkCore()) wrapped in its own permalink/resume-draft link
-	// plus the shared ⋯ edit/delete actions menu. Used everywhere a Mark
-	// appears in a list: Home's Recent/Drafts, Search's results.
+	// core (renderMarkCore()) wrapped in its own tap target plus the shared
+	// ⋯ edit/delete actions menu. Used everywhere a Mark appears in a list:
+	// Home's Recent/Drafts, Search's results.
 	function renderMarkItem(item) {
-		// Drafts look identical to published Marks otherwise — and
-		// their permalinks are invisible to visitors — so tapping one
-		// reopens the composer instead of the permalink. (renderMarkCore()
-		// handles the visible "Draft" chip itself.)
+		// Drafts look identical to published Marks otherwise — and their
+		// permalinks are invisible to visitors — so tapping one reopens the
+		// composer instead of expanding it. (renderMarkCore() handles the
+		// visible "Draft" chip itself.) A published item — a true Mark or
+		// an ordinary block-editor post alike — expands its own content in
+		// place instead (see toggleExpand()/onFeedListClick()), the same
+		// as a subscription post's card; it never navigates away to the
+		// permalink or opens an overlay the way it used to.
 		const title = item.title || 'Untitled Mark';
 		const isDraft = item.status && 'publish' !== item.status;
-		const href = isDraft ? '#create' : item.permalink || '#home';
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
 		const kind = resolveCardKind(item);
@@ -1657,14 +1659,20 @@
 						</div>
 					</div>
 				</div>`;
+		const card = isDraft
+			? `<a class="daymark-recent__item daymark-recent__item--${esc(
+					kind
+			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
+			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+					kind
+			  )}" data-expand-post="${id}" aria-expanded="false">${renderMarkCore(item)}</button>`;
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				${siteIcon}
 				${renderTypeIcon(kind)}
-				<a class="daymark-recent__item daymark-recent__item--${esc(kind)}" href="${esc(href)}"${editAttr}>
-					${renderMarkCore(item)}
-				</a>
+				${card}
 				${actions}
+				${isDraft ? '' : '<div class="daymark-recent__expand" data-expand-panel hidden></div>'}
 			</div>`;
 	}
 
@@ -1679,14 +1687,19 @@
 			: renderMarkItem(item);
 	}
 
-	// Track subscription-post items by id so a card tap can hand the
-	// detail sheet everything it already has without re-querying the DOM
-	// (a Mark item needs no such tracking — its card is a plain
-	// permalink/edit link, not a detail-sheet trigger). `screen` owns the
-	// Map (Home and Search each keep their own).
+	// Track every feed item by id so an inline-expand tap can hand the
+	// panel everything it already has without re-querying the DOM. A
+	// subscription post and a Mark/ordinary post keep separate Maps (their
+	// ids come from different post types and could otherwise collide) —
+	// `screen` owns both (Home and Search each keep their own pair).
 	function rememberItem(screen, item) {
-		if (item && 'subscription_post' === item.item_type) {
+		if (!item) {
+			return;
+		}
+		if ('subscription_post' === item.item_type) {
 			screen._bySubId.set(String(item.id), item);
+		} else {
+			screen._byMarkId.set(String(item.id), item);
 		}
 	}
 
@@ -1715,14 +1728,29 @@
 	function onFeedListClick(screen, event) {
 		const target = event.target;
 
-		// A subscription-post card is a <button>, not a Mark's plain
-		// permalink/⋯-menu item — opening it shows the click-through
-		// detail sheet in place rather than navigating.
+		// A subscription-post card's tap: expand its content inline, right
+		// below the card (see toggleExpand()) — fetched externally via the
+		// click-through endpoint.
 		const subTrigger = target.closest('[data-subpost]');
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
-			if (item) {
-				SubscriptionPostSheet.show(item, screen._detailCache, subTrigger);
+			const wrap = subTrigger.closest('.daymark-recent__item-wrap');
+			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
+			if (item && panel) {
+				toggleExpand(screen, subTrigger, panel, 'sub-' + item.id, () => loadSubscriptionExpandHtml(item));
+			}
+			return;
+		}
+
+		// A Mark or ordinary post's own tap: same inline expand, sourced
+		// straight from this site's own database instead.
+		const markTrigger = target.closest('[data-expand-post]');
+		if (markTrigger) {
+			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
+			const wrap = markTrigger.closest('.daymark-recent__item-wrap');
+			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
+			if (item && panel) {
+				toggleExpand(screen, markTrigger, panel, 'mark-' + item.id, () => loadMarkExpandHtml(item));
 			}
 			return;
 		}
@@ -2045,15 +2073,23 @@
 			this.recentDone = false;
 			this.recentLoading = false;
 			this._refreshing = false;
-			// Keyed by subscription-post id (string) → the list item, so a
-			// card tap can hand the detail sheet everything it already has
-			// (title/permalink/etc.) without re-querying the DOM.
+			// Keyed by id (string) → the list item, so an inline-expand tap
+			// can hand toggleExpand() everything it already has
+			// (title/permalink/etc.) without re-querying the DOM. Separate
+			// Maps per source, since a subscription post's id and a Mark's
+			// own post id share no relationship and could otherwise collide.
 			this._bySubId = new Map();
-			// Cache of fetched detail bodies, keyed by subscription-post id:
-			// { state: 'loading'|'done'|'error', body_content }. Persists on
-			// this singleton across re-inits (leaving and returning to Home)
-			// so a card already opened once never re-fetches.
+			this._byMarkId = new Map();
+			// Cache of fetched expand-panel content, keyed 'sub-{id}' /
+			// 'mark-{id}': { state: 'loading'|'done'|'error', html }.
+			// Persists on this singleton across re-inits (leaving and
+			// returning to Home) so a card already opened once never
+			// re-fetches. this._openExpand (which card, if any, is
+			// currently expanded) does not persist — a re-init already
+			// rebuilds the list from scratch, so any DOM it pointed at is
+			// gone anyway.
 			this._detailCache = this._detailCache || new Map();
+			this._openExpand = null;
 
 			await refreshPendingSection();
 
@@ -2108,6 +2144,8 @@
 				}
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
+				this._byMarkId.clear();
+				this._openExpand = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -2453,7 +2491,9 @@
 			this.searchType = '';
 			this.searchSource = '';
 			this._bySubId = new Map();
+			this._byMarkId = new Map();
 			this._detailCache = this._detailCache || new Map();
+			this._openExpand = null;
 			this._subscriptions = [];
 
 			// A preset handed from Explore/Me ("browse by type", "your
@@ -2539,6 +2579,8 @@
 				}
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
+				this._byMarkId.clear();
+				this._openExpand = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -3877,11 +3919,11 @@
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
-	// shows the click-through detail sheet in place rather than navigating —
-	// its permalink points at the *source* site, not anywhere in this app.
-	// No comment/like stat row: those only ever exist for a Mark — Daymark
-	// doesn't (and, for someone else's post, can't cheaply) track
-	// engagement data of its own for a subscription post.
+	// expands its content inline, right below the card, rather than
+	// navigating — its permalink points at the *source* site, not anywhere
+	// in this app. No comment/like stat row: those only ever exist for a
+	// Mark — Daymark doesn't (and, for someone else's post, can't cheaply)
+	// track engagement data of its own for a subscription post.
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
@@ -3919,160 +3961,123 @@
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
 					</button>
+					<div class="daymark-recent__expand" data-expand-panel hidden></div>
 				</div>`;
 	}
 
-	// --- Overlay: subscription-post detail sheet ---
+	// --- Inline expand: a Timeline card's own content, shown in place ---
+	//
+	// Replaces the old subscription-only modal/overlay detail sheet — every
+	// card (a Mark, an ordinary block-editor post, or a subscription post)
+	// now expands its own content directly below itself in the list
+	// instead: no dialog overlaying the Timeline, and — for a Mark or
+	// ordinary post — no navigating away to the permalink either. Only one
+	// card is expanded at a time per screen; opening another collapses
+	// whichever was open first, so the list doesn't grow unboundedly tall
+	// as you tap around. `screen._detailCache` (a Map keyed 'mark-{id}' /
+	// 'sub-{id}' so the two id spaces can never collide) persists across
+	// re-visiting the screen, so a card already opened once never re-fetches.
 
-	// Shown when opening a Home subscription-post card. Always issues the
-	// click-through fetch (GET /subscription-posts/{id}) on first open —
+	// Renders whatever HTML a card's content loader resolved to, plus a
+	// "View full post" link out to the real permalink — both kinds still
+	// point somewhere real: a Mark/ordinary post's own permalink (its
+	// theme-rendered page, comments included, for anyone who wants that),
+	// or a subscription post's source URL.
+	function expandBodyHtml(html, permalink, linkLabel) {
+		if (!html) {
+			return '';
+		}
+		const link = permalink
+			? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+					permalink
+			  )}" target="_blank" rel="noopener">${esc(linkLabel)} &#8599;</a></p>`
+			: '';
+		// Already wp_kses_post()-sanitized server-side (both the Mark/post
+		// content endpoint and the subscription click-through fetch) and
+		// meant to be rendered as trusted HTML — not re-escaped here.
+		return `<div class="daymark-expand-content">${html}</div>${link}`;
+	}
+
+	function expandErrorHtml() {
+		return '<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>';
+	}
+
+	// A Mark or ordinary post's own content — straight from the site's own
+	// database via GET /marks/{id}/content, so there's no page to narrow
+	// down in the first place (unlike a subscription post's external
+	// click-through fetch, below): no comments, no theme chrome, ever.
+	async function loadMarkExpandHtml(item) {
+		const full = await apiGet('marks/' + item.id + '/content');
+		const content = full && full.content ? String(full.content) : '';
+		return expandBodyHtml(content, item.permalink, 'View full post');
+	}
+
+	// A subscription post's full content, click-through-fetched (and
+	// narrowed/cached server-side) from its source site on first open —
 	// body_content is never present in the merged Timeline feed response,
-	// even for a 'full' post — then caches the result on the Map handed in
-	// by HomeScreen so re-opening the same card doesn't re-fetch it.
-	const SubscriptionPostSheet = {
-		el: null,
-		opener: null,
-		cache: null,
-		current: null,
+	// even for an already-'full' post.
+	async function loadSubscriptionExpandHtml(item) {
+		const full = await apiGet('subscription-posts/' + item.id);
+		const content = full && full.body_content ? String(full.body_content) : '';
+		return expandBodyHtml(content, item.permalink, 'View original');
+	}
 
-		show(item, cache, opener) {
-			this.opener = opener || null;
-			this.cache = cache;
-			this.current = item;
-			if (!this.el) {
-				this.el = document.createElement('div');
-				this.el.className = 'daymark-sheet';
-				document.body.appendChild(this.el);
-			}
-			this.el.hidden = false;
-			this.renderShell();
-			this.onKeydown = (event) => {
-				if ('Escape' === event.key) {
-					this.hide();
-				}
-			};
-			document.addEventListener('keydown', this.onKeydown);
-			const heading = this.el.querySelector('#daymark-subpost-title');
-			if (heading) {
-				heading.focus();
-			}
-			this.load();
-		},
+	// Collapses whichever card is currently expanded on this screen, if any.
+	function closeOpenExpand(screen) {
+		if (!screen._openExpand) {
+			return;
+		}
+		const { trigger, panel } = screen._openExpand;
+		panel.hidden = true;
+		panel.innerHTML = '';
+		if (trigger.isConnected) {
+			trigger.setAttribute('aria-expanded', 'false');
+		}
+		screen._openExpand = null;
+	}
 
-		renderShell() {
-			const item = this.current;
-			const metaParts = [];
-			if (item.author) {
-				metaParts.push(esc(item.author));
-			}
-			if (item.date) {
-				metaParts.push(esc(relativeTime(item.date)));
-			}
-			this.el.innerHTML = `
-			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="Close"></button>
-			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-subpost-title">
-				<h2 class="daymark-sheet__title" id="daymark-subpost-title" tabindex="-1">${esc(
-					item.title || 'Untitled post'
-				)}</h2>
-				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				<div class="daymark-sheet__body" data-subpost-body aria-live="polite">
-					<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading full post&hellip;</p>
-				</div>
-			</div>`;
-			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
-		},
+	// Toggles one card's expand panel: closes it if it's the one already
+	// open, otherwise closes whatever else was open and opens this one,
+	// fetching (or reusing the cached) content as needed.
+	async function toggleExpand(screen, trigger, panel, cacheKey, loader) {
+		const reopening = screen._openExpand && screen._openExpand.panel === panel;
+		closeOpenExpand(screen);
+		if (reopening) {
+			return;
+		}
+		trigger.setAttribute('aria-expanded', 'true');
+		panel.hidden = false;
+		screen._openExpand = { trigger, panel };
 
-		async load() {
-			const item = this.current;
-			const key = String(item.id);
-			const cached = this.cache.get(key);
-			if (cached && 'done' === cached.state) {
-				this.renderBody(cached.body_content);
-				return;
+		const cached = screen._detailCache.get(cacheKey);
+		if (cached && 'done' === cached.state) {
+			panel.innerHTML = cached.html || expandErrorHtml();
+			return;
+		}
+		if (cached && 'error' === cached.state) {
+			panel.innerHTML = expandErrorHtml();
+			return;
+		}
+		screen._detailCache.set(cacheKey, { state: 'loading' });
+		panel.innerHTML =
+			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading&hellip;</p>';
+		try {
+			const html = await loader();
+			// Collapsed again, or a different card opened, while the fetch
+			// was in flight — the result is still worth caching, just not
+			// worth rendering into a panel nobody's looking at anymore.
+			const stillOpen = screen._openExpand && screen._openExpand.panel === panel;
+			screen._detailCache.set(cacheKey, { state: 'done', html });
+			if (stillOpen) {
+				panel.innerHTML = html || expandErrorHtml();
 			}
-			if (cached && 'error' === cached.state) {
-				this.renderError();
-				return;
+		} catch (err) {
+			screen._detailCache.set(cacheKey, { state: 'error' });
+			if (screen._openExpand && screen._openExpand.panel === panel) {
+				panel.innerHTML = expandErrorHtml();
 			}
-			this.cache.set(key, { state: 'loading' });
-			try {
-				const full = await apiGet('subscription-posts/' + item.id);
-				if (!this.isShowing(key)) {
-					return;
-				}
-				const body = full && full.body_content ? String(full.body_content) : '';
-				this.cache.set(key, { state: 'done', body_content: body });
-				this.renderBody(body);
-			} catch (err) {
-				if (!this.isShowing(key)) {
-					return;
-				}
-				this.cache.set(key, { state: 'error' });
-				this.renderError();
-			}
-		},
-
-		// Whether this sheet is still open on the same card the in-flight
-		// request was made for (it may have been dismissed, or reopened on a
-		// different card, while the fetch was in flight).
-		isShowing(key) {
-			return !!this.el && !this.el.hidden && !!this.current && String(this.current.id) === key;
-		},
-
-		renderBody(html) {
-			const body = this.el.querySelector('[data-subpost-body]');
-			if (!body) {
-				return;
-			}
-			// An empty body (a 'full' fetch that genuinely had nothing to
-			// show) reads the same as a failure to the person looking at
-			// it — never leave them staring at a silently blank sheet.
-			if (!html) {
-				this.renderError();
-				return;
-			}
-			// Already wp_kses_post()-sanitized server-side and explicitly
-			// documented as safe to render as-is — not re-escaped here.
-			body.innerHTML =
-				`<div class="daymark-subpost-content">${html}</div>` + this.viewOriginalLink();
-		},
-
-		renderError() {
-			const body = this.el.querySelector('[data-subpost-body]');
-			if (!body) {
-				return;
-			}
-			body.innerHTML =
-				'<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>' +
-				this.viewOriginalLink();
-		},
-
-		viewOriginalLink() {
-			const permalink = this.current && this.current.permalink;
-			return permalink
-				? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
-						permalink
-				  )}" target="_blank" rel="noopener">View original &#8599;</a></p>`
-				: '';
-		},
-
-		hide(restoreFocus = true) {
-			if (!this.el || this.el.hidden) {
-				return;
-			}
-			this.el.hidden = true;
-			this.el.innerHTML = '';
-			if (this.onKeydown) {
-				document.removeEventListener('keydown', this.onKeydown);
-				this.onKeydown = null;
-			}
-			if (restoreFocus && this.opener && this.opener.isConnected) {
-				this.opener.focus();
-			}
-			this.opener = null;
-			this.current = null;
-		},
-	};
+		}
+	}
 
 	// --- Screen: Publish ---
 

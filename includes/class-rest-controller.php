@@ -311,6 +311,30 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/marks/(?P<id>\d+)/content',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_mark_content' ),
+				// Timeline's own visibility rule, not permissions_check_post's
+				// edit_post check: a Timeline card is already visible to
+				// anyone who can see the Timeline at all (permissions_check
+				// alone — edit_posts + nonce), regardless of who authored it —
+				// see get_timeline()'s own docblock. Expanding one in place
+				// discloses nothing that item's own Timeline summary
+				// (title/excerpt/thumbnail) didn't already.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)/sync-responses',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1353,6 +1377,53 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$payload['categories'] = array_map( 'intval', wp_get_post_categories( $post_id ) );
 
 		return rest_ensure_response( $payload );
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id}/content — a Timeline card's own inline-expand
+	 * fetch: just the post's rendered content, not the page around it.
+	 *
+	 * Unlike get_daymark(), this is not gated on `_daymark_is_mark` — it
+	 * backs the same inline expand for a true Mark, an ordinary post
+	 * published straight through the block editor, or anything else
+	 * GET /timeline itself already surfaces (see that method's own
+	 * docblock on why the Marks side isn't gated on _daymark_is_mark
+	 * either). Any published `post`-type post is fair game; anything else
+	 * (draft, another post type, nonexistent) 404s.
+	 *
+	 * Mirrors WP core's own REST Posts Controller
+	 * (WP_REST_Posts_Controller::prepare_item_for_response()): render via
+	 * `apply_filters( 'the_content', $post->post_content )` directly,
+	 * without setup_postdata() — the same filter every theme's own
+	 * the_content() call ultimately runs, applied to one post's content in
+	 * isolation rather than the whole page it would otherwise render
+	 * inside (comments, sidebar, footer, theme chrome). wp_kses_post() on
+	 * top is defense in depth, matching how a subscription post's own
+	 * body_content is handled.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_mark_content( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$post    = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
+		$content = apply_filters( 'the_content', $post->post_content );
+
+		return rest_ensure_response(
+			array(
+				'content' => wp_kses_post( $content ),
+			)
+		);
 	}
 
 	/**

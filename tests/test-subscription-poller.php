@@ -514,6 +514,74 @@ XML;
 		$this->assertStringNotContainsString( 'alert(', $body );
 		$this->assertStringNotContainsString( 'color:red', $body, "A <style> block's own text never leaks through" );
 		$this->assertStringNotContainsString( 'console.log', $body, "A <body> <script> block's own text never leaks through either" );
+		$this->assertStringNotContainsString( 'Skip to content', $body, "A <nav> element's own text never leaks through either" );
+	}
+
+	/**
+	 * The full nav/header/footer/comments case: a realistic single-post
+	 * page carrying every kind of chrome the click-through sheet is meant
+	 * to leave out, wrapped around a real <article>. Comments here are a
+	 * sibling of <article> (the common WordPress theme shape), so
+	 * preferring <article> over <body> already excludes them without
+	 * needing the id="comments" defensive pass at all.
+	 */
+	public function test_fetch_full_content_strips_nav_header_footer_and_sibling_comments() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/full-theme-page/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/full-theme-page/',
+			'<html><body>'
+			. '<header><nav>Home | About | Contact</nav></header>'
+			. '<article class="post"><h1>A Real Post Title</h1><p>The genuine article body.</p></article>'
+			. '<div id="comments" class="comments-area"><h2>3 Comments</h2><p>Someone said something.</p></div>'
+			. '<aside class="widget-area"><h3>Popular Posts</h3><p>Related link text.</p></aside>'
+			. '<footer><p>&copy; 2026 Example Site. All rights reserved.</p></footer>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The genuine article body', $body );
+		$this->assertStringNotContainsString( 'About | Contact', $body, "A <header>/<nav> element's text is dropped" );
+		$this->assertStringNotContainsString( 'Someone said something', $body, 'The comments section is dropped' );
+		$this->assertStringNotContainsString( 'Popular Posts', $body, "An <aside> element's text is dropped" );
+		$this->assertStringNotContainsString( 'All rights reserved', $body, "A <footer> element's text is dropped" );
+	}
+
+	/**
+	 * The defensive fallback: a theme that nests its comments *inside* the
+	 * same <article> as the post content (rather than as a sibling) still
+	 * gets them dropped, via the id="comments"/"respond" trailing-content
+	 * pass.
+	 */
+	public function test_fetch_full_content_strips_comments_nested_inside_article() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/nested-comments/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/nested-comments/',
+			'<html><body><article><p>The real post content.</p>'
+			. '<div id="respond"><h3>Leave a Reply</h3><p>Your email address will not be published.</p></div>'
+			. '</article></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real post content', $body );
+		$this->assertStringNotContainsString( 'Leave a Reply', $body, 'A reply form nested inside <article> is still dropped' );
 	}
 
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
