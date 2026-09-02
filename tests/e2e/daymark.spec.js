@@ -1445,6 +1445,15 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 	for (const hash of ['#explore', '#search', '#me']) {
 		await page.goto('/daymark' + hash);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
+		// Explore's Following list and Search's results both render a
+		// `.daymark-skeleton` placeholder synchronously, then replace it
+		// once their async fetch resolves (subscriptions, then a search
+		// results page) — real content of a different size than the
+		// placeholder can reflow the screen under the fixed launcher right
+		// as this loop taps it. Wait for the skeletons to clear first, or
+		// the click can land on the shifting content underneath instead of
+		// the launcher.
+		await expect(page.locator('.daymark-skeleton')).toHaveCount(0);
 		await page.locator('[data-action="new-mark"]').click();
 		await page.locator('[data-launcher-type="note"]').click();
 		await expect(page).toHaveURL(/#create$/);
