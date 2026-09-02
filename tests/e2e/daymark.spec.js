@@ -1454,6 +1454,17 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		// the click can land on the shifting content underneath instead of
 		// the launcher.
 		await expect(page.locator('.daymark-skeleton')).toHaveCount(0);
+		// bindFooterAutoHide() (assets/app.js) hides the persistent footer
+		// — the launcher lives inside it — on any scroll-down past 80px,
+		// and only guarantees it back on scroll-up or focus. A reflow from
+		// the async content above (or the browser's own scroll-anchoring
+		// compensating for it) can trip that listener before this loop
+		// ever scrolls on purpose, sliding the launcher out from under
+		// its own click. Forcing scrollY back to 0 — and waiting for the
+		// footer to actually confirm it's not hidden — before each tap
+		// closes that race regardless of what triggered it.
+		await page.evaluate(() => window.scrollTo(0, 0));
+		await expect(page.locator('.daymark-homefooter')).not.toHaveClass(/is-footer-hidden/);
 		await page.locator('[data-action="new-mark"]').click();
 		await page.locator('[data-launcher-type="note"]').click();
 		await expect(page).toHaveURL(/#create$/);
