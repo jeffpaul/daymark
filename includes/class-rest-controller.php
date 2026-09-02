@@ -311,6 +311,30 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/marks/(?P<id>\d+)/content',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_mark_content' ),
+				// Timeline's own visibility rule, not permissions_check_post's
+				// edit_post check: a Timeline card is already visible to
+				// anyone who can see the Timeline at all (permissions_check
+				// alone — edit_posts + nonce), regardless of who authored it —
+				// see get_timeline()'s own docblock. Expanding one in place
+				// discloses nothing that item's own Timeline summary
+				// (title/excerpt/thumbnail) didn't already.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)/sync-responses',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -759,17 +783,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /daymark/v1/timeline — the merged, date-sorted Timeline: the
-	 * user's own published Marks interleaved with cached
-	 * `daymark_subscription_post` entries from active subscriptions.
+	 * GET /daymark/v1/timeline — the merged, date-sorted Timeline: every
+	 * published post on this site (a Daymark Mark or an ordinary post
+	 * written directly in the block editor — see the Marks query below)
+	 * interleaved with cached `daymark_subscription_post` entries from
+	 * active subscriptions.
 	 *
-	 * `WP_Query` cannot express this in one query: `_daymark_is_mark` meta
-	 * only exists on (and only needs to gate) the `post` post type — mixing
-	 * it into a single cross-post-type query via `meta_query` would either
-	 * wrongly exclude every subscription post (meta condition applied
-	 * globally) or wrongly include every non-Mark `post` on the site (meta
-	 * condition dropped). So this runs two separate queries and merges the
-	 * results in PHP.
+	 * `WP_Query` cannot express this in one query: `daymark_subscription_post`
+	 * is a different post type entirely, so mixing the two sources into a
+	 * single query isn't possible regardless of Mark-gating. So this runs
+	 * two separate queries and merges the results in PHP.
 	 *
 	 * Pagination tradeoff (documented rather than silently assumed): each
 	 * source query fetches up to `page * per_page` of its own items
@@ -786,9 +809,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 *
 	 * Only published items are considered from both sources: subscription
 	 * posts are always ingested as 'publish' (there is no subscription
-	 * post draft state), and Marks are restricted to 'publish' here even
-	 * though drafts are a valid Mark status elsewhere (GET /marks) — the
-	 * Timeline is a published feed, not the composer's Home Drafts row.
+	 * post draft state), and the Marks side is restricted to 'publish'
+	 * here even though drafts are a valid Mark status elsewhere (GET
+	 * /marks) — the Timeline is a published feed, not the composer's Home
+	 * Drafts row. This also means the Marks side never needs a
+	 * `post_status = 'draft'` clause to exclude a plain draft blog post
+	 * being written in the block editor — 'publish' alone already does.
+	 *
+	 * The Marks side query is NOT gated on `_daymark_is_mark`: every
+	 * published `post`-type post shows up, whether it was created through
+	 * Daymark's own composer or written directly in the block editor —
+	 * this site is the canonical, portable source of truth (Product
+	 * Principle 2), and a site owner publishing some content one way and
+	 * some the other shouldn't mean half of it is invisible on their own
+	 * Timeline. A post with no `_daymark_primary_type` meta (never
+	 * touched by Daymark) simply comes back with `type` as `''` in
+	 * prepare_mark_summary() below — the app shell infers a reasonable
+	 * card kind from what it actually has (a real featured image, a real
+	 * excerpt) instead. The one exception is the `type` filter itself
+	 * (below): narrowing to one specific `_daymark_primary_type` value
+	 * only ever matches true Marks, since a plain post has no such meta to
+	 * match against — Explore's "browse by type" and Search's type chips
+	 * stay scoped to Daymark's own type vocabulary, not a guess at an
+	 * arbitrary post's content.
 	 *
 	 * Four optional filter params, combinable with the pagination params
 	 * above: `s` (keyword search, applied identically to both source
@@ -824,6 +867,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$items = array();
 
 		if ( $include_marks ) {
+			// Deliberately NOT gated on _daymark_is_mark — every published
+			// `post` on the site belongs on its own Timeline, whether it
+			// came from Daymark's composer or the block editor directly
+			// (see this method's own docblock above). The `type` filter
+			// below is the one case that still requires a true Mark, since
+			// a plain post has no _daymark_primary_type to filter on.
 			$marks_args = array(
 				'post_type'      => 'post',
 				'post_status'    => 'publish',
@@ -832,18 +881,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'orderby'        => 'date',
 				'order'          => 'DESC',
 				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Mark lookup.
-				'meta_key'       => '_daymark_is_mark',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Personal-site-scale Mark lookup.
-				'meta_value'     => '1',
 			);
 
-			// Optional content-type filter: narrow to one _daymark_primary_type.
-			// This adds a second meta condition, so switch to an explicit
-			// meta_query that keeps the _daymark_is_mark gate intact — mirrors
-			// get_marks()'s own type-filter handling.
+			// Optional content-type filter: narrow to one
+			// _daymark_primary_type — only a true Mark carries this meta,
+			// so this is the one Marks-query path that still requires
+			// _daymark_is_mark (mirrors get_marks()'s own type-filter
+			// handling).
 			if ( '' !== $type ) {
-				unset( $marks_args['meta_key'], $marks_args['meta_value'] );
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 				$marks_args['meta_query'] = array(
 					'relation' => 'AND',
@@ -1332,6 +1377,53 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$payload['categories'] = array_map( 'intval', wp_get_post_categories( $post_id ) );
 
 		return rest_ensure_response( $payload );
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id}/content — a Timeline card's own inline-expand
+	 * fetch: just the post's rendered content, not the page around it.
+	 *
+	 * Unlike get_daymark(), this is not gated on `_daymark_is_mark` — it
+	 * backs the same inline expand for a true Mark, an ordinary post
+	 * published straight through the block editor, or anything else
+	 * GET /timeline itself already surfaces (see that method's own
+	 * docblock on why the Marks side isn't gated on _daymark_is_mark
+	 * either). Any published `post`-type post is fair game; anything else
+	 * (draft, another post type, nonexistent) 404s.
+	 *
+	 * Mirrors WP core's own REST Posts Controller
+	 * (WP_REST_Posts_Controller::prepare_item_for_response()): render via
+	 * `apply_filters( 'the_content', $post->post_content )` directly,
+	 * without setup_postdata() — the same filter every theme's own
+	 * the_content() call ultimately runs, applied to one post's content in
+	 * isolation rather than the whole page it would otherwise render
+	 * inside (comments, sidebar, footer, theme chrome). wp_kses_post() on
+	 * top is defense in depth, matching how a subscription post's own
+	 * body_content is handled.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_mark_content( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$post    = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
+		$content = apply_filters( 'the_content', $post->post_content );
+
+		return rest_ensure_response(
+			array(
+				'content' => wp_kses_post( $content ),
+			)
+		);
 	}
 
 	/**
@@ -1837,6 +1929,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
 			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			// The 24-word-trimmed caption Daymark_Publisher already stores as
+			// this post's own post_excerpt (see class-publisher.php) — not
+			// previously exposed here, so a Timeline card had no way to show
+			// a Note Mark's actual text, only its (often timestamp-fallback)
+			// title.
+			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),

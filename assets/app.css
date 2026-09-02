@@ -593,6 +593,67 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-primary);
 }
 
+/* Media-dominant kinds (image/gallery/video/mixed — see
+   MEDIA_DOMINANT_KINDS in app.js) stack their own banner above the
+   caption instead of sitting beside a small thumb, and drop the row
+   padding around it so the photo runs to the card's own edges — this is
+   the deliberate height/weight variety the mixed feed wants: a photo
+   Mark's card is taller and heavier than a Note's one-line row, not a
+   uniform box repeated down the list. */
+.daymark-recent__item--image,
+.daymark-recent__item--gallery,
+.daymark-recent__item--video,
+.daymark-recent__item--mixed {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0;
+	padding: 0;
+	overflow: hidden;
+}
+
+.daymark-recent__item--image .daymark-recent__body,
+.daymark-recent__item--gallery .daymark-recent__body,
+.daymark-recent__item--video .daymark-recent__body,
+.daymark-recent__item--mixed .daymark-recent__body {
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) var(--daymark-spacing-md);
+}
+
+.daymark-recent__thumbwrap--media {
+	width: 100%;
+	height: 176px;
+}
+
+/* A genuinely photo-first Mark — a single image or a gallery of them, the
+   two kinds where the photo itself *is* the content rather than a poster
+   frame for something else (video) or one element among several (mixed) —
+   gets a taller banner than the other media-dominant kinds. The Mission's
+   "everything you create remains yours" and Product Principle 4 ("Media is
+   first-class") both argue for the image being shown clearly rather than
+   cropped down to a modest strip; content over engagement means the photo,
+   not the caption or stats below it, is what a scan down the Timeline
+   should register first. */
+.daymark-recent__item--image .daymark-recent__thumbwrap--media,
+.daymark-recent__item--gallery .daymark-recent__thumbwrap--media {
+	height: 320px;
+}
+
+.daymark-recent__thumbwrap--media .daymark-recent__thumb {
+	width: 100%;
+	height: 100%;
+	border-radius: 0;
+}
+
+.daymark-recent__thumbwrap--media .daymark-recent__thumb--siteicon {
+	/* A site-icon-as-banner would otherwise stretch a small favicon across
+	   176px of width — cap it to something recognizable instead, centered
+	   on the accent-wash background the surrounding placeholder rule
+	   already sets up. */
+	width: 64px;
+	height: 64px;
+	margin: auto;
+	padding: 0;
+}
+
 .daymark-recent__thumb {
 	width: 48px;
 	height: 48px;
@@ -602,12 +663,82 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-surface);
 }
 
-.daymark-recent__thumb--glyph {
+/* A subscription card's thumbnail slot falls back to the subscription's
+   own site icon when the post has no featured image of its own (see
+   renderCardMedia() in app.js) — a favicon is rarely a clean 48x48 square
+   the way a real featured image is, so `cover` would crop it awkwardly;
+   `contain` (plus the base rule's surface-color background as
+   letterboxing) keeps the whole icon visible instead. */
+.daymark-recent__thumb--siteicon {
+	object-fit: contain;
+	padding: 8px;
+}
+
+.daymark-recent__thumb--glyph,
+.daymark-recent__thumb--placeholder {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	font-size: 20px;
 	color: var(--daymark-text-muted);
+}
+
+/* The media-dominant kinds' (image/gallery/video/mixed) own placeholder,
+   shown only when there's no real image anywhere to fall back to — most
+   often a video/audio Mark, since Daymark only ever sets a featured image
+   for an image/gallery one (see attach_media() in class-publisher.php).
+   Tinted with the accent wash instead of the plain glyph fallback's
+   neutral surface color so a media-shaped card still reads as "media,"
+   just without a photo yet, rather than looking like an error state. */
+.daymark-recent__thumbwrap--media.daymark-recent__thumb--placeholder {
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent-deep);
+}
+
+/* One card's media slot — a Mark's own thumbnail, a subscription post's
+   featured image, or either one's site-icon/placeholder fallback (see
+   renderCardMedia() in app.js). Shrinks to the thumbnail's own size by
+   default so a badge's absolute position (below) anchors to it, not the
+   wider card; the media-dominant modifier (image/gallery/video/mixed)
+   instead stretches to the card's full width as a banner above the
+   caption — see .daymark-recent__item--image and friends below. */
+.daymark-recent__thumbwrap {
+	position: relative;
+	flex-shrink: 0;
+	display: inline-flex;
+}
+
+.daymark-recent__thumbbadge {
+	position: absolute;
+	right: -4px;
+	bottom: -4px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.6);
+	color: #fff;
+	box-shadow: 0 0 0 2px var(--daymark-bg);
+}
+
+/* A video card's own centered play affordance — its badge (top-right,
+   shared with audio/gallery/mixed) already says "video" at a glance; this
+   is the "clear play action" the media itself invites a tap toward. */
+.daymark-recent__thumbplay {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	background: rgba(0, 0, 0, 0.55);
+	color: #fff;
 }
 
 .daymark-recent__body {
@@ -1731,7 +1862,94 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item-wrap .daymark-recent__item {
 	flex: 1;
 	min-width: 0;
-	/* Room for the ⋯ button pinned to the right edge. */
+}
+
+/* Room for the ⋯ button pinned to the right edge — only reserved when
+   there's actually one there. A subscription-post card never has one
+   (renderSubscriptionPostCard() never renders .daymark-recent__actions),
+   and a Mark-shaped item that turns out to be an ordinary block-editor
+   post rather than a true Mark doesn't get one either (see the
+   isRealMark check in renderMarkItem(), app.js) — either way, reserving
+   the space anyway would leave a pointless empty gap down the card's own
+   right edge. */
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item {
+	padding-right: 56px;
+}
+
+/* A media-dominant card (see .daymark-recent__item--image and friends,
+   above) already dropped its own padding so the banner image runs full
+   bleed. A Mark card's ⋯ button still needs clearance, but that has to
+   move to the caption row underneath instead of the card as a whole, or
+   the photo would carry a pointless gap down its own right edge; a
+   subscription post's card has no ⋯ button at all (renderSubscriptionPostCard()
+   never renders .daymark-recent__actions), so it needs no clearance
+   anywhere — :has() (already relied on above, for the open-menu z-index
+   rule) scopes the caption's own padding to only the Mark case. */
+.daymark-recent__item-wrap .daymark-recent__item--image,
+.daymark-recent__item-wrap .daymark-recent__item--gallery,
+.daymark-recent__item-wrap .daymark-recent__item--video,
+.daymark-recent__item-wrap .daymark-recent__item--mixed {
+	padding-right: 0;
+}
+
+/* A media-dominant card is much taller than the wrap's other children
+   (the site icon, type icon, and — Mark only — the ⋯ button) — center
+   alignment would otherwise float those against the photo's own
+   midpoint; top-aligning them instead keeps them where Path's own
+   reference lines its icons up: against each moment's leading edge. */
+.daymark-recent__item-wrap:has(.daymark-recent__item--image),
+.daymark-recent__item-wrap:has(.daymark-recent__item--gallery),
+.daymark-recent__item-wrap:has(.daymark-recent__item--video),
+.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) {
+	align-items: flex-start;
+}
+
+.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__siteicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__siteicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__siteicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__siteicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__typeicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__typeicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__typeicon,
+.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__typeicon {
+	margin-top: var(--daymark-spacing-sm);
+}
+
+/* The rail: a small, quiet type-indicator between the site icon and the
+   card itself (see renderTypeIcon() in app.js), threaded to the item
+   above and below by a thin connecting line so a scan down the list reads
+   as one continuous chronological flow — Path's own timeline spine, kept
+   deliberately muted (grey, not the accent color) since this is a glance
+   aid, not something competing with the content for attention. */
+.daymark-recent__typeicon {
+	position: relative;
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 50%;
+	background: var(--daymark-surface);
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-recent__typeicon::before {
+	content: '';
+	position: absolute;
+	top: -4px;
+	bottom: -4px;
+	left: 50%;
+	width: 1px;
+	background: var(--daymark-border);
+	z-index: -1;
+	transform: translateX(-50%);
+}
+
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--image .daymark-recent__body,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--gallery .daymark-recent__body,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--video .daymark-recent__body,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--mixed .daymark-recent__body {
 	padding-right: 56px;
 }
 
@@ -1901,9 +2119,11 @@ h2[tabindex='-1']:focus {
 
 /* --- Home: merged Timeline feed --- */
 
-/* Subscription-post cards are <button>s (opening the detail sheet), not
-   <a>s — reset the button chrome the browser would otherwise add, while
-   keeping the exact same .daymark-recent__item look as a Mark card. */
+/* Every published card — a Mark, an ordinary post, or a subscription
+   post — is a <button> (expanding its content inline), not an <a>; only an
+   unpublished Draft still uses a real link (back into the composer). Reset
+   the button chrome the browser would otherwise add, while keeping the
+   exact same .daymark-recent__item look either way. */
 .daymark-recent__item--button {
 	width: 100%;
 	appearance: none;
@@ -1919,6 +2139,43 @@ h2[tabindex='-1']:focus {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* An article card earns a little more room for its excerpt than every
+   other kind's single-line preview — "title, excerpt, optional featured
+   image" per the brief means the excerpt is meant to be read, not just
+   glanced at. */
+.daymark-recent__item--article .daymark-recent__excerpt {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	white-space: normal;
+}
+
+/* A link card is deliberately the lightest-weight kind — no media slot,
+   tighter padding, an accent-tinted background instead of the plain card
+   surface — the "recognizable rich-preview card" the brief asks for,
+   scaled to what Daymark actually knows about a link post today (no
+   captured page title/image distinct from the post's own title/excerpt —
+   see this change's summary). */
+.daymark-recent__item--link {
+	background: var(--daymark-accent-wash);
+	border-color: transparent;
+	min-height: 0;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+}
+
+.daymark-recent__item--link .daymark-recent__excerpt {
+	color: var(--daymark-text-muted);
+}
+
+/* Audio's own artwork reads a size up from the plain thumb every other
+   compact-row kind uses — closer to how a podcast's cover art is actually
+   presented (a small, square, self-contained image), not just a generic
+   list-row icon. */
+.daymark-recent__item--audio .daymark-recent__thumb {
+	width: 56px;
+	height: 56px;
 }
 
 /* Pull-to-refresh indicator: collapsed (zero visual height, via the
@@ -1953,29 +2210,49 @@ h2[tabindex='-1']:focus {
 	border-top-color: var(--daymark-accent-deep);
 }
 
-/* Rendered body of a subscription post's click-through detail sheet
-   (already-sanitized HTML from the server, per Daymark_Subscription_Poller
-   — rendered as-is, styled here purely for readability/containment). */
-.daymark-subpost-content {
+/* Rendered body of a Timeline card's inline-expand panel (see
+   .daymark-recent__expand below) — already-sanitized HTML from the server
+   either way (a Mark/ordinary post's own the_content, or a subscription
+   post's click-through-fetched body_content, per Daymark_Subscription_Poller)
+   — rendered as-is, styled here purely for readability/containment. */
+.daymark-expand-content {
 	font-size: 15px;
 	line-height: 1.6;
 	color: var(--daymark-text-primary);
 }
 
-.daymark-subpost-content p {
+.daymark-expand-content p {
 	margin: 0 0 var(--daymark-spacing-md);
 }
 
-.daymark-subpost-content p:last-child {
+.daymark-expand-content p:last-child {
 	margin-bottom: 0;
 }
 
-.daymark-subpost-content img,
-.daymark-subpost-content video,
-.daymark-subpost-content iframe {
+.daymark-expand-content img,
+.daymark-expand-content video,
+.daymark-expand-content iframe {
 	max-width: 100%;
 	height: auto;
 	border-radius: var(--daymark-radius-sm);
+}
+
+/* A Timeline card's inline-expand panel — a Mark/ordinary post's own
+   content, or a subscription post's click-through-fetched content — drops
+   onto its own full-width row below the card (site icon, type icon, card
+   body, ⋯ menu) rather than sitting inline as another flex column; hidden
+   by default (toggleExpand() in app.js flips it), so a collapsed card
+   costs nothing in layout. */
+.daymark-recent__item-wrap {
+	flex-wrap: wrap;
+}
+
+.daymark-recent__expand {
+	flex-basis: 100%;
+	width: 100%;
+	margin-top: var(--daymark-spacing-sm);
+	padding-top: var(--daymark-spacing-sm);
+	border-top: 1px solid var(--daymark-border);
 }
 
 /* --- Reduced motion --- */

@@ -79,6 +79,21 @@
 	}
 
 	/**
+	 * An <img> whose src isn't fully trusted to resolve (a subscription's
+	 * favicon guess is the common case — see fallback_favicon_url()
+	 * server-side, an unverified `/favicon.ico` URL that 404s more often
+	 * than not) wired to degrade to a glyph span in the same visual slot on
+	 * load failure, rather than the browser's broken-image icon. Pairs with
+	 * the single delegated 'error' listener registered at boot below.
+	 */
+	function imgWithFallback(src, cssClass, glyph) {
+		const root = cssClass.split(' ')[0];
+		return `<img class="${esc(cssClass)}" src="${esc(src)}" alt="" data-img-fallback="${esc(
+			glyph
+		)}" data-img-fallback-class="${esc(root)} ${esc(root)}--glyph" />`;
+	}
+
+	/**
 	 * Reduce an HTML string (e.g. comment content) to plain text.
 	 */
 	function toPlainText(html) {
@@ -90,15 +105,26 @@
 	/**
 	 * Human relative timestamp. Accepts ISO 8601 or MySQL datetime strings.
 	 */
-	function relativeTime(value) {
+	/**
+	 * Parse an ISO 8601 or MySQL datetime string into a Date, or null if it
+	 * doesn't parse as either. Shared by relativeTime() and
+	 * renderCardTimestamp() so they can never drift on what counts as a
+	 * valid date.
+	 */
+	function parseDate(value) {
 		if (!value) {
-			return '';
+			return null;
 		}
 		let date = new Date(value);
 		if (Number.isNaN(date.getTime()) && typeof value === 'string') {
 			date = new Date(value.replace(' ', 'T'));
 		}
-		if (Number.isNaN(date.getTime())) {
+		return Number.isNaN(date.getTime()) ? null : date;
+	}
+
+	function relativeTime(value) {
+		const date = parseDate(value);
+		if (!date) {
 			return '';
 		}
 		const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -118,6 +144,27 @@
 			return days + 'd ago';
 		}
 		return date.toLocaleDateString();
+	}
+
+	/**
+	 * A Timeline card's own timestamp: relativeTime()'s display (relative
+	 * for the first week, then a plain date), wrapped in a real <time
+	 * datetime> element whose title is the full date and time — so the
+	 * exact moment is always one hover/screen-reader-announcement away,
+	 * not just available after the 7-day cutover to an absolute date.
+	 */
+	function renderCardTimestamp(value) {
+		const date = parseDate(value);
+		if (!date) {
+			return '';
+		}
+		const full =
+			date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) +
+			' at ' +
+			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
+			relativeTime(value)
+		)}</time>`;
 	}
 
 	function connectorLabel(id) {
@@ -212,41 +259,6 @@
 			'comment',
 			'comments'
 		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}</span>`;
-	}
-
-	// The thumbnail + title + meta + stats core of one Mark's card markup —
-	// used by every Mark item any feed-list screen renders (Home's
-	// Drafts/Timeline, Search's results), always wrapped in the same ⋯
-	// actions menu (see renderMarkItem()). Keeping this in one place is what
-	// "reuse, don't reinvent Mark card markup" means.
-	//
-	// No glyph fallback when there's no real thumbnail (a Note Mark, mainly):
-	// every card already carries its own leading site icon (see
-	// renderSiteIconButton()), so a second, type-initial icon sitting right
-	// next to it read as a duplicate rather than useful content — a Note's
-	// card just runs title/meta straight to the edge instead now.
-	function renderMarkCore(item) {
-		const title = item.title || 'Untitled Mark';
-		const thumb = item.thumbnail
-			? `<img class="daymark-recent__thumb" src="${esc(item.thumbnail)}" alt="" />`
-			: '';
-		// Drafts look identical to published Marks otherwise — and their
-		// permalinks are invisible to visitors — so say so. (The Timeline
-		// endpoint only ever returns published Marks, so this never fires
-		// there; Home's Recent/Drafts lists are what actually rely on it.)
-		const isDraft = item.status && 'publish' !== item.status;
-		const draftChip = isDraft
-			? '<span class="daymark-chip daymark-chip--draft">Draft</span> '
-			: '';
-		return `
-					${thumb}
-					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta">${draftChip}${esc(
-							TYPE_LABELS[item.type] || item.type || ''
-						)}${item.date ? ' · ' + esc(relativeTime(item.date)) : ''}</span>
-						${isDraft ? '' : renderItemStats(item)}
-					</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -1189,7 +1201,6 @@
 		}
 
 		AIAssistSheet.hide(false);
-		SubscriptionPostSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
 		// below — clear it unconditionally so it never keeps firing against
@@ -1568,10 +1579,11 @@
 	// a future Daymark content type can render its own card differently
 	// without this icon's placement following along.
 	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue }) {
+		const glyph = (iconAlt || '?').charAt(0).toUpperCase();
 		const icon = iconSrc
-			? `<img class="daymark-recent__siteiconimg" src="${esc(iconSrc)}" alt="" />`
+			? imgWithFallback(iconSrc, 'daymark-recent__siteiconimg', glyph)
 			: `<span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(
-					(iconAlt || '?').charAt(0).toUpperCase()
+					glyph
 			  )}</span>`;
 		return `
 			<div class="daymark-recent__siteicon">
@@ -1584,19 +1596,35 @@
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
-	// core (renderMarkCore()) wrapped in its own permalink/resume-draft link
-	// plus the shared ⋯ edit/delete actions menu. Used everywhere a Mark
-	// appears in a list: Home's Recent/Drafts, Search's results.
+	// core (renderMarkCore()) wrapped in its own tap target plus the shared
+	// ⋯ edit/delete actions menu. Used everywhere a Mark appears in a list:
+	// Home's Recent/Drafts, Search's results.
 	function renderMarkItem(item) {
-		// Drafts look identical to published Marks otherwise — and
-		// their permalinks are invisible to visitors — so tapping one
-		// reopens the composer instead of the permalink. (renderMarkCore()
-		// handles the visible "Draft" chip itself.)
+		// Drafts look identical to published Marks otherwise — and their
+		// permalinks are invisible to visitors — so tapping one reopens the
+		// composer instead of expanding it. (renderMarkCore() handles the
+		// visible "Draft" chip itself.) A published item — a true Mark or
+		// an ordinary block-editor post alike — expands its own content in
+		// place instead (see toggleExpand()/onFeedListClick()), the same
+		// as a subscription post's card; it never navigates away to the
+		// permalink or opens an overlay the way it used to.
 		const title = item.title || 'Untitled Mark';
 		const isDraft = item.status && 'publish' !== item.status;
-		const href = isDraft ? '#create' : item.permalink || '#home';
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
+		const kind = resolveCardKind(item);
+		// A Draft always came through Daymark's own composer (GET /marks
+		// only ever lists true Marks, unlike the Timeline's own Marks
+		// query — see get_timeline()'s docblock, class-rest-controller.php)
+		// — real, so it always gets the ⋯ menu. A published item's `type`
+		// (_daymark_primary_type) is only ever set by that same composer,
+		// so an empty one means this is an ordinary post published
+		// straight through the block editor, not a Mark — GET/PUT/DELETE
+		// /marks/{id} already 404 for it server-side (get_daymark(),
+		// delete_daymark() both gate on _daymark_is_mark independently of
+		// this), so offering Edit/Delete here would just be a dead end;
+		// simplest and most honest is to not offer them at all.
+		const isRealMark = isDraft || Boolean(item.type);
 		// A Draft is always the author's own unpublished work — there is no
 		// separate site to filter to, so it's the one item that skips the
 		// site icon.
@@ -1608,13 +1636,9 @@
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
 			  });
-		return `
-			<div class="daymark-recent__item-wrap" data-item="${id}">
-				${siteIcon}
-				<a class="daymark-recent__item" href="${esc(href)}"${editAttr}>
-					${renderMarkCore(item)}
-				</a>
-				<div class="daymark-recent__actions" data-actions>
+		const actions = !isRealMark
+			? ''
+			: `<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
 						title
 					)}">
@@ -1634,7 +1658,21 @@
 							<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
 						</div>
 					</div>
-				</div>
+				</div>`;
+		const card = isDraft
+			? `<a class="daymark-recent__item daymark-recent__item--${esc(
+					kind
+			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
+			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+					kind
+			  )}" data-expand-post="${id}" aria-expanded="false">${renderMarkCore(item)}</button>`;
+		return `
+			<div class="daymark-recent__item-wrap" data-item="${id}">
+				${siteIcon}
+				${renderTypeIcon(kind)}
+				${card}
+				${actions}
+				${isDraft ? '' : '<div class="daymark-recent__expand" data-expand-panel hidden></div>'}
 			</div>`;
 	}
 
@@ -1649,14 +1687,19 @@
 			: renderMarkItem(item);
 	}
 
-	// Track subscription-post items by id so a card tap can hand the
-	// detail sheet everything it already has without re-querying the DOM
-	// (a Mark item needs no such tracking — its card is a plain
-	// permalink/edit link, not a detail-sheet trigger). `screen` owns the
-	// Map (Home and Search each keep their own).
+	// Track every feed item by id so an inline-expand tap can hand the
+	// panel everything it already has without re-querying the DOM. A
+	// subscription post and a Mark/ordinary post keep separate Maps (their
+	// ids come from different post types and could otherwise collide) —
+	// `screen` owns both (Home and Search each keep their own pair).
 	function rememberItem(screen, item) {
-		if (item && 'subscription_post' === item.item_type) {
+		if (!item) {
+			return;
+		}
+		if ('subscription_post' === item.item_type) {
 			screen._bySubId.set(String(item.id), item);
+		} else {
+			screen._byMarkId.set(String(item.id), item);
 		}
 	}
 
@@ -1685,14 +1728,29 @@
 	function onFeedListClick(screen, event) {
 		const target = event.target;
 
-		// A subscription-post card is a <button>, not a Mark's plain
-		// permalink/⋯-menu item — opening it shows the click-through
-		// detail sheet in place rather than navigating.
+		// A subscription-post card's tap: expand its content inline, right
+		// below the card (see toggleExpand()) — fetched externally via the
+		// click-through endpoint.
 		const subTrigger = target.closest('[data-subpost]');
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
-			if (item) {
-				SubscriptionPostSheet.show(item, screen._detailCache, subTrigger);
+			const wrap = subTrigger.closest('.daymark-recent__item-wrap');
+			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
+			if (item && panel) {
+				toggleExpand(screen, subTrigger, panel, 'sub-' + item.id, () => loadSubscriptionExpandHtml(item));
+			}
+			return;
+		}
+
+		// A Mark or ordinary post's own tap: same inline expand, sourced
+		// straight from this site's own database instead.
+		const markTrigger = target.closest('[data-expand-post]');
+		if (markTrigger) {
+			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
+			const wrap = markTrigger.closest('.daymark-recent__item-wrap');
+			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
+			if (item && panel) {
+				toggleExpand(screen, markTrigger, panel, 'mark-' + item.id, () => loadMarkExpandHtml(item));
 			}
 			return;
 		}
@@ -2015,15 +2073,23 @@
 			this.recentDone = false;
 			this.recentLoading = false;
 			this._refreshing = false;
-			// Keyed by subscription-post id (string) → the list item, so a
-			// card tap can hand the detail sheet everything it already has
-			// (title/permalink/etc.) without re-querying the DOM.
+			// Keyed by id (string) → the list item, so an inline-expand tap
+			// can hand toggleExpand() everything it already has
+			// (title/permalink/etc.) without re-querying the DOM. Separate
+			// Maps per source, since a subscription post's id and a Mark's
+			// own post id share no relationship and could otherwise collide.
 			this._bySubId = new Map();
-			// Cache of fetched detail bodies, keyed by subscription-post id:
-			// { state: 'loading'|'done'|'error', body_content }. Persists on
-			// this singleton across re-inits (leaving and returning to Home)
-			// so a card already opened once never re-fetches.
+			this._byMarkId = new Map();
+			// Cache of fetched expand-panel content, keyed 'sub-{id}' /
+			// 'mark-{id}': { state: 'loading'|'done'|'error', html }.
+			// Persists on this singleton across re-inits (leaving and
+			// returning to Home) so a card already opened once never
+			// re-fetches. this._openExpand (which card, if any, is
+			// currently expanded) does not persist — a re-init already
+			// rebuilds the list from scratch, so any DOM it pointed at is
+			// gone anyway.
 			this._detailCache = this._detailCache || new Map();
+			this._openExpand = null;
 
 			await refreshPendingSection();
 
@@ -2078,6 +2144,8 @@
 				}
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
+				this._byMarkId.clear();
+				this._openExpand = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -2423,7 +2491,9 @@
 			this.searchType = '';
 			this.searchSource = '';
 			this._bySubId = new Map();
+			this._byMarkId = new Map();
 			this._detailCache = this._detailCache || new Map();
+			this._openExpand = null;
 			this._subscriptions = [];
 
 			// A preset handed from Explore/Me ("browse by type", "your
@@ -2509,6 +2579,8 @@
 				}
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
+				this._byMarkId.clear();
+				this._openExpand = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -2710,7 +2782,9 @@
 				list.innerHTML = draftItems
 					.map(
 						(item) =>
-							`<a class="daymark-recent__item" href="#create" data-edit-draft="${esc(
+							`<a class="daymark-recent__item daymark-recent__item--${esc(
+								resolveCardKind(item)
+							)}" href="#create" data-edit-draft="${esc(
 								String(item.id)
 							)}">${renderMarkCore(item)}</a>`
 					)
@@ -3612,51 +3686,258 @@
 		},
 	};
 
-	// --- Merged Timeline feed: subscription-post card + supporting glyphs ---
+	// --- Timeline card kinds: shared type-icon rail + per-kind bodies ---
 	//
 	// Home's Recent Marks list is the merged Timeline feed (GET
-	// /daymark/v1/timeline): a Mark item renders with the existing
-	// renderItem()/renderMarkCore() (⋯ edit/delete menu intact), while a
-	// subscription-post item gets its own card below.
+	// /daymark/v1/timeline): a Mark item and a subscription-post item each
+	// render their own card shape, but both resolve to one shared set of
+	// content "kinds" here — a Mark's own `type`
+	// (note/image/gallery/video/audio/mixed) and a subscription post's
+	// `post_format` are already the same vocabulary in spirit
+	// (Daymark_Subscription_Source_Feed::normalize() maps a subscribed
+	// feed's content onto exactly this set, not raw WordPress post
+	// formats) — so one icon set, one media-slot renderer, and one meta-line
+	// renderer serve every Timeline item regardless of source, while each
+	// kind still gets its own visual weight (image/video/gallery/mixed get
+	// a media-dominant banner, audio a compact artwork row, note pure
+	// typography, and a subscription post's 'standard' format further
+	// splits into 'article'/'link' below). 'article' and 'link' only ever
+	// apply to a subscription post — a Mark is never "an article."
 
-	// A subscription post's post_format is this source's equivalent of a
-	// Mark's primary_type; TYPE_LABELS already covers image/video/audio/note,
-	// this only adds the one label a Mark never has ('standard' — a plain
-	// text/link post from a feed with no richer format hint).
-	// Thumbnail for one subscription post card: only ever a real
-	// featured_image_url. A pruned rich-media post (its embed cleared) used
-	// to fall back to the subscription's own site icon here, and a post
-	// with no image at all fell back to a type-initial glyph — but every
-	// card already carries that same site icon in its own leading column
-	// (see renderSiteIconButton()), so showing it a second time inside the
-	// card (or a same-shaped glyph standing in for it) read as a duplicate
-	// rather than useful content. No image left just runs title/meta
-	// straight to the edge, same as a Note Mark's card now.
-	function subscriptionPostThumb(item) {
-		return item.featured_image_url
-			? `<img class="daymark-recent__thumb" src="${esc(item.featured_image_url)}" alt="" />`
-			: '';
+	// Icons for the rail's type-indicator column and a media-dominant
+	// card's placeholder panel (see renderCardMedia()). Reuses TYPE_ICONS'
+	// own image/video/audio/note glyphs so the same shape means the same
+	// thing everywhere in the app; the other four kinds have no
+	// composer-launcher equivalent, so they're defined here instead of
+	// extending TYPE_ICONS itself.
+	const CARD_KIND_ICONS = Object.assign({}, TYPE_ICONS, {
+		gallery:
+			'<rect x="7" y="7" width="14" height="14" rx="2"></rect><path d="M3 15V5a2 2 0 0 1 2-2h10"></path>',
+		mixed:
+			'<rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>',
+		article:
+			'<line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="17" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line>',
+		link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>',
+	});
+
+	// Display labels for the same kind vocabulary — TYPE_LABELS covers a
+	// Mark's own 6, this adds the 2 a Mark never has.
+	const CARD_KIND_LABELS = Object.assign({}, TYPE_LABELS, { article: 'Article', link: 'Link' });
+
+	// Kinds that get the media-dominant layout — a full-width band above
+	// the caption, not a small thumb beside it — the ones a real
+	// photo/poster frame is the point of. Audio gets its own compact
+	// artwork-beside-text treatment instead (see MEDIA_DOMINANT_KINDS'
+	// absence of 'audio'): Path's own audio moments show a small square,
+	// not a banner, and a podcast episode's cover art is square by
+	// convention anyway.
+	const MEDIA_DOMINANT_KINDS = ['image', 'gallery', 'video', 'mixed'];
+
+	// Kinds a small rich-media badge overlays on their own artwork (see
+	// cardKindBadge()) — 'image' doesn't need one (the photo itself already
+	// says "image"), and neither does a kind with no media slot at all
+	// (note/link).
+	// 'video' isn't included: its own dedicated centered play button (see
+	// renderCardMedia()'s playButton) already says "tap to play" more
+	// directly than a small corner badge duplicating the rail's own
+	// video-camera icon would.
+	const BADGED_KINDS = ['audio', 'gallery', 'mixed'];
+
+	// Audio's own badge is a play triangle rather than a second music-note
+	// icon (the rail's own type icon already identifies "audio" from a
+	// distance) — this is the compact "tap to listen" affordance the brief
+	// asks a podcast/audio card's artwork to carry.
+	const AUDIO_BADGE_ICON =
+		'<polygon points="6 4 20 12 6 20 6 4"></polygon>';
+
+	// A subscription post's 'standard' format (no richer signal from the
+	// feed itself) splits into 'article' or 'link' by a word-count
+	// heuristic: the excerpt server-side is always a fixed
+	// wp_trim_words(..., 40) regardless of the source post's real length
+	// (see Daymark_Subscription_Source_Feed::normalize()) — there's no
+	// length-preserving signal yet to tell "this genuinely was short" apart
+	// from "this got truncated," so a short excerpt with no image is
+	// treated as link-like; anything longer, or carrying an image, reads as
+	// an article. A deliberate approximation until the feed source captures
+	// real content length — see this change's summary for the follow-up
+	// this implies.
+	const CARD_KIND_LINK_WORD_THRESHOLD = 20;
+
+	function resolveCardKind(item) {
+		if ('subscription_post' !== item.item_type) {
+			if (item.type) {
+				return item.type;
+			}
+			// GET /timeline's Marks side isn't gated on _daymark_is_mark
+			// (see get_timeline()'s own docblock, class-rest-controller.php)
+			// — an ordinary post published straight through the block
+			// editor shows up here too, with no _daymark_primary_type meta
+			// at all to report as `type`. Infer a reasonable kind from
+			// what the post actually has instead of collapsing every
+			// non-Daymark post to the same bare note row: a real featured
+			// image gets the same media-dominant treatment a real Image
+			// Mark does, and any real excerpt otherwise reads as an
+			// article — the same inference a subscription's own
+			// 'standard' format gets just below.
+			if (item.thumbnail) {
+				return 'image';
+			}
+			const plainExcerpt = toPlainText(item.excerpt || '').trim();
+			return plainExcerpt ? 'article' : 'note';
+		}
+		if (item.post_format && 'standard' !== item.post_format) {
+			return item.post_format;
+		}
+		const words = toPlainText(item.excerpt || '')
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean).length;
+		return !item.featured_image_url && words > 0 && words < CARD_KIND_LINK_WORD_THRESHOLD
+			? 'link'
+			: 'article';
+	}
+
+	// The rail column every card carries between its site icon and its own
+	// body — a quiet, muted indicator of what kind of thing this is,
+	// visually threaded to the item above and below by a thin connecting
+	// line (see .daymark-recent__typeicon::before in app.css) so a scan
+	// down the list reads as one continuous chronological flow, the way
+	// Path's own timeline spine does. Deliberately not a tap target — it
+	// carries no interaction of its own, just a glance-able signal — so it
+	// stays out of the touch-target audit entirely.
+	function renderTypeIcon(kind) {
+		const glyph = CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note;
+		const label = CARD_KIND_LABELS[kind] || 'Post';
+		return `<span class="daymark-recent__typeicon" aria-hidden="true" title="${esc(
+			label
+		)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+	}
+
+	// Small badge overlaid on a card's own artwork — video/audio/gallery/
+	// mixed aren't obvious from a static image alone the way 'image'
+	// already is from its own thumbnail, so a glance at the badge is
+	// enough to know what a tap leads to before opening it.
+	function cardKindBadge(kind) {
+		if (!BADGED_KINDS.includes(kind)) {
+			return '';
+		}
+		const glyph = 'audio' === kind ? AUDIO_BADGE_ICON : CARD_KIND_ICONS[kind];
+		const fill = 'audio' === kind ? 'currentColor' : 'none';
+		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
+	}
+
+	// One card's media slot: a real image — a Mark's own thumbnail, a
+	// subscription post's featured_image_url, or (only when there's no
+	// post image at all) the subscription's own site icon — when there is
+	// one; a type-glyph placeholder panel when there isn't (a video/audio
+	// Mark very often has neither: Daymark's publisher only ever sets a
+	// featured image for an image/gallery Mark — see attach_media() in
+	// class-publisher.php — so the placeholder keeps the media slot's own
+	// visual promise instead of collapsing to nothing); or no slot at all
+	// for a kind with none (note/link). A broken image degrades to the
+	// same placeholder via imgWithFallback()'s shared error handling.
+	function renderCardMedia(item, kind) {
+		if ('note' === kind || 'link' === kind) {
+			return '';
+		}
+		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
+		const wrapClass = isMedia ? 'daymark-recent__thumbwrap daymark-recent__thumbwrap--media' : 'daymark-recent__thumbwrap';
+		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;
+		const glyph = (CARD_KIND_LABELS[kind] || 'S').charAt(0);
+		const playButton =
+			'video' === kind
+				? '<span class="daymark-recent__thumbplay" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg></span>'
+				: '';
+		if (src) {
+			const thumbClass =
+				'daymark-recent__thumb' +
+				(item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
+			return `<span class="${wrapClass}">${imgWithFallback(
+				src,
+				thumbClass,
+				glyph
+			)}${cardKindBadge(kind)}${playButton}</span>`;
+		}
+		const iconSize = isMedia ? 32 : 20;
+		return `<span class="${wrapClass} daymark-recent__thumb--placeholder" aria-hidden="true"><svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${
+			CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note
+		}</svg></span>${playButton}`;
+	}
+
+	// The meta line every card kind shares: an optional leading chip
+	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
+	// post), the author when there is one (a subscription post only — a
+	// Mark's author is implicitly config.currentUser, shown via its own
+	// site icon instead), and a relative timestamp. Deliberately doesn't
+	// repeat the kind as a text label the way this line used to for a Mark
+	// (TYPE_LABELS[item.type]) — the rail's own type icon (see
+	// renderTypeIcon()) already says that now, so the text stays free for
+	// what the icon can't show.
+	function renderCardMeta(item, chipHtml) {
+		const parts = [];
+		if (chipHtml) {
+			parts.push(chipHtml);
+		}
+		if (item.author) {
+			parts.push(esc(item.author));
+		}
+		if (item.date) {
+			parts.push(renderCardTimestamp(item.date));
+		}
+		return parts.join(' &middot; ');
+	}
+
+	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
+	// one Mark's card markup — used by every Mark item any feed-list screen
+	// renders (Home's Recent/Drafts, Search's results), always wrapped in
+	// the same ⋯ actions menu (see renderMarkItem()). Keeping this in one
+	// place is what "reuse, don't reinvent Mark card markup" means.
+	function renderMarkCore(item) {
+		const kind = resolveCardKind(item);
+		const title = item.title || 'Untitled Mark';
+		// Drafts look identical to published Marks otherwise — and their
+		// permalinks are invisible to visitors — so say so. (The Timeline
+		// endpoint only ever returns published Marks, so this never fires
+		// there; Home's Recent/Drafts lists are what actually rely on it.)
+		const isDraft = item.status && 'publish' !== item.status;
+		const chip = isDraft ? '<span class="daymark-chip daymark-chip--draft">Draft</span>' : '';
+		// A caption longer than generate_title()'s own 8-word title trim
+		// (class-publisher.php) carries real content beyond the title —
+		// show it as a secondary line; a short caption's title already
+		// *is* the whole caption, so repeating it as an "excerpt" would
+		// just be noise.
+		const excerpt = toPlainText(item.excerpt || '');
+		const showExcerpt = excerpt && excerpt !== title;
+		return `
+					${renderCardMedia(item, kind)}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
+						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						${isDraft ? '' : renderItemStats(item)}
+					</span>`;
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
-	// shows the click-through detail sheet in place rather than navigating —
-	// its permalink points at the *source* site, not anywhere in this app.
-	// No comment/like stat row: those only ever exist for a Mark.
+	// expands its content inline, right below the card, rather than
+	// navigating — its permalink points at the *source* site, not anywhere
+	// in this app. No comment/like stat row: those only ever exist for a
+	// Mark — Daymark doesn't (and, for someone else's post, can't cheaply)
+	// track engagement data of its own for a subscription post.
 	function renderSubscriptionPostCard(item) {
+		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
-		const metaParts = [];
-		if (item.author) {
-			metaParts.push(esc(item.author));
-		}
-		if (item.date) {
-			metaParts.push(esc(relativeTime(item.date)));
-		}
 		const excerpt = toPlainText(item.excerpt || '');
+		// Every kind but the media-dominant ones shows its excerpt — an
+		// image/video/gallery/mixed card already carries the point in its
+		// own banner, so a caption stays secondary the same way a Mark's
+		// own excerpt does; article/link/audio/note all lean on the text.
+		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind);
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
-		// sibling of the site icon inside a wrapper div instead, matching
-		// the Mark item's own wrapper shape.
+		// sibling of the site icon and type icon inside a wrapper div
+		// instead, matching the Mark item's own wrapper shape.
 		const siteLabel = subscriptionSiteLabel(item);
 		return `
 				<div class="daymark-recent__item-wrap">
@@ -3666,170 +3947,137 @@
 						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
 						filterValue: String(item.subscription_id),
 					})}
-					<button type="button" class="daymark-recent__item daymark-recent__item--button" data-subpost="${id}">
-						${subscriptionPostThumb(item)}
+					${renderTypeIcon(kind)}
+					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+						kind
+					)}" data-subpost="${id}">
+						${renderCardMedia(item, kind)}
 						<span class="daymark-recent__body">
 							<span class="daymark-recent__title">${esc(title)}</span>
-							<span class="daymark-recent__meta"><span class="daymark-chip daymark-chip--draft">Subscribed</span>${
-								metaParts.length ? ' ' + metaParts.join(' &middot; ') : ''
-							}</span>
-							${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+							<span class="daymark-recent__meta">${renderCardMeta(
+								item,
+								'<span class="daymark-chip daymark-chip--draft">Subscribed</span>'
+							)}</span>
+							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
 					</button>
+					<div class="daymark-recent__expand" data-expand-panel hidden></div>
 				</div>`;
 	}
 
-	// --- Overlay: subscription-post detail sheet ---
+	// --- Inline expand: a Timeline card's own content, shown in place ---
+	//
+	// Replaces the old subscription-only modal/overlay detail sheet — every
+	// card (a Mark, an ordinary block-editor post, or a subscription post)
+	// now expands its own content directly below itself in the list
+	// instead: no dialog overlaying the Timeline, and — for a Mark or
+	// ordinary post — no navigating away to the permalink either. Only one
+	// card is expanded at a time per screen; opening another collapses
+	// whichever was open first, so the list doesn't grow unboundedly tall
+	// as you tap around. `screen._detailCache` (a Map keyed 'mark-{id}' /
+	// 'sub-{id}' so the two id spaces can never collide) persists across
+	// re-visiting the screen, so a card already opened once never re-fetches.
 
-	// Shown when opening a Home subscription-post card. Always issues the
-	// click-through fetch (GET /subscription-posts/{id}) on first open —
+	// Renders whatever HTML a card's content loader resolved to, plus a
+	// "View full post" link out to the real permalink — both kinds still
+	// point somewhere real: a Mark/ordinary post's own permalink (its
+	// theme-rendered page, comments included, for anyone who wants that),
+	// or a subscription post's source URL.
+	function expandBodyHtml(html, permalink, linkLabel) {
+		if (!html) {
+			return '';
+		}
+		const link = permalink
+			? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+					permalink
+			  )}" target="_blank" rel="noopener">${esc(linkLabel)} &#8599;</a></p>`
+			: '';
+		// Already wp_kses_post()-sanitized server-side (both the Mark/post
+		// content endpoint and the subscription click-through fetch) and
+		// meant to be rendered as trusted HTML — not re-escaped here.
+		return `<div class="daymark-expand-content">${html}</div>${link}`;
+	}
+
+	function expandErrorHtml() {
+		return '<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>';
+	}
+
+	// A Mark or ordinary post's own content — straight from the site's own
+	// database via GET /marks/{id}/content, so there's no page to narrow
+	// down in the first place (unlike a subscription post's external
+	// click-through fetch, below): no comments, no theme chrome, ever.
+	async function loadMarkExpandHtml(item) {
+		const full = await apiGet('marks/' + item.id + '/content');
+		const content = full && full.content ? String(full.content) : '';
+		return expandBodyHtml(content, item.permalink, 'View full post');
+	}
+
+	// A subscription post's full content, click-through-fetched (and
+	// narrowed/cached server-side) from its source site on first open —
 	// body_content is never present in the merged Timeline feed response,
-	// even for a 'full' post — then caches the result on the Map handed in
-	// by HomeScreen so re-opening the same card doesn't re-fetch it.
-	const SubscriptionPostSheet = {
-		el: null,
-		opener: null,
-		cache: null,
-		current: null,
+	// even for an already-'full' post.
+	async function loadSubscriptionExpandHtml(item) {
+		const full = await apiGet('subscription-posts/' + item.id);
+		const content = full && full.body_content ? String(full.body_content) : '';
+		return expandBodyHtml(content, item.permalink, 'View original');
+	}
 
-		show(item, cache, opener) {
-			this.opener = opener || null;
-			this.cache = cache;
-			this.current = item;
-			if (!this.el) {
-				this.el = document.createElement('div');
-				this.el.className = 'daymark-sheet';
-				document.body.appendChild(this.el);
-			}
-			this.el.hidden = false;
-			this.renderShell();
-			this.onKeydown = (event) => {
-				if ('Escape' === event.key) {
-					this.hide();
-				}
-			};
-			document.addEventListener('keydown', this.onKeydown);
-			const heading = this.el.querySelector('#daymark-subpost-title');
-			if (heading) {
-				heading.focus();
-			}
-			this.load();
-		},
+	// Collapses whichever card is currently expanded on this screen, if any.
+	function closeOpenExpand(screen) {
+		if (!screen._openExpand) {
+			return;
+		}
+		const { trigger, panel } = screen._openExpand;
+		panel.hidden = true;
+		panel.innerHTML = '';
+		if (trigger.isConnected) {
+			trigger.setAttribute('aria-expanded', 'false');
+		}
+		screen._openExpand = null;
+	}
 
-		renderShell() {
-			const item = this.current;
-			const metaParts = [];
-			if (item.author) {
-				metaParts.push(esc(item.author));
-			}
-			if (item.date) {
-				metaParts.push(esc(relativeTime(item.date)));
-			}
-			this.el.innerHTML = `
-			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="Close"></button>
-			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-subpost-title">
-				<h2 class="daymark-sheet__title" id="daymark-subpost-title" tabindex="-1">${esc(
-					item.title || 'Untitled post'
-				)}</h2>
-				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				<div class="daymark-sheet__body" data-subpost-body aria-live="polite">
-					<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading full post&hellip;</p>
-				</div>
-			</div>`;
-			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
-		},
+	// Toggles one card's expand panel: closes it if it's the one already
+	// open, otherwise closes whatever else was open and opens this one,
+	// fetching (or reusing the cached) content as needed.
+	async function toggleExpand(screen, trigger, panel, cacheKey, loader) {
+		const reopening = screen._openExpand && screen._openExpand.panel === panel;
+		closeOpenExpand(screen);
+		if (reopening) {
+			return;
+		}
+		trigger.setAttribute('aria-expanded', 'true');
+		panel.hidden = false;
+		screen._openExpand = { trigger, panel };
 
-		async load() {
-			const item = this.current;
-			const key = String(item.id);
-			const cached = this.cache.get(key);
-			if (cached && 'done' === cached.state) {
-				this.renderBody(cached.body_content);
-				return;
+		const cached = screen._detailCache.get(cacheKey);
+		if (cached && 'done' === cached.state) {
+			panel.innerHTML = cached.html || expandErrorHtml();
+			return;
+		}
+		if (cached && 'error' === cached.state) {
+			panel.innerHTML = expandErrorHtml();
+			return;
+		}
+		screen._detailCache.set(cacheKey, { state: 'loading' });
+		panel.innerHTML =
+			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading&hellip;</p>';
+		try {
+			const html = await loader();
+			// Collapsed again, or a different card opened, while the fetch
+			// was in flight — the result is still worth caching, just not
+			// worth rendering into a panel nobody's looking at anymore.
+			const stillOpen = screen._openExpand && screen._openExpand.panel === panel;
+			screen._detailCache.set(cacheKey, { state: 'done', html });
+			if (stillOpen) {
+				panel.innerHTML = html || expandErrorHtml();
 			}
-			if (cached && 'error' === cached.state) {
-				this.renderError();
-				return;
+		} catch (err) {
+			screen._detailCache.set(cacheKey, { state: 'error' });
+			if (screen._openExpand && screen._openExpand.panel === panel) {
+				panel.innerHTML = expandErrorHtml();
 			}
-			this.cache.set(key, { state: 'loading' });
-			try {
-				const full = await apiGet('subscription-posts/' + item.id);
-				if (!this.isShowing(key)) {
-					return;
-				}
-				const body = full && full.body_content ? String(full.body_content) : '';
-				this.cache.set(key, { state: 'done', body_content: body });
-				this.renderBody(body);
-			} catch (err) {
-				if (!this.isShowing(key)) {
-					return;
-				}
-				this.cache.set(key, { state: 'error' });
-				this.renderError();
-			}
-		},
-
-		// Whether this sheet is still open on the same card the in-flight
-		// request was made for (it may have been dismissed, or reopened on a
-		// different card, while the fetch was in flight).
-		isShowing(key) {
-			return !!this.el && !this.el.hidden && !!this.current && String(this.current.id) === key;
-		},
-
-		renderBody(html) {
-			const body = this.el.querySelector('[data-subpost-body]');
-			if (!body) {
-				return;
-			}
-			// An empty body (a 'full' fetch that genuinely had nothing to
-			// show) reads the same as a failure to the person looking at
-			// it — never leave them staring at a silently blank sheet.
-			if (!html) {
-				this.renderError();
-				return;
-			}
-			// Already wp_kses_post()-sanitized server-side and explicitly
-			// documented as safe to render as-is — not re-escaped here.
-			body.innerHTML =
-				`<div class="daymark-subpost-content">${html}</div>` + this.viewOriginalLink();
-		},
-
-		renderError() {
-			const body = this.el.querySelector('[data-subpost-body]');
-			if (!body) {
-				return;
-			}
-			body.innerHTML =
-				'<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>' +
-				this.viewOriginalLink();
-		},
-
-		viewOriginalLink() {
-			const permalink = this.current && this.current.permalink;
-			return permalink
-				? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
-						permalink
-				  )}" target="_blank" rel="noopener">View original &#8599;</a></p>`
-				: '';
-		},
-
-		hide(restoreFocus = true) {
-			if (!this.el || this.el.hidden) {
-				return;
-			}
-			this.el.hidden = true;
-			this.el.innerHTML = '';
-			if (this.onKeydown) {
-				document.removeEventListener('keydown', this.onKeydown);
-				this.onKeydown = null;
-			}
-			if (restoreFocus && this.opener && this.opener.isConnected) {
-				this.opener.focus();
-			}
-			this.opener = null;
-			this.current = null;
-		},
-	};
+		}
+	}
 
 	// --- Screen: Publish ---
 
@@ -4541,6 +4789,29 @@
 	window.addEventListener('hashchange', () => {
 		showScreen(window.location.hash);
 	});
+
+	// A broken `data-img-fallback`-carrying <img> (see imgWithFallback()
+	// above) degrades to a glyph span in its place instead of the browser's
+	// broken-image icon. One delegated listener for the whole app rather
+	// than a per-screen binding, since the failure this guards against
+	// (an unverified favicon guess 404ing) can happen on any screen that
+	// renders a subscription's site icon or post thumbnail. The `error`
+	// event doesn't bubble, so this has to listen on the capturing phase.
+	window.addEventListener(
+		'error',
+		(event) => {
+			const img = event.target;
+			if (!(img instanceof HTMLImageElement) || !img.dataset.imgFallback) {
+				return;
+			}
+			const span = document.createElement('span');
+			span.className = img.dataset.imgFallbackClass || '';
+			span.setAttribute('aria-hidden', 'true');
+			span.textContent = img.dataset.imgFallback;
+			img.replaceWith(span);
+		},
+		true
+	);
 
 	// Explore/Search/Me are real server routes (Daymark_Routes), same as
 	// notifications already was — a direct load or refresh at
