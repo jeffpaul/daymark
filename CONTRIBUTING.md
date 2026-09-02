@@ -226,11 +226,16 @@ clear docblock — and **avoid curly braces `{ }` in hook docblock prose**, as
 MDX parses them as JavaScript and will break the docs build. (Describe array
 shapes in words rather than `array{...}` syntax in hook docblocks.)
 
+The Hooks Docs workflow builds and deploys the site on push to `main` only —
+not on pull requests. It's a publishing step, not a per-commit correctness
+check, so a docblock mistake here won't fail your PR's CI; it'll surface
+after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
+
 ## Pull requests
 
 1. **Branch off `main`** and open your PR against `main`.
-2. **Keep CI green.** Every PR runs CI, Tests, Plugin Check, and Hooks Docs;
-   all must pass before merge.
+2. **Keep CI green.** Every PR runs CI, Tests, and Plugin Check; all must
+   pass before merge. (Hooks Docs runs after merge — see above.)
 3. **Add or update tests** alongside behavior changes (PHPUnit for
    PHP/REST, Playwright for user-facing flows).
 4. **Write clear commit messages** with an imperative subject line
