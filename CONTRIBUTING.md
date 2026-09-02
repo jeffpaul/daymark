@@ -287,7 +287,11 @@ add someone by hand when they can't be detected (for example, off-GitHub help).
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Add an entry
 under `## [Unreleased]` in the same PR as your change, grouped under one of the
 standard headings — **Added**, **Changed**, **Deprecated**, **Removed**,
-**Fixed**, **Security**:
+**Fixed**, **Security** — plus this project's own **Developer** heading for
+changes with no end-user-visible effect (internal refactors, CI, dev tooling).
+Whichever of these a released version's section actually uses, they always
+appear in that same order — Added, Changed, Deprecated, Removed, Fixed,
+Security, Developer — never a different order per release:
 
 ```markdown
 ## [Unreleased]

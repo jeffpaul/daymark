@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Developer
+
+- Past releases' changelog sections listed their `###` category headings in whatever order they happened to be written, not a consistent one. Reordered every existing section (0.1.0 through 0.9.0) to the one true order — Added, Changed, Deprecated, Removed, Fixed, Security, Developer — content unchanged, and documented that order in CONTRIBUTING.md so it stays consistent going forward.
+
 ## [0.9.0] - 2026-09-02
 
 ### Added
@@ -42,6 +46,22 @@ can't act on them.
 - Share sheet integration: share a photo, link, or text to Daymark from any app on your phone (Photos, Safari, wherever) — it creates a draft and opens straight into the composer with it already loaded, ready for a caption. Requires having added Daymark to your home screen.
 - AI Assist can now generate a transcript for an audio or video Mark — tap "Generate transcript" in the composer — and improve, not just regenerate, an image's alt text via a new "Improve with AI"/"Suggest with AI" button next to the field. Once a Mark has a transcript, its AI-suggested caption and title are grounded in what's actually said, so "summarize podcast" falls out of the existing caption/title suggestions rather than being a separate feature. Both are exactly as optional and non-blocking as the rest of AI Assist: no configured provider means no button, and a failed request just leaves the field for manual entry.
 
+### Changed
+
+- For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.
+
+### Removed
+
+- `Daymark_Migration`, the one-time storage conversion from the plugin's previous identity, Moment (≤ 0.5.0), to Daymark. It has been deprecated since 0.7.0. **If your site still runs Moment (≤ 0.5.0), you must upgrade through an intermediate 0.6.x–0.8.x release first — jumping straight to this version will not convert your old Moment data.** ([#36](https://github.com/jeffpaul/daymark/issues/36))
+- The Images, Videos, Audio, and Notes section pages, their `daymark/*` blocks, `[daymark_*]` shortcodes, `Daymark_Renderer`, and the `@wordpress/scripts` block-editor build (`src/`, `build/`) that existed only to power them — superseded by Explore's "Browse by type" section. **An existing install's pages are moved to Trash (not hard-deleted) on upgrade**, and a bookmarked or indexed old URL now 301s to `/daymark/explore` instead of a bare 404.
+
+### Fixed
+
+- For developers: `uninstall.php` now cleans up everything the Subscriptions feature and the POSSE microformats2 work added — the `daymark_subscriptions` table, cached `daymark_sub_post` content, the subscription poller's cron event, the `daymark_redirect_rule_added`/`daymark_subscriptions_db_version` options, the `daymark_rel_me_url` user meta, and rate-limiter transients. It previously only covered what existed before those features shipped.
+- For developers: the SPA router now tears down the previous screen's outside-click/Escape dismiss listeners before rendering the next one, instead of leaving them attached to `document` and firing against whichever screen loads next. Not user-visible today (every current dismiss action is a no-op once its own screen is gone), but closes off the failure mode for a future one that isn't. ([#64](https://github.com/jeffpaul/daymark/issues/64))
+- Several tappable controls were sized below the app shell's own documented 44px minimum tap target: the Timeline item's ⋯ menu trigger, the site icon filter button, the tag remove ("×") button, the Notifications reply screen's Send button, the ⋯ menu's delete-confirmation buttons, and the Search screen's filter chips. All now size off the shared `--daymark-tap-min` token.
+- Subscribing to a site captured its feed `<link>` tag's own title — commonly WordPress's default `"{Site Name} » Feed"` convention — as the site name shown on the Settings screen and Timeline, instead of the plain site name. Now reads the site's own `<title>` tag; the old value is kept as a new `feed_title` column, unused for display today but there for a future subscription to more than one feed from the same site.
+
 ### Developer
 
 - Added product principles documentation. ([#118](https://github.com/jeffpaul/daymark/pull/118))
@@ -57,22 +77,6 @@ can't act on them.
 - CI: the Hooks Docs workflow now runs on push to `main` only, not on pull requests — it's a publishing step (building and deploying the hook reference site), not a per-commit correctness check, and the PR-side build-validate job was one of the slower checks in the suite (~4 minutes of Node/PHP/Docusaurus setup) for a narrow failure mode (MDX-hostile syntax in a hook docblock) that's rare and cheap to fix in a follow-up commit. The PR Playground Preview workflow no longer re-runs on every push to an open PR (`synchronize`) — its blueprint points at the PR's branch name, not a commit SHA, so the comment it posts can never change across pushes; only `opened`/`reopened` can produce a different result.
 - Added `GET /daymark/v1/marks/{id}/content` backing the Timeline's inline-expand panel for a Mark or ordinary post: renders `post_content` via `apply_filters( 'the_content', ... )` — the same filter a theme's own `the_content()` call runs — in isolation, so the response is just that post's own content, never the page a permalink visit would render around it. Not gated on `_daymark_is_mark`, matching `GET /timeline`'s own inclusive Marks query; permission callback is the shared `permissions_check` (Timeline's own visibility rule), not the per-post `permissions_check_post`, since a card's own Timeline summary already discloses the same information to anyone who can see the Timeline at all. `Daymark_Subscription_Poller::extract_body_html()` (the subscription click-through fetch's own content narrowing) is hardened alongside it: `<nav>`/`<header>`/`<footer>`/`<aside>` elements are now stripped wherever they appear, and the fetched page's own `<article>` element is preferred over its whole `<body>` when present, with a defensive pass dropping a trailing `id="comments"`/`id="respond"` container — still a bounded, regex-based approximation (this codebase's established choice over a DOMDocument dependency), not full Readability-style extraction, but no longer just "the entire fetched page minus `<head>`, `<script>`, and `<style>`."
 
-### Changed
-
-- For developers: the four wordpress.org screenshots (`.wordpress-org/screenshot-*.png`) still showed the plugin's previous identity, Moment — pre-0.6.0 branding, the removed public Timeline nav item, and no sign of Subscriptions or POSSE markup. Regenerated against a live 0.9.0 build with current Daymark branding and content.
-
-### Fixed
-
-- For developers: `uninstall.php` now cleans up everything the Subscriptions feature and the POSSE microformats2 work added — the `daymark_subscriptions` table, cached `daymark_sub_post` content, the subscription poller's cron event, the `daymark_redirect_rule_added`/`daymark_subscriptions_db_version` options, the `daymark_rel_me_url` user meta, and rate-limiter transients. It previously only covered what existed before those features shipped.
-- For developers: the SPA router now tears down the previous screen's outside-click/Escape dismiss listeners before rendering the next one, instead of leaving them attached to `document` and firing against whichever screen loads next. Not user-visible today (every current dismiss action is a no-op once its own screen is gone), but closes off the failure mode for a future one that isn't. ([#64](https://github.com/jeffpaul/daymark/issues/64))
-- Several tappable controls were sized below the app shell's own documented 44px minimum tap target: the Timeline item's ⋯ menu trigger, the site icon filter button, the tag remove ("×") button, the Notifications reply screen's Send button, the ⋯ menu's delete-confirmation buttons, and the Search screen's filter chips. All now size off the shared `--daymark-tap-min` token.
-- Subscribing to a site captured its feed `<link>` tag's own title — commonly WordPress's default `"{Site Name} » Feed"` convention — as the site name shown on the Settings screen and Timeline, instead of the plain site name. Now reads the site's own `<title>` tag; the old value is kept as a new `feed_title` column, unused for display today but there for a future subscription to more than one feed from the same site.
-
-### Removed
-
-- `Daymark_Migration`, the one-time storage conversion from the plugin's previous identity, Moment (≤ 0.5.0), to Daymark. It has been deprecated since 0.7.0. **If your site still runs Moment (≤ 0.5.0), you must upgrade through an intermediate 0.6.x–0.8.x release first — jumping straight to this version will not convert your old Moment data.** ([#36](https://github.com/jeffpaul/daymark/issues/36))
-- The Images, Videos, Audio, and Notes section pages, their `daymark/*` blocks, `[daymark_*]` shortcodes, `Daymark_Renderer`, and the `@wordpress/scripts` block-editor build (`src/`, `build/`) that existed only to power them — superseded by Explore's "Browse by type" section. **An existing install's pages are moved to Trash (not hard-deleted) on upgrade**, and a bookmarked or indexed old URL now 301s to `/daymark/explore` instead of a bare 404.
-
 ## [0.8.0] - 2026-08-31
 
 ### Added
@@ -83,16 +87,20 @@ can't act on them.
 - Home's Recent Marks list now shows the same comment/like stat row as the public Timeline card — a zero count stays a dimmed icon-only, a real count shows next to a bolder icon. Resolves the compactness side of [#42](https://github.com/jeffpaul/daymark/issues/42) in favor of the shared visual language. ([#72](https://github.com/jeffpaul/daymark/pull/72))
 - A Mark's own permalink page now carries outbound POSSE-quality microformats2 markup: `h-entry` (with `e-content`, `p-name`/`p-summary`, `dt-published`, `u-url`, and `u-photo`/`u-video`/`u-audio` for attached media) and an author `h-card` (`p-author`, `p-name`, `u-photo`). A new `rel=me` field on the native Users → Your Profile screen renders as a `rel="me"` link next to the h-card when set. Deliberately leaves out `u-email` — a WordPress account email isn't meant to be public, and it's optional in the h-card spec. (part of [#78](https://github.com/jeffpaul/daymark/issues/78))
 
-### Removed
-
-- The public `/timeline` page, the `daymark/timeline` block, and the `[daymark_timeline]` shortcode. Timeline is now an interleaved, multi-source view (your own Marks plus subscribed sites' posts, via Home) that only makes sense inside the authenticated app — a public page under the same name showing something narrower was confusing and redundant. An existing install's `/timeline` page is hard-deleted on upgrade (real 404, no redirect); individual Mark permalinks, your site's RSS/Atom feed, and the other four section pages (`/images`, `/videos`, `/audio`, `/notes`) are unaffected. (part of [#78](https://github.com/jeffpaul/daymark/issues/78))
-
 ### Changed
 
 - For developers: `Requires PHP` is now 8.2 (was 8.1) — PHP 8.1 stopped receiving security fixes. `phpunit/phpunit` stays on `^9.6` rather than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a method PHPUnit 10 removed, so every test run under PHPUnit 10+ fails regardless of anything in this plugin. Tracked in [#106](https://github.com/jeffpaul/daymark/issues/106) for whenever core fixes it.
 - For developers: `CONTRIBUTING.md`'s crediting-contributors section now says explicitly that Claude Code gets a `Co-Authored-By:` trailer too, alongside human contributors, when it wrote or materially helped write a change. ([#108](https://github.com/jeffpaul/daymark/pull/108))
 - For developers: `CONTRIBUTING.md`'s release checklist now opens with a dependency update check (`npm`/`composer outdated` and `audit`, patch/minor routinely, majors held for a deliberate compatibility review) and a bundle size/tree-shaking check, before opening the release PR. ([#105](https://github.com/jeffpaul/daymark/pull/105))
 - For developers: this release's dependency check found nothing to update — `npm outdated` and `composer outdated --direct` are clean apart from the already-tracked `phpunit/phpunit` hold-back (see above). `npm audit` reports 32 advisories, all in `webpack-dev-server`'s transitive chain under the `@wordpress/scripts` devDependency (local build/watch tooling only — the plugin ships no npm `dependencies` and none of this reaches the distribution zip); `composer audit` is clean. Bundle size unchanged at 778 bytes.
+
+### Deprecated
+
+- `Daymark_Migration` (the one-time Moment → Daymark storage conversion) is soft-deprecated ahead of removal in 0.9.0. No behavior change for anyone still upgrading from Moment (≤ 0.5.0) — sites with real legacy data to convert now also get a logged `_deprecated_function()` notice (visible under `WP_DEBUG`) at the moment the conversion runs, as a heads-up before it's removed. ([#69](https://github.com/jeffpaul/daymark/pull/69))
+
+### Removed
+
+- The public `/timeline` page, the `daymark/timeline` block, and the `[daymark_timeline]` shortcode. Timeline is now an interleaved, multi-source view (your own Marks plus subscribed sites' posts, via Home) that only makes sense inside the authenticated app — a public page under the same name showing something narrower was confusing and redundant. An existing install's `/timeline` page is hard-deleted on upgrade (real 404, no redirect); individual Mark permalinks, your site's RSS/Atom feed, and the other four section pages (`/images`, `/videos`, `/audio`, `/notes`) are unaffected. (part of [#78](https://github.com/jeffpaul/daymark/issues/78))
 
 ### Fixed
 
@@ -107,15 +115,16 @@ can't act on them.
 - A cached subscription post could previously be edited or deleted through WordPress's own generic REST API (`wp/v2/subscription-posts`), auto-registered because the post type was `show_in_rest => true` and gated only by ordinary edit/delete-post capabilities — entirely separate from, and bypassing, Daymark's own read-only routes. Nothing in the app ever used that generic endpoint; it's now disabled, so a cached copy of someone else's content can only ever be written by the subscription poller itself. ([#103](https://github.com/jeffpaul/daymark/pull/103))
 - For developers: bumped `nanoid`, a transitive devDependency of `@wordpress/scripts`' bundled Lighthouse tooling, to resolve a high-severity advisory. Dev-tooling only — never invoked by this project's own build/test scripts and never shipped in the plugin zip. ([#105](https://github.com/jeffpaul/daymark/pull/105))
 
-### Deprecated
-
-- `Daymark_Migration` (the one-time Moment → Daymark storage conversion) is soft-deprecated ahead of removal in 0.9.0. No behavior change for anyone still upgrading from Moment (≤ 0.5.0) — sites with real legacy data to convert now also get a logged `_deprecated_function()` notice (visible under `WP_DEBUG`) at the moment the conversion runs, as a heads-up before it's removed. ([#69](https://github.com/jeffpaul/daymark/pull/69))
-
 ## [0.7.0] - 2026-08-07
 
 ### Added
 
 - The five `daymark/*` blocks (Timeline, Images, Videos, Audio, Notes) now expose how many recent Marks they show as a setting in the block editor, instead of requiring a hand-edit of the block markup. The count control appears under Block tab → "Number of Marks" (1–50) and the editor preview updates as you drag it. ([#56](https://github.com/jeffpaul/daymark/pull/56))
+
+### Changed
+
+- Tapping "+ New Mark" now fans out into Image/Video/Audio/Note bubbles, Path-app style, instead of always landing on a generic composer — pick a type and the composer opens pre-set to it. The button itself shrank to a plain "+" circle, and Timeline moved from the bottom nav up into the header as a combined icon + "Daymark" home-link, freeing a slot for the new launcher among the remaining Images/Video/Audio/Notes icons. Every public view now also carries a small "← Daymark" link back into the app, since section pages render inside your theme with no app chrome of their own. The animation respects `prefers-reduced-motion`, and every icon — the launcher and its four bubbles — has a real accessible name. ([#53](https://github.com/jeffpaul/daymark/pull/53))
+- For developers: the coding-standards suite now covers the test files (`composer phpcs-tests`) and checks PHP 8.1+ compatibility with the PHPCompatibility standard (`composer phpcompat`); CI runs both.
 
 ### Fixed
 
@@ -133,16 +142,7 @@ can't act on them.
 - Imported social replies can be routed through moderation: the `daymark_comment_import_approved` filter decides whether an imported reply is approved.
 - AI Assist now treats your draft text strictly as data — instructions hidden inside a caption or filename can't redirect the model. Draft text and filenames are wrapped in an explicit data boundary in the prompt itself, and AI-generated captions, titles, and alt text are now hard-capped server-side rather than only requested via the prompt. ([#60](https://github.com/jeffpaul/daymark/pull/60))
 
-### Changed
-
-- Tapping "+ New Mark" now fans out into Image/Video/Audio/Note bubbles, Path-app style, instead of always landing on a generic composer — pick a type and the composer opens pre-set to it. The button itself shrank to a plain "+" circle, and Timeline moved from the bottom nav up into the header as a combined icon + "Daymark" home-link, freeing a slot for the new launcher among the remaining Images/Video/Audio/Notes icons. Every public view now also carries a small "← Daymark" link back into the app, since section pages render inside your theme with no app chrome of their own. The animation respects `prefers-reduced-motion`, and every icon — the launcher and its four bubbles — has a real accessible name. ([#53](https://github.com/jeffpaul/daymark/pull/53))
-- For developers: the coding-standards suite now covers the test files (`composer phpcs-tests`) and checks PHP 8.1+ compatibility with the PHPCompatibility standard (`composer phpcompat`); CI runs both.
-
 ## [0.6.1] - 2026-08-05
-
-### Fixed
-
-- `/daymark` no longer 404s on an install migrated from Moment. The app deliberately keeps its persisted URL (e.g. `/moment`) so a home-screen icon never breaks, but the new brand's own URL had nothing registered at all — it now redirects to wherever the app actually lives. ([#49](https://github.com/jeffpaul/daymark/pull/49))
 
 ### Changed
 
@@ -150,6 +150,10 @@ can't act on them.
 - Each Mark on the public views now shows a comment count and a like count (from replies and reactions the ActivityPub, ATmosphere, or Webmention plugins deliver, plus your own on-site comments). A count of zero stays quiet — just a dimmed icon, no "0" — and steps up in weight and color as soon as there's something to report. ([#43](https://github.com/jeffpaul/daymark/pull/43))
 - Audio and video Marks on the public views now play inline, right in the card, instead of showing only a badge and caption; note Marks get a larger, pull-quoted caption since the text is the whole Mark. ([#44](https://github.com/jeffpaul/daymark/pull/44))
 - The Home footer (New Mark button + site nav) slides out of the way while you scroll down the recent list, reclaiming its height for content, and slides back on scroll-up or when keyboard focus reaches it. The top bar is a touch more compact too. ([#50](https://github.com/jeffpaul/daymark/pull/50))
+
+### Fixed
+
+- `/daymark` no longer 404s on an install migrated from Moment. The app deliberately keeps its persisted URL (e.g. `/moment`) so a home-screen icon never breaks, but the new brand's own URL had nothing registered at all — it now redirects to wherever the app actually lives. ([#49](https://github.com/jeffpaul/daymark/pull/49))
 
 ## [0.6.0] - 2026-08-04
 
