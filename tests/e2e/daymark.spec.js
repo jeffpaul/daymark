@@ -260,9 +260,13 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	// allows generous headroom.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
-	const subWrap = page.locator('.daymark-recent__item-wrap').filter({ has: subCard });
+	// A direct following-sibling of the card itself (same DOM shape
+	// onFeedListClick()'s own closest('.daymark-recent__item-wrap') relies
+	// on) — more precise than re-deriving the wrap via a `has:` filter,
+	// which re-resolves subCard's own selector independently and can
+	// disagree with which element was actually clicked.
+	const subPanel = subCard.locator('xpath=following-sibling::*[@data-expand-panel]');
 	await subCard.click();
-	const subPanel = subWrap.locator('[data-expand-panel]');
 	await expect(subPanel).toBeVisible();
 	const viewOriginal = subPanel.getByRole('link', { name: /View original/ });
 	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
