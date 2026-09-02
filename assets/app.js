@@ -361,6 +361,13 @@
 		timer: null,
 		saving: false,
 		pendingRetry: false,
+		// The in-progress runAutosave() call's own completion promise —
+		// waitForPendingAutosave() below awaits this so Publish/Save as
+		// Draft can never race an autosave upload for the same file. Set
+		// the instant `saving` flips true, resolved in runAutosave()'s
+		// `finally`, so there's never a window where `saving` is true but
+		// this is stale or missing.
+		inFlight: null,
 	};
 
 	function setAutosaveStatus(kind) {
@@ -762,6 +769,10 @@
 		const targetId = state.editing ? state.editing.id : null;
 
 		autosaveState.saving = true;
+		let resolveInFlight;
+		autosaveState.inFlight = new Promise((resolve) => {
+			resolveInFlight = resolve;
+		});
 		setAutosaveStatus('saving');
 		try {
 			const result = await submitOrQueue(path, targetId, payload, state.offlineQueueId);
@@ -818,6 +829,7 @@
 			}
 		} finally {
 			autosaveState.saving = false;
+			resolveInFlight();
 			if (autosaveState.pendingRetry) {
 				autosaveState.pendingRetry = false;
 				runAutosave();
@@ -828,6 +840,21 @@
 	function scheduleAutosave() {
 		clearTimeout(autosaveState.timer);
 		autosaveState.timer = setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
+	}
+
+	// Publish/Save as Draft must never race an autosave upload that's
+	// already in flight for the same file: buildMarkPayload() only skips a
+	// file once entry.uploadedId is set, and that ID isn't known until the
+	// autosave request resolves, so tapping Publish mid-upload would re-send
+	// the same blob (attaching it twice, or — if this is the first autosave
+	// and the draft post doesn't exist server-side yet — creating a second,
+	// separate post). This is a no-op when nothing is saving; otherwise it
+	// waits out the current run and any chained retry (see runAutosave()'s
+	// pendingRetry) before returning.
+	async function waitForPendingAutosave() {
+		while (autosaveState.saving) {
+			await autosaveState.inFlight;
+		}
 	}
 
 	// Effective Mark type: new files win; otherwise an edited draft's
@@ -3805,8 +3832,13 @@
 
 			// A real Publish/Save as Draft supersedes any pending autosave —
 			// cancel it so it can't fire mid-request against the same draft.
+			// If an autosave upload for a just-picked file is already in
+			// flight, wait for it first (see waitForPendingAutosave()) so
+			// buildMarkPayload() below sees entry.uploadedId already set
+			// instead of re-sending — and re-attaching — the same file.
 			clearTimeout(autosaveState.timer);
 			autosaveState.timer = null;
+			await waitForPendingAutosave();
 
 			const payload = buildMarkPayload(postStatus);
 			// Editing a draft updates it in place; otherwise create.

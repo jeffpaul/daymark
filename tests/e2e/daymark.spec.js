@@ -1227,6 +1227,70 @@ test('publish is optimistic: Success shows immediately and upgrades once the upl
 	await expect(page.locator('[data-pending-section]')).toBeHidden({ timeout: 5000 });
 });
 
+// Regression for the race surfaced (but left unfixed as out of scope) while
+// building the optimistic-publish flow above: picking a file fires an
+// immediate background autosave upload for it (runAutosave(), not the
+// debounced path) before entry.uploadedId is known. Tapping Publish while
+// that upload is still in flight used to build its own payload from the
+// same stale entry and re-send the file, attaching it to the post twice.
+// The fix makes Publish await any in-flight autosave first.
+test('publish does not re-upload a file whose autosave is still in flight', async ({ page }) => {
+	const caption = `E2E race ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+
+	// First file: let its autosave finish normally, so the draft post
+	// exists and this file already has its uploadedId before the race
+	// below — isolates the assertion to the second file's in-flight upload.
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await page.fill('#daymark-caption', caption);
+	await expect(page.locator('[data-autosave-status]')).toHaveText('Saved', { timeout: 10000 });
+
+	// Hold the second file's autosave upload (a POST to marks/{id}) open
+	// long enough to tap Publish while it's still running.
+	let updateRequests = 0;
+	await page.route('**/daymark/v1/marks/*', async (route) => {
+		if (route.request().method() === 'POST') {
+			updateRequests += 1;
+			await new Promise((resolve) => setTimeout(resolve, 1200));
+		}
+		await route.continue();
+	});
+
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image-2.png');
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+
+	await expect(page.getByText('Published to your site')).toBeVisible({ timeout: 10000 });
+	// Both file2's own autosave upload and Publish's request route through
+	// this same endpoint; seeing more than one confirms the race was
+	// actually exercised rather than the autosave finishing first on its own.
+	expect(updateRequests).toBeGreaterThanOrEqual(1);
+
+	const media = await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		const headers = { 'X-WP-Nonce': config.nonce };
+		const listRes = await fetch(`${config.restUrl}marks?per_page=1`, {
+			headers,
+			credentials: 'same-origin',
+		});
+		const [latest] = await listRes.json();
+		const markRes = await fetch(`${config.restUrl}marks/${latest.id}`, {
+			headers,
+			credentials: 'same-origin',
+		});
+		const mark = await markRes.json();
+		return mark.media;
+	}, caption);
+
+	// Exactly two attachments — file1 and file2 once each. A regression
+	// here shows up as three: file2 attached by both the autosave and the
+	// unguarded Publish request.
+	expect(media).toHaveLength(2);
+});
+
 // Home IS the merged Timeline feed (Marks + subscribed posts) now — there's
 // no separate #timeline screen to navigate to. The header wordmark is just
 // a plain "go home" link, and the merged feed's heading already reads
