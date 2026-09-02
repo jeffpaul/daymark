@@ -343,6 +343,114 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		$this->assertSame( array(), $normalized['raw_media'] );
 	}
 
+	/**
+	 * Scenario: no enclosures, but a real <video> tag embedded directly in
+	 * the content body — a native player is a strong, unambiguous signal
+	 * even with no mf2 markup, so it always counts.
+	 */
+	public function test_normalize_detects_video_from_inline_content_tag() {
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<p>Watch this.</p><video src="https://example.com/clip.mp4" controls></video>',
+			)
+		);
+
+		$this->assertSame( 'video', $normalized['post_format'] );
+	}
+
+	/**
+	 * Scenario: a microformats2 u-photo class on an inline <img> is trusted
+	 * even alongside substantial article text — an explicit author signal,
+	 * unlike a bare <img>.
+	 */
+	public function test_normalize_detects_mf2_photo_regardless_of_surrounding_text_length() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img class="u-photo" src="https://example.com/photo.jpg" /><p>' . $long_text . '</p>',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://example.com/photo.jpg', $normalized['featured_image_url'] );
+	}
+
+	/**
+	 * Scenario: a bare <img> (no mf2 markup) with only a short caption reads
+	 * as a photo post — the same "short text" shape a real photo-blog post
+	 * has.
+	 */
+	public function test_normalize_detects_plain_inline_image_when_text_is_short() {
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img src="https://example.com/photo.jpg" /><p>A quiet morning.</p>',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://example.com/photo.jpg', $normalized['featured_image_url'] );
+	}
+
+	/**
+	 * Scenario: a bare <img> alongside a substantial article stays
+	 * 'standard' — an illustrated article is not a photo post, and treating
+	 * every text post with a header image as "image" would make the bucket
+	 * meaningless.
+	 */
+	public function test_normalize_ignores_plain_inline_image_in_long_article() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img src="https://example.com/header.jpg" /><p>' . $long_text . '</p>',
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
+	}
+
+	/** An enclosure-confirmed signal always wins over content sniffing. */
+	public function test_normalize_prefers_enclosure_over_content_sniffing() {
+		$normalized = $this->source->normalize(
+			array(
+				'enclosures' => array(
+					array(
+						'url'    => 'https://example.com/episode.mp3',
+						'type'   => 'audio/mpeg',
+						'medium' => 'audio',
+					),
+				),
+				'content'    => '<img src="https://example.com/cover.jpg" /><p>Short note.</p>',
+			)
+		);
+
+		$this->assertSame( 'audio', $normalized['post_format'] );
+	}
+
+	/** Content sniffing falls back to `description` when `content` is empty. */
+	public function test_normalize_sniffs_description_when_content_is_empty() {
+		$normalized = $this->source->normalize(
+			array(
+				'description' => '<img class="u-photo" src="https://example.com/photo.jpg" />',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+	}
+
+	/**
+	 * Malformed content HTML never breaks normalize() — a pathological feed
+	 * item degrades to 'standard', it doesn't fatal the whole poll run.
+	 */
+	public function test_normalize_tolerates_malformed_content_html() {
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img src="https://example.com/a.jpg" class="<<<' . str_repeat( '<div>', 500 ),
+			)
+		);
+
+		$this->assertContains( $normalized['post_format'], array( 'standard', 'image' ) );
+	}
+
 	/** Scenario: an unparsable date normalizes to ''. */
 	public function test_normalize_handles_missing_date() {
 		$normalized = $this->source->normalize( array( 'date' => '' ) );

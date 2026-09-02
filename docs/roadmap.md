@@ -122,6 +122,24 @@ microformats2 parsing of a *subscribed* site's markup is separate,
 out-of-scope-for-#78 work tracked on
 [issue #84](https://github.com/jeffpaul/daymark/issues/84).)
 
+- [x] **Subscription content-type inference: closes the inline-media gap.**
+  `Daymark_Subscription_Source_Feed::normalize()` already derived a
+  subscribed post's `post_format` from RSS enclosures; it now also sniffs
+  the item's own content/description HTML (`WP_HTML_Tag_Processor`, no new
+  dependency) when enclosures carry no signal — the common case of an
+  ordinary post with an inline `<img>`/`<video>`/`<audio>` and no
+  `<enclosure>` at all. A microformats2 `u-photo`/`u-video`/`u-audio` class
+  counts regardless of surrounding text length; a bare `<img>` only counts
+  when the accompanying text is short, so a long article's header image
+  doesn't get misclassified as a photo post. See CLAUDE.md's "Subscription
+  content-type inference" decision. Three larger, adjacent options from the
+  same discussion stay separate: a full mf2 h-entry connector
+  ([#84](https://github.com/jeffpaul/daymark/issues/84)), preferring the
+  WordPress REST API's real `format` field for WP-to-WP subscriptions
+  ([#137](https://github.com/jeffpaul/daymark/issues/137)), and following a
+  site via ActivityPub/Microsub for structured content
+  ([#88](https://github.com/jeffpaul/daymark/issues/88)).
+
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
 than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
@@ -142,7 +160,9 @@ preview, inbound microformats2 parsing, Webmention support, WebSub/PuSH,
 malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
-None of them are prioritized yet.
+None of them are prioritized yet, aside from
+[#137](https://github.com/jeffpaul/daymark/issues/137) (WordPress REST API
+preference for WP-to-WP subscriptions), targeting the 0.10.0 release.
 
 ---
 
