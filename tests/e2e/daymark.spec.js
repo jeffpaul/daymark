@@ -243,7 +243,9 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	const markPanel = markWrap.locator('[data-expand-panel]');
 	await expect(markPanel).toBeVisible();
 	await expect(markPanel.locator('.daymark-expand-content')).toContainText(caption);
-	await expect(page).toHaveURL(/\/daymark\/?$/);
+	// Still on the app shell (its own default-screen hash, #home, included)
+	// — never navigated off to the Mark's real permalink.
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 
 	// Clicking it again collapses it back in place.
@@ -266,7 +268,7 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
 	expect(await viewOriginal.getAttribute('href')).toMatch(/^https?:\/\//);
 	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0);
-	await expect(page).toHaveURL(/\/daymark\/?$/);
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });
 
