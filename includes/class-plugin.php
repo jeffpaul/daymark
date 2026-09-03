@@ -256,6 +256,14 @@ final class Daymark_Plugin {
 	 * @return void
 	 */
 	public function on_init(): void {
+		// Self-heal the subscriptions table: sites where the plugin was
+		// already active when this feature arrived never ran activation.
+		// install() is cheap to call every request (it checks the stored
+		// schema version before touching dbDelta) — matching the same
+		// self-heal pattern already used by Daymark_Backflow_Sync::schedule()
+		// and Daymark_Subscription_Poller::schedule().
+		Daymark_Subscriptions::install();
+
 		$this->routes->register();
 		$this->syndication_links->register();
 		$this->microformats->register();

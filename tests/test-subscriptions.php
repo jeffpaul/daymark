@@ -158,6 +158,38 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * Scenario: a site already running Daymark when subscriptions shipped
+	 * never re-fires register_activation_hook() on update, so the table
+	 * would never exist without a self-heal. Daymark_Plugin::on_init() calls
+	 * install() on every request for exactly this reason (matching the same
+	 * self-heal pattern Daymark_Backflow_Sync::schedule() and
+	 * Daymark_Subscription_Poller::schedule() already use). Simulate that
+	 * install by dropping the table and clearing the recorded schema
+	 * version, then confirm a subscription can be created once on_init()
+	 * runs again.
+	 */
+	public function test_missing_table_self_heals_on_init() {
+		global $wpdb;
+
+		$table = Daymark_Subscriptions::table_name();
+
+		$wpdb->query( "DROP TABLE IF EXISTS {$table}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input; simulating a pre-activation install (test-only DDL).
+		delete_option( 'daymark_subscriptions_db_version' );
+
+		Daymark_Plugin::instance()->on_init();
+
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed/',
+			)
+		);
+
+		$this->assertIsInt( $id );
+		$this->assertGreaterThan( 0, $id );
+	}
+
 	/** Scenario: create -> get -> update -> delete round trip. */
 	public function test_crud_round_trip() {
 		$id = $this->subscriptions->create(

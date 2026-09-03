@@ -677,12 +677,17 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 
 // The footer (CTA + site nav) slides out of view while scrolling down the
 // list, to reclaim its height for content, and back in on scroll-up or when
-// keyboard focus reaches one of its own controls.
-test('home footer auto-hides on scroll-down and returns on scroll-up or focus', async ({ page }) => {
+// keyboard focus reaches one of its own controls. The header does the
+// opposite — hides on scroll-up, reappears on scroll-down — so the two
+// chrome bars never both cost their height back at once.
+test('home header/footer auto-hide in opposite directions and return on scroll or focus', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Enough seeded Marks to make the page taller than the viewport.
+	// Enough seeded Marks to make the page taller than the viewport — kept
+	// at 10 (not more) since Daymark_Rate_Limiter::ACTION_PUBLISH caps
+	// publishing at 20 requests per 5 minutes, and 30 sequential creates
+	// here also blew past this test's own timeout.
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
 		for (let i = 1; i <= 10; i++) {
@@ -696,30 +701,50 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 	});
 	await page.goto('/daymark');
 
-	// Wait for the page to actually grow taller than the viewport — the
-	// footer itself is static markup and appears immediately, but scrolling
-	// before there's enough rendered content is a race that leaves the page
-	// too short to trigger auto-hide. Gating on a specific row count is
-	// itself racy (infinite scroll can load a second page before the count
-	// is ever observed at the first page's size), so wait on the actual
-	// precondition instead.
+	// Wait for the page to actually grow taller than the viewport, then
+	// pad it with a plain synthetic spacer well past the recent list —
+	// real seeded rows alone left too little scroll room to test the
+	// header's hide-on-scroll-up behavior without landing back inside the
+	// y < 80 "always show both, near the top" reset (see
+	// bindChromeAutoHide(), app.js) on the very next scroll-up. The spacer
+	// only needs to exist for scroll room; it carries no content of its
+	// own to assert on.
 	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 100);
+	await page.evaluate(() => {
+		const spacer = document.createElement('div');
+		spacer.style.height = '2000px';
+		document.body.appendChild(spacer);
+	});
 
 	const footer = page.locator('.daymark-homefooter');
+	const header = page.locator('.daymark-topbar');
 	await expect(footer).toBeVisible();
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 
-	await page.mouse.wheel(0, 600);
+	// Scroll well clear of the top first, so every up/down step below stays
+	// away from the y < 80 "always show both" reset.
+	await page.mouse.wheel(0, 1000);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 
-	await page.mouse.wheel(0, -600);
+	// Scroll up (still far from the top): footer returns, header hides.
+	await page.mouse.wheel(0, -200);
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).toHaveClass(/is-header-hidden/);
 
-	// Hide it again, then confirm tabbing a footer control reveals it.
-	await page.mouse.wheel(0, 600);
+	// Scroll down again: footer hides, header returns.
+	await page.mouse.wheel(0, 200);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
+
+	// Confirm tabbing a footer control reveals both bars, even with the
+	// header currently hidden from a scroll-up.
+	await page.mouse.wheel(0, -200);
+	await expect(header).toHaveClass(/is-header-hidden/);
 	await page.locator('[data-action="new-mark"]').focus();
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 });
 
 // With IntersectionObserver (all supported browsers) the recent list uses
@@ -1561,7 +1586,7 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		// the click can land on the shifting content underneath instead of
 		// the launcher.
 		await expect(page.locator('.daymark-skeleton')).toHaveCount(0);
-		// bindFooterAutoHide() (assets/app.js) hides the persistent footer
+		// bindChromeAutoHide() (assets/app.js) hides the persistent footer
 		// — the launcher lives inside it — on any scroll-down past 80px,
 		// and only guarantees it back on scroll-up or focus. A reflow from
 		// the async content above (or the browser's own scroll-anchoring

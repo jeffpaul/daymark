@@ -47,8 +47,17 @@ $daymark_csp_parts = array(
 	"default-src 'self'",
 	"script-src 'self' 'nonce-{$daymark_csp_nonce}'",
 	"style-src 'self' 'unsafe-inline'",
-	'img-src ' . "'self' data: blob:",
-	'media-src ' . "'self' blob:",
+	// Timeline legitimately renders images/media from arbitrary hosts, not
+	// just this site's own origin: a subscribed site's own thumbnails and
+	// favicons (the whole point of Subscriptions), and this site's own
+	// media when served through a CDN or offload plugin (e.g. Jetpack's
+	// Photon/i0.wp.com, S3, Cloudflare) rather than jeffpaul.com itself.
+	// 'self'-only was fine before Subscriptions existed but silently
+	// blocked every one of those images once it shipped — https: (not
+	// plain http:, to avoid a mixed-content downgrade) is the least
+	// restrictive fix that still limits every other directive to 'self'.
+	'img-src ' . "'self' https: data: blob:",
+	'media-src ' . "'self' https: blob:",
 	"connect-src 'self'",
 	"font-src 'self' data:",
 	"object-src 'none'",
@@ -165,6 +174,14 @@ $daymark_config = array(
 	'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 	'nonce'                 => wp_create_nonce( 'wp_rest' ),
 	'siteUrl'               => esc_url_raw( home_url( '/' ) ),
+	'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
+	// Site Icon first, Daymark's own bundled icon otherwise — same
+	// resolution Daymark_Routes::icon_url() already uses for the browser
+	// favicon and PWA manifest icons. Timeline's own-Mark leading icon
+	// reuses it too, so "your Marks" and "a subscribed site's posts" both
+	// identify their source the same way (a site's icon), not one by site
+	// and the other by the logged-in user's personal Gravatar.
+	'siteIconUrl'           => esc_url_raw( Daymark_Routes::icon_url( 96 ) ),
 	'screen'                => $daymark_screen,
 	'connectors'            => $daymark_connectors,
 	'defaults'              => $daymark_type_defaults,
