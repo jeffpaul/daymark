@@ -216,4 +216,77 @@ class Test_Microformats extends WP_UnitTestCase {
 
 		$this->assertStringNotContainsString( 'u-email', $markup );
 	}
+
+	/** location_markup() emits p-geo/h-geo when _daymark_location is present. */
+	public function test_location_markup_present_when_location_set() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat'      => 40.7128,
+					'lng'      => -74.006,
+					'accuracy' => 15.5,
+				)
+			)
+		);
+
+		$markup = $this->microformats->location_markup( $this->daymark_id );
+
+		$this->assertStringContainsString( 'class="p-geo h-geo"', $markup );
+		$this->assertStringContainsString( 'class="p-latitude"', $markup );
+		$this->assertStringContainsString( 'class="p-longitude"', $markup );
+		$this->assertStringContainsString( '40.7128', $markup );
+		$this->assertStringContainsString( '-74.006', $markup );
+	}
+
+	/** location_markup() is empty when a Mark carries no location meta. */
+	public function test_location_markup_absent_without_location() {
+		$this->assertSame( '', $this->microformats->location_markup( $this->daymark_id ) );
+	}
+
+	/**
+	 * entry_metadata_markup() never includes location markup by default,
+	 * even when a Mark has a captured location — publishing exact
+	 * device-GPS coordinates on a public, search-indexable page is a
+	 * separate decision from quietly capturing the location for the
+	 * authenticated app's own use (Timeline card, REST summary). See the
+	 * `daymark_publish_location_publicly` filter.
+	 */
+	public function test_entry_metadata_omits_location_markup_by_default() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat' => 51.5074,
+					'lng' => -0.1278,
+				)
+			)
+		);
+
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+
+		$this->assertStringNotContainsString( 'p-geo', $markup );
+	}
+
+	/** The daymark_publish_location_publicly filter opts a site in to public location markup. */
+	public function test_entry_metadata_includes_location_markup_when_filter_enabled() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat' => 51.5074,
+					'lng' => -0.1278,
+				)
+			)
+		);
+
+		add_filter( 'daymark_publish_location_publicly', '__return_true' );
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+		remove_filter( 'daymark_publish_location_publicly', '__return_true' );
+
+		$this->assertStringContainsString( 'class="p-geo h-geo"', $markup );
+	}
 }
