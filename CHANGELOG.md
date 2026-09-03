@@ -48,6 +48,7 @@ can't act on them.
 ### Developer
 
 - `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
+- The changelog-entry expectation is now called out in CLAUDE.md and the PR template, not just CONTRIBUTING.md, with explicit guidance to keep entries short. ([#156](https://github.com/jeffpaul/daymark/pull/156))
 
 ## [0.9.0] - 2026-09-02
 

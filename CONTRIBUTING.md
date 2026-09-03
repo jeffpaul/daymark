@@ -305,6 +305,10 @@ Write for the person using Daymark, not for the repository. "You can now search
 your Marks from Home" beats "implement search endpoint" — no commit hashes and
 no internal file names.
 
+Keep each entry to a sentence or two. The linked PR is where full implementation
+detail lives — a changelog entry says what changed and, briefly, why it matters;
+it isn't the place to re-explain the design.
+
 End each entry with a link to its pull request, for traceability. Use an explicit
 markdown link rather than a bare `#28`, which does not autolink in a rendered
 file, and list more than one where a change genuinely spanned PRs. These links
