@@ -252,6 +252,14 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    are all posted or maintained automatically, so review scaffolding never
    reaches the commit message. A test plan checklist belongs the same way —
    post it as a PR comment, not in the description, once tests have run.
+7. **Paste the changelog entry into the description too.** If you added a
+   `CHANGELOG.md` entry (see the Changelog section below), copy that same
+   entry verbatim into the template's `## Changelog` section. Since the
+   description becomes the squash-merge commit message, this keeps `git log`
+   on `main` as scannable as the changelog itself — a sentence or two per
+   change — instead of relying on whatever length of prose the rest of the
+   description happens to be. Delete the whole section for a PR with no
+   user-facing change.
 
 ### Crediting contributors
 
@@ -282,6 +290,9 @@ on the PR — plus the authors and commenters of its linked issues. You only nee
 add someone by hand when they can't be detected (for example, off-GitHub help).
 
 ## Changelog
+
+Also paste this same entry into the PR description's `## Changelog` section —
+see step 7 under [Pull requests](#pull-requests) for why.
 
 `CHANGELOG.md` is the source of truth for what changed, and it follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Add an entry
