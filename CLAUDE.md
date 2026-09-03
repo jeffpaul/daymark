@@ -42,7 +42,11 @@ for the full format ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 category order, the PR-link convention). Keep the entry itself short — a
 sentence or two, not a design writeup: the linked PR is where full detail
 lives, so the entry only needs to say what changed and, briefly, why it
-matters.
+matters. Also paste that same entry verbatim into the PR template's own
+`## Changelog` section — this repo squash-merges using the PR title and
+description as the commit message, so this keeps `git log` on `main` as
+scannable as the changelog itself instead of relying on whatever length of
+prose the rest of the description happens to be.
 
 ## Mission
 

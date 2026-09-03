@@ -50,7 +50,7 @@ jobs:
           ### Review checklist
 
           - [ ] Tests added or updated for the change
-          - [ ] Changelog entry added under \`## [Unreleased]\` in CHANGELOG.md (user-facing changes)
+          - [ ] Changelog entry added under \`## [Unreleased]\` in CHANGELOG.md, and pasted into this PR's own \`## Changelog\` section (user-facing changes)
           - [ ] Docs updated (README / CONTRIBUTING) if behavior changed
           - [ ] Any manual testing is described in the PR description
 
