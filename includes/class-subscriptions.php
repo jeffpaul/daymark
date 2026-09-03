@@ -326,6 +326,66 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * Re-run site-icon discovery for an existing subscription and update its
+	 * `site_icon_url` (issue #94).
+	 *
+	 * A dedicated method rather than folding this into
+	 * Daymark_Subscription_Poller::poll_subscription()/manual_refresh():
+	 * neither of those ever touches `site_icon_url` today — it is resolved
+	 * once, at subscribe time, inside subscribe_to_site() above, and never
+	 * revisited afterward. That is a real gap for a subscription imported
+	 * from a non-Daymark OPML file (see Daymark_Subscription_OPML), which
+	 * typically arrives with no cached icon at all, and for any site that
+	 * simply added or changed its favicon after the original subscribe.
+	 * This closes that gap on demand, without adding an automatic/scheduled
+	 * icon refresh the issue explicitly does not ask for.
+	 *
+	 * Reuses Daymark_Subscription_Source_Feed::get_favicon_url()'s own
+	 * per-instance HTML-fetch memoization, so this is exactly one outbound
+	 * request per call — the same request subscribe_to_site() already made
+	 * once, just repeated on demand.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param int $id Subscription ID.
+	 * @return true|WP_Error True once `site_icon_url` is updated; WP_Error
+	 *                       when the subscription doesn't exist, its source
+	 *                       type doesn't support icon discovery, or no icon
+	 *                       could be found (a real, expected outcome for a
+	 *                       site with no favicon — not a fatal).
+	 */
+	public function refresh_icon( int $id ) {
+		$subscription = $this->get( $id );
+
+		if ( null === $subscription ) {
+			return new WP_Error(
+				'daymark_subscription_not_found',
+				__( 'Subscription not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$registry = Daymark_Plugin::instance()->subscription_source_registry;
+		$source   = $registry->get_source( sanitize_key( (string) ( $subscription['source_type'] ?? '' ) ) );
+
+		$favicon_url = $source instanceof Daymark_Subscription_Source_Feed
+			? $source->get_favicon_url( (string) ( $subscription['site_url'] ?? '' ) )
+			: '';
+
+		if ( '' === $favicon_url ) {
+			return new WP_Error(
+				'daymark_subscription_icon_not_found',
+				__( 'No site icon could be found.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$this->update( $id, array( 'site_icon_url' => $favicon_url ) );
+
+		return true;
+	}
+
+	/**
 	 * Assume `https://` for a site URL typed without a scheme (e.g.
 	 * `example.com`) rather than reject it outright — the common case for
 	 * someone typing a bare domain into the subscribe form, same as most

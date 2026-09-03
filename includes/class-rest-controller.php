@@ -420,6 +420,36 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscriptions/export',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'export_subscriptions_opml' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/import',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'import_subscriptions_opml' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		// Serves export_subscriptions_opml()'s response as a raw OPML/XML
+		// file download rather than the REST API's usual JSON envelope —
+		// scoped to this one route by request path, using the documented
+		// `rest_pre_serve_request` short-circuit rather than forcing binary/
+		// XML output through the JSON envelope. Never fires during
+		// rest_do_request() (used by this plugin's own PHPUnit REST tests),
+		// only during a real WP_REST_Server::serve_request() dispatch — see
+		// maybe_serve_opml_export()'s own docblock.
+		add_filter( 'rest_pre_serve_request', array( $this, 'maybe_serve_opml_export' ), 10, 4 );
+
+		register_rest_route(
+			$this->namespace,
 			'/subscription-posts/(?P<id>\d+)',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -1763,6 +1793,175 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
 
 		return rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
+	}
+
+	/**
+	 * GET /daymark/v1/subscriptions/export — download every subscription as
+	 * a standard OPML file (issue #80).
+	 *
+	 * Builds the response via Daymark_Subscription_OPML::export() — the same
+	 * call the wp-admin Settings -> Daymark screen's own Export link makes —
+	 * so both surfaces are guaranteed to produce byte-identical output. No
+	 * extra permission beyond the standard nonce + edit_posts check: this is
+	 * a read of the current user's own subscription list, same access level
+	 * as GET /subscriptions itself.
+	 *
+	 * The response is never actually JSON-serialized to the client — see
+	 * maybe_serve_opml_export(), which intercepts this one route and echoes
+	 * the raw XML with file-download headers instead. Returning a normal
+	 * WP_REST_Response here still matters for two reasons: PHPUnit's
+	 * rest_do_request() bypasses serve_request() entirely and returns this
+	 * object directly (so tests can assert on `$response->get_data()['xml']`
+	 * without ever touching real output buffering), and it keeps this
+	 * method's own contract (permission check -> response) identical to
+	 * every other REST callback in this class.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function export_subscriptions_opml( WP_REST_Request $request ) {
+		unset( $request );
+
+		$xml = ( new Daymark_Subscription_OPML() )->export();
+
+		$response = new WP_REST_Response( array( 'xml' => $xml ) );
+		$response->header( 'Content-Type', 'text/x-opml+xml; charset=utf-8' );
+		$response->header( 'Content-Disposition', 'attachment; filename="daymark-subscriptions.opml"' );
+
+		return $response;
+	}
+
+	/**
+	 * `rest_pre_serve_request` callback, scoped to
+	 * GET /daymark/v1/subscriptions/export only: echoes the raw OPML XML
+	 * document with its file-download headers instead of letting
+	 * WP_REST_Server wrap export_subscriptions_opml()'s response in the
+	 * REST API's usual JSON envelope, which is not an appropriate shape for
+	 * a file download.
+	 *
+	 * Only ever runs during a real HTTP dispatch through
+	 * WP_REST_Server::serve_request() (i.e. rest_api_loaded()) — this filter
+	 * is never consulted by rest_do_request(), which this plugin's own
+	 * PHPUnit REST tests use, so those tests exercise
+	 * export_subscriptions_opml()'s returned WP_REST_Response directly and
+	 * never reach this method at all.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param bool            $served  Whether the request has already been served.
+	 * @param mixed           $result  The response result (normally a WP_REST_Response).
+	 * @param WP_REST_Request $request The request.
+	 * @param WP_REST_Server  $server  The REST server instance (unused).
+	 * @return bool
+	 */
+	public function maybe_serve_opml_export( $served, $result, $request, $server ) {
+		unset( $server );
+
+		if ( ! $request instanceof WP_REST_Request || '/' . $this->namespace . '/subscriptions/export' !== $request->get_route() ) {
+			return $served;
+		}
+
+		if ( ! $result instanceof WP_REST_Response || 200 !== $result->get_status() ) {
+			return $served;
+		}
+
+		$data = $result->get_data();
+
+		if ( ! is_array( $data ) || ! isset( $data['xml'] ) ) {
+			return $served;
+		}
+
+		foreach ( $result->get_headers() as $name => $value ) {
+			header( $name . ': ' . $value );
+		}
+
+		// Raw XML file download, not HTML output — every value inside this
+		// document was already escaped by DOMDocument when
+		// Daymark_Subscription_OPML::export() built it.
+		echo (string) $data['xml']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Raw OPML/XML file download; content already XML-escaped by DOMDocument, not HTML output.
+
+		return true;
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions/import — bulk-import subscriptions from
+	 * an uploaded OPML file (issue #80).
+	 *
+	 * Reads the uploaded file the same way ai_alt_text()/ai_transcript() read
+	 * their own uploads (WP_REST_Request::get_file_params(), no
+	 * wp_handle_upload() — nothing here is stored as a permanent attachment).
+	 * Rate limited once per whole import request (ACTION_SUBSCRIBE — the same
+	 * bucket manual subscribe-by-URL uses, since an `htmlUrl`-only entry
+	 * issues the exact same kind of outbound discovery request), not once per
+	 * entry — bulk-importing many entries in a single request is exactly what
+	 * that bucket already exists to allow.
+	 *
+	 * The upload size cap is enforced here, before the file is ever read into
+	 * memory or handed to Daymark_Subscription_OPML::import() — a request
+	 * validation step, not something import() itself is responsible for.
+	 * Extension + parse-success together are this route's content validation:
+	 * import() successfully parsing the file as OPML *is* the MIME check that
+	 * matters here, since this upload is never passed through
+	 * wp_handle_upload()'s own type sniffing.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function import_subscriptions_opml( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$files = $request->get_file_params();
+		$file  = isset( $files['opml'] ) && is_array( $files['opml'] ) ? $files['opml'] : null;
+
+		if ( ! $file || empty( $file['tmp_name'] ) || ! is_readable( $file['tmp_name'] ) ) {
+			return new WP_Error(
+				'daymark_subscription_opml_missing_file',
+				__( 'No OPML file was provided.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$filename  = isset( $file['name'] ) ? (string) $file['name'] : '';
+		$extension = strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) );
+
+		if ( ! in_array( $extension, array( 'opml', 'xml' ), true ) ) {
+			return new WP_Error(
+				'daymark_subscription_opml_invalid_extension',
+				__( 'Please upload a .opml or .xml file.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		/** This filter is documented in Daymark_Subscription_OPML::MAX_UPLOAD_BYTES's docblock. */
+		$max_bytes = (int) apply_filters( 'daymark_subscription_opml_max_upload_bytes', Daymark_Subscription_OPML::MAX_UPLOAD_BYTES );
+		$size      = isset( $file['size'] ) ? (int) $file['size'] : 0;
+
+		if ( $size <= 0 || $size > $max_bytes ) {
+			return new WP_Error(
+				'daymark_subscription_opml_too_large',
+				__( 'This file is too large to import.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a just-uploaded PHP temp upload file for in-memory XML parsing (not a remote fetch); matches this codebase's other direct tmp_name reads (e.g. ai_alt_text()'s finfo check reads the same kind of temp path).
+		$xml = (string) file_get_contents( $file['tmp_name'] );
+
+		$result = ( new Daymark_Subscription_OPML() )->import( $xml );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response( $result );
 	}
 
 	/**
