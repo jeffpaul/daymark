@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- wp-admin now offers two quick ways into Daymark: an "Open Daymark" link next to "Visit Site" under the site name in the admin bar, and a "Daymark" item in the "+New" menu that jumps straight into the composer pre-set to an Image Mark. (#PR)
 - Subscriptions can now be exported to and imported from a standard OPML file — Settings -> Daymark gets Export/Import controls (`GET`/`POST /daymark/v1/subscriptions/export`/`import` back them). Import reports a per-entry result (subscribed, already subscribed, or failed) rather than failing the whole file on one bad entry, and a dead-flagged subscription is included in the export since it's still a follow worth backing up. ([#80](https://github.com/jeffpaul/daymark/issues/80))
 - A subscription's cached site icon can now be refreshed on demand from Settings -> Daymark's "Refresh icon" action, instead of only ever being resolved once at subscribe time — useful when a site rebrands its favicon, or for a subscription imported via OPML from another reader with no cached icon at all. ([#94](https://github.com/jeffpaul/daymark/issues/94))
 

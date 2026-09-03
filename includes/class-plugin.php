@@ -141,6 +141,14 @@ final class Daymark_Plugin {
 	public Daymark_Share_Target $share_target;
 
 	/**
+	 * Admin bar shortcuts: "Open Daymark" under the site-name node, and
+	 * "Daymark" (pre-set to an image Mark) under the "+New" menu.
+	 *
+	 * @var Daymark_Admin_Bar
+	 */
+	public Daymark_Admin_Bar $admin_bar;
+
+	/**
 	 * The four content-type section pages a pre-Unreleased install may still
 	 * have lying around: slug => the block/shortcode markup that identifies
 	 * a page as Daymark-managed (never created for a fresh install — see
@@ -199,6 +207,7 @@ final class Daymark_Plugin {
 		$this->subscription_poller          = new Daymark_Subscription_Poller();
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 		$this->share_target                 = new Daymark_Share_Target();
+		$this->admin_bar                    = new Daymark_Admin_Bar();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -272,6 +281,7 @@ final class Daymark_Plugin {
 		$this->subscription_post_type->register();
 		$this->subscription_poller->register();
 		$this->admin_subscriptions->register();
+		$this->admin_bar->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
