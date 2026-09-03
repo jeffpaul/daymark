@@ -169,26 +169,62 @@ class Daymark_Subscription_Url_Guard {
 	 * Whether a resolved IP address falls in a private/loopback/link-local/
 	 * reserved/CGNAT range.
 	 *
-	 * PHP's own `FILTER_VALIDATE_IP` flags already cover almost everything
-	 * this needs: `FILTER_FLAG_NO_PRIV_RANGE` rejects the standard IPv4
-	 * private ranges (10/8, 172.16/12, 192.168/16) and the IPv6 unique local
-	 * range (fc00::/7); `FILTER_FLAG_NO_RES_RANGE` rejects the IPv4 reserved
-	 * ranges (0/8, 169.254/16, 127/8, 240/4) and, for IPv6, loopback (::1),
-	 * unspecified (::), link-local (fe80::/10), and — usefully, since it
-	 * rejects the entire block regardless of the embedded address — the
-	 * IPv4-mapped range (::ffff:0:0/96), which is exactly what catches a
-	 * literal like `::ffff:127.0.0.1`. Only the CGNAT range (100.64.0.0/10)
-	 * has no built-in flag and is checked separately below.
+	 * PHP's own `FILTER_VALIDATE_IP` flags cover most of what this needs:
+	 * `FILTER_FLAG_NO_PRIV_RANGE` rejects the standard IPv4 private ranges
+	 * (10/8, 172.16/12, 192.168/16) and the IPv6 unique local range (fc00::/7);
+	 * `FILTER_FLAG_NO_RES_RANGE` rejects the IPv4 reserved ranges (0/8,
+	 * 169.254/16, 127/8, 240/4) and, for IPv6, loopback (::1), unspecified
+	 * (::), and link-local (fe80::/10). Whether that same flag also rejects
+	 * the IPv4-mapped block (::ffff:0:0/96) as a whole turns out to be
+	 * PHP-version-dependent (observed: rejected on 8.4, accepted on 8.2), so
+	 * an IPv4-mapped literal like `::ffff:127.0.0.1` is unwrapped explicitly
+	 * below and its embedded IPv4 address re-checked on its own — not left to
+	 * that flag. Only the CGNAT range (100.64.0.0/10) has no built-in flag
+	 * and is checked separately below.
 	 *
 	 * @param string $address A resolved (or literal) IP address.
 	 * @return bool
 	 */
 	private static function is_unsafe_address( string $address ): bool {
+		$mapped_ipv4 = self::extract_ipv4_mapped_address( $address );
+
+		if ( null !== $mapped_ipv4 ) {
+			return self::is_unsafe_address( $mapped_ipv4 );
+		}
+
 		if ( false === filter_var( $address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
 			return true;
 		}
 
 		return self::is_cgnat_ipv4( $address );
+	}
+
+	/**
+	 * Unwrap an IPv4-mapped IPv6 literal (the ::ffff:0:0/96 block, e.g.
+	 * `::ffff:127.0.0.1`) to its embedded IPv4 address.
+	 *
+	 * @param string $address Candidate address.
+	 * @return string|null The embedded dotted IPv4 address, or null when
+	 *                      $address is not an IPv4-mapped IPv6 address.
+	 */
+	private static function extract_ipv4_mapped_address( string $address ): ?string {
+		if ( false === filter_var( $address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return null;
+		}
+
+		$binary = inet_pton( $address );
+
+		if ( false === $binary || 16 !== strlen( $binary ) ) {
+			return null;
+		}
+
+		if ( "\0\0\0\0\0\0\0\0\0\0\xff\xff" !== substr( $binary, 0, 12 ) ) {
+			return null;
+		}
+
+		$ipv4 = inet_ntop( substr( $binary, 12, 4 ) );
+
+		return false !== $ipv4 ? $ipv4 : null;
 	}
 
 	/**
