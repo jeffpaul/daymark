@@ -51,6 +51,7 @@ can't act on them.
 
 - `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
 - The changelog-entry expectation is now called out in CLAUDE.md and the PR template, not just CONTRIBUTING.md, with explicit guidance to keep entries short. ([#156](https://github.com/jeffpaul/daymark/pull/156))
+- The "Preview in WordPress Playground" PR comment now also posts on a PR's first `synchronize` (push), not only `opened`/`reopened` — a PR opened via the GitHub API (rather than a person pushing through the web UI) doesn't reliably deliver a plain `pull_request` `opened` event, so an `opened`-only trigger could silently never post the button at all. ([#158](https://github.com/jeffpaul/daymark/pull/158))
 
 ## [0.9.0] - 2026-09-02
 

@@ -16,11 +16,19 @@ name: PR Playground Preview
 # repo the button appears but the instance cannot load the plugin.
 on:
   pull_request:
-    # No `synchronize`: the blueprint points at the PR's branch name, not a
-    # commit SHA, and Playground fetches live from that branch at click-time
-    # — so the comment's content can never change across pushes. Re-running
-    # (and re-posting) on every commit would burn a job for no difference.
-    types: [opened, reopened]
+    # `synchronize` is included even though the blueprint's own content
+    # never changes across pushes (it points at the PR's branch name, not a
+    # commit SHA) — the underlying action manages a single comment rather
+    # than posting a new one each run, so a later `synchronize` just updates
+    # (or creates) that same comment instead of duplicating it. That matters
+    # because a PR opened via the GitHub API (rather than a person pushing
+    # through the web UI) does not reliably deliver a plain `pull_request`
+    # `opened` event — only `pull_request_target`-based workflows (like
+    # credit-contributors.yml) are guaranteed to see it — so an
+    # `opened`-only trigger can silently never run for such a PR. The first
+    # real push after that (a `synchronize`) is this workflow's fallback
+    # chance to still post the button.
+    types: [opened, synchronize, reopened]
 
 # Disable permissions for all available scopes by default.
 # Any needed permissions should be configured at the job level.
