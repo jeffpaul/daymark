@@ -684,10 +684,14 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Enough seeded Marks to make the page taller than the viewport.
+	// 30 seeded Marks — comfortably more scroll room than the minimum a
+	// couple of hundred px this test used to seed, which left the "scroll
+	// up" step landing back within the y < 80 "always show both, near the
+	// top" reset (see bindChromeAutoHide(), app.js) instead of actually
+	// exercising the header's own hide-on-scroll-up behavior.
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
-		for (let i = 1; i <= 10; i++) {
+		for (let i = 1; i <= 30; i++) {
 			await fetch(`${config.restUrl}marks`, {
 				method: 'POST',
 				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
@@ -698,14 +702,14 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	});
 	await page.goto('/daymark');
 
-	// Wait for the page to actually grow taller than the viewport — the
-	// header/footer are static markup and appear immediately, but scrolling
-	// before there's enough rendered content is a race that leaves the page
-	// too short to trigger auto-hide. Gating on a specific row count is
-	// itself racy (infinite scroll can load a second page before the count
-	// is ever observed at the first page's size), so wait on the actual
-	// precondition instead.
-	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 100);
+	// Wait for plenty of scroll room — the header/footer are static markup
+	// and appear immediately, but scrolling before there's enough rendered
+	// content is a race that leaves the page too short to trigger auto-hide,
+	// or too short to scroll away from the "near the top" reset below.
+	// Gating on a specific row count is itself racy (infinite scroll can
+	// load a second page before the count is ever observed at the first
+	// page's size), so wait on the actual precondition instead.
+	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 1200);
 
 	const footer = page.locator('.daymark-homefooter');
 	const header = page.locator('.daymark-topbar');
@@ -713,23 +717,25 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
-	// Scroll down: footer hides, header stays put.
-	await page.mouse.wheel(0, 600);
+	// Scroll well clear of the top first, so every up/down step below stays
+	// away from the y < 80 "always show both" reset.
+	await page.mouse.wheel(0, 1000);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
-	// Scroll up: footer returns, header hides instead.
-	await page.mouse.wheel(0, -600);
+	// Scroll up (still far from the top): footer returns, header hides.
+	await page.mouse.wheel(0, -200);
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
 	await expect(header).toHaveClass(/is-header-hidden/);
 
 	// Scroll down again: footer hides, header returns.
-	await page.mouse.wheel(0, 600);
+	await page.mouse.wheel(0, 200);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
-	// Confirm tabbing a footer control reveals both bars.
-	await page.mouse.wheel(0, -600);
+	// Confirm tabbing a footer control reveals both bars, even with the
+	// header currently hidden from a scroll-up.
+	await page.mouse.wheel(0, -200);
 	await expect(header).toHaveClass(/is-header-hidden/);
 	await page.locator('[data-action="new-mark"]').focus();
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
