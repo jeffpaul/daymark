@@ -29,6 +29,10 @@ can't act on them.
 - A Timeline card's image showed an empty placeholder instead of the real photo whenever that image was served from a different host than the site itself — a CDN or offload plugin (Jetpack's Photon, S3, Cloudflare, ...), or a subscribed site's own thumbnail/favicon. The app shell's Content-Security-Policy only allowed images from `'self'`, silently blocking every one of those; `img-src`/`media-src` now also allow `https:` sources. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 - The header never hid on scroll the way the footer already did, so it was always taking up space the footer's own auto-hide was reclaiming. It now hides on scroll-up and reappears on scroll-down — the opposite direction from the footer — so the two never both cost their height back at the same time. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 
+### Developer
+
+- `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
+
 ## [0.9.0] - 2026-09-02
 
 ### Added

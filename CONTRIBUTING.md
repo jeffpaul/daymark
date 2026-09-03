@@ -344,7 +344,10 @@ publishes the GitHub release (`.github/workflows/release.yml`).
 2. **Open a release PR** that bumps the version in all four places — the
    `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
    `readme.txt`, and `package.json`. The release workflow fails the build if
-   these disagree with the tag.
+   these disagree with the tag. Also update `SECURITY.md`'s supported-versions
+   table to the new version — this one is not build-enforced, so it drifts
+   silently if skipped (it sat at `0.6.x` for several releases before this
+   note was added).
 3. **Close out the changelog.** Rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD` (ISO 8601), add the version's compare link to the
    reference block at the bottom of the file, start a fresh empty
