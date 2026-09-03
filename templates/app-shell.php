@@ -169,6 +169,9 @@ $daymark_awareness_helpers    = array_values(
 	)
 );
 
+// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action; validated against a fixed whitelist below.
+$daymark_requested_type = isset( $_GET['daymark_type'] ) ? sanitize_key( wp_unslash( $_GET['daymark_type'] ) ) : '';
+
 $daymark_config = array(
 	'restUrl'               => esc_url_raw( rest_url( 'daymark/v1/' ) ),
 	'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
@@ -221,6 +224,15 @@ $daymark_config = array(
 	// uses) already enforces edit_post on this id, so a tampered value just
 	// fails that fetch harmlessly rather than needing a second check here.
 	'pendingDraftId'        => isset( $_GET['daymark_draft'] ) ? absint( wp_unslash( $_GET['daymark_draft'] ) ) : 0, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
+	// Set only when arriving from an external launcher (e.g. wp-admin's
+	// "+New -> Daymark" item, Daymark_Admin_Bar) that wants the composer
+	// to open pre-set to a specific type — the same one-shot mechanism
+	// state.pendingType already uses when the in-app Home launcher sets
+	// it, just seeded from a query var instead of a tap. Restricted to
+	// the four types the composer's picker actually understands
+	// (assets/app.js's LAUNCHER_TYPES); anything else is dropped rather
+	// than reaching a picker lookup that doesn't have a matching key.
+	'pendingType'           => in_array( $daymark_requested_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $daymark_requested_type : '',
 );
 
 /*

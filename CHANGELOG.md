@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- wp-admin now offers two quick ways into Daymark: an "Open Daymark" link next to "Visit Site" under the site name in the admin bar, and a "Daymark" item in the "+New" menu that jumps straight into the composer pre-set to an Image Mark. ([#158](https://github.com/jeffpaul/daymark/pull/158))
 - Subscriptions can now be exported to and imported from a standard OPML file — Settings -> Daymark gets Export/Import controls (`GET`/`POST /daymark/v1/subscriptions/export`/`import` back them). Import reports a per-entry result (subscribed, already subscribed, or failed) rather than failing the whole file on one bad entry, and a dead-flagged subscription is included in the export since it's still a follow worth backing up. ([#80](https://github.com/jeffpaul/daymark/issues/80))
 - A subscription's cached site icon can now be refreshed on demand from Settings -> Daymark's "Refresh icon" action, instead of only ever being resolved once at subscribe time — useful when a site rebrands its favicon, or for a subscription imported via OPML from another reader with no cached icon at all. ([#94](https://github.com/jeffpaul/daymark/issues/94))
 - A Mark now quietly picks up capture date/time, optional location, weather, camera EXIF metadata, an estimated reading time, and AI-suggested tags — none of it requires filling anything in, and none of it can block or delay publishing. Location, weather, and camera metadata capture can each be disabled with a filter (`daymark_capture_location`/`daymark_capture_weather`/`daymark_capture_camera_metadata`) — see the readme.txt/README.md FAQ for what's captured and why, ahead of planned future Timeline display work. ([#157](https://github.com/jeffpaul/daymark/pull/157))
@@ -50,6 +51,7 @@ can't act on them.
 
 - `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
 - The changelog-entry expectation is now called out in CLAUDE.md and the PR template, not just CONTRIBUTING.md, with explicit guidance to keep entries short. ([#156](https://github.com/jeffpaul/daymark/pull/156))
+- The "Preview in WordPress Playground" PR comment now also posts on a PR's first `synchronize` (push), not only `opened`/`reopened` — a PR opened via the GitHub API (rather than a person pushing through the web UI) doesn't reliably deliver a plain `pull_request` `opened` event, so an `opened`-only trigger could silently never post the button at all. ([#158](https://github.com/jeffpaul/daymark/pull/158))
 
 ## [0.9.0] - 2026-09-02
 

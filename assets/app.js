@@ -5029,6 +5029,15 @@
 	// to the ordinary boot instead of leaving the shell blank.
 	if (config.pendingDraftId) {
 		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
+	} else if (config.pendingType) {
+		// An external launcher (wp-admin's "+New -> Daymark" item,
+		// Daymark_Admin_Bar) wants the composer to open pre-set to a
+		// specific type — the same one-shot state.pendingType mechanism the
+		// in-app Home launcher already uses when a bubble is tapped, just
+		// seeded here from window.daymarkApp.pendingType instead.
+		resetComposer();
+		state.pendingType = config.pendingType;
+		showScreen('#create');
 	} else {
 		showScreen(initialHash);
 	}
