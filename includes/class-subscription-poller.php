@@ -224,6 +224,39 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
+		$this->record_successful_check( $subscription_id );
+
+		foreach ( $raw_items as $raw_item ) {
+			$this->maybe_ingest_item( $subscription_id, $source->normalize( $raw_item ) );
+		}
+
+		// WebSub (issue #82): purely additive to the polling this method
+		// already does — never a reason to fail or skip anything above.
+		// Only the built-in feed source can advertise a hub today.
+		if ( $source instanceof Daymark_Subscription_Source_Feed ) {
+			Daymark_Plugin::instance()->websub_subscriber->maybe_subscribe(
+				$subscription_id,
+				(string) $subscription['feed_url'],
+				$source->get_last_hub_url()
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Record a successful check: resets the failure count and refreshes
+	 * `status`/`last_checked_at`/`last_error` — shared by poll_subscription()
+	 * (a successful poll) and Daymark_Websub_Endpoint (a verified WebSub
+	 * content delivery, which is just as much evidence the subscription is
+	 * alive as a successful poll is).
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return void
+	 */
+	public function record_successful_check( int $subscription_id ): void {
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+
 		$subscriptions->reset_failure_count( $subscription_id );
 		$subscriptions->update(
 			$subscription_id,
@@ -233,12 +266,6 @@ class Daymark_Subscription_Poller {
 				'last_error'      => '',
 			)
 		);
-
-		foreach ( $raw_items as $raw_item ) {
-			$this->maybe_ingest_item( $subscription_id, $source->normalize( $raw_item ) );
-		}
-
-		return true;
 	}
 
 	/**
@@ -271,11 +298,16 @@ class Daymark_Subscription_Poller {
 	 * Ingest one normalized item, unless a `daymark_subscription_post` for
 	 * this permalink + subscription already exists.
 	 *
+	 * Public: also called directly by Daymark_Websub_Endpoint for a verified
+	 * WebSub content delivery, which normalizes items the exact same way a
+	 * poll does but never goes through poll_subscription() itself (there is
+	 * no fetch to perform — the hub already pushed the content).
+	 *
 	 * @param int                  $subscription_id Subscription ID.
 	 * @param array<string, mixed> $normalized      Daymark_Subscription_Source::normalize() output.
 	 * @return int New post ID, or 0 when skipped (duplicate, or no usable permalink) or on insert failure.
 	 */
-	private function maybe_ingest_item( int $subscription_id, array $normalized ): int {
+	public function maybe_ingest_item( int $subscription_id, array $normalized ): int {
 		$permalink = esc_url_raw( (string) ( $normalized['permalink'] ?? '' ) );
 
 		// Nothing to dedupe on or link back to the source with.

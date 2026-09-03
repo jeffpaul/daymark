@@ -28,7 +28,7 @@ class Daymark_Subscriptions {
 	 *
 	 * @var string
 	 */
-	private const DB_VERSION = '1.2.0';
+	private const DB_VERSION = '1.3.0';
 
 	/**
 	 * Option name storing the currently installed schema version.
@@ -43,6 +43,22 @@ class Daymark_Subscriptions {
 	 * @var string[]
 	 */
 	private const STATUSES = array( 'active', 'error' );
+
+	/**
+	 * Allowed `websub_status` values (issue #82). 'none' is the default for
+	 * every existing/new subscription — most feeds never advertise a hub at
+	 * all, and the polling cron is the only path they ever use. 'pending'
+	 * covers the window between sending a subscribe request and the hub's
+	 * own verification GET completing; 'verified' means the hub confirmed
+	 * the subscription and push delivery is expected; 'failed' means the
+	 * hub rejected the request or verification never completed. None of
+	 * these ever stop the existing polling cron from running — WebSub is
+	 * purely an additive, faster delivery path layered on top of it, not a
+	 * replacement (see Daymark_Websub_Subscriber).
+	 *
+	 * @var string[]
+	 */
+	private const WEBSUB_STATUSES = array( 'none', 'pending', 'verified', 'failed' );
 
 	/**
 	 * Unprefixed table name.
@@ -116,6 +132,13 @@ class Daymark_Subscriptions {
 	 * Distinct from `status`/`consecutive_failure_count`, which only ever
 	 * capture *that* a subscription is failing, not *why*.
 	 *
+	 * `websub_hub_url`/`websub_status`/`websub_lease_expires_at`/`websub_secret`
+	 * (added in 1.3.0, issue #82) track a WebSub (PubSubHubbub) push
+	 * subscription for feeds that advertise a hub — see Daymark_Websub_Subscriber
+	 * and Daymark_Websub_Endpoint. `websub_secret` is the per-subscription
+	 * HMAC secret the hub echoes signed content deliveries with; it is
+	 * never exposed outside this table.
+	 *
 	 * @return string
 	 */
 	private static function get_schema_sql(): string {
@@ -138,6 +161,10 @@ class Daymark_Subscriptions {
 			last_checked_at datetime DEFAULT NULL,
 			last_manual_refresh_at datetime DEFAULT NULL,
 			last_error varchar(255) NOT NULL DEFAULT '',
+			websub_hub_url varchar(255) NOT NULL DEFAULT '',
+			websub_status varchar(20) NOT NULL DEFAULT 'none',
+			websub_lease_expires_at datetime DEFAULT NULL,
+			websub_secret varchar(64) NOT NULL DEFAULT '',
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY feed_url (feed_url),
@@ -554,7 +581,8 @@ class Daymark_Subscriptions {
 	 *
 	 * Recognized `$fields` keys: `status`, `consecutive_failure_count`,
 	 * `last_checked_at`, `last_manual_refresh_at`, `site_title`,
-	 * `feed_title`, `site_icon_url`, `last_error`.
+	 * `feed_title`, `site_icon_url`, `last_error`, `websub_hub_url`,
+	 * `websub_status`, `websub_lease_expires_at`, `websub_secret`.
 	 *
 	 * @param int   $id     Subscription ID.
 	 * @param array $fields Fields to update.
@@ -613,6 +641,29 @@ class Daymark_Subscriptions {
 
 		if ( array_key_exists( 'site_icon_url', $fields ) ) {
 			$data['site_icon_url'] = esc_url_raw( (string) $fields['site_icon_url'] );
+			$format[]              = '%s';
+		}
+
+		if ( array_key_exists( 'websub_hub_url', $fields ) ) {
+			$data['websub_hub_url'] = esc_url_raw( (string) $fields['websub_hub_url'] );
+			$format[]               = '%s';
+		}
+
+		if ( array_key_exists( 'websub_status', $fields ) ) {
+			$data['websub_status'] = $this->sanitize_websub_status( (string) $fields['websub_status'] );
+			$format[]              = '%s';
+		}
+
+		if ( array_key_exists( 'websub_lease_expires_at', $fields ) ) {
+			$data['websub_lease_expires_at'] = $this->sanitize_datetime( $fields['websub_lease_expires_at'] );
+			$format[]                        = '%s';
+		}
+
+		if ( array_key_exists( 'websub_secret', $fields ) ) {
+			// Capped to fit the varchar(64) column; the generated secret
+			// (Daymark_Websub_Subscriber) is well under this, but never trust
+			// an input's length blindly against a fixed-width column.
+			$data['websub_secret'] = substr( sanitize_text_field( (string) $fields['websub_secret'] ), 0, 64 );
 			$format[]              = '%s';
 		}
 
@@ -752,6 +803,19 @@ class Daymark_Subscriptions {
 		$status = sanitize_key( $status );
 
 		return in_array( $status, self::STATUSES, true ) ? $status : 'active';
+	}
+
+	/**
+	 * Sanitize a `websub_status` value, falling back to 'none' for anything
+	 * unrecognized.
+	 *
+	 * @param string $status Raw WebSub status.
+	 * @return string
+	 */
+	private function sanitize_websub_status( string $status ): string {
+		$status = sanitize_key( $status );
+
+		return in_array( $status, self::WEBSUB_STATUSES, true ) ? $status : 'none';
 	}
 
 	/**
