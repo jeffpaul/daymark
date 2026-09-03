@@ -22,7 +22,7 @@ can't act on them.
 
 ### Fixed
 
-- Subscribing to a site could fail with "This subscription could not be saved. It may already exist." on a site where Daymark was already active before updating to 0.9.0 — the `daymark_subscriptions` table is created on plugin activation, which WordPress doesn't re-run on a plain file update. `Daymark_Subscriptions::install()` now self-heals on `init`, matching the pattern already used for the backflow and subscription-polling cron schedules.
+- Subscribing to a site could fail with "This subscription could not be saved. It may already exist." on a site where Daymark was already active before updating to 0.9.0 — the `daymark_subscriptions` table is created on plugin activation, which WordPress doesn't re-run on a plain file update. `Daymark_Subscriptions::install()` now self-heals on `init`, matching the pattern already used for the backflow and subscription-polling cron schedules. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 
 ## [0.9.0] - 2026-09-02
 
