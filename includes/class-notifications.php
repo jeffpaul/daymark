@@ -454,12 +454,12 @@ class Daymark_Notifications {
 	 * title on file (mirrors how the row itself is likely to be labeled
 	 * elsewhere once a title isn't available).
 	 *
-	 * There is no separate "last error message" stored on a subscription
-	 * row (the schema only tracks `status`/`consecutive_failure_count`/
-	 * `last_checked_at`), so this item does not fabricate one — a
-	 * subscription-management screen showing "last checked" plus the
-	 * failure count already covers the PRD's "view last error, last
-	 * checked time" ask with what's actually persisted.
+	 * `last_error` (issue #81) is the human-readable reason for the most
+	 * recent failed check — populated by
+	 * Daymark_Subscription_Poller::record_failed_check() — completing the
+	 * PRD's "view last error, last checked time" ask, which previously had
+	 * only the failure count and timestamp to work with since no error
+	 * message was persisted at all.
 	 *
 	 * @param array<string, mixed> $subscription Subscription row (from get_flagged()).
 	 * @return array<string, mixed>
@@ -482,6 +482,7 @@ class Daymark_Notifications {
 				/* translators: %s: human-readable time difference, e.g. "2 hours". */
 				? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
 				: '',
+			'last_error'                => sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) ),
 		);
 	}
 

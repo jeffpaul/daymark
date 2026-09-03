@@ -343,6 +343,52 @@ XML;
 		$this->assertSame( '0', (string) $row['consecutive_failure_count'] );
 	}
 
+	/**
+	 * Scenario (issue #81): a failed check populates `last_error` with a
+	 * human-readable reason, not just a generic status flip.
+	 */
+	public function test_poll_failure_populates_last_error() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+
+		// Deliberately not mocked: this feed is unreachable.
+		$result = $this->poller->poll_subscription( $subscription_id );
+		$this->assertWPError( $result );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$row           = $subscriptions->get( $subscription_id );
+		$this->assertNotSame( '', $row['last_error'] );
+	}
+
+	/**
+	 * Scenario (issue #81): an SSRF-guard rejection surfaces its own
+	 * specific reason as `last_error`, not a generic fetch-failure message —
+	 * fetch()'s WP_Error message is reused as-is by record_failed_check().
+	 */
+	public function test_poll_failure_populates_last_error_with_specific_ssrf_reason() {
+		$subscription_id = $this->create_subscription( 'http://127.0.0.1/feed/' );
+
+		$result = $this->poller->poll_subscription( $subscription_id );
+		$this->assertWPError( $result );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$row           = $subscriptions->get( $subscription_id );
+		$this->assertStringContainsString( 'private or internal network address', $row['last_error'] );
+	}
+
+	/** Scenario (issue #81): a successful check clears a previously recorded `last_error`. */
+	public function test_poll_success_clears_last_error() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$subscriptions->update( $subscription_id, array( 'last_error' => 'A previous failure message.' ) );
+
+		$this->mock_response( 'https://example.com/feed/', $this->rss_with_standard_and_image_items() );
+		$this->assertTrue( $this->poller->poll_subscription( $subscription_id ) );
+
+		$row = $subscriptions->get( $subscription_id );
+		$this->assertSame( '', $row['last_error'] );
+	}
+
 	/** Seven consecutive failed checks flags the subscription dead. */
 	public function test_dead_feed_flagged_after_seven_consecutive_failures() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
@@ -621,6 +667,94 @@ XML;
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'daymark_subscription_post_not_found', $result->get_error_code() );
+	}
+
+	/**
+	 * Scenario (issue #81, SSRF hardening): a cached post whose permalink
+	 * resolves to a private/internal address fails the exact same way an
+	 * already-invalid permalink does — no request is attempted (unmocked,
+	 * so a real attempt would be blocked by intercept_http_request() and
+	 * surface as `daymark_subscription_fetch_failed` instead, which the code
+	 * assertion below rules out).
+	 */
+	public function test_fetch_full_content_rejects_unsafe_permalink() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'http://127.0.0.1/post/' );
+		update_post_meta( $post_id, 'body_content', '' );
+
+		$result = $this->poller->fetch_full_content( $post_id );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_permalink', $result->get_error_code() );
+	}
+
+	/**
+	 * Scenario (issue #81): a response at or beyond the configured size cap
+	 * is rejected outright rather than cached as if it were the complete
+	 * article — the explicit body-length check this call site adds on top
+	 * of `limit_response_size` bounding the download itself.
+	 */
+	public function test_fetch_full_content_rejects_response_at_or_over_size_cap() {
+		add_filter(
+			'daymark_subscription_max_content_bytes',
+			static function () {
+				return 20;
+			}
+		);
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/oversized-post/' );
+		update_post_meta( $post_id, 'body_content', '' );
+
+		// 20 bytes exactly hits the cap — treated as truncated, not complete.
+		$this->mock_response( 'https://example.com/oversized-post/', str_repeat( 'a', 20 ), 'text/html; charset=UTF-8' );
+
+		$result = $this->poller->fetch_full_content( $post_id );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_fetch_failed', $result->get_error_code() );
+		$this->assertSame( '', get_post_meta( $post_id, 'body_content', true ), 'The oversized body is never cached' );
+		$this->assertNotSame( 'full', get_post_meta( $post_id, 'content_state', true ) );
+	}
+
+	/** Scenario (issue #81): the click-through fetch timeout is filterable. */
+	public function test_fetch_full_content_timeout_is_filterable() {
+		$captured = null;
+
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( &$captured ) {
+				if ( 'https://example.com/timed-post/' === $url ) {
+					$captured = $parsed_args;
+				}
+
+				return $preempt;
+			},
+			5,
+			3
+		);
+
+		add_filter(
+			'daymark_subscription_content_fetch_timeout',
+			static function () {
+				return 7;
+			}
+		);
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/timed-post/' );
+		update_post_meta( $post_id, 'body_content', '' );
+
+		$this->mock_response( 'https://example.com/timed-post/', '<html><body><p>Content.</p></body></html>', 'text/html; charset=UTF-8' );
+
+		$this->poller->fetch_full_content( $post_id );
+
+		$this->assertNotNull( $captured );
+		$this->assertSame( 7, $captured['timeout'] );
+		$this->assertSame( 4 * 1024 * 1024, $captured['limit_response_size'] );
 	}
 
 	// -----------------------------------------------------------------
