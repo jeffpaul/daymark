@@ -684,14 +684,13 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// 30 seeded Marks — comfortably more scroll room than the minimum a
-	// couple of hundred px this test used to seed, which left the "scroll
-	// up" step landing back within the y < 80 "always show both, near the
-	// top" reset (see bindChromeAutoHide(), app.js) instead of actually
-	// exercising the header's own hide-on-scroll-up behavior.
+	// Enough seeded Marks to make the page taller than the viewport — kept
+	// at 10 (not more) since Daymark_Rate_Limiter::ACTION_PUBLISH caps
+	// publishing at 20 requests per 5 minutes, and 30 sequential creates
+	// here also blew past this test's own timeout.
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
-		for (let i = 1; i <= 30; i++) {
+		for (let i = 1; i <= 10; i++) {
 			await fetch(`${config.restUrl}marks`, {
 				method: 'POST',
 				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
@@ -702,14 +701,20 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	});
 	await page.goto('/daymark');
 
-	// Wait for plenty of scroll room — the header/footer are static markup
-	// and appear immediately, but scrolling before there's enough rendered
-	// content is a race that leaves the page too short to trigger auto-hide,
-	// or too short to scroll away from the "near the top" reset below.
-	// Gating on a specific row count is itself racy (infinite scroll can
-	// load a second page before the count is ever observed at the first
-	// page's size), so wait on the actual precondition instead.
-	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 1200);
+	// Wait for the page to actually grow taller than the viewport, then
+	// pad it with a plain synthetic spacer well past the recent list —
+	// real seeded rows alone left too little scroll room to test the
+	// header's hide-on-scroll-up behavior without landing back inside the
+	// y < 80 "always show both, near the top" reset (see
+	// bindChromeAutoHide(), app.js) on the very next scroll-up. The spacer
+	// only needs to exist for scroll room; it carries no content of its
+	// own to assert on.
+	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 100);
+	await page.evaluate(() => {
+		const spacer = document.createElement('div');
+		spacer.style.height = '2000px';
+		document.body.appendChild(spacer);
+	});
 
 	const footer = page.locator('.daymark-homefooter');
 	const header = page.locator('.daymark-topbar');
