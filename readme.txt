@@ -51,7 +51,9 @@ Your site itself is always the primary destination — social networks are stric
 
 = External services =
 
-This plugin does not send data to any external service on its own. Publishing to social networks is handled by whichever publishing or federation plugin you install, and AI features go through the WordPress core AI Client and whichever provider plugin you have configured.
+Publishing to social networks is handled by whichever publishing or federation plugin you install, and AI features go through the WordPress core AI Client and whichever provider plugin you have configured — Daymark itself talks to neither directly.
+
+Daymark does make one outbound request of its own: when composing a Mark, if your browser's location permission is granted, Daymark quietly looks up current weather conditions for that location from [Open-Meteo](https://open-meteo.com/) (`api.open-meteo.com`), a free service that requires no account or API key. This only happens when a location was captured for that Mark, and only on publish. See "What does Daymark quietly capture, and can I turn it off?" in the FAQ for what's captured and how to disable any of it.
 
 = AI-assisted development =
 
@@ -83,6 +85,16 @@ If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deli
 = Which AI providers work with AI Assist? =
 
 Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini), or OpenAI (GPT). Daymark never talks to an AI vendor directly and never stores API keys; it goes through the core AI Client, and the first configured provider powers caption, title, alt text, tag, and transcript suggestions. Without a configured provider, the AI Assist UI simply does not appear.
+
+= What does Daymark quietly capture, and can I turn it off? =
+
+Composing a Mark quietly captures a few pieces of metadata in the background, without any field to fill in: the date/time it was created, your device's location (only if your browser grants permission — never a form field to fill in), current weather for that location, camera details from a photo's own EXIF data (camera model, aperture, ISO, and similar), an estimated reading time for a longer caption, and AI-suggested tags. None of it is required, none of it can block or delay publishing, and anything that isn't available (permission denied, no EXIF data, no AI provider configured, etc.) is simply left out rather than causing an error.
+
+This is captured ahead of planned future work: showing where a Mark was made ("checkins"), its weather at the time, and richer photo details, directly in the Timeline. Location and weather aren't shown anywhere in Daymark yet — they're captured now so that display work has real data to build on rather than starting from a Timeline with nothing to show. If you'd rather this wasn't captured at all while it's still invisible, location, weather, and camera metadata can each be turned off independently with a filter in your theme or a small site-specific plugin:
+
+`add_filter( 'daymark_capture_location', '__return_false' );`, `add_filter( 'daymark_capture_weather', '__return_false' );`, and `add_filter( 'daymark_capture_camera_metadata', '__return_false' );`
+
+Turning off location capture also stops the weather lookup, since weather is only ever attempted alongside a resolved location; the weather filter alone leaves location capture on but skips just the weather lookup. A Mark's captured location is stored for your own site's use and is never published on its public permalink page unless you explicitly opt in with `add_filter( 'daymark_publish_location_publicly', '__return_true' );`.
 
 = Does Daymark create a custom post type? =
 

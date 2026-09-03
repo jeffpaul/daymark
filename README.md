@@ -273,6 +273,49 @@ provider is configured the field is simply empty to fill in by hand). All
 of it is optional: no provider, no AI UI, and publishing never depends on
 it.
 
+### What does Daymark quietly capture, and can I turn it off?
+
+Composing a Mark quietly captures a few pieces of metadata in the
+background, without any field to fill in: the date/time it was created,
+your device's location (only if your browser grants permission — never a
+form field to fill in), current weather for that location, camera details
+from a photo's own EXIF data (camera model, aperture, ISO, and similar),
+an estimated reading time for a longer caption, and AI-suggested tags.
+None of it is required, none of it can block or delay publishing, and
+anything that isn't available (permission denied, no EXIF data, no AI
+provider configured, etc.) is simply left out rather than causing an
+error.
+
+Weather is the one piece that talks to an external service on its own:
+composing near a captured location makes one request to
+[Open-Meteo](https://open-meteo.com/) (`api.open-meteo.com`), a free,
+keyless service — chosen for the same reason Daymark never stores an AI
+provider API key. Everything else (location, camera metadata, reading
+time, tags) stays entirely between your browser and your own site.
+
+This is captured ahead of planned future work: showing where a Mark was
+made ("checkins"), its weather at the time, and richer photo details,
+directly in the Timeline. Location and weather aren't shown anywhere in
+Daymark yet — they're captured now so that display work has real data to
+build on rather than starting from a Timeline with nothing to show. If
+you'd rather this wasn't captured at all while it's still invisible,
+location, weather, and camera metadata can each be turned off
+independently with a filter in your theme or a small site-specific
+plugin:
+
+```php
+add_filter( 'daymark_capture_location', '__return_false' );
+add_filter( 'daymark_capture_weather', '__return_false' );
+add_filter( 'daymark_capture_camera_metadata', '__return_false' );
+```
+
+Turning off location capture also stops the weather lookup, since weather
+is only ever attempted alongside a resolved location; the weather filter
+alone leaves location capture on but skips just the weather lookup. A
+Mark's captured location is stored for your own site's use and is never
+published on its public permalink page unless you explicitly opt in with
+`add_filter( 'daymark_publish_location_publicly', '__return_true' );`.
+
 ## Contributing
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for

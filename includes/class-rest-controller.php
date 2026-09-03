@@ -97,6 +97,26 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'description'       => __( 'Marks this as a background autosave rather than a user-initiated action, for rate-limiting purposes only.', 'daymark' ),
 							'sanitize_callback' => 'rest_sanitize_boolean',
 						),
+						'captured_at'          => array(
+							'type'              => 'string',
+							'description'       => __( 'ISO 8601 capture timestamp from the client, used as the Mark\'s post_date when valid and not materially in the future.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
+						'location_lat'         => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured latitude, if available and permitted.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
+						'location_lng'         => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured longitude, if available and permitted.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
+						'location_accuracy'    => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured location accuracy in meters, if available.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
 					),
 				),
 				array(
@@ -253,6 +273,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/ai/tags',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'ai_tags' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'caption'    => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_textarea_field',
+					),
+					'type'       => array(
+						'type'              => 'string',
+						'default'           => 'note',
+						'sanitize_callback' => 'sanitize_key',
+					),
+					'transcript' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_textarea_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)',
 			array(
 				array(
@@ -272,25 +319,45 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'callback'            => array( $this, 'update_daymark' ),
 					'permission_callback' => array( $this, 'permissions_check_post' ),
 					'args'                => array(
-						'id'       => array(
+						'id'                => array(
 							'type'              => 'integer',
 							'required'          => true,
 							'sanitize_callback' => 'absint',
 						),
-						'caption'  => array(
+						'caption'           => array(
 							'type'              => 'string',
 							'sanitize_callback' => 'wp_kses_post',
 						),
-						'status'   => array(
+						'status'            => array(
 							'type'              => 'string',
 							'enum'              => array( 'publish', 'draft' ),
 							'sanitize_callback' => 'sanitize_key',
 						),
-						'autosave' => array(
+						'autosave'          => array(
 							'type'              => 'boolean',
 							'default'           => false,
 							'description'       => __( 'Marks this as a background autosave rather than a user-initiated action, for rate-limiting purposes only.', 'daymark' ),
 							'sanitize_callback' => 'rest_sanitize_boolean',
+						),
+						'captured_at'       => array(
+							'type'              => 'string',
+							'description'       => __( 'ISO 8601 capture timestamp from the client, used as the Mark\'s post_date when valid and not materially in the future.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
+						'location_lat'      => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured latitude, if available and permitted.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
+						'location_lng'      => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured longitude, if available and permitted.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
+						'location_accuracy' => array(
+							'type'              => 'number',
+							'description'       => __( 'Captured location accuracy in meters, if available.', 'daymark' ),
+							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
 						),
 					),
 				),
@@ -716,6 +783,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'alt'                  => $request->get_param( 'alt' ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 			'transcript'           => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
+			// Quiet metadata capture: date/time + optional location, both
+			// sent invisibly by the composer — see Daymark_Publisher::publish()
+			// for how these resolve (client value vs. EXIF vs. no signal) and
+			// range-validate. Never required, never blocks publishing.
+			'captured_at'          => sanitize_text_field( (string) $request->get_param( 'captured_at' ) ),
+			'location_lat'         => $request->get_param( 'location_lat' ),
+			'location_lng'         => $request->get_param( 'location_lng' ),
+			'location_accuracy'    => $request->get_param( 'location_accuracy' ),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -1117,6 +1192,74 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/ai/tags — an AI-suggested tag list for a Mark.
+	 *
+	 * Mirrors /ai/suggestions and /ai/title: delegates to
+	 * Daymark_AI_Assist::suggest_tags(), which falls back to a deterministic
+	 * mock tag list when no provider is configured. Serves two callers: the
+	 * manual "AI Assist" sheet, and the composer's own quiet, invisible
+	 * background tag suggestion (fired only when the composer has no tags
+	 * yet and the author hasn't touched the tag field — see assets/app.js).
+	 * Optional and non-blocking either way — never blocks publishing.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function ai_tags( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_AI );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		// Canonical request fields are `text` and `primary_type`; accept the
+		// older `caption`/`type` names as fallbacks (matches /ai/suggestions).
+		$caption    = sanitize_textarea_field( (string) ( $request->get_param( 'text' ) ?? $request->get_param( 'caption' ) ) );
+		$type       = sanitize_key( (string) ( $request->get_param( 'primary_type' ) ?? $request->get_param( 'type' ) ) );
+		$transcript = sanitize_textarea_field( (string) $request->get_param( 'transcript' ) );
+
+		if ( ! in_array( $type, Daymark_Publisher::PRIMARY_TYPES, true ) ) {
+			$type = 'note';
+		}
+
+		$ai   = Daymark_Plugin::instance()->ai_assist;
+		$tags = $ai->suggest_tags(
+			array(
+				'text'       => $caption,
+				'type'       => $type,
+				'transcript' => $transcript,
+			)
+		);
+
+		return rest_ensure_response(
+			array(
+				'tags'           => $tags,
+				'is_mocked'      => ! $ai->is_available(),
+				'provider_label' => $ai->get_provider_label(),
+			)
+		);
+	}
+
+	/**
+	 * Sanitize an optional REST float param: numeric input becomes a float,
+	 * anything else (missing, non-numeric) becomes null so a caller can
+	 * tell "no value supplied" apart from a real 0.0. Range validation
+	 * happens in Daymark_Publisher::resolve_location(), which silently
+	 * drops an out-of-range value rather than failing the request — this
+	 * callback only normalizes type.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param mixed $value Raw REST param value.
+	 * @return float|null
+	 */
+	public static function sanitize_optional_float( $value ): ?float {
+		return is_numeric( $value ) ? (float) $value : null;
+	}
+
+	/**
 	 * POST /daymark/v1/ai/alt-text — vision alt text for one uploaded image.
 	 *
 	 * Reads the uploaded image from the temp upload (no attachment is
@@ -1503,6 +1646,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
 			'tags'                => $request->get_param( 'tags' ),
 			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
+			// Quiet metadata capture — see create_mark()'s matching comment.
+			'captured_at'         => sanitize_text_field( (string) $request->get_param( 'captured_at' ) ),
+			'location_lat'        => $request->get_param( 'location_lat' ),
+			'location_lng'        => $request->get_param( 'location_lng' ),
+			'location_accuracy'   => $request->get_param( 'location_accuracy' ),
 		);
 
 		if ( null !== $request->get_param( 'publish_helpers' ) ) {
@@ -2119,7 +2267,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return array<string, mixed>
 	 */
 	private function prepare_mark_summary( int $post_id ): array {
-		return array(
+		$summary = array(
 			'id'                 => absint( $post_id ),
 			// Plain text: the_title filters entity-encode (&#8217; etc.) for
 			// HTML output, but API consumers escape at render time themselves.
@@ -2154,6 +2302,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 		);
+
+		// Quiet metadata capture: only ever present when a value was
+		// actually resolved for this Mark — omitted (not null-valued)
+		// otherwise, so a Timeline card can use a plain presence check.
+		$captured_at = (string) get_post_meta( $post_id, '_daymark_captured_at', true );
+
+		if ( '' !== $captured_at ) {
+			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
+			$summary['captured_at'] = mysql_to_rfc3339( $captured_at );
+		}
+
+		$reading_time = get_post_meta( $post_id, '_daymark_reading_time_minutes', true );
+
+		if ( is_numeric( $reading_time ) ) {
+			$summary['reading_time_minutes'] = (int) $reading_time;
+		}
+
+		$location = json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true );
+
+		if ( is_array( $location ) && isset( $location['lat'], $location['lng'] ) && is_numeric( $location['lat'] ) && is_numeric( $location['lng'] ) ) {
+			$summary['location'] = array(
+				'lat' => (float) $location['lat'],
+				'lng' => (float) $location['lng'],
+			);
+		}
+
+		return $summary;
 	}
 
 	/**

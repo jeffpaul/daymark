@@ -443,4 +443,516 @@ class Test_Publisher extends WP_UnitTestCase {
 		$defaults = json_decode( (string) get_post_meta( $post_id, '_daymark_default_destinations', true ), true );
 		$this->assertContains( 'bluesky', $defaults );
 	}
+
+	// --- Quiet mark metadata capture ---
+
+	/**
+	 * Blocks any real network request to api.open-meteo.com for the
+	 * duration of a test that resolves a location but doesn't itself care
+	 * about the weather result — publish() always attempts a best-effort
+	 * weather fetch once a location resolves, and this keeps that from
+	 * ever reaching the real network during a test run.
+	 *
+	 * @return Closure The installed filter, for remove_filter().
+	 */
+	private function block_weather_requests(): Closure {
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				return new WP_Error( 'daymark_test_http_blocked', 'Weather fetch blocked in test.' );
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+		return $filter;
+	}
+
+	/** A valid, past client-supplied captured_at becomes the Mark's post_date. */
+	public function test_captured_at_client_value_used_when_valid() {
+		$publisher = new Daymark_Publisher();
+		$captured  = gmdate( 'c', strtotime( '-2 days' ) );
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Captured two days ago',
+				'primary_type' => 'note',
+				'captured_at'  => $captured,
+			)
+		);
+
+		$expected = gmdate( 'Y-m-d H:i:s', strtotime( $captured ) );
+		$this->assertSame( $expected, get_post_meta( $post_id, '_daymark_captured_at', true ) );
+		$this->assertSame( $expected, get_post( $post_id )->post_date_gmt );
+	}
+
+	/**
+	 * A captured_at further in the future than the clock-skew tolerance is
+	 * ignored (not an error) — the Mark still publishes, falling through to
+	 * the ordinary "now" default since there's no EXIF signal either.
+	 */
+	public function test_captured_at_future_value_ignored() {
+		$publisher = new Daymark_Publisher();
+		$future    = gmdate( 'c', time() + 2 * DAY_IN_SECONDS );
+		$before    = time();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Future timestamp should be ignored',
+				'primary_type' => 'note',
+				'captured_at'  => $future,
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_captured_at', true ) );
+
+		$post_date_gmt = strtotime( get_post( $post_id )->post_date_gmt . ' UTC' );
+		$this->assertGreaterThanOrEqual( $before - 5, $post_date_gmt );
+		$this->assertLessThanOrEqual( time() + 5, $post_date_gmt );
+	}
+
+	/**
+	 * With no client captured_at, an image's EXIF created_timestamp is used
+	 * as the capture-time fallback.
+	 */
+	public function test_captured_at_exif_fallback_used_without_client_value() {
+		$exif_ts = strtotime( '2024-05-01 10:00:00 UTC' );
+		$filter  = static function ( $metadata ) use ( $exif_ts ) {
+			$metadata['image_meta'] = array( 'created_timestamp' => $exif_ts );
+			return $metadata;
+		};
+		add_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-exif-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'EXIF capture time' ),
+			array(
+				'files' => array(
+					'name'     => 'exif.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		remove_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$this->assertSame( gmdate( 'Y-m-d H:i:s', $exif_ts ), get_post_meta( $post_id, '_daymark_captured_at', true ) );
+		$this->assertSame( gmdate( 'Y-m-d H:i:s', $exif_ts ), get_post( $post_id )->post_date_gmt );
+	}
+
+	/** With neither a client value nor EXIF, behavior is unchanged: "now". */
+	public function test_captured_at_defaults_to_now_without_any_signal() {
+		$publisher = new Daymark_Publisher();
+		$before    = time();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'No capture signal at all',
+				'primary_type' => 'note',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_captured_at', true ) );
+		$post_date_gmt = strtotime( get_post( $post_id )->post_date_gmt . ' UTC' );
+		$this->assertGreaterThanOrEqual( $before - 5, $post_date_gmt );
+		$this->assertLessThanOrEqual( time() + 5, $post_date_gmt );
+	}
+
+	/** A valid lat/lng is stored as _daymark_location. */
+	public function test_valid_location_stored() {
+		$filter    = $this->block_weather_requests();
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'           => 'With location',
+				'primary_type'      => 'note',
+				'location_lat'      => 40.7128,
+				'location_lng'      => -74.006,
+				'location_accuracy' => 15.5,
+			)
+		);
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$location = json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true );
+		$this->assertSame( 40.7128, $location['lat'] );
+		$this->assertSame( -74.006, $location['lng'] );
+		$this->assertSame( 15.5, $location['accuracy'] );
+	}
+
+	/** An out-of-range lat/lng is silently dropped, never stored, never an error. */
+	public function test_out_of_range_location_silently_dropped() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Bad location',
+				'primary_type' => 'note',
+				'location_lat' => 200,
+				'location_lng' => -74.006,
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** A long caption/transcript gets a reading-time estimate stored. */
+	public function test_long_caption_gets_reading_time_meta() {
+		$publisher = new Daymark_Publisher();
+		$caption   = implode( ' ', array_fill( 0, 500, 'word' ) );
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => $caption,
+				'primary_type' => 'note',
+			)
+		);
+
+		$expected = max( 1, (int) round( 500 / Daymark_Publisher::WORDS_PER_MINUTE ) );
+		$this->assertSame( $expected, (int) get_post_meta( $post_id, '_daymark_reading_time_minutes', true ) );
+	}
+
+	/** A short caption gets no reading-time meta at all. */
+	public function test_short_caption_gets_no_reading_time_meta() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Just a short caption',
+				'primary_type' => 'note',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_reading_time_minutes', true ) );
+	}
+
+	/** Camera EXIF fields present on the first image are stored as _daymark_camera. */
+	public function test_camera_metadata_stored_when_present() {
+		$filter = static function ( $metadata ) {
+			$metadata['image_meta'] = array(
+				'camera'        => 'Canon EOS R5',
+				'aperture'      => '2.8',
+				'iso'           => '400',
+				'focal_length'  => '50',
+				'shutter_speed' => '0.005',
+			);
+			return $metadata;
+		};
+		add_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-camera-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'With camera EXIF' ),
+			array(
+				'files' => array(
+					'name'     => 'camera.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		remove_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$camera = json_decode( (string) get_post_meta( $post_id, '_daymark_camera', true ), true );
+		$this->assertSame( 'Canon EOS R5', $camera['camera'] );
+		$this->assertSame( '2.8', $camera['aperture'] );
+		$this->assertSame( '400', $camera['iso'] );
+		$this->assertSame( '50', $camera['focal_length'] );
+		$this->assertSame( '0.005', $camera['shutter_speed'] );
+	}
+
+	/** An attachment with no useful EXIF camera fields stores nothing. */
+	public function test_camera_metadata_not_stored_when_no_useful_fields() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-nocamera-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'No camera EXIF' ),
+			array(
+				'files' => array(
+					'name'     => 'nocamera.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_camera', true ) );
+	}
+
+	/** A successful Open-Meteo response stores _daymark_weather in the right shape. */
+	public function test_weather_stored_on_successful_fetch() {
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => wp_json_encode(
+					array(
+						'current' => array(
+							'temperature_2m' => 21.5,
+							'weather_code'   => 1,
+						),
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Weather test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$weather = json_decode( (string) get_post_meta( $post_id, '_daymark_weather', true ), true );
+		$this->assertSame( 21.5, $weather['temperature'] );
+		$this->assertSame( 'C', $weather['unit'] );
+		$this->assertSame( 'Mostly clear', $weather['condition'] );
+		$this->assertSame( 1, $weather['code'] );
+	}
+
+	/** A WP_Error (e.g. timeout) leaves _daymark_weather unset and never fails publish(). */
+	public function test_weather_not_stored_on_http_error() {
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return new WP_Error( 'http_request_failed', 'timeout' );
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Weather failure test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+	}
+
+	/** A non-200 response leaves _daymark_weather unset. */
+	public function test_weather_not_stored_on_non_200_response() {
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => '',
+				'response' => array(
+					'code'    => 503,
+					'message' => 'Service Unavailable',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Weather non-200 test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+	}
+
+	/** Malformed JSON leaves _daymark_weather unset. */
+	public function test_weather_not_stored_on_malformed_json() {
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => 'not valid json{{{',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Weather malformed test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+	}
+
+	// --- Quiet capture opt-out filters ---
+
+	/** daymark_capture_location = false stores no location even when a valid one is supplied. */
+	public function test_capture_location_filter_disables_storage() {
+		add_filter( 'daymark_capture_location', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Location capture disabled',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_location', '__return_false' );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** Disabling location capture also prevents the weather fetch from ever running. */
+	public function test_capture_location_filter_also_disables_weather() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+		add_filter( 'daymark_capture_location', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$publisher->publish(
+			array(
+				'caption'      => 'No weather without location',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_location', '__return_false' );
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+	}
+
+	/** daymark_capture_weather = false skips the weather fetch even with a resolved location. */
+	public function test_capture_weather_filter_disables_fetch() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+		add_filter( 'daymark_capture_weather', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Weather capture disabled',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_weather', '__return_false' );
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+		// Location itself is unaffected by the weather-only opt-out.
+		$this->assertNotSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** daymark_capture_camera_metadata = false stores no camera fields even when EXIF has them. */
+	public function test_capture_camera_metadata_filter_disables_storage() {
+		$filter = static function ( $metadata ) {
+			$metadata['image_meta'] = array(
+				'camera' => 'Canon EOS R5',
+				'iso'    => '400',
+			);
+			return $metadata;
+		};
+		add_filter( 'wp_generate_attachment_metadata', $filter );
+		add_filter( 'daymark_capture_camera_metadata', '__return_false' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-nocameraopt-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'Camera metadata capture disabled' ),
+			array(
+				'files' => array(
+					'name'     => 'nocameraopt.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		remove_filter( 'daymark_capture_camera_metadata', '__return_false' );
+		remove_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_camera', true ) );
+	}
 }
