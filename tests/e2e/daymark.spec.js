@@ -1007,8 +1007,10 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	await expect(results.locator('[data-subpost]').first()).toBeVisible();
 });
 
-// Per-item delete: the ⋯ menu offers Delete, which requires an explicit
-// confirm step. Cancel keeps the item; confirm removes it from the list.
+// Per-item delete: the ⋯ menu is a Draft-only affordance (a published Mark
+// offers no in-app Edit/Delete at all — see the "read no ⋯ menu" test below)
+// and offers Delete, which requires an explicit confirm step. Cancel keeps
+// the item; confirm removes it from the list.
 test('per-item menu: delete requires confirm — cancel keeps, confirm removes', async ({ page }) => {
 	const caption = `E2E deletable ${RUN_ID}`;
 
@@ -1020,18 +1022,14 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 			method: 'POST',
 			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
 			credentials: 'same-origin',
-			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+			body: JSON.stringify({ caption: cap, primary_type: 'note', status: 'draft' }),
 		});
 	}, caption);
 
 	await page.goto('/daymark');
 
-	// Scope every action to this Mark's own card, and within it to the ⋯
-	// actions menu specifically ([data-actions]) — its own site icon
-	// (data-filter-site) is a plain sibling button now, not a second user of
-	// this same data-menu-toggle/data-menu-actions machinery, so there's no
-	// collision to guard against there; [data-actions] is still the correct,
-	// explicit scope regardless.
+	// Scope every action to this Draft's own card, and within it to the ⋯
+	// actions menu specifically ([data-actions]).
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
 	const menu = card.locator('[data-actions]');
@@ -1058,12 +1056,10 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 	).toHaveCount(0);
 });
 
-// Touch-target audit: every tappable control sizes off the app shell's own
-// --daymark-tap-min (44px) token, not a hardcoded smaller value. Covers the
-// controls the audit found under that minimum before being fixed.
-test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => {
-	const caption = `E2E taptarget mark ${RUN_ID}`;
-	const TAP_MIN = 44;
+// A published Mark is read-only in-app: no ⋯ menu, so no in-app Edit or
+// Delete at all. wp-admin is where a published Mark gets adjusted or removed.
+test('published Marks have no ⋯ Edit/Delete menu', async ({ page }) => {
+	const caption = `E2E published readonly ${RUN_ID}`;
 
 	await loginAs(page);
 	await page.goto('/daymark');
@@ -1078,23 +1074,64 @@ test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => 
 	}, caption);
 
 	await page.goto('/daymark');
+
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
+	await expect(card.locator('[data-actions]')).toHaveCount(0);
+	await expect(card.locator('[data-menu-toggle]')).toHaveCount(0);
+});
 
-	// Per-item ⋯ menu trigger.
-	const menuToggle = card.locator('[data-menu-toggle]');
-	let box = await menuToggle.boundingBox();
+// Touch-target audit: every tappable control sizes off the app shell's own
+// --daymark-tap-min (44px) token, not a hardcoded smaller value. Covers the
+// controls the audit found under that minimum before being fixed.
+test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => {
+	const publishedCaption = `E2E taptarget mark ${RUN_ID}`;
+	const draftCaption = `E2E taptarget draft ${RUN_ID}`;
+	const TAP_MIN = 44;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(
+		async ({ published, draft }) => {
+			const config = window.daymarkApp;
+			const post = (cap, status) =>
+				fetch(`${config.restUrl}marks`, {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify({ caption: cap, primary_type: 'note', status }),
+				});
+			// The site icon only appears on a published Mark's card (a Draft
+			// has no separate site to filter to); the ⋯ menu only appears on
+			// a Draft's card (a published Mark is read-only in-app) — so this
+			// audit needs one of each.
+			await post(published, 'publish');
+			await post(draft, 'draft');
+		},
+		{ published: publishedCaption, draft: draftCaption }
+	);
+
+	await page.goto('/daymark');
+	const publishedCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: publishedCaption }).first();
+	await expect(publishedCard).toBeVisible();
+
+	// Site icon filter button (published Mark only).
+	const siteIcon = publishedCard.locator('[data-filter-site]');
+	let box = await siteIcon.boundingBox();
 	expect(box.width).toBeGreaterThanOrEqual(TAP_MIN);
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
 
-	// Site icon filter button.
-	const siteIcon = card.locator('[data-filter-site]');
-	box = await siteIcon.boundingBox();
+	const draftCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: draftCaption }).first();
+	await expect(draftCard).toBeVisible();
+
+	// Per-item ⋯ menu trigger (Draft only).
+	const menuToggle = draftCard.locator('[data-menu-toggle]');
+	box = await menuToggle.boundingBox();
 	expect(box.width).toBeGreaterThanOrEqual(TAP_MIN);
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
 
 	// Delete-confirmation buttons inside the ⋯ menu.
-	const menu = card.locator('[data-actions]');
+	const menu = draftCard.locator('[data-actions]');
 	await menuToggle.click();
 	await menu.locator('[data-menu-delete]').click();
 	for (const name of ['data-menu-delete-cancel', 'data-menu-delete-confirm']) {
