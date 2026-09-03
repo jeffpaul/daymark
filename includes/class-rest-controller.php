@@ -1929,6 +1929,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
 			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			// The post's own real WordPress post format ('standard' when
+			// unset). A true Mark's `type` above always takes priority
+			// client-side; this exists only for an ordinary post published
+			// straight through the block editor, which has no
+			// _daymark_primary_type of its own — so the Timeline card can
+			// tell "Standard post that happens to carry a featured image"
+			// apart from a real Image/Gallery/Video format, the same
+			// distinction a subscription post's own post_format already
+			// draws (see resolveCardKind(), app.js).
+			'post_format'        => sanitize_key( (string) ( get_post_format( $post_id ) ?: 'standard' ) ),
 			// The 24-word-trimmed caption Daymark_Publisher already stores as
 			// this post's own post_excerpt (see class-publisher.php) — not
 			// previously exposed here, so a Timeline card had no way to show

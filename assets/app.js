@@ -3777,18 +3777,26 @@
 			// (see get_timeline()'s own docblock, class-rest-controller.php)
 			// — an ordinary post published straight through the block
 			// editor shows up here too, with no _daymark_primary_type meta
-			// at all to report as `type`. Infer a reasonable kind from
-			// what the post actually has instead of collapsing every
-			// non-Daymark post to the same bare note row: a real featured
-			// image gets the same media-dominant treatment a real Image
-			// Mark does, and any real excerpt otherwise reads as an
-			// article — the same inference a subscription's own
-			// 'standard' format gets just below.
-			if (item.thumbnail) {
-				return 'image';
+			// at all to report as `type`. Its own real WordPress post
+			// format is the strongest signal when it says something
+			// richer than "Standard": Image/Gallery/Video mean the
+			// featured image really is the point, so those get the same
+			// media-dominant treatment a real Image/Gallery/Video Mark
+			// does — the same distinction a subscription post's own
+			// post_format already draws just below. A Standard post (or
+			// any format this app doesn't otherwise recognize) reads as
+			// an article instead — a smaller thumbnail beside the title
+			// and excerpt, not a full-bleed banner, since a Standard
+			// post's featured image is decoration, not the point, the
+			// way an actual Image Mark's photo is.
+			if (item.post_format && MEDIA_DOMINANT_KINDS.includes(item.post_format)) {
+				return item.post_format;
 			}
 			const plainExcerpt = toPlainText(item.excerpt || '').trim();
-			return plainExcerpt ? 'article' : 'note';
+			if (plainExcerpt) {
+				return 'article';
+			}
+			return item.thumbnail ? 'image' : 'note';
 		}
 		if (item.post_format && 'standard' !== item.post_format) {
 			return item.post_format;

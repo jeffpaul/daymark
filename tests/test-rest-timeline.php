@@ -241,6 +241,48 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * An ordinary post's own real WordPress post format is reported
+	 * (defaulting to 'standard' when never set) so the app shell can tell
+	 * a Standard post that merely carries a featured image apart from a
+	 * real Image/Gallery/Video format — see resolveCardKind(), app.js.
+	 * Without this, a Standard post with a featured image previously
+	 * rendered with the same full-bleed banner treatment a real Image
+	 * Mark gets, rather than a smaller thumbnail beside its title/excerpt.
+	 */
+	public function test_ordinary_post_reports_its_own_post_format() {
+		wp_set_current_user( $this->author_a );
+
+		$standard_post_id = (int) self::factory()->post->create(
+			array(
+				'post_author'   => $this->author_a,
+				'post_status'   => 'publish',
+				'post_title'    => 'A Standard Post With A Featured Image',
+				'post_date_gmt' => '2024-01-01 00:00:00',
+				'post_date'     => get_date_from_gmt( '2024-01-01 00:00:00' ),
+			)
+		);
+
+		$gallery_post_id = (int) self::factory()->post->create(
+			array(
+				'post_author'   => $this->author_a,
+				'post_status'   => 'publish',
+				'post_title'    => 'A Real Gallery-Format Post',
+				'post_date_gmt' => '2024-01-02 00:00:00',
+				'post_date'     => get_date_from_gmt( '2024-01-02 00:00:00' ),
+			)
+		);
+		set_post_format( $gallery_post_id, 'gallery' );
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+		$items    = $response->get_data();
+
+		$this->assertSame( $gallery_post_id, $items[0]['id'] );
+		$this->assertSame( 'gallery', $items[0]['post_format'] );
+		$this->assertSame( $standard_post_id, $items[1]['id'] );
+		$this->assertSame( 'standard', $items[1]['post_format'] );
+	}
+
+	/**
 	 * The one exception to the above: narrowing to one specific
 	 * _daymark_primary_type value only ever matches true Marks, since an
 	 * ordinary block-editor post has no such meta to match against.
