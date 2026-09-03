@@ -31,8 +31,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Registers the Settings -> Daymark page and its three admin-post form
- * handlers: subscribe, refresh, unsubscribe.
+ * Registers the Settings -> Daymark page and its admin-post form handlers:
+ * subscribe, refresh, refresh icon, unsubscribe, and OPML export/import.
  */
 class Daymark_Admin_Subscriptions {
 
@@ -77,7 +77,10 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'admin_post_daymark_subscribe', array( $this, 'handle_subscribe' ) );
 		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
+		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
+		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
+		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 	}
 
 	/**
@@ -147,6 +150,13 @@ class Daymark_Admin_Subscriptions {
 
 			<?php $this->render_subscribe_form(); ?>
 			<?php $this->render_subscriptions_table( $subscriptions ); ?>
+
+			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
+			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
+			<?php
+			$this->render_export_link();
+			$this->render_import_form();
+			?>
 		</div>
 		<?php
 	}
@@ -178,11 +188,18 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		if ( 'opml_imported' === $notice ) {
+			$this->render_opml_import_results();
+
+			return;
+		}
+
 		$success_messages = array(
 			'subscribed'         => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
 			'subscribed_pending' => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
 			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
 			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
+			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -191,6 +208,97 @@ class Daymark_Admin_Subscriptions {
 				esc_html( $success_messages[ $notice ] )
 			);
 		}
+	}
+
+	/**
+	 * Render the per-entry OPML import results summary, read once from the
+	 * short-lived, current-user-scoped transient handle_import() writes
+	 * (POST-redirect-GET can't otherwise carry an array through the
+	 * redirect's query string) — consumed (deleted) here so a page refresh
+	 * doesn't show a stale result again.
+	 *
+	 * @return void
+	 */
+	private function render_opml_import_results(): void {
+		$transient_key = 'daymark_opml_import_result_' . get_current_user_id();
+		$results       = get_transient( $transient_key );
+
+		delete_transient( $transient_key );
+
+		if ( ! is_array( $results ) ) {
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html__( 'Import complete.', 'daymark' )
+			);
+
+			return;
+		}
+
+		$counts = array(
+			'subscribed' => 0,
+			'duplicate'  => 0,
+			'failed'     => 0,
+		);
+
+		foreach ( $results as $result ) {
+			$status = isset( $result['status'] ) ? (string) $result['status'] : '';
+
+			if ( isset( $counts[ $status ] ) ) {
+				++$counts[ $status ];
+			}
+		}
+
+		printf(
+			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+			esc_html(
+				sprintf(
+					/* translators: 1: number subscribed, 2: number already subscribed, 3: number failed. */
+					__( 'Import complete: %1$d subscribed, %2$d already subscribed, %3$d failed.', 'daymark' ),
+					$counts['subscribed'],
+					$counts['duplicate'],
+					$counts['failed']
+				)
+			)
+		);
+
+		if ( empty( $results ) ) {
+			return;
+		}
+		$status_labels = array(
+			'subscribed' => __( 'Subscribed', 'daymark' ),
+			'duplicate'  => __( 'Already subscribed', 'daymark' ),
+			'failed'     => __( 'Failed', 'daymark' ),
+		);
+		?>
+		<table class="wp-list-table widefat fixed striped" style="max-width:600px;">
+			<thead>
+				<tr>
+					<th scope="col"><?php esc_html_e( 'Entry', 'daymark' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Result', 'daymark' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $results as $result ) : ?>
+					<?php
+					$label        = isset( $result['label'] ) ? (string) $result['label'] : '';
+					$status       = isset( $result['status'] ) ? (string) $result['status'] : '';
+					$message      = isset( $result['message'] ) ? (string) $result['message'] : '';
+					$status_label = $status_labels[ $status ] ?? $status;
+					?>
+					<tr>
+						<td><?php echo esc_html( '' !== $label ? $label : __( '(untitled)', 'daymark' ) ); ?></td>
+						<td>
+							<?php echo esc_html( $status_label ); ?>
+							<?php if ( '' !== $message && 'subscribed' !== $status ) : ?>
+								<br />
+								<span class="description"><?php echo esc_html( $message ); ?></span>
+							<?php endif; ?>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
 	}
 
 	/**
@@ -305,6 +413,8 @@ class Daymark_Admin_Subscriptions {
 				<?php
 				$this->render_refresh_form( $id );
 
+				$this->render_refresh_icon_form( $id );
+
 				$this->render_unsubscribe_form( $id, $row_label );
 				?>
 			</td>
@@ -329,6 +439,33 @@ class Daymark_Admin_Subscriptions {
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_refresh_' . $id, 'daymark_subscription_refresh_nonce' ); ?>
 			<?php submit_button( __( 'Refresh', 'daymark' ), 'secondary small', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render one subscription's "Refresh icon" form (issue #94): re-runs
+	 * site-icon discovery on demand and updates `site_icon_url`. Shown on
+	 * every row, not only one with no icon yet — a site's favicon can also
+	 * change after the original subscribe. Manual only, on purpose: no
+	 * scheduled/automatic icon refresh exists, and this action has no
+	 * per-subscription cooldown of its own (unlike Refresh's 15-minute
+	 * window) — the shared per-user rate limit
+	 * (Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH) is the only abuse
+	 * guard this lightweight, infrequent action needs.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @param int $id Subscription ID.
+	 * @return void
+	 */
+	private function render_refresh_icon_form( int $id ): void {
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-right:6px;">
+			<input type="hidden" name="action" value="daymark_subscription_refresh_icon" />
+			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+			<?php wp_nonce_field( 'daymark_subscription_refresh_icon_' . $id, 'daymark_subscription_refresh_icon_nonce' ); ?>
+			<?php submit_button( __( 'Refresh icon', 'daymark' ), 'secondary small', 'submit', false ); ?>
 		</form>
 		<?php
 	}
@@ -388,6 +525,60 @@ class Daymark_Admin_Subscriptions {
 				array( 'onclick' => 'return confirm(\'' . esc_js( $confirm_message ) . '\');' )
 			);
 			?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render the "Export" link (issue #80): a plain, nonce-carrying GET link
+	 * to admin_post_daymark_subscriptions_export, which streams the same
+	 * Daymark_Subscription_OPML::export() output the REST
+	 * `GET /daymark/v1/subscriptions/export` route serves — one export
+	 * implementation shared by both surfaces, matching this screen's
+	 * existing subscribe/refresh/unsubscribe convention of delegating to a
+	 * single shared method rather than duplicating logic per surface.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return void
+	 */
+	private function render_export_link(): void {
+		$url = wp_nonce_url(
+			add_query_arg( 'action', 'daymark_subscriptions_export', admin_url( 'admin-post.php' ) ),
+			'daymark_subscriptions_export',
+			'daymark_subscriptions_export_nonce'
+		);
+		?>
+		<p>
+			<a href="<?php echo esc_url( $url ); ?>" class="button button-secondary"><?php esc_html_e( 'Export subscriptions (OPML)', 'daymark' ); ?></a>
+		</p>
+		<?php
+	}
+
+	/**
+	 * Render the OPML file-upload Import form (issue #80).
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return void
+	 */
+	private function render_import_form(): void {
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">
+			<input type="hidden" name="action" value="daymark_subscriptions_import" />
+			<?php wp_nonce_field( 'daymark_subscriptions_import', 'daymark_subscriptions_import_nonce' ); ?>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row">
+						<label for="daymark_opml_file"><?php esc_html_e( 'Import OPML file', 'daymark' ); ?></label>
+					</th>
+					<td>
+						<input type="file" name="daymark_opml_file" id="daymark_opml_file" accept=".opml,.xml" required="required" />
+						<p class="description"><?php esc_html_e( 'Each entry is imported individually — one bad entry will not stop the rest from importing.', 'daymark' ); ?></p>
+					</td>
+				</tr>
+			</table>
+			<?php submit_button( __( 'Import', 'daymark' ), 'secondary', 'daymark-import-submit', true ); ?>
 		</form>
 		<?php
 	}
@@ -489,6 +680,50 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * Handle the Refresh icon form
+	 * (admin_post_daymark_subscription_refresh_icon, issue #94).
+	 *
+	 * Delegates to Daymark_Subscriptions::refresh_icon(). Applies the same
+	 * per-user rate limit (Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH
+	 * — same outbound-request risk class as the content Refresh action
+	 * above) as its only abuse guard; unlike handle_refresh(), there is no
+	 * separate per-subscription cooldown here — see
+	 * Daymark_Subscriptions::refresh_icon()'s own docblock for why one
+	 * isn't needed.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return void
+	 */
+	public function handle_refresh_icon(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_refresh_icon_' . $id, 'daymark_subscription_refresh_icon_nonce' );
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message() );
+
+			return;
+		}
+
+		$result = Daymark_Plugin::instance()->subscriptions->refresh_icon( $id );
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_with_error( $result->get_error_message() );
+
+			return;
+		}
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'icon_refreshed' ) );
+	}
+
+	/**
 	 * Handle the Unsubscribe form (admin_post_daymark_subscription_unsubscribe).
 	 *
 	 * Delegates to Daymark_Subscriptions::unsubscribe() — the same method
@@ -512,6 +747,122 @@ class Daymark_Admin_Subscriptions {
 		Daymark_Plugin::instance()->subscriptions->unsubscribe( $id );
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'unsubscribed' ) );
+	}
+
+	/**
+	 * Handle the Export link (admin_post_daymark_subscriptions_export,
+	 * issue #80): streams Daymark_Subscription_OPML::export()'s output as a
+	 * file download — the same shared export implementation
+	 * GET /daymark/v1/subscriptions/export serves, so there is exactly one
+	 * thing to keep in sync between the two surfaces.
+	 *
+	 * A GET request (this is a read, not a state change), so its nonce is
+	 * verified from `$_GET` rather than `$_POST`, matching
+	 * wp_nonce_url()'s own convention.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return void
+	 */
+	public function handle_export(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_subscriptions_export', 'daymark_subscriptions_export_nonce' );
+
+		$xml = ( new Daymark_Subscription_OPML() )->export();
+
+		nocache_headers();
+		header( 'Content-Type: text/x-opml+xml; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="daymark-subscriptions.opml"' );
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Raw OPML/XML file download, not HTML output; content already XML-escaped by DOMDocument in Daymark_Subscription_OPML::export().
+		echo $xml;
+		exit;
+	}
+
+	/**
+	 * Handle the Import form (admin_post_daymark_subscriptions_import,
+	 * issue #80).
+	 *
+	 * Capability + nonce + the same per-request rate limit
+	 * (Daymark_Rate_Limiter::ACTION_SUBSCRIBE) the REST import route
+	 * applies, then the same upload-size cap
+	 * (Daymark_Subscription_OPML::MAX_UPLOAD_BYTES, filterable via
+	 * `daymark_subscription_opml_max_upload_bytes` — one shared constant so
+	 * this handler and the REST route can never enforce a different cap),
+	 * enforced before the file is read into memory. The uploaded file is
+	 * read directly from `$_FILES` (standard PHP upload handling) rather
+	 * than through `wp_handle_upload()` — nothing here is stored as a
+	 * permanent attachment.
+	 *
+	 * The per-entry results array (not a request-level failure) is stashed
+	 * in a short-lived, current-user-scoped transient rather than passed
+	 * through the redirect's query string (POST-redirect-GET can't carry an
+	 * array that way) — render_opml_import_results() reads and consumes it
+	 * on the next page load.
+	 *
+	 * @since 0.10.0
+	 *
+	 * @return void
+	 */
+	public function handle_import(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_subscriptions_import', 'daymark_subscriptions_import_nonce' );
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message() );
+
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Nonce already verified above via check_admin_referer(); the raw upload array itself is not user-suppliable text to sanitize (each field is validated/read individually below — extension, size, tmp_name via is_uploaded_file()), same as Daymark_Share_Target::handle()'s own $_FILES read.
+		$file = isset( $_FILES['daymark_opml_file'] ) && is_array( $_FILES['daymark_opml_file'] ) ? $_FILES['daymark_opml_file'] : null;
+
+		if ( null === $file || empty( $file['tmp_name'] ) || ! is_uploaded_file( $file['tmp_name'] ) ) {
+			$this->redirect_with_error( __( 'No OPML file was provided.', 'daymark' ) );
+
+			return;
+		}
+
+		$filename  = isset( $file['name'] ) ? sanitize_file_name( wp_unslash( (string) $file['name'] ) ) : '';
+		$extension = strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) );
+
+		if ( ! in_array( $extension, array( 'opml', 'xml' ), true ) ) {
+			$this->redirect_with_error( __( 'Please upload a .opml or .xml file.', 'daymark' ) );
+
+			return;
+		}
+
+		/** This filter is documented in Daymark_Subscription_OPML::MAX_UPLOAD_BYTES's docblock. */
+		$max_bytes = (int) apply_filters( 'daymark_subscription_opml_max_upload_bytes', Daymark_Subscription_OPML::MAX_UPLOAD_BYTES );
+		$size      = isset( $file['size'] ) ? (int) $file['size'] : 0;
+
+		if ( $size <= 0 || $size > $max_bytes ) {
+			$this->redirect_with_error( __( 'This file is too large to import.', 'daymark' ) );
+
+			return;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a just-uploaded PHP temp upload file for in-memory XML parsing (not a remote fetch); this form intentionally doesn't go through wp_handle_upload() since nothing is stored as a permanent attachment.
+		$xml = (string) file_get_contents( $file['tmp_name'] );
+
+		$results = ( new Daymark_Subscription_OPML() )->import( $xml );
+
+		if ( is_wp_error( $results ) ) {
+			$this->redirect_with_error( $results->get_error_message() );
+
+			return;
+		}
+
+		set_transient( 'daymark_opml_import_result_' . get_current_user_id(), $results, MINUTE_IN_SECONDS );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'opml_imported' ) );
 	}
 
 	/**

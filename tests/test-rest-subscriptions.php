@@ -1,22 +1,31 @@
 <?php
 /**
- * REST tests for the Subscribing/Unsubscribing endpoints (issue #78):
+ * REST tests for the Subscribing/Unsubscribing endpoints (issue #78), plus
+ * OPML export/import (issue #80):
  *
  *   - POST   /daymark/v1/subscriptions
  *   - GET    /daymark/v1/subscriptions
  *   - DELETE /daymark/v1/subscriptions/{id}
+ *   - POST   /daymark/v1/subscriptions/{id}/refresh
+ *   - GET    /daymark/v1/subscriptions/export
+ *   - POST   /daymark/v1/subscriptions/import
  *
  * Feed autodiscovery and favicon lookup both go through
  * Daymark_Subscription_Source_Feed's own wp_safe_remote_get() call, so HTTP
  * is mocked via `pre_http_request` (same approach as
  * tests/test-subscription-source-feed.php) rather than hitting the real
- * network.
+ * network. Daymark_Subscription_OPML's own export()/import() logic (shape,
+ * escaping, XXE safety, nested outlines, the entry cap, the xmlUrl/htmlUrl
+ * split) is covered directly in tests/test-subscription-opml.php — the
+ * export/import tests here only cover the REST wrapping around it (auth,
+ * upload validation, response shape).
  *
  * @package Daymark
  */
 
 /**
- * Exercises the subscribe-by-URL, list, and unsubscribe REST endpoints.
+ * Exercises the subscribe-by-URL, list, refresh, unsubscribe, and
+ * OPML export/import REST endpoints.
  */
 class Test_Rest_Subscriptions extends WP_UnitTestCase {
 
@@ -333,6 +342,12 @@ XML;
 
 		$refresh = new WP_REST_Request( 'POST', '/daymark/v1/subscriptions/1/refresh' );
 		$this->assertSame( 401, rest_do_request( $refresh )->get_status() );
+
+		$export = new WP_REST_Request( 'GET', '/daymark/v1/subscriptions/export' );
+		$this->assertSame( 401, rest_do_request( $export )->get_status() );
+
+		$import = new WP_REST_Request( 'POST', '/daymark/v1/subscriptions/import' );
+		$this->assertSame( 401, rest_do_request( $import )->get_status() );
 	}
 
 	/** POST /subscriptions/{id}/refresh polls immediately outside the manual-refresh window. */
@@ -412,5 +427,181 @@ XML;
 		$request->set_param( 'site_url', $site_url );
 
 		return $request;
+	}
+
+	/**
+	 * GET /subscriptions/export returns the same OPML export()
+	 * Daymark_Subscription_OPML::export() produces, with file-download
+	 * headers set — rest_do_request() bypasses WP_REST_Server::serve_request()
+	 * entirely (see maybe_serve_opml_export()'s own docblock), so this
+	 * asserts directly on the WP_REST_Response object rather than on real
+	 * HTTP output.
+	 */
+	public function test_export_returns_opml_with_download_headers() {
+		wp_set_current_user( $this->author_a );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$subscriptions->create(
+			array(
+				'site_url'   => 'https://export-me.example/',
+				'feed_url'   => 'https://export-me.example/feed/',
+				'site_title' => 'Export Me',
+			)
+		);
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/subscriptions/export' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$data = $response->get_data();
+		$this->assertArrayHasKey( 'xml', $data );
+		$this->assertStringContainsString( '<opml', $data['xml'] );
+		$this->assertStringContainsString( 'Export Me', $data['xml'] );
+		$this->assertStringContainsString( 'https://export-me.example/feed/', $data['xml'] );
+
+		$headers = $response->get_headers();
+		$this->assertSame( 'text/x-opml+xml; charset=utf-8', $headers['Content-Type'] );
+		$this->assertSame( 'attachment; filename="daymark-subscriptions.opml"', $headers['Content-Disposition'] );
+	}
+
+	/** POST /subscriptions/import creates rows and reports per-entry results, matching Daymark_Subscription_OPML::import()'s own contract. */
+	public function test_import_creates_subscriptions_and_reports_results() {
+		wp_set_current_user( $this->author_a );
+
+		$opml = '<?xml version="1.0"?><opml version="2.0"><body>'
+			. '<outline text="Imported Feed" xmlUrl="https://imported.example/feed" htmlUrl="https://imported.example/" />'
+			. '</body></opml>';
+
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
+		$request->set_file_params(
+			array(
+				'opml' => array(
+					'name'     => 'subscriptions.opml',
+					'type'     => 'text/x-opml+xml',
+					'tmp_name' => $this->write_opml_fixture( $opml ),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => strlen( $opml ),
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$data = $response->get_data();
+		$this->assertCount( 1, $data );
+		$this->assertSame( 'subscribed', $data[0]['status'] );
+		$this->assertSame( 'Imported Feed', $data[0]['label'] );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$this->assertNotNull( $subscriptions->get_by_feed_url( 'https://imported.example/feed' ) );
+	}
+
+	/** A missing file is a clean 400, not a fatal. */
+	public function test_import_requires_a_file() {
+		wp_set_current_user( $this->author_a );
+
+		$response = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/import' ) );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_opml_missing_file', $response->get_data()['code'] );
+	}
+
+	/** A file with a disallowed extension is rejected before it is ever parsed. */
+	public function test_import_rejects_disallowed_extension() {
+		wp_set_current_user( $this->author_a );
+
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
+		$request->set_file_params(
+			array(
+				'opml' => array(
+					'name'     => 'subscriptions.txt',
+					'type'     => 'text/plain',
+					'tmp_name' => $this->write_opml_fixture( 'not opml' ),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => 8,
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_opml_invalid_extension', $response->get_data()['code'] );
+	}
+
+	/** A file over the configured upload-size cap is rejected before it is ever read/parsed. */
+	public function test_import_rejects_oversized_upload() {
+		wp_set_current_user( $this->author_a );
+
+		add_filter(
+			'daymark_subscription_opml_max_upload_bytes',
+			static function () {
+				return 10;
+			}
+		);
+
+		$opml    = '<?xml version="1.0"?><opml version="2.0"><body>'
+			. '<outline text="Too Big" xmlUrl="https://too-big.example/feed" />'
+			. '</body></opml>';
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
+		$request->set_file_params(
+			array(
+				'opml' => array(
+					'name'     => 'subscriptions.opml',
+					'type'     => 'text/x-opml+xml',
+					'tmp_name' => $this->write_opml_fixture( $opml ),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => strlen( $opml ),
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_opml_too_large', $response->get_data()['code'] );
+
+		$subscriptions = new Daymark_Subscriptions();
+		$this->assertSame( array(), $subscriptions->get_all() );
+	}
+
+	/** A malformed (non-OPML) file's parse failure surfaces as a clean 400, not a fatal. */
+	public function test_import_rejects_malformed_file() {
+		wp_set_current_user( $this->author_a );
+
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
+		$request->set_file_params(
+			array(
+				'opml' => array(
+					'name'     => 'subscriptions.opml',
+					'type'     => 'text/x-opml+xml',
+					'tmp_name' => $this->write_opml_fixture( 'not xml at all <<<' ),
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => 19,
+				),
+			)
+		);
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'daymark_subscription_opml_invalid', $response->get_data()['code'] );
+	}
+
+	/**
+	 * Write an OPML fixture body to a temp file and return its path, for
+	 * set_file_params()'s `tmp_name`.
+	 *
+	 * @param string $body File contents.
+	 * @return string Temp file path.
+	 */
+	private function write_opml_fixture( string $body ): string {
+		$path = wp_tempnam( 'daymark-opml-' ) . '.opml';
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture write; WP_Filesystem is unnecessary here.
+		file_put_contents( $path, $body );
+
+		return $path;
 	}
 }

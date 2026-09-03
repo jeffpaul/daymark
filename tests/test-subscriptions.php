@@ -550,4 +550,84 @@ class Test_Subscriptions extends WP_UnitTestCase {
 			'A different subscription\'s post is untouched'
 		);
 	}
+
+	/**
+	 * Scenario (issue #94): refresh_icon() re-runs favicon discovery for an
+	 * existing subscription and updates its stored site_icon_url — the same
+	 * discovery subscribe_to_site() only ever runs once, at subscribe time.
+	 */
+	public function test_refresh_icon_updates_site_icon_url() {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'      => 'https://example.com/',
+				'feed_url'      => 'https://example.com/feed/',
+				'site_icon_url' => 'https://example.com/old-icon.png',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+
+		$result = $this->subscriptions->refresh_icon( $id );
+
+		$this->assertTrue( $result );
+
+		$row = $this->subscriptions->get( $id );
+		$this->assertSame( 'https://example.com/icon.png', $row['site_icon_url'] );
+	}
+
+	/** Scenario: refresh_icon() on a nonexistent subscription is a clean 404-style WP_Error. */
+	public function test_refresh_icon_missing_subscription_returns_not_found() {
+		$result = $this->subscriptions->refresh_icon( 999999 );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_not_found', $result->get_error_code() );
+		$this->assertSame( 404, $result->get_error_data()['status'] );
+	}
+
+	/**
+	 * Scenario: a site with no discoverable icon (no host at all to derive
+	 * even the /favicon.ico fallback from) is not a fatal — a real, expected
+	 * outcome reported as a distinguishable WP_Error rather than 500ing.
+	 */
+	public function test_refresh_icon_no_icon_found_returns_error() {
+		// A non-empty, scheme-less string like 'not-a-real-url' is not a
+		// usable fixture here: esc_url_raw() (via create()'s own
+		// sanitization) auto-prepends 'http://' to a bare string with no
+		// scheme, which gives fallback_favicon_url() a host to guess
+		// {scheme}://{host}/favicon.ico from after all — that fallback is
+		// never itself verified to resolve, so this needs a site_url with
+		// no host at all (an empty string) to genuinely exercise "no icon
+		// could be found".
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => '',
+				'feed_url' => 'https://example.net/feed/',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$result = $this->subscriptions->refresh_icon( $id );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_icon_not_found', $result->get_error_code() );
+		$this->assertSame( 422, $result->get_error_data()['status'] );
+	}
+
+	/** Scenario: a subscription whose source_type has no icon-capable source fails cleanly rather than fatally. */
+	public function test_refresh_icon_unsupported_source_type_returns_error() {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://example.com/',
+				'feed_url'    => 'https://example.com/feed/',
+				'source_type' => 'activitypub',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$result = $this->subscriptions->refresh_icon( $id );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_icon_not_found', $result->get_error_code() );
+	}
 }
