@@ -3,6 +3,15 @@
 # Place this file in your WordPress installation root (same level as wp-config.php).
 # Update bracketed values after Phase 0 environment checks.
 
+## Working agreement: never merge PRs
+
+Claude must never merge a pull request in this repo, under any circumstance —
+not even when CI is green, review is approved, or the user previously approved
+a merge in another session. Jeff is the final reviewer and merges every PR
+himself. Open PRs as drafts, push fixes, respond to review/CI feedback, and
+leave the PR ready — then stop and wait. If asked to merge, decline and
+explain that merges are reserved for Jeff.
+
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
