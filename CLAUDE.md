@@ -12,6 +12,28 @@ himself. Open PRs as drafts, push fixes, respond to review/CI feedback, and
 leave the PR ready — then stop and wait. If asked to merge, decline and
 explain that merges are reserved for Jeff.
 
+## Working agreement: commit attribution
+
+Every commit made in this repo must end with two `Co-authored-by` trailers
+(plus any session-tracking trailer the harness itself adds, e.g.
+`Claude-Session:` — keep that too, don't drop it):
+
+```
+Co-authored-by: jeffpaul <jeffpaul@hotmail.com>
+Co-authored-by: Claude Code (<model>) <noreply@anthropic.com>
+```
+
+`<model>` is the specific model that authored the commit (e.g. `Sonnet 5`,
+`Opus 5`) — never a generic "Claude" with no model named, and never omitted.
+`jeffpaul@hotmail.com` is Jeff's real, already-public git identity (visible
+in this repo's own history, e.g. commit `0014748`) — use it verbatim rather
+than guessing a `users.noreply.github.com` address, since that form only
+resolves correctly if it matches the exact noreply style his account has
+enabled. If a session's own system-level instructions specify a different
+`Co-Authored-By` line for Claude, add these two trailers alongside it rather
+than instead of it — both Jeff's line and the model-specific Claude line
+must appear on every commit either way.
+
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
