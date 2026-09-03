@@ -152,6 +152,7 @@ class Test_Subscriptions extends WP_UnitTestCase {
 				'consecutive_failure_count',
 				'last_checked_at',
 				'last_manual_refresh_at',
+				'last_error',
 				'created_at',
 			),
 			$columns
@@ -467,6 +468,23 @@ class Test_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+	}
+
+	/**
+	 * Scenario (issue #81, SSRF hardening): a site URL that resolves to a
+	 * private/internal address is rejected the exact same way any other
+	 * invalid site URL already is — same error code, no fetch attempted (no
+	 * response mocked for this host, so a real attempt would be caught by
+	 * intercept_http_request()'s "unmocked request blocked" WP_Error, not
+	 * the assertion below).
+	 */
+	public function test_subscribe_to_site_rejects_unsafe_url() {
+		$result = $this->subscriptions->subscribe_to_site( 'http://127.0.0.1/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+		$this->assertSame( 400, $result->get_error_data()['status'] );
+		$this->assertSame( array(), $this->subscriptions->get_active(), 'Nothing was created' );
 	}
 
 	/** Scenario: a URL with no discoverable feed fails clearly, not with a fatal. */

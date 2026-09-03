@@ -31,12 +31,28 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		$this->source         = new Daymark_Subscription_Source_Feed();
 
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
+		// fetch_feed() caches parsed feeds by default (see the identical note
+		// in Test_Subscription_Poller); disabled so every fetch() call here
+		// hits the mocked pre_http_request layer, not a stale cache entry
+		// from an earlier test reusing the same feed URL.
+		add_action( 'wp_feed_options', array( $this, 'disable_feed_cache' ), 10, 2 );
 	}
 
 	public function tear_down(): void {
 		remove_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10 );
+		remove_action( 'wp_feed_options', array( $this, 'disable_feed_cache' ), 10 );
 
 		parent::tear_down();
+	}
+
+	/**
+	 * @param SimplePie $feed Feed instance, passed by reference by fetch_feed().
+	 * @param string    $url  Feed URL (unused).
+	 * @return void
+	 */
+	public function disable_feed_cache( $feed, $url ) {
+		unset( $url );
+		$feed->enable_cache( false );
 	}
 
 	/**
@@ -68,6 +84,30 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 	private function mock_response( string $url, string $body ): void {
 		$this->http_responses[ $url ] = array(
 			'headers'  => array(),
+			'body'     => $body,
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
+
+	/**
+	 * Register a canned 200 RSS/Atom response for a URL — like
+	 * mock_response(), but with the `content-type` header SimplePie (via
+	 * WP_SimplePie_File) consults to detect a feed; an empty/missing one
+	 * otherwise makes a perfectly valid mocked feed body look like a fetch
+	 * failure.
+	 *
+	 * @param string $url  URL to mock.
+	 * @param string $body Response body.
+	 * @return void
+	 */
+	private function mock_feed_response( string $url, string $body ): void {
+		$this->http_responses[ $url ] = array(
+			'headers'  => array( 'content-type' => 'application/rss+xml; charset=UTF-8' ),
 			'body'     => $body,
 			'response' => array(
 				'code'    => 200,
@@ -214,6 +254,50 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 	/** Scenario: a non-http(s) site URL is rejected before any request is made. */
 	public function test_discover_rejects_non_http_scheme() {
 		$this->assertSame( array(), $this->source->discover( 'ftp://example.com/' ) );
+	}
+
+	/**
+	 * Scenario (issue #81, SSRF hardening): a site URL that resolves to a
+	 * private/internal address discovers nothing — the exact same empty
+	 * result any other invalid site URL already produces, and no request is
+	 * ever attempted (an unmocked request would be blocked and would still
+	 * result in an empty array either way, so this also confirms the guard,
+	 * not just the fetch, is what's short-circuiting here).
+	 */
+	public function test_discover_rejects_unsafe_host() {
+		$this->assertSame( array(), $this->source->discover( 'http://127.0.0.1/' ) );
+	}
+
+	/**
+	 * Scenario (issue #81): the site-HTML fetch behind discover() rejects a
+	 * response at or beyond the configured size cap rather than parsing a
+	 * (possibly truncated) document — a real, discoverable feed link is
+	 * present in the fixture, so this proves the cap itself is what blocks
+	 * discovery, not a missing link.
+	 */
+	public function test_discover_rejects_html_response_at_or_over_size_cap() {
+		$html = $this->html_with_links(
+			array(
+				array(
+					'rel'  => 'alternate',
+					'type' => 'application/rss+xml',
+					'href' => '/feed/',
+				),
+			)
+		);
+
+		add_filter(
+			'daymark_subscription_max_html_bytes',
+			static function () use ( $html ) {
+				// One byte below the real body length: the body is "at or
+				// beyond" this cap, so it is rejected as (possibly) truncated.
+				return strlen( $html ) - 1;
+			}
+		);
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame( array(), $this->source->discover( 'https://example.com/' ) );
 	}
 
 	/**
@@ -459,6 +543,43 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Scenario (issue #81): fetch_html() (shared by discover(),
+	 * get_favicon_url(), and get_site_title()) requests the documented 1 MB
+	 * default size cap and 10s default timeout, and honors both filters.
+	 */
+	public function test_html_fetch_uses_filterable_timeout_and_size_limit() {
+		$captured = null;
+
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) use ( &$captured ) {
+				if ( 'https://example.com/' === $url ) {
+					$captured = $parsed_args;
+				}
+
+				return $preempt;
+			},
+			5,
+			3
+		);
+
+		add_filter(
+			'daymark_subscription_html_fetch_timeout',
+			static function () {
+				return 3;
+			}
+		);
+
+		$this->mock_response( 'https://example.com/', $this->html_with_links( array() ) );
+
+		$this->source->get_site_title( 'https://example.com/' );
+
+		$this->assertNotNull( $captured, 'The request was made and its args captured' );
+		$this->assertSame( 3, $captured['timeout'] );
+		$this->assertSame( 1024 * 1024, $captured['limit_response_size'] );
+	}
+
+	/**
 	 * Scenario: favicon discovery prefers an explicit `<link rel="icon">`
 	 * over the `/favicon.ico` fallback.
 	 */
@@ -506,6 +627,17 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * Scenario (issue #81, SSRF hardening): a site URL that resolves to a
+	 * private/internal address returns '' — unlike a merely unreachable
+	 * host (test above), an *unsafe* host never even reaches the
+	 * `/favicon.ico` fallback, since the guard rejects it before any host
+	 * information is used for a request of any kind.
+	 */
+	public function test_favicon_rejects_unsafe_host() {
+		$this->assertSame( '', $this->source->get_favicon_url( 'http://127.0.0.1/' ) );
+	}
+
 	/** Scenario: get_site_title() reads the page's own plain <title>. */
 	public function test_get_site_title_reads_title_tag() {
 		$this->mock_response( 'https://example.com/', $this->html_with_links( array() ) );
@@ -538,6 +670,11 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 	/** Scenario: an unreachable site returns an empty string, not a fatal. */
 	public function test_get_site_title_returns_empty_when_site_unreachable() {
 		$this->assertSame( '', $this->source->get_site_title( 'https://unreachable.example/' ) );
+	}
+
+	/** Scenario (issue #81, SSRF hardening): an unsafe host returns ''. */
+	public function test_get_site_title_rejects_unsafe_host() {
+		$this->assertSame( '', $this->source->get_site_title( 'http://127.0.0.1/' ) );
 	}
 
 	/** Scenario: HTML entities and surrounding whitespace in <title> are cleaned up. */
@@ -590,6 +727,84 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		$this->source->get_favicon_url( 'https://example.com/' );
 
 		$this->assertSame( 1, $requests );
+	}
+
+	// -----------------------------------------------------------------
+	// fetch() hardening (issue #81).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: a feed URL that resolves to a private/internal address is
+	 * rejected before any request is attempted, with a specific reason in
+	 * the WP_Error message — reused as-is by
+	 * Daymark_Subscription_Poller::record_failed_check() for `last_error`.
+	 */
+	public function test_fetch_rejects_unsafe_feed_url() {
+		$result = $this->source->fetch( 'http://127.0.0.1/feed/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_feed_url', $result->get_error_code() );
+		$this->assertStringContainsString( 'private or internal network address', $result->get_error_message() );
+	}
+
+	/**
+	 * Scenario: inject_feed_response_size_limit() — the http_request_args
+	 * callback scoped to fetch()'s own fetch_feed() call — injects the
+	 * documented 2 MB default, and honors the
+	 * `daymark_subscription_max_feed_bytes` filter.
+	 */
+	public function test_feed_response_size_limit_default_and_filter() {
+		$args = $this->source->inject_feed_response_size_limit( array() );
+		$this->assertSame( 2 * 1024 * 1024, $args['limit_response_size'] );
+
+		add_filter(
+			'daymark_subscription_max_feed_bytes',
+			static function () {
+				return 12345;
+			}
+		);
+
+		$args = $this->source->inject_feed_response_size_limit( array() );
+		$this->assertSame( 12345, $args['limit_response_size'] );
+	}
+
+	/**
+	 * Scenario: a feed response cut off mid-document (what a real
+	 * size-limited download looks like once truncated) fails as a WP_Error
+	 * via SimplePie's own parse failure — fetch()'s existing is_wp_error()
+	 * contract needs no separate truncation-detection code for this call
+	 * site (see fetch()'s own docblock).
+	 */
+	public function test_fetch_treats_a_truncated_feed_as_a_parse_failure() {
+		$truncated = '<?xml version="1.0"?><rss version="2.0"><channel><title>Example</title><item><title>Cut o';
+		$this->mock_feed_response( 'https://example.com/feed/', $truncated );
+
+		$result = $this->source->fetch( 'https://example.com/feed/' );
+
+		$this->assertWPError( $result );
+	}
+
+	/** Scenario: configure_feed_timeout() sets the documented 10s default and honors its filter. */
+	public function test_feed_fetch_timeout_default_and_filter() {
+		$feed = new class() {
+			public $timeout;
+			public function set_timeout( $seconds ) {
+				$this->timeout = $seconds;
+			}
+		};
+
+		$this->source->configure_feed_timeout( $feed );
+		$this->assertSame( 10, $feed->timeout );
+
+		add_filter(
+			'daymark_subscription_feed_fetch_timeout',
+			static function () {
+				return 3;
+			}
+		);
+
+		$this->source->configure_feed_timeout( $feed );
+		$this->assertSame( 3, $feed->timeout );
 	}
 
 	/**

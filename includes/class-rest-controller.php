@@ -1834,6 +1834,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'consecutive_failure_count' => absint( $row['consecutive_failure_count'] ?? 0 ),
 			'last_checked_at'           => sanitize_text_field( (string) ( $row['last_checked_at'] ?? '' ) ),
 			'last_manual_refresh_at'    => sanitize_text_field( (string) ( $row['last_manual_refresh_at'] ?? '' ) ),
+			// Human-readable reason for the most recent failed check (issue
+			// #81); '' when the subscription has never failed a check.
+			'last_error'                => sanitize_text_field( (string) ( $row['last_error'] ?? '' ) ),
 			'created_at'                => sanitize_text_field( (string) ( $row['created_at'] ?? '' ) ),
 		);
 	}

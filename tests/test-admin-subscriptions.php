@@ -89,6 +89,44 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Never', $output );
 	}
 
+	/**
+	 * Scenario (issue #81): the Status column shows an error-flagged
+	 * subscription's `last_error` text — a small, natural addition alongside
+	 * the existing "Error" label, not a new UI element.
+	 */
+	public function test_status_column_shows_last_error_for_error_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.biz',
+				'feed_url' => 'https://example.biz/feed',
+				'status'   => 'error',
+			)
+		);
+
+		$this->subscriptions->update( $id, array( 'last_error' => 'The response exceeded the maximum allowed size.' ) );
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'The response exceeded the maximum allowed size.', $output );
+	}
+
+	/** An active subscription's row never shows a `last_error`, even if one is on file from a past failure. */
+	public function test_status_column_hides_last_error_for_active_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.cc',
+				'feed_url' => 'https://example.cc/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update( $id, array( 'last_error' => 'A stale error from before this recovered.' ) );
+
+		$output = $this->render();
+
+		$this->assertStringNotContainsString( 'A stale error from before this recovered.', $output );
+	}
+
 	public function test_last_fetched_column_shows_relative_time_once_checked(): void {
 		$id = $this->subscriptions->create(
 			array(

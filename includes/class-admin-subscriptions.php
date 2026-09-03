@@ -274,13 +274,14 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscription_row( array $subscription ): void {
-		$id        = absint( $subscription['id'] ?? 0 );
-		$site_url  = (string) ( $subscription['site_url'] ?? '' );
-		$title     = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
-		$status    = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
-		$is_error  = 'error' === $status;
-		$label     = '' !== $title ? $title : $site_url;
-		$row_label = '' !== $label ? $label : __( '(untitled)', 'daymark' );
+		$id         = absint( $subscription['id'] ?? 0 );
+		$site_url   = (string) ( $subscription['site_url'] ?? '' );
+		$title      = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$status     = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
+		$is_error   = 'error' === $status;
+		$label      = '' !== $title ? $title : $site_url;
+		$row_label  = '' !== $label ? $label : __( '(untitled)', 'daymark' );
+		$last_error = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
 		?>
 		<tr>
 			<td>
@@ -292,6 +293,10 @@ class Daymark_Admin_Subscriptions {
 			</td>
 			<td>
 				<?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?>
+				<?php if ( $is_error && '' !== $last_error ) : ?>
+					<br />
+					<span class="description"><?php echo esc_html( $last_error ); ?></span>
+				<?php endif; ?>
 			</td>
 			<td>
 				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>

@@ -75,6 +75,49 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertNotEmpty( $item['last_checked_at_relative'] );
 	}
 
+	/**
+	 * Scenario (issue #81): a `dead_feed` item's `last_error` field carries
+	 * the human-readable reason for the most recent failed check.
+	 */
+	public function test_dead_feed_item_includes_last_error() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url' => 'https://error-example.com/',
+				'feed_url' => 'https://error-example.com/feed/',
+			)
+		);
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertTrue(
+			$subscriptions->update(
+				$subscription_id,
+				array(
+					'status'          => 'error',
+					'last_checked_at' => '2026-01-01 00:00:00',
+					'last_error'      => 'This subscription\'s feed could not be reached or parsed.',
+				)
+			)
+		);
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$dead_feed_items = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) use ( $subscription_id ) {
+					return 'dead_feed' === ( $item['type'] ?? '' ) && $subscription_id === $item['subscription_id'];
+				}
+			)
+		);
+
+		$this->assertCount( 1, $dead_feed_items );
+		$this->assertSame( 'This subscription\'s feed could not be reached or parsed.', $dead_feed_items[0]['last_error'] );
+	}
+
 	/** An active (non-flagged) subscription never appears as a `dead_feed` item. */
 	public function test_active_subscription_does_not_appear_as_dead_feed() {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );

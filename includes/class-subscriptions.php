@@ -28,7 +28,7 @@ class Daymark_Subscriptions {
 	 *
 	 * @var string
 	 */
-	private const DB_VERSION = '1.1.0';
+	private const DB_VERSION = '1.2.0';
 
 	/**
 	 * Option name storing the currently installed schema version.
@@ -109,6 +109,13 @@ class Daymark_Subscriptions {
 	 * `site_title` (the plain site name) so a future multi-feed-per-site
 	 * subscription has something to tell otherwise-identical rows apart by.
 	 *
+	 * `last_error` (added in 1.2.0, issue #81) is a human-readable reason for
+	 * the most recent failed check — the actual WP_Error message where one
+	 * exists, or a specific message for a pre-flight rejection (oversized
+	 * response, unsafe URL). Cleared back to '' on the next successful check.
+	 * Distinct from `status`/`consecutive_failure_count`, which only ever
+	 * capture *that* a subscription is failing, not *why*.
+	 *
 	 * @return string
 	 */
 	private static function get_schema_sql(): string {
@@ -130,6 +137,7 @@ class Daymark_Subscriptions {
 			consecutive_failure_count int(10) unsigned NOT NULL DEFAULT 0,
 			last_checked_at datetime DEFAULT NULL,
 			last_manual_refresh_at datetime DEFAULT NULL,
+			last_error varchar(255) NOT NULL DEFAULT '',
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY feed_url (feed_url),
@@ -236,6 +244,17 @@ class Daymark_Subscriptions {
 		$host     = (string) wp_parse_url( $site_url, PHP_URL_HOST );
 
 		if ( '' === $host || false !== strpos( $host, ' ' ) || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_url',
+				__( 'Please enter a valid site URL.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// SSRF hardening (issue #81): a rejected URL fails the exact same way
+		// an invalid one already does above — no new failure shape for a
+		// caller to special-case.
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $site_url ) ) ) {
 			return new WP_Error(
 				'daymark_subscription_invalid_url',
 				__( 'Please enter a valid site URL.', 'daymark' ),
@@ -475,7 +494,7 @@ class Daymark_Subscriptions {
 	 *
 	 * Recognized `$fields` keys: `status`, `consecutive_failure_count`,
 	 * `last_checked_at`, `last_manual_refresh_at`, `site_title`,
-	 * `feed_title`, `site_icon_url`.
+	 * `feed_title`, `site_icon_url`, `last_error`.
 	 *
 	 * @param int   $id     Subscription ID.
 	 * @param array $fields Fields to update.
@@ -521,6 +540,14 @@ class Daymark_Subscriptions {
 
 		if ( array_key_exists( 'feed_title', $fields ) ) {
 			$data['feed_title'] = sanitize_text_field( (string) $fields['feed_title'] );
+			$format[]           = '%s';
+		}
+
+		if ( array_key_exists( 'last_error', $fields ) ) {
+			// Truncated to fit the varchar(255) column — a verbose WP_Error
+			// message (e.g. a raw SimplePie parse error) should not risk a
+			// DB-level truncation warning under strict SQL modes.
+			$data['last_error'] = substr( sanitize_text_field( (string) $fields['last_error'] ), 0, 255 );
 			$format[]           = '%s';
 		}
 
