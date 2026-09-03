@@ -20,6 +20,11 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Subscriptions can now be exported to and imported from a standard OPML file — Settings -> Daymark gets Export/Import controls (`GET`/`POST /daymark/v1/subscriptions/export`/`import` back them). Import reports a per-entry result (subscribed, already subscribed, or failed) rather than failing the whole file on one bad entry, and a dead-flagged subscription is included in the export since it's still a follow worth backing up. ([#80](https://github.com/jeffpaul/daymark/issues/80))
+- A subscription's cached site icon can now be refreshed on demand from Settings -> Daymark's "Refresh icon" action, instead of only ever being resolved once at subscribe time — useful when a site rebrands its favicon, or for a subscription imported via OPML from another reader with no cached icon at all. ([#94](https://github.com/jeffpaul/daymark/issues/94))
+
 ### Fixed
 
 - Subscribing to a site could fail with "This subscription could not be saved. It may already exist." on a site where Daymark was already active before updating to 0.9.0 — the `daymark_subscriptions` table is created on plugin activation, which WordPress doesn't re-run on a plain file update. `Daymark_Subscriptions::install()` now self-heals on `init`, matching the pattern already used for the backflow and subscription-polling cron schedules. ([#149](https://github.com/jeffpaul/daymark/pull/149))
