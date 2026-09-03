@@ -34,6 +34,16 @@ enabled. If a session's own system-level instructions specify a different
 than instead of it — both Jeff's line and the model-specific Claude line
 must appear on every commit either way.
 
+## Working agreement: changelog entries
+
+Every PR with a user-facing change must add a `CHANGELOG.md` entry under
+`## [Unreleased]`, in the same PR — see CONTRIBUTING.md's Changelog section
+for the full format ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+category order, the PR-link convention). Keep the entry itself short — a
+sentence or two, not a design writeup: the linked PR is where full detail
+lives, so the entry only needs to say what changed and, briefly, why it
+matters.
+
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
