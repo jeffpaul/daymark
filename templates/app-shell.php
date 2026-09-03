@@ -165,6 +165,14 @@ $daymark_config = array(
 	'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 	'nonce'                 => wp_create_nonce( 'wp_rest' ),
 	'siteUrl'               => esc_url_raw( home_url( '/' ) ),
+	'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
+	// Site Icon first, Daymark's own bundled icon otherwise — same
+	// resolution Daymark_Routes::icon_url() already uses for the browser
+	// favicon and PWA manifest icons. Timeline's own-Mark leading icon
+	// reuses it too, so "your Marks" and "a subscribed site's posts" both
+	// identify their source the same way (a site's icon), not one by site
+	// and the other by the logged-in user's personal Gravatar.
+	'siteIconUrl'           => esc_url_raw( Daymark_Routes::icon_url( 96 ) ),
 	'screen'                => $daymark_screen,
 	'connectors'            => $daymark_connectors,
 	'defaults'              => $daymark_type_defaults,

@@ -1628,11 +1628,16 @@
 		// A Draft is always the author's own unpublished work — there is no
 		// separate site to filter to, so it's the one item that skips the
 		// site icon.
+		// The site's own icon (config.siteIconUrl, resolved server-side by
+		// Daymark_Routes::icon_url() — Site Icon, else Daymark's bundled
+		// icon), not the logged-in user's personal Gravatar: a subscription
+		// post's leading icon is the *source site's* icon, so a Mark's own
+		// leading icon identifies the same way, by site rather than by author.
 		const siteIcon = isDraft
 			? ''
 			: renderSiteIconButton({
-					iconSrc: (config.currentUser && config.currentUser.avatarUrl) || '',
-					iconAlt: (config.currentUser && config.currentUser.displayName) || 'You',
+					iconSrc: config.siteIconUrl || '',
+					iconAlt: config.siteTitle || 'Site',
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
 			  });

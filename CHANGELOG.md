@@ -23,6 +23,7 @@ can't act on them.
 ### Fixed
 
 - Subscribing to a site could fail with "This subscription could not be saved. It may already exist." on a site where Daymark was already active before updating to 0.9.0 — the `daymark_subscriptions` table is created on plugin activation, which WordPress doesn't re-run on a plain file update. `Daymark_Subscriptions::install()` now self-heals on `init`, matching the pattern already used for the backflow and subscription-polling cron schedules. ([#149](https://github.com/jeffpaul/daymark/pull/149))
+- A Timeline card for your own Mark showed your WordPress user avatar/Gravatar as its leading site icon, not your site's actual Site Icon — often just a plain letter glyph, since a self-hosted site's admin rarely has a Gravatar set. It now shows the site's Site Icon (or Daymark's own bundled icon if none is set), the same source resolution `Daymark_Routes::icon_url()` already uses for the browser favicon and PWA icons, and consistent with how a subscribed site's posts already show that site's own icon rather than its author's. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 
 ## [0.9.0] - 2026-09-02
 

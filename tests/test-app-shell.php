@@ -59,6 +59,25 @@ class Test_App_Shell extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * The bootstrap config carries a site-level icon (Site Icon, falling
+	 * back to Daymark's bundled icon via Daymark_Routes::icon_url()) and
+	 * title, so Timeline's own-Mark leading icon can identify the site the
+	 * same way a subscription post's leading icon already does, rather than
+	 * the logged-in user's personal Gravatar.
+	 */
+	public function test_config_carries_site_icon_and_title() {
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( '"siteTitle":', $html );
+		$this->assertStringContainsString( '"siteIconUrl":', $html );
+		$this->assertStringContainsString(
+			str_replace( '/', '\/', Daymark_Routes::icon_url( 96 ) ),
+			$html,
+			'Config must carry the resolved site icon URL'
+		);
+	}
+
 	/** The shell stays hermetic: no admin bar, no theme head/footer output. */
 	public function test_shell_has_no_admin_chrome() {
 		$html = $this->render_shell();
