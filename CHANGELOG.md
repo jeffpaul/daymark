@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Developer
+
+- `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
+
 ## [0.9.0] - 2026-09-02
 
 ### Added
