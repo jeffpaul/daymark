@@ -5,6 +5,13 @@
  * @package Daymark
  */
 
+// WP_Admin_Bar is normally loaded by _wp_admin_bar_init(), which only runs
+// while actually rendering a request's admin bar — never during a plain
+// PHPUnit run. Load it directly so it's available to instantiate here.
+if ( ! class_exists( 'WP_Admin_Bar' ) ) {
+	require_once ABSPATH . WPINC . '/class-wp-admin-bar.php';
+}
+
 /**
  * "Open Daymark" under the site-name node, and "Daymark" (pre-set to an
  * image Mark) under the "+New" menu — both gated on edit_posts.
