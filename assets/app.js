@@ -1287,7 +1287,7 @@
 	// pendingType and jumps to #create. `screen` is whichever screen object
 	// owns the footer currently on the page (Home/Explore/Search/Me all
 	// call this from their own bindEvents()) — its openLauncher/closeLauncher
-	// and _launcherOpen get attached here, same as bindFooterAutoHide()
+	// and _launcherOpen get attached here, same as bindChromeAutoHide()
 	// below and the per-item ⋯ menu convention (aria-expanded,
 	// focus-first-item on open).
 	function bindLauncher(screen) {
@@ -1382,22 +1382,33 @@
 
 	// Slide the footer (nav + launcher) out of view while scrolling down
 	// through a screen's list, back in on scroll-up — reclaiming its height
-	// for content without losing the controls. Removing the previous
-	// listener first keeps these from stacking across repeated renders of
-	// the same screen, same as the document click/keydown pair in
+	// for content without losing the controls. The header does the
+	// opposite: it hides while scrolling up and reappears while scrolling
+	// down, so the two chrome bars are never both reclaiming space at the
+	// same time — scrolling down (reading further into the list) only
+	// ever costs the footer's height, scrolling back up toward the top
+	// only ever costs the header's. Removing the previous listener first
+	// keeps these from stacking across repeated renders of the same
+	// screen, same as the document click/keydown pair in
 	// bindDismissible()/clearDismissible().
-	function bindFooterAutoHide(screen) {
+	function bindChromeAutoHide(screen) {
 		const footer = root.querySelector('.daymark-homefooter');
-		if (!footer) {
+		const header = root.querySelector('.daymark-topbar');
+		if (!footer && !header) {
 			return;
 		}
-		const launcher = footer.querySelector('[data-launcher]');
+		const launcher = footer && footer.querySelector('[data-launcher]');
 
 		if (screen._onScroll) {
 			window.removeEventListener('scroll', screen._onScroll);
 		}
-		if (screen._onFooterFocusIn) {
-			footer.removeEventListener('focusin', screen._onFooterFocusIn);
+		if (screen._onChromeFocusIn) {
+			if (footer) {
+				footer.removeEventListener('focusin', screen._onChromeFocusIn);
+			}
+			if (header) {
+				header.removeEventListener('focusin', screen._onChromeFocusIn);
+			}
 		}
 
 		let lastY = window.scrollY;
@@ -1412,15 +1423,20 @@
 				const y = window.scrollY;
 				const delta = y - lastY;
 
-				// Always show it near the top, regardless of direction.
+				// Always show both near the top, regardless of direction.
 				if (y < 80) {
-					footer.classList.remove('is-footer-hidden');
+					if (footer) {
+						footer.classList.remove('is-footer-hidden');
+					}
+					if (header) {
+						header.classList.remove('is-header-hidden');
+					}
 					lastY = y;
 					ticking = false;
 					return;
 				}
 
-				// Ignore small jitters either direction so the footer
+				// Ignore small jitters either direction so the chrome
 				// doesn't flicker mid-scroll.
 				if (Math.abs(delta) < 8) {
 					ticking = false;
@@ -1442,21 +1458,36 @@
 					screen.closeLauncher();
 				}
 
-				footer.classList.toggle('is-footer-hidden', delta > 0);
+				if (footer) {
+					footer.classList.toggle('is-footer-hidden', delta > 0);
+				}
+				if (header) {
+					header.classList.toggle('is-header-hidden', delta < 0);
+				}
 				lastY = y;
 				ticking = false;
 			});
 		};
 
-		// A keyboard user tabbing to the CTA or a nav link must always
-		// find it visible, regardless of scroll position — the footer is
-		// never aria-hidden, so this just keeps sight in sync with focus.
-		screen._onFooterFocusIn = () => {
-			footer.classList.remove('is-footer-hidden');
+		// A keyboard user tabbing to a control in either bar must always
+		// find it visible, regardless of scroll position — neither is ever
+		// aria-hidden, so this just keeps sight in sync with focus.
+		screen._onChromeFocusIn = () => {
+			if (footer) {
+				footer.classList.remove('is-footer-hidden');
+			}
+			if (header) {
+				header.classList.remove('is-header-hidden');
+			}
 		};
 
 		window.addEventListener('scroll', screen._onScroll, { passive: true });
-		footer.addEventListener('focusin', screen._onFooterFocusIn);
+		if (footer) {
+			footer.addEventListener('focusin', screen._onChromeFocusIn);
+		}
+		if (header) {
+			header.addEventListener('focusin', screen._onChromeFocusIn);
+		}
 	}
 
 	// The one dismissible entry every nav-footer screen needs (outside
@@ -1473,13 +1504,14 @@
 		};
 	}
 
-	// Wires the launcher and the footer's scroll auto-hide for a screen
-	// that has nothing else to add to bindDismissible() — Explore/Search/Me.
-	// Home calls bindLauncher()/bindFooterAutoHide() directly instead, so it
-	// can merge navFooterDismissEntry() into its own larger dismissible list.
+	// Wires the launcher and the header/footer scroll auto-hide for a
+	// screen that has nothing else to add to bindDismissible() —
+	// Explore/Search/Me. Home calls bindLauncher()/bindChromeAutoHide()
+	// directly instead, so it can merge navFooterDismissEntry() into its
+	// own larger dismissible list.
 	function bindNavFooter(screen) {
 		bindLauncher(screen);
-		bindFooterAutoHide(screen);
+		bindChromeAutoHide(screen);
 	}
 
 	// The dismissible entry every feed-list screen (Home, Search) needs: an
@@ -2068,7 +2100,7 @@
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 
 			bindLauncher(this);
-			bindFooterAutoHide(this);
+			bindChromeAutoHide(this);
 		},
 
 		async init() {

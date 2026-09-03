@@ -119,12 +119,33 @@ h2[tabindex='-1']:focus {
 
 /* --- Top bar --- */
 .daymark-topbar {
+	position: sticky;
+	top: 0;
+	z-index: 5;
 	display: flex;
 	align-items: center;
 	gap: var(--daymark-spacing-sm);
 	min-height: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 	padding: 12px var(--daymark-spacing-md);
 	padding-top: calc(12px + env(safe-area-inset-top, 0px));
+	background: var(--daymark-bg);
+	transition: transform 0.2s ease;
+}
+
+/* Slides fully out of view while scrolling up — the opposite direction
+   from the footer (see .daymark-homefooter.is-footer-hidden below) — so
+   the two chrome bars never both cost their height back at the same
+   time: scrolling down through a list only ever reclaims the footer's
+   height, scrolling back up toward the top only ever reclaims the
+   header's. JS toggles this (see bindChromeAutoHide(), app.js). */
+.daymark-topbar.is-header-hidden {
+	transform: translateY(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-topbar {
+		transition: none;
+	}
 }
 
 .daymark-topbar__title {

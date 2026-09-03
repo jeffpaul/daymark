@@ -677,8 +677,10 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 
 // The footer (CTA + site nav) slides out of view while scrolling down the
 // list, to reclaim its height for content, and back in on scroll-up or when
-// keyboard focus reaches one of its own controls.
-test('home footer auto-hides on scroll-down and returns on scroll-up or focus', async ({ page }) => {
+// keyboard focus reaches one of its own controls. The header does the
+// opposite — hides on scroll-up, reappears on scroll-down — so the two
+// chrome bars never both cost their height back at once.
+test('home header/footer auto-hide in opposite directions and return on scroll or focus', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 
@@ -697,7 +699,7 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 	await page.goto('/daymark');
 
 	// Wait for the page to actually grow taller than the viewport — the
-	// footer itself is static markup and appears immediately, but scrolling
+	// header/footer are static markup and appear immediately, but scrolling
 	// before there's enough rendered content is a race that leaves the page
 	// too short to trigger auto-hide. Gating on a specific row count is
 	// itself racy (infinite scroll can load a second page before the count
@@ -706,20 +708,32 @@ test('home footer auto-hides on scroll-down and returns on scroll-up or focus', 
 	await page.waitForFunction(() => document.documentElement.scrollHeight > window.innerHeight + 100);
 
 	const footer = page.locator('.daymark-homefooter');
+	const header = page.locator('.daymark-topbar');
 	await expect(footer).toBeVisible();
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 
+	// Scroll down: footer hides, header stays put.
 	await page.mouse.wheel(0, 600);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 
+	// Scroll up: footer returns, header hides instead.
 	await page.mouse.wheel(0, -600);
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).toHaveClass(/is-header-hidden/);
 
-	// Hide it again, then confirm tabbing a footer control reveals it.
+	// Scroll down again: footer hides, header returns.
 	await page.mouse.wheel(0, 600);
 	await expect(footer).toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
+
+	// Confirm tabbing a footer control reveals both bars.
+	await page.mouse.wheel(0, -600);
+	await expect(header).toHaveClass(/is-header-hidden/);
 	await page.locator('[data-action="new-mark"]').focus();
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	await expect(header).not.toHaveClass(/is-header-hidden/);
 });
 
 // With IntersectionObserver (all supported browsers) the recent list uses
@@ -1561,7 +1575,7 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		// the click can land on the shifting content underneath instead of
 		// the launcher.
 		await expect(page.locator('.daymark-skeleton')).toHaveCount(0);
-		// bindFooterAutoHide() (assets/app.js) hides the persistent footer
+		// bindChromeAutoHide() (assets/app.js) hides the persistent footer
 		// — the launcher lives inside it — on any scroll-down past 80px,
 		// and only guarantees it back on scroll-up or focus. A reflow from
 		// the async content above (or the browser's own scroll-anchoring
