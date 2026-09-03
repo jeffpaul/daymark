@@ -2069,7 +2069,9 @@
 				more.hidden = true;
 			}
 			list.innerHTML =
-				'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
+				`<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or <a href="${esc(
+					config.adminSubscriptionsUrl || '#'
+				)}">subscribe to a site</a> to fill your timeline.</p>`;
 		}
 	}
 
@@ -2319,7 +2321,9 @@
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
-						'<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or subscribe to a site to fill your timeline.</p>';
+						`<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or <a href="${esc(
+							config.adminSubscriptionsUrl || '#'
+						)}">subscribe to a site</a> to fill your timeline.</p>`;
 					this.recentDone = true;
 					if (sentinel) {
 						sentinel.hidden = true;
