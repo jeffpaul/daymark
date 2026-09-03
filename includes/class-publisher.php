@@ -1328,6 +1328,22 @@ class Daymark_Publisher {
 	 * @return array{camera: array<string, string>, exif_timestamp: int|null}
 	 */
 	private function extract_camera_info( array $media_ids ): array {
+		/**
+		 * Whether camera EXIF fields (camera/aperture/iso/focal_length/
+		 * shutter_speed) are copied into `_daymark_camera` post meta.
+		 *
+		 * Defaults to true. Set to false to opt a site out of storing this
+		 * quietly-captured device/equipment metadata — see the "quiet Mark
+		 * metadata capture" feature's privacy note in readme.txt/README.md.
+		 * This does not affect the EXIF capture-timestamp fallback (see
+		 * resolve_captured_at()), which is a separate date/time concern.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		$capture_camera_metadata = (bool) apply_filters( 'daymark_capture_camera_metadata', true );
+
 		foreach ( $media_ids as $attachment_id ) {
 			$attachment_id = (int) $attachment_id;
 
@@ -1342,9 +1358,11 @@ class Daymark_Publisher {
 
 			$camera = array();
 
-			foreach ( self::CAMERA_META_FIELDS as $field ) {
-				if ( ! empty( $image_meta[ $field ] ) && is_scalar( $image_meta[ $field ] ) ) {
-					$camera[ $field ] = sanitize_text_field( (string) $image_meta[ $field ] );
+			if ( $capture_camera_metadata ) {
+				foreach ( self::CAMERA_META_FIELDS as $field ) {
+					if ( ! empty( $image_meta[ $field ] ) && is_scalar( $image_meta[ $field ] ) ) {
+						$camera[ $field ] = sanitize_text_field( (string) $image_meta[ $field ] );
+					}
 				}
 			}
 
@@ -1417,6 +1435,25 @@ class Daymark_Publisher {
 	 * @return array{lat: float, lng: float, accuracy?: float}|null
 	 */
 	private function resolve_location( array $data ): ?array {
+		/**
+		 * Whether a Mark's quietly-captured location (lat/lng, best-effort
+		 * from the composer's browser geolocation) is stored at all.
+		 *
+		 * Defaults to true. Set to false to opt a site out of location
+		 * capture entirely — the client may still send it, but the server
+		 * ignores it — see the "quiet Mark metadata capture" feature's
+		 * privacy note in readme.txt/README.md. Disabling this also
+		 * prevents fetch_weather() from ever running, since weather is only
+		 * ever attempted alongside a resolved location.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		if ( ! apply_filters( 'daymark_capture_location', true ) ) {
+			return null;
+		}
+
 		if ( ! isset( $data['location_lat'] ) || ! isset( $data['location_lng'] ) ) {
 			return null;
 		}
@@ -1474,6 +1511,25 @@ class Daymark_Publisher {
 	 * @return array{temperature: float, unit: string, condition: string, code: int}|null
 	 */
 	private function fetch_weather( float $lat, float $lng ) {
+		/**
+		 * Whether a Mark's weather is looked up at all, given a resolved
+		 * location.
+		 *
+		 * Defaults to true. Set to false to opt a site out of the outbound
+		 * Open-Meteo request entirely, independent of
+		 * `daymark_capture_location` — useful for a site that's fine
+		 * capturing location but does not want any outbound request tied
+		 * to it. See the "quiet Mark metadata capture" feature's privacy
+		 * note in readme.txt/README.md.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		if ( ! apply_filters( 'daymark_capture_weather', true ) ) {
+			return null;
+		}
+
 		try {
 			$url = add_query_arg(
 				array(

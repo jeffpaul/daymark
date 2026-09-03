@@ -836,4 +836,123 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertIsInt( $post_id );
 		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
 	}
+
+	// --- Quiet capture opt-out filters ---
+
+	/** daymark_capture_location = false stores no location even when a valid one is supplied. */
+	public function test_capture_location_filter_disables_storage() {
+		add_filter( 'daymark_capture_location', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Location capture disabled',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_location', '__return_false' );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** Disabling location capture also prevents the weather fetch from ever running. */
+	public function test_capture_location_filter_also_disables_weather() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+		add_filter( 'daymark_capture_location', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$publisher->publish(
+			array(
+				'caption'      => 'No weather without location',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_location', '__return_false' );
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+	}
+
+	/** daymark_capture_weather = false skips the weather fetch even with a resolved location. */
+	public function test_capture_weather_filter_disables_fetch() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+		add_filter( 'daymark_capture_weather', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Weather capture disabled',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_weather', '__return_false' );
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+		// Location itself is unaffected by the weather-only opt-out.
+		$this->assertNotSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** daymark_capture_camera_metadata = false stores no camera fields even when EXIF has them. */
+	public function test_capture_camera_metadata_filter_disables_storage() {
+		$filter = static function ( $metadata ) {
+			$metadata['image_meta'] = array(
+				'camera' => 'Canon EOS R5',
+				'iso'    => '400',
+			);
+			return $metadata;
+		};
+		add_filter( 'wp_generate_attachment_metadata', $filter );
+		add_filter( 'daymark_capture_camera_metadata', '__return_false' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-nocameraopt-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'Camera metadata capture disabled' ),
+			array(
+				'files' => array(
+					'name'     => 'nocameraopt.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		remove_filter( 'daymark_capture_camera_metadata', '__return_false' );
+		remove_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_camera', true ) );
+	}
 }
