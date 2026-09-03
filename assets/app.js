@@ -1628,9 +1628,9 @@
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
-	// core (renderMarkCore()) wrapped in its own tap target plus the shared
-	// ⋯ edit/delete actions menu. Used everywhere a Mark appears in a list:
-	// Home's Recent/Drafts, Search's results.
+	// core (renderMarkCore()) wrapped in its own tap target plus, for a
+	// Draft only, the shared ⋯ edit/delete actions menu. Used everywhere a
+	// Mark appears in a list: Home's Recent/Drafts, Search's results.
 	function renderMarkItem(item) {
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so tapping one reopens the
@@ -1645,18 +1645,10 @@
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
 		const kind = resolveCardKind(item);
-		// A Draft always came through Daymark's own composer (GET /marks
-		// only ever lists true Marks, unlike the Timeline's own Marks
-		// query — see get_timeline()'s docblock, class-rest-controller.php)
-		// — real, so it always gets the ⋯ menu. A published item's `type`
-		// (_daymark_primary_type) is only ever set by that same composer,
-		// so an empty one means this is an ordinary post published
-		// straight through the block editor, not a Mark — GET/PUT/DELETE
-		// /marks/{id} already 404 for it server-side (get_daymark(),
-		// delete_daymark() both gate on _daymark_is_mark independently of
-		// this), so offering Edit/Delete here would just be a dead end;
-		// simplest and most honest is to not offer them at all.
-		const isRealMark = isDraft || Boolean(item.type);
+		// The ⋯ Edit/Delete menu is a Draft-only affordance: once a Mark is
+		// published, in-app editing/deleting isn't offered at all — wp-admin
+		// is the place to adjust or remove a published Mark (see the
+		// "Published Marks are read-only in-app" decision, CLAUDE.md).
 		// A Draft is always the author's own unpublished work — there is no
 		// separate site to filter to, so it's the one item that skips the
 		// site icon.
@@ -1673,7 +1665,7 @@
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
 			  });
-		const actions = !isRealMark
+		const actions = !isDraft
 			? ''
 			: `<div class="daymark-recent__actions" data-actions>
 					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
@@ -3934,9 +3926,9 @@
 
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
 	// one Mark's card markup — used by every Mark item any feed-list screen
-	// renders (Home's Recent/Drafts, Search's results), always wrapped in
-	// the same ⋯ actions menu (see renderMarkItem()). Keeping this in one
-	// place is what "reuse, don't reinvent Mark card markup" means.
+	// renders (Home's Recent/Drafts, Search's results), wrapped by
+	// renderMarkItem() in the same ⋯ actions menu for a Draft. Keeping this
+	// in one place is what "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled Mark';
