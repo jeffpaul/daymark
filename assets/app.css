@@ -1922,7 +1922,6 @@ h2[tabindex='-1']:focus {
    deliberately muted (grey, not the accent color) since this is a glance
    aid, not something competing with the content for attention. */
 .daymark-recent__typeicon {
-	position: relative;
 	flex-shrink: 0;
 	display: inline-flex;
 	align-items: center;
@@ -1934,16 +1933,43 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
-.daymark-recent__typeicon::before {
+/* One line per list, not per item: a row's own height varies wildly (a
+   compact note vs. a media-dominant card's full photo banner), so a line
+   confined to each icon's own small box only ever reached a few px past
+   it — never far enough to touch the next row's icon. Drawing it once
+   behind the whole list instead makes it genuinely continuous from the
+   first icon to the last; each icon's own opaque background then masks
+   the segment directly behind it, which is what keeps the line looking
+   like it passes behind the icons rather than over them. `isolation:
+   isolate` scopes the line's negative z-index to this list, so it stays
+   behind this list's own icons without also dropping behind unrelated
+   content elsewhere on the page. */
+.daymark-recent__list:has(.daymark-recent__typeicon) {
+	position: relative;
+	isolation: isolate;
+}
+
+.daymark-recent__list:has(.daymark-recent__typeicon)::before {
 	content: '';
 	position: absolute;
-	top: -4px;
-	bottom: -4px;
-	left: 50%;
+	top: 0;
+	bottom: 0;
+	/* Site icon column width + the item-wrap gap to the type icon + half
+	   the type icon's own 28px width — centers the line under every
+	   type icon in a list that has a leading site icon column. */
+	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
 	width: 1px;
 	background: var(--daymark-border);
 	z-index: -1;
-	transform: translateX(-50%);
+}
+
+/* A Drafts-only list (Home's Drafts row, Me's) never renders the leading
+   site icon column — see renderMarkItem()'s isDraft check in app.js, which
+   skips it because a draft has no separate site to filter to. The type
+   icon rail is the row's first element there instead, so the line shifts
+   to sit under just half its own width. */
+.daymark-recent__list:has(.daymark-recent__typeicon):not(:has(.daymark-recent__siteicon))::before {
+	left: 14px;
 }
 
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--image .daymark-recent__body,
