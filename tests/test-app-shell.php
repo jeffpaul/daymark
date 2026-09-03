@@ -107,6 +107,31 @@ class Test_App_Shell extends WP_UnitTestCase {
 	}
 
 	/**
+	 * img-src/media-src must allow https: sources, not just 'self' — a
+	 * subscribed site's own thumbnails/favicons (Subscriptions' whole
+	 * point) and this site's own media served through a CDN or offload
+	 * plugin (Jetpack Photon, S3, Cloudflare, ...) both come from a
+	 * different origin than this site's own. A 'self'-only policy silently
+	 * blocks all of those images/media rather than showing them.
+	 */
+	public function test_csp_allows_https_images_and_media_from_other_hosts() {
+		$captured = null;
+		$capture  = static function ( $policy ) use ( &$captured ) {
+			$captured = $policy;
+
+			return $policy;
+		};
+		add_filter( 'daymark_app_content_security_policy', $capture );
+
+		$this->render_shell();
+		remove_filter( 'daymark_app_content_security_policy', $capture );
+
+		$this->assertStringContainsString( 'img-src', (string) $captured );
+		$this->assertMatchesRegularExpression( '/img-src[^;]*\bhttps:/', (string) $captured );
+		$this->assertMatchesRegularExpression( '/media-src[^;]*\bhttps:/', (string) $captured );
+	}
+
+	/**
 	 * script-src carries a per-request nonce (not 'unsafe-inline', which
 	 * would let ANY injected <script> tag execute, not just the app's own),
 	 * and that exact nonce is what actually appears on the inline bootstrap

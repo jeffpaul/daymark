@@ -47,8 +47,17 @@ $daymark_csp_parts = array(
 	"default-src 'self'",
 	"script-src 'self' 'nonce-{$daymark_csp_nonce}'",
 	"style-src 'self' 'unsafe-inline'",
-	'img-src ' . "'self' data: blob:",
-	'media-src ' . "'self' blob:",
+	// Timeline legitimately renders images/media from arbitrary hosts, not
+	// just this site's own origin: a subscribed site's own thumbnails and
+	// favicons (the whole point of Subscriptions), and this site's own
+	// media when served through a CDN or offload plugin (e.g. Jetpack's
+	// Photon/i0.wp.com, S3, Cloudflare) rather than jeffpaul.com itself.
+	// 'self'-only was fine before Subscriptions existed but silently
+	// blocked every one of those images once it shipped — https: (not
+	// plain http:, to avoid a mixed-content downgrade) is the least
+	// restrictive fix that still limits every other directive to 'self'.
+	'img-src ' . "'self' https: data: blob:",
+	'media-src ' . "'self' https: blob:",
 	"connect-src 'self'",
 	"font-src 'self' data:",
 	"object-src 'none'",
