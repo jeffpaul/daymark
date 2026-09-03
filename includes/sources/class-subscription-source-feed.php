@@ -29,6 +29,24 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	private const FEED_LINK_TYPES = array( 'application/rss+xml', 'application/atom+xml' );
 
 	/**
+	 * Default maximum feed response size, in bytes, fetch() will download
+	 * via fetch_feed()/SimplePie. Filterable via
+	 * `daymark_subscription_max_feed_bytes` (issue #81).
+	 *
+	 * @var int
+	 */
+	private const MAX_FEED_BYTES = 2 * 1024 * 1024; // 2 MB.
+
+	/**
+	 * Default maximum site-HTML response size, in bytes, fetch_html() will
+	 * download (autodiscovery/favicon/site-title). Filterable via
+	 * `daymark_subscription_max_html_bytes` (issue #81).
+	 *
+	 * @var int
+	 */
+	private const MAX_HTML_BYTES = 1024 * 1024; // 1 MB.
+
+	/**
 	 * Per-request cache of fetched site HTML, keyed by URL, so a subscribe
 	 * flow that calls discover() and then get_favicon_url() for the same
 	 * site only issues one HTTP request.
@@ -121,22 +139,40 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 *                                                    reached or parsed.
 	 */
 	public function fetch( string $feed_url ): array|WP_Error {
-		$feed_url = $this->sanitize_source_url( $feed_url );
+		$validated = $this->validate_source_url( $feed_url );
 
-		if ( '' === $feed_url ) {
+		if ( is_wp_error( $validated ) ) {
 			return new WP_Error(
 				'daymark_subscription_invalid_feed_url',
-				__( 'Invalid feed URL.', 'daymark' )
+				$validated->get_error_message()
 			);
 		}
+
+		$feed_url = esc_url_raw( trim( $feed_url ) );
 
 		if ( ! function_exists( 'fetch_feed' ) ) {
 			require_once ABSPATH . WPINC . '/feed.php';
 		}
 
+		// Scoped narrowly to this one fetch_feed() call, per the standard WP
+		// idiom for a filter with no per-call argument of its own: added
+		// immediately before, removed immediately after. Injects a response
+		// size cap (issue #81) — fetch_feed()'s own signature (via
+		// WP_SimplePie_File) has no direct way to pass limit_response_size.
+		// A feed truncated mid-download almost always fails XML parsing on
+		// its own, which SimplePie already reports as a WP_Error below; no
+		// separate truncation detection is needed for this call site.
+		add_filter( 'http_request_args', array( $this, 'inject_feed_response_size_limit' ), 10, 1 );
+		// The official WP-documented hook for configuring a SimplePie feed's
+		// HTTP behavior (e.g. timeout) before fetch_feed() calls $feed->init().
+		add_action( 'wp_feed_options', array( $this, 'configure_feed_timeout' ), 10, 1 );
+
 		// fetch_feed() itself goes through SimplePie's WP_SimplePie_File,
 		// which wraps WP's own HTTP API — never a raw remote fetch.
 		$feed = fetch_feed( $feed_url );
+
+		remove_filter( 'http_request_args', array( $this, 'inject_feed_response_size_limit' ), 10 );
+		remove_action( 'wp_feed_options', array( $this, 'configure_feed_timeout' ), 10 );
 
 		if ( is_wp_error( $feed ) ) {
 			return $feed;
@@ -150,6 +186,47 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		}
 
 		return $raw_items;
+	}
+
+	/**
+	 * `http_request_args` callback, scoped to the single fetch_feed() call in
+	 * fetch() above: injects a maximum response size for the feed download.
+	 *
+	 * @param array<string, mixed> $args HTTP request args.
+	 * @return array<string, mixed>
+	 */
+	public function inject_feed_response_size_limit( array $args ): array {
+		/**
+		 * Filters the maximum feed response size, in bytes, fetch() will
+		 * download via fetch_feed()/SimplePie.
+		 *
+		 * @since 0.10.0
+		 *
+		 * @param int $max_bytes Defaults to 2 MB.
+		 */
+		$args['limit_response_size'] = (int) apply_filters( 'daymark_subscription_max_feed_bytes', self::MAX_FEED_BYTES );
+
+		return $args;
+	}
+
+	/**
+	 * `wp_feed_options` callback, scoped to the single fetch_feed() call in
+	 * fetch() above: sets an explicit, filterable timeout instead of
+	 * SimplePie's own default.
+	 *
+	 * @param SimplePie $feed Feed instance, passed by reference by fetch_feed().
+	 * @return void
+	 */
+	public function configure_feed_timeout( $feed ): void {
+		/**
+		 * Filters the HTTP timeout, in seconds, used when fetching a
+		 * subscription's feed.
+		 *
+		 * @since 0.10.0
+		 *
+		 * @param int $seconds Defaults to 10.
+		 */
+		$feed->set_timeout( (int) apply_filters( 'daymark_subscription_feed_fetch_timeout', 10 ) );
 	}
 
 	/**
@@ -759,20 +836,47 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * (blocking loopback/private/reserved IP ranges) WordPress core itself
 	 * uses for feed fetching via fetch_feed().
 	 *
+	 * The response is capped at `daymark_subscription_max_html_bytes` (issue
+	 * #81): `limit_response_size` bounds the download itself, and a body at
+	 * or beyond that cap is discarded rather than used — a body that long
+	 * means the download was cut off, not that the page genuinely ended
+	 * there, and a truncated document should not be treated as a complete
+	 * one for autodiscovery/favicon/title parsing.
+	 *
 	 * @param string $url Already-sanitized, http(s) URL to fetch.
-	 * @return string Response body, or '' on any failure.
+	 * @return string Response body, or '' on any failure (including a
+	 *                response that hit the size cap).
 	 */
 	private function fetch_html( string $url ): string {
 		if ( array_key_exists( $url, $this->html_cache ) ) {
 			return $this->html_cache[ $url ];
 		}
 
+		/**
+		 * Filters the maximum site-HTML response size, in bytes, fetch_html()
+		 * will download (autodiscovery/favicon/site-title).
+		 *
+		 * @since 0.10.0
+		 *
+		 * @param int $max_bytes Defaults to 1 MB.
+		 */
+		$max_bytes = (int) apply_filters( 'daymark_subscription_max_html_bytes', self::MAX_HTML_BYTES );
+
 		$response = wp_safe_remote_get(
 			$url,
 			array(
-				'timeout'     => 10,
-				'redirection' => 5,
-				'user-agent'  => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
+				/**
+				 * Filters the HTTP timeout, in seconds, used when fetching a
+				 * subscribed site's HTML (autodiscovery/favicon/site-title).
+				 *
+				 * @since 0.10.0
+				 *
+				 * @param int $seconds Defaults to 10.
+				 */
+				'timeout'             => (int) apply_filters( 'daymark_subscription_html_fetch_timeout', 10 ),
+				'redirection'         => 5,
+				'limit_response_size' => $max_bytes,
+				'user-agent'          => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
 			)
 		);
 
@@ -792,33 +896,60 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 
 		$body = (string) wp_remote_retrieve_body( $response );
 
+		// Reject rather than silently accept a truncated body.
+		if ( strlen( $body ) >= $max_bytes ) {
+			$this->html_cache[ $url ] = '';
+
+			return '';
+		}
+
 		$this->html_cache[ $url ] = $body;
 
 		return $body;
 	}
 
 	/**
-	 * Sanitize and validate a user-supplied site or feed URL: reject
-	 * anything that is not `http`/`https` before it is ever used in a
-	 * remote request.
+	 * Validate a user-supplied site or feed URL for safety: `http`/`https`
+	 * scheme, and — per issue #81's SSRF hardening — a host that does not
+	 * resolve to a private/internal/reserved address, no embedded userinfo,
+	 * and a standard port (see Daymark_Subscription_Url_Guard).
 	 *
 	 * @param string $url Raw URL.
-	 * @return string Sanitized URL, or '' if invalid.
+	 * @return true|WP_Error True when safe to fetch; WP_Error with a
+	 *                       specific, human-readable rejection reason
+	 *                       otherwise.
 	 */
-	private function sanitize_source_url( string $url ): string {
+	private function validate_source_url( string $url ) {
 		$url = esc_url_raw( trim( $url ) );
 
 		if ( '' === $url ) {
-			return '';
+			return new WP_Error( 'daymark_subscription_invalid_url', __( 'Invalid URL.', 'daymark' ) );
 		}
 
 		$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
 
 		if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return new WP_Error( 'daymark_subscription_invalid_url', __( 'Invalid URL.', 'daymark' ) );
+		}
+
+		return Daymark_Subscription_Url_Guard::check( $url );
+	}
+
+	/**
+	 * Sanitize and validate a user-supplied site or feed URL: reject
+	 * anything that is not `http`/`https`, or that fails the SSRF guard
+	 * (Daymark_Subscription_Url_Guard), before it is ever used in a remote
+	 * request.
+	 *
+	 * @param string $url Raw URL.
+	 * @return string Sanitized URL, or '' if invalid or unsafe.
+	 */
+	private function sanitize_source_url( string $url ): string {
+		if ( is_wp_error( $this->validate_source_url( $url ) ) ) {
 			return '';
 		}
 
-		return $url;
+		return esc_url_raw( trim( $url ) );
 	}
 
 	/**

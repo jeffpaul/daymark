@@ -62,6 +62,14 @@ class Daymark_Subscription_Poller {
 	private const DEAD_FEED_FAILURE_THRESHOLD = 7;
 
 	/**
+	 * Default maximum full-content click-through response size, in bytes.
+	 * Filterable via `daymark_subscription_max_content_bytes` (issue #81).
+	 *
+	 * @var int
+	 */
+	private const MAX_CONTENT_BYTES = 4 * 1024 * 1024; // 4 MB.
+
+	/**
 	 * Hook up. Called once from Daymark_Plugin::on_init(), mirroring
 	 * Daymark_Backflow_Sync::register().
 	 *
@@ -183,11 +191,13 @@ class Daymark_Subscription_Poller {
 		$source   = $registry->get_source( sanitize_key( (string) ( $subscription['source_type'] ?? '' ) ) );
 
 		if ( ! $source instanceof Daymark_Subscription_Source ) {
-			$this->record_failed_check( $subscription_id );
+			$error_message = __( 'This subscription\'s source type is no longer available.', 'daymark' );
+
+			$this->record_failed_check( $subscription_id, $error_message );
 
 			return new WP_Error(
 				'daymark_subscription_source_missing',
-				__( 'This subscription\'s source type is no longer available.', 'daymark' ),
+				$error_message,
 				array( 'status' => 500 )
 			);
 		}
@@ -201,7 +211,11 @@ class Daymark_Subscription_Poller {
 		// subscription would get wrongly flagged dead after enough silent
 		// poll cycles.
 		if ( is_wp_error( $raw_items ) ) {
-			$this->record_failed_check( $subscription_id );
+			// Reuses the source's own WP_Error message (e.g. a SimplePie
+			// parse error, an SSRF-guard rejection, or a size-cap failure)
+			// for `last_error` — the most specific reason actually available,
+			// rather than the generic message the returned WP_Error carries.
+			$this->record_failed_check( $subscription_id, $raw_items->get_error_message() );
 
 			return new WP_Error(
 				'daymark_subscription_fetch_failed',
@@ -216,6 +230,7 @@ class Daymark_Subscription_Poller {
 			array(
 				'status'          => 'active',
 				'last_checked_at' => current_time( 'mysql', true ),
+				'last_error'      => '',
 			)
 		);
 
@@ -228,17 +243,22 @@ class Daymark_Subscription_Poller {
 
 	/**
 	 * Record one failed check: increments the consecutive failure count,
-	 * updates `last_checked_at`, and flags the subscription dead once the
-	 * threshold is reached.
+	 * updates `last_checked_at`/`last_error`, and flags the subscription dead
+	 * once the threshold is reached.
 	 *
-	 * @param int $subscription_id Subscription ID.
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $error_message   Human-readable reason for this failure
+	 *                                (issue #81), stored as `last_error`.
 	 * @return void
 	 */
-	private function record_failed_check( int $subscription_id ): void {
+	private function record_failed_check( int $subscription_id, string $error_message = '' ): void {
 		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 		$new_count     = $subscriptions->increment_failure_count( $subscription_id );
 
-		$fields = array( 'last_checked_at' => current_time( 'mysql', true ) );
+		$fields = array(
+			'last_checked_at' => current_time( 'mysql', true ),
+			'last_error'      => $error_message,
+		);
 
 		if ( is_int( $new_count ) && $new_count >= self::DEAD_FEED_FAILURE_THRESHOLD ) {
 			$fields['status'] = 'error';
@@ -480,15 +500,44 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
+		// SSRF hardening (issue #81): a rejected URL fails the exact same way
+		// an invalid one already does above.
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $permalink ) ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_permalink',
+				__( 'This post has no valid source URL to fetch.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		/**
+		 * Filters the maximum full-content click-through response size, in
+		 * bytes, fetch_full_content() will download.
+		 *
+		 * @since 0.10.0
+		 *
+		 * @param int $max_bytes Defaults to 4 MB.
+		 */
+		$max_bytes = (int) apply_filters( 'daymark_subscription_max_content_bytes', self::MAX_CONTENT_BYTES );
+
 		// wp_safe_remote_get(), not wp_remote_get(): this is a stored,
 		// user-subscribed-to external URL fetched on a live user action, same
 		// SSRF-hardening reasoning as the feed source's own site-HTML fetch.
 		$response = wp_safe_remote_get(
 			$permalink,
 			array(
-				'timeout'     => 15,
-				'redirection' => 5,
-				'user-agent'  => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
+				/**
+				 * Filters the HTTP timeout, in seconds, used for the
+				 * click-through full-content fetch.
+				 *
+				 * @since 0.10.0
+				 *
+				 * @param int $seconds Defaults to 15.
+				 */
+				'timeout'             => (int) apply_filters( 'daymark_subscription_content_fetch_timeout', 15 ),
+				'redirection'         => 5,
+				'limit_response_size' => $max_bytes,
+				'user-agent'          => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
 			)
 		);
 
@@ -516,6 +565,17 @@ class Daymark_Subscription_Poller {
 			return new WP_Error(
 				'daymark_subscription_fetch_failed',
 				__( 'The source site returned an empty response.', 'daymark' ),
+				array( 'status' => 502 )
+			);
+		}
+
+		// Reject rather than silently accept a truncated body: a body at or
+		// beyond the cap means the download was cut off, not that the page
+		// genuinely ended there.
+		if ( strlen( $body ) >= $max_bytes ) {
+			return new WP_Error(
+				'daymark_subscription_fetch_failed',
+				__( 'The full content could not be fetched from the source site.', 'daymark' ),
 				array( 'status' => 502 )
 			);
 		}

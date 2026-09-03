@@ -33,6 +33,13 @@ can't act on them.
 - A Timeline card's image showed an empty placeholder instead of the real photo whenever that image was served from a different host than the site itself — a CDN or offload plugin (Jetpack's Photon, S3, Cloudflare, ...), or a subscribed site's own thumbnail/favicon. The app shell's Content-Security-Policy only allowed images from `'self'`, silently blocking every one of those; `img-src`/`media-src` now also allow `https:` sources. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 - The header never hid on scroll the way the footer already did, so it was always taking up space the footer's own auto-hide was reclaiming. It now hides on scroll-up and reappears on scroll-down — the opposite direction from the footer — so the two never both cost their height back at the same time. ([#149](https://github.com/jeffpaul/daymark/pull/149))
 
+### Security
+
+- Feed and subscription fetches (feed content, site-HTML autodiscovery/favicon/title, and the click-through full-content fetch) now enforce filterable response size caps (2 MB / 1 MB / 4 MB respectively) — a response at or beyond the cap is rejected outright rather than parsed or cached as if it were complete. ([#81](https://github.com/jeffpaul/daymark/issues/81))
+- Added `Daymark_Subscription_Url_Guard`, a shared SSRF defense-in-depth check applied to every subscription/feed/site URL before it's fetched — on top of the IPv4 protection WordPress core's `wp_http_validate_url()` already provides, it also rejects IPv6 loopback/unique-local/link-local addresses, IPv4-mapped IPv6 literals, the IPv4 CGNAT range, embedded userinfo, and non-standard ports. ([#81](https://github.com/jeffpaul/daymark/issues/81))
+- A subscription now records a human-readable `last_error` reason for its most recent failed check (surfaced in the wp-admin Subscriptions screen, notifications, and the REST API), instead of only a status flag and a failure count with no explanation of why. ([#81](https://github.com/jeffpaul/daymark/issues/81))
+- Feed, site-HTML, and click-through fetch timeouts are now filterable instead of hardcoded. ([#81](https://github.com/jeffpaul/daymark/issues/81))
+
 ### Developer
 
 - `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
