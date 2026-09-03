@@ -168,13 +168,19 @@ class Test_Subscription_OPML extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'https://dead.example/feed/', $xml );
 	}
 
-	/** export() escapes special characters in a subscription's title. */
+	/**
+	 * export() escapes special characters in a subscription's title. Only
+	 * `&`/`"`/`'` are exercised here (not `<`/`>`) — `create()` already
+	 * runs `site_title` through `sanitize_text_field()`, which strips
+	 * anything shaped like an HTML tag before it's ever stored, so a
+	 * `<Test>` substring could never reach export() in the first place.
+	 */
 	public function test_export_escapes_special_characters() {
 		$this->subscriptions->create(
 			array(
 				'site_url'   => 'https://escaped.example/',
 				'feed_url'   => 'https://escaped.example/feed/',
-				'site_title' => 'Ben & Jerry\'s "Blog" <Test>',
+				'site_title' => 'Ben & Jerry\'s "Blog"',
 			)
 		);
 
@@ -189,7 +195,7 @@ class Test_Subscription_OPML extends WP_UnitTestCase {
 		$dom->loadXML( $xml );
 		$xpath = new DOMXPath( $dom );
 		$this->assertSame(
-			'Ben & Jerry\'s "Blog" <Test>',
+			'Ben & Jerry\'s "Blog"',
 			$xpath->query( '//outline' )->item( 0 )->getAttribute( 'title' )
 		);
 	}

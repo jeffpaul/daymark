@@ -591,9 +591,17 @@ class Test_Subscriptions extends WP_UnitTestCase {
 	 * outcome reported as a distinguishable WP_Error rather than 500ing.
 	 */
 	public function test_refresh_icon_no_icon_found_returns_error() {
+		// A non-empty, scheme-less string like 'not-a-real-url' is not a
+		// usable fixture here: esc_url_raw() (via create()'s own
+		// sanitization) auto-prepends 'http://' to a bare string with no
+		// scheme, which gives fallback_favicon_url() a host to guess
+		// {scheme}://{host}/favicon.ico from after all — that fallback is
+		// never itself verified to resolve, so this needs a site_url with
+		// no host at all (an empty string) to genuinely exercise "no icon
+		// could be found".
 		$id = $this->subscriptions->create(
 			array(
-				'site_url' => 'not-a-real-url',
+				'site_url' => '',
 				'feed_url' => 'https://example.net/feed/',
 			)
 		);
