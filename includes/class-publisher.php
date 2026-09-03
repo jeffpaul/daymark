@@ -150,6 +150,95 @@ class Daymark_Publisher {
 	public const MAX_TRANSCRIPT_CHARS = 8000;
 
 	/**
+	 * Clock-skew tolerance, in seconds, for a client-supplied `captured_at`
+	 * timestamp. A value further in the future than this is treated as
+	 * unusable (ignored, falling through to the next signal) rather than
+	 * rejected with an error — quiet metadata capture never blocks
+	 * publishing.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @var int
+	 */
+	private const CAPTURE_TIME_FUTURE_TOLERANCE = 5 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Average silent-reading speed, in words per minute, used to derive
+	 * `_daymark_reading_time_minutes` from a Mark's caption (and transcript,
+	 * when present). A commonly-cited average; named as a constant so it's
+	 * easy to tune later rather than a magic number in the calculation.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @var int
+	 */
+	public const WORDS_PER_MINUTE = 225;
+
+	/**
+	 * Minimum word count before a reading-time estimate is stored at all.
+	 * Below this, "1 min read" is noise on a two-sentence caption rather
+	 * than useful information.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @var int
+	 */
+	private const READING_TIME_MIN_WORDS = 40;
+
+	/**
+	 * Camera/shooting-condition EXIF fields copied into `_daymark_camera`
+	 * when present and non-empty, from the first image attachment's own
+	 * `wp_get_attachment_metadata()['image_meta']` (populated by core's own
+	 * `wp_generate_attachment_metadata()` during sideload — nothing here
+	 * re-parses EXIF itself).
+	 *
+	 * @since 0.11.0
+	 *
+	 * @var string[]
+	 */
+	private const CAMERA_META_FIELDS = array( 'camera', 'aperture', 'iso', 'focal_length', 'shutter_speed' );
+
+	/**
+	 * Open-Meteo WMO weather codes mapped to a short human-readable label.
+	 * Not exhaustive — an unmapped code still stores its raw numeric value
+	 * with a generic label rather than being dropped.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @var array<int, string>
+	 */
+	private const WEATHER_CONDITION_LABELS = array(
+		0  => 'Clear',
+		1  => 'Mostly clear',
+		2  => 'Partly cloudy',
+		3  => 'Overcast',
+		45 => 'Fog',
+		48 => 'Fog',
+		51 => 'Drizzle',
+		53 => 'Drizzle',
+		55 => 'Drizzle',
+		56 => 'Freezing drizzle',
+		57 => 'Freezing drizzle',
+		61 => 'Rain',
+		63 => 'Rain',
+		65 => 'Rain',
+		66 => 'Freezing rain',
+		67 => 'Freezing rain',
+		71 => 'Snow',
+		73 => 'Snow',
+		75 => 'Snow',
+		77 => 'Snow',
+		80 => 'Rain showers',
+		81 => 'Rain showers',
+		82 => 'Rain showers',
+		85 => 'Snow showers',
+		86 => 'Snow showers',
+		95 => 'Thunderstorm',
+		96 => 'Thunderstorm',
+		99 => 'Thunderstorm',
+	);
+
+	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
 	 *
 	 * Content sniffing (finfo) reports some formats with non-canonical names (e.g. WAV).
@@ -187,7 +276,8 @@ class Daymark_Publisher {
 	 * @param array<string, mixed>                $data  Sanitized Mark input. Supported keys:
 	 *                                                   caption, title, primary_type,
 	 *                                                   syndication_targets, default_destinations,
-	 *                                                   ai_assist_used.
+	 *                                                   ai_assist_used, captured_at, location_lat,
+	 *                                                   location_lng, location_accuracy.
 	 * @param array<string, array<string, mixed>> $files $_FILES-style array of uploaded media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -280,6 +370,14 @@ class Daymark_Publisher {
 		// each plugin's control filter, then transition to publish below.
 		$defer_helpers = $final_publish && $has_helper_selection;
 
+		// Quiet capture: camera EXIF (first image only — video/audio never
+		// carry EXIF) is read once here, before the post exists, so its
+		// created_timestamp is available as the second-priority signal for
+		// the capture-time resolution immediately below. The camera fields
+		// themselves are written to post meta after the insert succeeds.
+		$camera_info = $this->extract_camera_info( $media_ids );
+		$captured_at = $this->resolve_captured_at( $data['captured_at'] ?? null, $camera_info['exif_timestamp'] );
+
 		$post_data = array(
 			'post_type'    => 'post', // NEVER a custom post type — the Daymark is a standard post.
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
@@ -288,6 +386,14 @@ class Daymark_Publisher {
 			'post_content' => $this->build_block_markup( $media_ids, $caption ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 		);
+
+		// A resolved capture time (client-supplied or EXIF) becomes the
+		// Mark's real post_date; with neither signal, wp_insert_post() keeps
+		// its own unchanged default of "now".
+		if ( null !== $captured_at ) {
+			$post_data['post_date_gmt'] = $captured_at;
+			$post_data['post_date']     = get_date_from_gmt( $captured_at );
+		}
 
 		$post_id = wp_insert_post( $post_data, true );
 
@@ -354,6 +460,36 @@ class Daymark_Publisher {
 		update_post_meta( $post_id, '_daymark_comment_backflow_enabled', '1' );
 		update_post_meta( $post_id, '_daymark_ai_assist_used', $ai_assist_used );
 		update_post_meta( $post_id, '_daymark_created_from', 'mobile' );
+
+		// Quiet metadata capture: date/time, camera EXIF, location, weather,
+		// reading time, all best-effort and never blocking. See this
+		// method's own captured_at/camera_info resolution above and the
+		// per-helper docblocks below for how each degrades to "field simply
+		// absent" on failure.
+		if ( ! empty( $camera_info['camera'] ) ) {
+			update_post_meta( $post_id, '_daymark_camera', wp_json_encode( $camera_info['camera'] ) );
+		}
+
+		if ( null !== $captured_at ) {
+			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
+		}
+
+		$location = $this->resolve_location( $data );
+
+		if ( null !== $location ) {
+			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
+
+			// Weather is only ever attempted alongside a resolved location,
+			// and only on publish — not on every autosave/update — to avoid
+			// firing a third-party request on every keystroke-triggered save.
+			$weather = $this->fetch_weather( (float) $location['lat'], (float) $location['lng'] );
+
+			if ( null !== $weather ) {
+				update_post_meta( $post_id, '_daymark_weather', wp_json_encode( $weather ) );
+			}
+		}
+
+		$this->apply_reading_time( $post_id, $caption, $transcript );
 
 		if ( $has_helper_selection ) {
 			update_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, wp_json_encode( $helper_selection ) );
@@ -435,7 +571,9 @@ class Daymark_Publisher {
 	 * @param int                                 $post_id The Mark post ID.
 	 * @param array<string, mixed>                $data    Sanitized input: caption, title,
 	 *                                                     primary_type, syndication_targets,
-	 *                                                     status, tags, alt_text.
+	 *                                                     status, tags, alt_text, captured_at,
+	 *                                                     location_lat, location_lng,
+	 *                                                     location_accuracy.
 	 * @param array<string, array<string, mixed>> $files   $_FILES-style array of new media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -556,16 +694,30 @@ class Daymark_Publisher {
 		// Re-apply in case the type changed on edit (e.g. adding media to a note).
 		$this->apply_post_format( $post_id, $type );
 
-		$result = wp_update_post(
-			array(
-				'ID'           => $post_id,
-				'post_title'   => $title,
-				'post_content' => $this->build_block_markup( $media_ids, $caption ),
-				'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
-				'post_status'  => $new_status,
-			),
-			true
+		// Quiet capture, resolved against the FULL (existing + new) media
+		// list — see extract_camera_info()'s own docblock for why only the
+		// first image is considered. Mirrors publish()'s own resolution;
+		// unlike publish(), a null result here simply leaves the Mark's
+		// existing post_date/_daymark_captured_at untouched rather than
+		// falling back to "now" — an edit with no fresh signal should never
+		// silently move an already-correct capture time.
+		$camera_info = $this->extract_camera_info( $media_ids );
+		$captured_at = $this->resolve_captured_at( $data['captured_at'] ?? null, $camera_info['exif_timestamp'] );
+
+		$update_data = array(
+			'ID'           => $post_id,
+			'post_title'   => $title,
+			'post_content' => $this->build_block_markup( $media_ids, $caption ),
+			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
+			'post_status'  => $new_status,
 		);
+
+		if ( null !== $captured_at ) {
+			$update_data['post_date_gmt'] = $captured_at;
+			$update_data['post_date']     = get_date_from_gmt( $captured_at );
+		}
+
+		$result = wp_update_post( $update_data, true );
 
 		if ( is_wp_error( $result ) ) {
 			$result->add_data( array( 'status' => 500 ) );
@@ -580,6 +732,25 @@ class Daymark_Publisher {
 			wp_set_post_categories( $post_id, $categories, false );
 			$this->remember_category_prefs( $type, $categories );
 		}
+
+		// Quiet metadata capture, continued (see publish()'s matching block
+		// for the full rationale). Weather is deliberately NOT re-fetched
+		// on every edit/autosave — only publish() attempts it.
+		if ( ! empty( $camera_info['camera'] ) ) {
+			update_post_meta( $post_id, '_daymark_camera', wp_json_encode( $camera_info['camera'] ) );
+		}
+
+		if ( null !== $captured_at ) {
+			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
+		}
+
+		$location = $this->resolve_location( $data );
+
+		if ( null !== $location ) {
+			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
+		}
+
+		$this->apply_reading_time( $post_id, $caption, $transcript );
 
 		return $post_id;
 	}
@@ -1139,6 +1310,311 @@ class Daymark_Publisher {
 				update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( (string) $alt ) );
 			}
 		}
+	}
+
+	/**
+	 * Read camera EXIF metadata from a Mark's first image attachment.
+	 *
+	 * Only the first image in $media_ids is considered: video/audio never
+	 * carry EXIF, and a second image's own EXIF is no more authoritative
+	 * about "when/how was this Mark captured" than the first. Reads from
+	 * `wp_get_attachment_metadata()['image_meta']`, which core's own
+	 * `wp_generate_attachment_metadata()` already populates during
+	 * sideload — this never re-parses EXIF itself.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param int[] $media_ids Attachment IDs, in upload order.
+	 * @return array{camera: array<string, string>, exif_timestamp: int|null}
+	 */
+	private function extract_camera_info( array $media_ids ): array {
+		/**
+		 * Whether camera EXIF fields (camera/aperture/iso/focal_length/
+		 * shutter_speed) are copied into `_daymark_camera` post meta.
+		 *
+		 * Defaults to true. Set to false to opt a site out of storing this
+		 * quietly-captured device/equipment metadata — see the "quiet Mark
+		 * metadata capture" feature's privacy note in readme.txt/README.md.
+		 * This does not affect the EXIF capture-timestamp fallback (see
+		 * resolve_captured_at()), which is a separate date/time concern.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		$capture_camera_metadata = (bool) apply_filters( 'daymark_capture_camera_metadata', true );
+
+		foreach ( $media_ids as $attachment_id ) {
+			$attachment_id = (int) $attachment_id;
+
+			if ( ! wp_attachment_is_image( $attachment_id ) ) {
+				continue;
+			}
+
+			$metadata   = wp_get_attachment_metadata( $attachment_id );
+			$image_meta = ( is_array( $metadata ) && isset( $metadata['image_meta'] ) && is_array( $metadata['image_meta'] ) )
+				? $metadata['image_meta']
+				: array();
+
+			$camera = array();
+
+			if ( $capture_camera_metadata ) {
+				foreach ( self::CAMERA_META_FIELDS as $field ) {
+					if ( ! empty( $image_meta[ $field ] ) && is_scalar( $image_meta[ $field ] ) ) {
+						$camera[ $field ] = sanitize_text_field( (string) $image_meta[ $field ] );
+					}
+				}
+			}
+
+			$exif_timestamp = null;
+
+			if ( isset( $image_meta['created_timestamp'] ) && is_numeric( $image_meta['created_timestamp'] ) && (int) $image_meta['created_timestamp'] > 0 ) {
+				$exif_timestamp = (int) $image_meta['created_timestamp'];
+			}
+
+			return array(
+				'camera'         => $camera,
+				'exif_timestamp' => $exif_timestamp,
+			);
+		}
+
+		return array(
+			'camera'         => array(),
+			'exif_timestamp' => null,
+		);
+	}
+
+	/**
+	 * Resolve the capture timestamp to use for a Mark, in priority order:
+	 * (a) a valid, parseable client-supplied value that isn't more than
+	 * CAPTURE_TIME_FUTURE_TOLERANCE in the future (small clock-skew
+	 * tolerance — further out is treated as unusable, not an error); (b)
+	 * the first image attachment's EXIF created_timestamp. Returns null
+	 * when neither signal resolves — the caller decides what "no signal"
+	 * means for its own context (publish() falls back to "now" via
+	 * wp_insert_post()'s own default; update() leaves the existing
+	 * post_date untouched).
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param mixed    $client_value   Raw captured_at input (expected ISO 8601 string, or empty/absent).
+	 * @param int|null $exif_timestamp EXIF created_timestamp from extract_camera_info(), if any.
+	 * @return string|null MySQL datetime (UTC), or null when nothing resolved.
+	 */
+	private function resolve_captured_at( $client_value, ?int $exif_timestamp ): ?string {
+		$client_value = is_string( $client_value ) ? trim( $client_value ) : '';
+
+		if ( '' !== $client_value ) {
+			$timestamp = strtotime( $client_value );
+
+			if ( false !== $timestamp && $timestamp <= time() + self::CAPTURE_TIME_FUTURE_TOLERANCE ) {
+				return gmdate( 'Y-m-d H:i:s', $timestamp );
+			}
+		}
+
+		if ( null !== $exif_timestamp && $exif_timestamp > 0 ) {
+			return gmdate( 'Y-m-d H:i:s', $exif_timestamp );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Resolve an optional client-supplied location from Mark input.
+	 *
+	 * Silently returns null (never an error) for anything not usable: a
+	 * missing lat/lng pair, a non-numeric value, or a value outside the
+	 * valid range — "no location supplied" and "an invalid location was
+	 * supplied" are treated identically, since a location is always
+	 * optional and must never fail a publish.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param array<string, mixed> $data Sanitized Mark input (location_lat, location_lng,
+	 *                                   location_accuracy).
+	 * @return array{lat: float, lng: float, accuracy?: float}|null
+	 */
+	private function resolve_location( array $data ): ?array {
+		/**
+		 * Whether a Mark's quietly-captured location (lat/lng, best-effort
+		 * from the composer's browser geolocation) is stored at all.
+		 *
+		 * Defaults to true. Set to false to opt a site out of location
+		 * capture entirely — the client may still send it, but the server
+		 * ignores it — see the "quiet Mark metadata capture" feature's
+		 * privacy note in readme.txt/README.md. Disabling this also
+		 * prevents fetch_weather() from ever running, since weather is only
+		 * ever attempted alongside a resolved location.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		if ( ! apply_filters( 'daymark_capture_location', true ) ) {
+			return null;
+		}
+
+		if ( ! isset( $data['location_lat'] ) || ! isset( $data['location_lng'] ) ) {
+			return null;
+		}
+
+		$lat = $data['location_lat'];
+		$lng = $data['location_lng'];
+
+		if ( ! is_numeric( $lat ) || ! is_numeric( $lng ) ) {
+			return null;
+		}
+
+		$lat = (float) $lat;
+		$lng = (float) $lng;
+
+		if ( $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
+			return null;
+		}
+
+		$location = array(
+			'lat' => $lat,
+			'lng' => $lng,
+		);
+
+		if ( isset( $data['location_accuracy'] ) && is_numeric( $data['location_accuracy'] ) ) {
+			$location['accuracy'] = (float) $data['location_accuracy'];
+		}
+
+		return $location;
+	}
+
+	/**
+	 * Best-effort current-weather lookup via Open-Meteo (api.open-meteo.com),
+	 * a free service requiring no API key or account signup — chosen
+	 * specifically to avoid adding a second third-party credential to store,
+	 * matching the spirit of this plugin's own "no AI provider API key
+	 * storage" non-goal (see CLAUDE.md) even though weather isn't AI.
+	 *
+	 * No SSRF surface applies here: the only externally-influenced input is
+	 * a numeric lat/lng pair already range-validated by resolve_location(),
+	 * passed as query params to one fixed, hardcoded host. There is no
+	 * user-controlled URL, host, or path component the way a subscription's
+	 * site/feed URL has, so Daymark_Subscription_Url_Guard does not apply
+	 * here and is deliberately not invoked.
+	 *
+	 * Never throws (wrapped in try/catch against any unexpected failure
+	 * mode) and never delays the publish response meaningfully — a short,
+	 * filterable timeout. Any failure (timeout, non-200, malformed JSON,
+	 * WP_Error) simply returns null; the caller leaves _daymark_weather
+	 * unset rather than surfacing an error or retrying.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param float $lat Latitude.
+	 * @param float $lng Longitude.
+	 * @return array{temperature: float, unit: string, condition: string, code: int}|null
+	 */
+	private function fetch_weather( float $lat, float $lng ) {
+		/**
+		 * Whether a Mark's weather is looked up at all, given a resolved
+		 * location.
+		 *
+		 * Defaults to true. Set to false to opt a site out of the outbound
+		 * Open-Meteo request entirely, independent of
+		 * `daymark_capture_location` — useful for a site that's fine
+		 * capturing location but does not want any outbound request tied
+		 * to it. See the "quiet Mark metadata capture" feature's privacy
+		 * note in readme.txt/README.md.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $capture Defaults to true.
+		 */
+		if ( ! apply_filters( 'daymark_capture_weather', true ) ) {
+			return null;
+		}
+
+		try {
+			$url = add_query_arg(
+				array(
+					'latitude'         => $lat,
+					'longitude'        => $lng,
+					'current'          => 'temperature_2m,weather_code',
+					'temperature_unit' => 'celsius',
+				),
+				'https://api.open-meteo.com/v1/forecast'
+			);
+
+			/**
+			 * Filters the HTTP timeout, in seconds, used for the best-effort
+			 * Open-Meteo current-weather lookup.
+			 *
+			 * @since 0.11.0
+			 *
+			 * @param int $seconds Defaults to 4.
+			 */
+			$timeout = max( 1, (int) apply_filters( 'daymark_weather_fetch_timeout', 4 ) );
+
+			$response = wp_safe_remote_get(
+				$url,
+				array(
+					'timeout' => $timeout,
+				)
+			);
+
+			if ( is_wp_error( $response ) ) {
+				return null;
+			}
+
+			if ( 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+				return null;
+			}
+
+			$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+
+			if ( ! is_array( $body )
+				|| ! isset( $body['current']['temperature_2m'], $body['current']['weather_code'] )
+				|| ! is_numeric( $body['current']['temperature_2m'] )
+				|| ! is_numeric( $body['current']['weather_code'] )
+			) {
+				return null;
+			}
+
+			$code = (int) $body['current']['weather_code'];
+
+			return array(
+				'temperature' => (float) $body['current']['temperature_2m'],
+				'unit'        => 'C',
+				'condition'   => self::WEATHER_CONDITION_LABELS[ $code ] ?? '—',
+				'code'        => $code,
+			);
+		} catch ( Throwable $e ) {
+			return null;
+		}
+	}
+
+	/**
+	 * Compute and store a reading-time estimate from a Mark's caption plus
+	 * transcript (when present — audio/video Marks add the two word counts
+	 * together). Only stored when there's enough text to make the estimate
+	 * meaningful; a Mark that drops below the threshold on edit has its
+	 * estimate removed rather than left stale.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param int    $post_id   Mark post ID.
+	 * @param string $caption   Caption text.
+	 * @param string $transcript Transcript text.
+	 * @return void
+	 */
+	private function apply_reading_time( int $post_id, string $caption, string $transcript ): void {
+		$words = str_word_count( wp_strip_all_tags( $caption . ' ' . $transcript ) );
+
+		if ( $words < self::READING_TIME_MIN_WORDS ) {
+			delete_post_meta( $post_id, '_daymark_reading_time_minutes' );
+
+			return;
+		}
+
+		$minutes = max( 1, (int) round( $words / self::WORDS_PER_MINUTE ) );
+
+		update_post_meta( $post_id, '_daymark_reading_time_minutes', $minutes );
 	}
 
 	/**

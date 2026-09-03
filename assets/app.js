@@ -34,6 +34,12 @@
 		transcriptStatus: 'idle', // idle | loading | done — manual generation lifecycle
 		transcriptEdited: false, // author typed/edited it: don't clobber on a later manual generation
 		tags: [],
+		tagsEdited: false, // author added/removed/accepted a tag themselves: never overwrite with a later quiet suggestion
+		// Quiet metadata capture (never user-visible, never blocks anything):
+		// set once per fresh composing session by maybeBeginQuietCapture().
+		capturedAt: null, // ISO 8601 string — "when this Mark was actually created"
+		location: null, // { lat, lng, accuracy } | null — best-effort, silent geolocation
+		locationRequested: false, // guards against asking more than once per session
 		primaryType: 'note',
 		// Set by the Home launcher before navigating to #create so the
 		// composer opens pre-set to the chosen type; cleared by
@@ -362,6 +368,12 @@
 		state.transcriptStatus = 'idle';
 		state.transcriptEdited = false;
 		state.tags = [];
+		state.tagsEdited = false;
+		clearTimeout(quietTagsTimer);
+		quietTagsTimer = null;
+		state.capturedAt = null;
+		state.location = null;
+		state.locationRequested = false;
 		state.primaryType = 'note';
 		state.pendingType = null;
 		state.targets = [];
@@ -370,6 +382,50 @@
 		state.editing = null;
 		state.helpers = [];
 		state.offlineQueueId = null;
+	}
+
+	// Quietly capture "when/where this Mark was actually created" the
+	// moment a fresh composing session begins — never for a resumed draft:
+	// openDraft()/openPendingMark() both set state.editing BEFORE
+	// navigate('#create') runs, so the guard below skips both, and
+	// resetComposer() (called by both the launcher's typed-entry bubbles and
+	// "Create Another") always clears state.editing first, so a genuinely
+	// fresh session reliably has it unset. Idempotent per session — once
+	// state.capturedAt is set, this is a no-op until the next
+	// resetComposer(). Called from CreateScreen.bindEvents() so it covers
+	// every path into the composer for a new Mark (the launcher, "Create
+	// Another", a bookmarked/refreshed #create URL, the PWA manifest's
+	// #create shortcut, an empty-state "Start one" link) with one guard
+	// rather than needing a call at each entry point.
+	//
+	// "Don't make users fill those in": no loading state, no error, no
+	// retry prompt — geolocation denial/timeout/absence just leaves
+	// state.location unset, exactly like every other quiet-capture signal
+	// in this feature.
+	function maybeBeginQuietCapture() {
+		if (state.editing) {
+			return;
+		}
+		if (!state.capturedAt) {
+			state.capturedAt = new Date().toISOString();
+		}
+		if (state.locationRequested || !('geolocation' in navigator)) {
+			return;
+		}
+		state.locationRequested = true;
+		navigator.geolocation.getCurrentPosition(
+			(position) => {
+				state.location = {
+					lat: position.coords.latitude,
+					lng: position.coords.longitude,
+					accuracy: position.coords.accuracy,
+				};
+			},
+			() => {
+				// Denied, unsupported, or timed out — nothing to surface.
+			},
+			{ enableHighAccuracy: false, timeout: 5000 }
+		);
 	}
 
 	// Abandon the composer's in-progress work (starting a new Mark, or
@@ -603,6 +659,12 @@
 				Array.isArray(config.controllableHelpers) && config.controllableHelpers.length
 					? state.helpers.slice()
 					: null,
+			// Quiet metadata capture: carried along unchanged by every payload
+			// consumer (a live request, autosave, and an offline-queue replay
+			// all share this one builder), so it survives exactly like every
+			// other composer field does.
+			capturedAt: state.capturedAt || null,
+			location: state.location ? Object.assign({}, state.location) : null,
 			newFiles,
 			existingAlt,
 		};
@@ -636,6 +698,16 @@
 			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
 		}
 		payload.tags.forEach((tag) => formData.append('tags[]', tag));
+		if (payload.capturedAt) {
+			formData.append('captured_at', payload.capturedAt);
+		}
+		if (payload.location) {
+			formData.append('location_lat', String(payload.location.lat));
+			formData.append('location_lng', String(payload.location.lng));
+			if (payload.location.accuracy !== undefined && payload.location.accuracy !== null) {
+				formData.append('location_accuracy', String(payload.location.accuracy));
+			}
+		}
 		if (payload.autosave) {
 			formData.append('autosave', '1');
 		}
@@ -782,6 +854,13 @@
 		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
 		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : [];
 		state.tags = Array.isArray(payload.tags) ? payload.tags.slice() : [];
+		// Quiet metadata capture: this session's original signals travel
+		// with the queued payload — restore them rather than re-resolving
+		// (a fresh "now" or a fresh geolocation prompt would misrepresent
+		// when/where this Mark was actually created).
+		state.capturedAt = payload.capturedAt || null;
+		state.location = payload.location || null;
+		state.locationRequested = true;
 		state.primaryType = payload.primaryType || 'note';
 		state.files = (payload.newFiles || []).map((f) => {
 			state.fileCounter += 1;
@@ -891,6 +970,68 @@
 	function scheduleAutosave() {
 		clearTimeout(autosaveState.timer);
 		autosaveState.timer = setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
+	}
+
+	// --- Quiet AI tag suggestion ---
+	//
+	// "Leverage AI to generate tags. Don't make users fill those in." A
+	// background, invisible counterpart to the manual "AI Assist" sheet's
+	// own tag suggestions: no spinner, no toast, never interrupts, never
+	// blocks Publish (it's simply not awaited by anything in the publish
+	// path). Fires at most once per composing session — the moment it
+	// successfully applies a result, state.tags is no longer empty, which
+	// is itself the guard against firing again.
+	const QUIET_TAGS_DEBOUNCE_MS = 2500; // Mirrors AUTOSAVE_DEBOUNCE_MS.
+	let quietTagsTimer = null;
+	let quietTagsInFlight = false;
+
+	function scheduleQuietTagSuggestion() {
+		if (state.tagsEdited || state.tags.length) {
+			return; // Author already has tags — nothing quiet to add.
+		}
+		clearTimeout(quietTagsTimer);
+		quietTagsTimer = setTimeout(runQuietTagSuggestion, QUIET_TAGS_DEBOUNCE_MS);
+	}
+
+	async function runQuietTagSuggestion() {
+		if (quietTagsInFlight || state.tagsEdited || state.tags.length) {
+			return;
+		}
+		// Same grounding bar as the manual AI Assist sheet/describe_context():
+		// a caption, or at least one picked media file.
+		if (!state.caption.trim() && !state.files.length) {
+			return;
+		}
+		const generation = composerGeneration;
+		quietTagsInFlight = true;
+		try {
+			const result = await apiPost('ai/tags', {
+				text: state.caption,
+				primary_type: effectiveType(),
+				transcript: state.transcript || '',
+			});
+			// The composer may have moved on to a different Mark entirely, or
+			// the author may have added/accepted tags themselves while this
+			// was in flight — either way, never stomp on the current state.
+			if (generation !== composerGeneration || state.tagsEdited || state.tags.length) {
+				return;
+			}
+			const tags = Array.isArray(result.tags) ? result.tags.map((t) => String(t)) : [];
+			if (!tags.length) {
+				return;
+			}
+			state.tags = tags;
+			// Keep the AI Assist sheet in sync if it happens to already be
+			// open, reusing its own render call rather than duplicating it.
+			if (AIAssistSheet.el && !AIAssistSheet.el.hidden) {
+				AIAssistSheet.tags = tags.slice();
+				AIAssistSheet.renderTags();
+			}
+		} catch (err) {
+			// Best-effort and invisible — never surface an error here.
+		} finally {
+			quietTagsInFlight = false;
+		}
 	}
 
 	// Publish/Save as Draft must never race an autosave upload that's
@@ -2940,6 +3081,14 @@
 		},
 
 		bindEvents() {
+			// Quietly capture date/time + optional location the moment a
+			// fresh composing session begins — a no-op when resuming a draft
+			// (state.editing is already set by then) or later in the same
+			// session (state.capturedAt is already set). See
+			// maybeBeginQuietCapture()'s own docblock for why this single call
+			// site covers every entry path into a new Mark.
+			maybeBeginQuietCapture();
+
 			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
 			const caption = root.querySelector('#daymark-caption');
@@ -2999,12 +3148,16 @@
 					// Protect the actual picked media as soon as possible —
 					// don't wait for Publish/Save as Draft to upload it.
 					runAutosave();
+					// Picked media alone is enough to ground a quiet tag
+					// suggestion (same bar as the caption trigger below).
+					scheduleQuietTagSuggestion();
 				});
 			}
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
 				scheduleAutosave();
+				scheduleQuietTagSuggestion();
 			});
 
 			// Alt edits on media already attached to a draft, keyed by ID.
@@ -3618,6 +3771,9 @@
 			this.el.querySelector('[data-sheet-accept]').addEventListener('click', () => {
 				state.caption = this.el.querySelector('#daymark-ai-caption').value;
 				state.tags = this.tags.slice();
+				// An explicit user action, same as titleEdited/altEdited: never
+				// let a later quiet suggestion overwrite what was just accepted.
+				state.tagsEdited = true;
 				state.aiAssistUsed = true;
 				const captionField = document.getElementById('daymark-caption');
 				if (captionField) {
@@ -3905,11 +4061,14 @@
 	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
 	// post), the author when there is one (a subscription post only — a
 	// Mark's author is implicitly config.currentUser, shown via its own
-	// site icon instead), and a relative timestamp. Deliberately doesn't
-	// repeat the kind as a text label the way this line used to for a Mark
-	// (TYPE_LABELS[item.type]) — the rail's own type icon (see
-	// renderTypeIcon()) already says that now, so the text stays free for
-	// what the icon can't show.
+	// site icon instead), a relative timestamp, and — only when the server
+	// resolved one (prepare_mark_summary(), class-rest-controller.php) — a
+	// reading-time estimate. Deliberately doesn't repeat the kind as a text
+	// label the way this line used to for a Mark (TYPE_LABELS[item.type])
+	// — the rail's own type icon (see renderTypeIcon()) already says that
+	// now, so the text stays free for what the icon can't show. Camera and
+	// weather metadata stay server-stored-only for now — deliberately not
+	// rendered here, to keep this compact card from getting cluttered.
 	function renderCardMeta(item, chipHtml) {
 		const parts = [];
 		if (chipHtml) {
@@ -3920,6 +4079,9 @@
 		}
 		if (item.date) {
 			parts.push(renderCardTimestamp(item.date));
+		}
+		if (item.reading_time_minutes) {
+			parts.push(esc(item.reading_time_minutes + ' min read'));
 		}
 		return parts.join(' &middot; ');
 	}

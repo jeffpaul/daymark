@@ -160,6 +160,28 @@ class Daymark_Microformats {
 		$html .= '<time class="dt-published" datetime="' . esc_attr( $published ) . '">' . esc_html( (string) get_the_date( '', $post_id ) ) . '</time>';
 		$html .= $this->rich_media_markup( $post_id );
 
+		/**
+		 * Whether a Mark's quietly-captured location (see the "quiet Mark
+		 * metadata capture" feature, Daymark_Publisher) is rendered as public
+		 * p-geo/h-geo markup on its own permalink page.
+		 *
+		 * Defaults to false: capturing a location so it's available inside
+		 * the authenticated app (Timeline card, REST summary) is not the
+		 * same decision as publishing an author's exact device-GPS
+		 * coordinates into public, search-indexable page HTML — the same
+		 * reasoning this class already applies to leaving u-email off the
+		 * h-card (see this file's own docblock). A site owner who wants
+		 * public location markup can opt in explicitly with this filter.
+		 *
+		 * @since 0.11.0
+		 *
+		 * @param bool $publish_publicly Defaults to false.
+		 * @param int  $post_id          Mark post ID.
+		 */
+		if ( apply_filters( 'daymark_publish_location_publicly', false, $post_id ) ) {
+			$html .= $this->location_markup( $post_id );
+		}
+
 		$post = get_post( $post_id );
 
 		if ( $post instanceof WP_Post ) {
@@ -216,6 +238,33 @@ class Daymark_Microformats {
 		}
 
 		return $html;
+	}
+
+	/**
+	 * Build p-geo/h-geo location markup from a Mark's quietly-captured
+	 * location (issue: quiet mark metadata capture), when present.
+	 *
+	 * Reads _daymark_location — the same meta key Daymark_Publisher writes
+	 * — rather than parsing the rendered block HTML, matching
+	 * rich_media_markup()'s own precedent for this class.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Escaped HTML, or '' when the Mark carries no location.
+	 */
+	public function location_markup( int $post_id ): string {
+		$raw      = get_post_meta( $post_id, '_daymark_location', true );
+		$location = json_decode( is_string( $raw ) ? $raw : '', true );
+
+		if ( ! is_array( $location ) || ! isset( $location['lat'], $location['lng'] ) || ! is_numeric( $location['lat'] ) || ! is_numeric( $location['lng'] ) ) {
+			return '';
+		}
+
+		return '<span class="p-geo h-geo">'
+			. '<span class="p-latitude">' . esc_html( (string) $location['lat'] ) . '</span> '
+			. '<span class="p-longitude">' . esc_html( (string) $location['lng'] ) . '</span>'
+			. '</span>';
 	}
 
 	/**
