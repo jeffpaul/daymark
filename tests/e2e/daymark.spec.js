@@ -960,9 +960,11 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	await expect(markIcon).toBeVisible();
 	// No menu markup left to reuse — the icon itself carries the
 	// filter action directly, and has its own accessible name since there's
-	// no popover left to label a menu item inside.
+	// no popover left to label a menu item inside. A published Mark's card
+	// has no ⋯ menu at all (Draft-only affordance), so there's none here to
+	// collide with.
 	await expect(markIcon).toHaveAttribute('aria-label', 'Filter Timeline to your Marks');
-	await expect(markCard.locator('[data-menu]')).toHaveCount(1); // only the ⋯ menu
+	await expect(markCard.locator('[data-menu]')).toHaveCount(0);
 
 	// One click — no menu-open step first — jumps straight to Search with
 	// "My Marks" already applied.
