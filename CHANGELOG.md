@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#172](https://github.com/jeffpaul/daymark/issues/172))
+- A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#173](https://github.com/jeffpaul/daymark/pull/173))
 
 ## [0.10.0] - 2026-09-04
 
