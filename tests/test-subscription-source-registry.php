@@ -114,66 +114,55 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	 * source's own ID under `source_type` — what Daymark_Subscriptions::
 	 * subscribe_to_site() relies on to record the right source_type instead
 	 * of hardcoding 'feed' (issue #84).
+	 *
+	 * Deliberately exercises this via the real built-in 'feed' source (mocked
+	 * to succeed) rather than a dynamically registered stub: the registry is
+	 * a process-wide singleton, so a stub source registered by an earlier
+	 * test in this file (e.g. make_stub_source()'s 'stub-source', whose
+	 * discover() unconditionally returns a non-empty result with no HTTP
+	 * involved at all) can already be sitting ahead of a newly registered
+	 * stub in iteration order and win discovery first — blocking HTTP alone
+	 * cannot neutralize it. The built-in 'feed' source is always registered
+	 * first of all, so mocking it to succeed is deterministic regardless of
+	 * whatever else this test file has registered by the time this runs.
 	 */
 	public function test_discover_feeds_tags_candidates_with_source_type() {
-		add_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10, 3 );
+		add_filter( 'pre_http_request', array( $this, 'mock_feed_discovery_request' ), 10, 3 );
 
-		$shaped_source = new class() implements Daymark_Subscription_Source {
+		$result = Daymark_Subscription_Source_Registry::instance()->discover_feeds( 'https://tagging.example/' );
 
-			public function get_id(): string {
-				return 'shaped-stub';
-			}
+		remove_filter( 'pre_http_request', array( $this, 'mock_feed_discovery_request' ), 10 );
 
-			public function get_label(): string {
-				return 'Shaped Stub';
-			}
-
-			public function discover( string $site_url ): array {
-				return array(
-					array(
-						'url'   => $site_url . 'shaped/',
-						'title' => 'Shaped',
-						'type'  => 'text/html',
-					),
-				);
-			}
-
-			public function fetch( string $feed_url ): array {
-				return array();
-			}
-
-			public function normalize( array $raw_item ): array {
-				return $raw_item;
-			}
-		};
-
-		// The built-in 'feed'/'microformats' sources are registered ahead of
-		// this stub and run first; with HTTP blocked, both legitimately find
-		// nothing, so control falls through to this newly registered source
-		// and its result is what's returned.
-		Daymark_Subscription_Source_Registry::instance()->register_source( $shaped_source );
-
-		$result = Daymark_Subscription_Source_Registry::instance()->discover_feeds( 'https://example.test/' );
-
-		remove_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10 );
-
-		$this->assertSame( 'shaped-stub', $result[0]['source_type'] ?? null );
-		$this->assertSame( 'https://example.test/shaped/', $result[0]['url'] ?? null );
+		$this->assertSame( 'feed', $result[0]['source_type'] ?? null );
+		$this->assertSame( 'https://tagging.example/feed/', $result[0]['url'] ?? null );
 	}
 
 	/**
-	 * Short-circuits every HTTP request made during a test with a WP_Error,
-	 * so discover() calls against the built-in sources never attempt a real
-	 * network request.
+	 * Mocks a single site's HTML with a discoverable `<link rel="alternate">`
+	 * feed, and blocks every other request — so only the built-in 'feed'
+	 * source's discover() call for this exact URL succeeds.
 	 *
 	 * @param mixed  $preempt     Existing short-circuit value.
 	 * @param array  $parsed_args Request args (unused).
-	 * @param string $url         Requested URL (unused).
-	 * @return WP_Error
+	 * @param string $url         Requested URL.
+	 * @return mixed
 	 */
-	public function block_http_request( $preempt, $parsed_args, $url ) {
-		unset( $preempt, $parsed_args, $url );
+	public function mock_feed_discovery_request( $preempt, $parsed_args, $url ) {
+		unset( $preempt, $parsed_args );
 
-		return new WP_Error( 'daymark_test_http_blocked', 'HTTP blocked in test' );
+		if ( 'https://tagging.example/' !== $url ) {
+			return new WP_Error( 'daymark_test_http_blocked', 'HTTP blocked in test' );
+		}
+
+		return array(
+			'headers'  => array(),
+			'body'     => '<html><head><link rel="alternate" type="application/rss+xml" title="Tagging &raquo; Feed" href="https://tagging.example/feed/"></head><body></body></html>',
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
 	}
 }
