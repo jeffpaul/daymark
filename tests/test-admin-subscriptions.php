@@ -45,6 +45,14 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->admin_subscriptions = new Daymark_Admin_Subscriptions();
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		// wp_scripts() is a persistent global PHPUnit does not reset between
+		// tests, so an earlier test's enqueue_assets() call would otherwise
+		// leave this script enqueued for every test that follows it in the
+		// same process — the same reason tests/test-subscription-opml.php's
+		// set_up() resets Daymark_Subscription_Html_Cache (issue #137).
+		wp_dequeue_script( 'daymark-admin-subscriptions' );
+		wp_deregister_script( 'daymark-admin-subscriptions' );
 	}
 
 	/**
