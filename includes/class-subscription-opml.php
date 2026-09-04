@@ -254,7 +254,30 @@ class Daymark_Subscription_OPML {
 			$results[] = $this->import_entry( $node );
 		}
 
+		$this->maybe_poll_new_subscriptions( $results );
+
 		return $results;
+	}
+
+	/**
+	 * Trigger an async poll of every active subscription (issue #174) when
+	 * this import created at least one new one, so a freshly imported site
+	 * doesn't sit with zero cached posts until the next scheduled poll.
+	 * Delegates to Daymark_Subscription_Poller::maybe_poll_now() — see its
+	 * own docblock for why this polls everything active rather than just the
+	 * entries this import created.
+	 *
+	 * @param array<int, array{label: string, status: string, message: string}> $results Per-entry import results.
+	 * @return void
+	 */
+	private function maybe_poll_new_subscriptions( array $results ): void {
+		foreach ( $results as $result ) {
+			if ( 'subscribed' === $result['status'] ) {
+				Daymark_Plugin::instance()->subscription_poller->maybe_poll_now();
+
+				return;
+			}
+		}
 	}
 
 	/**

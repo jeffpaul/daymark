@@ -852,4 +852,36 @@ XML;
 		$this->assertArrayHasKey( 'daymark_subscription_poll_interval', $schedules );
 		$this->assertSame( 6 * HOUR_IN_SECONDS, $schedules['daymark_subscription_poll_interval']['interval'] );
 	}
+
+	/**
+	 * maybe_poll_now() (issue #174): schedules a single, immediate cron
+	 * event on the `_now` hook, distinct from and never touching the
+	 * recurring schedule.
+	 */
+	public function test_maybe_poll_now_schedules_single_event() {
+		Daymark_Subscription_Poller::unschedule();
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+		Daymark_Subscription_Poller::schedule();
+		$recurring_at = wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK );
+
+		$this->assertFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+
+		$this->poller->maybe_poll_now();
+
+		$this->assertNotFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+		// The recurring schedule is untouched by this call.
+		$this->assertSame( $recurring_at, wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK ) );
+	}
+
+	/** A second call while one is already pending does not schedule a duplicate event. */
+	public function test_maybe_poll_now_does_not_double_schedule() {
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+
+		$this->poller->maybe_poll_now();
+		$first_scheduled_at = wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+
+		$this->poller->maybe_poll_now();
+
+		$this->assertSame( $first_scheduled_at, wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+	}
 }

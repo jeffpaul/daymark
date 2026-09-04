@@ -77,6 +77,10 @@ class Daymark_Subscription_Poller {
 	 */
 	public function register(): void {
 		add_action( self::CRON_HOOK, array( $this, 'run_scheduled_poll' ) );
+		// Same callback as the recurring hook — see maybe_poll_now()'s own
+		// docblock for why an OPML import fires this instead of polling
+		// individual newly created subscriptions synchronously.
+		add_action( self::CRON_HOOK . '_now', array( $this, 'run_scheduled_poll' ) );
 		add_filter( 'cron_schedules', array( __CLASS__, 'register_cron_schedule' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- Interval is intentionally filterable; see daymark_subscription_poll_interval.
 		// Self-heal the recurring schedule: sites where the plugin was
 		// already active when this feature arrived never ran activation.
@@ -128,6 +132,37 @@ class Daymark_Subscription_Poller {
 	 */
 	public static function unschedule(): void {
 		wp_clear_scheduled_hook( self::CRON_HOOK );
+	}
+
+	/**
+	 * Schedule an immediate, one-off poll of every active subscription — an
+	 * async single cron event bound to the same callback as the recurring
+	 * poll, mirroring Daymark_Backflow_Sync::maybe_freshen(). Called after an
+	 * OPML import that created at least one new subscription (issue #174):
+	 * without this, a freshly imported batch would sit with zero cached
+	 * posts until the next scheduled poll, by default up to a day away.
+	 *
+	 * Deliberately reuses run_scheduled_poll() (poll every active
+	 * subscription) rather than polling only the newly imported rows — an
+	 * import can contain up to 1000 entries, so synchronously polling each
+	 * one within the request risks timing out the import itself and hammers
+	 * that many external hosts in one PHP request; a single subscribe-by-URL
+	 * can afford Daymark_Subscription_Poller::manual_refresh()'s synchronous
+	 * poll specifically because it's exactly one feed. Guarded the same way
+	 * as the recurring schedule so a burst of imports (or the REST and
+	 * wp-admin surfaces both firing in quick succession) schedules at most
+	 * one pending event.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function maybe_poll_now(): void {
+		if ( wp_next_scheduled( self::CRON_HOOK . '_now' ) ) {
+			return;
+		}
+
+		wp_schedule_single_event( time(), self::CRON_HOOK . '_now' );
 	}
 
 	/**
