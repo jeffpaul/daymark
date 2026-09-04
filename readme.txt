@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -135,7 +135,52 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.10.0 - 2026-09-04 =
+**Added**
+
+* wp-admin now offers two quick ways into Daymark: an "Open Daymark" link next to "Visit Site" under the site name in the admin bar, and a "Daymark" item in the "+New" menu that jumps straight into the composer pre-set to an Image Mark.
+* Subscriptions can now be exported to and imported from a standard OPML file — Settings -> Daymark gets Export/Import controls (`GET`/`POST /daymark/v1/subscriptions/export`/`import` back them). Import reports a per-entry result (subscribed, already subscribed, or failed) rather than failing the whole file on one bad entry, and a dead-flagged subscription is included in the export since it's still a follow worth backing up.
+* A subscription's cached site icon can now be refreshed on demand from Settings -> Daymark's "Refresh icon" action, instead of only ever being resolved once at subscribe time — useful when a site rebrands its favicon, or for a subscription imported via OPML from another reader with no cached icon at all.
+* A Mark now quietly picks up capture date/time, optional location, weather, camera EXIF metadata, an estimated reading time, and AI-suggested tags — none of it requires filling anything in, and none of it can block or delay publishing. Location, weather, and camera metadata capture can each be disabled with a filter (`daymark_capture_location`/`daymark_capture_weather`/`daymark_capture_camera_metadata`) — see the readme.txt/README.md FAQ for what's captured and why, ahead of planned future Timeline display work.
+* A subscribed feed that advertises WebSub (PubSubHubbub) support now delivers its updates by push instead of waiting for the next scheduled poll, so new posts from a supporting site can show up on your Timeline within moments of being published. Purely additive: the existing polling schedule keeps running unchanged for every subscription regardless of WebSub support, so nothing changes for a feed that doesn't advertise a hub.
+* Expanding a subscribed post's Timeline card now offers a "Reply" action that opens the composer seeded to that post. Publishing sends a normal Mark whose permalink carries a `u-in-reply-to` link to the source — install the [Webmention plugin](https://wordpress.org/plugins/webmention/) and it notifies the source automatically the moment your reply goes live.
+* You can now subscribe to IndieWeb sites that publish microformats2 (h-entry/h-card) markup but have no traditional RSS/Atom feed at all — a new parser discovers and reads that markup directly, mapping richer post types (reply/like/repost/bookmark/RSVP) and author info onto your Timeline the same way a feed-based subscription would. When a site has both a feed and h-feed markup, the feed is always used.
+* Subscribing to another WordPress site now prefers its real REST API over its RSS/Atom feed when both are reachable, so Timeline cards for that subscription's posts get the site's actual post format (image/video/audio/gallery/standard) instead of a guess from feed content. Any other site — including a WordPress site with the REST API disabled — subscribes exactly as before.
+* If you already follow someone through the [Friends plugin](https://wordpress.org/plugins/friends/), subscribing to their site in Daymark now reads their posts straight from Friends' own already-fetched cache instead of independently re-polling their site — no extra setup, and it only ever applies to a friend you've already added there.
+* A Mark's Timeline card now shows a repost count alongside its existing comment and like counts, the same quiet, zero-hides-itself treatment as those two — reposts delivered as replies/reactions from the ActivityPub, ATmosphere, or Webmention plugins now show up on the stat row too, not just in Notifications.
+* Subscribing to a WordPress site (directly, or to a friend through the Friends plugin) now shows a "Status" or "Chat" formatted post as a Note on your Timeline, with its own icon, instead of a generic "Standard"/article card.
+
+**Changed**
+
+* A published Mark's Timeline card no longer offers in-app Edit or Delete — the ⋯ actions menu is now a Draft-only affordance. To edit or delete a published Mark, use wp-admin directly.
+
+**Fixed**
+
+* Subscribing to a site could fail with "This subscription could not be saved. It may already exist." on a site where Daymark was already active before updating to 0.9.0 — the `daymark_subscriptions` table is created on plugin activation, which WordPress doesn't re-run on a plain file update. `Daymark_Subscriptions::install()` now self-heals on `init`, matching the pattern already used for the backflow and subscription-polling cron schedules.
+* A Timeline card for your own Mark showed your WordPress user avatar/Gravatar as its leading site icon, not your site's actual Site Icon — often just a plain letter glyph, since a self-hosted site's admin rarely has a Gravatar set. It now shows the site's Site Icon (or Daymark's own bundled icon if none is set), the same source resolution `Daymark_Routes::icon_url()` already uses for the browser favicon and PWA icons, and consistent with how a subscribed site's posts already show that site's own icon rather than its author's.
+* Timeline's connecting line between type icons only reached a few px above and below each icon, never actually touching the next or previous item's icon — visibly broken on any row taller than a compact one, which is most of them. It's now drawn once per list rather than per item, so it runs continuously from the first icon to the last regardless of how tall an individual card is, still behind every icon rather than over it.
+* An ordinary "Standard"-format post with a featured image rendered with the same full-bleed banner treatment a real Image Mark gets, since Timeline only ever checked whether a thumbnail existed, never the post's own WordPress post format. It now reports that format to the app shell, so a Standard post reads as a smaller thumbnail beside its title and excerpt (an Article card), and only a post whose actual format is Image/Gallery/Video gets the full banner.
+* A Timeline card's image showed an empty placeholder instead of the real photo whenever that image was served from a different host than the site itself — a CDN or offload plugin (Jetpack's Photon, S3, Cloudflare, ...), or a subscribed site's own thumbnail/favicon. The app shell's Content-Security-Policy only allowed images from `'self'`, silently blocking every one of those; `img-src`/`media-src` now also allow `https:` sources.
+* The header never hid on scroll the way the footer already did, so it was always taking up space the footer's own auto-hide was reclaiming. It now hides on scroll-up and reappears on scroll-down — the opposite direction from the footer — so the two never both cost their height back at the same time.
+* An empty Timeline's "Nothing here yet. Publish a Mark or subscribe to a site to fill your timeline." only ever linked "Publish a Mark" — "subscribe to a site" was plain text with nowhere to go. It now links to the Settings -> Daymark subscribe screen, the same destination Explore's own "Following" empty state already links to.
+* Subscribing to a WordPress site with the REST API reachable (Daymark's own preferred source for it) could classify every one of its posts as a plain "Standard" card, even an image/video/audio-only one, on any site that never assigns WordPress post formats — the common case, especially with a block theme. Subscribing to that same site's RSS/Atom feed instead already detected inline media correctly; the REST connector now falls back to the same content-sniffing when the site's own `format` field is `standard`. A friend followed through the Friends plugin gets the same, richer fallback (video/audio/gallery, not just a single image as before).
+
+**Security**
+
+* Feed and subscription fetches (feed content, site-HTML autodiscovery/favicon/title, and the click-through full-content fetch) now enforce filterable response size caps (2 MB / 1 MB / 4 MB respectively) — a response at or beyond the cap is rejected outright rather than parsed or cached as if it were complete.
+* Added `Daymark_Subscription_Url_Guard`, a shared SSRF defense-in-depth check applied to every subscription/feed/site URL before it's fetched — on top of the IPv4 protection WordPress core's `wp_http_validate_url()` already provides, it also rejects IPv6 loopback/unique-local/link-local addresses, IPv4-mapped IPv6 literals, the IPv4 CGNAT range, embedded userinfo, and non-standard ports.
+* A subscription now records a human-readable `last_error` reason for its most recent failed check (surfaced in the wp-admin Subscriptions screen, notifications, and the REST API), instead of only a status flag and a failure count with no explanation of why.
+* Feed, site-HTML, and click-through fetch timeouts are now filterable instead of hardcoded.
+
+**Developer**
+
+* `SECURITY.md`'s supported-versions table had sat at `0.6.x` since that release, several versions stale — bumped to `0.9.x`, the actual current release, and added a reminder to the release checklist in CONTRIBUTING.md so this doesn't silently drift again (this table isn't build-enforced the way the four version-number locations are).
+* The changelog-entry expectation is now called out in CLAUDE.md and the PR template, not just CONTRIBUTING.md, with explicit guidance to keep entries short.
+* The "Preview in WordPress Playground" PR comment now also posts on a PR's first `synchronize` (push), not only `opened`/`reopened` — a PR opened via the GitHub API (rather than a person pushing through the web UI) doesn't reliably deliver a plain `pull_request` `opened` event, so an `opened`-only trigger could silently never post the button at all.
+* The PR template now has its own `## Changelog` section, for pasting in the same entry you added to `CHANGELOG.md`. Since this repo squash-merges using the PR title and description as the commit message, this keeps `git log` on `main` as scannable as the changelog itself instead of only as concise as the rest of a given PR's description happens to be.
+
 = 0.9.0 - 2026-09-02 =
+
 **Added**
 
 * Replaced the Images/Videos/Audio/Notes links flanking +New with a persistent bottom nav: **Timeline, Explore, +New, Search, Me**. Explore, Search, and Me are real routes (`/daymark/explore`, `/daymark/search`, `/daymark/me`), so a direct link or refresh lands correctly, and the active tab shows via `aria-current="page"`.
@@ -394,6 +439,9 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.10.0 =
+Subscriptions get four new detection sources (WebSub push delivery, microformats2-only sites, WordPress REST API, and Friends-plugin friends) plus more accurate post-type mapping, OPML import/export, and an on-demand icon refresh. Timeline cards gain a repost count and a Reply action on subscribed posts. Published Marks drop their in-app Edit/Delete menu — use wp-admin for that now.
 
 = 0.9.0 =
 A redesigned bottom navigation (Timeline, Explore, Search, Me) replaces the old Images/Videos/Audio/Notes pages — existing pages move to Trash automatically and old links redirect to Explore. Composer autosave, offline-first creation, and optimistic publishing mean your work is never lost and Publish never makes you wait. Timeline cards now render by content kind and expand in place instead of navigating away or opening an overlay. If your site still runs Moment (<= 0.5.0), upgrade through an intermediate 0.6.x-0.8.x release first — this version can no longer convert old Moment data.

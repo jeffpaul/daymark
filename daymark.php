@@ -3,7 +3,7 @@
  * Plugin Name: Daymark
  * Plugin URI: https://github.com/jeffpaul/daymark
  * Description: Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
- * Version: 0.9.0
+ * Version: 0.10.0
  * Requires at least: 7.0
  * Requires PHP: 8.2
  * Author: Jeff Paul
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DAYMARK_VERSION', '0.9.0' );
+define( 'DAYMARK_VERSION', '0.10.0' );
 define( 'DAYMARK_PLUGIN_FILE', __FILE__ );
 define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

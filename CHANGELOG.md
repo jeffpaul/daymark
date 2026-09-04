@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-04
+
 ### Added
 
 - wp-admin now offers two quick ways into Daymark: an "Open Daymark" link next to "Visit Site" under the site name in the admin bar, and a "Daymark" item in the "+New" menu that jumps straight into the composer pre-set to an Image Mark. ([#158](https://github.com/jeffpaul/daymark/pull/158))
@@ -322,7 +324,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.9.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.10.0...HEAD
+[0.10.0]: https://github.com/jeffpaul/daymark/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/jeffpaul/daymark/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/jeffpaul/daymark/compare/0.7.0...0.8.0
 [0.7.0]: https://github.com/jeffpaul/daymark/compare/0.6.1...0.7.0
