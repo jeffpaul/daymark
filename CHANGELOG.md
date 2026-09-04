@@ -27,6 +27,7 @@ can't act on them.
 ### Changed
 
 - A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#173](https://github.com/jeffpaul/daymark/pull/173))
+- Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page. ([#176](https://github.com/jeffpaul/daymark/issues/176))
 
 ## [0.10.0] - 2026-09-04
 

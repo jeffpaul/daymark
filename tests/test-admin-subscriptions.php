@@ -263,4 +263,56 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		// Consumed: rendering again with no notice query var shows nothing left over.
 		$this->assertFalse( get_transient( 'daymark_opml_import_result_' . $user_id ) );
 	}
+
+	/**
+	 * Scenario (issue #175): the Refresh form and its row carry the data
+	 * attributes assets/admin-subscriptions.js needs to submit inline via
+	 * the REST refresh endpoint and update that row in place.
+	 */
+	public function test_refresh_form_and_row_carry_js_enhancement_hooks(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://inline-refresh.example',
+				'feed_url' => 'https://inline-refresh.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'data-daymark-subscription-row="' . $id . '"', $output );
+		$this->assertStringContainsString( 'daymark-subscription-refresh-form', $output );
+		$this->assertStringContainsString( 'data-daymark-subscription-id="' . $id . '"', $output );
+		$this->assertStringContainsString( 'daymark-subscription-status-text', $output );
+		$this->assertStringContainsString( 'daymark-subscription-last-fetched', $output );
+	}
+
+	/**
+	 * Scenario (issue #175): enqueue_assets() localizes the REST refresh
+	 * endpoint + a wp_rest nonce for assets/admin-subscriptions.js, but only
+	 * on this screen.
+	 */
+	public function test_enqueue_assets_localizes_rest_config_on_settings_screen(): void {
+		$this->admin_subscriptions->enqueue_assets( 'settings_page_' . Daymark_Admin_Subscriptions::PAGE_SLUG );
+
+		$this->assertTrue( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
+
+		$localized = wp_scripts()->get_data( 'daymark-admin-subscriptions', 'data' );
+		$this->assertIsString( $localized );
+
+		$this->assertSame( 1, preg_match( '/daymarkAdminSubscriptions\s*=\s*(\{.*\});/s', $localized, $matches ) );
+		$config = json_decode( $matches[1], true );
+
+		$this->assertIsArray( $config );
+		$this->assertSame( rest_url( 'daymark/v1/subscriptions/' ), $config['restUrl'] );
+		$this->assertNotEmpty( $config['restNonce'] );
+		$this->assertSame( 'Refresh', $config['i18n']['refreshLabel'] );
+	}
+
+	/** enqueue_assets() does nothing on any other admin screen. */
+	public function test_enqueue_assets_does_nothing_off_screen(): void {
+		$this->admin_subscriptions->enqueue_assets( 'edit.php' );
+
+		$this->assertFalse( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
+	}
 }
