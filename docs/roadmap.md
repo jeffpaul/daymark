@@ -132,15 +132,15 @@ h-card) subscription parsing" below.)
   counts regardless of surrounding text length; a bare `<img>` only counts
   when the accompanying text is short, so a long article's header image
   doesn't get misclassified as a photo post. See CLAUDE.md's "Subscription
-  content-type inference" decision. Two larger, adjacent options from the
-  same discussion stay separate: preferring the WordPress REST API's real
-  `format` field for WP-to-WP subscriptions
-  ([#137](https://github.com/jeffpaul/daymark/issues/137)), and following a
-  site via ActivityPub/Microsub for structured content
-  ([#88](https://github.com/jeffpaul/daymark/issues/88)). (The full mf2
-  h-entry connector these were originally grouped with,
-  [#84](https://github.com/jeffpaul/daymark/issues/84), shipped separately —
-  see below.)
+  content-type inference" decision. One larger, adjacent option from the
+  same discussion stays separate: following a site via ActivityPub/Microsub
+  for structured content instead of periodic feed polling
+  ([#88](https://github.com/jeffpaul/daymark/issues/88)). Two others
+  originally grouped with it shipped separately — a full mf2 h-entry
+  connector ([#84](https://github.com/jeffpaul/daymark/issues/84)) and
+  preferring the WordPress REST API's real `format` field for WP-to-WP
+  subscriptions ([#137](https://github.com/jeffpaul/daymark/issues/137)) —
+  see below.
 
 - [x] **WebSub/PubSubHubbub subscribing.** A subscribed feed that advertises
   a hub via `<link rel="hub">` now delivers new posts by push instead of
@@ -178,6 +178,23 @@ h-card) subscription parsing" below.)
   "Microformats2 (h-entry/h-card) subscription parsing (issue #84)"
   decision.
 
+- [x] **Prefer the WordPress REST API for WP-to-WP subscriptions.** A new
+  `Daymark_Subscription_Source_WordPress` connector, checked *before* the
+  RSS/Atom feed source (the opposite precedence direction from the mf2
+  connector above — the real thing beats a guess): discovers a site's REST
+  API via the same `<link rel="https://api.w.org/">` tag a browser or client
+  library would, then actively probes `wp/v2/posts` before trusting it,
+  since a site can disable the REST API while leaving the discovery tag in
+  place. When reachable, `post_format` comes straight from the site's own
+  real value instead of the feed connector's enclosure/content-sniffing
+  guess; the five WordPress formats with no dedicated Daymark bucket
+  (`aside`/`link`/`quote`/`status`/`chat`) map down to `standard`, the same
+  treatment issue #84's own unmapped h-entry post types get. Any other site
+  — REST API disabled, unreachable, or not WordPress at all — falls straight
+  through to the existing feed connector with no behavior change. See
+  CLAUDE.md's "Prefer the WordPress REST API for WP-to-WP subscriptions
+  (issue #137)" decision.
+
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
 than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
@@ -198,11 +215,10 @@ preview, inbound microformats2 parsing, Webmention support, WebSub/PuSH,
 malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
-Inbound microformats2 parsing (#84), Webmention support (#83), and
-WebSub/PuSH (#82) have since shipped — see the entries above. Of what
-remains, none is prioritized yet aside from
-[#137](https://github.com/jeffpaul/daymark/issues/137) (WordPress REST API
-preference for WP-to-WP subscriptions), targeting the 0.10.0 release.
+Inbound microformats2 parsing (#84), Webmention support (#83), WebSub/PuSH
+(#82), and WordPress REST API preference for WP-to-WP subscriptions (#137)
+have since shipped — see the entries above. None of what remains is
+prioritized yet.
 
 ---
 
