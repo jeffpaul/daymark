@@ -208,6 +208,18 @@ that renders as a `rel="me"` link next to your h-card — so IndieWeb tools
 (readers, IndieAuth, Bridgy) can read a Mark correctly without any of this
 plugin's own APIs.
 
+Replying to a subscribed post works the same way. Tap "Reply" on an
+expanded Timeline card and Daymark opens the composer seeded to that post
+— write your reply, publish it as a normal Mark, done. The published
+Mark's permalink carries a `u-in-reply-to` link to the source, and if you
+have the Webmention plugin installed and active, it notifies the source
+automatically the moment your reply goes live — Daymark itself never
+sends, receives, or verifies a Webmention; it just makes sure the markup
+a Webmention plugin looks for is there. **For the best Daymark + IndieWeb
+experience, install [Webmention](https://wordpress.org/plugins/webmention/)**
+(and ActivityPub/ATmosphere, per the table above) so replies and mentions
+from across the web show up in your Notifications automatically.
+
 ### I already run a social auto-poster (Jetpack Social, XPoster, …). Does it work with Daymark?
 
 Yes, automatically — because a Mark is a standard WordPress post.

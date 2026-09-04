@@ -184,6 +184,21 @@ class Test_Microformats extends WP_UnitTestCase {
 		$this->assertSame( '', $this->microformats->rich_media_markup( $this->daymark_id ) );
 	}
 
+	/** reply_markup() emits a u-in-reply-to link when the Mark is a reply (issue #83). */
+	public function test_reply_markup_renders_when_in_reply_to_is_set() {
+		update_post_meta( $this->daymark_id, '_daymark_in_reply_to', 'https://example.com/original-post/' );
+
+		$markup = $this->microformats->reply_markup( $this->daymark_id );
+
+		$this->assertStringContainsString( 'class="u-in-reply-to"', $markup );
+		$this->assertStringContainsString( 'href="https://example.com/original-post/"', $markup );
+	}
+
+	/** reply_markup() is empty for an ordinary (non-reply) Mark. */
+	public function test_reply_markup_empty_without_in_reply_to() {
+		$this->assertSame( '', $this->microformats->reply_markup( $this->daymark_id ) );
+	}
+
 	/** render_author_hcard() emits p-author h-card, p-name, and u-photo. */
 	public function test_author_hcard_has_required_properties() {
 		$markup = $this->microformats->render_author_hcard( $this->author_id );
