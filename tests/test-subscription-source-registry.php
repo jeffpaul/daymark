@@ -92,4 +92,77 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 		$registry = Daymark_Subscription_Source_Registry::instance();
 		$this->assertSame( $source, $registry->get_source( 'stub-source' ) );
 	}
+
+	/**
+	 * Scenario: both built-in sources are registered, feed before
+	 * microformats — the registration order that implements this feature's
+	 * documented feed-wins precedence rule (issue #84).
+	 */
+	public function test_built_in_sources_registered_feed_before_microformats() {
+		$ids = array_keys( Daymark_Subscription_Source_Registry::instance()->get_sources() );
+
+		$feed_position         = array_search( 'feed', $ids, true );
+		$microformats_position = array_search( 'microformats', $ids, true );
+
+		$this->assertIsInt( $feed_position );
+		$this->assertIsInt( $microformats_position );
+		$this->assertLessThan( $microformats_position, $feed_position );
+	}
+
+	/**
+	 * Scenario: discover_feeds() augments each candidate with its producing
+	 * source's own ID under `source_type` — what Daymark_Subscriptions::
+	 * subscribe_to_site() relies on to record the right source_type instead
+	 * of hardcoding 'feed' (issue #84).
+	 *
+	 * Deliberately exercises this via the real built-in 'feed' source (mocked
+	 * to succeed) rather than a dynamically registered stub: the registry is
+	 * a process-wide singleton, so a stub source registered by an earlier
+	 * test in this file (e.g. make_stub_source()'s 'stub-source', whose
+	 * discover() unconditionally returns a non-empty result with no HTTP
+	 * involved at all) can already be sitting ahead of a newly registered
+	 * stub in iteration order and win discovery first — blocking HTTP alone
+	 * cannot neutralize it. The built-in 'feed' source is always registered
+	 * first of all, so mocking it to succeed is deterministic regardless of
+	 * whatever else this test file has registered by the time this runs.
+	 */
+	public function test_discover_feeds_tags_candidates_with_source_type() {
+		add_filter( 'pre_http_request', array( $this, 'mock_feed_discovery_request' ), 10, 3 );
+
+		$result = Daymark_Subscription_Source_Registry::instance()->discover_feeds( 'https://tagging.example/' );
+
+		remove_filter( 'pre_http_request', array( $this, 'mock_feed_discovery_request' ), 10 );
+
+		$this->assertSame( 'feed', $result[0]['source_type'] ?? null );
+		$this->assertSame( 'https://tagging.example/feed/', $result[0]['url'] ?? null );
+	}
+
+	/**
+	 * Mocks a single site's HTML with a discoverable `<link rel="alternate">`
+	 * feed, and blocks every other request — so only the built-in 'feed'
+	 * source's discover() call for this exact URL succeeds.
+	 *
+	 * @param mixed  $preempt     Existing short-circuit value.
+	 * @param array  $parsed_args Request args (unused).
+	 * @param string $url         Requested URL.
+	 * @return mixed
+	 */
+	public function mock_feed_discovery_request( $preempt, $parsed_args, $url ) {
+		unset( $preempt, $parsed_args );
+
+		if ( 'https://tagging.example/' !== $url ) {
+			return new WP_Error( 'daymark_test_http_blocked', 'HTTP blocked in test' );
+		}
+
+		return array(
+			'headers'  => array(),
+			'body'     => '<html><head><link rel="alternate" type="application/rss+xml" title="Tagging &raquo; Feed" href="https://tagging.example/feed/"></head><body></body></html>',
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
 }
