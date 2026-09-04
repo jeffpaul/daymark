@@ -54,6 +54,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/sources/interface-subscription-sourc
 require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-feed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-microformats.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-wordpress.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-friends.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-source-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-post-type.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';

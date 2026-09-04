@@ -220,6 +220,19 @@ experience, install [Webmention](https://wordpress.org/plugins/webmention/)**
 (and ActivityPub/ATmosphere, per the table above) so replies and mentions
 from across the web show up in your Notifications automatically.
 
+### Does Daymark work with the Friends plugin?
+
+Yes. If you already follow someone through the
+[Friends plugin](https://wordpress.org/plugins/friends/), subscribing to
+their site in Daymark reads their posts straight from Friends' own cache
+instead of independently re-fetching their site a second time — Friends
+already does the real fetching, parsing, and post-format classification for
+a friend, so Daymark just reuses it. This only ever applies to a friend
+you've already added in Friends' own UI; Daymark doesn't add friends on
+Friends' behalf, and a site Friends doesn't yet follow subscribes exactly
+as it always has (via its RSS/Atom feed, WordPress REST API, or
+microformats2 markup).
+
 ### I already run a social auto-poster (Jetpack Social, XPoster, …). Does it work with Daymark?
 
 Yes, automatically — because a Mark is a standard WordPress post.

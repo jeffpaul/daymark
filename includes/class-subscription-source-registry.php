@@ -73,17 +73,27 @@ class Daymark_Subscription_Source_Registry {
 	}
 
 	/**
-	 * Register the built-in sources, WordPress REST API first, then feed,
-	 * then microformats.
+	 * Register the built-in sources: Friends first, then WordPress REST
+	 * API, then feed, then microformats.
 	 *
 	 * Registration order is what implements every documented precedence
 	 * rule across these sources: discover_feeds() below returns the first
 	 * non-empty discover() result in registration order.
 	 *
+	 * - Issue #88: a site the owner has *already* added as a friend through
+	 *   the Friends plugin's own UI is always read from Friends' own
+	 *   already-fetched, already-deduplicated, already-format-classified
+	 *   cache — Daymark never independently re-polls a site it can already
+	 *   get this same content from for free, and never drives Friends' own
+	 *   "add a friend" flow itself. Daymark_Subscription_Source_Friends is
+	 *   registered first of all for exactly this reason; it never issues a
+	 *   network request of its own, so trying it first costs nothing for a
+	 *   site Friends doesn't already know about — it just falls straight
+	 *   through to the next source.
 	 * - Issue #137: a subscribed WordPress site with a discoverable,
 	 *   working REST API is always preferred over its own RSS/Atom feed —
 	 *   the real thing beats a guess — so Daymark_Subscription_Source_WordPress
-	 *   is registered first of all. Any other site (including a WordPress
+	 *   is registered next. Any other site (including a WordPress
 	 *   site with the REST API disabled or unreachable) falls straight
 	 *   through to the feed source with no behavior change.
 	 * - Issue #84: where a site exposes both a traditional feed and h-feed/
@@ -95,6 +105,7 @@ class Daymark_Subscription_Source_Registry {
 	 * @return void
 	 */
 	private function register_built_in_sources(): void {
+		$this->register_source( new Daymark_Subscription_Source_Friends() );
 		$this->register_source( new Daymark_Subscription_Source_WordPress() );
 		$this->register_source( new Daymark_Subscription_Source_Feed() );
 		$this->register_source( new Daymark_Subscription_Source_Microformats() );
@@ -148,7 +159,7 @@ class Daymark_Subscription_Source_Registry {
 	 * `daymark_register_subscription_sources` needs no caller-side changes.
 	 * This registration-order, first-non-empty-wins behavior is also what
 	 * implements every precedence rule documented on register_built_in_sources()
-	 * above (issues #84 and #137).
+	 * above (issues #84, #88, and #137).
 	 *
 	 * Each returned candidate carries its producing source's ID under
 	 * `source_type`, added here rather than by the source itself, so every

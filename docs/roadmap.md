@@ -132,15 +132,21 @@ h-card) subscription parsing" below.)
   counts regardless of surrounding text length; a bare `<img>` only counts
   when the accompanying text is short, so a long article's header image
   doesn't get misclassified as a photo post. See CLAUDE.md's "Subscription
-  content-type inference" decision. One larger, adjacent option from the
-  same discussion stays separate: following a site via ActivityPub/Microsub
-  for structured content instead of periodic feed polling
-  ([#88](https://github.com/jeffpaul/daymark/issues/88)). Two others
-  originally grouped with it shipped separately — a full mf2 h-entry
-  connector ([#84](https://github.com/jeffpaul/daymark/issues/84)) and
-  preferring the WordPress REST API's real `format` field for WP-to-WP
-  subscriptions ([#137](https://github.com/jeffpaul/daymark/issues/137)) —
-  see below.
+  content-type inference" decision. Three options from the same discussion
+  shipped separately — a full mf2 h-entry connector
+  ([#84](https://github.com/jeffpaul/daymark/issues/84)), preferring the
+  WordPress REST API's real `format` field for WP-to-WP subscriptions
+  ([#137](https://github.com/jeffpaul/daymark/issues/137)), and a Friends
+  plugin subscription source ([#88](https://github.com/jeffpaul/daymark/issues/88))
+  — see below. Native ActivityPub-following ingestion and a Microsub client
+  remain deferred (also tracked under #88): the ActivityPub plugin's own
+  Reader UI for followed accounts is still experimental/feature-flagged,
+  with an open, unresolved upstream discussion about how incoming posts
+  should even be stored, and Microsub requires an external, non-WordPress
+  server (e.g. Aperture) most Daymark users won't already have. Revisit
+  once the ActivityPub plugin's own schema stabilizes, or Bridgy Fed
+  ([#91](https://github.com/jeffpaul/daymark/issues/91)) offers a
+  lower-effort path to the same Mastodon/Fediverse interoperability.
 
 - [x] **WebSub/PubSubHubbub subscribing.** A subscribed feed that advertises
   a hub via `<link rel="hub">` now delivers new posts by push instead of
@@ -195,6 +201,23 @@ h-card) subscription parsing" below.)
   CLAUDE.md's "Prefer the WordPress REST API for WP-to-WP subscriptions
   (issue #137)" decision.
 
+- [x] **Friends plugin as a subscription source.** A new
+  `Daymark_Subscription_Source_Friends` connector, checked before every
+  other built-in source, surfaces a friend the site owner already follows
+  through the [Friends plugin](https://wordpress.org/plugins/friends/) —
+  optional, never a hard dependency. Unlike every other source it makes no
+  network request at all: Friends already fetches, parses, deduplicates,
+  and classifies a friend's posts itself, caching the result locally, so
+  this connector is a plain local database query against that cache and
+  reads Friends' own already-assigned post format directly. Daymark never
+  drives Friends' own "add a friend" flow — a site Friends doesn't already
+  follow falls straight through to the other sources exactly as if this
+  one didn't exist. See CLAUDE.md's "Friends plugin as a subscription
+  source (issue #88)" decision, including an explicit callout that this
+  was researched against the Friends plugin's public source rather than a
+  live installation, since there was no way to install a third-party
+  plugin for testing in this environment.
+
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
 than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
@@ -216,9 +239,11 @@ malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
 Inbound microformats2 parsing (#84), Webmention support (#83), WebSub/PuSH
-(#82), and WordPress REST API preference for WP-to-WP subscriptions (#137)
-have since shipped — see the entries above. None of what remains is
-prioritized yet.
+(#82), WordPress REST API preference for WP-to-WP subscriptions (#137), and
+the Friends-plugin half of additional source connectors (#88) have since
+shipped — see the entries above. #88's own ActivityPub/Microsub half
+remains deferred, per that entry's own reasoning above. None of what
+remains otherwise is prioritized yet.
 
 ---
 
