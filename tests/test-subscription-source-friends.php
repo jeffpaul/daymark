@@ -114,6 +114,42 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
 	}
 
+	/** normalize()'s content-sniff fallback also recognizes video, matching Daymark_Subscription_Source_Feed's own richer sniffing, not just a lone image. */
+	public function test_normalize_sniffs_inline_video_without_structured_signals() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'A clip',
+				'content'      => '<video src="https://jane.example/clip.mp4"></video>',
+				'permalink'    => 'https://jane.example/2024/a-clip/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => '',
+			)
+		);
+
+		$this->assertSame( 'video', $normalized['post_format'] );
+	}
+
+	/** The content-sniff fallback never overrides a real Friends-assigned format, even one with no dedicated Daymark bucket. */
+	public function test_normalize_never_sniffs_when_friends_already_assigned_a_format() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'A quote',
+				'content'      => '<img src="https://jane.example/inline.jpg">',
+				'permalink'    => 'https://jane.example/2024/a-quote/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => 'quote',
+			)
+		);
+
+		// 'quote' has no dedicated Daymark bucket and maps to 'standard', but
+		// it is still a real, explicit Friends signal — never overridden by
+		// a content sniff.
+		$this->assertSame( 'standard', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
+	}
+
 	/** normalize() defaults to 'standard' with no featured image when there is no post_format and no image to sniff either. */
 	public function test_normalize_defaults_to_standard_without_media() {
 		$normalized = $this->source->normalize(

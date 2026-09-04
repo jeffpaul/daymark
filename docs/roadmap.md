@@ -218,6 +218,25 @@ h-card) subscription parsing" below.)
   live installation, since there was no way to install a third-party
   plugin for testing in this environment.
 
+- [x] **Subscription type-mapping audit.** With four built-in sources now
+  shipped, an audit of every signal each one can read and how (or whether) it
+  reaches a Timeline card's `post_format` — written up as
+  [docs/subscription-type-mapping.md](subscription-type-mapping.md). Found
+  and fixed a real gap: the `wordpress` source (second-preferred, ahead of
+  `feed`) trusted its site's real `format` field completely, with no
+  fallback for the common case of a WordPress site that never assigns post
+  formats at all — meaning it could detect a site's own media *less*
+  accurately than the fallback `feed` connector already did for that same
+  content. Fixed by extracting the existing content-sniffing fallback into a
+  shared `Daymark_Subscription_Content_Sniffer` class and using it in both
+  `wordpress` and (upgraded from a narrower image-only check) `friends`.
+  Also documents, without changing, two signals a source detects and
+  currently discards: `microformats`'s own mf2 post-type discovery (reply/
+  like/repost/bookmark/rsvp) and the five WordPress-native formats with no
+  Daymark bucket — both flagged as the concrete starting points for a future
+  expansion of Daymark's own type vocabulary, not resolved here. See
+  CLAUDE.md's "Subscription type-mapping audit" decision.
+
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
 than moving to 11.x: WordPress core's own PHPUnit test scaffold still calls a
