@@ -781,6 +781,19 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* A card's timestamp, pulled out of .daymark-recent__meta's own line (see
+   renderCardTimestampRow(), app.js) and given its own bottom-right-anchored
+   row instead — a quiet, corner-anchored detail rather than one more item
+   in the meta line's list. .daymark-recent__body is a flex column for
+   every card kind, so align-self alone pushes this row to the right; no
+   absolute positioning, so it can never overlap a stats row or an excerpt
+   of unpredictable height above it. */
+.daymark-recent__timestamp {
+	align-self: flex-end;
+	font-size: 12px;
+	color: var(--daymark-text-muted);
+}
+
 /* Same stat-row look as the public views' .daymark-item-stats (views.css),
    built on this file's custom properties instead of that file's hardcoded
    hex — one visual vocabulary, each stylesheet's own color convention. */

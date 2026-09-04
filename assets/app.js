@@ -4108,14 +4108,16 @@
 	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
 	// post), the author when there is one (a subscription post only — a
 	// Mark's author is implicitly config.currentUser, shown via its own
-	// site icon instead), a relative timestamp, and — only when the server
-	// resolved one (prepare_mark_summary(), class-rest-controller.php) — a
-	// reading-time estimate. Deliberately doesn't repeat the kind as a text
-	// label the way this line used to for a Mark (TYPE_LABELS[item.type])
-	// — the rail's own type icon (see renderTypeIcon()) already says that
-	// now, so the text stays free for what the icon can't show. Camera and
-	// weather metadata stay server-stored-only for now — deliberately not
-	// rendered here, to keep this compact card from getting cluttered.
+	// site icon instead), and — only when the server resolved one
+	// (prepare_mark_summary(), class-rest-controller.php) — a reading-time
+	// estimate. Deliberately doesn't repeat the kind as a text label the way
+	// this line used to for a Mark (TYPE_LABELS[item.type]) — the rail's own
+	// type icon (see renderTypeIcon()) already says that now, so the text
+	// stays free for what the icon can't show. Camera and weather metadata
+	// stay server-stored-only for now — deliberately not rendered here, to
+	// keep this compact card from getting cluttered. The timestamp itself
+	// isn't part of this line — see renderCardTimestampRow(), rendered as
+	// its own bottom-right-anchored row instead.
 	function renderCardMeta(item, chipHtml) {
 		const parts = [];
 		if (chipHtml) {
@@ -4124,13 +4126,24 @@
 		if (item.author) {
 			parts.push(esc(item.author));
 		}
-		if (item.date) {
-			parts.push(renderCardTimestamp(item.date));
-		}
 		if (item.reading_time_minutes) {
 			parts.push(esc(item.reading_time_minutes + ' min read'));
 		}
 		return parts.join(' &middot; ');
+	}
+
+	// A card's timestamp, on its own row at the bottom of the card, aligned
+	// right — a quiet, corner-anchored detail rather than another item in
+	// the meta line's list (see renderCardMeta() above). `.daymark-recent__body`
+	// is a flex column for every card kind, so `align-self: flex-end` (see
+	// app.css) is enough to push this row to the right without needing
+	// absolute positioning that would risk overlapping the stats row or an
+	// excerpt of unpredictable height.
+	function renderCardTimestampRow(item) {
+		if (!item.date) {
+			return '';
+		}
+		return `<span class="daymark-recent__timestamp">${renderCardTimestamp(item.date)}</span>`;
 	}
 
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
@@ -4161,6 +4174,7 @@
 						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						${isDraft ? '' : renderItemStats(item)}
+						${renderCardTimestampRow(item)}
 					</span>`;
 	}
 
@@ -4205,6 +4219,7 @@
 								'<span class="daymark-chip daymark-chip--draft">Subscribed</span>'
 							)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+							${renderCardTimestampRow(item)}
 						</span>
 					</button>
 					<div class="daymark-recent__expand" data-expand-panel hidden></div>
