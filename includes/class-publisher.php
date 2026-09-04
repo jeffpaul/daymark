@@ -489,6 +489,12 @@ class Daymark_Publisher {
 			}
 		}
 
+		$in_reply_to = $this->resolve_in_reply_to( $data );
+
+		if ( null !== $in_reply_to ) {
+			update_post_meta( $post_id, '_daymark_in_reply_to', $in_reply_to );
+		}
+
 		$this->apply_reading_time( $post_id, $caption, $transcript );
 
 		if ( $has_helper_selection ) {
@@ -748,6 +754,12 @@ class Daymark_Publisher {
 
 		if ( null !== $location ) {
 			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
+		}
+
+		$in_reply_to = $this->resolve_in_reply_to( $data );
+
+		if ( null !== $in_reply_to ) {
+			update_post_meta( $post_id, '_daymark_in_reply_to', $in_reply_to );
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
@@ -1482,6 +1494,38 @@ class Daymark_Publisher {
 		}
 
 		return $location;
+	}
+
+	/**
+	 * Resolve a reply-to URL sent by the composer's "Reply" action on a
+	 * subscribed post (issue #83), if present and a well-formed http(s) URL.
+	 *
+	 * Deliberately just a URL, never fetched or verified server-side — this
+	 * is Daymark's own POSSE markup (Daymark_Microformats renders it as
+	 * u-in-reply-to on the published Mark's permalink), not a Webmention
+	 * protocol implementation. Whichever Webmention plugin the site owner
+	 * has active already auto-sends a notification to any link a published
+	 * post's own content links out to; Daymark never sends, receives, or
+	 * verifies a Webmention itself. See CLAUDE.md's Webmention decision.
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @return string|null The URL, or null when absent/invalid.
+	 */
+	private function resolve_in_reply_to( array $data ): ?string {
+		$url = isset( $data['in_reply_to'] ) ? trim( (string) $data['in_reply_to'] ) : '';
+
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$url    = esc_url_raw( $url );
+		$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+
+		if ( '' === $url || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return null;
+		}
+
+		return $url;
 	}
 
 	/**

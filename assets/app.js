@@ -46,6 +46,14 @@
 		// resetComposer(). Only a fallback — picking files or resuming a
 		// draft still wins, exactly as effectiveType() already resolves.
 		pendingType: null,
+		// { url, title } | null — set by startReplyToSubscriptionPost() when
+		// composing a reply from a subscribed post's expanded card, or
+		// restored from an existing draft's own in_reply_to (openDraft()).
+		// Unlike pendingType this isn't a one-shot UI hint: url travels with
+		// every buildMarkPayload() call for the rest of the session (autosave,
+		// publish) exactly like capturedAt/location do, so the relationship
+		// is recorded on the Mark itself, not just the composer's first render.
+		replyTo: null,
 		targets: [],
 		categories: [], // selected category term IDs (numbers)
 		aiAssistUsed: false,
@@ -376,6 +384,7 @@
 		state.locationRequested = false;
 		state.primaryType = 'note';
 		state.pendingType = null;
+		state.replyTo = null;
 		state.targets = [];
 		state.categories = [];
 		state.aiAssistUsed = false;
@@ -665,6 +674,7 @@
 			// other composer field does.
 			capturedAt: state.capturedAt || null,
 			location: state.location ? Object.assign({}, state.location) : null,
+			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
 		};
@@ -707,6 +717,9 @@
 			if (payload.location.accuracy !== undefined && payload.location.accuracy !== null) {
 				formData.append('location_accuracy', String(payload.location.accuracy));
 			}
+		}
+		if (payload.inReplyTo) {
+			formData.append('in_reply_to', payload.inReplyTo);
 		}
 		if (payload.autosave) {
 			formData.append('autosave', '1');
@@ -1124,6 +1137,9 @@
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
 		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : [];
 		state.primaryType = state.editing.type;
+		// No cached title to show for a resumed draft — the chip falls back
+		// to the URL itself (see CreateScreen.render()).
+		state.replyTo = mark.in_reply_to ? { url: mark.in_reply_to, title: '' } : null;
 		navigate('#create');
 	}
 
@@ -1897,6 +1913,18 @@
 
 	function onFeedListClick(screen, event) {
 		const target = event.target;
+
+		// The "Reply" action inside an expanded subscription post's panel
+		// (see loadSubscriptionExpandHtml()): jump into the composer seeded
+		// to reply to that post.
+		const replyTrigger = target.closest('[data-reply-to]');
+		if (replyTrigger) {
+			startReplyToSubscriptionPost(
+				replyTrigger.getAttribute('data-reply-to'),
+				replyTrigger.getAttribute('data-reply-title') || ''
+			);
+			return;
+		}
 
 		// A subscription-post card's tap: expand its content inline, right
 		// below the card (see toggleExpand()) — fetched externally via the
@@ -3019,6 +3047,13 @@
 				${
 					editing
 						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">Draft</span> Changes save to this Mark — new media is added alongside what’s attached.</p>'
+						: ''
+				}
+				${
+					state.replyTo
+						? `<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">Reply</span> Replying to ${esc(
+								state.replyTo.title || state.replyTo.url
+						  )}</p>`
 						: ''
 				}
 				${existingTiles}
@@ -4222,7 +4257,31 @@
 	async function loadSubscriptionExpandHtml(item) {
 		const full = await apiGet('subscription-posts/' + item.id);
 		const content = full && full.body_content ? String(full.body_content) : '';
-		return expandBodyHtml(content, item.permalink, 'View original');
+		const body = expandBodyHtml(content, item.permalink, 'View original');
+		// A reply here rides Daymark's own POSSE markup rather than a real
+		// Webmention protocol implementation: the published Mark's
+		// u-in-reply-to link (Daymark_Microformats) is what any Webmention
+		// plugin the site owner already runs auto-notifies on publish. See
+		// CLAUDE.md's "Webmention: rescoped to lean on ecosystem plugins"
+		// decision for why nothing here sends/verifies a Webmention itself.
+		const reply = item.permalink
+			? `<p class="daymark-note-card__links"><button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
+					item.permalink
+			  )}" data-reply-title="${esc(item.title || '')}">Reply</button></p>`
+			: '';
+		return body + reply;
+	}
+
+	// Jump into a fresh composer seeded to reply to a subscribed post —
+	// abandons (autosaving first) any in-progress composition, same as the
+	// Home launcher's own bubbles and openDraft(). `title` is a one-time
+	// display hint for the "Replying to" chip (CreateScreen.render()), not
+	// itself sent to the server; only the URL is (state.replyTo.url, via
+	// buildMarkPayload()'s inReplyTo field).
+	function startReplyToSubscriptionPost(url, title) {
+		abandonComposer();
+		state.replyTo = { url, title };
+		navigate('#create');
 	}
 
 	// Collapses whichever card is currently expanded on this screen, if any.
