@@ -113,14 +113,14 @@ sites you follow, without turning WordPress into a social network.
   against a live-rendered Mark's actual HTML output, not just unit tests —
   that live check is what caught a real bug (`post_class`'s filter
   signature has three arguments, not the two the first pass assumed).
-  `u-in-reply-to` isn't rendered: nothing in the Mark data model records a
-  parent post today, so the property is never applicable yet.
+  `u-in-reply-to` now renders too, once a Mark actually is a reply — see
+  "Webmention: rescoped to lean on ecosystem plugins" below.
 
 This was the outbound half of POSSE-quality microformats2 support, the one
 piece of issue #78 that shipped without it at the time. (*Inbound*
-microformats2 parsing of a *subscribed* site's markup is separate,
-out-of-scope-for-#78 work tracked on
-[issue #84](https://github.com/jeffpaul/daymark/issues/84).)
+microformats2 parsing of a *subscribed* site's markup was separate,
+out-of-scope-for-#78 work — it shipped later; see "Microformats2 (h-entry/
+h-card) subscription parsing" below.)
 
 - [x] **Subscription content-type inference: closes the inline-media gap.**
   `Daymark_Subscription_Source_Feed::normalize()` already derived a
@@ -132,13 +132,51 @@ out-of-scope-for-#78 work tracked on
   counts regardless of surrounding text length; a bare `<img>` only counts
   when the accompanying text is short, so a long article's header image
   doesn't get misclassified as a photo post. See CLAUDE.md's "Subscription
-  content-type inference" decision. Three larger, adjacent options from the
-  same discussion stay separate: a full mf2 h-entry connector
-  ([#84](https://github.com/jeffpaul/daymark/issues/84)), preferring the
-  WordPress REST API's real `format` field for WP-to-WP subscriptions
+  content-type inference" decision. Two larger, adjacent options from the
+  same discussion stay separate: preferring the WordPress REST API's real
+  `format` field for WP-to-WP subscriptions
   ([#137](https://github.com/jeffpaul/daymark/issues/137)), and following a
   site via ActivityPub/Microsub for structured content
-  ([#88](https://github.com/jeffpaul/daymark/issues/88)).
+  ([#88](https://github.com/jeffpaul/daymark/issues/88)). (The full mf2
+  h-entry connector these were originally grouped with,
+  [#84](https://github.com/jeffpaul/daymark/issues/84), shipped separately —
+  see below.)
+
+- [x] **WebSub/PubSubHubbub subscribing.** A subscribed feed that advertises
+  a hub via `<link rel="hub">` now delivers new posts by push instead of
+  waiting for the next scheduled poll — purely additive, the existing
+  polling cron keeps running unchanged for every subscription regardless of
+  WebSub support. See CLAUDE.md's "WebSub/PubSubHubbub subscribing (issue
+  #82)" decision.
+
+- [x] **Webmention: rescoped to lean on ecosystem plugins.** Issue #83 as
+  filed asked for a full native Webmention sender, receiver, spec
+  verification, and Vouch spam mitigation — reimplementing federation
+  protocol work this plugin already made a deliberate choice not to own (see
+  "Federation backflow" in CLAUDE.md). Rescoped to the one genuinely new
+  capability: composing a reply to a subscribed post from its expanded
+  Timeline card, which records `_daymark_in_reply_to` and renders
+  `u-in-reply-to` on the resulting Mark's permalink. Whichever Webmention/
+  ActivityPub/ATmosphere plugin the site owner runs sends and verifies from
+  there. See CLAUDE.md's "Webmention: rescoped to lean on ecosystem plugins
+  (issue #83)" decision.
+
+- [x] **Microformats2 (h-entry/h-card) subscription parsing.** A new
+  `Daymark_Subscription_Source_Microformats` connector discovers and parses
+  h-feed/h-entry markup directly from a subscribed site's pages — a
+  companion to the RSS/Atom connector, sharing its normalize() contract, so
+  ingest and Timeline rendering never need to know which source produced an
+  item. A minimal, purpose-built regex-based parser (no new Composer
+  dependency — `mf2/mf2`'s last tagged release predates this work by several
+  years) rather than a spec-complete mf2 implementation. Where a site
+  exposes both a feed and h-feed markup, the feed always wins (registration
+  order in `Daymark_Subscription_Source_Registry`); microformats2 is the
+  sole source for a site with h-feed/h-entry markup but no discoverable feed
+  at all. h-entry post types (reply/like/repost/bookmark/rsvp) are detected
+  via the IndieWeb post-type-discovery algorithm and given a sensible
+  fallback title when the entry itself carries no `p-name`. See CLAUDE.md's
+  "Microformats2 (h-entry/h-card) subscription parsing (issue #84)"
+  decision.
 
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather
@@ -150,8 +188,8 @@ core fixes it — a diagnosed, ready-to-apply test-file rename
 (`test-*.php` → `test_*.php`, required by PHPUnit 11's stricter file/class
 matching) is documented there too.
 
-Sixteen further Subscriptions enhancements explicitly deferred out of #78's
-own scope are tracked as their own issues — see
+Sixteen further Subscriptions enhancements were explicitly deferred out of
+#78's own scope and tracked as their own issues — see
 [#79](https://github.com/jeffpaul/daymark/issues/79) through
 [#94](https://github.com/jeffpaul/daymark/issues/94) (Action Scheduler,
 per-subscription polling interval, multi-feed/category-scoped subscriptions,
@@ -160,7 +198,9 @@ preview, inbound microformats2 parsing, Webmention support, WebSub/PuSH,
 malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
-None of them are prioritized yet, aside from
+Inbound microformats2 parsing (#84), Webmention support (#83), and
+WebSub/PuSH (#82) have since shipped — see the entries above. Of what
+remains, none is prioritized yet aside from
 [#137](https://github.com/jeffpaul/daymark/issues/137) (WordPress REST API
 preference for WP-to-WP subscriptions), targeting the 0.10.0 release.
 

@@ -73,13 +73,20 @@ class Daymark_Subscription_Source_Registry {
 	}
 
 	/**
-	 * Register the one built-in source shipped in phase one: the RSS/Atom
-	 * feed reader.
+	 * Register the built-in sources, feed first.
+	 *
+	 * Registration order is what implements this feature's documented
+	 * precedence rule (issue #84): discover_feeds() below returns the first
+	 * non-empty discover() result in registration order, so a site exposing
+	 * both a traditional feed and h-feed/h-entry markup is always subscribed
+	 * via the feed source — the microformats source only ever wins discovery
+	 * for a site with h-feed/h-entry markup but no discoverable feed at all.
 	 *
 	 * @return void
 	 */
 	private function register_built_in_sources(): void {
 		$this->register_source( new Daymark_Subscription_Source_Feed() );
+		$this->register_source( new Daymark_Subscription_Source_Microformats() );
 	}
 
 	/**
@@ -125,23 +132,47 @@ class Daymark_Subscription_Source_Registry {
 	 * Ask every registered source to discover feed(s)/locator(s) for a site
 	 * URL, in registration order, and return the first non-empty result.
 	 *
-	 * Keeps callers (the subscribe-by-URL REST handler) source-agnostic even
-	 * though only the built-in RSS/Atom feed source ships today — a future
-	 * source (Friends, ActivityPub) registering via
+	 * Keeps callers (the subscribe-by-URL REST handler) source-agnostic —
+	 * a future source (Friends, ActivityPub) registering via
 	 * `daymark_register_subscription_sources` needs no caller-side changes.
+	 * This registration-order, first-non-empty-wins behavior is also what
+	 * implements the feed-vs-microformats precedence rule documented on
+	 * Daymark_Subscription_Source_Microformats and in CLAUDE.md (issue #84):
+	 * the built-in feed source is always registered first.
+	 *
+	 * Each returned candidate carries its producing source's ID under
+	 * `source_type`, added here rather than by the source itself, so every
+	 * `Daymark_Subscription_Source::discover()` implementation can stay
+	 * focused on its own candidate shape (`url`/`title`/`type`) without
+	 * needing to know its own registered ID.
 	 *
 	 * @param string $site_url Site URL entered by the user (not a feed URL).
-	 * @return array<int|string, mixed> The first source's non-empty discover()
-	 *                                  result, or an empty array when no
-	 *                                  registered source discovers anything.
+	 * @return array<int, array<string, mixed>> The first source's non-empty
+	 *                                          discover() result, each entry
+	 *                                          augmented with `source_type`;
+	 *                                          empty when no registered
+	 *                                          source discovers anything.
 	 */
 	public function discover_feeds( string $site_url ): array {
-		foreach ( $this->sources as $source ) {
+		foreach ( $this->sources as $id => $source ) {
 			$discovered = $source->discover( $site_url );
 
-			if ( ! empty( $discovered ) ) {
-				return $discovered;
+			if ( empty( $discovered ) ) {
+				continue;
 			}
+
+			return array_map(
+				static function ( $candidate ) use ( $id ) {
+					if ( ! is_array( $candidate ) ) {
+						return $candidate;
+					}
+
+					$candidate['source_type'] = $id;
+
+					return $candidate;
+				},
+				$discovered
+			);
 		}
 
 		return array();

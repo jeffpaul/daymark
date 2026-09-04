@@ -302,6 +302,12 @@ class Daymark_Subscriptions {
 			);
 		}
 
+		// Which source actually discovered this (issue #84: 'feed' or
+		// 'microformats', per discover_feeds()'s registration-order
+		// precedence — never hardcoded, since either may win depending on
+		// what the site publishes).
+		$source_type = isset( $feed['source_type'] ) ? sanitize_key( (string) $feed['source_type'] ) : 'feed';
+
 		// The feed's own title (often WordPress's default "{Site Name} »
 		// Feed" convention, or a category/tag-scoped feed's own name) is
 		// kept as feed_title — distinct from site_title, the plain site
@@ -314,7 +320,7 @@ class Daymark_Subscriptions {
 			array(
 				'site_url'    => $site_url,
 				'feed_url'    => $feed_url,
-				'source_type' => 'feed',
+				'source_type' => $source_type,
 				'site_title'  => $feed_title,
 				'feed_title'  => $feed_title,
 			)
