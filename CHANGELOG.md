@@ -32,7 +32,7 @@ can't act on them.
 - Subscribing to another WordPress site now prefers its real REST API over its RSS/Atom feed when both are reachable, so Timeline cards for that subscription's posts get the site's actual post format (image/video/audio/gallery/standard) instead of a guess from feed content. Any other site — including a WordPress site with the REST API disabled — subscribes exactly as before. ([#164](https://github.com/jeffpaul/daymark/pull/164))
 - If you already follow someone through the [Friends plugin](https://wordpress.org/plugins/friends/), subscribing to their site in Daymark now reads their posts straight from Friends' own already-fetched cache instead of independently re-polling their site — no extra setup, and it only ever applies to a friend you've already added there. ([#165](https://github.com/jeffpaul/daymark/pull/165))
 - A Mark's Timeline card now shows a repost count alongside its existing comment and like counts, the same quiet, zero-hides-itself treatment as those two — reposts delivered as replies/reactions from the ActivityPub, ATmosphere, or Webmention plugins now show up on the stat row too, not just in Notifications. ([#166](https://github.com/jeffpaul/daymark/pull/166))
-- Subscribing to a WordPress site (directly, or to a friend through the Friends plugin) now shows a "Status" or "Chat" formatted post as a Note on your Timeline, with its own icon, instead of a generic "Standard"/article card. (#PR)
+- Subscribing to a WordPress site (directly, or to a friend through the Friends plugin) now shows a "Status" or "Chat" formatted post as a Note on your Timeline, with its own icon, instead of a generic "Standard"/article card. ([#167](https://github.com/jeffpaul/daymark/pull/167))
 
 ### Changed
 
