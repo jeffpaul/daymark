@@ -57,3 +57,8 @@ require $_tests_dir . '/includes/bootstrap.php';
 // true on a real site post-activation, rather than requiring every such
 // test file to know to call Daymark_Subscriptions::install() itself.
 Daymark_Subscriptions::install();
+
+// See class-friends-stub.php's own docblock for why this test-only stub for
+// the real akirk/friends plugin (issue #88) lives in its own required file
+// rather than inline here or in the test file itself.
+require_once __DIR__ . '/class-friends-stub.php';
