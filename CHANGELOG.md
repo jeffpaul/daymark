@@ -22,7 +22,7 @@ can't act on them.
 
 ### Added
 
-- The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. (#PR)
+- The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. ([#171](https://github.com/jeffpaul/daymark/pull/171))
 
 ## [0.10.0] - 2026-09-04
 
