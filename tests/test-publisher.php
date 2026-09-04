@@ -599,6 +599,65 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
 	}
 
+	/**
+	 * A valid http(s) in_reply_to URL (set by the composer's "Reply" action
+	 * on a subscribed post, issue #83) is stored as _daymark_in_reply_to, and
+	 * carried through an edit the same way _daymark_transcript already is.
+	 */
+	public function test_publish_and_update_store_in_reply_to() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'A reply',
+				'primary_type' => 'note',
+				'in_reply_to'  => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( 'https://example.com/original-post/', get_post_meta( $post_id, '_daymark_in_reply_to', true ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'A reply, edited',
+				'primary_type' => 'note',
+				'in_reply_to'  => 'https://example.com/a-different-post/',
+			)
+		);
+
+		$this->assertSame(
+			'https://example.com/a-different-post/',
+			get_post_meta( $post_id, '_daymark_in_reply_to', true )
+		);
+	}
+
+	/** An ordinary Mark with no in_reply_to sent never gets the meta at all. */
+	public function test_in_reply_to_absent_when_not_sent() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Not a reply',
+				'primary_type' => 'note',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_in_reply_to', true ) );
+	}
+
+	/** A non-http(s) in_reply_to (e.g. javascript:) is silently dropped, never stored. */
+	public function test_in_reply_to_rejects_non_http_scheme() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Suspicious reply target',
+				'primary_type' => 'note',
+				'in_reply_to'  => 'javascript:alert(1)',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_in_reply_to', true ) );
+	}
+
 	/** A long caption/transcript gets a reading-time estimate stored. */
 	public function test_long_caption_gets_reading_time_meta() {
 		$publisher = new Daymark_Publisher();

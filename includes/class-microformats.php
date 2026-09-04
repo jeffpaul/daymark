@@ -11,10 +11,13 @@
  * already does: filters on post_class, the_title, and the_content, guarded
  * so they only touch a Mark's own singular main-query render.
  *
- * u-in-reply-to is not implemented. Nothing in the Mark data model
- * (_daymark_* meta, class-publisher.php) records a parent post — a Mark is
- * always an original post today, so there is no reply relationship to mark
- * up. Add it if that changes.
+ * u-in-reply-to renders when a Mark carries `_daymark_in_reply_to` (issue
+ * #83: composing a reply from a subscribed post's Timeline card) — see
+ * reply_markup(). This is Daymark's own POSSE markup, not a Webmention
+ * protocol implementation: whichever Webmention plugin the site owner has
+ * active already discovers this link and sends its own notification when
+ * the Mark publishes. See CLAUDE.md's Webmention decision for why Daymark
+ * itself never sends, receives, or verifies a Webmention.
  *
  * u-email is deliberately left off the h-card. WordPress account emails are
  * not meant to be public and there is no separate public-contact-address
@@ -159,6 +162,7 @@ class Daymark_Microformats {
 		$html .= '<a class="u-url" href="' . esc_url( (string) $permalink ) . '">' . esc_html( (string) $permalink ) . '</a>';
 		$html .= '<time class="dt-published" datetime="' . esc_attr( $published ) . '">' . esc_html( (string) get_the_date( '', $post_id ) ) . '</time>';
 		$html .= $this->rich_media_markup( $post_id );
+		$html .= $this->reply_markup( $post_id );
 
 		/**
 		 * Whether a Mark's quietly-captured location (see the "quiet Mark
@@ -238,6 +242,27 @@ class Daymark_Microformats {
 		}
 
 		return $html;
+	}
+
+	/**
+	 * Build u-in-reply-to markup from a Mark's reply-to URL, when present.
+	 *
+	 * Reads `_daymark_in_reply_to` — set only when the Mark was composed via
+	 * the "Reply" action on a subscribed post's expanded Timeline card (issue
+	 * #83) — rather than a general "any Mark can reply to anything" feature,
+	 * since that's the only flow that ever records this meta.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Escaped HTML, or '' when the Mark isn't a reply.
+	 */
+	public function reply_markup( int $post_id ): string {
+		$url = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		return '<a class="u-in-reply-to" href="' . esc_url( $url ) . '">' . esc_html( $url ) . '</a>';
 	}
 
 	/**

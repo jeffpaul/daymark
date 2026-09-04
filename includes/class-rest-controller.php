@@ -791,6 +791,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lat'         => $request->get_param( 'location_lat' ),
 			'location_lng'         => $request->get_param( 'location_lng' ),
 			'location_accuracy'    => $request->get_param( 'location_accuracy' ),
+			// Set only when composing a reply from a subscribed post's
+			// expanded card (issue #83) — see Daymark_Publisher::resolve_in_reply_to().
+			'in_reply_to'          => (string) $request->get_param( 'in_reply_to' ),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -1541,13 +1544,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
 		$helpers = json_decode( (string) get_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, true ), true );
 
-		$payload               = $this->prepare_mark_summary( $post_id );
-		$payload['caption']    = $caption;
-		$payload['transcript'] = (string) get_post_meta( $post_id, '_daymark_transcript', true );
-		$payload['media']      = $media;
-		$payload['targets']    = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
-		$payload['helpers']    = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
-		$payload['categories'] = array_map( 'intval', wp_get_post_categories( $post_id ) );
+		$payload                = $this->prepare_mark_summary( $post_id );
+		$payload['caption']     = $caption;
+		$payload['transcript']  = (string) get_post_meta( $post_id, '_daymark_transcript', true );
+		$payload['media']       = $media;
+		$payload['targets']     = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+		$payload['helpers']     = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
+		$payload['categories']  = array_map( 'intval', wp_get_post_categories( $post_id ) );
+		$payload['in_reply_to'] = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
 
 		return rest_ensure_response( $payload );
 	}
@@ -1651,6 +1655,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lat'        => $request->get_param( 'location_lat' ),
 			'location_lng'        => $request->get_param( 'location_lng' ),
 			'location_accuracy'   => $request->get_param( 'location_accuracy' ),
+			'in_reply_to'         => (string) $request->get_param( 'in_reply_to' ),
 		);
 
 		if ( null !== $request->get_param( 'publish_helpers' ) ) {
