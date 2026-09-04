@@ -88,6 +88,35 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'daymark_subscription_refresh', $output );
 	}
 
+	public function test_icon_column_renders_image_when_site_icon_url_set(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'      => 'https://example.com',
+				'feed_url'      => 'https://example.com/feed',
+				'site_icon_url' => 'https://example.com/favicon.ico',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Icon', $output );
+		$this->assertStringContainsString( '<img src="https://example.com/favicon.ico"', $output );
+	}
+
+	public function test_icon_column_renders_nothing_when_site_icon_url_empty(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.org',
+				'feed_url' => 'https://example.org/feed',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Icon', $output );
+		$this->assertStringNotContainsString( '<img', $output );
+	}
+
 	public function test_last_fetched_column_shows_never_when_unchecked(): void {
 		$this->subscriptions->create(
 			array(

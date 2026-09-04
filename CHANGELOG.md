@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. (#PR)
+
 ## [0.10.0] - 2026-09-04
 
 ### Added
