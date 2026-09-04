@@ -485,4 +485,63 @@ XML;
 
 		$this->assertSame( array(), $results );
 	}
+
+	// -----------------------------------------------------------------
+	// Post-import poll trigger (issue #174).
+	// -----------------------------------------------------------------
+
+	/**
+	 * A successful import (at least one entry actually subscribed) triggers
+	 * an immediate async poll of every active subscription — see
+	 * Daymark_Subscription_Poller::maybe_poll_now()'s own docblock for why
+	 * this polls everything active rather than only the entries this import
+	 * created.
+	 */
+	public function test_import_with_new_subscription_schedules_immediate_poll() {
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+
+		$xml = '<?xml version="1.0"?><opml version="2.0"><body>'
+			. '<outline text="New Feed" xmlUrl="https://brand-new.example/feed" htmlUrl="https://brand-new.example/" />'
+			. '</body></opml>';
+
+		$results = $this->opml->import( $xml );
+
+		$this->assertSame( 'subscribed', $results[0]['status'] );
+		$this->assertNotFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ), 'A new subscription should trigger an immediate poll' );
+	}
+
+	/** An import where every entry is a duplicate (nothing new subscribed) does not schedule a poll. */
+	public function test_import_with_only_duplicates_does_not_schedule_poll() {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://existing.example/',
+				'feed_url' => 'https://existing.example/feed',
+			)
+		);
+
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+
+		$xml = '<?xml version="1.0"?><opml version="2.0"><body>'
+			. '<outline text="Already Subscribed" xmlUrl="https://existing.example/feed" htmlUrl="https://existing.example/" />'
+			. '</body></opml>';
+
+		$results = $this->opml->import( $xml );
+
+		$this->assertSame( 'duplicate', $results[0]['status'] );
+		$this->assertFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+	}
+
+	/** An import where every entry fails (nothing new subscribed) does not schedule a poll. */
+	public function test_import_with_only_failures_does_not_schedule_poll() {
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+
+		$xml = '<?xml version="1.0"?><opml version="2.0"><body>'
+			. '<outline text="Unsafe" xmlUrl="http://127.0.0.1/feed" htmlUrl="http://127.0.0.1/" />'
+			. '</body></opml>';
+
+		$results = $this->opml->import( $xml );
+
+		$this->assertSame( 'failed', $results[0]['status'] );
+		$this->assertFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+	}
 }

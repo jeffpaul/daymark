@@ -29,6 +29,10 @@ can't act on them.
 - A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#173](https://github.com/jeffpaul/daymark/pull/173))
 - Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page. ([#177](https://github.com/jeffpaul/daymark/pull/177))
 
+### Fixed
+
+- Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll. ([#175](https://github.com/jeffpaul/daymark/pull/175))
+
 ## [0.10.0] - 2026-09-04
 
 ### Added
