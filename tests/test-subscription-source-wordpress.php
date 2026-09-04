@@ -164,9 +164,9 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( array( 'https://jane.example/wp-content/uploads/photo.jpg' ), $normalized['raw_media'] );
 	}
 
-	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote/status/chat) down to 'standard'. */
+	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote) down to 'standard'. */
 	public function test_normalize_maps_unmapped_formats_to_standard() {
-		foreach ( array( 'aside', 'link', 'quote', 'status', 'chat', 'standard', 'unknown-future-format' ) as $wp_format ) {
+		foreach ( array( 'aside', 'link', 'quote', 'standard', 'unknown-future-format' ) as $wp_format ) {
 			$normalized = $this->source->normalize(
 				array(
 					'title'  => array( 'rendered' => 'Item' ),
@@ -175,6 +175,20 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 			);
 
 			$this->assertSame( 'standard', $normalized['post_format'], "format '$wp_format' should map to 'standard'" );
+		}
+	}
+
+	/** normalize() maps WordPress's status/chat post_format values to Daymark's own 'note' bucket, not 'standard'. */
+	public function test_normalize_maps_status_and_chat_formats_to_note() {
+		foreach ( array( 'status', 'chat' ) as $wp_format ) {
+			$normalized = $this->source->normalize(
+				array(
+					'title'  => array( 'rendered' => 'Item' ),
+					'format' => $wp_format,
+				)
+			);
+
+			$this->assertSame( 'note', $normalized['post_format'], "format '$wp_format' should map to 'note'" );
 		}
 	}
 
@@ -190,6 +204,20 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 
 			$this->assertSame( $wp_format, $normalized['post_format'] );
 		}
+	}
+
+	/** The content-sniff fallback never runs for (nor overrides) a 'note' result from status/chat — 'note' is a real, confirmed signal, not an ambiguous 'standard'. */
+	public function test_normalize_never_sniffs_a_note_format() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Update' ),
+				'format'  => 'status',
+				'content' => array( 'rendered' => '<img src="https://jane.example/inline.jpg">' ),
+			)
+		);
+
+		$this->assertSame( 'note', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
 	}
 
 	/**

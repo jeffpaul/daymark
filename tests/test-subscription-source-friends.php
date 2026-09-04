@@ -173,6 +173,41 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'video', $normalized['post_format'] );
 	}
 
+	/** normalize() maps a Friends-assigned status/chat post_format to Daymark's own 'note' bucket, not 'standard', matching Daymark_Subscription_Source_WordPress's own mapping. */
+	public function test_normalize_maps_status_and_chat_formats_to_note() {
+		foreach ( array( 'status', 'chat' ) as $wp_format ) {
+			$normalized = $this->source->normalize(
+				array(
+					'title'        => 'An update',
+					'content'      => 'Just a quick note.',
+					'permalink'    => 'https://jane.example/2024/an-update/',
+					'published_at' => '2024-03-05 10:00:00',
+					'author_name'  => 'Jane Doe',
+					'post_format'  => $wp_format,
+				)
+			);
+
+			$this->assertSame( 'note', $normalized['post_format'], "post_format '$wp_format' should map to 'note'" );
+		}
+	}
+
+	/** The content-sniff fallback never runs for (nor overrides) a 'note' result — it's a real, confirmed signal, not an ambiguous 'standard'. */
+	public function test_normalize_never_sniffs_a_note_format() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'An update',
+				'content'      => '<img src="https://jane.example/inline.jpg">',
+				'permalink'    => 'https://jane.example/2024/an-update/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => 'status',
+			)
+		);
+
+		$this->assertSame( 'note', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
+	}
+
 	/** normalize() defaults to 'standard' with no featured image when there is no post_format and no image to sniff either. */
 	public function test_normalize_defaults_to_standard_without_media() {
 		$normalized = $this->source->normalize(

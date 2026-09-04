@@ -363,7 +363,7 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'embed_data', $embed_data );
 		// Every format starts excerpt_only: rich-media formats get their
 		// embed data pre-resolved above, but none of them (nor standard/
-		// status/quote/link) fetch a full body at ingest time.
+		// note/quote/link) fetch a full body at ingest time.
 		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
 		update_post_meta( $post_id, 'body_content', '' );
 		update_post_meta( $post_id, 'fetched_full_at', '' );

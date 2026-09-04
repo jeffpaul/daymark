@@ -26,8 +26,8 @@ contract is a strength (see CLAUDE.md's own reasoning for it), but it also
 means it's easy for a signal one source *can* detect to quietly go unused,
 either because a different source never learned to look for it, or because
 Daymark's own `post_format` vocabulary (`image`\|`video`\|`audio`\|`gallery`\|
-`standard`) has no bucket for it at all. This document is the audit that
-finds those gaps and tracks which ones have been closed.
+`note`\|`standard`) has no bucket for it at all. This document is the audit
+that finds those gaps and tracks which ones have been closed.
 
 ## Registration order (precedence)
 
@@ -45,8 +45,8 @@ rule below. Current order, most-preferred first:
 
 | Source | Real, structured per-item signal | How it becomes `post_format` | Content-sniffing fallback |
 |---|---|---|---|
-| `friends` | Friends' own already-assigned WordPress post_format taxonomy value (Friends does its own content-based format-discovery upstream, before Daymark ever sees the cached post) | `image`/`video`/`audio`/`gallery` pass straight through; `aside`/`link`/`quote`/`status`/`chat`/unset all collapse to `standard` | **Yes** (added this pass) — `Daymark_Subscription_Content_Sniffer` scans the cached post's own content HTML only when the resolved format is `standard`; a real Friends-assigned format is never second-guessed |
-| `wordpress` | The subscribed site's real `format` field from `GET wp/v2/posts` | Same 4-value pass-through / 5-value collapse as `friends` | **Yes** (added this pass — see "What this pass fixed" below) — same shared sniffer, over `content.rendered`, only when `format` resolves to `standard` |
+| `friends` | Friends' own already-assigned WordPress post_format taxonomy value (Friends does its own content-based format-discovery upstream, before Daymark ever sees the cached post) | `image`/`video`/`audio`/`gallery` pass straight through; `status`/`chat` map to `note`; `aside`/`link`/`quote`/unset all collapse to `standard` | **Yes** — `Daymark_Subscription_Content_Sniffer` scans the cached post's own content HTML only when the resolved format is `standard` (never for `note` — see "Follow-up: status/chat mapped to Note" below); a real Friends-assigned format is never second-guessed |
+| `wordpress` | The subscribed site's real `format` field from `GET wp/v2/posts` | Same pass-through/`note`-mapping/collapse as `friends` | **Yes** — same shared sniffer, over `content.rendered`, only when `format` resolves to `standard` |
 | `feed` | Media RSS `medium` (or MIME `type` prefix) on an RSS `<enclosure>` — `video`/`audio`/`image` counted directly, more than one image → `gallery` | Enclosure counts feed the same 5-way decision | **Yes** (original implementation; the sniffer now lives in a shared class other sources use too) — only when *no* enclosure carried any signal at all |
 | `microformats` | mf2 `u-photo`/`u-video`/`u-audio` property elements on the h-entry itself, resolved to real URLs by a nesting-aware parser that excludes a nested `h-card`/`h-cite`'s own properties | Any video → `video`; any audio → `audio`; >1 photo → `gallery`; 1 photo → `image`; none → `standard` | **No, and none needed** — an h-entry's own mf2 markup already *is* the explicit signal every other source's fallback is trying to approximate; there is no "no enclosure" ambiguity to recover from |
 
@@ -84,9 +84,32 @@ gap, plus one inconsistency worth closing for its own sake:
 Both changes only ever *promote away from* an unconfirmed `standard` result;
 neither ever overrides a real, explicitly assigned format from any source.
 
+## Follow-up: status/chat mapped to Note
+
+The first of the two vocabulary-expansion opportunities this audit flagged
+(below) has since been acted on: WordPress's `status` and `chat` post_format
+values now map to Daymark's own `note` post_format bucket in both
+`wordpress` and `friends` (`DAYMARK_NOTE_FORMATS` on each class), rather than
+collapsing to `standard` alongside `aside`/`link`/`quote`, which still do.
+`note` is treated exactly like a real, confirmed media format — it never
+enters the content-sniff fallback, so an incidental inline image on a
+`status`-format post can't override it. `aside`/`link`/`quote` were left
+alone: an aside is commentary on other content rather than its own update, a
+link post is about the linked-to thing rather than the author's own words,
+and a quote post centers someone else's words — none of the three read as
+"the author's own short note" the unambiguous way `status`/`chat` do.
+
+No changes were needed anywhere outside the two sources' own format
+resolution: the poller (`sanitize_key()`, no fixed-vocabulary whitelist),
+the REST layer (passes `post_format` through as stored), and the app shell
+(`resolveCardKind()` already returns any non-`standard` value verbatim, and
+`note` already has a full icon/label/rendering treatment since a Mark can
+already be one) all already treated `post_format` as an open string, not a
+hardcoded enum.
+
 ## Signals detected but not reflected in a Daymark type
 
-Two categories of real signal are read by a source today and then discarded,
+One category of real signal is read by a source today and then discarded,
 rather than lost to a gap in detection — a genuinely different situation
 from the fixes above, and a product decision rather than a bug:
 
@@ -105,21 +128,17 @@ from the fixes above, and a product decision rather than a bug:
   concept on the *outbound* side — a Mark's own `_daymark_in_reply_to`/
   `u-in-reply-to` (issue #83) — but nothing today reads an *inbound*
   subscribed reply back into any equivalent field.
-- **WordPress-native formats with no Daymark bucket (`wordpress` and
-  `friends` sources).** `aside`/`link`/`quote`/`status`/`chat` are real,
-  explicit signals a site owner (or, for `friends`, the friend's own site)
-  actually set — not a guess — and all five are deliberately collapsed to
-  `standard` (see the issue #137 decision row) since none of Daymark's six
-  Mark types has a natural equivalent. `aside` and `status` are the closest
-  conceptual fits to Daymark's own `note` type (both are short, timestamped
-  updates); `link`, `quote`, and `chat` have no real Daymark counterpart at
-  all today.
 
-Neither of these is a bug to fix — they're exactly the kind of "no natural
-equivalent" case CLAUDE.md's decisions already name — but both are flagged
-here because they're the two most concrete candidates if Daymark's own type
-vocabulary ever grows to cover reply/reaction content or short-form updates
-from subscriptions.
+This isn't a bug to fix — it's exactly the kind of "no natural equivalent"
+case CLAUDE.md's decisions already name — but it's flagged here because it's
+the most concrete remaining candidate if Daymark's own type vocabulary ever
+grows to cover reply/reaction content from subscriptions the way it now does
+for short-form status-style updates (see "Follow-up" above).
+
+The other half of what this row originally flagged — `aside`/`link`/`quote`
+still having no Daymark equivalent — is now a settled design choice rather
+than an open question: see "Follow-up: status/chat mapped to Note" above for
+why those three specifically were left collapsed to `standard`.
 
 ## Remaining gaps in detection itself
 
@@ -148,5 +167,5 @@ represent any of the above, come back to this file and:
 2. Move it out of "Signals detected but not reflected" / "Remaining gaps"
    into the mapping table proper.
 3. Update the affected source's own `normalize()` and its class docblock
-   (search for `DAYMARK_MEDIA_FORMATS` / the fixed 5-way `post_format`
-   decision each source currently hardcodes).
+   (search for `DAYMARK_MEDIA_FORMATS`/`DAYMARK_NOTE_FORMATS` — the format
+   buckets each source currently hardcodes).

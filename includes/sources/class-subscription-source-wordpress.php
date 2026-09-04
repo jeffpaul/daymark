@@ -14,7 +14,11 @@
  * confirmed (most WordPress sites never assign a post format at all), so
  * normalize() still falls back to that same shared content sniffer for a
  * `standard`-reporting post, the same way Daymark_Subscription_Source_Friends
- * does for a cached post with no Friends-assigned format.
+ * does for a cached post with no Friends-assigned format. `status` and
+ * `chat` map to Daymark's own `note` bucket (added after the
+ * "Subscription type-mapping audit" flagged this vocabulary gap) rather
+ * than collapsing to `standard` like `aside`/`link`/`quote` still do — see
+ * DAYMARK_NOTE_FORMATS.
  *
  * Registered first in
  * Daymark_Subscription_Source_Registry::register_built_in_sources() — ahead
@@ -65,6 +69,18 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
+
+	/**
+	 * WordPress post_format values mapped to Daymark's own `note` bucket —
+	 * `aside`/`link`/`quote` still map down to `standard` (see
+	 * DAYMARK_MEDIA_FORMATS's own docblock); `status` and `chat` are close
+	 * enough in spirit to a Daymark Note (a short, timestamped text update,
+	 * no dedicated media of its own) that they get their own real bucket
+	 * instead of also collapsing to `standard`.
+	 *
+	 * @var string[]
+	 */
+	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -200,11 +216,12 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * produced an item.
 	 *
 	 * `post_format` reads the site's own real `format` field directly
-	 * rather than guessing from content — the entire point of this source —
-	 * except for the five WordPress formats with no dedicated Daymark
-	 * bucket (`aside`/`link`/`quote`/`status`/`chat`), which map down to
-	 * `standard`. A `standard` result (whether genuinely assigned or mapped
-	 * down from one of those five) then falls back to
+	 * rather than guessing from content — the entire point of this source.
+	 * `status` and `chat` map to Daymark's own `note` bucket; the three
+	 * remaining WordPress formats with no dedicated Daymark bucket
+	 * (`aside`/`link`/`quote`) map down to `standard`. A `standard` result
+	 * (whether genuinely assigned or mapped down from one of those three)
+	 * then falls back to
 	 * Daymark_Subscription_Content_Sniffer against the post's own rendered
 	 * content, the same inline-`<img>`/`<video>`/`<audio>`/mf2 signal
 	 * Daymark_Subscription_Source_Feed already looks for — most WordPress
@@ -244,7 +261,10 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$permalink    = esc_url_raw( (string) ( $raw_item['link'] ?? '' ) );
 
 		$format = sanitize_key( (string) ( $raw_item['format'] ?? 'standard' ) );
-		if ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
+
+		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
+			$format = 'note';
+		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
 			$format = 'standard';
 		}
 

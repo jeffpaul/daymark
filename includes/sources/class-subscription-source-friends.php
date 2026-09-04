@@ -61,14 +61,25 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 
 	/**
 	 * WordPress post_format values with a dedicated Daymark post_format
-	 * bucket; everything else (including no format at all) maps to
-	 * 'standard'. Matches Daymark_Subscription_Source_WordPress's own list
-	 * and the "no natural equivalent" treatment issue #84's own unmapped
-	 * h-entry post types get.
+	 * bucket; everything else not in DAYMARK_NOTE_FORMATS either (including
+	 * no format at all) maps to 'standard'. Matches
+	 * Daymark_Subscription_Source_WordPress's own list and the "no natural
+	 * equivalent" treatment issue #84's own unmapped h-entry post types get.
 	 *
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
+
+	/**
+	 * WordPress post_format values mapped to Daymark's own `note` bucket —
+	 * matches Daymark_Subscription_Source_WordPress's own list; see that
+	 * class's DAYMARK_NOTE_FORMATS docblock for why `status`/`chat` get
+	 * their own bucket while `aside`/`link`/`quote` still collapse to
+	 * `standard`.
+	 *
+	 * @var string[]
+	 */
+	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -203,12 +214,13 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 	 * content-based format discovery when a source feed doesn't declare
 	 * one) — the same "trust the real value, don't re-guess" approach
 	 * `Daymark_Subscription_Source_WordPress` takes toward `wp/v2/posts`'
-	 * own `format` field. A `standard` result then falls back to the same
-	 * shared `Daymark_Subscription_Content_Sniffer` both of those sources
-	 * use, for the same reason: Friends' own format-discovery fallback
-	 * doesn't run for every source feed shape, so a `standard` result here
-	 * isn't necessarily a confirmed "no media" the way a genuinely assigned
-	 * `image`/`video`/`audio`/`gallery` is.
+	 * own `format` field, including mapping `status`/`chat` to Daymark's
+	 * own `note` bucket rather than `standard`. A `standard` result then
+	 * falls back to the same shared `Daymark_Subscription_Content_Sniffer`
+	 * both of those sources use, for the same reason: Friends' own
+	 * format-discovery fallback doesn't run for every source feed shape, so
+	 * a `standard` result here isn't necessarily a confirmed "no media" the
+	 * way a genuinely assigned `image`/`video`/`audio`/`gallery`/`note` is.
 	 *
 	 * @param array<string, mixed> $raw_item One item from fetch()'s raw result.
 	 * @return array<string, mixed> Source-agnostic normalized post data.
@@ -230,7 +242,9 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 
 		$format = sanitize_key( (string) ( $raw_item['post_format'] ?? '' ) );
 
-		if ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
+		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
+			$format = 'note';
+		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
 			$format = 'standard';
 		}
 

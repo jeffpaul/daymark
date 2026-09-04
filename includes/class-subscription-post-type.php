@@ -253,7 +253,7 @@ class Daymark_Subscription_Post_Type {
 			'post_format',
 			array(
 				'type'              => 'string',
-				'description'       => __( 'Source post format (e.g. standard, image, video, audio, gallery, link, quote, status).', 'daymark' ),
+				'description'       => __( 'The Daymark post_format a source connector normalized this item to (standard, image, video, audio, gallery, or note).', 'daymark' ),
 				'single'            => true,
 				'default'           => '',
 				'show_in_rest'      => true,
