@@ -37,21 +37,15 @@ class Test_Subscriptions extends WP_UnitTestCase {
 
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
 
-		// Daymark_Subscription_Source_Registry (and the built-in feed source
-		// it holds) is a singleton that outlives any single test — PHPUnit
-		// runs every test in this file in one PHP process — so the feed
-		// source's own fetch_html() memoization would otherwise leak an
-		// earlier test's HTML fixture into this one for a reused URL (e.g.
-		// several subscribe_to_site() tests here all fetch
+		// Daymark_Subscription_Html_Cache is a static, request-scoped cache
+		// shared by every subscription source's discovery-time homepage
+		// fetch (issue #137) — but PHPUnit runs every test in this file in
+		// one continuous PHP process, so without resetting it, an earlier
+		// test's HTML fixture would leak into a later test for a reused URL
+		// (e.g. several subscribe_to_site() tests here all fetch
 		// 'https://example.com/'). Clear it before every test so each one
 		// starts from a clean fetch cache.
-		$feed_source = Daymark_Plugin::instance()->subscription_source_registry->get_source( 'feed' );
-
-		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
-			$html_cache = new ReflectionProperty( Daymark_Subscription_Source_Feed::class, 'html_cache' );
-			$html_cache->setAccessible( true );
-			$html_cache->setValue( $feed_source, array() );
-		}
+		Daymark_Subscription_Html_Cache::reset();
 	}
 
 	public function tear_down(): void {

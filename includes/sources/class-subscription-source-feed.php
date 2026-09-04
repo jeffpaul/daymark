@@ -41,24 +41,6 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	private const MAX_FEED_BYTES = 2 * 1024 * 1024; // 2 MB.
 
 	/**
-	 * Default maximum site-HTML response size, in bytes, fetch_html() will
-	 * download (autodiscovery/favicon/site-title). Filterable via
-	 * `daymark_subscription_max_html_bytes` (issue #81).
-	 *
-	 * @var int
-	 */
-	private const MAX_HTML_BYTES = 1024 * 1024; // 1 MB.
-
-	/**
-	 * Per-request cache of fetched site HTML, keyed by URL, so a subscribe
-	 * flow that calls discover() and then get_favicon_url() for the same
-	 * site only issues one HTTP request.
-	 *
-	 * @var array<string, string>
-	 */
-	private array $html_cache = array();
-
-	/**
 	 * The WebSub (PubSubHubbub) hub URL the most recent fetch()/
 	 * parse_raw_feed_body() call found advertised on the feed, if any — see
 	 * get_last_hub_url(). Reset at the top of each call so a hub link found
@@ -924,87 +906,30 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	}
 
 	/**
-	 * Fetch a URL's response body via `wp_safe_remote_get()`, memoized per
-	 * URL for the lifetime of this instance so discover() and
-	 * get_favicon_url() can share one fetch for the same site.
+	 * Fetch a URL's response body for autodiscovery/favicon/site-title.
 	 *
-	 * `wp_safe_remote_get()` rather than `wp_remote_get()` deliberately: the
-	 * URL here is user-supplied (the site URL entered at subscribe time)
-	 * and this same request recurs unattended via the polling cron for as
-	 * long as the subscription exists, so it gets the same SSRF-hardening
-	 * (blocking loopback/private/reserved IP ranges) WordPress core itself
-	 * uses for feed fetching via fetch_feed().
-	 *
-	 * The response is capped at `daymark_subscription_max_html_bytes` (issue
-	 * #81): `limit_response_size` bounds the download itself, and a body at
-	 * or beyond that cap is discarded rather than used — a body that long
-	 * means the download was cut off, not that the page genuinely ended
-	 * there, and a truncated document should not be treated as a complete
-	 * one for autodiscovery/favicon/title parsing.
+	 * Delegates to Daymark_Subscription_Html_Cache (issue #137), a static,
+	 * request-scoped cache shared across every built-in subscription
+	 * source's discovery-time homepage fetch — not just this instance's own
+	 * discover()/get_favicon_url()/get_site_title() calls, but also
+	 * Daymark_Subscription_Source_WordPress's and
+	 * Daymark_Subscription_Source_Microformats's own discover() calls
+	 * against the very same URL. Daymark_Subscription_Source_Registry tries
+	 * each registered source in turn until one succeeds, so without a
+	 * shared cache, a site only this source can resolve would still be
+	 * fetched once per source tried ahead of it in
+	 * Daymark_Subscription_Source_Registry::discover_feeds() — this is what
+	 * keeps a single subscribe-by-URL call to exactly one live request
+	 * regardless of how many sources are registered.
 	 *
 	 * @param string $url Already-sanitized, http(s) URL to fetch.
 	 * @return string Response body, or '' on any failure (including a
 	 *                response that hit the size cap).
 	 */
 	private function fetch_html( string $url ): string {
-		if ( array_key_exists( $url, $this->html_cache ) ) {
-			return $this->html_cache[ $url ];
-		}
+		$result = Daymark_Subscription_Html_Cache::fetch( $url );
 
-		/**
-		 * Filters the maximum site-HTML response size, in bytes, fetch_html()
-		 * will download (autodiscovery/favicon/site-title).
-		 *
-		 * @since 0.10.0
-		 *
-		 * @param int $max_bytes Defaults to 1 MB.
-		 */
-		$max_bytes = (int) apply_filters( 'daymark_subscription_max_html_bytes', self::MAX_HTML_BYTES );
-
-		$response = wp_safe_remote_get(
-			$url,
-			array(
-				/**
-				 * Filters the HTTP timeout, in seconds, used when fetching a
-				 * subscribed site's HTML (autodiscovery/favicon/site-title).
-				 *
-				 * @since 0.10.0
-				 *
-				 * @param int $seconds Defaults to 10.
-				 */
-				'timeout'             => (int) apply_filters( 'daymark_subscription_html_fetch_timeout', 10 ),
-				'redirection'         => 5,
-				'limit_response_size' => $max_bytes,
-				'user-agent'          => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			$this->html_cache[ $url ] = '';
-
-			return '';
-		}
-
-		$code = (int) wp_remote_retrieve_response_code( $response );
-
-		if ( $code < 200 || $code >= 300 ) {
-			$this->html_cache[ $url ] = '';
-
-			return '';
-		}
-
-		$body = (string) wp_remote_retrieve_body( $response );
-
-		// Reject rather than silently accept a truncated body.
-		if ( strlen( $body ) >= $max_bytes ) {
-			$this->html_cache[ $url ] = '';
-
-			return '';
-		}
-
-		$this->html_cache[ $url ] = $body;
-
-		return $body;
+		return is_wp_error( $result ) ? '' : $result;
 	}
 
 	/**

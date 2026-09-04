@@ -42,17 +42,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_Source {
 
 	/**
-	 * Default maximum page-HTML response size, in bytes, a discover()/
-	 * fetch() request will download. Shares the same filter
-	 * (`daymark_subscription_max_html_bytes`) Daymark_Subscription_Source_Feed
-	 * uses for its own site-HTML fetches — both are "fetch a subscribed
-	 * site's HTML page" requests, not a feed-specific concern.
-	 *
-	 * @var int
-	 */
-	private const MAX_HTML_BYTES = 1024 * 1024; // 1 MB.
-
-	/**
 	 * HTML void elements — never have a closing tag, so they never open a
 	 * new nesting level for find_elements_by_class()'s depth tracking.
 	 *
@@ -733,14 +722,14 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	}
 
 	/**
-	 * Fetch a page's HTML body via `wp_safe_remote_get()`.
+	 * Fetch a page's HTML body.
 	 *
-	 * `wp_safe_remote_get()` rather than `wp_remote_get()` deliberately: the
-	 * URL here is user-supplied (the site URL entered at subscribe time) and
-	 * this same request recurs unattended via the polling cron for as long
-	 * as the subscription exists — the same SSRF-hardening reasoning
-	 * Daymark_Subscription_Source_Feed::fetch_html() documents for its own
-	 * identical fetch.
+	 * Delegates to Daymark_Subscription_Html_Cache (issue #137), a static,
+	 * request-scoped cache shared across every built-in subscription
+	 * source's discovery-time homepage fetch — this is what keeps a single
+	 * subscribe-by-URL call to exactly one live request to a given site
+	 * regardless of how many sources Daymark_Subscription_Source_Registry
+	 * tries before one succeeds.
 	 *
 	 * @param string $url Already-sanitized, http(s) URL to fetch.
 	 * @return string|WP_Error Response body, or a WP_Error describing why
@@ -750,60 +739,7 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 *                         treated as complete).
 	 */
 	private function fetch_page( string $url ) {
-		/**
-		 * Filters the maximum site-HTML response size, in bytes, a
-		 * subscription source will download. Shared with
-		 * Daymark_Subscription_Source_Feed's own site-HTML fetches.
-		 *
-		 * @since 0.10.0
-		 *
-		 * @param int $max_bytes Defaults to 1 MB.
-		 */
-		$max_bytes = (int) apply_filters( 'daymark_subscription_max_html_bytes', self::MAX_HTML_BYTES );
-
-		$response = wp_safe_remote_get(
-			$url,
-			array(
-				/**
-				 * Filters the HTTP timeout, in seconds, used when fetching a
-				 * subscribed site's HTML. Shared with
-				 * Daymark_Subscription_Source_Feed's own site-HTML fetches.
-				 *
-				 * @since 0.10.0
-				 *
-				 * @param int $seconds Defaults to 10.
-				 */
-				'timeout'             => (int) apply_filters( 'daymark_subscription_html_fetch_timeout', 10 ),
-				'redirection'         => 5,
-				'limit_response_size' => $max_bytes,
-				'user-agent'          => 'Daymark/' . ( defined( 'DAYMARK_VERSION' ) ? DAYMARK_VERSION : '0' ) . '; ' . home_url( '/' ),
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-
-		$code = (int) wp_remote_retrieve_response_code( $response );
-
-		if ( $code < 200 || $code >= 300 ) {
-			return new WP_Error(
-				'daymark_subscription_mf2_http_error',
-				sprintf(
-					/* translators: %d: HTTP status code. */
-					__( 'The page returned HTTP status %d.', 'daymark' ),
-					$code
-				)
-			);
-		}
-
-		$body = (string) wp_remote_retrieve_body( $response );
-
-		if ( strlen( $body ) >= $max_bytes ) {
-			return new WP_Error( 'daymark_subscription_mf2_too_large', __( 'The page response exceeded the allowed size and was discarded.', 'daymark' ) );
-		}
-
-		return $body;
+		return Daymark_Subscription_Html_Cache::fetch( $url );
 	}
 
 	/**

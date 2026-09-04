@@ -73,18 +73,29 @@ class Daymark_Subscription_Source_Registry {
 	}
 
 	/**
-	 * Register the built-in sources, feed first.
+	 * Register the built-in sources, WordPress REST API first, then feed,
+	 * then microformats.
 	 *
-	 * Registration order is what implements this feature's documented
-	 * precedence rule (issue #84): discover_feeds() below returns the first
-	 * non-empty discover() result in registration order, so a site exposing
-	 * both a traditional feed and h-feed/h-entry markup is always subscribed
-	 * via the feed source — the microformats source only ever wins discovery
-	 * for a site with h-feed/h-entry markup but no discoverable feed at all.
+	 * Registration order is what implements every documented precedence
+	 * rule across these sources: discover_feeds() below returns the first
+	 * non-empty discover() result in registration order.
+	 *
+	 * - Issue #137: a subscribed WordPress site with a discoverable,
+	 *   working REST API is always preferred over its own RSS/Atom feed —
+	 *   the real thing beats a guess — so Daymark_Subscription_Source_WordPress
+	 *   is registered first of all. Any other site (including a WordPress
+	 *   site with the REST API disabled or unreachable) falls straight
+	 *   through to the feed source with no behavior change.
+	 * - Issue #84: where a site exposes both a traditional feed and h-feed/
+	 *   h-entry markup, the feed source wins — the microformats source only
+	 *   ever wins discovery for a site with h-feed/h-entry markup but no
+	 *   discoverable feed (and, per the row above, no working WP REST API)
+	 *   at all.
 	 *
 	 * @return void
 	 */
 	private function register_built_in_sources(): void {
+		$this->register_source( new Daymark_Subscription_Source_WordPress() );
 		$this->register_source( new Daymark_Subscription_Source_Feed() );
 		$this->register_source( new Daymark_Subscription_Source_Microformats() );
 	}
@@ -136,9 +147,8 @@ class Daymark_Subscription_Source_Registry {
 	 * a future source (Friends, ActivityPub) registering via
 	 * `daymark_register_subscription_sources` needs no caller-side changes.
 	 * This registration-order, first-non-empty-wins behavior is also what
-	 * implements the feed-vs-microformats precedence rule documented on
-	 * Daymark_Subscription_Source_Microformats and in CLAUDE.md (issue #84):
-	 * the built-in feed source is always registered first.
+	 * implements every precedence rule documented on register_built_in_sources()
+	 * above (issues #84 and #137).
 	 *
 	 * Each returned candidate carries its producing source's ID under
 	 * `source_type`, added here rather than by the source itself, so every

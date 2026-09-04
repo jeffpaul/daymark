@@ -12,6 +12,18 @@
  */
 class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 
+	public function set_up(): void {
+		parent::set_up();
+
+		// Daymark_Subscription_Html_Cache is a static, request-scoped cache
+		// shared by every subscription source's discovery-time homepage
+		// fetch (issue #137) — but PHPUnit runs every test in this file (and
+		// every other test file) in one continuous PHP process, so without
+		// resetting it, an earlier test's fixture for a reused URL could
+		// leak into a test here.
+		Daymark_Subscription_Html_Cache::reset();
+	}
+
 	/**
 	 * Build a minimal stub source used only to exercise the registry
 	 * contract. An anonymous class keeps this file to one named test
@@ -94,18 +106,24 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Scenario: both built-in sources are registered, feed before
-	 * microformats — the registration order that implements this feature's
-	 * documented feed-wins precedence rule (issue #84).
+	 * Scenario: all three built-in sources are registered in the order
+	 * WordPress, feed, microformats — the registration order that
+	 * implements both documented precedence rules: WordPress's own REST API
+	 * beats its RSS/Atom feed when both are reachable (issue #137), and the
+	 * feed beats h-feed/h-entry markup when both exist (issue #84).
 	 */
-	public function test_built_in_sources_registered_feed_before_microformats() {
+	public function test_built_in_sources_registered_wordpress_then_feed_then_microformats() {
 		$ids = array_keys( Daymark_Subscription_Source_Registry::instance()->get_sources() );
 
+		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- the lowercase machine ID (source_type value), not prose.
+		$wordpress_position    = array_search( 'wordpress', $ids, true );
 		$feed_position         = array_search( 'feed', $ids, true );
 		$microformats_position = array_search( 'microformats', $ids, true );
 
+		$this->assertIsInt( $wordpress_position );
 		$this->assertIsInt( $feed_position );
 		$this->assertIsInt( $microformats_position );
+		$this->assertLessThan( $feed_position, $wordpress_position );
 		$this->assertLessThan( $microformats_position, $feed_position );
 	}
 

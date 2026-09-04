@@ -52,16 +52,10 @@ class Test_Subscription_OPML extends WP_UnitTestCase {
 
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
 
-		// Same reasoning as test-subscriptions.php's set_up(): the feed
-		// source singleton's own per-instance HTML fetch cache must not leak
+		// Same reasoning as test-subscriptions.php's set_up(): the shared,
+		// static Daymark_Subscription_Html_Cache (issue #137) must not leak
 		// a fixture from an earlier test into this one for a reused URL.
-		$feed_source = Daymark_Plugin::instance()->subscription_source_registry->get_source( 'feed' );
-
-		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
-			$html_cache = new ReflectionProperty( Daymark_Subscription_Source_Feed::class, 'html_cache' );
-			$html_cache->setAccessible( true );
-			$html_cache->setValue( $feed_source, array() );
-		}
+		Daymark_Subscription_Html_Cache::reset();
 	}
 
 	public function tear_down(): void {
