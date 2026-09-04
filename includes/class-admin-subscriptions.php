@@ -360,6 +360,7 @@ class Daymark_Admin_Subscriptions {
 			<thead>
 				<tr>
 					<th scope="col"><?php esc_html_e( 'Site', 'daymark' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Icon', 'daymark' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Status', 'daymark' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Last fetched', 'daymark' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
@@ -375,8 +376,17 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's row: site title/URL, status, when it was
-	 * last fetched, and its Refresh / Unsubscribe actions.
+	 * Render one subscription's row: site title/URL, its cached icon, status,
+	 * when it was last fetched, and its Refresh / Unsubscribe actions.
+	 *
+	 * The icon cell renders nothing at all (not a placeholder glyph) when
+	 * `site_icon_url` is empty or fails to load — a bare `/favicon.ico`
+	 * fallback guess (see `Daymark_Subscription_Source_Feed::get_favicon_url()`)
+	 * is not verified to resolve to a real image, and this screen has no
+	 * enqueued JS/CSS asset of its own worth adding just for a fallback
+	 * glyph the app shell already provides its own version of
+	 * (`imgWithFallback()`, `assets/app.js`) for the exact same "a
+	 * subscription's icon might 404" case.
 	 *
 	 * @param array<string, mixed> $subscription A `daymark_subscription` row.
 	 * @return void
@@ -385,6 +395,7 @@ class Daymark_Admin_Subscriptions {
 		$id         = absint( $subscription['id'] ?? 0 );
 		$site_url   = (string) ( $subscription['site_url'] ?? '' );
 		$title      = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$icon_url   = (string) ( $subscription['site_icon_url'] ?? '' );
 		$status     = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
 		$is_error   = 'error' === $status;
 		$label      = '' !== $title ? $title : $site_url;
@@ -397,6 +408,11 @@ class Daymark_Admin_Subscriptions {
 				<?php if ( '' !== $site_url ) : ?>
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
+				<?php endif; ?>
+			</td>
+			<td>
+				<?php if ( '' !== $icon_url ) : ?>
+					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;" onerror="this.remove()" />
 				<?php endif; ?>
 			</td>
 			<td>
