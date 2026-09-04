@@ -164,9 +164,9 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( array( 'https://jane.example/wp-content/uploads/photo.jpg' ), $normalized['raw_media'] );
 	}
 
-	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote/status/chat) down to 'standard'. */
+	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote) down to 'standard'. */
 	public function test_normalize_maps_unmapped_formats_to_standard() {
-		foreach ( array( 'aside', 'link', 'quote', 'status', 'chat', 'standard', 'unknown-future-format' ) as $wp_format ) {
+		foreach ( array( 'aside', 'link', 'quote', 'standard', 'unknown-future-format' ) as $wp_format ) {
 			$normalized = $this->source->normalize(
 				array(
 					'title'  => array( 'rendered' => 'Item' ),
@@ -175,6 +175,20 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 			);
 
 			$this->assertSame( 'standard', $normalized['post_format'], "format '$wp_format' should map to 'standard'" );
+		}
+	}
+
+	/** normalize() maps WordPress's status/chat post_format values to Daymark's own 'note' bucket, not 'standard'. */
+	public function test_normalize_maps_status_and_chat_formats_to_note() {
+		foreach ( array( 'status', 'chat' ) as $wp_format ) {
+			$normalized = $this->source->normalize(
+				array(
+					'title'  => array( 'rendered' => 'Item' ),
+					'format' => $wp_format,
+				)
+			);
+
+			$this->assertSame( 'note', $normalized['post_format'], "format '$wp_format' should map to 'note'" );
 		}
 	}
 
@@ -190,6 +204,86 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 
 			$this->assertSame( $wp_format, $normalized['post_format'] );
 		}
+	}
+
+	/** The content-sniff fallback never runs for (nor overrides) a 'note' result from status/chat — 'note' is a real, confirmed signal, not an ambiguous 'standard'. */
+	public function test_normalize_never_sniffs_a_note_format() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Update' ),
+				'format'  => 'status',
+				'content' => array( 'rendered' => '<img src="https://jane.example/inline.jpg">' ),
+			)
+		);
+
+		$this->assertSame( 'note', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
+	}
+
+	/**
+	 * normalize() falls back to sniffing the post's own rendered content for
+	 * inline media when the real `format` field is 'standard' — most
+	 * WordPress sites never assign a post format at all, so a bare `standard`
+	 * shouldn't be trusted as "definitely no media" the way an explicitly
+	 * assigned `image`/`video`/`audio`/`gallery` is.
+	 */
+	public function test_normalize_sniffs_inline_media_when_format_is_standard() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'A quiet morning' ),
+				'format'  => 'standard',
+				'content' => array( 'rendered' => '<img src="https://jane.example/inline.jpg"><p>A quiet morning.</p>' ),
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
+	}
+
+	/** The content-sniff fallback never overrides a real, explicitly assigned format. */
+	public function test_normalize_never_sniffs_when_format_is_already_a_real_media_format() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Clip' ),
+				'format'  => 'image',
+				'content' => array( 'rendered' => '<video src="https://jane.example/clip.mp4"></video>' ),
+			)
+		);
+
+		// A real 'image' format wins even though the content itself sniffs as video.
+		$this->assertSame( 'image', $normalized['post_format'] );
+	}
+
+	/** The content-sniff fallback never overrides a real embedded featured image with a weaker sniffed one. */
+	public function test_normalize_prefers_embedded_featured_image_over_sniffed_one() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'          => array( 'rendered' => 'Item' ),
+				'format'         => 'standard',
+				'content'        => array( 'rendered' => '<img src="https://jane.example/inline.jpg">' ),
+				'featured_media' => 5,
+				'_embedded'      => array(
+					'wp:featuredmedia' => array( array( 'source_url' => 'https://jane.example/wp-content/uploads/real.jpg' ) ),
+				),
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://jane.example/wp-content/uploads/real.jpg', $normalized['featured_image_url'] );
+	}
+
+	/** A 'standard'-format post with substantial text and only a header image stays 'standard' — an illustrated article, not a photo post. */
+	public function test_normalize_ignores_header_image_in_long_standard_article() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Article' ),
+				'format'  => 'standard',
+				'content' => array( 'rendered' => '<img src="https://jane.example/header.jpg"><p>' . $long_text . '</p>' ),
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
 	}
 
 	/** fetch() returns an empty (not error) array for a site that responds fine but currently has no posts — a healthy, quiet state, not a failure. */

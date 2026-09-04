@@ -9,8 +9,16 @@
  * plus already-rendered content/excerpt HTML and structured author/
  * featured-media data, none of which RSS/Atom's own XML carries. Where the
  * RSS/Atom connector has to *guess* a post's type from enclosures or content
- * sniffing (Daymark_Subscription_Source_Feed::sniff_content_media()), this
- * source reads the real thing.
+ * sniffing (Daymark_Subscription_Content_Sniffer), this source reads the
+ * real thing first — but a `format` of `standard` is ambiguous rather than
+ * confirmed (most WordPress sites never assign a post format at all), so
+ * normalize() still falls back to that same shared content sniffer for a
+ * `standard`-reporting post, the same way Daymark_Subscription_Source_Friends
+ * does for a cached post with no Friends-assigned format. `status` and
+ * `chat` map to Daymark's own `note` bucket (added after the
+ * "Subscription type-mapping audit" flagged this vocabulary gap) rather
+ * than collapsing to `standard` like `aside`/`link`/`quote` still do — see
+ * DAYMARK_NOTE_FORMATS.
  *
  * Registered first in
  * Daymark_Subscription_Source_Registry::register_built_in_sources() — ahead
@@ -61,6 +69,18 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
+
+	/**
+	 * WordPress post_format values mapped to Daymark's own `note` bucket —
+	 * `aside`/`link`/`quote` still map down to `standard` (see
+	 * DAYMARK_MEDIA_FORMATS's own docblock); `status` and `chat` are close
+	 * enough in spirit to a Daymark Note (a short, timestamped text update,
+	 * no dedicated media of its own) that they get their own real bucket
+	 * instead of also collapsing to `standard`.
+	 *
+	 * @var string[]
+	 */
+	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -196,10 +216,19 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	 * produced an item.
 	 *
 	 * `post_format` reads the site's own real `format` field directly
-	 * rather than guessing from content — the entire point of this source —
-	 * except for the five WordPress formats with no dedicated Daymark
-	 * bucket (`aside`/`link`/`quote`/`status`/`chat`), which map down to
-	 * `standard`.
+	 * rather than guessing from content — the entire point of this source.
+	 * `status` and `chat` map to Daymark's own `note` bucket; the three
+	 * remaining WordPress formats with no dedicated Daymark bucket
+	 * (`aside`/`link`/`quote`) map down to `standard`. A `standard` result
+	 * (whether genuinely assigned or mapped down from one of those three)
+	 * then falls back to
+	 * Daymark_Subscription_Content_Sniffer against the post's own rendered
+	 * content, the same inline-`<img>`/`<video>`/`<audio>`/mf2 signal
+	 * Daymark_Subscription_Source_Feed already looks for — most WordPress
+	 * sites never assign post formats at all, so trusting `standard` at
+	 * face value would under-detect media on exactly the sites this source
+	 * is supposed to read *more* accurately than the feed connector, not
+	 * less.
 	 *
 	 * @param array<string, mixed> $raw_item One item from fetch()'s raw result.
 	 * @return array<string, mixed> Source-agnostic normalized post data.
@@ -232,7 +261,10 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$permalink    = esc_url_raw( (string) ( $raw_item['link'] ?? '' ) );
 
 		$format = sanitize_key( (string) ( $raw_item['format'] ?? 'standard' ) );
-		if ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
+
+		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
+			$format = 'note';
+		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
 			$format = 'standard';
 		}
 
@@ -240,6 +272,31 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 
 		if ( isset( $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] ) ) {
 			$featured_image_url = esc_url_raw( (string) $raw_item['_embedded']['wp:featuredmedia'][0]['source_url'] );
+		}
+
+		// The real `format` field is only ever set when the site's theme
+		// actually supports and uses post formats — most WordPress sites,
+		// especially block themes, never assign one, so every post reports
+		// 'standard' regardless of what it actually contains. Rather than
+		// trust that silence, fall back to sniffing the post's own rendered
+		// content for the same inline-media signal
+		// Daymark_Subscription_Source_Feed already looks for, exactly like
+		// Daymark_Subscription_Source_Friends does for a cached post with no
+		// Friends-assigned format either — a confirmed `format` or a real
+		// featured-media embed always wins, this only ever promotes away
+		// from an unconfirmed 'standard'.
+		if ( 'standard' === $format ) {
+			$content_html   = (string) ( $raw_item['content']['rendered'] ?? '' );
+			$sniffed        = Daymark_Subscription_Content_Sniffer::sniff( $content_html );
+			$sniffed_format = Daymark_Subscription_Content_Sniffer::classify( $sniffed, $content_html );
+
+			if ( '' !== $sniffed_format ) {
+				$format = $sniffed_format;
+			}
+
+			if ( '' === $featured_image_url && '' !== $sniffed['image_src'] ) {
+				$featured_image_url = esc_url_raw( $sniffed['image_src'] );
+			}
 		}
 
 		return array(

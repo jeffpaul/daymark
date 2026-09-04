@@ -321,7 +321,8 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * - `permalink` (the item's own URL on the source site)
 	 * - `post_format` (`image`|`video`|`audio`|`gallery`|`standard`, guessed
 	 *   from enclosures first, falling back to the item's own content HTML
-	 *   when no enclosure carries a signal — see sniff_content_media())
+	 *   when no enclosure carries a signal — see
+	 *   Daymark_Subscription_Content_Sniffer::sniff())
 	 * - `featured_image_url` (best available image URL, or '')
 	 * - `raw_media` (enclosure URLs, for later embed/oEmbed resolution —
 	 *   never resolved here)
@@ -394,7 +395,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 				$content_html = (string) ( $raw_item['description'] ?? '' );
 			}
 
-			$sniffed = $this->sniff_content_media( $content_html );
+			$sniffed = Daymark_Subscription_Content_Sniffer::sniff( $content_html );
 
 			if ( $sniffed['has_video'] ) {
 				$has_video = true;
@@ -446,86 +447,6 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			'featured_image_url' => $featured_image_url,
 			'raw_media'          => $raw_media,
 		);
-	}
-
-	/**
-	 * Scan an item's content HTML for media the enclosure loop in normalize()
-	 * never sees — an ordinary `<img>`/`<video>`/`<audio>` embedded directly
-	 * in the post body, with no `<enclosure>` at all (an extremely common
-	 * shape for a plain WordPress image post). Also recognizes microformats2
-	 * `u-photo`/`u-video`/`u-audio` classes when present — an explicit,
-	 * author-intended "this is the post's media" signal from an IndieWeb
-	 * theme, distinct from (and more trustworthy than) a bare tag with no
-	 * such markup.
-	 *
-	 * Uses WP_HTML_Tag_Processor (core since WP 6.2, so always available on
-	 * Daymark's WP 7.0+ baseline) rather than a full DOM parser or an
-	 * external library — this only ever needs to walk tags and read two
-	 * attributes, not build a tree.
-	 *
-	 * @since 0.8.0
-	 *
-	 * @param string $html Item content or description HTML.
-	 * @return array{has_video: bool, has_audio: bool, photo_count: int, plain_image_count: int, image_src: string}
-	 */
-	private function sniff_content_media( string $html ): array {
-		$result = array(
-			'has_video'         => false,
-			'has_audio'         => false,
-			'photo_count'       => 0,
-			'plain_image_count' => 0,
-			'image_src'         => '',
-		);
-
-		if ( '' === trim( $html ) || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
-			return $result;
-		}
-
-		// Untrusted external HTML from a feed — never let a pathological
-		// document (issue #81 tracks broader feed hardening) turn a
-		// classification hint into a fatal that breaks the whole poll run.
-		try {
-			$processor = new WP_HTML_Tag_Processor( $html );
-
-			while ( $processor->next_tag() ) {
-				$tag   = $processor->get_tag();
-				$class = (string) ( $processor->get_attribute( 'class' ) ?? '' );
-
-				if ( false !== stripos( $class, 'u-video' ) || 'VIDEO' === $tag ) {
-					$result['has_video'] = true;
-					continue;
-				}
-
-				if ( false !== stripos( $class, 'u-audio' ) || 'AUDIO' === $tag ) {
-					$result['has_audio'] = true;
-					continue;
-				}
-
-				$is_mf2_photo = false !== stripos( $class, 'u-photo' );
-
-				if ( $is_mf2_photo || 'IMG' === $tag ) {
-					if ( $is_mf2_photo ) {
-						++$result['photo_count'];
-					} else {
-						++$result['plain_image_count'];
-					}
-
-					if ( '' === $result['image_src'] ) {
-						$result['image_src'] = (string) ( $processor->get_attribute( 'src' ) ?? '' );
-					}
-				}
-			}
-		} catch ( Throwable $e ) {
-			return array(
-				'has_video'         => false,
-				'has_audio'         => false,
-				'photo_count'       => 0,
-				'plain_image_count' => 0,
-				'image_src'         => '',
-			);
-		}
-
-		return $result;
 	}
 
 	/**

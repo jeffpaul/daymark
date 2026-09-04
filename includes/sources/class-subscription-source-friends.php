@@ -61,14 +61,25 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 
 	/**
 	 * WordPress post_format values with a dedicated Daymark post_format
-	 * bucket; everything else (including no format at all) maps to
-	 * 'standard'. Matches Daymark_Subscription_Source_WordPress's own list
-	 * and the "no natural equivalent" treatment issue #84's own unmapped
-	 * h-entry post types get.
+	 * bucket; everything else not in DAYMARK_NOTE_FORMATS either (including
+	 * no format at all) maps to 'standard'. Matches
+	 * Daymark_Subscription_Source_WordPress's own list and the "no natural
+	 * equivalent" treatment issue #84's own unmapped h-entry post types get.
 	 *
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
+
+	/**
+	 * WordPress post_format values mapped to Daymark's own `note` bucket —
+	 * matches Daymark_Subscription_Source_WordPress's own list; see that
+	 * class's DAYMARK_NOTE_FORMATS docblock for why `status`/`chat` get
+	 * their own bucket while `aside`/`link`/`quote` still collapse to
+	 * `standard`.
+	 *
+	 * @var string[]
+	 */
+	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -203,7 +214,13 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 	 * content-based format discovery when a source feed doesn't declare
 	 * one) — the same "trust the real value, don't re-guess" approach
 	 * `Daymark_Subscription_Source_WordPress` takes toward `wp/v2/posts`'
-	 * own `format` field.
+	 * own `format` field, including mapping `status`/`chat` to Daymark's
+	 * own `note` bucket rather than `standard`. A `standard` result then
+	 * falls back to the same shared `Daymark_Subscription_Content_Sniffer`
+	 * both of those sources use, for the same reason: Friends' own
+	 * format-discovery fallback doesn't run for every source feed shape, so
+	 * a `standard` result here isn't necessarily a confirmed "no media" the
+	 * way a genuinely assigned `image`/`video`/`audio`/`gallery`/`note` is.
 	 *
 	 * @param array<string, mixed> $raw_item One item from fetch()'s raw result.
 	 * @return array<string, mixed> Source-agnostic normalized post data.
@@ -225,7 +242,9 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 
 		$format = sanitize_key( (string) ( $raw_item['post_format'] ?? '' ) );
 
-		if ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
+		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
+			$format = 'note';
+		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
 			$format = 'standard';
 		}
 
@@ -239,20 +258,26 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 			}
 		}
 
-		// A structured thumbnail is a confirmed signal a format guess isn't
-		// (see Daymark_Subscription_Source_Feed's own layered approach), so
-		// only fall back to sniffing the cached content's own first inline
-		// image, and only promote an otherwise-'standard' item to 'image',
-		// when nothing more confident already set the format.
-		if ( '' === $featured_image_url ) {
-			$sniffed = $this->sniff_first_image( (string) ( $raw_item['content'] ?? '' ) );
+		// A structured thumbnail or a real Friends-assigned format is a
+		// confirmed signal a content guess isn't, so only fall back to
+		// sniffing the cached content's own inline media — the same
+		// video/audio/gallery/image signal
+		// Daymark_Subscription_Source_Feed and
+		// Daymark_Subscription_Source_WordPress already look for via the
+		// shared Daymark_Subscription_Content_Sniffer — and only ever
+		// promote away from an unconfirmed 'standard', never override a
+		// real assigned format.
+		if ( 'standard' === $format ) {
+			$content_html   = (string) ( $raw_item['content'] ?? '' );
+			$sniffed        = Daymark_Subscription_Content_Sniffer::sniff( $content_html );
+			$sniffed_format = Daymark_Subscription_Content_Sniffer::classify( $sniffed, $content_html );
 
-			if ( '' !== $sniffed ) {
-				$featured_image_url = $sniffed;
+			if ( '' !== $sniffed_format ) {
+				$format = $sniffed_format;
+			}
 
-				if ( 'standard' === $format ) {
-					$format = 'image';
-				}
+			if ( '' === $featured_image_url && '' !== $sniffed['image_src'] ) {
+				$featured_image_url = esc_url_raw( $sniffed['image_src'] );
 			}
 		}
 
@@ -378,30 +403,6 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		$path = untrailingslashit( (string) wp_parse_url( $url, PHP_URL_PATH ) );
 
 		return $host . $path;
-	}
-
-	/**
-	 * Find the first `<img src="...">` in an HTML fragment — a fallback
-	 * only used when Friends set no structured featured image for a cached
-	 * post (e.g. a plain-text-only source feed's post that happens to
-	 * embed an image inline).
-	 *
-	 * @param string $html Cached post content.
-	 * @return string Absolute-or-relative src attribute value, sanitized —
-	 *                or '' if none found. Not resolved against a base URL:
-	 *                Friends' own feed parsers already store absolute URLs
-	 *                in cached content.
-	 */
-	private function sniff_first_image( string $html ): string {
-		if ( '' === trim( $html ) ) {
-			return '';
-		}
-
-		if ( ! preg_match( '/<img\b[^>]*\bsrc\s*=\s*["\']([^"\']+)["\']/i', $html, $matches ) ) {
-			return '';
-		}
-
-		return esc_url_raw( $matches[1] );
 	}
 
 	/**

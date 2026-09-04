@@ -193,9 +193,10 @@ h-card) subscription parsing" below.)
   since a site can disable the REST API while leaving the discovery tag in
   place. When reachable, `post_format` comes straight from the site's own
   real value instead of the feed connector's enclosure/content-sniffing
-  guess; the five WordPress formats with no dedicated Daymark bucket
-  (`aside`/`link`/`quote`/`status`/`chat`) map down to `standard`, the same
-  treatment issue #84's own unmapped h-entry post types get. Any other site
+  guess; the WordPress formats with no dedicated Daymark bucket
+  (`aside`/`link`/`quote`) map down to `standard`, the same treatment issue
+  #84's own unmapped h-entry post types get (`status`/`chat` were later
+  mapped to Daymark's own `note` bucket instead — see below). Any other site
   — REST API disabled, unreachable, or not WordPress at all — falls straight
   through to the existing feed connector with no behavior change. See
   CLAUDE.md's "Prefer the WordPress REST API for WP-to-WP subscriptions
@@ -217,6 +218,42 @@ h-card) subscription parsing" below.)
   was researched against the Friends plugin's public source rather than a
   live installation, since there was no way to install a third-party
   plugin for testing in this environment.
+
+- [x] **Subscription type-mapping audit.** With four built-in sources now
+  shipped, an audit of every signal each one can read and how (or whether) it
+  reaches a Timeline card's `post_format` — written up as
+  [docs/subscription-type-mapping.md](subscription-type-mapping.md). Found
+  and fixed a real gap: the `wordpress` source (second-preferred, ahead of
+  `feed`) trusted its site's real `format` field completely, with no
+  fallback for the common case of a WordPress site that never assigns post
+  formats at all — meaning it could detect a site's own media *less*
+  accurately than the fallback `feed` connector already did for that same
+  content. Fixed by extracting the existing content-sniffing fallback into a
+  shared `Daymark_Subscription_Content_Sniffer` class and using it in both
+  `wordpress` and (upgraded from a narrower image-only check) `friends`.
+  Also documents, without changing at the time, two signals a source detects
+  and discards: `microformats`'s own mf2 post-type discovery (reply/like/
+  repost/bookmark/rsvp) and the five WordPress-native formats with no
+  Daymark bucket — both flagged as the concrete starting points for a future
+  expansion of Daymark's own type vocabulary. See CLAUDE.md's "Subscription
+  type-mapping audit" decision.
+
+- [x] **Status/chat post formats mapped to Daymark's Note type.** The first
+  of the two vocabulary-expansion opportunities the type-mapping audit
+  flagged, acted on: WordPress's `status` and `chat` post_format values
+  (read by the `wordpress` and `friends` sources) now map to Daymark's own
+  `note` post_format bucket instead of collapsing to `standard` alongside
+  `aside`/`link`/`quote`, which still do — a `status`/`chat` post already
+  reads as a short, timestamped text update the same way a Daymark Note
+  does, unlike an aside/link/quote post which centers something other than
+  the author's own words. `note` is treated as a fully confirmed format, the
+  same as a real `image`/`video`/`audio`/`gallery` assignment — it's never
+  second-guessed by the content-sniffing fallback. No changes were needed
+  outside the two sources' own format resolution: the ingest, REST, and
+  app-shell layers already treated `post_format` as an open string rather
+  than a hardcoded enum. mf2 post-type discovery (reply/like/repost/
+  bookmark/rsvp) remains unaddressed. See CLAUDE.md's "Status/chat post
+  formats mapped to Daymark's Note type" decision.
 
 A related, smaller adjustment: the PHP minimum is now 8.2 (was 8.1 — 8.1
 stopped receiving security fixes). `phpunit/phpunit` stays on `^9.6` rather

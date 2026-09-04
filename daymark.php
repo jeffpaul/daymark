@@ -48,6 +48,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-url-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-html-cache.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-content-sniffer.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opml.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/sources/interface-subscription-source.php';
