@@ -34,16 +34,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Source {
 
 	/**
-	 * Default maximum page-HTML response size, in bytes, discover()'s
-	 * `<head>` scan will download. Shares the same filter
-	 * (`daymark_subscription_max_html_bytes`) every other subscription
-	 * source's site-HTML fetch uses.
-	 *
-	 * @var int
-	 */
-	private const MAX_HTML_BYTES = 1024 * 1024; // 1 MB.
-
-	/**
 	 * Default maximum `wp/v2/posts` response size, in bytes. Shares the
 	 * same filter (`daymark_subscription_max_feed_bytes`) the feed source's
 	 * own feed download uses — this is the WP-REST-flavored equivalent of
@@ -475,18 +465,23 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	}
 
 	/**
-	 * Fetch a URL's response body via `wp_safe_remote_get()`, for the
-	 * `discover()` HTML scan specifically. Deliberately mirrors
-	 * Daymark_Subscription_Source_Feed::fetch_html() (no per-instance
-	 * caching needed here — this source's discover() only ever fetches a
-	 * given site's HTML once).
+	 * Fetch a URL's response body for the `discover()` HTML scan
+	 * specifically.
+	 *
+	 * Delegates to Daymark_Subscription_Html_Cache (issue #137), a static,
+	 * request-scoped cache shared across every built-in subscription
+	 * source's discovery-time homepage fetch — this source is always
+	 * registered first (see Daymark_Subscription_Source_Registry), so
+	 * without this shared cache, every site this source doesn't end up
+	 * matching would still cost a live request before the feed/microformats
+	 * sources ever get a chance to try the same URL.
 	 *
 	 * @param string $url Already-sanitized, http(s) URL to fetch.
 	 * @return string Response body, or '' on any failure (including a
 	 *                response that hit the size cap).
 	 */
 	private function fetch_html( string $url ): string {
-		$body = $this->fetch_body( $url, self::MAX_HTML_BYTES, 'daymark_subscription_max_html_bytes', 'daymark_subscription_html_fetch_timeout' );
+		$body = Daymark_Subscription_Html_Cache::fetch( $url );
 
 		return is_wp_error( $body ) ? '' : $body;
 	}

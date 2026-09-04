@@ -48,6 +48,15 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 		$this->author_a       = (int) self::factory()->user->create( array( 'role' => 'author' ) );
 		$this->http_responses = array();
 
+		// Daymark_Subscription_Html_Cache is a static, request-scoped cache
+		// shared by every subscription source's discovery-time homepage
+		// fetch (issue #137) — but PHPUnit runs every test in this file (and
+		// every other test file) in one continuous PHP process, so without
+		// resetting it, an earlier test's fixture for a reused URL (several
+		// tests here, and in other files, reuse 'https://example.com/')
+		// could leak into a test here.
+		Daymark_Subscription_Html_Cache::reset();
+
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
 	}
 

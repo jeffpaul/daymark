@@ -12,6 +12,18 @@
  */
 class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 
+	public function set_up(): void {
+		parent::set_up();
+
+		// Daymark_Subscription_Html_Cache is a static, request-scoped cache
+		// shared by every subscription source's discovery-time homepage
+		// fetch (issue #137) — but PHPUnit runs every test in this file (and
+		// every other test file) in one continuous PHP process, so without
+		// resetting it, an earlier test's fixture for a reused URL could
+		// leak into a test here.
+		Daymark_Subscription_Html_Cache::reset();
+	}
+
 	/**
 	 * Build a minimal stub source used only to exercise the registry
 	 * contract. An anonymous class keeps this file to one named test
