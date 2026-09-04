@@ -126,11 +126,14 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The list's comment_count/like_count reflect the app shell's stat row:
-	 * approved comments and approved 'like'-type comments, counted
-	 * separately, with unapproved ones excluded.
+	 * The list's comment_count/like_count/repost_count reflect the app
+	 * shell's stat row: approved comments, approved 'like'-type comments,
+	 * and approved 'repost'-type comments, counted separately, with
+	 * unapproved ones excluded. 'repost' is the comment_type the
+	 * ActivityPub/ATmosphere/Webmention plugins all write for a repost/
+	 * reblog/reshare (see issue #41).
 	 */
-	public function test_list_reports_approved_comment_and_like_counts() {
+	public function test_list_reports_approved_comment_like_and_repost_counts() {
 		wp_set_current_user( $this->author_a );
 
 		$post_id = $this->create_mark( $this->author_a, 'note', 'publish', 'Has engagement' );
@@ -163,6 +166,20 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 				'comment_type'     => 'like',
 			)
 		);
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 1,
+				'comment_type'     => 'repost',
+			)
+		);
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 0,
+				'comment_type'     => 'repost',
+			)
+		);
 
 		$request = $this->request( 'GET', '/daymark/v1/marks' );
 		$marks   = rest_do_request( $request )->get_data();
@@ -170,6 +187,7 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 
 		$this->assertSame( 2, $mark['comment_count'], 'Only the 2 approved comments are counted' );
 		$this->assertSame( 1, $mark['like_count'] );
+		$this->assertSame( 1, $mark['repost_count'], 'Only the 1 approved repost is counted' );
 	}
 
 	/** A temporary PNG file for attachment tests that don't care about its content. */

@@ -2305,6 +2305,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
 			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
+			// Only the federation plugins (ActivityPub/ATmosphere/Webmention)
+			// ever write a 'repost' comment_type today — see issue #41 for the
+			// cross-plugin confirmation. A polling connector's own reactions
+			// aren't pulled in at all (backflow only imports replies), so this
+			// is 0 there regardless of the real network's count; extending
+			// backflow to also sync reaction counts is tracked as a separate,
+			// larger question on that same issue, not done here.
+			'repost_count'       => $this->count_comments_of_type( $post_id, 'repost' ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 		);
 
@@ -2338,14 +2346,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * Count approved comments of one comment_type on a Mark, for the app
-	 * shell's comment/like stat row. Replies (comment_type 'comment') include
-	 * on-site comments and, once backflow imports them, replies from
-	 * Bluesky/the fediverse/webmention; likes (comment_type 'like') are
-	 * populated the same way. Both are 0 for a Mark with no connected
-	 * federation plugin or no engagement yet.
+	 * shell's comment/like/repost stat row. Replies (comment_type 'comment')
+	 * include on-site comments and, once backflow imports them, replies from
+	 * Bluesky/the fediverse/webmention; likes ('like') and reposts ('repost')
+	 * are populated the same way, written directly by the ActivityPub/
+	 * ATmosphere/Webmention plugins when they receive one. All three are 0
+	 * for a Mark with no connected federation plugin or no engagement yet.
 	 *
 	 * @param int    $post_id Mark post ID.
-	 * @param string $type    Comment type ('comment' or 'like').
+	 * @param string $type    Comment type ('comment', 'like', or 'repost').
 	 * @return int
 	 */
 	private function count_comments_of_type( int $post_id, string $type ): int {
