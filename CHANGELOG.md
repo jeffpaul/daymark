@@ -30,7 +30,7 @@ can't act on them.
 
 ### Fixed
 
-- Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll. ([#174](https://github.com/jeffpaul/daymark/issues/174))
+- Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll. ([#175](https://github.com/jeffpaul/daymark/pull/175))
 
 ## [0.10.0] - 2026-09-04
 
