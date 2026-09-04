@@ -153,6 +153,10 @@ class Test_Subscriptions extends WP_UnitTestCase {
 				'last_checked_at',
 				'last_manual_refresh_at',
 				'last_error',
+				'websub_hub_url',
+				'websub_status',
+				'websub_lease_expires_at',
+				'websub_secret',
 				'created_at',
 			),
 			$columns

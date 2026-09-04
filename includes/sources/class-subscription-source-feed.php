@@ -7,7 +7,10 @@
  * normalizes items into Daymark's source-agnostic subscription post shape.
  * Also resolves a site's favicon at subscribe time (a separate, related
  * one-time lookup that reuses the same site-HTML fetch as feed
- * autodiscovery rather than issuing a second request).
+ * autodiscovery rather than issuing a second request), and — for a feed
+ * that advertises one — a WebSub (PubSubHubbub) hub URL, SimplePie's own
+ * `get_links( 'hub' )` (see get_last_hub_url(), consulted by
+ * Daymark_Websub_Subscriber after every fetch()/parse_raw_feed_body() call).
  *
  * @package Daymark
  */
@@ -54,6 +57,16 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * @var array<string, string>
 	 */
 	private array $html_cache = array();
+
+	/**
+	 * The WebSub (PubSubHubbub) hub URL the most recent fetch()/
+	 * parse_raw_feed_body() call found advertised on the feed, if any — see
+	 * get_last_hub_url(). Reset at the top of each call so a hub link found
+	 * on an earlier, unrelated feed is never carried over.
+	 *
+	 * @var string
+	 */
+	private string $last_hub_url = '';
 
 	/**
 	 * Source ID.
@@ -139,6 +152,8 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 *                                                    reached or parsed.
 	 */
 	public function fetch( string $feed_url ): array|WP_Error {
+		$this->last_hub_url = '';
+
 		$validated = $this->validate_source_url( $feed_url );
 
 		if ( is_wp_error( $validated ) ) {
@@ -178,6 +193,90 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			return $feed;
 		}
 
+		$this->last_hub_url = $this->extract_hub_url( $feed );
+
+		return $this->build_raw_items( $feed );
+	}
+
+	/**
+	 * Parse an already-in-hand feed document (issue #82: a WebSub hub's
+	 * content-distribution POST body) the same way fetch() parses a
+	 * downloaded one — same item shape, same normalize() contract — but
+	 * without making an HTTP request of its own, since the hub already
+	 * pushed the content.
+	 *
+	 * Deliberately mirrors fetch()'s own error handling: a body SimplePie
+	 * cannot parse (malformed/truncated XML) returns a WP_Error, same as an
+	 * unreachable feed would.
+	 *
+	 * @param string $raw_body Raw feed document (RSS or Atom XML).
+	 * @return array<int, array<string, mixed>>|WP_Error
+	 */
+	public function parse_raw_feed_body( string $raw_body ) {
+		$this->last_hub_url = '';
+
+		if ( '' === trim( $raw_body ) ) {
+			return new WP_Error( 'daymark_websub_empty_body', __( 'The delivered content was empty.', 'daymark' ) );
+		}
+
+		if ( ! class_exists( 'SimplePie', false ) ) {
+			require_once ABSPATH . WPINC . '/class-simplepie.php';
+		}
+
+		$feed = new SimplePie();
+		$feed->enable_cache( false );
+		$feed->set_raw_data( $raw_body );
+		$feed->set_output_encoding( get_option( 'blog_charset', 'UTF-8' ) );
+		$feed->init();
+		$feed->handle_content_type();
+
+		if ( $feed->error() ) {
+			return new WP_Error( 'daymark_websub_parse_failed', (string) $feed->error() );
+		}
+
+		$this->last_hub_url = $this->extract_hub_url( $feed );
+
+		return $this->build_raw_items( $feed );
+	}
+
+	/**
+	 * The WebSub hub URL the most recent fetch()/parse_raw_feed_body() call
+	 * found advertised on the feed (a `<link rel="hub">`/`<atom:link
+	 * rel="hub">` element — SimplePie parses this automatically), or '' when
+	 * the feed advertised none. Consulted by Daymark_Websub_Subscriber right
+	 * after a poll to decide whether a WebSub subscription is possible for
+	 * this feed at all.
+	 *
+	 * @return string
+	 */
+	public function get_last_hub_url(): string {
+		return $this->last_hub_url;
+	}
+
+	/**
+	 * First hub link a parsed feed advertises, or '' when it advertises
+	 * none. A feed may list more than one hub; Daymark only ever needs one
+	 * to subscribe through.
+	 *
+	 * @param SimplePie $feed Parsed feed.
+	 * @return string
+	 */
+	private function extract_hub_url( $feed ): string {
+		$hubs = $feed->get_links( 'hub' );
+
+		return is_array( $hubs ) && isset( $hubs[0] ) ? esc_url_raw( (string) $hubs[0] ) : '';
+	}
+
+	/**
+	 * Map every item on a parsed SimplePie feed to fetch()'s raw item shape.
+	 * Shared by fetch() (a freshly downloaded feed) and parse_raw_feed_body()
+	 * (a WebSub-delivered one) so both funnel through the exact same
+	 * SimplePie-item-to-raw-item mapping.
+	 *
+	 * @param SimplePie $feed Parsed feed.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function build_raw_items( $feed ): array {
 		$items     = $feed->get_items( 0, $feed->get_item_quantity() );
 		$raw_items = array();
 
