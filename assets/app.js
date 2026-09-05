@@ -242,7 +242,7 @@
 
 	const PLUS_GLYPH = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
 
-	// Outline icons for the comment/like/repost stat row shown on Mark cards
+	// Outline icons for the like/comment/reblog stat row shown on Mark cards
 	// throughout the app shell (Home, Search).
 	const COMMENT_GLYPH =
 		'<path d="M21 11.5a8.38 8.38 0 0 1-4.7 7.6 8.5 8.5 0 0 1-3.8.9H12a8.48 8.48 0 0 1-4-.9l-5 1 1-5a8.48 8.48 0 0 1-.9-4 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>';
@@ -269,12 +269,12 @@
 
 	function renderItemStats(item) {
 		return `<span class="daymark-item-stats">${renderStat(
-			COMMENT_GLYPH,
-			item.comment_count || 0,
-			'comments',
-			'comment',
-			'comments'
-		)}${renderStat(HEART_GLYPH, item.like_count || 0, 'likes', 'like', 'likes')}${renderStat(
+			HEART_GLYPH,
+			item.like_count || 0,
+			'likes',
+			'like',
+			'likes'
+		)}${renderStat(COMMENT_GLYPH, item.comment_count || 0, 'comments', 'comment', 'comments')}${renderStat(
 			REPOST_GLYPH,
 			item.repost_count || 0,
 			'reposts',
