@@ -405,6 +405,29 @@ test('Timeline shows a start and end flourish once it has content', async ({ pag
 	await expect(page.locator('.daymark-timeline-flourish--end svg')).toBeVisible();
 });
 
+// Timeline cards are grouped under relative-period headers (issue #145) —
+// Today, This Week, Last Month, etc. — inserted once per bucket, not once
+// per card. Every Mark this suite publishes lands "today", so the first
+// page of the Timeline should show exactly one "Today" header however many
+// same-day Marks are on it, immediately ahead of the first card it groups.
+test('Timeline groups same-day cards under a single "Today" header', async ({ page }) => {
+	const caption = `E2E grouping ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark');
+	await expect(page.locator('.daymark-recent__groupheader', { hasText: 'Today' })).toHaveCount(1);
+	await expect(page.locator('[data-recent-list] > :first-child')).toHaveClass(
+		/daymark-recent__groupheader/
+	);
+});
+
 // Categories: the "File under" picker files a Mark under a chosen
 // category and remembers it as the per-type default for the next Mark.
 // (CI seeds the "E2E Photos"/"E2E Travel" categories; the picker only
