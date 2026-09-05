@@ -331,32 +331,48 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	/**
 	 * Create three subscriptions whose site_title values are deliberately
 	 * out of alphabetical order, so a test can assert render()'s output
-	 * puts them back in (or out of) order via relative strpos().
+	 * puts them back in (or out of) order via relative strpos(). Each gets
+	 * an explicit, distinct created_at (oldest: Charlie, then Alpha, then
+	 * Bravo newest) set directly via $wpdb — create() always stamps
+	 * created_at with "now", and three creations in one test method can
+	 * easily land in the same second, which would make the *default*
+	 * (created_at DESC) order's tie-break behavior undefined rather than
+	 * reliably reverse-insertion; the tests here need it deterministic.
 	 *
 	 * @return void
 	 */
 	private function create_three_out_of_order_subscriptions(): void {
-		$this->subscriptions->create(
+		global $wpdb;
+
+		$charlie_id = $this->subscriptions->create(
 			array(
 				'site_url'   => 'https://charlie.example',
 				'feed_url'   => 'https://charlie.example/feed',
 				'site_title' => 'Charlie Site',
 			)
 		);
-		$this->subscriptions->create(
+		$alpha_id   = $this->subscriptions->create(
 			array(
 				'site_url'   => 'https://alpha.example',
 				'feed_url'   => 'https://alpha.example/feed',
 				'site_title' => 'Alpha Site',
 			)
 		);
-		$this->subscriptions->create(
+		$bravo_id   = $this->subscriptions->create(
 			array(
 				'site_url'   => 'https://bravo.example',
 				'feed_url'   => 'https://bravo.example/feed',
 				'site_title' => 'Bravo Site',
 			)
 		);
+
+		$table = Daymark_Subscriptions::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Test-only: forcing a deterministic created_at that Daymark_Subscriptions::update() doesn't expose (matches tests/test-subscriptions.php's own precedent for direct $wpdb use in test setup).
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:01' ), array( 'id' => $charlie_id ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- See above.
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:02' ), array( 'id' => $alpha_id ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- See above.
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:03' ), array( 'id' => $bravo_id ) );
 	}
 
 	/** Sorting the Site column ascending orders rows by site_title A-Z. */
