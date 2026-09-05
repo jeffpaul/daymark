@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-05
+
 ### Added
 
 - The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. ([#171](https://github.com/jeffpaul/daymark/pull/171))
@@ -353,7 +355,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.10.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.11.0...HEAD
+[0.11.0]: https://github.com/jeffpaul/daymark/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/jeffpaul/daymark/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/jeffpaul/daymark/compare/0.8.0...0.9.0
 [0.8.0]: https://github.com/jeffpaul/daymark/compare/0.7.0...0.8.0

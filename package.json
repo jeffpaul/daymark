@@ -1,6 +1,6 @@
 {
   "name": "daymark",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests only.",
   "private": true,
   "license": "GPL-2.0-or-later",
@@ -12,6 +12,6 @@
     "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1"
+    "@playwright/test": "^1.63.0"
   }
 }
