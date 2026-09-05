@@ -30,7 +30,7 @@ can't act on them.
 - The Timeline's own vertical rail now gets a small "sunrise" flourish where it begins and a "sunset" flourish where it currently ends, in the app's own sunset-gradient palette. ([#192](https://github.com/jeffpaul/daymark/pull/192))
 - A Timeline card (Mark or subscribed post) can now be bookmarked directly from its stat row for offline viewing — a new "Bookmarks" section on Explore shows just what you've saved, and its full content is cached for offline viewing automatically, including on a new device the moment you open Daymark. ([#194](https://github.com/jeffpaul/daymark/pull/194))
 - A Timeline card's stat row now has a Share icon — it opens your device's native share menu when available, or copies the post's link to your clipboard otherwise. ([#197](https://github.com/jeffpaul/daymark/pull/197))
-- The Timeline now groups cards under relative-period headers — Today, This Week, Last Week, This Month, Last Month, This Year, or a bare year for anything older — so a long scroll back through older content reads by chronological chunk instead of a wall of individual per-card timestamps. ([#145](https://github.com/jeffpaul/daymark/issues/145))
+- The Timeline now groups cards under relative-period headers — Today, This Week, Last Week, This Month, Last Month, This Year, or a bare year for anything older — so a long scroll back through older content reads by chronological chunk instead of a wall of individual per-card timestamps. ([#199](https://github.com/jeffpaul/daymark/pull/199))
 
 ### Changed
 
