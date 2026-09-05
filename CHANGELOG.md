@@ -29,6 +29,7 @@ can't act on them.
 - A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem. ([#182](https://github.com/jeffpaul/daymark/issues/182))
 - The Timeline's own vertical rail now gets a small "sunrise" flourish where it begins and a "sunset" flourish where it currently ends, in the app's own sunset-gradient palette. ([#192](https://github.com/jeffpaul/daymark/pull/192))
 - A Timeline card (Mark or subscribed post) can now be bookmarked directly from its stat row for offline viewing — a new "Bookmarks" section on Explore shows just what you've saved, and its full content is cached for offline viewing automatically, including on a new device the moment you open Daymark. ([#194](https://github.com/jeffpaul/daymark/pull/194))
+- A Timeline card's stat row now has a Share icon — it opens your device's native share menu when available, or copies the post's link to your clipboard otherwise. ([#195](https://github.com/jeffpaul/daymark/issues/195))
 
 ### Changed
 
