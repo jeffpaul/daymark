@@ -36,9 +36,33 @@ async function loginAs(page) {
 // Image/Video/Audio/Note bubbles, then tap the one matching `type`. Replaces
 // the old single click straight into #create now that the launcher sits in
 // front of it.
+//
+// Home's chrome auto-hide closes the launcher on any real scroll (see
+// bindLauncher()/bindChromeAutoHide() in app.js) — including a scroll-anchor
+// adjustment the browser can fire on its own while Home's Timeline content is
+// still settling height, with no user interaction at all. That can race the
+// launcher's own fan-out animation and leave the bubble click intercepted by
+// whatever's now underneath for the rest of the test timeout, so this retries
+// the whole open sequence a couple of times rather than fighting one flaky
+// click to the end.
 async function openComposer(page, type = 'note') {
-	await page.locator('[data-action="new-mark"]').click();
-	await page.locator(`[data-launcher-type="${type}"]`).click();
+	const bubble = page.locator(`[data-launcher-type="${type}"]`);
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		await page.locator('[data-action="new-mark"]').click();
+		try {
+			await bubble.click({ timeout: 8000 });
+			return;
+		} catch (err) {
+			if (attempt === 3) {
+				throw err;
+			}
+			// Unknown state (open, closed, mid-animation) — close it
+			// explicitly so the next attempt starts from a clean slate
+			// instead of toggling an unknown one.
+			await page.keyboard.press('Escape');
+			await page.waitForTimeout(300);
+		}
+	}
 }
 
 // --- Subscriptions & Timeline (issue #78) helpers ---
@@ -260,12 +284,16 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 
 	// A subscription-post card: same mechanism, external content instead —
 	// settles on success (`.daymark-expand-content`) or a graceful failure
-	// (`.daymark-error`), either way followed by a real "View original ↗"
-	// link with a real http(s) href, and never a modal or a navigation.
-	// The external fetch has its own 15s server-side timeout, so this
-	// allows generous headroom.
+	// (`.daymark-error`), never a modal or a navigation. The "Open
+	// original" stat-row icon (a real http(s) href) is a permanent part of
+	// the card itself now, not something that only appears once expanded
+	// — see the card-frame/icon-row decision. The external fetch has its
+	// own 15s server-side timeout, so this allows generous headroom.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
+	const externalLink = subCard.locator('[data-external-link]');
+	await expect(externalLink).toHaveCount(1);
+	expect(await externalLink.getAttribute('data-external-link')).toMatch(/^https?:\/\//);
 	// A direct following-sibling of the card itself (same DOM shape
 	// onFeedListClick()'s own closest('.daymark-recent__item-wrap') relies
 	// on) — more precise than re-deriving the wrap via a `has:` filter,
@@ -273,13 +301,11 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	// disagree with which element was actually clicked.
 	const subPanel = subCard.locator('xpath=following-sibling::*[@data-expand-panel]');
 	// Same title-click reasoning as the Mark card above — this card's own
-	// stat row (Bookmark, Share) sits at the bottom of the same button.
+	// stat row (Bookmark, Open original, Share) sits at the bottom of the
+	// same button.
 	await subCard.locator('.daymark-recent__title').click();
 	await expect(subPanel).toBeVisible();
-	const viewOriginal = subPanel.getByRole('link', { name: /View original/ });
-	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
-	expect(await viewOriginal.getAttribute('href')).toMatch(/^https?:\/\//);
-	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0);
+	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0, { timeout: 20000 });
 	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });

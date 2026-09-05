@@ -253,19 +253,24 @@
 	const BOOKMARK_GLYPH = '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>';
 	const SHARE_GLYPH =
 		'<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>';
+	const EXTERNAL_LINK_GLYPH =
+		'<line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
 
 	// A zero-count stat shows only its (dimmed) icon — no "0" — so the row
-	// stays quiet until there's something to report.
+	// stays quiet until there's something to report. `title` mirrors
+	// `aria-label` as a native hover tooltip, matching the precedent
+	// renderSiteIconButton() already set: a screen reader needs the
+	// label; a sighted, non-touch hover wants to see it too.
 	function renderStat(glyph, count, modifier, singular, plural) {
 		const isActive = count > 0;
 		const label = `${count} ${count === 1 ? singular : plural}`;
 		return `<span class="daymark-stat daymark-stat--${modifier}${
 			isActive ? ' daymark-stat--active' : ''
-		}" aria-label="${esc(label)}">${statIcon(glyph)}${
+		}" aria-label="${esc(label)}" title="${esc(label)}">${statIcon(glyph)}${
 			isActive ? `<span class="daymark-stat__count" aria-hidden="true">${count}</span>` : ''
 		}</span>`;
 	}
@@ -291,7 +296,45 @@
 			bookmarked ? ' daymark-stat--active daymark-stat--bookmarked' : ''
 		}" role="button" tabindex="0" aria-pressed="${bookmarked ? 'true' : 'false'}" aria-label="${esc(
 			label
-		)}" data-bookmark-toggle="${id}" data-bookmark-kind="${esc(kind)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
+		)}" title="${esc(label)}" data-bookmark-toggle="${id}" data-bookmark-kind="${esc(
+			kind
+		)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
+	}
+
+	// A permanent "open the original" entry in the row — replaces the old
+	// "View full post"/"View original" link that used to sit in the
+	// expanded content's own footer (only visible once expanded). Same
+	// span[role="button"] reasoning as Bookmark/Share; the URL travels
+	// directly on the element itself (data-external-link) rather than
+	// through a screen._byMarkId/_bySubId lookup, since — unlike Share —
+	// there's no title/other field this needs, just the one URL. Omitted
+	// entirely when an item has no permalink (should not normally happen
+	// for anything actually published).
+	function renderExternalLinkToggle(item) {
+		if (!item.permalink) {
+			return '';
+		}
+		const url = esc(item.permalink);
+		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="Open original" title="Open original" data-external-link="${url}">${statIcon(
+			EXTERNAL_LINK_GLYPH
+		)}</span>`;
+	}
+
+	// The row's other interactive entry, same span[role="button"] reasoning
+	// as renderBookmarkToggle() above (nested inside the card's own
+	// expand-trigger button either way). Shares a Mark's or a subscription
+	// post's real permalink — identical behavior for either, so unlike the
+	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
+	// when an item has no permalink at all (should not normally happen for
+	// anything actually published), since there'd be nothing to share.
+	function renderShareToggle(item) {
+		if (!item.permalink) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
+			SHARE_GLYPH
+		)}</span>`;
 	}
 
 	// The row's other interactive entry, same span[role="button"] reasoning
@@ -324,7 +367,7 @@
 			'reposts',
 			'repost',
 			'reposts'
-		)}${renderBookmarkToggle(item, 'mark')}${renderShareToggle(item)}</span>`;
+		)}${renderBookmarkToggle(item, 'mark')}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -2145,6 +2188,18 @@
 			return;
 		}
 
+		// The "open original" toggle — same reasoning/placement as the
+		// Bookmark toggle above; the permanent replacement for the old
+		// "View full post"/"View original" footer link, so this now works
+		// even on a collapsed card, not only once expanded.
+		const externalLinkToggle = target.closest('[data-external-link]');
+		if (externalLinkToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			openExternalLink(externalLinkToggle);
+			return;
+		}
+
 		// The Share toggle — same reasoning/placement as the Bookmark
 		// toggle just above.
 		const shareToggle = target.closest('[data-share-toggle]');
@@ -2293,6 +2348,12 @@
 			toggleBookmark(screen, bookmarkToggle);
 			return;
 		}
+		const externalLinkToggle = event.target.closest('[data-external-link]');
+		if (externalLinkToggle) {
+			event.preventDefault();
+			openExternalLink(externalLinkToggle);
+			return;
+		}
 		const shareToggle = event.target.closest('[data-share-toggle]');
 		if (shareToggle) {
 			event.preventDefault();
@@ -2339,6 +2400,18 @@
 			}
 		} catch (err) {
 			setBookmarkToggleState(trigger, wasBookmarked);
+		}
+	}
+
+	// Opens a Mark's or a subscription post's real permalink in a new tab
+	// — the permanent stat-row replacement for the old "View full
+	// post"/"View original" footer link (see expandBodyHtml()'s own
+	// docblock). The URL lives directly on the element (data-external-link),
+	// unlike Share, which needs a screen lookup for the title too.
+	function openExternalLink(trigger) {
+		const url = trigger.getAttribute('data-external-link');
+		if (url) {
+			window.open(url, '_blank', 'noopener');
 		}
 	}
 
@@ -4749,7 +4822,7 @@
 							<span class="daymark-item-stats daymark-item-stats--minimal">${renderBookmarkToggle(
 								item,
 								'subscription_post'
-							)}${renderShareToggle(item)}</span>
+							)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>
 							${renderCardTimestampRow(item)}
 						</span>
 					</button>
@@ -4770,24 +4843,19 @@
 	// 'sub-{id}' so the two id spaces can never collide) persists across
 	// re-visiting the screen, so a card already opened once never re-fetches.
 
-	// Renders whatever HTML a card's content loader resolved to, plus a
-	// "View full post" link out to the real permalink — both kinds still
-	// point somewhere real: a Mark/ordinary post's own permalink (its
-	// theme-rendered page, comments included, for anyone who wants that),
-	// or a subscription post's source URL.
-	function expandBodyHtml(html, permalink, linkLabel) {
+	// Renders whatever HTML a card's content loader resolved to. Used to
+	// also append a "View full post"/"View original" link out to the real
+	// permalink — that's now a permanent entry in the stat row instead
+	// (renderExternalLinkToggle()), always visible rather than only once
+	// expanded, so this function no longer needs the permalink at all.
+	function expandBodyHtml(html) {
 		if (!html) {
 			return '';
 		}
-		const link = permalink
-			? `<p class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
-					permalink
-			  )}" target="_blank" rel="noopener">${esc(linkLabel)} &#8599;</a></p>`
-			: '';
 		// Already wp_kses_post()-sanitized server-side (both the Mark/post
 		// content endpoint and the subscription click-through fetch) and
 		// meant to be rendered as trusted HTML — not re-escaped here.
-		return `<div class="daymark-expand-content">${html}</div>${link}`;
+		return `<div class="daymark-expand-content">${html}</div>`;
 	}
 
 	function expandErrorHtml() {
@@ -4822,7 +4890,7 @@
 		} catch (err) {
 			content = await loadExpandHtmlOffline(err, item.id);
 		}
-		return expandBodyHtml(content, item.permalink, 'View full post');
+		return expandBodyHtml(content);
 	}
 
 	// A subscription post's full content, click-through-fetched (and
@@ -4837,7 +4905,7 @@
 		} catch (err) {
 			content = await loadExpandHtmlOffline(err, item.id);
 		}
-		const body = expandBodyHtml(content, item.permalink, 'View original');
+		const body = expandBodyHtml(content);
 		// A reply here rides Daymark's own POSSE markup rather than a real
 		// Webmention protocol implementation: the published Mark's
 		// u-in-reply-to link (Daymark_Microformats) is what any Webmention

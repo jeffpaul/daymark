@@ -694,6 +694,14 @@ class Daymark_Subscription_Poller {
 	 *    from that point onward rather than trying to balance the
 	 *    container's own closing tag (which a plain regex can't do
 	 *    reliably against arbitrary nested markup).
+	 * 5. Drop an accessibility "skip to content" link, wherever it sits —
+	 *    conventionally the very first focusable element in `<body>`, so
+	 *    it isn't always excluded by step 3: a page with no `<article>`
+	 *    element at all falls back to the whole `<body>`, which still
+	 *    includes it. Matches the common direct-text shape a WP core
+	 *    theme uses (`<a href="#content">Skip to the content</a>`) and,
+	 *    separately, any anchor whose own class marks it as a skip link
+	 *    regardless of its text.
 	 *
 	 * None of this is exact against arbitrary, unknown page markup — an
 	 * unusual theme that skips `<article>` and/or gives its comments
@@ -707,6 +715,8 @@ class Daymark_Subscription_Poller {
 	private static function extract_body_html( string $html ): string {
 		$html = (string) preg_replace( '#<(script|style|noscript)\b[^>]*>.*?</\1>#is', '', $html );
 		$html = (string) preg_replace( '#<(nav|header|footer|aside)\b[^>]*>.*?</\1>#is', '', $html );
+		$html = (string) preg_replace( '#<a\b[^>]*>\s*Skip to[^<]*</a>#i', '', $html );
+		$html = (string) preg_replace( '#<a\b[^>]*\bclass=["\'][^"\']*skip-link[^"\']*["\'][^>]*>.*?</a>#is', '', $html );
 
 		if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
 			$html = $matches[1];
