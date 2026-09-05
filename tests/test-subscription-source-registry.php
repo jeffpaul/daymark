@@ -244,35 +244,27 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Every built-in source ID — excluded up front by the two tests below,
-	 * so their outcome depends only on the stub sources actually under
-	 * test, regardless of what a real built-in source would otherwise do
-	 * for an arbitrary URL (network availability, global filter state left
-	 * behind by another test file, etc.). Exercising $exclude_ids this way
-	 * is the parameter's own intended use, not a workaround.
-	 *
-	 * @var string[]
-	 */
-	private const BUILT_IN_SOURCE_IDS = array( 'friends', 'wordpress', 'feed', 'microformats' );
-
-	/**
-	 * Scenario: with no exclusions beyond the real built-in sources, that
-	 * still leaves discover_feeds() to choose between the two stubs —
-	 * confirming it returns the first-registered one (baseline for the
-	 * exclusion test below).
+	 * Scenario: with every already-registered source excluded (both the
+	 * real built-ins and anything an earlier test in this file left
+	 * registered — the registry is a process-wide singleton, so
+	 * make_stub_source()'s own 'stub-source' is typically still sitting in
+	 * it by the time this runs), that still leaves discover_feeds() to
+	 * choose between the two stubs registered here — confirming it returns
+	 * the first-registered one (baseline for the exclusion test below).
 	 */
 	public function test_discover_feeds_with_no_exclusions_returns_first_registered_source() {
 		$registry = Daymark_Subscription_Source_Registry::instance();
+
+		// Captured *before* registering the two stubs under test, so it
+		// excludes every source already sitting in the registry — real
+		// built-ins and any other test's leftover stub alike — without
+		// this test needing to know their exact IDs.
+		$pre_existing_ids = array_keys( $registry->get_sources() );
+
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- TEMP DEBUG (issue #183 CI investigation), remove before merge.
-		fwrite( STDERR, "\n[DEBUG] sources: " . implode( ',', array_keys( $registry->get_sources() ) ) . "\n" );
-
-		$result = $registry->discover_feeds( 'https://exclude-test.example/', self::BUILT_IN_SOURCE_IDS );
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPress.PHP.DevelopmentFunctions.error_log_var_export -- TEMP DEBUG (issue #183 CI investigation), remove before merge.
-		fwrite( STDERR, '[DEBUG] result: ' . var_export( $result, true ) . "\n" );
+		$result = $registry->discover_feeds( 'https://exclude-test.example/', $pre_existing_ids );
 
 		$this->assertSame( 'stub-first', $result[0]['source_type'] ?? null );
 	}
@@ -287,12 +279,15 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	 */
 	public function test_discover_feeds_skips_excluded_source_ids() {
 		$registry = Daymark_Subscription_Source_Registry::instance();
+
+		$pre_existing_ids = array_keys( $registry->get_sources() );
+
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
 		$result = $registry->discover_feeds(
 			'https://exclude-test.example/',
-			array_merge( self::BUILT_IN_SOURCE_IDS, array( 'stub-first' ) )
+			array_merge( $pre_existing_ids, array( 'stub-first' ) )
 		);
 
 		$this->assertSame( 'stub-second', $result[0]['source_type'] ?? null );
