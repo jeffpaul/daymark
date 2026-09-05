@@ -2012,6 +2012,32 @@ h2[tabindex='-1']:focus {
 	left: 14px;
 }
 
+/* A small flourish bookending Home's own Timeline rail (the thin grey
+   line above) — a "sunrise" mark where it begins, a "sunset" mark where
+   it currently ends, both rendered by timelineStartFlourish()/
+   timelineEndFlourish() (assets/app.js) as siblings of the list itself
+   (not inside it), so infinite scroll appending more items to the list's
+   own end can never separate them from their fixed position at the very
+   top/bottom of the section. Hidden by default and only shown once the
+   list actually has the rail to bookend — an empty Timeline shows neither,
+   the same :has(.daymark-recent__typeicon) condition the rail itself
+   gates on. Home's own Timeline always has a leading site icon on every
+   row (a Mark's own, or a subscribed site's), so — unlike the rail
+   itself — there's no Drafts-style "no site icon column" case to also
+   account for here. */
+.daymark-timeline-flourish {
+	display: none;
+	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
+}
+
+.daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish {
+	display: block;
+}
+
+.daymark-timeline-flourish svg {
+	display: block;
+}
+
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--image .daymark-recent__body,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--gallery .daymark-recent__body,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--video .daymark-recent__body,

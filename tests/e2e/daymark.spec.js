@@ -346,6 +346,29 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// A small decorative touch bookending Home's own vertical rail: a
+// "sunrise" mark where it begins, a "sunset" mark where it currently
+// ends — both hidden while the Timeline is empty (CSS gates them on the
+// same :has(.daymark-recent__typeicon) condition the rail itself uses),
+// both visible once it has at least one item.
+test('Timeline shows a start and end flourish once it has content', async ({ page }) => {
+	const caption = `E2E flourish ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark');
+	await expect(page.locator('.daymark-timeline-flourish--start')).toBeVisible();
+	await expect(page.locator('.daymark-timeline-flourish--end')).toBeVisible();
+	await expect(page.locator('.daymark-timeline-flourish--start svg')).toBeVisible();
+	await expect(page.locator('.daymark-timeline-flourish--end svg')).toBeVisible();
+});
+
 // Categories: the "File under" picker files a Mark under a chosen
 // category and remembers it as the per-type default for the next Mark.
 // (CI seeds the "E2E Photos"/"E2E Travel" categories; the picker only
