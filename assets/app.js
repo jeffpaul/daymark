@@ -2215,30 +2215,48 @@
 		}
 	}
 
+	// --- Shared topbar chrome: the Daymark icon link and the Notifications
+	// icon button. Home shows the icon paired with the "Daymark" wordmark;
+	// Explore/Search/Me show it on its own, alongside their own screen
+	// title, since all four screens (plus Notifications, reached from the
+	// button below) share one persistent top-level chrome — this keeps a
+	// tap back to Timeline and a way to reach Notifications available from
+	// every one of them, matching the bottom nav's own always-present rows.
+
+	function daymarkIconLink() {
+		return `<a class="daymark-iconbtn" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
+			config.siteIconUrl || ''
+		)}" alt="" width="20" height="20" /></a>`;
+	}
+
+	function notificationsIconButton() {
+		const hasUnread = config.notifications && config.notifications.hasUnread;
+		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${
+			hasUnread ? 'Notifications — unread replies' : 'Notifications'
+		}">
+			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+			${hasUnread ? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>' : ''}
+		</a>`;
+	}
+
 	// --- Screen: Home (Timeline) ---
 
 	const HomeScreen = {
 		render() {
-			const hasUnread = config.notifications && config.notifications.hasUnread;
 			// Home itself is the merged Marks + subscriptions feed now, so
 			// this is just a plain "go home" link — no separate screen to
-			// point at.
-			const wordmark = `<a class="daymark-homelink" href="#home"><svg class="daymark-homelink__icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
-					TIMELINE_GLYPH
-			  }</svg><span>Daymark</span></a>`;
+			// point at. The icon is Daymark's own (config.siteIconUrl — a
+			// site's Site Icon, else Daymark's bundled icon; same resolution
+			// used for the browser favicon/PWA icons and Timeline's own-Mark
+			// leading icon), not the Timeline nav glyph the bottom nav's own
+			// Timeline tab still uses.
+			const wordmark = `<a class="daymark-homelink" href="#home"><img class="daymark-homelink__icon" src="${esc(
+				config.siteIconUrl || ''
+			)}" alt="" width="22" height="22" /><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
-				<a class="daymark-iconbtn" href="#notifications" aria-label="${
-					hasUnread ? 'Notifications — unread replies' : 'Notifications'
-				}">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
-					${
-						hasUnread
-							? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>'
-							: ''
-					}
-				</a>
+				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
@@ -2648,7 +2666,9 @@
 			).join('');
 			return `
 			<header class="daymark-topbar">
+				${daymarkIconLink()}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Search</h1>
+				${notificationsIconButton()}
 			</header>
 			<div class="daymark-searchbar daymark-searchbar--screen">
 				<label class="daymark-visually-hidden" for="daymark-search-input">Search Daymark</label>
@@ -2838,7 +2858,9 @@
 			).join('');
 			return `
 			<header class="daymark-topbar">
+				${daymarkIconLink()}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Explore</h1>
+				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
 				<section class="daymark-recent" aria-labelledby="daymark-explore-types-heading">
@@ -2917,10 +2939,11 @@
 	//
 	// A minimal foundation for the user's own Daymark identity: who they
 	// are, their drafts, and the surfaces that already exist elsewhere
-	// (Notifications, Subscriptions in wp-admin, their WordPress profile).
-	// Deliberately doesn't duplicate WordPress's own account settings —
-	// Edit profile and Log out link out to WordPress rather than
-	// reimplementing them.
+	// (Subscriptions in wp-admin, their WordPress profile — Notifications
+	// is reached from the header icon every screen now shares, so it's no
+	// longer a link in this body). Deliberately doesn't duplicate
+	// WordPress's own account settings — Edit profile and Log out link
+	// out to WordPress rather than reimplementing them.
 
 	const MeScreen = {
 		render() {
@@ -2932,7 +2955,9 @@
 				  )}</span>`;
 			return `
 			<header class="daymark-topbar">
+				${daymarkIconLink()}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Me</h1>
+				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
 				<div class="daymark-meprofile">
@@ -2941,7 +2966,6 @@
 				</div>
 				<nav class="daymark-melinks" aria-label="Your Daymark">
 					<button type="button" class="daymark-melink" data-me-mymarks>Your Marks</button>
-					<a class="daymark-melink" href="#notifications">Notifications</a>
 					${
 						config.adminSubscriptionsUrl
 							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">Subscriptions</a>`
