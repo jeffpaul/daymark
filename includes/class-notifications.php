@@ -103,11 +103,16 @@ class Daymark_Notifications {
 
 	/**
 	 * Build the unified notifications list: on-site comments and imported
-	 * social responses for Daymark-created posts, plus one `dead_feed`
-	 * alert per subscription `daymark-subscriptions` has flagged
-	 * `status = 'error'` (7 consecutive failed checks — see
-	 * Daymark_Subscription_Poller::record_failed_check(); this class does
-	 * not decide that flag, only surfaces it).
+	 * social responses for Daymark-created posts, plus one subscription-
+	 * issue alert per subscription currently in a failing state — any row
+	 * `Daymark_Subscriptions::get_with_issues()` returns, i.e.
+	 * `consecutive_failure_count > 0`, whether or not it's reached the
+	 * 7-failure `status = 'error'` dead threshold yet (issue #189; this
+	 * class does not decide either flag, only surfaces what's already
+	 * set — see Daymark_Subscription_Poller::record_failed_check()). A
+	 * fully-dead row still surfaces exactly once here, not twice: it's
+	 * already included in `get_with_issues()`'s own result, so there is no
+	 * separate dead-feed-only pass to double up with.
 	 *
 	 * The Daymark-only scope is enforced server-side here — comments on
 	 * normal posts created outside Daymark never enter the result set,
@@ -117,22 +122,23 @@ class Daymark_Notifications {
 	 * Scoped per user: comment/reply items are replies to Marks the
 	 * current user can edit (authors get their own posts' activity;
 	 * editors and admins get all of it) — never other authors' draft
-	 * activity. `dead_feed` items are not scoped per user: subscriptions
-	 * carry no author/owner field in the data model (they're a single
-	 * install-wide list, not per-user), so every `dead_feed` item is
+	 * activity. Subscription-issue items are not scoped per user:
+	 * subscriptions carry no author/owner field in the data model (they're
+	 * a single install-wide list, not per-user), so every such item is
 	 * visible to anyone who can reach this endpoint at all — the same
 	 * `edit_posts` gate the /notifications route itself already enforces.
 	 *
-	 * Comment/reply items and `dead_feed` items are merged and sorted
-	 * together, newest first, by a single timestamp per item: a comment's
-	 * `comment_date_gmt`, or a flagged subscription's `last_checked_at`.
-	 * `last_checked_at` stands in for "when this subscription became
-	 * flagged" because Daymark_Subscription_Poller::run_scheduled_poll()
-	 * only ever polls `get_active()` rows — once a subscription flips to
-	 * `error` it stops being auto-polled, so `last_checked_at` freezes at
-	 * the exact failed check that crossed the threshold (unless/until a
-	 * manual refresh runs). A dead-feed alert has no natural "post date"
-	 * of its own, so this is the most honest recency signal available for
+	 * Comment/reply items and subscription-issue items are merged and
+	 * sorted together, newest first, by a single timestamp per item: a
+	 * comment's `comment_date_gmt`, or a failing subscription's
+	 * `last_checked_at`. For a still-`active`-but-failing subscription,
+	 * `last_checked_at` updates on every poll cycle like any other active
+	 * row's; for a fully-`error` (dead) one,
+	 * Daymark_Subscription_Poller::run_scheduled_poll() only ever polls
+	 * `get_active()` rows, so it freezes at the exact failed check that
+	 * crossed the threshold (unless/until a manual refresh runs). Either
+	 * way a subscription-issue alert has no natural "post date" of its
+	 * own, so this is the most honest recency signal available for
 	 * interleaving it chronologically with dated comment activity, rather
 	 * than always pinning it to the top or the bottom of the list.
 	 *
@@ -162,10 +168,10 @@ class Daymark_Notifications {
 			}
 		}
 
-		foreach ( $this->get_flagged_subscriptions() as $subscription ) {
+		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
 			$dated_items[] = array(
-				'timestamp' => $this->flagged_subscription_timestamp( $subscription ),
-				'item'      => $this->format_dead_feed( $subscription ),
+				'timestamp' => $this->subscription_issue_timestamp( $subscription ),
+				'item'      => $this->format_subscription_issue( $subscription ),
 			);
 		}
 
@@ -195,9 +201,10 @@ class Daymark_Notifications {
 	 * Whether the current user has notifications newer than their last
 	 * visit to the notifications screen. Boolean only — no counts.
 	 *
-	 * A newly flagged dead subscription counts as unread, the same as a
-	 * new comment: it is genuinely new information the user has not seen
-	 * yet ("this subscription just stopped working"), and there is no
+	 * A subscription newly starting to fail (or newly flagged fully dead)
+	 * counts as unread, the same as a new comment: it is genuinely new
+	 * information the user has not seen yet ("this subscription is having
+	 * trouble" or "this subscription stopped working"), and there is no
 	 * reason for it to sit silently until the user happens to open
 	 * Subscription management. See get_notifications()'s docblock for why
 	 * `last_checked_at` is the right timestamp to compare against `$seen`.
@@ -223,8 +230,8 @@ class Daymark_Notifications {
 			}
 		}
 
-		foreach ( $this->get_flagged_subscriptions() as $subscription ) {
-			if ( $this->flagged_subscription_timestamp( $subscription ) > $seen ) {
+		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
+			if ( $this->subscription_issue_timestamp( $subscription ) > $seen ) {
 				return true;
 			}
 		}
@@ -408,20 +415,21 @@ class Daymark_Notifications {
 	}
 
 	/**
-	 * Get subscriptions `daymark-subscriptions` has flagged dead
-	 * (`status = 'error'`). Thin passthrough to
-	 * Daymark_Subscriptions::get_flagged() — kept as its own method so
+	 * Get subscriptions currently in a failing state — dead
+	 * (`status = 'error'`) or still `active` but failing at least once
+	 * since its last success (issue #189). Thin passthrough to
+	 * Daymark_Subscriptions::get_with_issues() — kept as its own method so
 	 * get_notifications() and has_unread() share one lookup, and so tests
 	 * only need to reach through Daymark_Plugin::instance() in one place.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
-	private function get_flagged_subscriptions(): array {
-		return Daymark_Plugin::instance()->subscriptions->get_flagged();
+	private function get_subscriptions_with_issues(): array {
+		return Daymark_Plugin::instance()->subscriptions->get_with_issues();
 	}
 
 	/**
-	 * The recency timestamp for a flagged subscription: its
+	 * The recency timestamp for a failing subscription: its
 	 * `last_checked_at`, as a Unix timestamp (UTC), or 0 when unset/
 	 * unparsable. See get_notifications()'s docblock for why
 	 * `last_checked_at` is used here.
@@ -429,7 +437,7 @@ class Daymark_Notifications {
 	 * @param array<string, mixed> $subscription Subscription row.
 	 * @return int
 	 */
-	private function flagged_subscription_timestamp( array $subscription ): int {
+	private function subscription_issue_timestamp( array $subscription ): int {
 		$last_checked_at = (string) ( $subscription['last_checked_at'] ?? '' );
 
 		if ( '' === $last_checked_at ) {
@@ -442,13 +450,21 @@ class Daymark_Notifications {
 	}
 
 	/**
-	 * Build a `dead_feed` notification item from a flagged subscription
-	 * row, shaped so a frontend can both render the alert and link through
-	 * to that subscription's row in subscription management (view last
-	 * error, last checked time, retry/edit/unsubscribe) — this is the data
-	 * layer for that link, not the screen it points at, so the contract is
-	 * deliberately just "the subscription id plus display context", not a
-	 * guessed URL/hash structure for a screen that doesn't exist yet.
+	 * Build a subscription-issue notification item from a failing
+	 * subscription row, shaped so a frontend can both render the alert and
+	 * link through to Settings -> Daymark's subscription management screen
+	 * (view last error, last checked time, retry/edit/unsubscribe) — this
+	 * is the data layer for that link, not the screen it points at, so the
+	 * contract is deliberately just "the subscription id plus display
+	 * context", not a guessed URL/hash structure for an in-app screen that
+	 * doesn't exist (subscription management stays a wp-admin screen —
+	 * see CLAUDE.md's "Subscribe-by-URL + subscription management" row).
+	 *
+	 * `type` is `'dead_feed'` for a fully-dead (`status = 'error'`) row and
+	 * `'feed_issue'` for a still-`active`-but-failing one (issue #189) — a
+	 * frontend can word the alert accordingly (e.g. "this feed stopped
+	 * working" vs. "having trouble reaching this site") without having to
+	 * re-derive severity from `consecutive_failure_count` itself.
 	 *
 	 * `site_title` falls back to `site_url` when a subscription has no
 	 * title on file (mirrors how the row itself is likely to be labeled
@@ -461,21 +477,22 @@ class Daymark_Notifications {
 	 * only the failure count and timestamp to work with since no error
 	 * message was persisted at all.
 	 *
-	 * @param array<string, mixed> $subscription Subscription row (from get_flagged()).
+	 * @param array<string, mixed> $subscription Subscription row (from get_with_issues()).
 	 * @return array<string, mixed>
 	 */
-	private function format_dead_feed( array $subscription ): array {
+	private function format_subscription_issue( array $subscription ): array {
 		$site_title = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
 		$site_url   = esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) );
-		$timestamp  = $this->flagged_subscription_timestamp( $subscription );
+		$status     = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
+		$timestamp  = $this->subscription_issue_timestamp( $subscription );
 
 		return array(
-			'type'                      => 'dead_feed',
+			'type'                      => 'error' === $status ? 'dead_feed' : 'feed_issue',
 			'subscription_id'           => absint( $subscription['id'] ?? 0 ),
 			'site_title'                => '' !== $site_title ? $site_title : $site_url,
 			'site_url'                  => $site_url,
 			'feed_url'                  => esc_url_raw( (string) ( $subscription['feed_url'] ?? '' ) ),
-			'status'                    => 'error',
+			'status'                    => '' !== $status ? $status : 'error',
 			'consecutive_failure_count' => absint( $subscription['consecutive_failure_count'] ?? 0 ),
 			'last_checked_at'           => sanitize_text_field( (string) ( $subscription['last_checked_at'] ?? '' ) ),
 			'last_checked_at_relative'  => $timestamp

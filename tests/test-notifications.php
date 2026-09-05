@@ -95,9 +95,10 @@ class Test_Notifications extends WP_UnitTestCase {
 			$subscriptions->update(
 				$subscription_id,
 				array(
-					'status'          => 'error',
-					'last_checked_at' => '2026-01-01 00:00:00',
-					'last_error'      => 'This subscription\'s feed could not be reached or parsed.',
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+					'last_error'                => 'This subscription\'s feed could not be reached or parsed.',
 				)
 			)
 		);
@@ -118,8 +119,8 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertSame( 'This subscription\'s feed could not be reached or parsed.', $dead_feed_items[0]['last_error'] );
 	}
 
-	/** An active (non-flagged) subscription never appears as a `dead_feed` item. */
-	public function test_active_subscription_does_not_appear_as_dead_feed() {
+	/** A healthy subscription (no failures at all) never appears as a subscription-issue item — `dead_feed` or `feed_issue`. */
+	public function test_healthy_subscription_does_not_appear_as_a_subscription_issue() {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 
 		$subscriptions   = new Daymark_Subscriptions();
@@ -129,17 +130,107 @@ class Test_Notifications extends WP_UnitTestCase {
 		$notifications = new Daymark_Notifications();
 		$items         = $notifications->get_notifications();
 
-		$dead_feed_subscription_ids = array_column(
+		$issue_subscription_ids = array_column(
 			array_filter(
 				$items,
 				static function ( array $item ) {
-					return 'dead_feed' === ( $item['type'] ?? '' );
+					return in_array( $item['type'] ?? '', array( 'dead_feed', 'feed_issue' ), true );
 				}
 			),
 			'subscription_id'
 		);
 
-		$this->assertNotContains( $subscription_id, $dead_feed_subscription_ids );
+		$this->assertNotContains( $subscription_id, $issue_subscription_ids );
+	}
+
+	/**
+	 * Scenario (issue #189): a subscription that's failing but hasn't yet
+	 * reached the 7-failure dead threshold — still `status = 'active'` —
+	 * surfaces as a `feed_issue` notification item instead of `dead_feed`,
+	 * carrying its real (still-active) status.
+	 */
+	public function test_failing_but_still_active_subscription_appears_as_feed_issue_notification() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create(
+			array(
+				'site_url'   => 'https://flaky.example/',
+				'feed_url'   => 'https://flaky.example/feed/',
+				'site_title' => 'Flaky Site',
+			)
+		);
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertTrue(
+			$subscriptions->update(
+				$subscription_id,
+				array(
+					'consecutive_failure_count' => 2,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+					'last_error'                => 'Connection timed out.',
+				)
+			)
+		);
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$feed_issue_items = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) use ( $subscription_id ) {
+					return 'feed_issue' === ( $item['type'] ?? '' ) && $subscription_id === $item['subscription_id'];
+				}
+			)
+		);
+
+		$this->assertCount( 1, $feed_issue_items );
+
+		$item = $feed_issue_items[0];
+		$this->assertSame( 'Flaky Site', $item['site_title'] );
+		$this->assertSame( 'active', $item['status'] );
+		$this->assertSame( 2, $item['consecutive_failure_count'] );
+		$this->assertSame( 'Connection timed out.', $item['last_error'] );
+	}
+
+	/**
+	 * A fully-dead subscription surfaces exactly once, as `dead_feed` —
+	 * even though it also matches get_with_issues()'s broader condition,
+	 * there is no separate, duplicate `feed_issue` item for the same row.
+	 */
+	public function test_dead_subscription_does_not_also_appear_as_feed_issue() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://dead.example.com/feed/' ) );
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertTrue(
+			$subscriptions->update(
+				$subscription_id,
+				array(
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+				)
+			)
+		);
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) use ( $subscription_id ) {
+					return isset( $item['subscription_id'] ) && $subscription_id === $item['subscription_id'];
+				}
+			)
+		);
+
+		$this->assertCount( 1, $matching );
+		$this->assertSame( 'dead_feed', $matching[0]['type'] );
 	}
 
 	/**
@@ -164,8 +255,9 @@ class Test_Notifications extends WP_UnitTestCase {
 			$subscriptions->update(
 				$subscription_id,
 				array(
-					'status'          => 'error',
-					'last_checked_at' => '2026-01-01 00:00:00',
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_checked_at'           => '2026-01-01 00:00:00',
 				)
 			)
 		);
@@ -202,13 +294,14 @@ class Test_Notifications extends WP_UnitTestCase {
 		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://unread-example.com/feed/' ) );
 		$this->assertIsInt( $subscription_id );
 
-		$this->assertFalse( $notifications->has_unread(), 'A merely active subscription is not unread' );
+		$this->assertFalse( $notifications->has_unread(), 'A merely active, healthy subscription is not unread' );
 
 		$subscriptions->update(
 			$subscription_id,
 			array(
-				'status'          => 'error',
-				'last_checked_at' => gmdate( 'Y-m-d H:i:s' ),
+				'status'                    => 'error',
+				'consecutive_failure_count' => 7,
+				'last_checked_at'           => gmdate( 'Y-m-d H:i:s' ),
 			)
 		);
 
@@ -216,6 +309,36 @@ class Test_Notifications extends WP_UnitTestCase {
 
 		$notifications->mark_seen();
 		$this->assertFalse( $notifications->has_unread(), 'Viewing notifications marks the dead-feed alert seen too' );
+	}
+
+	/**
+	 * Unread lifecycle (issue #189): a subscription that just started
+	 * failing — but hasn't reached the dead threshold, still `active` —
+	 * counts as unread too, not only a fully-dead one.
+	 */
+	public function test_unread_reflects_newly_failing_but_still_active_subscription() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$notifications = new Daymark_Notifications();
+
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://newly-flaky.example.com/feed/' ) );
+		$this->assertIsInt( $subscription_id );
+
+		$this->assertFalse( $notifications->has_unread(), 'A merely active, healthy subscription is not unread' );
+
+		$subscriptions->update(
+			$subscription_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_checked_at'           => gmdate( 'Y-m-d H:i:s' ),
+			)
+		);
+
+		$this->assertTrue( $notifications->has_unread(), 'A subscription that just started failing counts as unread, even before it is fully dead' );
+
+		$notifications->mark_seen();
+		$this->assertFalse( $notifications->has_unread(), 'Viewing notifications marks the feed-issue alert seen too' );
 	}
 
 	/** Scenario 8: comments on non-Mark posts are excluded. */

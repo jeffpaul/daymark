@@ -35,6 +35,7 @@ can't act on them.
 - A subscription post's Timeline card no longer shows a "Subscribed" chip — its site icon already makes clear it isn't one of your own Marks, so the chip was just taking up space. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 - A Timeline card's comment/like/repost stat row is now ordered like, comment, reblog (was comment, like, repost). ([#186](https://github.com/jeffpaul/daymark/pull/186))
 - The header now shows the Daymark icon in the upper left on every screen (Home, Explore, Search, Me) instead of just the Timeline icon on Home — tapping it from Explore, Search, or Me takes you back to the Timeline. Explore, Search, and Me also now show the Notifications icon in the upper right, so it's been removed as a separate link on the Me page. ([#188](https://github.com/jeffpaul/daymark/pull/188))
+- A subscription having trouble fetching new posts (or fully dead) now shows up right in your Notifications, with a link back to Settings -> Daymark — no more separate wp-admin notice to check. ([#189](https://github.com/jeffpaul/daymark/issues/189))
 
 ### Fixed
 
