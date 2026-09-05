@@ -215,8 +215,9 @@ class Test_Rest_Bookmarks extends WP_UnitTestCase {
 		$this->create_mark( $this->author_a );
 		Daymark_Plugin::instance()->bookmarks->add( $this->author_a, $bookmarked_id );
 
-		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline?bookmarked=1' ) );
-		$items    = $response->get_data();
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$items = rest_do_request( $request )->get_data();
 
 		$this->assertCount( 1, $items );
 		$this->assertSame( $bookmarked_id, $items[0]['id'] );
@@ -228,8 +229,9 @@ class Test_Rest_Bookmarks extends WP_UnitTestCase {
 		$sub_post_id = $this->create_subscription_post();
 		Daymark_Plugin::instance()->bookmarks->add( $this->author_a, $sub_post_id );
 
-		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline?bookmarked=1' ) );
-		$items    = $response->get_data();
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$items = rest_do_request( $request )->get_data();
 
 		$this->assertCount( 1, $items );
 		$this->assertSame( $sub_post_id, $items[0]['id'] );
@@ -240,7 +242,9 @@ class Test_Rest_Bookmarks extends WP_UnitTestCase {
 		wp_set_current_user( $this->author_a );
 		$this->create_mark( $this->author_a );
 
-		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline?bookmarked=1' ) );
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'bookmarked', '1' );
+		$response = rest_do_request( $request );
 
 		$this->assertSame( array(), $response->get_data() );
 	}
