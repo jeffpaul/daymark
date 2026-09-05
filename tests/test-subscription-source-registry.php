@@ -244,27 +244,30 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Scenario: with every already-registered source excluded (both the
-	 * real built-ins and anything an earlier test in this file left
+	 * Scenario: with every *other* registered source excluded (both the
+	 * real built-ins and anything any other test in this file left
 	 * registered — the registry is a process-wide singleton, so
-	 * make_stub_source()'s own 'stub-source' is typically still sitting in
-	 * it by the time this runs), that still leaves discover_feeds() to
-	 * choose between the two stubs registered here — confirming it returns
-	 * the first-registered one (baseline for the exclusion test below).
+	 * make_stub_source()'s own 'stub-source', and even this same test's own
+	 * 'stub-first'/'stub-second' from an earlier run, are typically still
+	 * sitting in it), that still leaves discover_feeds() to choose between
+	 * the two stubs registered here — confirming it returns the
+	 * first-registered one (baseline for the exclusion test below).
 	 */
 	public function test_discover_feeds_with_no_exclusions_returns_first_registered_source() {
 		$registry = Daymark_Subscription_Source_Registry::instance();
 
-		// Captured *before* registering the two stubs under test, so it
-		// excludes every source already sitting in the registry — real
-		// built-ins and any other test's leftover stub alike — without
-		// this test needing to know their exact IDs.
-		$pre_existing_ids = array_keys( $registry->get_sources() );
-
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
-		$result = $registry->discover_feeds( 'https://exclude-test.example/', $pre_existing_ids );
+		// Computed *after* registering the two stubs under test, as
+		// "everything except them" — not "everything registered before
+		// this test ran", which would wrongly include 'stub-first'/
+		// 'stub-second' themselves once a *later* run of this same test
+		// (or the sibling test below, which registers the same two IDs)
+		// has already left them sitting in the process-wide singleton.
+		$exclude_ids = array_diff( array_keys( $registry->get_sources() ), array( 'stub-first', 'stub-second' ) );
+
+		$result = $registry->discover_feeds( 'https://exclude-test.example/', $exclude_ids );
 
 		$this->assertSame( 'stub-first', $result[0]['source_type'] ?? null );
 	}
@@ -280,15 +283,16 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	public function test_discover_feeds_skips_excluded_source_ids() {
 		$registry = Daymark_Subscription_Source_Registry::instance();
 
-		$pre_existing_ids = array_keys( $registry->get_sources() );
-
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
-		$result = $registry->discover_feeds(
-			'https://exclude-test.example/',
-			array_merge( $pre_existing_ids, array( 'stub-first' ) )
-		);
+		// Everything except 'stub-second' — see the sibling test above for
+		// why this has to be computed after registering, as "everything
+		// except the one source that should stay eligible", not a
+		// snapshot taken before registering.
+		$exclude_ids = array_diff( array_keys( $registry->get_sources() ), array( 'stub-second' ) );
+
+		$result = $registry->discover_feeds( 'https://exclude-test.example/', $exclude_ids );
 
 		$this->assertSame( 'stub-second', $result[0]['source_type'] ?? null );
 	}
