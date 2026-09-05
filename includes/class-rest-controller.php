@@ -193,6 +193,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => 0,
 						'sanitize_callback' => 'absint',
 					),
+					'bookmarked'      => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -527,6 +532,41 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'type'              => 'integer',
 						'required'          => true,
 						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/bookmarks/(?P<id>\d+)',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'add_bookmark' ),
+					// Same reasoning as GET /marks/{id}/content: a personal
+					// "save for later" action on anything already visible on
+					// this user's own Timeline, not an edit_post ownership
+					// check — permissions_check (edit_posts + nonce) alone.
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'remove_bookmark' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
 					),
 				),
 			)
@@ -941,16 +981,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * stay scoped to Daymark's own type vocabulary, not a guess at an
 	 * arbitrary post's content.
 	 *
-	 * Four optional filter params, combinable with the pagination params
+	 * Five optional filter params, combinable with the pagination params
 	 * above: `s` (keyword search, applied identically to both source
 	 * queries), `type` (content-type filter — `_daymark_primary_type` on
 	 * the Marks side, `post_format` on the subscription-posts side, same
 	 * enum space `GET /marks` already accepts for its own `type` param),
 	 * `mine` (Marks only — the subscription-posts query is skipped
-	 * entirely, not merely filtered to empty), and `subscription_id`
+	 * entirely, not merely filtered to empty), `subscription_id`
 	 * (that one subscription's posts only — the Marks query is skipped
-	 * entirely). If both `mine` and `subscription_id` are set, `mine`
-	 * wins and `subscription_id` is ignored.
+	 * entirely), and `bookmarked` (restricts both source queries to the
+	 * current user's bookmarked post IDs via `post__in` — see
+	 * Daymark_Bookmarks; backs Explore's "Bookmarks" section and Search's
+	 * own bookmarked filter). If both `mine` and `subscription_id` are set,
+	 * `mine` wins and `subscription_id` is ignored.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
@@ -966,6 +1009,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$type            = sanitize_key( (string) $request->get_param( 'type' ) );
 		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
+		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
+
+		// Bookmarks live in user meta, not post meta, so there's no
+		// meta_query to add — resolve the current user's bookmarked IDs
+		// once and restrict both source queries to them via `post__in`.
+		// `post__in` combines with each query's own `post_type`, so handing
+		// the same full ID list to both branches naturally scopes each to
+		// only the IDs that are actually that branch's post type — no need
+		// to split the list by type first. An empty bookmark list still
+		// needs an explicit `array( 0 )` (a real post ID can never be 0):
+		// WP_Query treats a genuinely empty `post__in` as "no restriction",
+		// which would defeat the filter instead of correctly returning
+		// nothing.
+		$bookmarked_post_in = null;
+		if ( $bookmarked ) {
+			$bookmarked_ids     = Daymark_Plugin::instance()->bookmarks->get_ids( get_current_user_id() );
+			$bookmarked_post_in = ! empty( $bookmarked_ids ) ? $bookmarked_ids : array( 0 );
+		}
 
 		// `mine` takes precedence over `subscription_id` when both are set:
 		// Marks only, subscription posts skipped entirely either way.
@@ -1013,6 +1074,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			if ( '' !== $search ) {
 				$marks_args['s'] = $search;
+			}
+
+			if ( null !== $bookmarked_post_in ) {
+				$marks_args['post__in'] = $bookmarked_post_in;
 			}
 
 			$marks_query = new WP_Query( $marks_args );
@@ -1080,6 +1145,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			if ( '' !== $search ) {
 				$subscription_posts_args['s'] = $search;
+			}
+
+			if ( null !== $bookmarked_post_in ) {
+				$subscription_posts_args['post__in'] = $bookmarked_post_in;
 			}
 
 			$subscription_posts_query = new WP_Query( $subscription_posts_args );
@@ -1599,6 +1668,89 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return rest_ensure_response(
 			array(
 				'content' => wp_kses_post( $content ),
+			)
+		);
+	}
+
+	/**
+	 * Validates that an ID refers to something bookmarkable: a published
+	 * `post` (Mark or ordinary post — same "any published post" rule
+	 * get_mark_content() already applies) or a published
+	 * `daymark_subscription_post`. Anything else (draft, another post type,
+	 * nonexistent) isn't a real Timeline item, so bookmarking it makes no
+	 * sense.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return true|WP_Error
+	 */
+	private function assert_bookmarkable( int $post_id ) {
+		$post = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		if ( ! in_array( $post->post_type, array( 'post', Daymark_Subscription_Post_Type::POST_TYPE ), true ) ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * POST /daymark/v1/bookmarks/{id} — bookmark a Timeline item (a Mark or
+	 * a cached subscription post) for the current user, for offline
+	 * viewing in Explore's Bookmarks section.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function add_bookmark( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_bookmarkable( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		Daymark_Plugin::instance()->bookmarks->add( get_current_user_id(), $post_id );
+
+		return rest_ensure_response(
+			array(
+				'id'         => $post_id,
+				'bookmarked' => true,
+			)
+		);
+	}
+
+	/**
+	 * DELETE /daymark/v1/bookmarks/{id} — remove a bookmark.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function remove_bookmark( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_bookmarkable( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		Daymark_Plugin::instance()->bookmarks->remove( get_current_user_id(), $post_id );
+
+		return rest_ensure_response(
+			array(
+				'id'         => $post_id,
+				'bookmarked' => false,
 			)
 		);
 	}
@@ -2262,6 +2414,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// no extra lookup.
 			'site_url'           => esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) ),
 			'site_title'         => sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) ),
+			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 		);
 	}
 
@@ -2314,6 +2467,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// larger question on that same issue, not done here.
 			'repost_count'       => $this->count_comments_of_type( $post_id, 'repost' ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
+			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 		);
 
 		// Quiet metadata capture: only ever present when a value was

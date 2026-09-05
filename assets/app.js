@@ -250,6 +250,7 @@
 		'<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 1 0-7.8 7.8l1 1L12 21.2l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"></path>';
 	const REPOST_GLYPH =
 		'<polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path>';
+	const BOOKMARK_GLYPH = '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -267,6 +268,30 @@
 		}</span>`;
 	}
 
+	// A Bookmark toggle, not a passive stat: it always shows (filled when
+	// bookmarked, outline otherwise — never quiet-hidden the way a
+	// zero-count stat is) and is the one *interactive* entry in this row,
+	// so it's a `span[role="button"]` rather than a real `<button>` — this
+	// row lives nested inside the card's own expand-trigger `<button>`
+	// (renderMarkCore()) or, for a subscription post, inside its own
+	// click-through `<button>` (renderSubscriptionPostCard()) — either
+	// way, a real nested `<button>` would trip the HTML parser's own
+	// "no <button> inside <button>" auto-close rule and silently break the
+	// surrounding markup. onFeedListClick()/onFeedListKeydown() handle
+	// activation the same as a real button would (click, or Enter/Space
+	// while focused), and stop before reaching that button's own
+	// expand-post/subpost handling.
+	function renderBookmarkToggle(item, kind) {
+		const bookmarked = !!item.bookmarked;
+		const id = esc(String(item.id));
+		const label = bookmarked ? 'Remove bookmark' : 'Bookmark for offline viewing';
+		return `<span class="daymark-stat daymark-stat--bookmark${
+			bookmarked ? ' daymark-stat--active daymark-stat--bookmarked' : ''
+		}" role="button" tabindex="0" aria-pressed="${bookmarked ? 'true' : 'false'}" aria-label="${esc(
+			label
+		)}" data-bookmark-toggle="${id}" data-bookmark-kind="${esc(kind)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
+	}
+
 	function renderItemStats(item) {
 		return `<span class="daymark-item-stats">${renderStat(
 			HEART_GLYPH,
@@ -280,7 +305,7 @@
 			'reposts',
 			'repost',
 			'reposts'
-		)}</span>`;
+		)}${renderBookmarkToggle(item, 'mark')}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -524,8 +549,13 @@
 	// Draft/autosave already uses the moment connectivity returns, so the
 	// server never sees a different code path for offline-originated work.
 	const OFFLINE_DB_NAME = 'daymark-offline';
-	const OFFLINE_DB_VERSION = 1;
+	// v2 adds BOOKMARK_STORE (see "Bookmarks" below) — the existing
+	// OFFLINE_STORE is untouched, so onupgradeneeded's own existence check
+	// (unchanged) still leaves an existing 'pending' store alone on
+	// upgrade; only the new store is created.
+	const OFFLINE_DB_VERSION = 2;
 	const OFFLINE_STORE = 'pending';
+	const BOOKMARK_STORE = 'bookmarks';
 
 	function openOfflineDB() {
 		return new Promise((resolve, reject) => {
@@ -538,6 +568,14 @@
 				const db = request.result;
 				if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
 					db.createObjectStore(OFFLINE_STORE, { keyPath: 'id', autoIncrement: true });
+				}
+				if (!db.objectStoreNames.contains(BOOKMARK_STORE)) {
+					// Keyed by the real Mark/subscription-post ID (not
+					// auto-incrementing, unlike OFFLINE_STORE) — a bookmark's
+					// cached content has exactly one natural identity, and
+					// keying on it directly is what makes put()-to-update and
+					// delete()-on-unbookmark idempotent.
+					db.createObjectStore(BOOKMARK_STORE, { keyPath: 'id' });
 				}
 			};
 			request.onsuccess = () => resolve(request.result);
@@ -627,6 +665,149 @@
 		const store = db.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE);
 		const all = await idbRequest(store.getAll());
 		return Array.isArray(all) ? all : [];
+	}
+
+	// --- Bookmarks: cached full content for offline viewing ---
+	//
+	// A bookmarked Mark or subscription post's full content is cached in
+	// BOOKMARK_STORE (see openOfflineDB() above) so Explore's Bookmarks
+	// section (a Search view filtered to `bookmarked=1`) still has
+	// something to show with no connectivity — the same
+	// content-fetch endpoints the inline-expand feature already uses
+	// (GET /marks/{id}/content, GET /subscription-posts/{id}), just
+	// persisted locally instead of fetched fresh every time. Every
+	// function here is best-effort: a failed cache write or read never
+	// blocks the bookmark action itself (the server-side bookmark already
+	// succeeded/failed independently) — it just means this device won't
+	// have that one item available offline until the next successful
+	// cache attempt (a retry on toggling it again, or syncBookmarkCache()
+	// on the next app boot).
+	async function putCachedBookmark(record) {
+		const db = await openOfflineDB();
+		const store = db.transaction(BOOKMARK_STORE, 'readwrite').objectStore(BOOKMARK_STORE);
+		return idbRequest(store.put(record));
+	}
+
+	async function getCachedBookmark(id) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(BOOKMARK_STORE, 'readonly').objectStore(BOOKMARK_STORE);
+			return await idbRequest(store.get(Number(id)));
+		} catch (err) {
+			return undefined;
+		}
+	}
+
+	async function getAllCachedBookmarks() {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(BOOKMARK_STORE, 'readonly').objectStore(BOOKMARK_STORE);
+			const all = await idbRequest(store.getAll());
+			return Array.isArray(all) ? all : [];
+		} catch (err) {
+			return [];
+		}
+	}
+
+	async function removeCachedBookmarkOffline(id) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(BOOKMARK_STORE, 'readwrite').objectStore(BOOKMARK_STORE);
+			await idbRequest(store.delete(Number(id)));
+		} catch (err) {
+			// IndexedDB unavailable, or this item was never cached in the
+			// first place — either way, nothing left to remove.
+		}
+	}
+
+	// Fetches one bookmarked item's full content and caches it. `screen`
+	// (when given) supplies the item's own already-fetched Timeline
+	// summary via its `_byMarkId`/`_bySubId` map (see rememberItem()) — no
+	// extra request for that half; a `null` summary (screen not given, or
+	// the item wasn't in either map — e.g. the boot-time sync below,
+	// working from GET /timeline?bookmarked=1 directly) is fine too,
+	// since renderFeedItem() only needs prepare_mark_summary()'s/
+	// prepare_subscription_post_summary()'s own shape, which the boot sync
+	// already has from that same request.
+	async function cacheBookmarkOffline(screen, kind, id, summary) {
+		try {
+			const item =
+				summary ||
+				(screen && screen._byMarkId && screen._byMarkId.get(String(id))) ||
+				(screen && screen._bySubId && screen._bySubId.get(String(id))) ||
+				null;
+			const isSubscriptionPost = 'subscription_post' === kind;
+			const response = await apiGet(
+				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
+			);
+			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
+			await putCachedBookmark({
+				id: Number(id),
+				kind,
+				item,
+				content,
+				cachedAt: Date.now(),
+			});
+		} catch (err) {
+			// Best-effort — see this section's own docblock above.
+		}
+	}
+
+	// Boot-time sync (issue #193's own explicit requirement: "whenever
+	// someone logs into their site and opens Daymark on a new device, we
+	// should ensure we cache these Bookmarked posts' content"). Fetches
+	// the user's current bookmark list from the server (the source of
+	// truth — bookmarks are per-user server state, not local) and caches
+	// full content for anything not already cached; also prunes any
+	// locally cached item that's no longer bookmarked (e.g. unbookmarked
+	// from a different device since this one's last sync). Never awaited
+	// by boot() itself — see its own call site — so a slow or offline
+	// sync never delays the app shell's first render.
+	async function syncBookmarkCache() {
+		// GET /timeline caps per_page at 50 server-side (MAX_PER_PAGE), so a
+		// user with more than 50 bookmarks needs more than one page — loop
+		// until a short page confirms there's nothing left, capped at 10
+		// pages (500 items, matching the server's own MAX_TIMELINE_QUERY_ITEMS)
+		// as a sanity ceiling against ever looping unbounded.
+		const perPage = 50;
+		const items = [];
+		try {
+			for (let page = 1; page <= 10; page += 1) {
+				const batch = await apiGet(
+					'timeline?per_page=' + perPage + '&page=' + page + '&bookmarked=1'
+				);
+				const arr = Array.isArray(batch) ? batch : [];
+				items.push(...arr);
+				if (arr.length < perPage) {
+					break;
+				}
+			}
+		} catch (err) {
+			return;
+		}
+		const stillBookmarkedIds = new Set(items.map((item) => Number(item.id)));
+
+		const cached = await getAllCachedBookmarks();
+		const alreadyCachedIds = new Set(cached.map((record) => record.id));
+
+		await Promise.all(
+			cached
+				.filter((record) => !stillBookmarkedIds.has(record.id))
+				.map((record) => removeCachedBookmarkOffline(record.id))
+		);
+
+		await Promise.all(
+			items
+				.filter((item) => !alreadyCachedIds.has(Number(item.id)))
+				.map((item) =>
+					cacheBookmarkOffline(
+						null,
+						'subscription_post' === item.item_type ? 'subscription_post' : 'mark',
+						item.id,
+						item
+					)
+				)
+		);
 	}
 
 	// The current composer state as a plain, structured-cloneable object —
@@ -1932,6 +2113,19 @@
 	function onFeedListClick(screen, event) {
 		const target = event.target;
 
+		// The Bookmark toggle — checked first so tapping it never also
+		// triggers the card's own expand-post/subpost tap (both live inside
+		// the same clickable card; see renderBookmarkToggle()'s own
+		// docblock for why this is a span[role="button"], not a real
+		// nested <button>).
+		const bookmarkToggle = target.closest('[data-bookmark-toggle]');
+		if (bookmarkToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleBookmark(screen, bookmarkToggle);
+			return;
+		}
+
 		// The "Reply" action inside an expanded subscription post's panel
 		// (see loadSubscriptionExpandHtml()): jump into the composer seeded
 		// to reply to that post.
@@ -2053,6 +2247,64 @@
 		if (confirmDel) {
 			event.preventDefault();
 			deleteItem(screen, confirmDel);
+		}
+	}
+
+	// Enter/Space activation for the Bookmark toggle's span[role="button"]
+	// — a real <button> gets this for free; this one doesn't, so it needs
+	// its own keydown handling, bound alongside onFeedListClick() on every
+	// feed-list container.
+	function onFeedListKeydown(screen, event) {
+		if ('Enter' !== event.key && ' ' !== event.key && 'Spacebar' !== event.key) {
+			return;
+		}
+		const toggle = event.target.closest('[data-bookmark-toggle]');
+		if (!toggle) {
+			return;
+		}
+		event.preventDefault();
+		toggleBookmark(screen, toggle);
+	}
+
+	function setBookmarkToggleState(trigger, bookmarked) {
+		trigger.classList.toggle('daymark-stat--bookmarked', bookmarked);
+		trigger.classList.toggle('daymark-stat--active', bookmarked);
+		trigger.setAttribute('aria-pressed', bookmarked ? 'true' : 'false');
+		trigger.setAttribute('aria-label', bookmarked ? 'Remove bookmark' : 'Bookmark for offline viewing');
+	}
+
+	// Toggles a bookmark for the Mark or subscription post this trigger
+	// belongs to. Optimistic: the icon flips immediately, then rolls back
+	// if the request fails. On the Bookmarks-filtered Search view
+	// specifically (screen.searchBookmarked), a successful unbookmark also
+	// removes the card from view — the filtered list is defined as "only
+	// what's currently bookmarked", so a card that's no longer bookmarked
+	// has no reason to still be in it.
+	async function toggleBookmark(screen, trigger) {
+		const id = trigger.getAttribute('data-bookmark-toggle');
+		const kind = trigger.getAttribute('data-bookmark-kind') || 'mark';
+		if (!id) {
+			return;
+		}
+		const wasBookmarked = 'true' === trigger.getAttribute('aria-pressed');
+		const nextBookmarked = !wasBookmarked;
+		setBookmarkToggleState(trigger, nextBookmarked);
+		try {
+			if (nextBookmarked) {
+				await apiPost('bookmarks/' + id, {});
+				cacheBookmarkOffline(screen, kind, id);
+			} else {
+				await apiDelete('bookmarks/' + id);
+				removeCachedBookmarkOffline(id);
+				if (screen && screen.searchBookmarked) {
+					const wrap = trigger.closest('.daymark-recent__item-wrap');
+					if (wrap) {
+						wrap.remove();
+					}
+				}
+			}
+		} catch (err) {
+			setBookmarkToggleState(trigger, wasBookmarked);
 		}
 	}
 
@@ -2338,6 +2590,7 @@
 			// --- Per-item ⋯ menu (edit / delete) via list delegation ---
 			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
+				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			});
 			// Pull-to-refresh is gesture-only now — Home is assumed to be
 			// the Timeline, so there's no separate "Refresh" link/button.
@@ -2732,6 +2985,10 @@
 				</div>
 			</div>
 			<section class="daymark-screen">
+				<p class="daymark-searchbookmarks-banner" data-search-bookmarks-banner hidden>
+					Showing your bookmarks.
+					<button type="button" class="daymark-btn daymark-btn--text" data-search-clear-bookmarks>Show everything</button>
+				</p>
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
 					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">Results</h2>
 					<div class="daymark-recent__list" data-search-results aria-live="polite">
@@ -2768,6 +3025,16 @@
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
+				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
+
+			const clearBookmarks = root.querySelector('[data-search-clear-bookmarks]');
+			if (clearBookmarks) {
+				clearBookmarks.addEventListener('click', () => {
+					this.searchBookmarked = false;
+					this.syncBookmarksBanner();
+					this.runSearch();
+				});
 			}
 
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
@@ -2780,6 +3047,7 @@
 			this.searchQuery = '';
 			this.searchType = '';
 			this.searchSource = '';
+			this.searchBookmarked = false;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._detailCache = this._detailCache || new Map();
@@ -2787,17 +3055,19 @@
 			this._subscriptions = [];
 
 			// A preset handed from Explore/Me ("browse by type", "your
-			// Marks", "Following") right before navigate('#search') — the
-			// same one-shot pattern state.pendingType already uses for the
-			// composer.
+			// Marks", "Following", "Bookmarks") right before navigate('#search')
+			// — the same one-shot pattern state.pendingType already uses for
+			// the composer.
 			if (searchPreset) {
 				this.searchType = searchPreset.type || '';
 				this.searchSource = searchPreset.source || '';
 				this.searchQuery = searchPreset.query || '';
+				this.searchBookmarked = !!searchPreset.bookmarked;
 				searchPreset = null;
 			}
 
 			this.syncFilterChips();
+			this.syncBookmarksBanner();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
@@ -2819,6 +3089,13 @@
 			this.searchType = type || '';
 			this.syncFilterChips();
 			this.runSearch();
+		},
+
+		syncBookmarksBanner() {
+			const banner = root.querySelector('[data-search-bookmarks-banner]');
+			if (banner) {
+				banner.hidden = !this.searchBookmarked;
+			}
 		},
 
 		// Fetch active subscriptions once per visit, purely to populate the
@@ -2862,6 +3139,9 @@
 			} else if (this.searchSource) {
 				params.set('subscription_id', this.searchSource);
 			}
+			if (this.searchBookmarked) {
+				params.set('bookmarked', '1');
+			}
 			try {
 				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
@@ -2882,21 +3162,67 @@
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
+				// Only the Bookmarks-filtered view has a meaningful offline
+				// fallback — its whole point is content already cached for
+				// exactly this case (see cacheBookmarkOffline()); an
+				// ordinary keyword/type search has no local data to fall
+				// back to, so it still just reports the failure.
+				if (this.searchBookmarked && (!navigator.onLine || err instanceof TypeError)) {
+					await this.renderCachedBookmarks(list, seq);
+					return;
+				}
 				list.innerHTML =
 					'<p class="daymark-error" role="alert">Search failed. ' + esc(err.message) + '</p>';
 			}
+		},
+
+		// Offline fallback for the Bookmarks-filtered view: renders from
+		// BOOKMARK_STORE's own cached item summaries instead of a live
+		// GET /timeline. Applies the type/keyword filters client-side,
+		// best-effort — the Source filter (mine/a specific subscription)
+		// is skipped here, since the cache has no reliable per-source
+		// membership to filter by offline.
+		async renderCachedBookmarks(list, seq) {
+			const cached = await getAllCachedBookmarks();
+			if (seq !== this._searchSeq || !list.isConnected) {
+				return;
+			}
+			let items = cached.map((record) => record.item).filter(Boolean);
+			if (this.searchType) {
+				items = items.filter(
+					(item) => this.searchType === (item.type || item.post_format || '')
+				);
+			}
+			if (this.searchQuery) {
+				const query = this.searchQuery.toLowerCase();
+				items = items.filter((item) => {
+					const haystack = ((item.title || '') + ' ' + (item.excerpt || '')).toLowerCase();
+					return haystack.includes(query);
+				});
+			}
+			this._bySubId.clear();
+			this._byMarkId.clear();
+			this._openExpand = null;
+			items.forEach((item) => rememberItem(this, item));
+			if (!items.length) {
+				list.innerHTML =
+					'<p class="daymark-empty">No bookmarks cached for offline viewing yet.</p>';
+				return;
+			}
+			list.innerHTML = items.map((item) => renderFeedItem(item)).join('');
 		},
 	};
 
 	// --- Screen: Explore ---
 	//
 	// A first, deliberately non-chronological browsing destination — never
-	// a second Timeline. Both sections here are real, built entirely on
-	// data the plugin already exposes (Mark type filtering, active
-	// subscriptions): "Browse by type" and "Following" hand a preset off to
-	// Search rather than duplicating its results rendering. Memories,
-	// highlights, collections, favorites, and suggested content are future
-	// sections on this same screen, not implied by anything rendered here.
+	// a second Timeline. Every section here is real, built entirely on
+	// data the plugin already exposes (Mark type filtering, bookmark
+	// state, active subscriptions): "Browse by type", "Bookmarks", and
+	// "Following" all hand a preset off to Search rather than duplicating
+	// its results rendering. Memories, highlights, collections, favorites,
+	// and suggested content are future sections on this same screen, not
+	// implied by anything rendered here.
 
 	const ExploreScreen = {
 		render() {
@@ -2917,6 +3243,14 @@
 					<h2 id="daymark-explore-types-heading" class="daymark-section-heading">Browse by type</h2>
 					<div class="daymark-exploretypes">${typeButtons}</div>
 				</section>
+				<section class="daymark-recent" aria-labelledby="daymark-explore-bookmarks-heading">
+					<h2 id="daymark-explore-bookmarks-heading" class="daymark-section-heading">Bookmarks</h2>
+					<div class="daymark-exploretypes">
+						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
+							BOOKMARK_GLYPH
+						)}<span>Saved for offline</span></button>
+					</div>
+				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
 					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">Following</h2>
 					<div class="daymark-recent__list" data-explore-following>
@@ -2935,6 +3269,14 @@
 					navigate('#search');
 				});
 			});
+
+			const bookmarksBtn = root.querySelector('[data-explore-bookmarks]');
+			if (bookmarksBtn) {
+				bookmarksBtn.addEventListener('click', () => {
+					searchPreset = { bookmarked: true };
+					navigate('#search');
+				});
+			}
 
 			const following = root.querySelector('[data-explore-following]');
 			if (following) {
@@ -4266,9 +4608,13 @@
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
 	// expands its content inline, right below the card, rather than
 	// navigating — its permalink points at the *source* site, not anywhere
-	// in this app. No comment/like stat row: those only ever exist for a
-	// Mark — Daymark doesn't (and, for someone else's post, can't cheaply)
-	// track engagement data of its own for a subscription post.
+	// in this app. No comment/like/reblog stat row: those only ever exist
+	// for a Mark — Daymark doesn't (and, for someone else's post, can't
+	// cheaply) track engagement data of its own for a subscription post.
+	// Bookmarking is different: it's this user's own "save for offline
+	// viewing" action on anything they can see on their Timeline, so it
+	// gets its own one-item stats row here even though the other three
+	// stats don't apply.
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
@@ -4302,6 +4648,10 @@
 							<span class="daymark-recent__title">${esc(title)}</span>
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+							<span class="daymark-item-stats daymark-item-stats--bookmark-only">${renderBookmarkToggle(
+								item,
+								'subscription_post'
+							)}</span>
 							${renderCardTimestampRow(item)}
 						</span>
 					</button>
@@ -4346,13 +4696,34 @@
 		return '<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>';
 	}
 
+	// A bookmarked item's cached content (see cacheBookmarkOffline()) is
+	// the fallback for both loaders below, only reached on a
+	// connectivity-shaped failure of the live fetch — an actual server
+	// error (a real HTTP response, not a network failure) is rethrown
+	// unchanged rather than silently masked by stale cached content.
+	async function loadExpandHtmlOffline(err, id) {
+		if (!(err instanceof TypeError) && navigator.onLine) {
+			throw err;
+		}
+		const cached = await getCachedBookmark(id);
+		if (!cached || !cached.content) {
+			throw err;
+		}
+		return String(cached.content);
+	}
+
 	// A Mark or ordinary post's own content — straight from the site's own
 	// database via GET /marks/{id}/content, so there's no page to narrow
 	// down in the first place (unlike a subscription post's external
 	// click-through fetch, below): no comments, no theme chrome, ever.
 	async function loadMarkExpandHtml(item) {
-		const full = await apiGet('marks/' + item.id + '/content');
-		const content = full && full.content ? String(full.content) : '';
+		let content;
+		try {
+			const full = await apiGet('marks/' + item.id + '/content');
+			content = full && full.content ? String(full.content) : '';
+		} catch (err) {
+			content = await loadExpandHtmlOffline(err, item.id);
+		}
 		return expandBodyHtml(content, item.permalink, 'View full post');
 	}
 
@@ -4361,8 +4732,13 @@
 	// body_content is never present in the merged Timeline feed response,
 	// even for an already-'full' post.
 	async function loadSubscriptionExpandHtml(item) {
-		const full = await apiGet('subscription-posts/' + item.id);
-		const content = full && full.body_content ? String(full.body_content) : '';
+		let content;
+		try {
+			const full = await apiGet('subscription-posts/' + item.id);
+			content = full && full.body_content ? String(full.body_content) : '';
+		} catch (err) {
+			content = await loadExpandHtmlOffline(err, item.id);
+		}
 		const body = expandBodyHtml(content, item.permalink, 'View original');
 		// A reply here rides Daymark's own POSSE markup rather than a real
 		// Webmention protocol implementation: the published Mark's
@@ -5278,6 +5654,17 @@
 		)
 		.catch(() => {})
 		.then(() => flushOfflineQueue().catch(() => {}));
+
+	// --- Bookmarks: refresh the offline content cache at boot ---
+	//
+	// issue #193's own explicit requirement: opening Daymark on a new
+	// device (or any fresh app-shell load) should make sure every
+	// currently-bookmarked item's full content is cached for offline
+	// viewing, not just whatever happened to already be cached on this
+	// device. Never awaited — a slow or offline sync attempt must never
+	// delay the app shell's own first render; syncBookmarkCache() itself
+	// is already best-effort end to end (see its own docblock).
+	syncBookmarkCache().catch(() => {});
 
 	// --- Service worker (PWA, Phase 8) ---
 	//

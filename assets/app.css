@@ -845,6 +845,48 @@ h2[tabindex='-1']:focus {
 	font-variant-numeric: tabular-nums;
 }
 
+/* The Bookmark toggle — the row's one interactive entry (see
+   renderBookmarkToggle(), app.js), pushed to the end of the row so it
+   reads as the last icon in the ordering, same as the request asked for. */
+.daymark-stat--bookmark {
+	margin-left: auto;
+	cursor: pointer;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	justify-content: center;
+}
+
+.daymark-stat--bookmark:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* Filled ribbon once bookmarked — .daymark-stat--active already supplies
+   the accent color and bolder stroke every other active stat uses; this
+   is the one additional rule a bookmark's own filled-vs-outline state
+   needs on top of that. */
+.daymark-stat--bookmarked svg {
+	fill: currentColor;
+}
+
+/* A subscription-post card has no like/comment/reblog stats to share a
+   row with (see renderSubscriptionPostCard()) — this variant keeps the
+   row's height and end-alignment without those, so the Bookmark toggle
+   still lands in the same visual corner a Mark card's own row places it. */
+.daymark-item-stats--bookmark-only {
+	justify-content: flex-end;
+}
+
+.daymark-searchbookmarks-banner {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+	margin: 0 0 var(--daymark-spacing-sm);
+}
+
 .daymark-empty {
 	padding: var(--daymark-spacing-lg);
 	border: 1px dashed var(--daymark-border);

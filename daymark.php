@@ -45,6 +45,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/class-connector-threads.p
 require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/class-connector-x.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmarks.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-url-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-html-cache.php';
