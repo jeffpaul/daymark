@@ -102,9 +102,17 @@ function ensureSubscription(page) {
 					credentials: 'same-origin',
 				});
 				const list = await listRes.json();
-				subscription = (Array.isArray(list) ? list : []).find(
-					(s) => s.feed_url && s.feed_url.includes('wordpress.org')
-				);
+				subscription = (Array.isArray(list) ? list : []).find((s) => {
+					if (!s.feed_url) {
+						return false;
+					}
+					try {
+						const parsed = new URL(s.feed_url);
+						return parsed.hostname === 'wordpress.org' && parsed.pathname.startsWith('/news/');
+					} catch {
+						return false;
+					}
+				});
 			}
 
 			await fetch(`${config.restUrl}subscriptions/${subscription.id}/refresh`, {
