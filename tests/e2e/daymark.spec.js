@@ -237,7 +237,15 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	const markWrap = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
 	const markCard = markWrap.locator('[data-expand-post]');
 	await expect(markCard).toBeVisible();
-	await markCard.click();
+	// Clicks the title specifically, not the button's own bounding-box
+	// center: the stat row (heart/comment/reblog/Bookmark/Share, each a
+	// real tap target) sits at the bottom of this same button, and a
+	// short/untitled-excerpt note card is compact enough that a blind
+	// center click can land on one of those icons instead of the card
+	// itself — exactly what a real tap on the title (not the icon row)
+	// would never do either.
+	const markTitle = markCard.locator('.daymark-recent__title');
+	await markTitle.click();
 	const markPanel = markWrap.locator('[data-expand-panel]');
 	await expect(markPanel).toBeVisible();
 	await expect(markPanel.locator('.daymark-expand-content')).toContainText(caption);
@@ -247,7 +255,7 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 
 	// Clicking it again collapses it back in place.
-	await markCard.click();
+	await markTitle.click();
 	await expect(markPanel).toBeHidden();
 
 	// A subscription-post card: same mechanism, external content instead —
@@ -264,7 +272,9 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	// which re-resolves subCard's own selector independently and can
 	// disagree with which element was actually clicked.
 	const subPanel = subCard.locator('xpath=following-sibling::*[@data-expand-panel]');
-	await subCard.click();
+	// Same title-click reasoning as the Mark card above — this card's own
+	// stat row (Bookmark, Share) sits at the bottom of the same button.
+	await subCard.locator('.daymark-recent__title').click();
 	await expect(subPanel).toBeVisible();
 	const viewOriginal = subPanel.getByRole('link', { name: /View original/ });
 	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
