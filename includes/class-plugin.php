@@ -85,6 +85,13 @@ final class Daymark_Plugin {
 	public Daymark_Notifications $notifications;
 
 	/**
+	 * Per-user bookmark set membership.
+	 *
+	 * @var Daymark_Bookmarks
+	 */
+	public Daymark_Bookmarks $bookmarks;
+
+	/**
 	 * Per-user rate limiter for REST actions.
 	 *
 	 * @var Daymark_Rate_Limiter
@@ -215,6 +222,7 @@ final class Daymark_Plugin {
 		$this->ai_assist                    = new Daymark_AI_Assist();
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
+		$this->bookmarks                    = new Daymark_Bookmarks();
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
