@@ -266,7 +266,13 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- TEMP DEBUG (issue #183 CI investigation), remove before merge.
+		fwrite( STDERR, "\n[DEBUG] sources: " . implode( ',', array_keys( $registry->get_sources() ) ) . "\n" );
+
 		$result = $registry->discover_feeds( 'https://exclude-test.example/', self::BUILT_IN_SOURCE_IDS );
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPress.PHP.DevelopmentFunctions.error_log_var_export -- TEMP DEBUG (issue #183 CI investigation), remove before merge.
+		fwrite( STDERR, '[DEBUG] result: ' . var_export( $result, true ) . "\n" );
 
 		$this->assertSame( 'stub-first', $result[0]['source_type'] ?? null );
 	}
