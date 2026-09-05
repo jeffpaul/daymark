@@ -181,6 +181,66 @@
 		)}</time>`;
 	}
 
+	/**
+	 * Buckets a date into a relative Timeline period (issue #145) — Today,
+	 * This Week, Last Week, This Month, Last Month, This Year, or a bare
+	 * year for anything older. Purely additive to a card's own
+	 * renderCardTimestamp(): this only decides where a section break falls,
+	 * never what an individual card's own timestamp shows. Deliberately no
+	 * separate "Now" bucket on top of Today — a card's own per-item
+	 * timestamp (relativeTime()) already reads "Just now"/"Xm ago" for the
+	 * freshest items, so a second, coarser "Now" header above Today would
+	 * only say the same thing twice.
+	 *
+	 * `key` is a plain equality-comparable string so callers can detect a
+	 * bucket change by walking date-descending items in order — this
+	 * codebase's `GET /timeline` already sorts that way, so a bucket, once
+	 * left, is never revisited within one render pass.
+	 *
+	 * Week/month/year boundaries are calendar-based (not a rolling N-day
+	 * window), matching how "This Month"/"Last Month" read in everyday use;
+	 * weeks start on Sunday (Date#getDay()'s own 0-based convention) rather
+	 * than assuming a locale's first day of the week.
+	 */
+	function timelinePeriod(date) {
+		const now = new Date();
+		const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const today = startOfDay(now);
+		const day = startOfDay(date);
+
+		if (day.getTime() === today.getTime()) {
+			return { key: 'today', label: 'Today' };
+		}
+
+		const startOfWeek = (d) => {
+			const s = startOfDay(d);
+			s.setDate(s.getDate() - s.getDay());
+			return s;
+		};
+		const thisWeekStart = startOfWeek(now);
+		if (day.getTime() >= thisWeekStart.getTime()) {
+			return { key: 'this_week', label: 'This Week' };
+		}
+		const lastWeekStart = new Date(thisWeekStart);
+		lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+		if (day.getTime() >= lastWeekStart.getTime()) {
+			return { key: 'last_week', label: 'Last Week' };
+		}
+
+		if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
+			return { key: 'this_month', label: 'This Month' };
+		}
+		const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+		if (date.getFullYear() === lastMonth.getFullYear() && date.getMonth() === lastMonth.getMonth()) {
+			return { key: 'last_month', label: 'Last Month' };
+		}
+
+		if (date.getFullYear() === now.getFullYear()) {
+			return { key: 'this_year', label: 'This Year' };
+		}
+		return { key: 'year:' + date.getFullYear(), label: String(date.getFullYear()) };
+	}
+
 	function connectorLabel(id) {
 		const found = connectors.find((c) => c.id === id);
 		return found ? found.label : id;
@@ -2134,6 +2194,35 @@
 			: renderMarkItem(item);
 	}
 
+	// Renders a page of feed items with relative-period group headers
+	// (timelinePeriod(), issue #145) interleaved ahead of the first item in
+	// each new bucket — Home's Timeline only (renderMarkItem()/
+	// renderSubscriptionPostCard() elsewhere, e.g. Search's results, are
+	// unaffected). `screen._lastGroupKey` carries the most recent bucket
+	// across calls so loadMorePage()'s own appended page continues the same
+	// run of headers loadRecent() started, rather than repeating one for a
+	// bucket the list is already mid-way through — loadRecent() resets it
+	// to null before rendering page 1, loadMorePage() deliberately doesn't.
+	// An item with no parseable date is rendered with no header of its own
+	// and leaves the current bucket untouched, rather than guessing one.
+	function renderFeedItemsWithGroups(screen, items) {
+		let html = '';
+		items.forEach((item) => {
+			const date = item.date ? parseDate(item.date) : null;
+			if (date) {
+				const period = timelinePeriod(date);
+				if (period.key !== screen._lastGroupKey) {
+					html += `<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(
+						period.label
+					)}</h3>`;
+					screen._lastGroupKey = period.key;
+				}
+			}
+			html += renderFeedItem(item);
+		});
+		return html;
+	}
+
 	// Track every feed item by id so an inline-expand tap can hand the
 	// panel everything it already has without re-querying the DOM. A
 	// subscription post and a Mark/ordinary post keep separate Maps (their
@@ -2800,6 +2889,11 @@
 			// gone anyway.
 			this._detailCache = this._detailCache || new Map();
 			this._openExpand = null;
+			// Most recent relative-period bucket rendered so far (issue
+			// #145) — reset on every fresh init/loadRecent(), left alone by
+			// loadMorePage() so an appended page continues the same run of
+			// headers instead of repeating one.
+			this._lastGroupKey = null;
 
 			await refreshPendingSection();
 
@@ -2856,6 +2950,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._openExpand = null;
+				this._lastGroupKey = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -2868,7 +2963,7 @@
 					}
 					return;
 				}
-				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
+				list.innerHTML = renderFeedItemsWithGroups(this, arr);
 
 				if (arr.length < RECENT_PER_PAGE) {
 					// A short first page means there is nothing more to load.
@@ -2924,10 +3019,11 @@
 				if (arr.length && list.isConnected) {
 					this.recentPage = nextPage;
 					arr.forEach((item) => rememberItem(this, item));
-					list.insertAdjacentHTML(
-						'beforeend',
-						arr.map((item) => renderFeedItem(item)).join('')
-					);
+					// Deliberately not resetting this._lastGroupKey first —
+					// continuing from wherever loadRecent()'s own page (or a
+					// prior loadMorePage() call) left off is what keeps this
+					// page's own headers from repeating one still in view.
+					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;

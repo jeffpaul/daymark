@@ -2109,6 +2109,28 @@ h2[tabindex='-1']:focus {
 	left: 14px;
 }
 
+/* Relative-period group headers (Today, This Week, Last Month, ...; see
+   timelinePeriod()/renderFeedItemsWithGroups(), app.js — issue #145). A
+   plain sibling of the item-wraps in the same list, so the rail line above
+   (a full-height ::before behind the whole list) would otherwise run
+   straight through its text; giving it the same solid --daymark-bg every
+   other rail-masking element in this list already uses (see this rule
+   block's own header comment) covers exactly the segment behind it, the
+   same way each type icon's own opaque background already does. Left
+   padding aligns its text with a card's own content, past the leading
+   site-icon/type-icon columns, rather than starting flush with the rail. */
+.daymark-recent__groupheader {
+	margin: var(--daymark-spacing-md) 0 0;
+	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 28px + var(--daymark-spacing-sm));
+	background: var(--daymark-bg);
+}
+
+/* The very first header in the list needs no extra clearance above it —
+   the list's own top edge already provides that. */
+.daymark-recent__groupheader:first-child {
+	margin-top: 0;
+}
+
 /* A small flourish bookending Home's own Timeline rail (the thin grey
    line above) — a "sunrise" mark where it begins, a "sunset" mark where
    it currently ends, both rendered by timelineStartFlourish()/
