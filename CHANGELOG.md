@@ -37,6 +37,7 @@ can't act on them.
 ### Fixed
 
 - Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll. ([#175](https://github.com/jeffpaul/daymark/pull/175))
+- Subscribing to a second feed on an already-subscribed WordPress site (e.g. a friend publishing both a Posts archive and a separate Notes archive on one install) previously failed as a duplicate, since the site's REST API always resolves to the same site-wide feed regardless of which page you subscribed from. You can now paste a specific feed URL directly to subscribe to exactly that feed, and subscribing to a second page on the same site now falls back to that page's own RSS/Atom feed instead of failing. ([#184](https://github.com/jeffpaul/daymark/pull/184))
 
 ## [0.10.0] - 2026-09-04
 

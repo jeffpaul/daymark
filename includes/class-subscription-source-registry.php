@@ -167,15 +167,29 @@ class Daymark_Subscription_Source_Registry {
 	 * focused on its own candidate shape (`url`/`title`/`type`) without
 	 * needing to know its own registered ID.
 	 *
-	 * @param string $site_url Site URL entered by the user (not a feed URL).
-	 * @return array<int, array<string, mixed>> The first source's non-empty
-	 *                                          discover() result, each entry
-	 *                                          augmented with `source_type`;
-	 *                                          empty when no registered
-	 *                                          source discovers anything.
+	 * @param string   $site_url    Site URL entered by the user (not a feed URL).
+	 * @param string[] $exclude_ids Source IDs to skip entirely (issue #183):
+	 *                              lets a caller re-run discovery after the
+	 *                              normally-winning source resolved to a feed
+	 *                              URL that's already subscribed under a
+	 *                              different page's URL on the same site, so
+	 *                              the next-preferred source gets a chance to
+	 *                              find a differently-scoped feed instead.
+	 *                              Empty by default — every existing caller
+	 *                              is unaffected.
+	 * @return array<int, array<string, mixed>> The first non-excluded
+	 *                                          source's non-empty discover()
+	 *                                          result, each entry augmented
+	 *                                          with `source_type`; empty when
+	 *                                          no eligible source discovers
+	 *                                          anything.
 	 */
-	public function discover_feeds( string $site_url ): array {
+	public function discover_feeds( string $site_url, array $exclude_ids = array() ): array {
 		foreach ( $this->sources as $id => $source ) {
+			if ( in_array( $id, $exclude_ids, true ) ) {
+				continue;
+			}
+
 			$discovered = $source->discover( $site_url );
 
 			if ( empty( $discovered ) ) {

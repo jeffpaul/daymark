@@ -276,6 +276,57 @@ class Test_Subscription_Source_Feed extends WP_UnitTestCase {
 		$this->assertSame( array(), $this->source->discover( 'http://127.0.0.1/' ) );
 	}
 
+	// -----------------------------------------------------------------
+	// discover_direct_feed() (issue #183).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: a URL that is itself a valid feed (not a page to run
+	 * autodiscovery against) is recognized directly, returning a single
+	 * candidate carrying the feed's own title.
+	 */
+	public function test_discover_direct_feed_recognizes_a_literal_feed_url() {
+		$feed = <<<'XML'
+<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+<title>Example Notes</title>
+<link>https://example.com/notes/</link>
+</channel>
+</rss>
+XML;
+		$this->mock_feed_response( 'https://example.com/notes/feed/', $feed );
+
+		$discovered = $this->source->discover_direct_feed( 'https://example.com/notes/feed/' );
+
+		$this->assertCount( 1, $discovered );
+		$this->assertSame( 'https://example.com/notes/feed/', $discovered[0]['url'] );
+		$this->assertSame( 'Example Notes', $discovered[0]['title'] );
+	}
+
+	/**
+	 * Scenario: an ordinary HTML page (the common case — most subscribe-by-URL
+	 * input is a page, not a direct feed link) does not parse as a feed, so
+	 * this returns empty rather than a false positive — the caller falls back
+	 * to normal page-based discovery.
+	 */
+	public function test_discover_direct_feed_returns_empty_array_for_an_ordinary_page() {
+		$this->mock_response( 'https://example.com/notes/', '<html><head><title>Notes</title></head><body></body></html>' );
+
+		$this->assertSame( array(), $this->source->discover_direct_feed( 'https://example.com/notes/' ) );
+	}
+
+	/** Scenario: an unreachable URL also returns empty, not a fatal. */
+	public function test_discover_direct_feed_returns_empty_array_on_fetch_failure() {
+		// Deliberately not mocked — intercept_http_request() blocks it with a WP_Error.
+		$this->assertSame( array(), $this->source->discover_direct_feed( 'https://unreachable.example/feed/' ) );
+	}
+
+	/** Scenario (issue #81, SSRF hardening): an unsafe URL is rejected before any request is made. */
+	public function test_discover_direct_feed_rejects_unsafe_host() {
+		$this->assertSame( array(), $this->source->discover_direct_feed( 'http://127.0.0.1/feed/' ) );
+	}
+
 	/**
 	 * Scenario (issue #81): the site-HTML fetch behind discover() rejects a
 	 * response at or beyond the configured size cap rather than parsing a

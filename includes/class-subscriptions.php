@@ -294,6 +294,55 @@ class Daymark_Subscriptions {
 		$feed       = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
 		$feed_url   = isset( $feed['url'] ) ? (string) $feed['url'] : '';
 
+		// issue #183: page-based discovery found nothing at all — try
+		// $site_url as a literal feed URL directly before giving up. Only
+		// attempted as a fallback here, never unconditionally up front: an
+		// ordinary page URL essentially never also parses as a feed, so
+		// trying it first on every call would cost one wasted live request
+		// on the common, already-successful path (exactly what
+		// Daymark_Subscription_Html_Cache exists to avoid for page-based
+		// discovery itself). This fallback is what actually lets a caller
+		// who already knows a specific feed's own URL (e.g. a Notes
+		// archive's `/notes/feed/`, distinct from the same site's main
+		// `/feed/`) subscribe to exactly that feed — see
+		// Daymark_Subscription_Source_Feed::discover_direct_feed()'s own
+		// docblock for why a second feed on an already-subscribed WordPress
+		// site can never be reached through page-based discovery alone.
+		if ( '' === $feed_url ) {
+			$feed_source = $registry->get_source( 'feed' );
+			$direct      = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
+				? $feed_source->discover_direct_feed( $site_url )
+				: array();
+
+			if ( ! empty( $direct ) ) {
+				$feed                = $direct[0];
+				$feed['source_type'] = 'feed';
+				$feed_url            = isset( $feed['url'] ) ? (string) $feed['url'] : '';
+			}
+		}
+
+		// issue #183: the winning source resolved to a feed this site is
+		// already subscribed to under a different page's URL — most often
+		// Daymark_Subscription_Source_WordPress, which always resolves to
+		// the same site-wide `wp/v2/posts` collection no matter which page
+		// discovery started from. Retry with that source excluded so the
+		// next-preferred source (typically the RSS/Atom `feed` source,
+		// reading *this* page's own `<link rel="alternate">`) gets a chance
+		// to find the differently-scoped feed the user actually meant,
+		// rather than failing with a duplicate-subscription error for a feed
+		// that's already subscribed.
+		if ( '' !== $feed_url && $this->get_by_feed_url( $feed_url ) ) {
+			$retry_source_type = isset( $feed['source_type'] ) ? sanitize_key( (string) $feed['source_type'] ) : '';
+			$retry_discovered  = $registry->discover_feeds( $site_url, array( $retry_source_type ) );
+			$retry_feed        = isset( $retry_discovered[0] ) && is_array( $retry_discovered[0] ) ? $retry_discovered[0] : array();
+			$retry_feed_url    = isset( $retry_feed['url'] ) ? (string) $retry_feed['url'] : '';
+
+			if ( '' !== $retry_feed_url && ! $this->get_by_feed_url( $retry_feed_url ) ) {
+				$feed     = $retry_feed;
+				$feed_url = $retry_feed_url;
+			}
+		}
+
 		if ( '' === $feed_url ) {
 			return new WP_Error(
 				'daymark_subscription_no_feed_found',

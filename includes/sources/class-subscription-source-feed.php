@@ -145,8 +145,79 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			);
 		}
 
-		$feed_url = esc_url_raw( trim( $feed_url ) );
+		$feed = $this->fetch_simplepie_feed( esc_url_raw( trim( $feed_url ) ) );
 
+		if ( is_wp_error( $feed ) ) {
+			return $feed;
+		}
+
+		$this->last_hub_url = $this->extract_hub_url( $feed );
+
+		return $this->build_raw_items( $feed );
+	}
+
+	/**
+	 * Treat $url itself as a literal feed URL rather than a page to run
+	 * `<link>` autodiscovery against (issue #183). Lets a caller subscribe
+	 * directly to a feed it already knows about, bypassing page-based
+	 * discovery entirely — and, in doing so, bypassing whichever source
+	 * would otherwise win discovery for that page.
+	 *
+	 * This matters specifically because Daymark_Subscription_Source_WordPress
+	 * always resolves to the exact same site-wide `wp/v2/posts` collection
+	 * URL no matter which page on that domain discovery started from, so a
+	 * second, differently-scoped feed on an already-subscribed WordPress
+	 * site (e.g. a Notes archive with its own `/notes/feed/`, distinct from
+	 * the main site's `/feed/`) can never be reached through ordinary
+	 * page-based discovery — the WordPress source wins every time and
+	 * "discovers" the same feed_url the first subscription already used.
+	 * Pasting that Notes feed's own URL directly here sidesteps the whole
+	 * discovery cascade, the same way an OPML `xmlUrl` entry already trusts
+	 * a known feed URL directly rather than re-discovering it (see
+	 * Daymark_Subscription_OPML's own "fast path" for the same reasoning).
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param string $url A URL the caller already believes is a feed, not a page.
+	 * @return array<int, array{url: string, title: string, type: string}> A
+	 *         single-element array shaped like discover()'s own return value
+	 *         when $url parses as a genuine feed; empty when it does not (an
+	 *         ordinary page, an unreachable URL, or malformed XML) — the
+	 *         caller falls back to normal page-based discovery in that case.
+	 */
+	public function discover_direct_feed( string $url ): array {
+		$validated = $this->validate_source_url( $url );
+
+		if ( is_wp_error( $validated ) ) {
+			return array();
+		}
+
+		$url  = esc_url_raw( trim( $url ) );
+		$feed = $this->fetch_simplepie_feed( $url );
+
+		if ( is_wp_error( $feed ) ) {
+			return array();
+		}
+
+		return array(
+			array(
+				'url'   => $url,
+				'title' => sanitize_text_field( (string) $feed->get_title() ),
+				'type'  => 'application/rss+xml',
+			),
+		);
+	}
+
+	/**
+	 * Fetch and parse a feed URL via SimplePie, returning the parsed feed
+	 * object itself (title and all) rather than fetch()'s own raw-item
+	 * shape — shared by fetch() and discover_direct_feed(), which each need
+	 * a different projection of the same parsed feed.
+	 *
+	 * @param string $feed_url Already-validated, sanitized feed URL.
+	 * @return SimplePie|WP_Error
+	 */
+	private function fetch_simplepie_feed( string $feed_url ) {
 		if ( ! function_exists( 'fetch_feed' ) ) {
 			require_once ABSPATH . WPINC . '/feed.php';
 		}
@@ -171,13 +242,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		remove_filter( 'http_request_args', array( $this, 'inject_feed_response_size_limit' ), 10 );
 		remove_action( 'wp_feed_options', array( $this, 'configure_feed_timeout' ), 10 );
 
-		if ( is_wp_error( $feed ) ) {
-			return $feed;
-		}
-
-		$this->last_hub_url = $this->extract_hub_url( $feed );
-
-		return $this->build_raw_items( $feed );
+		return $feed;
 	}
 
 	/**
