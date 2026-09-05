@@ -337,6 +337,23 @@
 		)}</span>`;
 	}
 
+	// The row's other interactive entry, same span[role="button"] reasoning
+	// as renderBookmarkToggle() above (nested inside the card's own
+	// expand-trigger button either way). Shares a Mark's or a subscription
+	// post's real permalink — identical behavior for either, so unlike the
+	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
+	// when an item has no permalink at all (should not normally happen for
+	// anything actually published), since there'd be nothing to share.
+	function renderShareToggle(item) {
+		if (!item.permalink) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
+			SHARE_GLYPH
+		)}</span>`;
+	}
+
 	function renderItemStats(item) {
 		return `<span class="daymark-item-stats">${renderStat(
 			HEART_GLYPH,
