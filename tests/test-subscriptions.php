@@ -554,6 +554,107 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertSame( 'daymark_subscription_duplicate', $second->get_error_code() );
 	}
 
+	// -----------------------------------------------------------------
+	// Subscribing to a second, differently-scoped feed on the same site
+	// (issue #183).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: pasting a URL that is itself a feed (not a page to run
+	 * autodiscovery against) subscribes to exactly that feed directly —
+	 * no page-based discovery, no HTML fetch at all. Lets a caller who
+	 * already knows a specific feed's own URL (e.g. a Notes archive's
+	 * `/notes/feed/`, distinct from the same site's main `/feed/`)
+	 * subscribe to exactly that feed.
+	 */
+	public function test_subscribe_to_site_accepts_a_direct_feed_url() {
+		$feed = <<<'XML'
+<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+<title>Jeremy's Notes</title>
+<link>https://jeremyfelt.example/notes/</link>
+</channel>
+</rss>
+XML;
+		$this->mock_response( 'https://jeremyfelt.example/notes/feed/', $feed, 'application/rss+xml; charset=UTF-8' );
+
+		$result = $this->subscriptions->subscribe_to_site( 'https://jeremyfelt.example/notes/feed/' );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertSame( 'https://jeremyfelt.example/notes/feed/', $row['feed_url'] );
+		$this->assertSame( 'feed', $row['source_type'] );
+		$this->assertSame( "Jeremy's Notes", $row['site_title'] );
+	}
+
+	/**
+	 * Scenario: two different sites/domains each publishing their own feed
+	 * (e.g. a friend's main site and a separate notes-only site) subscribe
+	 * independently with no special handling needed — each resolves to its
+	 * own distinct feed_url.
+	 */
+	public function test_subscribe_to_site_allows_two_independent_domains() {
+		$this->mock_response( 'https://peterwilson.example/', $this->html_with_feed_and_icon() );
+		$this->mock_response( 'https://peterwilson-notes.example/', $this->html_with_feed_and_icon() );
+
+		$posts = $this->subscriptions->subscribe_to_site( 'https://peterwilson.example/' );
+		$notes = $this->subscriptions->subscribe_to_site( 'https://peterwilson-notes.example/' );
+
+		$this->assertIsInt( $posts );
+		$this->assertIsInt( $notes );
+		$this->assertNotSame(
+			$this->subscriptions->get( $posts )['feed_url'],
+			$this->subscriptions->get( $notes )['feed_url']
+		);
+	}
+
+	/**
+	 * Scenario: a WordPress site's own REST API source always resolves to
+	 * the same site-wide `wp/v2/posts` collection regardless of which page
+	 * discovery started from — so subscribing to a second page on that same
+	 * site (e.g. a Notes archive, after already subscribing to the main
+	 * Blog) would otherwise "discover" the exact feed already subscribed
+	 * and fail as a duplicate. Retrying with that source excluded lets the
+	 * next-preferred source (the RSS/Atom feed source, reading this exact
+	 * page's own `<link rel="alternate">`) find the page-specific feed the
+	 * user actually meant instead.
+	 */
+	public function test_subscribe_to_site_finds_a_page_specific_feed_after_a_site_wide_duplicate() {
+		$blog_html = '<html><head><title>Jeremy</title>'
+			. '<link rel="https://api.w.org/" href="https://jeremyfelt.example/wp-json/">'
+			. '</head><body></body></html>';
+
+		// The Notes page shares the exact same site-wide REST API discovery
+		// link (same WordPress install) but also advertises its own,
+		// page-specific RSS feed — realistic for a WordPress archive page
+		// that has both.
+		$notes_html = '<html><head><title>Notes</title>'
+			. '<link rel="https://api.w.org/" href="https://jeremyfelt.example/wp-json/">'
+			. '<link rel="alternate" type="application/rss+xml" href="https://jeremyfelt.example/notes/feed/">'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://jeremyfelt.example/blog/', $blog_html );
+		$this->mock_response( 'https://jeremyfelt.example/notes/', $notes_html );
+		$this->mock_response( 'https://jeremyfelt.example/wp-json/wp/v2/posts?per_page=1', '[]' );
+
+		$blog = $this->subscriptions->subscribe_to_site( 'https://jeremyfelt.example/blog/' );
+		$this->assertIsInt( $blog );
+
+		$blog_row = $this->subscriptions->get( $blog );
+		$this->assertSame( 'https://jeremyfelt.example/wp-json/wp/v2/posts', $blog_row['feed_url'] );
+		$this->assertSame( 'WordPress', $blog_row['source_type'] );
+
+		$notes = $this->subscriptions->subscribe_to_site( 'https://jeremyfelt.example/notes/' );
+		$this->assertIsInt( $notes, 'A second, page-specific feed was found instead of failing as a duplicate' );
+
+		$notes_row = $this->subscriptions->get( $notes );
+		$this->assertSame( 'https://jeremyfelt.example/notes/feed/', $notes_row['feed_url'] );
+		$this->assertSame( 'feed', $notes_row['source_type'] );
+		$this->assertNotSame( $blog_row['feed_url'], $notes_row['feed_url'] );
+	}
+
 	/**
 	 * Scenario: unsubscribe() trashes every cached daymark_subscription_post
 	 * ingested from this subscription and deletes the subscription row —

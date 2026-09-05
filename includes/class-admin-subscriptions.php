@@ -516,7 +516,7 @@ class Daymark_Admin_Subscriptions {
 							placeholder="example.com"
 							required="required"
 						/>
-						<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address. The scheme (https://) is optional — assumed when left off.', 'daymark' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address — a specific section (e.g. a Notes archive) or a feed URL itself both work, so you can subscribe to more than one feed on the same site. The scheme (https://) is optional — assumed when left off.', 'daymark' ); ?></p>
 					</td>
 				</tr>
 			</table>

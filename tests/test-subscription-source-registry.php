@@ -189,4 +189,105 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 			'filename' => null,
 		);
 	}
+
+	// -----------------------------------------------------------------
+	// discover_feeds()'s $exclude_ids parameter (issue #183).
+	// -----------------------------------------------------------------
+
+	/**
+	 * A stub source whose discover() unconditionally succeeds with a
+	 * candidate carrying its own ID in the URL, so a test can tell which
+	 * one actually won discovery without any HTTP involved — same
+	 * no-network-needed shape make_stub_source() already established,
+	 * just returning a real candidate array (`url`/`title`/`type`) rather
+	 * than a bare string, since this one is exercised through
+	 * discover_feeds() itself.
+	 *
+	 * @param string $id Source ID this stub registers under.
+	 * @return Daymark_Subscription_Source
+	 */
+	private function make_discoverable_stub_source( string $id ): Daymark_Subscription_Source {
+		return new class( $id ) implements Daymark_Subscription_Source {
+
+			private string $id;
+
+			public function __construct( string $id ) {
+				$this->id = $id;
+			}
+
+			public function get_id(): string {
+				return $this->id;
+			}
+
+			public function get_label(): string {
+				return $this->id;
+			}
+
+			public function discover( string $site_url ): array {
+				return array(
+					array(
+						'url'   => $site_url . $this->id . '/feed/',
+						'title' => '',
+						'type'  => 'application/rss+xml',
+					),
+				);
+			}
+
+			public function fetch( string $feed_url ): array {
+				return array();
+			}
+
+			public function normalize( array $raw_item ): array {
+				return $raw_item;
+			}
+		};
+	}
+
+	/**
+	 * Scenario: with no exclusions, discover_feeds() still returns the
+	 * first-registered source's result (baseline for the exclusion test
+	 * below).
+	 */
+	public function test_discover_feeds_with_no_exclusions_returns_first_registered_source() {
+		$registry = Daymark_Subscription_Source_Registry::instance();
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
+
+		$result = $registry->discover_feeds( 'https://exclude-test.example/' );
+
+		$this->assertSame( 'stub-first', $result[0]['source_type'] ?? null );
+	}
+
+	/**
+	 * Scenario (issue #183): excluding the first-registered source lets the
+	 * next-registered one win instead — what Daymark_Subscriptions::
+	 * subscribe_to_site() relies on to retry discovery when the normally-
+	 * winning source (typically the WordPress REST API source, which always
+	 * resolves to the same site-wide feed regardless of page) resolved to a
+	 * feed already subscribed under a different page's URL.
+	 */
+	public function test_discover_feeds_skips_excluded_source_ids() {
+		$registry = Daymark_Subscription_Source_Registry::instance();
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
+
+		$result = $registry->discover_feeds( 'https://exclude-test.example/', array( 'stub-first' ) );
+
+		$this->assertSame( 'stub-second', $result[0]['source_type'] ?? null );
+	}
+
+	/**
+	 * Scenario: excluding every registered source leaves discovery with
+	 * nothing. Excludes every ID any test in this file (this one included)
+	 * or the built-ins could have registered, since the registry is a
+	 * process-wide singleton PHPUnit never resets between tests.
+	 */
+	public function test_discover_feeds_returns_empty_array_when_all_sources_excluded() {
+		$registry = Daymark_Subscription_Source_Registry::instance();
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-only' ) );
+
+		$exclude_ids = array_keys( $registry->get_sources() );
+
+		$this->assertSame( array(), $registry->discover_feeds( 'https://exclude-test.example/', $exclude_ids ) );
+	}
 }
