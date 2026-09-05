@@ -191,12 +191,10 @@ test('home Timeline blends a subscribed feed post with the user’s own Mark', a
 	await expect(markWrap).toBeVisible();
 	await expect(markWrap.locator('[data-expand-post]')).toBeVisible();
 
-	// A subscription-post card: a <button>, not an <a>, carrying the
-	// "Subscribed" chip renderSubscriptionPostCard() renders.
+	// A subscription-post card: a <button>, not an <a>.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
 	await expect(subCard).toHaveClass(/daymark-recent__item--button/);
-	await expect(subCard.locator('.daymark-chip--draft')).toHaveText('Subscribed');
 });
 
 // Clicking a Timeline card expands its own content in place, directly

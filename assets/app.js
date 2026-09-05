@@ -4115,10 +4115,11 @@
 	}
 
 	// The meta line every card kind shares: an optional leading chip
-	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
-	// post), the author when there is one (a subscription post only — a
-	// Mark's author is implicitly config.currentUser, shown via its own
-	// site icon instead), and — only when the server resolved one
+	// ('Draft' on an unpublished Mark — a subscription post carries no chip
+	// at all, since its site icon already makes clear it isn't yours), the
+	// author when there is one (a subscription post only — a Mark's author
+	// is implicitly config.currentUser, shown via its own site icon
+	// instead), and — only when the server resolved one
 	// (prepare_mark_summary(), class-rest-controller.php) — a reading-time
 	// estimate. Deliberately doesn't repeat the kind as a text label the way
 	// this line used to for a Mark (TYPE_LABELS[item.type]) — the rail's own
@@ -4225,10 +4226,7 @@
 						${renderCardMedia(item, kind)}
 						<span class="daymark-recent__body">
 							<span class="daymark-recent__title">${esc(title)}</span>
-							<span class="daymark-recent__meta">${renderCardMeta(
-								item,
-								'<span class="daymark-chip daymark-chip--draft">Subscribed</span>'
-							)}</span>
+							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 							${renderCardTimestampRow(item)}
 						</span>
