@@ -352,6 +352,50 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$this->assertNotContains( (string) $active_id, array_map( 'strval', $flagged_ids ) );
 	}
 
+	/**
+	 * Scenario (issue #182): get_with_issues() returns any subscription with
+	 * a positive consecutive_failure_count, whether or not it's already
+	 * reached the 7-failure dead threshold — unlike get_flagged(), which
+	 * only ever returns the fully-dead ('status' = 'error') case.
+	 */
+	public function test_get_with_issues_includes_both_failing_and_dead_subscriptions() {
+		$healthy_id = $this->subscriptions->create( array( 'feed_url' => 'https://healthy-example.com/feed/' ) );
+		$this->assertIsInt( $healthy_id );
+
+		$failing_id = $this->subscriptions->create( array( 'feed_url' => 'https://failing-example.com/feed/' ) );
+		$this->assertIsInt( $failing_id );
+		$this->assertTrue(
+			$this->subscriptions->update(
+				$failing_id,
+				array(
+					'consecutive_failure_count' => 2,
+					'last_error'                => 'Connection timed out.',
+				)
+			)
+		);
+
+		$dead_id = $this->subscriptions->create( array( 'feed_url' => 'https://dead-example.com/feed/' ) );
+		$this->assertIsInt( $dead_id );
+		$this->assertTrue(
+			$this->subscriptions->update(
+				$dead_id,
+				array(
+					'status'                    => 'error',
+					'consecutive_failure_count' => 7,
+					'last_error'                => 'This subscription\'s feed could not be reached or parsed.',
+				)
+			)
+		);
+
+		$issues    = $this->subscriptions->get_with_issues();
+		$issue_ids = array_map( 'strval', array_column( $issues, 'id' ) );
+
+		$this->assertCount( 2, $issues );
+		$this->assertContains( (string) $failing_id, $issue_ids );
+		$this->assertContains( (string) $dead_id, $issue_ids );
+		$this->assertNotContains( (string) $healthy_id, $issue_ids );
+	}
+
 	/** Scenario: an unrecognized source_type is still accepted (future values reserved, not enum-locked). */
 	public function test_future_source_type_is_accepted() {
 		$id = $this->subscriptions->create(

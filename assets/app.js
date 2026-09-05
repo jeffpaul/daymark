@@ -1775,18 +1775,27 @@
 	// card's flex layout (not nested inside the card's own link/button) so
 	// a future Daymark content type can render its own card differently
 	// without this icon's placement following along.
-	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue }) {
+	//
+	// `title` carries the site's name and URL as a native on-hover tooltip
+	// (issue #181) — deliberately separate from `aria-label`, which
+	// describes the button's *action* ("Filter Timeline to..."), not the
+	// site itself; a screen reader announces the action, a sighted hover
+	// sees what site this actually is. `\n` renders as a real line break in
+	// every browser's native title tooltip, so the two read as separate
+	// lines rather than one run-on sentence.
+	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue, siteUrl }) {
 		const glyph = (iconAlt || '?').charAt(0).toUpperCase();
 		const icon = iconSrc
 			? imgWithFallback(iconSrc, 'daymark-recent__siteiconimg', glyph)
 			: `<span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(
 					glyph
 			  )}</span>`;
+		const tooltip = siteUrl ? `${iconAlt || ''}\n${siteUrl}` : iconAlt || '';
 		return `
 			<div class="daymark-recent__siteicon">
 				<button type="button" class="daymark-recent__siteiconbtn" data-filter-site="${esc(
 					filterValue
-				)}" aria-label="${esc(ariaLabel)}">
+				)}" aria-label="${esc(ariaLabel)}" title="${esc(tooltip)}">
 					${icon}
 				</button>
 			</div>`;
@@ -1829,6 +1838,7 @@
 					iconAlt: config.siteTitle || 'Site',
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
+					siteUrl: config.siteUrl || '',
 			  });
 		const actions = !isDraft
 			? ''
@@ -4105,10 +4115,11 @@
 	}
 
 	// The meta line every card kind shares: an optional leading chip
-	// ('Draft' on an unpublished Mark, 'Subscribed' on a subscription
-	// post), the author when there is one (a subscription post only — a
-	// Mark's author is implicitly config.currentUser, shown via its own
-	// site icon instead), and — only when the server resolved one
+	// ('Draft' on an unpublished Mark — a subscription post carries no chip
+	// at all, since its site icon already makes clear it isn't yours), the
+	// author when there is one (a subscription post only — a Mark's author
+	// is implicitly config.currentUser, shown via its own site icon
+	// instead), and — only when the server resolved one
 	// (prepare_mark_summary(), class-rest-controller.php) — a reading-time
 	// estimate. Deliberately doesn't repeat the kind as a text label the way
 	// this line used to for a Mark (TYPE_LABELS[item.type]) — the rail's own
@@ -4206,6 +4217,7 @@
 						iconAlt: siteLabel,
 						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
 						filterValue: String(item.subscription_id),
+						siteUrl: item.site_url || '',
 					})}
 					${renderTypeIcon(kind)}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
@@ -4214,10 +4226,7 @@
 						${renderCardMedia(item, kind)}
 						<span class="daymark-recent__body">
 							<span class="daymark-recent__title">${esc(title)}</span>
-							<span class="daymark-recent__meta">${renderCardMeta(
-								item,
-								'<span class="daymark-chip daymark-chip--draft">Subscribed</span>'
-							)}</span>
+							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 							${renderCardTimestampRow(item)}
 						</span>

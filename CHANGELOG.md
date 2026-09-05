@@ -23,11 +23,16 @@ can't act on them.
 ### Added
 
 - The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. ([#171](https://github.com/jeffpaul/daymark/pull/171))
+- The Settings -> Daymark subscriptions table's Site, Status, and Last fetched column headers are now clickable to sort the table ascending or descending. ([#179](https://github.com/jeffpaul/daymark/pull/179))
+- A subscription's Site name can now be edited directly in Settings -> Daymark, for when the auto-derived name (especially a Friends-plugin-sourced one) isn't obviously who or what it is. ([#179](https://github.com/jeffpaul/daymark/pull/179))
+- A Timeline card's site icon now shows the site's name and URL as a native tooltip on hover. ([#179](https://github.com/jeffpaul/daymark/pull/179))
+- A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem. ([#182](https://github.com/jeffpaul/daymark/issues/182))
 
 ### Changed
 
 - A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#173](https://github.com/jeffpaul/daymark/pull/173))
 - Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page. ([#177](https://github.com/jeffpaul/daymark/pull/177))
+- A subscription post's Timeline card no longer shows a "Subscribed" chip — its site icon already makes clear it isn't one of your own Marks, so the chip was just taking up space. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 
 ### Fixed
 

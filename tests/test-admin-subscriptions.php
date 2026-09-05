@@ -323,4 +323,458 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertFalse( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
 	}
+
+	// -----------------------------------------------------------------
+	// Sortable columns (issue #178).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Create three subscriptions whose site_title values are deliberately
+	 * out of alphabetical order, so a test can assert render()'s output
+	 * puts them back in (or out of) order via relative strpos(). Each gets
+	 * an explicit, distinct created_at (oldest: Charlie, then Alpha, then
+	 * Bravo newest) set directly via $wpdb — create() always stamps
+	 * created_at with "now", and three creations in one test method can
+	 * easily land in the same second, which would make the *default*
+	 * (created_at DESC) order's tie-break behavior undefined rather than
+	 * reliably reverse-insertion; the tests here need it deterministic.
+	 *
+	 * @return void
+	 */
+	private function create_three_out_of_order_subscriptions(): void {
+		global $wpdb;
+
+		$charlie_id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://charlie.example',
+				'feed_url'   => 'https://charlie.example/feed',
+				'site_title' => 'Charlie Site',
+			)
+		);
+		$alpha_id   = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+		$bravo_id   = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://bravo.example',
+				'feed_url'   => 'https://bravo.example/feed',
+				'site_title' => 'Bravo Site',
+			)
+		);
+
+		$table = Daymark_Subscriptions::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Test-only: forcing a deterministic created_at that Daymark_Subscriptions::update() doesn't expose (matches tests/test-subscriptions.php's own precedent for direct $wpdb use in test setup).
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:01' ), array( 'id' => $charlie_id ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- See above.
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:02' ), array( 'id' => $alpha_id ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- See above.
+		$wpdb->update( $table, array( 'created_at' => '2026-01-01 00:00:03' ), array( 'id' => $bravo_id ) );
+	}
+
+	/** Sorting the Site column ascending orders rows by site_title A-Z. */
+	public function test_site_column_sorts_ascending(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$alpha   = strpos( $output, 'Alpha Site' );
+		$bravo   = strpos( $output, 'Bravo Site' );
+		$charlie = strpos( $output, 'Charlie Site' );
+
+		$this->assertLessThan( $bravo, $alpha );
+		$this->assertLessThan( $charlie, $bravo );
+	}
+
+	/** Sorting the Site column descending orders rows by site_title Z-A. */
+	public function test_site_column_sorts_descending(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'desc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$alpha   = strpos( $output, 'Alpha Site' );
+		$bravo   = strpos( $output, 'Bravo Site' );
+		$charlie = strpos( $output, 'Charlie Site' );
+
+		$this->assertLessThan( $bravo, $charlie );
+		$this->assertLessThan( $alpha, $bravo );
+	}
+
+	/** Sorting the Status column ascending puts 'active' rows before 'error' rows. */
+	public function test_status_column_sorts_ascending(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://error-site.example',
+				'feed_url'   => 'https://error-site.example/feed',
+				'site_title' => 'Error Site',
+				'status'     => 'error',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://active-site.example',
+				'feed_url'   => 'https://active-site.example/feed',
+				'site_title' => 'Active Site',
+				'status'     => 'active',
+			)
+		);
+
+		$_GET['orderby'] = 'status';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Error Site' ), strpos( $output, 'Active Site' ) );
+	}
+
+	/** Sorting the Last fetched column ascending puts the least-recently-checked row first. */
+	public function test_last_checked_column_sorts_ascending(): void {
+		$older_id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://older.example',
+				'feed_url'   => 'https://older.example/feed',
+				'site_title' => 'Older Check',
+			)
+		);
+		$this->subscriptions->update( $older_id, array( 'last_checked_at' => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) );
+
+		$newer_id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://newer.example',
+				'feed_url'   => 'https://newer.example/feed',
+				'site_title' => 'Newer Check',
+			)
+		);
+		$this->subscriptions->update( $newer_id, array( 'last_checked_at' => gmdate( 'Y-m-d H:i:s', time() - MINUTE_IN_SECONDS ) ) );
+
+		$_GET['orderby'] = 'last_checked';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Newer Check' ), strpos( $output, 'Older Check' ) );
+	}
+
+	/** With no orderby requested, the table keeps its existing default order (created_at DESC) — sorting is opt-in only. */
+	public function test_no_orderby_keeps_default_order(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$output = $this->render();
+
+		// Default order is most-recently-created first; the third one
+		// created ("Bravo Site") should lead, not the alphabetically-first one.
+		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+	}
+
+	/** An unrecognized orderby value is ignored, falling back to the default order rather than erroring. */
+	public function test_invalid_orderby_falls_back_to_default_order(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'not-a-real-column';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+	}
+
+	/** Column header links carry the query args that flip the active column's direction, and mark it via aria-sort. */
+	public function test_sortable_header_reflects_active_column_and_toggles_direction(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		// The active (Site) header points at the opposite direction and is marked ascending.
+		// The exact entity esc_url() uses to separate query args (&#038;, &amp;, or a
+		// bare &) isn't the point of this assertion, so the regex accepts any of them.
+		$this->assertStringContainsString( 'aria-sort="ascending"', $output );
+		$this->assertMatchesRegularExpression( '/orderby=site(&amp;|&#038;|&)order=desc/', $output );
+
+		// An inactive sortable header (Status) is marked unsorted and defaults to ascending.
+		$this->assertStringContainsString( 'aria-sort="none"', $output );
+		$this->assertMatchesRegularExpression( '/orderby=status(&amp;|&#038;|&)order=asc/', $output );
+	}
+
+	// -----------------------------------------------------------------
+	// Editable site name (issue #180).
+	// -----------------------------------------------------------------
+
+	/** The "Edit name" form carries the subscription's current site_title, ready to submit back unchanged or edited. */
+	public function test_edit_title_form_renders_with_current_site_title(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://friend-site.example',
+				'feed_url'   => 'https://friend-site.example/feed',
+				'site_title' => 'cryptic-friend-handle',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_subscription_edit_title', $output );
+		$this->assertStringContainsString( 'name="daymark_site_title" value="cryptic-friend-handle"', $output );
+		$this->assertStringContainsString( 'Edit name', $output );
+	}
+
+	/** With no site_title set, the edit form's input is empty but hints at the site URL via its placeholder. */
+	public function test_edit_title_form_placeholder_falls_back_to_site_url_when_title_empty(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://untitled.example',
+				'feed_url' => 'https://untitled.example/feed',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'placeholder="https://untitled.example"', $output );
+	}
+
+	// -----------------------------------------------------------------
+	// Surfacing subscription fetch issues (issue #182).
+	// -----------------------------------------------------------------
+
+	/**
+	 * An active subscription that has started failing (but hasn't yet
+	 * reached the dead threshold) now shows a prefixed "Recent fetch
+	 * issue: ..." message — distinct wording from a fully dead feed's
+	 * plain error text, so the two don't read as identical.
+	 */
+	public function test_status_column_shows_recent_fetch_issue_for_failing_active_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 2,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Recent fetch issue: Connection timed out.', $output );
+	}
+
+	/**
+	 * A dead (`status` = 'error') subscription still shows the plain
+	 * `last_error` text, unchanged — the new prefixed wording is only for
+	 * the not-yet-dead case.
+	 */
+	public function test_status_column_shows_plain_error_for_dead_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://dead.example',
+				'feed_url' => 'https://dead.example/feed',
+				'status'   => 'error',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 7,
+				'last_error'                => 'This subscription\'s feed could not be reached or parsed.',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'This subscription&#039;s feed could not be reached or parsed.', $output );
+		$this->assertStringNotContainsString( 'Recent fetch issue:', $output );
+	}
+
+	/**
+	 * An active subscription with no failures at all (consecutive_failure_count
+	 * stays 0) shows no error text, matching the pre-existing
+	 * test_status_column_hides_last_error_for_active_subscription() case.
+	 */
+	public function test_status_column_hides_error_for_healthy_active_subscription(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://healthy.example',
+				'feed_url' => 'https://healthy.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringNotContainsString( 'Recent fetch issue:', $output );
+	}
+
+	/** No admin notice renders when nothing is currently failing. */
+	public function test_issue_notice_renders_nothing_when_no_subscriptions_are_failing(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://healthy.example',
+				'feed_url' => 'https://healthy.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+	}
+
+	/** With at least one failing subscription, the notice renders with a link to the settings screen and a Dismiss link. */
+	public function test_issue_notice_renders_when_a_subscription_is_failing(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 1 subscription is having trouble fetching new posts.', $output );
+		$this->assertStringContainsString( Daymark_Admin_Subscriptions::page_url(), $output );
+		$this->assertStringContainsString( 'Dismiss', $output );
+	}
+
+	/** Plural wording is used when more than one subscription is failing. */
+	public function test_issue_notice_uses_plural_wording_for_multiple_failing_subscriptions(): void {
+		foreach ( array( 'https://flaky-one.example', 'https://flaky-two.example' ) as $site_url ) {
+			$id = $this->subscriptions->create(
+				array(
+					'site_url' => $site_url,
+					'feed_url' => $site_url . '/feed',
+					'status'   => 'active',
+				)
+			);
+
+			$this->subscriptions->update(
+				$id,
+				array(
+					'consecutive_failure_count' => 1,
+					'last_error'                => 'Connection timed out.',
+				)
+			);
+		}
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 2 subscriptions are having trouble fetching new posts.', $output );
+	}
+
+	/**
+	 * Following the notice's own Dismiss link (simulated here by directly
+	 * calling maybe_handle_dismiss_notice() with its expected $_GET/nonce
+	 * state, since that method ends in exit() the same way every other
+	 * admin_post handler in this class does — see this file's own
+	 * docblock) records the dismissal, and the notice stays hidden for the
+	 * same still-failing subscription on the next render.
+	 */
+	public function test_issue_notice_stays_dismissed_for_same_failing_set(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		update_user_meta( get_current_user_id(), 'daymark_subscription_notice_dismissed', (string) $id );
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * A dismissal recorded for one failing set does not suppress the
+	 * notice once a *different* subscription starts failing too — the
+	 * issue signature (the sorted set of failing IDs) has changed.
+	 */
+	public function test_issue_notice_reappears_when_a_new_subscription_starts_failing(): void {
+		$dismissed_id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://already-known.example',
+				'feed_url' => 'https://already-known.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$dismissed_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		update_user_meta( get_current_user_id(), 'daymark_subscription_notice_dismissed', (string) $dismissed_id );
+
+		$new_id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://newly-flaky.example',
+				'feed_url' => 'https://newly-flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$new_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 2 subscriptions are having trouble fetching new posts.', $output );
+	}
 }

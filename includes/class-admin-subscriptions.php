@@ -35,7 +35,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Registers the Settings -> Daymark page and its admin-post form handlers:
- * subscribe, refresh, refresh icon, unsubscribe, and OPML export/import.
+ * subscribe, refresh, refresh icon, edit name, unsubscribe, and OPML
+ * export/import.
  */
 class Daymark_Admin_Subscriptions {
 
@@ -71,6 +72,32 @@ class Daymark_Admin_Subscriptions {
 	private const MESSAGE_QUERY_VAR = 'daymark_message';
 
 	/**
+	 * Subscriptions table columns a visitor can sort by (issue #178), via
+	 * `?orderby=` — anything else falls back to the table's default order
+	 * (get_all()'s own `created_at DESC`). Icon and Actions are not
+	 * meaningful to sort by, so they're left out.
+	 *
+	 * @var string[]
+	 */
+	private const SORTABLE_COLUMNS = array( 'site', 'status', 'last_checked' );
+
+	/**
+	 * User meta key storing the "issue signature" (see issue_signature())
+	 * the current user last dismissed render_subscription_issue_notice()
+	 * for.
+	 *
+	 * @var string
+	 */
+	private const DISMISSED_ISSUE_NOTICE_META_KEY = 'daymark_subscription_notice_dismissed';
+
+	/**
+	 * Query var carrying a dismiss request's issue signature.
+	 *
+	 * @var string
+	 */
+	private const DISMISS_NOTICE_QUERY_VAR = 'daymark_dismiss_subscription_notice';
+
+	/**
 	 * Register the settings page and admin-post handlers.
 	 *
 	 * @return void
@@ -81,9 +108,16 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscribe', array( $this, 'handle_subscribe' ) );
 		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
 		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
+		add_action( 'admin_post_daymark_subscription_edit_title', array( $this, 'handle_edit_title' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
+
+		// Issue #182: a dismissible, wp-admin-wide heads-up when at least one
+		// subscription is currently failing to fetch, linking to this
+		// screen's own table (which already shows the same thing per-row).
+		add_action( 'admin_init', array( $this, 'maybe_handle_dismiss_notice' ) );
+		add_action( 'admin_notices', array( $this, 'render_subscription_issue_notice' ) );
 	}
 
 	/**
@@ -135,12 +169,19 @@ class Daymark_Admin_Subscriptions {
 				'restUrl'   => esc_url_raw( rest_url( 'daymark/v1/subscriptions/' ) ),
 				'restNonce' => wp_create_nonce( 'wp_rest' ),
 				'i18n'      => array(
-					'refreshLabel'    => __( 'Refresh', 'daymark' ),
-					'refreshingLabel' => __( 'Refreshing…', 'daymark' ),
-					'statusActive'    => __( 'Active', 'daymark' ),
-					'statusError'     => __( 'Error', 'daymark' ),
-					'justNow'         => __( 'Just now', 'daymark' ),
-					'genericError'    => __( 'Something went wrong. Please try again.', 'daymark' ),
+					'refreshLabel'     => __( 'Refresh', 'daymark' ),
+					'refreshingLabel'  => __( 'Refreshing…', 'daymark' ),
+					'statusActive'     => __( 'Active', 'daymark' ),
+					'statusError'      => __( 'Error', 'daymark' ),
+					'justNow'          => __( 'Just now', 'daymark' ),
+					'genericError'     => __( 'Something went wrong. Please try again.', 'daymark' ),
+					// %s is replaced with the failure's own reason text
+					// client-side (see applyRefreshedRow() in
+					// admin-subscriptions.js) — kept as one translatable
+					// string rather than concatenating a fixed prefix, so a
+					// translation can reorder around the inserted reason.
+					/* translators: %s: the most recent fetch failure's reason. */
+					'recentFetchIssue' => __( 'Recent fetch issue: %s', 'daymark' ),
 				),
 			)
 		);
@@ -167,6 +208,8 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_all();
+		$sort          = $this->resolve_sort_request();
+		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Daymark', 'daymark' ); ?></h1>
@@ -177,7 +220,7 @@ class Daymark_Admin_Subscriptions {
 			<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
 
 			<?php $this->render_subscribe_form(); ?>
-			<?php $this->render_subscriptions_table( $subscriptions ); ?>
+			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'] ); ?>
 
 			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
 			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
@@ -187,6 +230,125 @@ class Daymark_Admin_Subscriptions {
 			?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render a dismissible, wp-admin-wide notice when at least one
+	 * subscription currently has a fetch problem (issue #182) — the same
+	 * `consecutive_failure_count > 0` condition Settings -> Daymark's own
+	 * table surfaces per-row (see render_subscription_row()), just visible
+	 * from anywhere in wp-admin rather than only on that one screen.
+	 *
+	 * Dismissal is per-user and persists across page loads (a plain link,
+	 * not JS) but only until the *set* of currently-failing subscriptions
+	 * actually changes (issue_signature()) — a still-failing subscription's
+	 * `consecutive_failure_count` keeps climbing on every poll it fails
+	 * again, which would otherwise re-show this on every single poll cycle
+	 * even though nothing new happened.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function render_subscription_issue_notice(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		$issues = Daymark_Plugin::instance()->subscriptions->get_with_issues();
+
+		if ( empty( $issues ) ) {
+			return;
+		}
+
+		$signature = self::issue_signature( $issues );
+		$dismissed = (string) get_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, true );
+
+		if ( $dismissed === $signature ) {
+			return;
+		}
+
+		$count       = count( $issues );
+		$dismiss_url = wp_nonce_url(
+			add_query_arg( self::DISMISS_NOTICE_QUERY_VAR, $signature ),
+			self::DISMISS_NOTICE_QUERY_VAR
+		);
+		?>
+		<div class="notice notice-warning">
+			<p>
+				<?php
+				printf(
+					esc_html(
+						/* translators: %d: number of subscriptions currently failing to fetch. */
+						_n(
+							'Daymark: %d subscription is having trouble fetching new posts.',
+							'Daymark: %d subscriptions are having trouble fetching new posts.',
+							$count,
+							'daymark'
+						)
+					),
+					(int) $count
+				);
+				?>
+				<a href="<?php echo esc_url( self::page_url() ); ?>"><?php esc_html_e( 'Check Settings -> Daymark', 'daymark' ); ?></a>
+				&nbsp;&mdash;&nbsp;
+				<a href="<?php echo esc_url( $dismiss_url ); ?>"><?php esc_html_e( 'Dismiss', 'daymark' ); ?></a>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle a click on render_subscription_issue_notice()'s "Dismiss" link:
+	 * remember the issue signature being dismissed (per-user), then redirect
+	 * back with the query args stripped so a page refresh can't resubmit it.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function maybe_handle_dismiss_notice(): void {
+		if ( ! isset( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified explicitly below via check_admin_referer(), which also reads from $_GET.
+			return;
+		}
+
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		check_admin_referer( self::DISMISS_NOTICE_QUERY_VAR );
+
+		$signature = sanitize_text_field( wp_unslash( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified immediately above via check_admin_referer().
+
+		update_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, $signature );
+
+		wp_safe_redirect( remove_query_arg( array( self::DISMISS_NOTICE_QUERY_VAR, '_wpnonce' ) ) );
+		exit;
+	}
+
+	/**
+	 * A stable signature for "which subscriptions are currently failing" —
+	 * just the sorted set of IDs, not their individual failure counts
+	 * (which climb every poll cycle a subscription fails again and would
+	 * otherwise make every dismissal expire on the very next poll). The
+	 * signature changes only when a new subscription starts failing or an
+	 * existing one recovers, which is the actual "something changed" this
+	 * notice's dismissal is meant to track.
+	 *
+	 * @param array<int, array<string, mixed>> $issues Rows from Daymark_Subscriptions::get_with_issues().
+	 * @return string
+	 */
+	private static function issue_signature( array $issues ): string {
+		$ids = array_map(
+			static function ( array $row ): int {
+				return absint( $row['id'] ?? 0 );
+			},
+			$issues
+		);
+
+		sort( $ids );
+
+		return implode( ',', $ids );
 	}
 
 	/**
@@ -228,6 +390,7 @@ class Daymark_Admin_Subscriptions {
 			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
 			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
 			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'      => __( 'Site name updated.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -374,10 +537,16 @@ class Daymark_Admin_Subscriptions {
 	 * Render the table of existing subscriptions.
 	 *
 	 * @param array<int, array<string, mixed>> $subscriptions Rows from
-	 *                                                          Daymark_Subscriptions::get_all().
+	 *                                                          Daymark_Subscriptions::get_all(),
+	 *                                                          already sorted by sort_subscriptions().
+	 * @param string                           $orderby       The active sort column (one of
+	 *                                                         SORTABLE_COLUMNS, or '' for the
+	 *                                                         table's default order).
+	 * @param string                           $order         'asc' or 'desc' — meaningless when
+	 *                                                         $orderby is ''.
 	 * @return void
 	 */
-	private function render_subscriptions_table( array $subscriptions ): void {
+	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order ): void {
 		if ( empty( $subscriptions ) ) {
 			echo '<p>' . esc_html__( 'No subscriptions yet.', 'daymark' ) . '</p>';
 
@@ -387,10 +556,10 @@ class Daymark_Admin_Subscriptions {
 		<table class="wp-list-table widefat fixed striped">
 			<thead>
 				<tr>
-					<th scope="col"><?php esc_html_e( 'Site', 'daymark' ); ?></th>
+					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order ); ?>
 					<th scope="col"><?php esc_html_e( 'Icon', 'daymark' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Status', 'daymark' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Last fetched', 'daymark' ); ?></th>
+					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order ); ?>
+					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order ); ?>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
 				</tr>
 			</thead>
@@ -401,6 +570,132 @@ class Daymark_Admin_Subscriptions {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Render one sortable column header: a link that sorts ascending, or —
+	 * when this column is already the active sort — flips to the opposite
+	 * direction, matching the standard wp-admin list-table sortable-column
+	 * convention (issue #178). A plain Unicode arrow marks the active
+	 * column's current direction rather than relying on core's list-table
+	 * CSS/icon font, matching this screen's existing "no extra CSS/JS asset
+	 * for a decorative indicator" posture (see render_subscription_row()'s
+	 * own icon-cell docblock for the same reasoning applied to the site
+	 * icon's fallback glyph).
+	 *
+	 * @param string $label         Visible column label.
+	 * @param string $column        This column's sort key (one of SORTABLE_COLUMNS).
+	 * @param string $orderby       The currently active sort column, or ''.
+	 * @param string $order         The currently active sort direction ('asc'/'desc').
+	 * @return void
+	 */
+	private function render_sortable_column_header( string $label, string $column, string $orderby, string $order ): void {
+		$is_active  = ( $column === $orderby );
+		$next_order = ( $is_active && 'asc' === $order ) ? 'desc' : 'asc';
+		$url        = add_query_arg(
+			array(
+				'orderby' => $column,
+				'order'   => $next_order,
+			),
+			self::page_url()
+		);
+		$aria_sort  = ! $is_active ? 'none' : ( 'desc' === $order ? 'descending' : 'ascending' );
+		?>
+		<th scope="col" aria-sort="<?php echo esc_attr( $aria_sort ); ?>">
+			<a href="<?php echo esc_url( $url ); ?>">
+				<?php echo esc_html( $label ); ?>
+				<?php if ( $is_active ) : ?>
+					<span aria-hidden="true"><?php echo 'desc' === $order ? '&#9660;' : '&#9650;'; ?></span>
+				<?php endif; ?>
+			</a>
+		</th>
+		<?php
+	}
+
+	/**
+	 * Read and validate this screen's own `?orderby=`/`?order=` query args
+	 * (issue #178). A read-only sort of this screen's own table — not a
+	 * state-changing action — so, like render_notice()'s query-string read
+	 * above, no nonce applies here.
+	 *
+	 * @return array{orderby: string, order: string} `orderby` is one of
+	 *         SORTABLE_COLUMNS, or '' to keep the table's default order;
+	 *         `order` is always 'asc' or 'desc' (meaningless when `orderby`
+	 *         is '').
+	 */
+	private function resolve_sort_request(): array {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
+		$orderby = isset( $_GET['orderby'] ) ? sanitize_key( wp_unslash( $_GET['orderby'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
+		$order = isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '';
+
+		if ( ! in_array( $orderby, self::SORTABLE_COLUMNS, true ) ) {
+			$orderby = '';
+		}
+
+		return array(
+			'orderby' => $orderby,
+			'order'   => 'desc' === $order ? 'desc' : 'asc',
+		);
+	}
+
+	/**
+	 * Sort a list of subscription rows for display (issue #178). Leaves the
+	 * list untouched (get_all()'s own `created_at DESC`) when `$orderby` is
+	 * '' — the whitelist resolve_sort_request() already applies means that's
+	 * only ever the "no sort requested, or an invalid one" case, never a
+	 * real column with nothing to compare.
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Rows to sort.
+	 * @param string                           $orderby       One of SORTABLE_COLUMNS, or ''.
+	 * @param string                           $order         'asc' or 'desc'.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function sort_subscriptions( array $subscriptions, string $orderby, string $order ): array {
+		if ( '' === $orderby ) {
+			return $subscriptions;
+		}
+
+		usort(
+			$subscriptions,
+			static function ( array $a, array $b ) use ( $orderby ) {
+				if ( 'status' === $orderby ) {
+					return strcasecmp( (string) ( $a['status'] ?? '' ), (string) ( $b['status'] ?? '' ) );
+				}
+
+				if ( 'last_checked' === $orderby ) {
+					$a_time = strtotime( (string) ( $a['last_checked_at'] ?? '' ) . ' +00:00' );
+					$b_time = strtotime( (string) ( $b['last_checked_at'] ?? '' ) . ' +00:00' );
+
+					return ( false !== $a_time ? $a_time : 0 ) <=> ( false !== $b_time ? $b_time : 0 );
+				}
+
+				return strcasecmp( self::subscription_label( $a ), self::subscription_label( $b ) );
+			}
+		);
+
+		if ( 'desc' === $order ) {
+			$subscriptions = array_reverse( $subscriptions );
+		}
+
+		return $subscriptions;
+	}
+
+	/**
+	 * A subscription's display label: its site title when known, else its
+	 * site URL — the same resolution render_subscription_row() and
+	 * render_unsubscribe_form() already apply for the row's own strong text
+	 * and confirm() prompt, shared here so the Site column always sorts by
+	 * exactly what it displays.
+	 *
+	 * @param array<string, mixed> $subscription A `daymark_subscription` row.
+	 * @return string
+	 */
+	private static function subscription_label( array $subscription ): string {
+		$title    = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$site_url = (string) ( $subscription['site_url'] ?? '' );
+
+		return '' !== $title ? $title : $site_url;
 	}
 
 	/**
@@ -420,16 +715,24 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscription_row( array $subscription ): void {
-		$id                = absint( $subscription['id'] ?? 0 );
-		$site_url          = (string) ( $subscription['site_url'] ?? '' );
-		$title             = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
-		$icon_url          = (string) ( $subscription['site_icon_url'] ?? '' );
-		$status            = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
-		$is_error          = 'error' === $status;
-		$label             = '' !== $title ? $title : $site_url;
-		$row_label         = '' !== $label ? $label : __( '(untitled)', 'daymark' );
-		$last_error        = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
-		$has_error_message = $is_error && '' !== $last_error;
+		$id            = absint( $subscription['id'] ?? 0 );
+		$site_url      = (string) ( $subscription['site_url'] ?? '' );
+		$site_title    = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$icon_url      = (string) ( $subscription['site_icon_url'] ?? '' );
+		$status        = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
+		$is_error      = 'error' === $status;
+		$label         = self::subscription_label( $subscription );
+		$row_label     = '' !== $label ? $label : __( '(untitled)', 'daymark' );
+		$last_error    = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
+		$failure_count = absint( $subscription['consecutive_failure_count'] ?? 0 );
+		// Issue #182: a subscription can be failing (and have a real
+		// last_error) well before it's flagged fully dead — the dead
+		// threshold is 7 consecutive failures, but the very first one
+		// already has something worth surfacing here. A subscription that
+		// recovers has its failure count reset to 0 on the next successful
+		// check, so a stale last_error left over from a past recovery
+		// (failure count back at 0) still correctly shows nothing.
+		$has_error_message = '' !== $last_error && ( $is_error || $failure_count > 0 );
 		?>
 		<tr data-daymark-subscription-row="<?php echo esc_attr( (string) $id ); ?>">
 			<td>
@@ -438,6 +741,7 @@ class Daymark_Admin_Subscriptions {
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
 				<?php endif; ?>
+				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
 			</td>
 			<td>
 				<?php if ( '' !== $icon_url ) : ?>
@@ -446,7 +750,22 @@ class Daymark_Admin_Subscriptions {
 			</td>
 			<td>
 				<span class="daymark-subscription-status-text"><?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?></span>
-				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo $has_error_message ? esc_html( $last_error ) : ''; ?></div>
+				<?php
+				$error_message = '';
+
+				if ( $has_error_message ) {
+					// The dead ('Error') case shows the reason alone, unchanged
+					// from before this row could also show a non-dead issue.
+					// The still-'Active'-but-failing case gets a prefix so it
+					// doesn't read as identical to a fully dead feed.
+					$error_message = $is_error ? $last_error : sprintf(
+						/* translators: %s: the most recent fetch failure's reason. */
+						__( 'Recent fetch issue: %s', 'daymark' ),
+						$last_error
+					);
+				}
+				?>
+				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo esc_html( $error_message ); ?></div>
 			</td>
 			<td class="daymark-subscription-last-fetched">
 				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>
@@ -517,6 +836,44 @@ class Daymark_Admin_Subscriptions {
 			<?php wp_nonce_field( 'daymark_subscription_refresh_icon_' . $id, 'daymark_subscription_refresh_icon_nonce' ); ?>
 			<?php submit_button( __( 'Refresh icon', 'daymark' ), 'secondary small', 'submit', false ); ?>
 		</form>
+		<?php
+	}
+
+	/**
+	 * Render one subscription's "Edit name" disclosure (issue #180): a
+	 * collapsed-by-default `<details>`/`<summary>` revealing a text input
+	 * pre-filled with the subscription's own `site_title`, so overriding it
+	 * needs no toggle JS at all — matching this screen's plain-forms
+	 * posture for every action except the JS-enhanced Refresh form. Useful
+	 * in particular for a Friends-plugin-sourced subscription (issue #88),
+	 * whose `site_title` is whatever that friend's own site calls itself —
+	 * not necessarily the name the site owner would recognize them by.
+	 *
+	 * Submitting a blank value is allowed on purpose: it clears a bad
+	 * override back to '', which subscription_label() already falls back
+	 * from to the site URL, exactly the same fallback a never-titled
+	 * subscription already shows.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param int    $id          Subscription ID.
+	 * @param string $site_title  Current raw site_title (may be '').
+	 * @param string $site_url    Current site_url, shown as the input's
+	 *                            placeholder when site_title is ''.
+	 * @return void
+	 */
+	private function render_edit_title_form( int $id, string $site_title, string $site_url ): void {
+		?>
+		<details class="daymark-subscription-edit-title" style="margin-top:4px;">
+			<summary style="cursor:pointer;color:var(--wp-admin-theme-color,#2271b1);"><?php esc_html_e( 'Edit name', 'daymark' ); ?></summary>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:6px;">
+				<input type="hidden" name="action" value="daymark_subscription_edit_title" />
+				<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+				<?php wp_nonce_field( 'daymark_subscription_edit_title_' . $id, 'daymark_subscription_edit_title_nonce' ); ?>
+				<input type="text" name="daymark_site_title" value="<?php echo esc_attr( $site_title ); ?>" placeholder="<?php echo esc_attr( $site_url ); ?>" style="width:100%;max-width:220px;" />
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			</form>
+		</details>
 		<?php
 	}
 
@@ -771,6 +1128,37 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'icon_refreshed' ) );
+	}
+
+	/**
+	 * Handle the "Edit name" form (admin_post_daymark_subscription_edit_title,
+	 * issue #180). A pure local DB write (Daymark_Subscriptions::update()'s
+	 * own `site_title` field) — no outbound request, so unlike Refresh/
+	 * Refresh icon this needs no rate limit, matching handle_unsubscribe()'s
+	 * own posture for the same reason.
+	 *
+	 * A blank submission is stored as-is: subscription_label()'s existing
+	 * "site_title, else site_url" fallback already handles a cleared value
+	 * the same way it handles a never-titled subscription.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function handle_edit_title(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_edit_title_' . $id, 'daymark_subscription_edit_title_nonce' );
+
+		$site_title = isset( $_POST['daymark_site_title'] ) ? sanitize_text_field( wp_unslash( $_POST['daymark_site_title'] ) ) : '';
+
+		Daymark_Plugin::instance()->subscriptions->update( $id, array( 'site_title' => $site_title ) );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'title_updated' ) );
 	}
 
 	/**
