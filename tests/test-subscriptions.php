@@ -644,7 +644,8 @@ XML;
 
 		$blog_row = $this->subscriptions->get( $blog );
 		$this->assertSame( 'https://jeremyfelt.example/wp-json/wp/v2/posts', $blog_row['feed_url'] );
-		$this->assertSame( 'WordPress', $blog_row['source_type'] );
+		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- the lowercase machine ID (source_type value), not prose.
+		$this->assertSame( 'wordpress', $blog_row['source_type'] );
 
 		$notes = $this->subscriptions->subscribe_to_site( 'https://jeremyfelt.example/notes/' );
 		$this->assertIsInt( $notes, 'A second, page-specific feed was found instead of failing as a duplicate' );

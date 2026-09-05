@@ -289,39 +289,37 @@ class Daymark_Subscriptions {
 			);
 		}
 
-		$registry = Daymark_Plugin::instance()->subscription_source_registry;
+		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
+		$discovered = $registry->discover_feeds( $site_url );
+		$feed       = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
+		$feed_url   = isset( $feed['url'] ) ? (string) $feed['url'] : '';
 
-		// issue #183: try $site_url as a literal feed URL first, before ever
-		// running page-based discovery — lets a caller who already knows a
-		// specific feed's own URL (e.g. a Notes archive's `/notes/feed/`,
-		// distinct from the same site's main `/feed/`) subscribe to exactly
-		// that feed. This has to come *before* discover_feeds() below, not
-		// merely as a fallback after it fails: an ordinary page URL almost
-		// never also parses as a valid feed, so this adds no wrong turn for
-		// the common case, but a URL that *is* already a feed would
-		// otherwise be handed to page-based discovery — which fetches it as
-		// HTML and finds nothing — instead of being used directly. See
+		// issue #183: page-based discovery found nothing at all — try
+		// $site_url as a literal feed URL directly before giving up. Only
+		// attempted as a fallback here, never unconditionally up front: an
+		// ordinary page URL essentially never also parses as a feed, so
+		// trying it first on every call would cost one wasted live request
+		// on the common, already-successful path (exactly what
+		// Daymark_Subscription_Html_Cache exists to avoid for page-based
+		// discovery itself). This fallback is what actually lets a caller
+		// who already knows a specific feed's own URL (e.g. a Notes
+		// archive's `/notes/feed/`, distinct from the same site's main
+		// `/feed/`) subscribe to exactly that feed — see
 		// Daymark_Subscription_Source_Feed::discover_direct_feed()'s own
 		// docblock for why a second feed on an already-subscribed WordPress
-		// site can never be reached any other way.
-		$feed_source = $registry->get_source( 'feed' );
-		$discovered  = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
-			? array_map(
-				static function ( array $candidate ): array {
-					$candidate['source_type'] = 'feed';
+		// site can never be reached through page-based discovery alone.
+		if ( '' === $feed_url ) {
+			$feed_source = $registry->get_source( 'feed' );
+			$direct      = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
+				? $feed_source->discover_direct_feed( $site_url )
+				: array();
 
-					return $candidate;
-				},
-				$feed_source->discover_direct_feed( $site_url )
-			)
-			: array();
-
-		if ( empty( $discovered ) ) {
-			$discovered = $registry->discover_feeds( $site_url );
+			if ( ! empty( $direct ) ) {
+				$feed                = $direct[0];
+				$feed['source_type'] = 'feed';
+				$feed_url            = isset( $feed['url'] ) ? (string) $feed['url'] : '';
+			}
 		}
-
-		$feed     = isset( $discovered[0] ) && is_array( $discovered[0] ) ? $discovered[0] : array();
-		$feed_url = isset( $feed['url'] ) ? (string) $feed['url'] : '';
 
 		// issue #183: the winning source resolved to a feed this site is
 		// already subscribed to under a different page's URL — most often

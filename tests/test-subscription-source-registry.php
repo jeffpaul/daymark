@@ -244,6 +244,27 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Blocks every real HTTP request with a WP_Error — used only by the two
+	 * tests below, which register their own stub sources ahead of the real
+	 * built-in ones (friends/wordpress/feed/microformats) still sitting in
+	 * the same process-wide registry. Without this, those built-ins would
+	 * each attempt a real, unmocked network request for the test URL before
+	 * ever reaching the stub sources under test, exactly the kind of
+	 * non-deterministic network dependency this file's own
+	 * mock_feed_discovery_request() already avoids for its own test.
+	 *
+	 * @param mixed  $preempt     Existing short-circuit value (unused).
+	 * @param array  $parsed_args Request args (unused).
+	 * @param string $url         Requested URL (unused).
+	 * @return WP_Error
+	 */
+	public function block_all_http_requests( $preempt, $parsed_args, $url ) {
+		unset( $preempt, $parsed_args, $url );
+
+		return new WP_Error( 'daymark_test_http_blocked', 'HTTP blocked in test' );
+	}
+
+	/**
 	 * Scenario: with no exclusions, discover_feeds() still returns the
 	 * first-registered source's result (baseline for the exclusion test
 	 * below).
@@ -253,7 +274,9 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
+		add_filter( 'pre_http_request', array( $this, 'block_all_http_requests' ), 10, 3 );
 		$result = $registry->discover_feeds( 'https://exclude-test.example/' );
+		remove_filter( 'pre_http_request', array( $this, 'block_all_http_requests' ), 10 );
 
 		$this->assertSame( 'stub-first', $result[0]['source_type'] ?? null );
 	}
@@ -271,7 +294,9 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-first' ) );
 		$registry->register_source( $this->make_discoverable_stub_source( 'stub-second' ) );
 
+		add_filter( 'pre_http_request', array( $this, 'block_all_http_requests' ), 10, 3 );
 		$result = $registry->discover_feeds( 'https://exclude-test.example/', array( 'stub-first' ) );
+		remove_filter( 'pre_http_request', array( $this, 'block_all_http_requests' ), 10 );
 
 		$this->assertSame( 'stub-second', $result[0]['source_type'] ?? null );
 	}
