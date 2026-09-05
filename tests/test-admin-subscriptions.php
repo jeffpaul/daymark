@@ -323,4 +323,176 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertFalse( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
 	}
+
+	// -----------------------------------------------------------------
+	// Sortable columns (issue #178).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Create three subscriptions whose site_title values are deliberately
+	 * out of alphabetical order, so a test can assert render()'s output
+	 * puts them back in (or out of) order via relative strpos().
+	 *
+	 * @return void
+	 */
+	private function create_three_out_of_order_subscriptions(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://charlie.example',
+				'feed_url'   => 'https://charlie.example/feed',
+				'site_title' => 'Charlie Site',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://bravo.example',
+				'feed_url'   => 'https://bravo.example/feed',
+				'site_title' => 'Bravo Site',
+			)
+		);
+	}
+
+	/** Sorting the Site column ascending orders rows by site_title A-Z. */
+	public function test_site_column_sorts_ascending(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$alpha   = strpos( $output, 'Alpha Site' );
+		$bravo   = strpos( $output, 'Bravo Site' );
+		$charlie = strpos( $output, 'Charlie Site' );
+
+		$this->assertLessThan( $bravo, $alpha );
+		$this->assertLessThan( $charlie, $bravo );
+	}
+
+	/** Sorting the Site column descending orders rows by site_title Z-A. */
+	public function test_site_column_sorts_descending(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'desc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$alpha   = strpos( $output, 'Alpha Site' );
+		$bravo   = strpos( $output, 'Bravo Site' );
+		$charlie = strpos( $output, 'Charlie Site' );
+
+		$this->assertLessThan( $bravo, $charlie );
+		$this->assertLessThan( $alpha, $bravo );
+	}
+
+	/** Sorting the Status column ascending puts 'active' rows before 'error' rows. */
+	public function test_status_column_sorts_ascending(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://error-site.example',
+				'feed_url'   => 'https://error-site.example/feed',
+				'site_title' => 'Error Site',
+				'status'     => 'error',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://active-site.example',
+				'feed_url'   => 'https://active-site.example/feed',
+				'site_title' => 'Active Site',
+				'status'     => 'active',
+			)
+		);
+
+		$_GET['orderby'] = 'status';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Error Site' ), strpos( $output, 'Active Site' ) );
+	}
+
+	/** Sorting the Last fetched column ascending puts the least-recently-checked row first. */
+	public function test_last_checked_column_sorts_ascending(): void {
+		$older_id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://older.example',
+				'feed_url'   => 'https://older.example/feed',
+				'site_title' => 'Older Check',
+			)
+		);
+		$this->subscriptions->update( $older_id, array( 'last_checked_at' => gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) );
+
+		$newer_id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://newer.example',
+				'feed_url'   => 'https://newer.example/feed',
+				'site_title' => 'Newer Check',
+			)
+		);
+		$this->subscriptions->update( $newer_id, array( 'last_checked_at' => gmdate( 'Y-m-d H:i:s', time() - MINUTE_IN_SECONDS ) ) );
+
+		$_GET['orderby'] = 'last_checked';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Newer Check' ), strpos( $output, 'Older Check' ) );
+	}
+
+	/** With no orderby requested, the table keeps its existing default order (created_at DESC) — sorting is opt-in only. */
+	public function test_no_orderby_keeps_default_order(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$output = $this->render();
+
+		// Default order is most-recently-created first; the third one
+		// created ("Bravo Site") should lead, not the alphabetically-first one.
+		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+	}
+
+	/** An unrecognized orderby value is ignored, falling back to the default order rather than erroring. */
+	public function test_invalid_orderby_falls_back_to_default_order(): void {
+		$this->create_three_out_of_order_subscriptions();
+
+		$_GET['orderby'] = 'not-a-real-column';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+	}
+
+	/** Column header links carry the query args that flip the active column's direction, and mark it via aria-sort. */
+	public function test_sortable_header_reflects_active_column_and_toggles_direction(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'asc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		// The active (Site) header points at the opposite direction and is marked ascending.
+		// The exact entity esc_url() uses to separate query args (&#038;, &amp;, or a
+		// bare &) isn't the point of this assertion, so the regex accepts any of them.
+		$this->assertStringContainsString( 'aria-sort="ascending"', $output );
+		$this->assertMatchesRegularExpression( '/orderby=site(&amp;|&#038;|&)order=desc/', $output );
+
+		// An inactive sortable header (Status) is marked unsorted and defaults to ascending.
+		$this->assertStringContainsString( 'aria-sort="none"', $output );
+		$this->assertMatchesRegularExpression( '/orderby=status(&amp;|&#038;|&)order=asc/', $output );
+	}
 }

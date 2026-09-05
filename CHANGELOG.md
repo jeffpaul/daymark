@@ -23,6 +23,7 @@ can't act on them.
 ### Added
 
 - The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status. ([#171](https://github.com/jeffpaul/daymark/pull/171))
+- The Settings -> Daymark subscriptions table's Site, Status, and Last fetched column headers are now clickable to sort the table ascending or descending. ([#178](https://github.com/jeffpaul/daymark/issues/178))
 
 ### Changed
 

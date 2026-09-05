@@ -71,6 +71,16 @@ class Daymark_Admin_Subscriptions {
 	private const MESSAGE_QUERY_VAR = 'daymark_message';
 
 	/**
+	 * Subscriptions table columns a visitor can sort by (issue #178), via
+	 * `?orderby=` — anything else falls back to the table's default order
+	 * (get_all()'s own `created_at DESC`). Icon and Actions are not
+	 * meaningful to sort by, so they're left out.
+	 *
+	 * @var string[]
+	 */
+	private const SORTABLE_COLUMNS = array( 'site', 'status', 'last_checked' );
+
+	/**
 	 * Register the settings page and admin-post handlers.
 	 *
 	 * @return void
@@ -167,6 +177,8 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_all();
+		$sort          = $this->resolve_sort_request();
+		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
 		?>
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Daymark', 'daymark' ); ?></h1>
@@ -177,7 +189,7 @@ class Daymark_Admin_Subscriptions {
 			<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
 
 			<?php $this->render_subscribe_form(); ?>
-			<?php $this->render_subscriptions_table( $subscriptions ); ?>
+			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'] ); ?>
 
 			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
 			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
@@ -374,10 +386,16 @@ class Daymark_Admin_Subscriptions {
 	 * Render the table of existing subscriptions.
 	 *
 	 * @param array<int, array<string, mixed>> $subscriptions Rows from
-	 *                                                          Daymark_Subscriptions::get_all().
+	 *                                                          Daymark_Subscriptions::get_all(),
+	 *                                                          already sorted by sort_subscriptions().
+	 * @param string                           $orderby       The active sort column (one of
+	 *                                                         SORTABLE_COLUMNS, or '' for the
+	 *                                                         table's default order).
+	 * @param string                           $order         'asc' or 'desc' — meaningless when
+	 *                                                         $orderby is ''.
 	 * @return void
 	 */
-	private function render_subscriptions_table( array $subscriptions ): void {
+	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order ): void {
 		if ( empty( $subscriptions ) ) {
 			echo '<p>' . esc_html__( 'No subscriptions yet.', 'daymark' ) . '</p>';
 
@@ -387,10 +405,10 @@ class Daymark_Admin_Subscriptions {
 		<table class="wp-list-table widefat fixed striped">
 			<thead>
 				<tr>
-					<th scope="col"><?php esc_html_e( 'Site', 'daymark' ); ?></th>
+					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order ); ?>
 					<th scope="col"><?php esc_html_e( 'Icon', 'daymark' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Status', 'daymark' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Last fetched', 'daymark' ); ?></th>
+					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order ); ?>
+					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order ); ?>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
 				</tr>
 			</thead>
@@ -401,6 +419,132 @@ class Daymark_Admin_Subscriptions {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Render one sortable column header: a link that sorts ascending, or —
+	 * when this column is already the active sort — flips to the opposite
+	 * direction, matching the standard wp-admin list-table sortable-column
+	 * convention (issue #178). A plain Unicode arrow marks the active
+	 * column's current direction rather than relying on core's list-table
+	 * CSS/icon font, matching this screen's existing "no extra CSS/JS asset
+	 * for a decorative indicator" posture (see render_subscription_row()'s
+	 * own icon-cell docblock for the same reasoning applied to the site
+	 * icon's fallback glyph).
+	 *
+	 * @param string $label         Visible column label.
+	 * @param string $column        This column's sort key (one of SORTABLE_COLUMNS).
+	 * @param string $orderby       The currently active sort column, or ''.
+	 * @param string $order         The currently active sort direction ('asc'/'desc').
+	 * @return void
+	 */
+	private function render_sortable_column_header( string $label, string $column, string $orderby, string $order ): void {
+		$is_active  = ( $column === $orderby );
+		$next_order = ( $is_active && 'asc' === $order ) ? 'desc' : 'asc';
+		$url        = add_query_arg(
+			array(
+				'orderby' => $column,
+				'order'   => $next_order,
+			),
+			self::page_url()
+		);
+		$aria_sort  = ! $is_active ? 'none' : ( 'desc' === $order ? 'descending' : 'ascending' );
+		?>
+		<th scope="col" aria-sort="<?php echo esc_attr( $aria_sort ); ?>">
+			<a href="<?php echo esc_url( $url ); ?>">
+				<?php echo esc_html( $label ); ?>
+				<?php if ( $is_active ) : ?>
+					<span aria-hidden="true"><?php echo 'desc' === $order ? '&#9660;' : '&#9650;'; ?></span>
+				<?php endif; ?>
+			</a>
+		</th>
+		<?php
+	}
+
+	/**
+	 * Read and validate this screen's own `?orderby=`/`?order=` query args
+	 * (issue #178). A read-only sort of this screen's own table — not a
+	 * state-changing action — so, like render_notice()'s query-string read
+	 * above, no nonce applies here.
+	 *
+	 * @return array{orderby: string, order: string} `orderby` is one of
+	 *         SORTABLE_COLUMNS, or '' to keep the table's default order;
+	 *         `order` is always 'asc' or 'desc' (meaningless when `orderby`
+	 *         is '').
+	 */
+	private function resolve_sort_request(): array {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
+		$orderby = isset( $_GET['orderby'] ) ? sanitize_key( wp_unslash( $_GET['orderby'] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
+		$order = isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '';
+
+		if ( ! in_array( $orderby, self::SORTABLE_COLUMNS, true ) ) {
+			$orderby = '';
+		}
+
+		return array(
+			'orderby' => $orderby,
+			'order'   => 'desc' === $order ? 'desc' : 'asc',
+		);
+	}
+
+	/**
+	 * Sort a list of subscription rows for display (issue #178). Leaves the
+	 * list untouched (get_all()'s own `created_at DESC`) when `$orderby` is
+	 * '' — the whitelist resolve_sort_request() already applies means that's
+	 * only ever the "no sort requested, or an invalid one" case, never a
+	 * real column with nothing to compare.
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Rows to sort.
+	 * @param string                           $orderby       One of SORTABLE_COLUMNS, or ''.
+	 * @param string                           $order         'asc' or 'desc'.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function sort_subscriptions( array $subscriptions, string $orderby, string $order ): array {
+		if ( '' === $orderby ) {
+			return $subscriptions;
+		}
+
+		usort(
+			$subscriptions,
+			static function ( array $a, array $b ) use ( $orderby ) {
+				if ( 'status' === $orderby ) {
+					return strcasecmp( (string) ( $a['status'] ?? '' ), (string) ( $b['status'] ?? '' ) );
+				}
+
+				if ( 'last_checked' === $orderby ) {
+					$a_time = strtotime( (string) ( $a['last_checked_at'] ?? '' ) . ' +00:00' );
+					$b_time = strtotime( (string) ( $b['last_checked_at'] ?? '' ) . ' +00:00' );
+
+					return ( false !== $a_time ? $a_time : 0 ) <=> ( false !== $b_time ? $b_time : 0 );
+				}
+
+				return strcasecmp( self::subscription_label( $a ), self::subscription_label( $b ) );
+			}
+		);
+
+		if ( 'desc' === $order ) {
+			$subscriptions = array_reverse( $subscriptions );
+		}
+
+		return $subscriptions;
+	}
+
+	/**
+	 * A subscription's display label: its site title when known, else its
+	 * site URL — the same resolution render_subscription_row() and
+	 * render_unsubscribe_form() already apply for the row's own strong text
+	 * and confirm() prompt, shared here so the Site column always sorts by
+	 * exactly what it displays.
+	 *
+	 * @param array<string, mixed> $subscription A `daymark_subscription` row.
+	 * @return string
+	 */
+	private static function subscription_label( array $subscription ): string {
+		$title    = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$site_url = (string) ( $subscription['site_url'] ?? '' );
+
+		return '' !== $title ? $title : $site_url;
 	}
 
 	/**
@@ -422,11 +566,10 @@ class Daymark_Admin_Subscriptions {
 	private function render_subscription_row( array $subscription ): void {
 		$id                = absint( $subscription['id'] ?? 0 );
 		$site_url          = (string) ( $subscription['site_url'] ?? '' );
-		$title             = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
 		$icon_url          = (string) ( $subscription['site_icon_url'] ?? '' );
 		$status            = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
 		$is_error          = 'error' === $status;
-		$label             = '' !== $title ? $title : $site_url;
+		$label             = self::subscription_label( $subscription );
 		$row_label         = '' !== $label ? $label : __( '(untitled)', 'daymark' );
 		$last_error        = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
 		$has_error_message = $is_error && '' !== $last_error;
