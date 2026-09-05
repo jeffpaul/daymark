@@ -26,6 +26,7 @@ can't act on them.
 - The Settings -> Daymark subscriptions table's Site, Status, and Last fetched column headers are now clickable to sort the table ascending or descending. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 - A subscription's Site name can now be edited directly in Settings -> Daymark, for when the auto-derived name (especially a Friends-plugin-sourced one) isn't obviously who or what it is. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 - A Timeline card's site icon now shows the site's name and URL as a native tooltip on hover. ([#179](https://github.com/jeffpaul/daymark/pull/179))
+- A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem. ([#182](https://github.com/jeffpaul/daymark/issues/182))
 
 ### Changed
 

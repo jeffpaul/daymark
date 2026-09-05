@@ -546,4 +546,235 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'placeholder="https://untitled.example"', $output );
 	}
+
+	// -----------------------------------------------------------------
+	// Surfacing subscription fetch issues (issue #182).
+	// -----------------------------------------------------------------
+
+	/**
+	 * An active subscription that has started failing (but hasn't yet
+	 * reached the dead threshold) now shows a prefixed "Recent fetch
+	 * issue: ..." message — distinct wording from a fully dead feed's
+	 * plain error text, so the two don't read as identical.
+	 */
+	public function test_status_column_shows_recent_fetch_issue_for_failing_active_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 2,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Recent fetch issue: Connection timed out.', $output );
+	}
+
+	/**
+	 * A dead (`status` = 'error') subscription still shows the plain
+	 * `last_error` text, unchanged — the new prefixed wording is only for
+	 * the not-yet-dead case.
+	 */
+	public function test_status_column_shows_plain_error_for_dead_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://dead.example',
+				'feed_url' => 'https://dead.example/feed',
+				'status'   => 'error',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 7,
+				'last_error'                => 'This subscription\'s feed could not be reached or parsed.',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'This subscription&#039;s feed could not be reached or parsed.', $output );
+		$this->assertStringNotContainsString( 'Recent fetch issue:', $output );
+	}
+
+	/**
+	 * An active subscription with no failures at all (consecutive_failure_count
+	 * stays 0) shows no error text, matching the pre-existing
+	 * test_status_column_hides_last_error_for_active_subscription() case.
+	 */
+	public function test_status_column_hides_error_for_healthy_active_subscription(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://healthy.example',
+				'feed_url' => 'https://healthy.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringNotContainsString( 'Recent fetch issue:', $output );
+	}
+
+	/** No admin notice renders when nothing is currently failing. */
+	public function test_issue_notice_renders_nothing_when_no_subscriptions_are_failing(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://healthy.example',
+				'feed_url' => 'https://healthy.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+	}
+
+	/** With at least one failing subscription, the notice renders with a link to the settings screen and a Dismiss link. */
+	public function test_issue_notice_renders_when_a_subscription_is_failing(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 1 subscription is having trouble fetching new posts.', $output );
+		$this->assertStringContainsString( Daymark_Admin_Subscriptions::page_url(), $output );
+		$this->assertStringContainsString( 'Dismiss', $output );
+	}
+
+	/** Plural wording is used when more than one subscription is failing. */
+	public function test_issue_notice_uses_plural_wording_for_multiple_failing_subscriptions(): void {
+		foreach ( array( 'https://flaky-one.example', 'https://flaky-two.example' ) as $site_url ) {
+			$id = $this->subscriptions->create(
+				array(
+					'site_url' => $site_url,
+					'feed_url' => $site_url . '/feed',
+					'status'   => 'active',
+				)
+			);
+
+			$this->subscriptions->update(
+				$id,
+				array(
+					'consecutive_failure_count' => 1,
+					'last_error'                => 'Connection timed out.',
+				)
+			);
+		}
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 2 subscriptions are having trouble fetching new posts.', $output );
+	}
+
+	/**
+	 * Following the notice's own Dismiss link (simulated here by directly
+	 * calling maybe_handle_dismiss_notice() with its expected $_GET/nonce
+	 * state, since that method ends in exit() the same way every other
+	 * admin_post handler in this class does — see this file's own
+	 * docblock) records the dismissal, and the notice stays hidden for the
+	 * same still-failing subscription on the next render.
+	 */
+	public function test_issue_notice_stays_dismissed_for_same_failing_set(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://flaky.example',
+				'feed_url' => 'https://flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		update_user_meta( get_current_user_id(), 'daymark_subscription_notice_dismissed', (string) $id );
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertSame( '', $output );
+	}
+
+	/**
+	 * A dismissal recorded for one failing set does not suppress the
+	 * notice once a *different* subscription starts failing too — the
+	 * issue signature (the sorted set of failing IDs) has changed.
+	 */
+	public function test_issue_notice_reappears_when_a_new_subscription_starts_failing(): void {
+		$dismissed_id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://already-known.example',
+				'feed_url' => 'https://already-known.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$dismissed_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		update_user_meta( get_current_user_id(), 'daymark_subscription_notice_dismissed', (string) $dismissed_id );
+
+		$new_id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://newly-flaky.example',
+				'feed_url' => 'https://newly-flaky.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$this->subscriptions->update(
+			$new_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_error'                => 'Connection timed out.',
+			)
+		);
+
+		ob_start();
+		$this->admin_subscriptions->render_subscription_issue_notice();
+		$output = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Daymark: 2 subscriptions are having trouble fetching new posts.', $output );
+	}
 }

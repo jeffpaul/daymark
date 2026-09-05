@@ -581,6 +581,38 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * List every subscription currently in a failing state — `consecutive_failure_count`
+	 * greater than zero — regardless of whether it's already been flagged
+	 * fully dead (`status` = 'error', 7+ consecutive failures) or is still
+	 * `active` but has failed at least once since its last success (issue
+	 * #182). Unlike get_flagged() (only the fully-dead case), this is what
+	 * lets Settings -> Daymark's admin notice and its table surface a
+	 * developing problem before it reaches the dead threshold.
+	 *
+	 * `consecutive_failure_count` is reset to 0 on the very next successful
+	 * check (Daymark_Subscription_Poller::record_successful_check()), so a
+	 * subscription that recovers drops out of this list on its own, with no
+	 * separate "clear the issue" step needed anywhere.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_with_issues(): array {
+		global $wpdb;
+
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API.
+		$rows = $wpdb->get_results(
+			"SELECT * FROM {$table} WHERE consecutive_failure_count > 0 ORDER BY created_at DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input.
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
 	 * Update status/failure-count/checked-at fields on an existing
 	 * subscription. Only recognized columns are written; unknown keys in
 	 * `$fields` are ignored rather than passed through to the query.

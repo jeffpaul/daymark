@@ -159,14 +159,22 @@
 		var statusError = row.querySelector( '.daymark-subscription-status-error' );
 		var lastFetched = row.querySelector( '.daymark-subscription-last-fetched' );
 		var isError = 'error' === subscription.status;
+		// Issue #182: mirrors Daymark_Admin_Subscriptions::render_subscription_row()'s
+		// own $has_error_message condition — a subscription can be failing
+		// (and carry a real last_error) well before consecutive_failure_count
+		// reaches the dead threshold, not just once status flips to 'error'.
+		var failureCount = Number( subscription.consecutive_failure_count ) || 0;
+		var hasIssue = Boolean( subscription.last_error ) && ( isError || failureCount > 0 );
 
 		if ( statusText ) {
 			statusText.textContent = isError ? config.i18n.statusError : config.i18n.statusActive;
 		}
 
 		if ( statusError ) {
-			if ( isError && subscription.last_error ) {
-				statusError.textContent = subscription.last_error;
+			if ( hasIssue ) {
+				statusError.textContent = isError
+					? subscription.last_error
+					: config.i18n.recentFetchIssue.replace( '%s', subscription.last_error );
 				statusError.hidden = false;
 			} else {
 				statusError.textContent = '';

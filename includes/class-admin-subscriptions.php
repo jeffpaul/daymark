@@ -82,6 +82,22 @@ class Daymark_Admin_Subscriptions {
 	private const SORTABLE_COLUMNS = array( 'site', 'status', 'last_checked' );
 
 	/**
+	 * User meta key storing the "issue signature" (see issue_signature())
+	 * the current user last dismissed render_subscription_issue_notice()
+	 * for.
+	 *
+	 * @var string
+	 */
+	private const DISMISSED_ISSUE_NOTICE_META_KEY = 'daymark_subscription_notice_dismissed';
+
+	/**
+	 * Query var carrying a dismiss request's issue signature.
+	 *
+	 * @var string
+	 */
+	private const DISMISS_NOTICE_QUERY_VAR = 'daymark_dismiss_subscription_notice';
+
+	/**
 	 * Register the settings page and admin-post handlers.
 	 *
 	 * @return void
@@ -96,6 +112,12 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
+
+		// Issue #182: a dismissible, wp-admin-wide heads-up when at least one
+		// subscription is currently failing to fetch, linking to this
+		// screen's own table (which already shows the same thing per-row).
+		add_action( 'admin_init', array( $this, 'maybe_handle_dismiss_notice' ) );
+		add_action( 'admin_notices', array( $this, 'render_subscription_issue_notice' ) );
 	}
 
 	/**
@@ -147,12 +169,19 @@ class Daymark_Admin_Subscriptions {
 				'restUrl'   => esc_url_raw( rest_url( 'daymark/v1/subscriptions/' ) ),
 				'restNonce' => wp_create_nonce( 'wp_rest' ),
 				'i18n'      => array(
-					'refreshLabel'    => __( 'Refresh', 'daymark' ),
-					'refreshingLabel' => __( 'Refreshing…', 'daymark' ),
-					'statusActive'    => __( 'Active', 'daymark' ),
-					'statusError'     => __( 'Error', 'daymark' ),
-					'justNow'         => __( 'Just now', 'daymark' ),
-					'genericError'    => __( 'Something went wrong. Please try again.', 'daymark' ),
+					'refreshLabel'     => __( 'Refresh', 'daymark' ),
+					'refreshingLabel'  => __( 'Refreshing…', 'daymark' ),
+					'statusActive'     => __( 'Active', 'daymark' ),
+					'statusError'      => __( 'Error', 'daymark' ),
+					'justNow'          => __( 'Just now', 'daymark' ),
+					'genericError'     => __( 'Something went wrong. Please try again.', 'daymark' ),
+					// %s is replaced with the failure's own reason text
+					// client-side (see applyRefreshedRow() in
+					// admin-subscriptions.js) — kept as one translatable
+					// string rather than concatenating a fixed prefix, so a
+					// translation can reorder around the inserted reason.
+					/* translators: %s: the most recent fetch failure's reason. */
+					'recentFetchIssue' => __( 'Recent fetch issue: %s', 'daymark' ),
 				),
 			)
 		);
@@ -201,6 +230,125 @@ class Daymark_Admin_Subscriptions {
 			?>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Render a dismissible, wp-admin-wide notice when at least one
+	 * subscription currently has a fetch problem (issue #182) — the same
+	 * `consecutive_failure_count > 0` condition Settings -> Daymark's own
+	 * table surfaces per-row (see render_subscription_row()), just visible
+	 * from anywhere in wp-admin rather than only on that one screen.
+	 *
+	 * Dismissal is per-user and persists across page loads (a plain link,
+	 * not JS) but only until the *set* of currently-failing subscriptions
+	 * actually changes (issue_signature()) — a still-failing subscription's
+	 * `consecutive_failure_count` keeps climbing on every poll it fails
+	 * again, which would otherwise re-show this on every single poll cycle
+	 * even though nothing new happened.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function render_subscription_issue_notice(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		$issues = Daymark_Plugin::instance()->subscriptions->get_with_issues();
+
+		if ( empty( $issues ) ) {
+			return;
+		}
+
+		$signature = self::issue_signature( $issues );
+		$dismissed = (string) get_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, true );
+
+		if ( $dismissed === $signature ) {
+			return;
+		}
+
+		$count       = count( $issues );
+		$dismiss_url = wp_nonce_url(
+			add_query_arg( self::DISMISS_NOTICE_QUERY_VAR, $signature ),
+			self::DISMISS_NOTICE_QUERY_VAR
+		);
+		?>
+		<div class="notice notice-warning">
+			<p>
+				<?php
+				printf(
+					esc_html(
+						/* translators: %d: number of subscriptions currently failing to fetch. */
+						_n(
+							'Daymark: %d subscription is having trouble fetching new posts.',
+							'Daymark: %d subscriptions are having trouble fetching new posts.',
+							$count,
+							'daymark'
+						)
+					),
+					(int) $count
+				);
+				?>
+				<a href="<?php echo esc_url( self::page_url() ); ?>"><?php esc_html_e( 'Check Settings -> Daymark', 'daymark' ); ?></a>
+				&nbsp;&mdash;&nbsp;
+				<a href="<?php echo esc_url( $dismiss_url ); ?>"><?php esc_html_e( 'Dismiss', 'daymark' ); ?></a>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle a click on render_subscription_issue_notice()'s "Dismiss" link:
+	 * remember the issue signature being dismissed (per-user), then redirect
+	 * back with the query args stripped so a page refresh can't resubmit it.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function maybe_handle_dismiss_notice(): void {
+		if ( ! isset( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified explicitly below via check_admin_referer(), which also reads from $_GET.
+			return;
+		}
+
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			return;
+		}
+
+		check_admin_referer( self::DISMISS_NOTICE_QUERY_VAR );
+
+		$signature = sanitize_text_field( wp_unslash( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified immediately above via check_admin_referer().
+
+		update_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, $signature );
+
+		wp_safe_redirect( remove_query_arg( array( self::DISMISS_NOTICE_QUERY_VAR, '_wpnonce' ) ) );
+		exit;
+	}
+
+	/**
+	 * A stable signature for "which subscriptions are currently failing" —
+	 * just the sorted set of IDs, not their individual failure counts
+	 * (which climb every poll cycle a subscription fails again and would
+	 * otherwise make every dismissal expire on the very next poll). The
+	 * signature changes only when a new subscription starts failing or an
+	 * existing one recovers, which is the actual "something changed" this
+	 * notice's dismissal is meant to track.
+	 *
+	 * @param array<int, array<string, mixed>> $issues Rows from Daymark_Subscriptions::get_with_issues().
+	 * @return string
+	 */
+	private static function issue_signature( array $issues ): string {
+		$ids = array_map(
+			static function ( array $row ): int {
+				return absint( $row['id'] ?? 0 );
+			},
+			$issues
+		);
+
+		sort( $ids );
+
+		return implode( ',', $ids );
 	}
 
 	/**
@@ -567,16 +715,24 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscription_row( array $subscription ): void {
-		$id                = absint( $subscription['id'] ?? 0 );
-		$site_url          = (string) ( $subscription['site_url'] ?? '' );
-		$site_title        = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
-		$icon_url          = (string) ( $subscription['site_icon_url'] ?? '' );
-		$status            = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
-		$is_error          = 'error' === $status;
-		$label             = self::subscription_label( $subscription );
-		$row_label         = '' !== $label ? $label : __( '(untitled)', 'daymark' );
-		$last_error        = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
-		$has_error_message = $is_error && '' !== $last_error;
+		$id            = absint( $subscription['id'] ?? 0 );
+		$site_url      = (string) ( $subscription['site_url'] ?? '' );
+		$site_title    = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$icon_url      = (string) ( $subscription['site_icon_url'] ?? '' );
+		$status        = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
+		$is_error      = 'error' === $status;
+		$label         = self::subscription_label( $subscription );
+		$row_label     = '' !== $label ? $label : __( '(untitled)', 'daymark' );
+		$last_error    = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
+		$failure_count = absint( $subscription['consecutive_failure_count'] ?? 0 );
+		// Issue #182: a subscription can be failing (and have a real
+		// last_error) well before it's flagged fully dead — the dead
+		// threshold is 7 consecutive failures, but the very first one
+		// already has something worth surfacing here. A subscription that
+		// recovers has its failure count reset to 0 on the next successful
+		// check, so a stale last_error left over from a past recovery
+		// (failure count back at 0) still correctly shows nothing.
+		$has_error_message = '' !== $last_error && ( $is_error || $failure_count > 0 );
 		?>
 		<tr data-daymark-subscription-row="<?php echo esc_attr( (string) $id ); ?>">
 			<td>
@@ -594,7 +750,22 @@ class Daymark_Admin_Subscriptions {
 			</td>
 			<td>
 				<span class="daymark-subscription-status-text"><?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?></span>
-				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo $has_error_message ? esc_html( $last_error ) : ''; ?></div>
+				<?php
+				$error_message = '';
+
+				if ( $has_error_message ) {
+					// The dead ('Error') case shows the reason alone, unchanged
+					// from before this row could also show a non-dead issue.
+					// The still-'Active'-but-failing case gets a prefix so it
+					// doesn't read as identical to a fully dead feed.
+					$error_message = $is_error ? $last_error : sprintf(
+						/* translators: %s: the most recent fetch failure's reason. */
+						__( 'Recent fetch issue: %s', 'daymark' ),
+						$last_error
+					);
+				}
+				?>
+				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo esc_html( $error_message ); ?></div>
 			</td>
 			<td class="daymark-subscription-last-fetched">
 				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>
