@@ -20,6 +20,20 @@
  */
 class Test_Subscription_Url_Guard extends WP_UnitTestCase {
 
+	public function tear_down(): void {
+		// Both tests below add a `daymark_subscription_url_guard_resolved_addresses`
+		// filter to supply a deterministic resolution instead of a real DNS
+		// lookup; removing all callbacks here (rather than each test
+		// removing its own) guarantees neither ever leaks into a later
+		// test in this file or any other — a leaked filter here would make
+		// resolve_addresses() return a stale, canned result for every host
+		// resolved for the rest of the process, silently changing every
+		// other test's real DNS-resolution behavior.
+		remove_all_filters( 'daymark_subscription_url_guard_resolved_addresses' );
+
+		parent::tear_down();
+	}
+
 	/** A normal, resolvable public-site URL is accepted. */
 	public function test_accepts_normal_public_url() {
 		add_filter(
