@@ -1550,7 +1550,7 @@ test('header home-link points home, and Home shows the Timeline feed', async ({ 
 	const home = page.locator('.daymark-homelink');
 	await expect(home).toBeVisible();
 	await expect(home).toHaveText('Daymark');
-	await expect(home.locator('svg')).toBeVisible();
+	await expect(home.locator('img')).toBeVisible();
 	expect(await home.getAttribute('href')).toContain('#home');
 
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
@@ -1703,6 +1703,35 @@ test('Explore, Search, and Me are directly linkable and survive a refresh', asyn
 		await page.reload();
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
 	}
+});
+
+// Explore, Search, and Me now share Home's own header chrome: the Daymark
+// icon (upper left) links back to Timeline, and Notifications (upper
+// right) is reachable from every one of them — so Me's own body no longer
+// needs a separate "Notifications" link.
+test('Explore, Search, and Me headers carry the Daymark icon and Notifications icon', async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	for (const hash of ['#explore', '#search', '#me']) {
+		await page.goto('/daymark' + hash);
+
+		const homeIcon = page.locator('header.daymark-topbar a.daymark-iconbtn[href="#home"]');
+		await expect(homeIcon).toBeVisible();
+		await expect(homeIcon.locator('img')).toBeVisible();
+
+		await expect(
+			page.locator('header.daymark-topbar a.daymark-iconbtn[href="#notifications"]')
+		).toBeVisible();
+	}
+
+	await expect(page.locator('.daymark-melink', { hasText: 'Notifications' })).toHaveCount(0);
+
+	await page.goto('/daymark#explore');
+	await page.locator('header.daymark-topbar a.daymark-iconbtn[href="#home"]').click();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
 });
 
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles

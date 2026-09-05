@@ -155,8 +155,7 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
-/* The Timeline icon + wordmark act as one home-link — Timeline moved here
-   from the bottom nav so the launcher could take its place in that row. */
+/* Daymark's own icon + wordmark act as one home-link. */
 .daymark-homelink {
 	display: inline-flex;
 	align-items: center;
@@ -167,8 +166,15 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-homelink__icon {
-	color: var(--daymark-accent);
 	flex: none;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* The same Daymark icon, alone, inside a .daymark-iconbtn — the Explore/
+   Search/Me headers' link back to Timeline. */
+.daymark-iconbtn__icon {
+	display: block;
+	border-radius: var(--daymark-radius-sm);
 }
 
 .daymark-backlink {
