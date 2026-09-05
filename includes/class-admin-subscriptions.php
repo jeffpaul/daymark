@@ -9,9 +9,12 @@
  * mobile-first app shell. This is the first admin-facing class in this
  * codebase — plain wp-admin form posts (POST-redirect-GET via the standard
  * `admin_post_{action}` hook pattern, with query-string status notices on
- * redirect back). No REST, no AJAX — a small enqueued script only gives the
- * Subscribe button a loading state on submit; it doesn't change the request
- * model.
+ * redirect back) for every action except the per-row Refresh form (issue
+ * #175): that one form is progressively enhanced by
+ * `assets/admin-subscriptions.js` to submit via the existing REST refresh
+ * endpoint instead, updating only its own row in place rather than
+ * reloading the whole page — the admin-post handler stays as that one
+ * form's no-JS fallback, unchanged.
  *
  * Gated on `edit_posts`, not the wp-admin-conventional `manage_options`:
  * every existing Daymark permission check in this codebase
@@ -101,6 +104,14 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * Enqueue this screen's own script, and only on this screen.
 	 *
+	 * Localizes the REST refresh endpoint + a `wp_rest` nonce (issue #175):
+	 * the per-row Refresh form (see render_refresh_form()) now submits via
+	 * this endpoint instead of a full admin-post.php POST-redirect-GET, so
+	 * the row updates in place instead of reloading the page. The `wp_rest`
+	 * nonce is distinct from the admin-post action nonce
+	 * check_admin_referer() still verifies in handle_refresh() — that nonce
+	 * only guards the no-JS fallback form submission, not the REST call.
+	 *
 	 * @param string $hook_suffix The current admin page's hook suffix.
 	 * @return void
 	 */
@@ -115,6 +126,23 @@ class Daymark_Admin_Subscriptions {
 			array(),
 			DAYMARK_VERSION,
 			true
+		);
+
+		wp_localize_script(
+			'daymark-admin-subscriptions',
+			'daymarkAdminSubscriptions',
+			array(
+				'restUrl'   => esc_url_raw( rest_url( 'daymark/v1/subscriptions/' ) ),
+				'restNonce' => wp_create_nonce( 'wp_rest' ),
+				'i18n'      => array(
+					'refreshLabel'    => __( 'Refresh', 'daymark' ),
+					'refreshingLabel' => __( 'Refreshing…', 'daymark' ),
+					'statusActive'    => __( 'Active', 'daymark' ),
+					'statusError'     => __( 'Error', 'daymark' ),
+					'justNow'         => __( 'Just now', 'daymark' ),
+					'genericError'    => __( 'Something went wrong. Please try again.', 'daymark' ),
+				),
+			)
 		);
 	}
 
@@ -392,17 +420,18 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscription_row( array $subscription ): void {
-		$id         = absint( $subscription['id'] ?? 0 );
-		$site_url   = (string) ( $subscription['site_url'] ?? '' );
-		$title      = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
-		$icon_url   = (string) ( $subscription['site_icon_url'] ?? '' );
-		$status     = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
-		$is_error   = 'error' === $status;
-		$label      = '' !== $title ? $title : $site_url;
-		$row_label  = '' !== $label ? $label : __( '(untitled)', 'daymark' );
-		$last_error = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
+		$id                = absint( $subscription['id'] ?? 0 );
+		$site_url          = (string) ( $subscription['site_url'] ?? '' );
+		$title             = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+		$icon_url          = (string) ( $subscription['site_icon_url'] ?? '' );
+		$status            = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
+		$is_error          = 'error' === $status;
+		$label             = '' !== $title ? $title : $site_url;
+		$row_label         = '' !== $label ? $label : __( '(untitled)', 'daymark' );
+		$last_error        = sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) );
+		$has_error_message = $is_error && '' !== $last_error;
 		?>
-		<tr>
+		<tr data-daymark-subscription-row="<?php echo esc_attr( (string) $id ); ?>">
 			<td>
 				<strong><?php echo esc_html( $row_label ); ?></strong>
 				<?php if ( '' !== $site_url ) : ?>
@@ -416,13 +445,10 @@ class Daymark_Admin_Subscriptions {
 				<?php endif; ?>
 			</td>
 			<td>
-				<?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?>
-				<?php if ( $is_error && '' !== $last_error ) : ?>
-					<br />
-					<span class="description"><?php echo esc_html( $last_error ); ?></span>
-				<?php endif; ?>
+				<span class="daymark-subscription-status-text"><?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?></span>
+				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo $has_error_message ? esc_html( $last_error ) : ''; ?></div>
 			</td>
-			<td>
+			<td class="daymark-subscription-last-fetched">
 				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>
 			</td>
 			<td>
@@ -445,16 +471,24 @@ class Daymark_Admin_Subscriptions {
 	 * 'error'. Delegates to the same Daymark_Subscription_Poller::manual_refresh()
 	 * as the REST refresh endpoint, including its per-subscription cooldown.
 	 *
+	 * When JS is available (issue #175), `assets/admin-subscriptions.js`
+	 * intercepts this form's submit and calls the REST refresh endpoint
+	 * directly instead, updating this row's Status/Last fetched cells in
+	 * place — see enqueue_assets()'s localized config. The form itself still
+	 * posts to admin_post_daymark_subscription_refresh as a no-JS fallback,
+	 * identical to this form's previous (page-reloading) behavior.
+	 *
 	 * @param int $id Subscription ID.
 	 * @return void
 	 */
 	private function render_refresh_form( int $id ): void {
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-right:6px;">
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-refresh-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;margin-right:6px;">
 			<input type="hidden" name="action" value="daymark_subscription_refresh" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_refresh_' . $id, 'daymark_subscription_refresh_nonce' ); ?>
 			<?php submit_button( __( 'Refresh', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			<span class="description daymark-subscription-refresh-error" role="alert" hidden></span>
 		</form>
 		<?php
 	}
