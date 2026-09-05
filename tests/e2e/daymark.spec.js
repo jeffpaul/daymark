@@ -1573,7 +1573,9 @@ test('header home-link points home, and Home shows the Timeline feed', async ({ 
 	const home = page.locator('.daymark-homelink');
 	await expect(home).toBeVisible();
 	await expect(home).toHaveText('Daymark');
-	await expect(home.locator('img')).toBeVisible();
+	const homeImg = home.locator('img');
+	await expect(homeImg).toBeVisible();
+	expect(await homeImg.getAttribute('width')).toBe('26');
 	expect(await home.getAttribute('href')).toContain('#home');
 
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
@@ -1742,7 +1744,10 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 
 		const homeIcon = page.locator('header.daymark-topbar a.daymark-iconbtn[href="#home"]');
 		await expect(homeIcon).toBeVisible();
-		await expect(homeIcon.locator('img')).toBeVisible();
+		await expect(homeIcon).toHaveClass(/daymark-iconbtn--plain/);
+		const homeIconImg = homeIcon.locator('img');
+		await expect(homeIconImg).toBeVisible();
+		expect(await homeIconImg.getAttribute('width')).toBe('26');
 
 		await expect(
 			page.locator('header.daymark-topbar a.daymark-iconbtn[href="#notifications"]')

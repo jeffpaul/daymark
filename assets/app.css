@@ -202,6 +202,17 @@ h2[tabindex='-1']:focus {
 	text-decoration: none;
 }
 
+/* The Explore/Search/Me headers' Daymark icon link reuses .daymark-iconbtn
+   for its tap-target sizing/centering, but drops the bordered-square button
+   chrome — same plain, unboxed feel as Home's own wordmark icon
+   (.daymark-homelink), just without the "Daymark" text label alongside it.
+   The Notifications icon button on every screen keeps the bordered square
+   unchanged; this modifier is scoped to the Daymark icon link alone. */
+.daymark-iconbtn--plain {
+	border-color: transparent;
+	background: none;
+}
+
 /* --- Screen layout --- */
 .daymark-screen {
 	display: flex;

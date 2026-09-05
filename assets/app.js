@@ -2224,9 +2224,9 @@
 	// every one of them, matching the bottom nav's own always-present rows.
 
 	function daymarkIconLink() {
-		return `<a class="daymark-iconbtn" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
+		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
 			config.siteIconUrl || ''
-		)}" alt="" width="20" height="20" /></a>`;
+		)}" alt="" width="26" height="26" /></a>`;
 	}
 
 	function notificationsIconButton() {
@@ -2300,7 +2300,7 @@
 			// Timeline tab still uses.
 			const wordmark = `<a class="daymark-homelink" href="#home"><img class="daymark-homelink__icon" src="${esc(
 				config.siteIconUrl || ''
-			)}" alt="" width="22" height="22" /><span>Daymark</span></a>`;
+			)}" alt="" width="26" height="26" /><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
