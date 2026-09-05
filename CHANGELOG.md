@@ -33,6 +33,7 @@ can't act on them.
 - A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list. ([#173](https://github.com/jeffpaul/daymark/pull/173))
 - Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page. ([#177](https://github.com/jeffpaul/daymark/pull/177))
 - A subscription post's Timeline card no longer shows a "Subscribed" chip — its site icon already makes clear it isn't one of your own Marks, so the chip was just taking up space. ([#179](https://github.com/jeffpaul/daymark/pull/179))
+- A Timeline card's comment/like/repost stat row is now ordered like, comment, reblog (was comment, like, repost). ([#186](https://github.com/jeffpaul/daymark/pull/186))
 
 ### Fixed
 
