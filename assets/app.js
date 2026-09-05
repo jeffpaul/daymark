@@ -2224,9 +2224,9 @@
 	// every one of them, matching the bottom nav's own always-present rows.
 
 	function daymarkIconLink() {
-		return `<a class="daymark-iconbtn" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
+		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
 			config.siteIconUrl || ''
-		)}" alt="" width="20" height="20" /></a>`;
+		)}" alt="" width="26" height="26" /></a>`;
 	}
 
 	function notificationsIconButton() {
@@ -2237,6 +2237,54 @@
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
 			${hasUnread ? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>' : ''}
 		</a>`;
+	}
+
+	// A small bit of whimsy bookending the Timeline's own vertical rail (the
+	// thin grey line drawn behind the list — see .daymark-recent__list::before
+	// in app.css): a "sunrise" mark where it begins and a "sunset" mark where
+	// it currently ends, in the same sunset-gradient palette (deep ember
+	// overhead through to light gold) docs/brand.md already documents for the
+	// app icon/banner artwork — quite literally marking a day, start to end,
+	// which is the whole point of the name "Daymark". Purely decorative
+	// (aria-hidden); CSS gates their visibility on the same
+	// :has(.daymark-recent__typeicon) condition the rail itself uses, so
+	// neither ever shows floating above/below an empty Timeline.
+
+	function timelineStartFlourish() {
+		return `<div class="daymark-timeline-flourish daymark-timeline-flourish--start" aria-hidden="true">
+			<svg width="28" height="28" viewBox="0 0 28 28">
+				<defs>
+					<radialGradient id="daymark-flourish-start-grad" cx="50%" cy="35%" r="65%">
+						<stop offset="0%" stop-color="#FFD9A8"></stop>
+						<stop offset="100%" stop-color="#C93A06"></stop>
+					</radialGradient>
+				</defs>
+				<g stroke="#C93A06" stroke-width="1.5" stroke-linecap="round" opacity="0.55">
+					<line x1="14" y1="1" x2="14" y2="5"></line>
+					<line x1="5.5" y1="5.5" x2="8.2" y2="8.2"></line>
+					<line x1="22.5" y1="5.5" x2="19.8" y2="8.2"></line>
+				</g>
+				<circle cx="14" cy="15" r="6" fill="url(#daymark-flourish-start-grad)"></circle>
+			</svg>
+		</div>`;
+	}
+
+	function timelineEndFlourish() {
+		return `<div class="daymark-timeline-flourish daymark-timeline-flourish--end" aria-hidden="true">
+			<svg width="28" height="22" viewBox="0 0 28 22">
+				<defs>
+					<radialGradient id="daymark-flourish-end-grad" cx="50%" cy="25%" r="75%">
+						<stop offset="0%" stop-color="#FFD9A8"></stop>
+						<stop offset="100%" stop-color="#9E2A02"></stop>
+					</radialGradient>
+					<clipPath id="daymark-flourish-end-clip">
+						<rect x="0" y="0" width="28" height="13"></rect>
+					</clipPath>
+				</defs>
+				<circle cx="14" cy="13" r="6" fill="url(#daymark-flourish-end-grad)" clip-path="url(#daymark-flourish-end-clip)"></circle>
+				<line x1="1" y1="13" x2="27" y2="13" stroke="#E0E0E0" stroke-width="1.5" stroke-linecap="round"></line>
+			</svg>
+		</div>`;
 	}
 
 	// --- Screen: Home (Timeline) ---
@@ -2252,7 +2300,7 @@
 			// Timeline tab still uses.
 			const wordmark = `<a class="daymark-homelink" href="#home"><img class="daymark-homelink__icon" src="${esc(
 				config.siteIconUrl || ''
-			)}" alt="" width="22" height="22" /><span>Daymark</span></a>`;
+			)}" alt="" width="26" height="26" /><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
@@ -2273,12 +2321,14 @@
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">Timeline</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
+					${timelineStartFlourish()}
 					<div class="daymark-recent__list" data-recent-list aria-live="polite">
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">Loading your timeline</span>
 					</div>
 					<div class="daymark-recent__sentinel" data-recent-sentinel aria-hidden="true"></div>
 					<p class="daymark-recent__more" data-recent-more hidden></p>
+					${timelineEndFlourish()}
 				</section>
 			</section>
 			${navFooterMarkup('home')}`;

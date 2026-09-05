@@ -27,6 +27,7 @@ can't act on them.
 - A subscription's Site name can now be edited directly in Settings -> Daymark, for when the auto-derived name (especially a Friends-plugin-sourced one) isn't obviously who or what it is. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 - A Timeline card's site icon now shows the site's name and URL as a native tooltip on hover. ([#179](https://github.com/jeffpaul/daymark/pull/179))
 - A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem. ([#182](https://github.com/jeffpaul/daymark/issues/182))
+- The Timeline's own vertical rail now gets a small "sunrise" flourish where it begins and a "sunset" flourish where it currently ends, in the app's own sunset-gradient palette. ([#192](https://github.com/jeffpaul/daymark/pull/192))
 
 ### Changed
 
@@ -36,6 +37,7 @@ can't act on them.
 - A Timeline card's comment/like/repost stat row is now ordered like, comment, reblog (was comment, like, repost). ([#186](https://github.com/jeffpaul/daymark/pull/186))
 - The header now shows the Daymark icon in the upper left on every screen (Home, Explore, Search, Me) instead of just the Timeline icon on Home — tapping it from Explore, Search, or Me takes you back to the Timeline. Explore, Search, and Me also now show the Notifications icon in the upper right, so it's been removed as a separate link on the Me page. ([#188](https://github.com/jeffpaul/daymark/pull/188))
 - A subscription having trouble fetching new posts (or fully dead) now shows up right in your Notifications, with a link back to Settings -> Daymark — no more separate wp-admin notice to check. ([#190](https://github.com/jeffpaul/daymark/pull/190))
+- The Daymark icon in the header is a bit bigger now (closer to the size of the bottom nav's own icons), and on Explore/Search/Me it no longer sits inside a bordered square button. ([#192](https://github.com/jeffpaul/daymark/pull/192))
 
 ### Fixed
 
