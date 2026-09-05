@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 0.10.0
+Stable tag: 0.11.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -135,7 +135,38 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.11.0 - 2026-09-05 =
+**Added**
+
+* The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status.
+* The Settings -> Daymark subscriptions table's Site, Status, and Last fetched column headers are now clickable to sort the table ascending or descending.
+* A subscription's Site name can now be edited directly in Settings -> Daymark, for when the auto-derived name (especially a Friends-plugin-sourced one) isn't obviously who or what it is.
+* A Timeline card's site icon now shows the site's name and URL as a native tooltip on hover.
+* A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem.
+* The Timeline's own vertical rail now gets a small "sunrise" flourish where it begins and a "sunset" flourish where it currently ends, in the app's own sunset-gradient palette.
+* A Timeline card (Mark or subscribed post) can now be bookmarked directly from its stat row for offline viewing — a new "Bookmarks" section on Explore shows just what you've saved, and its full content is cached for offline viewing automatically, including on a new device the moment you open Daymark.
+* A Timeline card's stat row now has a Share icon — it opens your device's native share menu when available, or copies the post's link to your clipboard otherwise.
+* The Timeline now groups cards under relative-period headers — Today, This Week, Last Week, This Month, Last Month, This Year, or a bare year for anything older — so a long scroll back through older content reads by chronological chunk instead of a wall of individual per-card timestamps.
+
+**Changed**
+
+* A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list.
+* Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page.
+* A subscription post's Timeline card no longer shows a "Subscribed" chip — its site icon already makes clear it isn't one of your own Marks, so the chip was just taking up space.
+* A Timeline card's comment/like/repost stat row is now ordered like, comment, reblog (was comment, like, repost).
+* The header now shows the Daymark icon in the upper left on every screen (Home, Explore, Search, Me) instead of just the Timeline icon on Home — tapping it from Explore, Search, or Me takes you back to the Timeline. Explore, Search, and Me also now show the Notifications icon in the upper right, so it's been removed as a separate link on the Me page.
+* A subscription having trouble fetching new posts (or fully dead) now shows up right in your Notifications, with a link back to Settings -> Daymark — no more separate wp-admin notice to check.
+* The Daymark icon in the header is a bit bigger now (closer to the size of the bottom nav's own icons), and on Explore/Search/Me it no longer sits inside a bordered square button.
+* Expanding a Timeline card's content now grows the card's own bordered frame instead of inserting content below it that could look like it overlapped other Timeline elements. The "View full post"/"View original" link is now a permanent icon in the stat row (between Bookmark and Share) instead of only appearing once a card is expanded, and every icon in the row now shows a hover tooltip.
+
+**Fixed**
+
+* Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll.
+* Subscribing to a second feed on an already-subscribed WordPress site (e.g. a friend publishing both a Posts archive and a separate Notes archive on one install) previously failed as a duplicate, since the site's REST API always resolves to the same site-wide feed regardless of which page you subscribed from. You can now paste a specific feed URL directly to subscribe to exactly that feed, and subscribing to a second page on the same site now falls back to that page's own RSS/Atom feed instead of failing.
+* A subscribed post's expanded content could show a stray "Skip to content" accessibility link from the source site's own theme, when that site had no `<article>` element for Daymark to narrow down to.
+
 = 0.10.0 - 2026-09-04 =
+
 **Added**
 
 * wp-admin now offers two quick ways into Daymark: an "Open Daymark" link next to "Visit Site" under the site name in the admin bar, and a "Daymark" item in the "+New" menu that jumps straight into the composer pre-set to an Image Mark.
@@ -439,6 +470,9 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.11.0 =
+Timeline cards can now be bookmarked for offline viewing and shared via your device's native share menu. Expanding a card grows its own bordered frame instead of overlapping other Timeline elements, with a permanent "open original" icon and hover tooltips on every stat-row icon. The Timeline also now groups cards under relative-period headers (Today, This Week, Last Month, etc.) for easier scanning further back.
 
 = 0.10.0 =
 Subscriptions get four new detection sources (WebSub push delivery, microformats2-only sites, WordPress REST API, and Friends-plugin friends) plus more accurate post-type mapping, OPML import/export, and an on-demand icon refresh. Timeline cards gain a repost count and a Reply action on subscribed posts. Published Marks drop their in-app Edit/Delete menu — use wp-admin for that now.
