@@ -606,9 +606,14 @@ class Daymark_Subscriptions {
 	 * Daymark_Subscription_Poller::record_failed_check() already sets after
 	 * 7 consecutive failed checks (see DEAD_FEED_FAILURE_THRESHOLD there) —
 	 * this method does not decide when a subscription becomes flagged, it
-	 * only surfaces the ones that already are, for
-	 * Daymark_Notifications::get_notifications() to turn into
-	 * `dead_feed` notification items.
+	 * only surfaces the ones that already are.
+	 *
+	 * `Daymark_Notifications::get_notifications()` reads `get_with_issues()`
+	 * instead (issue #189) — a superset that also includes a still-`active`
+	 * subscription that's failing but not yet dead — so a fully-dead row
+	 * surfaces exactly once there, not twice. This method stays as its own
+	 * narrower, `status`-only accessor for any other caller (and its own
+	 * test coverage) that specifically wants only the fully-dead case.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */

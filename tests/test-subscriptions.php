@@ -321,9 +321,10 @@ class Test_Subscriptions extends WP_UnitTestCase {
 
 	/**
 	 * Scenario: get_flagged() returns only `status = 'error'` rows, and
-	 * leaves active rows out — the mirror image of get_active(). This is
-	 * the query Daymark_Notifications::get_notifications() (issue #78,
-	 * "Dead feed detection") builds `dead_feed` items from.
+	 * leaves active rows out — the mirror image of get_active(). (Issue
+	 * #189: Daymark_Notifications::get_notifications() reads the broader
+	 * get_with_issues() instead these days, not this narrower accessor —
+	 * see that method's own docblock.)
 	 */
 	public function test_get_flagged_returns_only_error_status() {
 		$active_id = $this->subscriptions->create( array( 'feed_url' => 'https://active-example.com/feed/' ) );
