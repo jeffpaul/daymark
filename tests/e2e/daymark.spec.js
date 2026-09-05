@@ -260,12 +260,16 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 
 	// A subscription-post card: same mechanism, external content instead —
 	// settles on success (`.daymark-expand-content`) or a graceful failure
-	// (`.daymark-error`), either way followed by a real "View original ↗"
-	// link with a real http(s) href, and never a modal or a navigation.
-	// The external fetch has its own 15s server-side timeout, so this
-	// allows generous headroom.
+	// (`.daymark-error`), never a modal or a navigation. The "Open
+	// original" stat-row icon (a real http(s) href) is a permanent part of
+	// the card itself now, not something that only appears once expanded
+	// — see the card-frame/icon-row decision. The external fetch has its
+	// own 15s server-side timeout, so this allows generous headroom.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
+	const externalLink = subCard.locator('[data-external-link]');
+	await expect(externalLink).toHaveCount(1);
+	expect(await externalLink.getAttribute('data-external-link')).toMatch(/^https?:\/\//);
 	// A direct following-sibling of the card itself (same DOM shape
 	// onFeedListClick()'s own closest('.daymark-recent__item-wrap') relies
 	// on) — more precise than re-deriving the wrap via a `has:` filter,
@@ -273,13 +277,11 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	// disagree with which element was actually clicked.
 	const subPanel = subCard.locator('xpath=following-sibling::*[@data-expand-panel]');
 	// Same title-click reasoning as the Mark card above — this card's own
-	// stat row (Bookmark, Share) sits at the bottom of the same button.
+	// stat row (Bookmark, Open original, Share) sits at the bottom of the
+	// same button.
 	await subCard.locator('.daymark-recent__title').click();
 	await expect(subPanel).toBeVisible();
-	const viewOriginal = subPanel.getByRole('link', { name: /View original/ });
-	await expect(viewOriginal).toBeVisible({ timeout: 20000 });
-	expect(await viewOriginal.getAttribute('href')).toMatch(/^https?:\/\//);
-	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0);
+	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0, { timeout: 20000 });
 	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });

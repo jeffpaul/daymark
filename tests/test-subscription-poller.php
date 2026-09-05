@@ -630,6 +630,37 @@ XML;
 		$this->assertStringNotContainsString( 'Leave a Reply', $body, 'A reply form nested inside <article> is still dropped' );
 	}
 
+	/**
+	 * A site with no <article> element at all falls back to the whole
+	 * <body> (see extract_body_html()'s own docblock) — which still
+	 * includes a theme's accessibility skip link, conventionally the very
+	 * first element in <body>. This is the real gap: preferring <article>
+	 * alone doesn't help here, since there's no <article> to prefer.
+	 */
+	public function test_fetch_full_content_strips_skip_link_when_no_article_element_exists() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/no-article-tag/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/no-article-tag/',
+			'<html><body>'
+			. '<a class="skip-link screen-reader-text" href="#content">Skip to the content</a>'
+			. '<div id="content"><p>The real post content, no article tag around it.</p></div>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real post content', $body );
+		$this->assertStringNotContainsString( 'Skip to the content', $body, 'A skip link outside <article> is still dropped when there is no <article> to narrow to' );
+	}
+
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
 	public function test_fetch_full_content_on_pruned_post_works_the_same_way() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );

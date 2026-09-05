@@ -870,11 +870,27 @@ h2[tabindex='-1']:focus {
 	fill: currentColor;
 }
 
-/* The Share toggle (see renderShareToggle(), app.js) — the row's other
-   interactive entry, immediately after Bookmark. Unlike
-   .daymark-stat--bookmark it doesn't need its own `margin-left: auto`:
-   Bookmark's already pushed the whole trailing group (itself + Share) to
-   the row's end, so Share just follows in normal flex flow right after it. */
+/* The "open original" toggle (see renderExternalLinkToggle(), app.js) —
+   sits between Bookmark and Share. Like Share below, it doesn't need its
+   own `margin-left: auto`: Bookmark's already pushed the whole trailing
+   group (itself + this + Share) to the row's end, so this just follows
+   in normal flex flow right after Bookmark. */
+.daymark-stat--external {
+	cursor: pointer;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	justify-content: center;
+}
+
+.daymark-stat--external:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* The Share toggle (see renderShareToggle(), app.js) — the row's final
+   entry, immediately after the "open original" toggle above; same
+   reasoning applies (no `margin-left: auto` of its own needed). */
 .daymark-stat--share {
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
@@ -2418,6 +2434,22 @@ h2[tabindex='-1']:focus {
    costs nothing in layout. */
 .daymark-recent__item-wrap {
 	flex-wrap: wrap;
+}
+
+/* While expanded, the whole item (icons, card, and the panel together)
+   gets a visible frame — border, background, rounded corners, its own
+   padding — so opening a card reads as that card's own frame growing
+   taller, not as separate content inserted below it that visually
+   overlaps the rail/other Timeline items. A collapsed card has no such
+   border, matching every other item (which relies on spacing + the rail
+   line rather than a per-card box), so this only ever appears once
+   expanded — :has() scopes it to exactly that state without any extra
+   JS-toggled class. */
+.daymark-recent__item-wrap:has(.daymark-recent__expand:not([hidden])) {
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
+	padding: var(--daymark-spacing-sm);
 }
 
 .daymark-recent__expand {
