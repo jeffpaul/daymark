@@ -870,11 +870,39 @@ h2[tabindex='-1']:focus {
 	fill: currentColor;
 }
 
+/* The Share toggle (see renderShareToggle(), app.js) — the row's other
+   interactive entry, immediately after Bookmark. Unlike
+   .daymark-stat--bookmark it doesn't need its own `margin-left: auto`:
+   Bookmark's already pushed the whole trailing group (itself + Share) to
+   the row's end, so Share just follows in normal flex flow right after it. */
+.daymark-stat--share {
+	cursor: pointer;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	justify-content: center;
+}
+
+.daymark-stat--share:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* Brief confirmation after a clipboard-copy fallback (shareItem(), app.js)
+   — the same accent treatment .daymark-stat--active already uses
+   elsewhere in this row, so "just copied" reads the same visual language
+   as "already bookmarked" rather than a one-off color. */
+.daymark-stat--share-copied {
+	color: var(--daymark-accent);
+	font-weight: 600;
+}
+
 /* A subscription-post card has no like/comment/reblog stats to share a
    row with (see renderSubscriptionPostCard()) — this variant keeps the
-   row's height and end-alignment without those, so the Bookmark toggle
-   still lands in the same visual corner a Mark card's own row places it. */
-.daymark-item-stats--bookmark-only {
+   row's height and end-alignment without those, so the Bookmark/Share
+   toggles still land in the same visual corner a Mark card's own row
+   places them. */
+.daymark-item-stats--minimal {
 	justify-content: flex-end;
 }
 

@@ -251,6 +251,8 @@
 	const REPOST_GLYPH =
 		'<polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path>';
 	const BOOKMARK_GLYPH = '<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>';
+	const SHARE_GLYPH =
+		'<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -292,6 +294,23 @@
 		)}" data-bookmark-toggle="${id}" data-bookmark-kind="${esc(kind)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
 	}
 
+	// The row's other interactive entry, same span[role="button"] reasoning
+	// as renderBookmarkToggle() above (nested inside the card's own
+	// expand-trigger button either way). Shares a Mark's or a subscription
+	// post's real permalink — identical behavior for either, so unlike the
+	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
+	// when an item has no permalink at all (should not normally happen for
+	// anything actually published), since there'd be nothing to share.
+	function renderShareToggle(item) {
+		if (!item.permalink) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
+			SHARE_GLYPH
+		)}</span>`;
+	}
+
 	function renderItemStats(item) {
 		return `<span class="daymark-item-stats">${renderStat(
 			HEART_GLYPH,
@@ -305,7 +324,7 @@
 			'reposts',
 			'repost',
 			'reposts'
-		)}${renderBookmarkToggle(item, 'mark')}</span>`;
+		)}${renderBookmarkToggle(item, 'mark')}${renderShareToggle(item)}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -2126,6 +2145,16 @@
 			return;
 		}
 
+		// The Share toggle — same reasoning/placement as the Bookmark
+		// toggle just above.
+		const shareToggle = target.closest('[data-share-toggle]');
+		if (shareToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			shareItem(screen, shareToggle);
+			return;
+		}
+
 		// The "Reply" action inside an expanded subscription post's panel
 		// (see loadSubscriptionExpandHtml()): jump into the composer seeded
 		// to reply to that post.
@@ -2258,12 +2287,17 @@
 		if ('Enter' !== event.key && ' ' !== event.key && 'Spacebar' !== event.key) {
 			return;
 		}
-		const toggle = event.target.closest('[data-bookmark-toggle]');
-		if (!toggle) {
+		const bookmarkToggle = event.target.closest('[data-bookmark-toggle]');
+		if (bookmarkToggle) {
+			event.preventDefault();
+			toggleBookmark(screen, bookmarkToggle);
 			return;
 		}
-		event.preventDefault();
-		toggleBookmark(screen, toggle);
+		const shareToggle = event.target.closest('[data-share-toggle]');
+		if (shareToggle) {
+			event.preventDefault();
+			shareItem(screen, shareToggle);
+		}
 	}
 
 	function setBookmarkToggleState(trigger, bookmarked) {
@@ -2305,6 +2339,70 @@
 			}
 		} catch (err) {
 			setBookmarkToggleState(trigger, wasBookmarked);
+		}
+	}
+
+	// Shares a Mark's or a subscription post's real permalink: the OS
+	// native share sheet when available (navigator.share() — this already
+	// covers "open the local device's share menu" wherever a browser
+	// supports it, mobile or desktop, with no separate iOS/Android/desktop
+	// branching needed), falling back to a clipboard copy otherwise. A
+	// user-cancelled share (AbortError) is normal, not a failure — no
+	// fallback, no error shown.
+	async function shareItem(screen, trigger) {
+		const id = trigger.getAttribute('data-share-toggle');
+		if (!id) {
+			return;
+		}
+		const item =
+			(screen && screen._byMarkId && screen._byMarkId.get(id)) ||
+			(screen && screen._bySubId && screen._bySubId.get(id));
+		const url = item && item.permalink;
+		if (!url) {
+			return;
+		}
+		if (navigator.share) {
+			try {
+				await navigator.share({ title: (item && item.title) || '', url });
+				return;
+			} catch (err) {
+				if (err && 'AbortError' === err.name) {
+					return;
+				}
+				// Any other failure (including a browser that advertises
+				// navigator.share but rejects this particular call) falls
+				// through to the clipboard-copy fallback below.
+			}
+		}
+		await copyLinkToClipboard(url, trigger);
+	}
+
+	// Transient inline confirmation right on the tapped icon itself — no
+	// separate toast/status region exists for a Timeline card's stat row
+	// (unlike full-screen actions elsewhere, which each have their own
+	// dedicated aria-live status paragraph), so this doubles as both the
+	// visual and the accessible-name update or an assistive-tech user
+	// would otherwise miss.
+	function flashShareStatus(trigger, message) {
+		const original = trigger.getAttribute('aria-label') || 'Share';
+		trigger.setAttribute('aria-label', message);
+		trigger.setAttribute('title', message);
+		trigger.classList.add('daymark-stat--share-copied');
+		window.setTimeout(() => {
+			if (trigger.isConnected) {
+				trigger.setAttribute('aria-label', original);
+				trigger.setAttribute('title', original);
+				trigger.classList.remove('daymark-stat--share-copied');
+			}
+		}, 2000);
+	}
+
+	async function copyLinkToClipboard(url, trigger) {
+		try {
+			await navigator.clipboard.writeText(url);
+			flashShareStatus(trigger, 'Link copied');
+		} catch (err) {
+			flashShareStatus(trigger, "Couldn't copy link");
 		}
 	}
 
@@ -4611,10 +4709,10 @@
 	// in this app. No comment/like/reblog stat row: those only ever exist
 	// for a Mark — Daymark doesn't (and, for someone else's post, can't
 	// cheaply) track engagement data of its own for a subscription post.
-	// Bookmarking is different: it's this user's own "save for offline
-	// viewing" action on anything they can see on their Timeline, so it
-	// gets its own one-item stats row here even though the other three
-	// stats don't apply.
+	// Bookmarking and sharing are different: they're this user's own
+	// actions on anything they can see on their Timeline, independent of
+	// engagement data, so they get their own minimal stats row here even
+	// though the other three stats don't apply.
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
@@ -4648,10 +4746,10 @@
 							<span class="daymark-recent__title">${esc(title)}</span>
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
-							<span class="daymark-item-stats daymark-item-stats--bookmark-only">${renderBookmarkToggle(
+							<span class="daymark-item-stats daymark-item-stats--minimal">${renderBookmarkToggle(
 								item,
 								'subscription_post'
-							)}</span>
+							)}${renderShareToggle(item)}</span>
 							${renderCardTimestampRow(item)}
 						</span>
 					</button>
