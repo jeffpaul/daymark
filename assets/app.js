@@ -4907,6 +4907,10 @@
 		},
 
 		renderItem(item) {
+			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
+				return this.renderSubscriptionIssueItem(item);
+			}
+
 			const text = toPlainText(item.comment_content);
 			const long = text.length > 140;
 			const author = item.comment_author || item.author || '';
@@ -4969,6 +4973,42 @@
 					<p class="daymark-note-card__replied" data-replied hidden>Reply sent.</p>`
 						: ''
 				}
+			</article>`;
+		},
+
+		// A subscription currently having trouble fetching new posts
+		// (`feed_issue`, still `active`) or fully flagged dead (`dead_feed`,
+		// `status: 'error'`) — surfaced here instead of a separate wp-admin
+		// notice (issue #189): this screen is already where a Daymark user
+		// looks for "what needs my attention," so a second, admin-only
+		// heads-up would just be a duplicate alert most users would never
+		// see anyway. No reply/comment affordances apply — the only action
+		// is managing the subscription itself, in wp-admin.
+		renderSubscriptionIssueItem(item) {
+			const isDead = 'dead_feed' === item.type;
+			const siteLabel = item.site_title || item.site_url || 'A subscribed site';
+			const metaParts = [];
+			if (item.last_error) {
+				metaParts.push(
+					esc(isDead ? item.last_error : 'Recent fetch issue: ' + item.last_error)
+				);
+			}
+			if (item.last_checked_at) {
+				const when = relativeTime(item.last_checked_at);
+				if (when) {
+					metaParts.push(esc(when));
+				}
+			}
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip daymark-chip--danger">${esc(isDead ? 'Feed error' : 'Feed issue')}</span>
+				<p class="daymark-note-card__text">${esc(siteLabel)}</p>
+				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
+				<div class="daymark-note-card__links">
+					<a class="daymark-note-card__link" href="${esc(
+						config.adminSubscriptionsUrl || '#'
+					)}">&rarr; Manage subscriptions</a>
+				</div>
 			</article>`;
 		},
 

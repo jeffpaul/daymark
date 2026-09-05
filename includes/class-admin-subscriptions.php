@@ -82,22 +82,6 @@ class Daymark_Admin_Subscriptions {
 	private const SORTABLE_COLUMNS = array( 'site', 'status', 'last_checked' );
 
 	/**
-	 * User meta key storing the "issue signature" (see issue_signature())
-	 * the current user last dismissed render_subscription_issue_notice()
-	 * for.
-	 *
-	 * @var string
-	 */
-	private const DISMISSED_ISSUE_NOTICE_META_KEY = 'daymark_subscription_notice_dismissed';
-
-	/**
-	 * Query var carrying a dismiss request's issue signature.
-	 *
-	 * @var string
-	 */
-	private const DISMISS_NOTICE_QUERY_VAR = 'daymark_dismiss_subscription_notice';
-
-	/**
 	 * Register the settings page and admin-post handlers.
 	 *
 	 * @return void
@@ -112,12 +96,6 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
-
-		// Issue #182: a dismissible, wp-admin-wide heads-up when at least one
-		// subscription is currently failing to fetch, linking to this
-		// screen's own table (which already shows the same thing per-row).
-		add_action( 'admin_init', array( $this, 'maybe_handle_dismiss_notice' ) );
-		add_action( 'admin_notices', array( $this, 'render_subscription_issue_notice' ) );
 	}
 
 	/**
@@ -230,125 +208,6 @@ class Daymark_Admin_Subscriptions {
 			?>
 		</div>
 		<?php
-	}
-
-	/**
-	 * Render a dismissible, wp-admin-wide notice when at least one
-	 * subscription currently has a fetch problem (issue #182) — the same
-	 * `consecutive_failure_count > 0` condition Settings -> Daymark's own
-	 * table surfaces per-row (see render_subscription_row()), just visible
-	 * from anywhere in wp-admin rather than only on that one screen.
-	 *
-	 * Dismissal is per-user and persists across page loads (a plain link,
-	 * not JS) but only until the *set* of currently-failing subscriptions
-	 * actually changes (issue_signature()) — a still-failing subscription's
-	 * `consecutive_failure_count` keeps climbing on every poll it fails
-	 * again, which would otherwise re-show this on every single poll cycle
-	 * even though nothing new happened.
-	 *
-	 * @since 0.11.0
-	 *
-	 * @return void
-	 */
-	public function render_subscription_issue_notice(): void {
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			return;
-		}
-
-		$issues = Daymark_Plugin::instance()->subscriptions->get_with_issues();
-
-		if ( empty( $issues ) ) {
-			return;
-		}
-
-		$signature = self::issue_signature( $issues );
-		$dismissed = (string) get_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, true );
-
-		if ( $dismissed === $signature ) {
-			return;
-		}
-
-		$count       = count( $issues );
-		$dismiss_url = wp_nonce_url(
-			add_query_arg( self::DISMISS_NOTICE_QUERY_VAR, $signature ),
-			self::DISMISS_NOTICE_QUERY_VAR
-		);
-		?>
-		<div class="notice notice-warning">
-			<p>
-				<?php
-				printf(
-					esc_html(
-						/* translators: %d: number of subscriptions currently failing to fetch. */
-						_n(
-							'Daymark: %d subscription is having trouble fetching new posts.',
-							'Daymark: %d subscriptions are having trouble fetching new posts.',
-							$count,
-							'daymark'
-						)
-					),
-					(int) $count
-				);
-				?>
-				<a href="<?php echo esc_url( self::page_url() ); ?>"><?php esc_html_e( 'Check Settings -> Daymark', 'daymark' ); ?></a>
-				&nbsp;&mdash;&nbsp;
-				<a href="<?php echo esc_url( $dismiss_url ); ?>"><?php esc_html_e( 'Dismiss', 'daymark' ); ?></a>
-			</p>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Handle a click on render_subscription_issue_notice()'s "Dismiss" link:
-	 * remember the issue signature being dismissed (per-user), then redirect
-	 * back with the query args stripped so a page refresh can't resubmit it.
-	 *
-	 * @since 0.11.0
-	 *
-	 * @return void
-	 */
-	public function maybe_handle_dismiss_notice(): void {
-		if ( ! isset( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Verified explicitly below via check_admin_referer(), which also reads from $_GET.
-			return;
-		}
-
-		if ( ! current_user_can( self::CAPABILITY ) ) {
-			return;
-		}
-
-		check_admin_referer( self::DISMISS_NOTICE_QUERY_VAR );
-
-		$signature = sanitize_text_field( wp_unslash( $_GET[ self::DISMISS_NOTICE_QUERY_VAR ] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified immediately above via check_admin_referer().
-
-		update_user_meta( get_current_user_id(), self::DISMISSED_ISSUE_NOTICE_META_KEY, $signature );
-
-		wp_safe_redirect( remove_query_arg( array( self::DISMISS_NOTICE_QUERY_VAR, '_wpnonce' ) ) );
-		exit;
-	}
-
-	/**
-	 * A stable signature for "which subscriptions are currently failing" —
-	 * just the sorted set of IDs, not their individual failure counts
-	 * (which climb every poll cycle a subscription fails again and would
-	 * otherwise make every dismissal expire on the very next poll). The
-	 * signature changes only when a new subscription starts failing or an
-	 * existing one recovers, which is the actual "something changed" this
-	 * notice's dismissal is meant to track.
-	 *
-	 * @param array<int, array<string, mixed>> $issues Rows from Daymark_Subscriptions::get_with_issues().
-	 * @return string
-	 */
-	private static function issue_signature( array $issues ): string {
-		$ids = array_map(
-			static function ( array $row ): int {
-				return absint( $row['id'] ?? 0 );
-			},
-			$issues
-		);
-
-		sort( $ids );
-
-		return implode( ',', $ids );
 	}
 
 	/**
