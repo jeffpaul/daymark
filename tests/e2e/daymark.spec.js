@@ -36,9 +36,33 @@ async function loginAs(page) {
 // Image/Video/Audio/Note bubbles, then tap the one matching `type`. Replaces
 // the old single click straight into #create now that the launcher sits in
 // front of it.
+//
+// Home's chrome auto-hide closes the launcher on any real scroll (see
+// bindLauncher()/bindChromeAutoHide() in app.js) — including a scroll-anchor
+// adjustment the browser can fire on its own while Home's Timeline content is
+// still settling height, with no user interaction at all. That can race the
+// launcher's own fan-out animation and leave the bubble click intercepted by
+// whatever's now underneath for the rest of the test timeout, so this retries
+// the whole open sequence a couple of times rather than fighting one flaky
+// click to the end.
 async function openComposer(page, type = 'note') {
-	await page.locator('[data-action="new-mark"]').click();
-	await page.locator(`[data-launcher-type="${type}"]`).click();
+	const bubble = page.locator(`[data-launcher-type="${type}"]`);
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		await page.locator('[data-action="new-mark"]').click();
+		try {
+			await bubble.click({ timeout: 8000 });
+			return;
+		} catch (err) {
+			if (attempt === 3) {
+				throw err;
+			}
+			// Unknown state (open, closed, mid-animation) — close it
+			// explicitly so the next attempt starts from a clean slate
+			// instead of toggling an unknown one.
+			await page.keyboard.press('Escape');
+			await page.waitForTimeout(300);
+		}
+	}
 }
 
 // --- Subscriptions & Timeline (issue #78) helpers ---
