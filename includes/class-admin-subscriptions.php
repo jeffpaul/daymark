@@ -35,7 +35,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Registers the Settings -> Daymark page and its admin-post form handlers:
- * subscribe, refresh, refresh icon, unsubscribe, and OPML export/import.
+ * subscribe, refresh, refresh icon, edit name, unsubscribe, and OPML
+ * export/import.
  */
 class Daymark_Admin_Subscriptions {
 
@@ -91,6 +92,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscribe', array( $this, 'handle_subscribe' ) );
 		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
 		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
+		add_action( 'admin_post_daymark_subscription_edit_title', array( $this, 'handle_edit_title' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
@@ -240,6 +242,7 @@ class Daymark_Admin_Subscriptions {
 			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
 			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
 			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'      => __( 'Site name updated.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -566,6 +569,7 @@ class Daymark_Admin_Subscriptions {
 	private function render_subscription_row( array $subscription ): void {
 		$id                = absint( $subscription['id'] ?? 0 );
 		$site_url          = (string) ( $subscription['site_url'] ?? '' );
+		$site_title        = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
 		$icon_url          = (string) ( $subscription['site_icon_url'] ?? '' );
 		$status            = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
 		$is_error          = 'error' === $status;
@@ -581,6 +585,7 @@ class Daymark_Admin_Subscriptions {
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
 				<?php endif; ?>
+				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
 			</td>
 			<td>
 				<?php if ( '' !== $icon_url ) : ?>
@@ -660,6 +665,44 @@ class Daymark_Admin_Subscriptions {
 			<?php wp_nonce_field( 'daymark_subscription_refresh_icon_' . $id, 'daymark_subscription_refresh_icon_nonce' ); ?>
 			<?php submit_button( __( 'Refresh icon', 'daymark' ), 'secondary small', 'submit', false ); ?>
 		</form>
+		<?php
+	}
+
+	/**
+	 * Render one subscription's "Edit name" disclosure (issue #180): a
+	 * collapsed-by-default `<details>`/`<summary>` revealing a text input
+	 * pre-filled with the subscription's own `site_title`, so overriding it
+	 * needs no toggle JS at all — matching this screen's plain-forms
+	 * posture for every action except the JS-enhanced Refresh form. Useful
+	 * in particular for a Friends-plugin-sourced subscription (issue #88),
+	 * whose `site_title` is whatever that friend's own site calls itself —
+	 * not necessarily the name the site owner would recognize them by.
+	 *
+	 * Submitting a blank value is allowed on purpose: it clears a bad
+	 * override back to '', which subscription_label() already falls back
+	 * from to the site URL, exactly the same fallback a never-titled
+	 * subscription already shows.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @param int    $id          Subscription ID.
+	 * @param string $site_title  Current raw site_title (may be '').
+	 * @param string $site_url    Current site_url, shown as the input's
+	 *                            placeholder when site_title is ''.
+	 * @return void
+	 */
+	private function render_edit_title_form( int $id, string $site_title, string $site_url ): void {
+		?>
+		<details class="daymark-subscription-edit-title" style="margin-top:4px;">
+			<summary style="cursor:pointer;color:var(--wp-admin-theme-color,#2271b1);"><?php esc_html_e( 'Edit name', 'daymark' ); ?></summary>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:6px;">
+				<input type="hidden" name="action" value="daymark_subscription_edit_title" />
+				<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+				<?php wp_nonce_field( 'daymark_subscription_edit_title_' . $id, 'daymark_subscription_edit_title_nonce' ); ?>
+				<input type="text" name="daymark_site_title" value="<?php echo esc_attr( $site_title ); ?>" placeholder="<?php echo esc_attr( $site_url ); ?>" style="width:100%;max-width:220px;" />
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			</form>
+		</details>
 		<?php
 	}
 
@@ -914,6 +957,37 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'icon_refreshed' ) );
+	}
+
+	/**
+	 * Handle the "Edit name" form (admin_post_daymark_subscription_edit_title,
+	 * issue #180). A pure local DB write (Daymark_Subscriptions::update()'s
+	 * own `site_title` field) — no outbound request, so unlike Refresh/
+	 * Refresh icon this needs no rate limit, matching handle_unsubscribe()'s
+	 * own posture for the same reason.
+	 *
+	 * A blank submission is stored as-is: subscription_label()'s existing
+	 * "site_title, else site_url" fallback already handles a cleared value
+	 * the same way it handles a never-titled subscription.
+	 *
+	 * @since 0.11.0
+	 *
+	 * @return void
+	 */
+	public function handle_edit_title(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_edit_title_' . $id, 'daymark_subscription_edit_title_nonce' );
+
+		$site_title = isset( $_POST['daymark_site_title'] ) ? sanitize_text_field( wp_unslash( $_POST['daymark_site_title'] ) ) : '';
+
+		Daymark_Plugin::instance()->subscriptions->update( $id, array( 'site_title' => $site_title ) );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'title_updated' ) );
 	}
 
 	/**

@@ -511,4 +511,39 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'aria-sort="none"', $output );
 		$this->assertMatchesRegularExpression( '/orderby=status(&amp;|&#038;|&)order=asc/', $output );
 	}
+
+	// -----------------------------------------------------------------
+	// Editable site name (issue #180).
+	// -----------------------------------------------------------------
+
+	/** The "Edit name" form carries the subscription's current site_title, ready to submit back unchanged or edited. */
+	public function test_edit_title_form_renders_with_current_site_title(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://friend-site.example',
+				'feed_url'   => 'https://friend-site.example/feed',
+				'site_title' => 'cryptic-friend-handle',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_subscription_edit_title', $output );
+		$this->assertStringContainsString( 'name="daymark_site_title" value="cryptic-friend-handle"', $output );
+		$this->assertStringContainsString( 'Edit name', $output );
+	}
+
+	/** With no site_title set, the edit form's input is empty but hints at the site URL via its placeholder. */
+	public function test_edit_title_form_placeholder_falls_back_to_site_url_when_title_empty(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://untitled.example',
+				'feed_url' => 'https://untitled.example/feed',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'placeholder="https://untitled.example"', $output );
+	}
 }

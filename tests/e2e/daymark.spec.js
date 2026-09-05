@@ -966,6 +966,14 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	await expect(markIcon).toHaveAttribute('aria-label', 'Filter Timeline to your Marks');
 	await expect(markCard.locator('[data-menu]')).toHaveCount(0);
 
+	// The icon's native on-hover tooltip (issue #181) names the site itself
+	// — distinct from aria-label's action wording above — as "Title\nURL".
+	const siteConfig = await page.evaluate(() => ({
+		siteTitle: window.daymarkApp.siteTitle,
+		siteUrl: window.daymarkApp.siteUrl,
+	}));
+	await expect(markIcon).toHaveAttribute('title', `${siteConfig.siteTitle || 'Site'}\n${siteConfig.siteUrl}`);
+
 	// One click — no menu-open step first — jumps straight to Search with
 	// "My Marks" already applied.
 	await markIcon.click();
@@ -1000,6 +1008,10 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	// asserted here — same tolerance the Source-filter test above already
 	// applies to this same subscription.
 	expect(await subIcon.getAttribute('aria-label')).toContain('Filter Timeline to posts from');
+	// Same on-hover tooltip as the Mark icon above, but this site's title is
+	// real external data — only its known site_url is asserted here, same
+	// tolerance already applied to the aria-label above.
+	expect(await subIcon.getAttribute('title')).toContain(subscription.site_url);
 
 	// One click re-applies the Source filter to just this one subscribed
 	// site, still on Search.

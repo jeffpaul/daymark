@@ -1775,18 +1775,27 @@
 	// card's flex layout (not nested inside the card's own link/button) so
 	// a future Daymark content type can render its own card differently
 	// without this icon's placement following along.
-	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue }) {
+	//
+	// `title` carries the site's name and URL as a native on-hover tooltip
+	// (issue #181) — deliberately separate from `aria-label`, which
+	// describes the button's *action* ("Filter Timeline to..."), not the
+	// site itself; a screen reader announces the action, a sighted hover
+	// sees what site this actually is. `\n` renders as a real line break in
+	// every browser's native title tooltip, so the two read as separate
+	// lines rather than one run-on sentence.
+	function renderSiteIconButton({ iconSrc, iconAlt, ariaLabel, filterValue, siteUrl }) {
 		const glyph = (iconAlt || '?').charAt(0).toUpperCase();
 		const icon = iconSrc
 			? imgWithFallback(iconSrc, 'daymark-recent__siteiconimg', glyph)
 			: `<span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(
 					glyph
 			  )}</span>`;
+		const tooltip = siteUrl ? `${iconAlt || ''}\n${siteUrl}` : iconAlt || '';
 		return `
 			<div class="daymark-recent__siteicon">
 				<button type="button" class="daymark-recent__siteiconbtn" data-filter-site="${esc(
 					filterValue
-				)}" aria-label="${esc(ariaLabel)}">
+				)}" aria-label="${esc(ariaLabel)}" title="${esc(tooltip)}">
 					${icon}
 				</button>
 			</div>`;
@@ -1829,6 +1838,7 @@
 					iconAlt: config.siteTitle || 'Site',
 					ariaLabel: 'Filter Timeline to your Marks',
 					filterValue: 'mine',
+					siteUrl: config.siteUrl || '',
 			  });
 		const actions = !isDraft
 			? ''
@@ -4206,6 +4216,7 @@
 						iconAlt: siteLabel,
 						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
 						filterValue: String(item.subscription_id),
+						siteUrl: item.site_url || '',
 					})}
 					${renderTypeIcon(kind)}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
