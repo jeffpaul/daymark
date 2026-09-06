@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reduced the empty vertical space between the header and the first Timeline item — the pull-to-refresh indicator's collapsed box and the empty refresh-status message were each still costing a full flex gap even though neither had any visible content. ([#215](https://github.com/jeffpaul/daymark/pull/215))
+
 ## [0.11.0] - 2026-09-05
 
 ### Added
