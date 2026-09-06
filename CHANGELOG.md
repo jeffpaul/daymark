@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap. ([#225](https://github.com/jeffpaul/daymark/pull/225))
+
 ## [0.11.0] - 2026-09-05
 
 ### Added
