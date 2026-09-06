@@ -2442,11 +2442,21 @@ h2[tabindex='-1']:focus {
    .daymark-recent__expand below) — already-sanitized HTML from the server
    either way (a Mark/ordinary post's own the_content, or a subscription
    post's click-through-fetched body_content, per Daymark_Subscription_Poller)
-   — rendered as-is, styled here purely for readability/containment. */
+   — rendered as-is, styled here purely for readability/containment. Its own
+   surface-tinted background (the expanded card frame around it is white,
+   see .daymark-recent__item-wrap:has(...) below) visually marks this off as
+   borrowed content from elsewhere, distinct from Daymark's own chrome
+   (e.g. the "Reply" action on a subscription post, rendered as a sibling
+   after this element, on the card's own white background) — otherwise
+   nothing tells a reader where the source page's content ends and
+   Daymark's own UI begins. */
 .daymark-expand-content {
 	font-size: 15px;
 	line-height: 1.6;
 	color: var(--daymark-text-primary);
+	background: var(--daymark-surface);
+	border-radius: var(--daymark-radius-sm);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
 }
 
 .daymark-expand-content p {
@@ -2463,6 +2473,21 @@ h2[tabindex='-1']:focus {
 	max-width: 100%;
 	height: auto;
 	border-radius: var(--daymark-radius-sm);
+}
+
+/* This content's source theme's own CSS never loads here (a subscription
+ * post's fetched HTML, or even a local Mark/ordinary post's, since the app
+ * shell never loads a theme's stylesheet) — so anything the original markup
+ * floats via an inline style or a WP alignment class (alignleft/alignright/
+ * wp-caption) has no clearfix to support it here, and overlaps whatever
+ * comes after it instead of wrapping cleanly. `!important` is needed since
+ * an inline `style="float:…"` attribute otherwise beats any external rule
+ * regardless of specificity. */
+.daymark-expand-content [style*='float'],
+.daymark-expand-content .alignleft,
+.daymark-expand-content .alignright,
+.daymark-expand-content .wp-caption {
+	float: none !important;
 }
 
 /* A Timeline card's inline-expand panel — a Mark/ordinary post's own
@@ -2483,11 +2508,15 @@ h2[tabindex='-1']:focus {
    border, matching every other item (which relies on spacing + the rail
    line rather than a per-card box), so this only ever appears once
    expanded — :has() scopes it to exactly that state without any extra
-   JS-toggled class. */
+   JS-toggled class. The frame itself stays Daymark's own white
+   (--daymark-bg, the same background every other card already has) rather
+   than the surface gray — the gray tint belongs to .daymark-expand-content
+   alone, so the frame's own chrome (a subscription post's "Reply" action
+   included) reads as clearly Daymark's, not part of the quoted content. */
 .daymark-recent__item-wrap:has(.daymark-recent__expand:not([hidden])) {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius);
-	background: var(--daymark-surface);
+	background: var(--daymark-bg);
 	padding: var(--daymark-spacing-sm);
 }
 
