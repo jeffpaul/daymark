@@ -1899,6 +1899,18 @@ h2[tabindex='-1']:focus {
 	padding-bottom: var(--daymark-spacing-sm);
 }
 
+/* Home's own Timeline refresh status (e.g. "Updated just now") is only
+ * ever shown briefly after a manual/pull-to-refresh — unlike Create/
+ * Publish's own .daymark-status uses, which stay reserved to avoid
+ * layout shift while a user is actively interacting with those screens,
+ * this one sits empty the vast majority of the time. Collapsing it (and
+ * the flex gap around it) when empty removes dead space between the
+ * header and the first Timeline item without touching any other
+ * .daymark-status use. */
+[data-recent-refresh-status]:empty {
+	display: none;
+}
+
 /* --- Header search (collapsible) --- */
 .daymark-searchbar {
 	display: flex;
@@ -2393,13 +2405,18 @@ h2[tabindex='-1']:focus {
    negative margin) until JS translates it down while dragging or
    refreshing. `transition` is toggled inline by the drag handlers
    themselves (none while actively tracking a finger, restored to snap
-   back afterwards) — only the fade is a plain CSS transition here. */
+   back afterwards) — only the fade is a plain CSS transition here. The
+   negative top margin only cancels this element's own height, though —
+   as a flex child of .daymark-screen it still costs a full
+   --daymark-spacing-lg gap to whatever comes after it even while
+   collapsed, so the negative bottom margin here cancels that gap too
+   (transform-only animation isn't affected by either margin). */
 .daymark-pullrefresh {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	height: 40px;
-	margin: -40px 0 0;
+	margin: -40px 0 calc(-1 * var(--daymark-spacing-lg));
 	opacity: 0;
 	transition: opacity 0.15s ease;
 	pointer-events: none;
