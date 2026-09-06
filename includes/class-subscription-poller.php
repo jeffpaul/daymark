@@ -699,9 +699,50 @@ class Daymark_Subscription_Poller {
 	 *    it isn't always excluded by step 3: a page with no `<article>`
 	 *    element at all falls back to the whole `<body>`, which still
 	 *    includes it. Matches the common direct-text shape a WP core
-	 *    theme uses (`<a href="#content">Skip to the content</a>`) and,
-	 *    separately, any anchor whose own class marks it as a skip link
-	 *    regardless of its text.
+	 *    theme uses (`<a href="#content">Skip to the content</a>`), any
+	 *    anchor whose own class marks it as a skip link regardless of its
+	 *    text, and — the most reliable of the three, since a theme's
+	 *    displayed text/class can vary by translation or design while this
+	 *    doesn't — any anchor whose `href` points at one of WordPress's
+	 *    own conventional skip-link targets (`#content`/`#main`/`#primary`
+	 *    for a classic theme, `#wp--skip-link--target` for a block theme).
+	 * 5a. Prefer a nested `class="entry-content"`/`class="post-content"`
+	 *    element over the whole `<article>` once step 3 has already
+	 *    narrowed to it, when one is found — the near-universal WordPress
+	 *    theme convention for "the post body specifically," as opposed to
+	 *    the sibling `entry-header` (title, publish date, category/tag
+	 *    links) and `entry-footer` a theme just as conventionally nests
+	 *    inside the same `<article>`, before/after it. Unlike step 3's
+	 *    `<article>` match, this only looks for the *opening* tag and
+	 *    keeps everything after it rather than trying to find its own
+	 *    matching close (a plain regex can't reliably balance nested
+	 *    markup) — safe because whatever trails the real post body here
+	 *    (entry-footer, comments, Jetpack's sharing/related blocks) is
+	 *    exactly what steps 4/6 already know how to drop from a
+	 *    recognizable marker onward anyway.
+	 * 6. Drop a Jetpack "Sharedaddy" sharing block (`class="sharedaddy …"`)
+	 *    or "Related Posts" block (`class="jp-relatedposts …"`), from the
+	 *    first one found to the end of the string — the same "drop to the
+	 *    end" approach step 4 already uses for comments, since both
+	 *    Jetpack modules are always appended at the very tail of
+	 *    `the_content` and never followed by more of the actual post.
+	 *    Both hook directly into the `the_content` filter on the *live*
+	 *    page — landing inside `<article>` itself, past every other pass
+	 *    above — but Jetpack explicitly suppresses both in feed context,
+	 *    so a real RSS feed for the same post never carries them; this is
+	 *    genuine page furniture, not post content, on the extremely
+	 *    common slice of the WordPress ecosystem that runs Jetpack or is
+	 *    hosted on WordPress.com.
+	 * 7. Drop a WordPress "post navigation" block (the previous/next post
+	 *    links `the_post_navigation()`/`the_posts_navigation()` output,
+	 *    conventionally `class="post-navigation"`, `class="nav-links"`, or
+	 *    `class="posts-navigation"`), again from the first one found to
+	 *    the end of the string. Some themes wrap this in a semantic
+	 *    `<nav>` element (already excluded by step 2), but just as many
+	 *    use a plain `<div>` instead — this is always appended at the
+	 *    very tail of a theme's single-post template, right alongside
+	 *    entry-footer/comments, so the same "drop to the end" approach is
+	 *    safe here too.
 	 *
 	 * None of this is exact against arbitrary, unknown page markup — an
 	 * unusual theme that skips `<article>` and/or gives its comments
@@ -717,6 +758,7 @@ class Daymark_Subscription_Poller {
 		$html = (string) preg_replace( '#<(nav|header|footer|aside)\b[^>]*>.*?</\1>#is', '', $html );
 		$html = (string) preg_replace( '#<a\b[^>]*>\s*Skip to[^<]*</a>#i', '', $html );
 		$html = (string) preg_replace( '#<a\b[^>]*\bclass=["\'][^"\']*skip-link[^"\']*["\'][^>]*>.*?</a>#is', '', $html );
+		$html = (string) preg_replace( '#<a\b[^>]*\bhref=["\']\#(?:content|main|primary|wp--skip-link--target)["\'][^>]*>.*?</a>#is', '', $html );
 
 		if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
 			$html = $matches[1];
@@ -724,7 +766,13 @@ class Daymark_Subscription_Poller {
 			$html = $matches[1];
 		}
 
+		if ( preg_match( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:entry-content|post-content)\b[^"\']*["\'][^>]*>#i', $html, $matches, PREG_OFFSET_CAPTURE ) ) {
+			$html = substr( $html, $matches[0][1] + strlen( $matches[0][0] ) );
+		}
+
 		$html = (string) preg_replace( '#<[^>]+\bid=["\'](?:comments|respond)["\'][^>]*>.*$#is', '', $html );
+		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:sharedaddy|jp-relatedposts)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
+		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:post-navigation|posts-navigation|nav-links)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
 
 		return $html;
 	}
