@@ -2465,6 +2465,21 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* This content's source theme's own CSS never loads here (a subscription
+ * post's fetched HTML, or even a local Mark/ordinary post's, since the app
+ * shell never loads a theme's stylesheet) — so anything the original markup
+ * floats via an inline style or a WP alignment class (alignleft/alignright/
+ * wp-caption) has no clearfix to support it here, and overlaps whatever
+ * comes after it instead of wrapping cleanly. `!important` is needed since
+ * an inline `style="float:…"` attribute otherwise beats any external rule
+ * regardless of specificity. */
+.daymark-expand-content [style*='float'],
+.daymark-expand-content .alignleft,
+.daymark-expand-content .alignright,
+.daymark-expand-content .wp-caption {
+	float: none !important;
+}
+
 /* A Timeline card's inline-expand panel — a Mark/ordinary post's own
    content, or a subscription post's click-through-fetched content — drops
    onto its own full-width row below the card (site icon, type icon, card
