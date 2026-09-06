@@ -1466,11 +1466,15 @@
 
 	async function readError(res) {
 		let message = 'Request failed (' + res.status + ')';
+		let code = '';
 		let data = null;
 		try {
 			const body = await res.json();
 			if (body && body.message) {
 				message = body.message;
+			}
+			if (body && body.code) {
+				code = String(body.code);
 			}
 			if (body && body.data && typeof body.data === 'object') {
 				data = body.data;
@@ -1480,6 +1484,11 @@
 		}
 		const error = new Error(message);
 		error.status = res.status;
+		// WP core's own machine-readable error code (e.g.
+		// 'rest_cookie_invalid_nonce') — exposed so a caller can recognize a
+		// specific failure without matching on the human-readable message
+		// text, which isn't meant to be parsed (see isAuthExpiredError()).
+		error.code = code;
 		// Some WP_Error responses (e.g. the subscription manual-refresh
 		// cooldown) attach a retry_after (seconds) — exposed here so a
 		// caller can distinguish "rate limited, try again later" from any
@@ -1488,6 +1497,25 @@
 			error.retryAfter = Number(data.retry_after);
 		}
 		return error;
+	}
+
+	// A stale nonce baked into the app-shell page at load time (e.g. a
+	// home-screen-installed PWA resumed from a long background suspension
+	// instead of a fresh navigation) fails every REST call with WP core's
+	// own 'rest_cookie_invalid_nonce' error — a real, actionable "your
+	// session expired, reload" case, not a generic request failure. Callers
+	// that surface API errors to the user check this first so they can show
+	// something a reader can actually act on instead of a raw WP error
+	// string like "Cookie check failed."
+	function isAuthExpiredError(err) {
+		return Boolean(err) && 'rest_cookie_invalid_nonce' === err.code;
+	}
+
+	function authExpiredErrorHtml() {
+		return (
+			'<p class="daymark-error" role="alert">Your session has expired. ' +
+			'<button type="button" class="daymark-btn--text daymark-btn" data-reload-app>Reload</button></p>'
+		);
 	}
 
 	async function apiGet(path) {
@@ -2264,6 +2292,14 @@
 	function onFeedListClick(screen, event) {
 		const target = event.target;
 
+		// The "session expired" error state's own Reload button (see
+		// authExpiredErrorHtml()) — a plain full-page reload is the fix,
+		// since it's the one thing that fetches a fresh nonce.
+		if (target.closest('[data-reload-app]')) {
+			window.location.reload();
+			return;
+		}
+
 		// The Bookmark toggle — checked first so tapping it never also
 		// triggers the card's own expand-post/subpost tap (both live inside
 		// the same clickable card; see renderBookmarkToggle()'s own
@@ -2993,10 +3029,9 @@
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
-				list.innerHTML =
-					'<p class="daymark-error" role="alert">Could not load your timeline. ' +
-					esc(err.message) +
-					'</p>';
+				list.innerHTML = isAuthExpiredError(err)
+					? authExpiredErrorHtml()
+					: '<p class="daymark-error" role="alert">Could not load your timeline. ' + esc(err.message) + '</p>';
 			}
 		},
 
