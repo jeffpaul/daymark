@@ -733,6 +733,16 @@ class Daymark_Subscription_Poller {
 	 *    genuine page furniture, not post content, on the extremely
 	 *    common slice of the WordPress ecosystem that runs Jetpack or is
 	 *    hosted on WordPress.com.
+	 * 7. Drop a WordPress "post navigation" block (the previous/next post
+	 *    links `the_post_navigation()`/`the_posts_navigation()` output,
+	 *    conventionally `class="post-navigation"`, `class="nav-links"`, or
+	 *    `class="posts-navigation"`), again from the first one found to
+	 *    the end of the string. Some themes wrap this in a semantic
+	 *    `<nav>` element (already excluded by step 2), but just as many
+	 *    use a plain `<div>` instead — this is always appended at the
+	 *    very tail of a theme's single-post template, right alongside
+	 *    entry-footer/comments, so the same "drop to the end" approach is
+	 *    safe here too.
 	 *
 	 * None of this is exact against arbitrary, unknown page markup — an
 	 * unusual theme that skips `<article>` and/or gives its comments
@@ -762,6 +772,7 @@ class Daymark_Subscription_Poller {
 
 		$html = (string) preg_replace( '#<[^>]+\bid=["\'](?:comments|respond)["\'][^>]*>.*$#is', '', $html );
 		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:sharedaddy|jp-relatedposts)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
+		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:post-navigation|posts-navigation|nav-links)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
 
 		return $html;
 	}

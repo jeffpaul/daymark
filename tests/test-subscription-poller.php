@@ -759,6 +759,38 @@ XML;
 		$this->assertStringNotContainsString( 'Related', $body, 'The Related Posts block is dropped' );
 	}
 
+	/**
+	 * A theme's previous/next post-navigation block, wrapped in a plain
+	 * `<div class="nav-links">` rather than a semantic `<nav>` element (so
+	 * the existing nav/header/footer/aside stripping doesn't already catch
+	 * it) — always appended at the tail of a single-post template, never
+	 * followed by more of the actual post.
+	 */
+	public function test_fetch_full_content_strips_post_navigation_links() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/post-nav/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/post-nav/',
+			'<html><body><article class="post">'
+			. '<div class="entry-content"><p>The real post body text.</p></div>'
+			. '<div class="nav-links"><div class="nav-previous">'
+			. '<a href="/prev/">Previous: My Plugins Compatibility for WordPress 7.0</a></div></div>'
+			. '</article></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real post body text', $body );
+		$this->assertStringNotContainsString( 'Previous:', $body, 'A div-wrapped post-navigation block is dropped' );
+	}
+
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
 	public function test_fetch_full_content_on_pruned_post_works_the_same_way() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );

@@ -22,7 +22,7 @@ can't act on them.
 
 ### Fixed
 
-- A subscription post's expanded content could show a Jetpack "Share this:" block, a Jetpack "Related" posts block, floated images overlapping surrounding text, a "Skip to content" link the existing stripping didn't catch, and a theme's own publish-date/category markup nested alongside the real post body — none of that is part of the post content from an RSS-feed point of view. ([#218](https://github.com/jeffpaul/daymark/pull/218))
+- A subscription post's expanded content could show a Jetpack "Share this:" block, a Jetpack "Related" posts block, floated images overlapping surrounding text, a "Skip to content" link the existing stripping didn't catch, a theme's own publish-date/category markup nested alongside the real post body, and a "Previous:"/"Next:" post-navigation link — none of that is part of the post content from an RSS-feed point of view. ([#218](https://github.com/jeffpaul/daymark/pull/218))
 
 ## [0.11.0] - 2026-09-05
 
