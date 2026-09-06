@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- A subscription post whose only image was lazy-loaded (a placeholder `src` with the real URL in `data-src`/`data-lazy-src`/`srcset`) previously showed no Timeline card thumbnail at all — the content sniffer now falls back through those common lazy-load attributes when `src` itself is empty or a placeholder. ([#227](https://github.com/jeffpaul/daymark/pull/227))
+
 ## [0.11.0] - 2026-09-05
 
 ### Added
