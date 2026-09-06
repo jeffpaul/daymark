@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Timeline card for a post with no featured image and no cached site icon no longer shows a manufactured placeholder icon — the title/excerpt/date now use the card's full width instead. ([#220](https://github.com/jeffpaul/daymark/pull/220))
+
 ## [0.11.0] - 2026-09-05
 
 ### Added

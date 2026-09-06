@@ -4774,8 +4774,22 @@
 			return '';
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
-		const wrapClass = isMedia ? 'daymark-recent__thumbwrap daymark-recent__thumbwrap--media' : 'daymark-recent__thumbwrap';
 		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;
+		// A manufactured placeholder glyph only earns its keep for a kind
+		// where it stands in for media the reader would otherwise expect —
+		// the media-dominant kinds (image/video/gallery/mixed) plus audio,
+		// which very often has neither a thumbnail nor a featured image (see
+		// the docblock above renderCardMedia()). An article/standard-format
+		// card with no featured image and no cached site icon has nothing
+		// real to show either way, so the slot is dropped entirely rather
+		// than reserving space for an icon that isn't standing in for
+		// anything — the title/excerpt/date get the card's full width
+		// instead, the same treatment note/link already get.
+		const wantsPlaceholder = isMedia || 'audio' === kind;
+		if (!wantsPlaceholder && !src) {
+			return '';
+		}
+		const wrapClass = isMedia ? 'daymark-recent__thumbwrap daymark-recent__thumbwrap--media' : 'daymark-recent__thumbwrap';
 		const glyph = (CARD_KIND_LABELS[kind] || 'S').charAt(0);
 		const playButton =
 			'video' === kind
