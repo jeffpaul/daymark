@@ -2737,7 +2737,7 @@
 
 	function daymarkIconLink() {
 		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
-			config.siteIconUrl || ''
+			config.daymarkIconUrl || ''
 		)}" alt="" width="26" height="26" /></a>`;
 	}
 
@@ -2805,13 +2805,14 @@
 		render() {
 			// Home itself is the merged Marks + subscriptions feed now, so
 			// this is just a plain "go home" link — no separate screen to
-			// point at. The icon is Daymark's own (config.siteIconUrl — a
-			// site's Site Icon, else Daymark's bundled icon; same resolution
-			// used for the browser favicon/PWA icons and Timeline's own-Mark
-			// leading icon), not the Timeline nav glyph the bottom nav's own
+			// point at. The icon is always Daymark's own bundled icon
+			// (config.daymarkIconUrl), never the site's own Site Icon, so
+			// the app's own header chrome reads as Daymark's brand
+			// identity regardless of what a site owner sets as their Site
+			// Icon — not the Timeline nav glyph the bottom nav's own
 			// Timeline tab still uses.
 			const wordmark = `<a class="daymark-homelink" href="#home"><img class="daymark-homelink__icon" src="${esc(
-				config.siteIconUrl || ''
+				config.daymarkIconUrl || ''
 			)}" alt="" width="26" height="26" /><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
@@ -5545,9 +5546,16 @@
 
 	const NotificationsScreen = {
 		render() {
+			// Keeps the arrow but replaces the "Back" text with Daymark's own
+			// icon (config.daymarkIconUrl — never the site's Site Icon, same
+			// as the rest of the header chrome) instead, so the accessible
+			// name moves onto the link itself.
+			const backLink = `<a class="daymark-backlink daymark-backlink--icon" href="#home" aria-label="Back to Timeline"><span aria-hidden="true">&larr;</span><img src="${esc(
+				config.daymarkIconUrl || ''
+			)}" alt="" width="26" height="26" /></a>`;
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#home">&larr; Back</a>
+				${backLink}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Notifications</h1>
 			</header>
 			<section class="daymark-screen">

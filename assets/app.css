@@ -189,6 +189,17 @@ h2[tabindex='-1']:focus {
 	text-decoration: none;
 }
 
+/* Notifications' own back link: same arrow, but the Daymark icon stands in
+   for the "Back" text rather than a second word alongside the arrow. */
+.daymark-backlink--icon {
+	gap: 7px;
+}
+
+.daymark-backlink--icon img {
+	flex: none;
+	border-radius: var(--daymark-radius-sm);
+}
+
 .daymark-iconbtn {
 	display: inline-flex;
 	align-items: center;
@@ -211,6 +222,17 @@ h2[tabindex='-1']:focus {
 .daymark-iconbtn--plain {
 	border-color: transparent;
 	background: none;
+}
+
+/* Explore/Search/Me's header title sat farther from the icon than Home's
+   own "Daymark" wordmark text does from its icon, because .daymark-iconbtn's
+   44px tap-target box (required — see --daymark-tap-min) centers the 26px
+   icon graphic inside it, adding padding on top of the topbar's own flex
+   gap that .daymark-homelink's directly-adjacent icon+text never has. Pull
+   the title back by exactly that centering padding rather than shrinking
+   the tap target itself. */
+.daymark-iconbtn--plain + .daymark-topbar__title {
+	margin-left: calc((26px - var(--daymark-tap-min)) / 2);
 }
 
 /* --- Screen layout --- */
