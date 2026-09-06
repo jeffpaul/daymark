@@ -23,6 +23,7 @@ can't act on them.
 ### Fixed
 
 - Reduced the empty vertical space between the header and the first Timeline item — the pull-to-refresh indicator's collapsed box and the empty refresh-status message were each still costing a full flex gap even though neither had any visible content. ([#215](https://github.com/jeffpaul/daymark/pull/215))
+- Search's "Showing your bookmarks." banner text now matches the size of its "Show everything" link — they previously rendered at two different sizes. ([#229](https://github.com/jeffpaul/daymark/pull/229))
 
 ## [0.11.0] - 2026-09-05
 
