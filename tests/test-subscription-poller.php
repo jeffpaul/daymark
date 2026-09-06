@@ -661,6 +661,104 @@ XML;
 		$this->assertStringNotContainsString( 'Skip to the content', $body, 'A skip link outside <article> is still dropped when there is no <article> to narrow to' );
 	}
 
+	/**
+	 * A skip link whose class carries no recognizable "skip-link" token and
+	 * whose text isn't matched directly still gets dropped, via its `href`
+	 * pointing at one of WordPress's own conventional skip-link targets.
+	 */
+	public function test_fetch_full_content_strips_skip_link_by_href_target() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/href-skip-link/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/href-skip-link/',
+			'<html><body>'
+			. '<a href="#content" class="menu-skip">Skip to content</a>'
+			. '<article><p>The genuine post body.</p></article>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The genuine post body', $body );
+		$this->assertStringNotContainsString( 'Skip to content', $body, 'An anchor whose href targets a WP skip-link convention is dropped even without a recognizable class' );
+	}
+
+	/**
+	 * A theme nesting its entry-header (title, publish date, category
+	 * links) and entry-footer inside the same <article> as a dedicated
+	 * `entry-content` div: preferring that inner div excludes both, leaving
+	 * only the real post body — the gap `<article>`-narrowing alone can't
+	 * close, since entry-header/footer are genuinely inside <article>.
+	 */
+	public function test_fetch_full_content_prefers_entry_content_over_entry_header_and_footer() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/entry-content-theme/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/entry-content-theme/',
+			'<html><body><article class="post">'
+			. '<div class="entry-header"><h1>A Real Post Title</h1>'
+			. '<div class="entry-meta">Posted on <time>2026-08-23</time> in '
+			. '<span class="cat-links">Categories: AI, WordPress</span></div></div>'
+			. '<div class="entry-content"><p>The actual real post body text.</p></div>'
+			. '</article></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The actual real post body text', $body );
+		$this->assertStringNotContainsString( 'A Real Post Title', $body, 'entry-header (nested inside <article>) is excluded' );
+		$this->assertStringNotContainsString( 'Categories: AI, WordPress', $body, 'entry-meta/cat-links (nested inside <article>) is excluded' );
+	}
+
+	/**
+	 * Jetpack's Sharedaddy sharing block and Related Posts block both hook
+	 * into the live page's own `the_content` filter — landing inside
+	 * <article> itself, past every other stripping pass — but Jetpack
+	 * explicitly suppresses both in feed context, so neither is really part
+	 * of the post from an RSS-content point of view.
+	 */
+	public function test_fetch_full_content_strips_jetpack_sharedaddy_and_related_posts() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/jetpack-post/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/jetpack-post/',
+			'<html><body><article>'
+			. '<p>The real post text about a special day.</p>'
+			. '<div class="sharedaddy sd-sharing-enabled"><h3 class="sd-title">Share this:</h3>'
+			. '<div class="sd-content"><ul><li class="share-tumblr">Tumblr</li><li class="share-facebook">Facebook</li></ul></div></div>'
+			. '<div id="jp-relatedposts" class="jp-relatedposts"><h3 class="jp-relatedposts-headline">Related</h3></div>'
+			. '</article></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real post text about a special day', $body );
+		$this->assertStringNotContainsString( 'Share this', $body, 'The Sharedaddy sharing block is dropped' );
+		$this->assertStringNotContainsString( 'Tumblr', $body );
+		$this->assertStringNotContainsString( 'Related', $body, 'The Related Posts block is dropped' );
+	}
+
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
 	public function test_fetch_full_content_on_pruned_post_works_the_same_way() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
