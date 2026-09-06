@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Timeline could show a raw WordPress error ("Could not load your timeline. Cookie check failed") when the app-shell page's nonce went stale — most commonly a home-screen-installed PWA session resumed after a long background suspension. It now shows "Your session has expired" with a Reload button. ([#223](https://github.com/jeffpaul/daymark/pull/223))
+
 ## [0.11.0] - 2026-09-05
 
 ### Added
