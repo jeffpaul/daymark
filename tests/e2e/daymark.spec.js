@@ -48,8 +48,15 @@ async function loginAs(page) {
 async function openComposer(page, type = 'note') {
 	const bubble = page.locator(`[data-launcher-type="${type}"]`);
 	for (let attempt = 1; attempt <= 3; attempt++) {
-		await page.locator('[data-action="new-mark"]').click();
 		try {
+			// An explicit, short timeout on both clicks — not just the
+			// bubble's — matters here: with no timeout of its own, the
+			// launcher click inherits Playwright's action timeout (0,
+			// meaning "wait for the whole test timeout"), so a single
+			// intercepted attempt could burn the entire 30s test budget
+			// before this loop ever got a second try, defeating the retry
+			// this function exists for.
+			await page.locator('[data-action="new-mark"]').click({ timeout: 8000 });
 			await bubble.click({ timeout: 8000 });
 			return;
 		} catch (err) {
