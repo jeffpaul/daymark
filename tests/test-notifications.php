@@ -390,6 +390,44 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertSame( 0, $second['imported_count'] );
 	}
 
+	/**
+	 * Issue #258: a sync attempt records when it happened, whether or not
+	 * anything new was found — including the mock importer's second,
+	 * dedup-skipped call for a network already synced once.
+	 */
+	public function test_import_responses_records_synced_at() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Sync recency test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		$backflow_sync = new Daymark_Backflow_Sync();
+		$this->assertSame( '', $backflow_sync->last_synced_at( $post_id, 'bluesky' ), 'Never synced yet' );
+
+		$notifications = new Daymark_Notifications();
+		$notifications->import_responses( $post_id, array( 'bluesky' ) );
+
+		$first_synced_at = $backflow_sync->last_synced_at( $post_id, 'bluesky' );
+		$this->assertNotSame( '', $first_synced_at );
+		$this->assertNotFalse( strtotime( $first_synced_at ), 'Recorded value parses as a real datetime' );
+
+		// A network never referenced on this Mark has no recorded sync.
+		$this->assertSame( '', $backflow_sync->last_synced_at( $post_id, 'mastodon' ) );
+
+		// The dedup-skipped second mock sync still records that a check
+		// happened — cadence, not just successful imports, is being made
+		// observable here.
+		$notifications->import_responses( $post_id, array( 'bluesky' ) );
+		$this->assertNotSame( '', $backflow_sync->last_synced_at( $post_id, 'bluesky' ) );
+	}
+
 	/** The import-approval filter can route imported replies to moderation. */
 	public function test_import_approved_filter_can_hold_replies() {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );

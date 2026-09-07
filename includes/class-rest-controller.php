@@ -1650,37 +1650,49 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * falls back to a live-resolved label with an 'unknown' outcome rather
 	 * than silently vanishing from the response.
 	 *
+	 * A `backflow_supported` target also carries `backflow_last_synced_at`
+	 * (issue #258) — when its replies were last actually checked, from
+	 * Daymark_Backflow_Sync::last_synced_at(), or '' when never synced.
+	 * Empty for any non-backflow-supported target: a mock/demo reference's
+	 * replies aren't "checked" from a live source, so surfacing a sync
+	 * recency for one would be misleading.
+	 *
 	 * @param int      $post_id Mark post ID.
 	 * @param string[] $targets Sanitized target connector IDs.
 	 * @return array<string, array<string, mixed>> Keyed by connector ID.
 	 */
 	private function prepare_external_posts( int $post_id, array $targets ): array {
-		$stored   = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
-		$stored   = is_array( $stored ) ? $stored : array();
-		$registry = Daymark_Syndication_Registry::instance();
-		$result   = array();
+		$stored        = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$stored        = is_array( $stored ) ? $stored : array();
+		$registry      = Daymark_Syndication_Registry::instance();
+		$backflow_sync = Daymark_Plugin::instance()->backflow_sync;
+		$result        = array();
 
 		foreach ( $targets as $connector_id ) {
 			$entry = isset( $stored[ $connector_id ] ) && is_array( $stored[ $connector_id ] ) ? $stored[ $connector_id ] : null;
 
 			if ( null !== $entry ) {
 				$result[ $connector_id ] = array(
-					'label'              => sanitize_text_field( (string) ( $entry['label'] ?? $connector_id ) ),
-					'status'             => sanitize_key( (string) ( $entry['status'] ?? 'unknown' ) ),
-					'external_url'       => ! empty( $entry['external_url'] ) ? esc_url_raw( (string) $entry['external_url'] ) : '',
-					'message'            => sanitize_text_field( (string) ( $entry['message'] ?? '' ) ),
-					'backflow_supported' => ! empty( $entry['backflow_supported'] ),
+					'label'                   => sanitize_text_field( (string) ( $entry['label'] ?? $connector_id ) ),
+					'status'                  => sanitize_key( (string) ( $entry['status'] ?? 'unknown' ) ),
+					'external_url'            => ! empty( $entry['external_url'] ) ? esc_url_raw( (string) $entry['external_url'] ) : '',
+					'message'                 => sanitize_text_field( (string) ( $entry['message'] ?? '' ) ),
+					'backflow_supported'      => ! empty( $entry['backflow_supported'] ),
+					'backflow_last_synced_at' => ! empty( $entry['backflow_supported'] )
+						? $backflow_sync->last_synced_at( $post_id, $connector_id )
+						: '',
 				);
 				continue;
 			}
 
 			$connector               = $registry->get_connector( $connector_id );
 			$result[ $connector_id ] = array(
-				'label'              => $connector ? $connector->get_label() : $connector_id,
-				'status'             => 'unknown',
-				'external_url'       => '',
-				'message'            => '',
-				'backflow_supported' => false,
+				'label'                   => $connector ? $connector->get_label() : $connector_id,
+				'status'                  => 'unknown',
+				'external_url'            => '',
+				'message'                 => '',
+				'backflow_supported'      => false,
+				'backflow_last_synced_at' => '',
 			);
 		}
 

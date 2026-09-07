@@ -547,6 +547,12 @@ class Daymark_Notifications {
 				continue; // The Mark was never syndicated to this network.
 			}
 
+			// Recorded for every network actually attempted here — real-
+			// connector-handled or mock, and whether or not it turns out
+			// there's anything new — so a Mark's sync recency reflects that
+			// a check happened, not only that a check found something.
+			$this->record_synced_at( $post_id, $network );
+
 			/**
 			 * Allows a real connector plugin to handle response import for
 			 * a network instead of the mock importer.
@@ -759,5 +765,29 @@ class Daymark_Notifications {
 
 		/* translators: %s: social network name, e.g. Instagram. */
 		return sprintf( __( 'Comment from %s', 'daymark' ), $network_label );
+	}
+
+	/**
+	 * Record that a network's replies were just checked for a Mark —
+	 * independent of whether anything new was actually found, so
+	 * `Daymark_Backflow_Sync::last_synced_at()` reflects sync *cadence*
+	 * (issue #258), not just successful imports. Stores a JSON object keyed
+	 * by network, matching the shape `_daymark_external_posts` already uses
+	 * for per-network data on the same post.
+	 *
+	 * @param int    $post_id Mark post ID.
+	 * @param string $network Network ID, e.g. 'bluesky'.
+	 * @return void
+	 */
+	private function record_synced_at( int $post_id, string $network ): void {
+		$synced = json_decode( (string) get_post_meta( $post_id, Daymark_Backflow_Sync::LAST_SYNCED_META, true ), true );
+
+		if ( ! is_array( $synced ) ) {
+			$synced = array();
+		}
+
+		$synced[ $network ] = current_time( 'mysql' );
+
+		update_post_meta( $post_id, Daymark_Backflow_Sync::LAST_SYNCED_META, wp_json_encode( $synced ) );
 	}
 }

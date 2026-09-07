@@ -98,6 +98,74 @@ class Test_Rest_Mark_Routing extends WP_UnitTestCase {
 		$this->assertSame( 'Bluesky', $data['external_posts']['bluesky']['label'], 'Falls back to the connector\'s own live label, not the raw ID' );
 	}
 
+	/**
+	 * A `backflow_supported` target's sync recency (issue #258) appears
+	 * once a check has actually run for it.
+	 */
+	public function test_external_posts_includes_sync_recency_for_backflow_supported_target() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'             => 'Sync recency REST test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		// Simulate a real connector's own reference, matching
+		// Test_Backflow_Sync::create_syndicated_daymark( true ).
+		update_post_meta(
+			$post_id,
+			'_daymark_external_posts',
+			wp_json_encode(
+				array(
+					'bluesky' => array(
+						'external_id'        => 'at://did:plc:x/app.bsky.feed.post/' . $post_id,
+						'external_url'       => 'https://bsky.app/profile/demo/post/' . $post_id,
+						'label'              => 'Bluesky',
+						'status'             => 'published',
+						'backflow_supported' => true,
+					),
+				)
+			)
+		);
+
+		$before_sync = rest_do_request( $this->request_for( $post_id ) )->get_data();
+		$this->assertSame( '', $before_sync['external_posts']['bluesky']['backflow_last_synced_at'], 'Not checked yet' );
+
+		$handled_filter = static function () {
+			return array(); // A real connector handled it: no comments imported.
+		};
+		add_filter( 'daymark_import_network_responses', $handled_filter );
+		( new Daymark_Notifications() )->import_responses( $post_id, array( 'bluesky' ) );
+		remove_filter( 'daymark_import_network_responses', $handled_filter );
+
+		$after_sync = rest_do_request( $this->request_for( $post_id ) )->get_data();
+		$this->assertNotSame( '', $after_sync['external_posts']['bluesky']['backflow_last_synced_at'] );
+	}
+
+	/**
+	 * A mocked (non-`backflow_supported`) target never reports a sync
+	 * recency — its replies aren't checked from a live source, so surfacing
+	 * one would be misleading, even after a mock sync has run.
+	 */
+	public function test_external_posts_omits_sync_recency_for_mocked_target() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'             => 'Mock target no recency test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		( new Daymark_Notifications() )->import_responses( $post_id, array( 'bluesky' ) );
+
+		$data = rest_do_request( $this->request_for( $post_id ) )->get_data();
+		$this->assertFalse( $data['external_posts']['bluesky']['backflow_supported'] );
+		$this->assertSame( '', $data['external_posts']['bluesky']['backflow_last_synced_at'] );
+	}
+
 	/** A Mark with no syndication targets reports none — nothing to route. */
 	public function test_external_posts_empty_when_no_targets() {
 		$publisher = new Daymark_Publisher();
