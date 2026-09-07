@@ -70,25 +70,40 @@ async function loginAs(page) {
 // breath and CI still failed, landing on real Timeline content instead of
 // the flourish/screen this time — confirming the click was hitting the
 // footer's own off-screen (translateY(100%)) position, not a still-visible
-// footer with something on top of it. Waiting for that class to actually
-// clear closes that gap directly, instead of guessing at how many
-// milliseconds one animation frame takes in CI.
+// footer with something on top of it.
+//
+// Waiting for that class to clear helped, but a clean CI re-run reproduced
+// the *exact* same failing tests byte-for-byte — proof this was never
+// random flakiness, just a race that reliably loses once the Timeline has
+// accumulated enough real subscription content (this suite subscribes to a
+// real, live wordpress.org feed and never cleans up after itself). By the
+// time these later tests run, real external images for that real content
+// are still arriving well after any one check here passes, so Playwright's
+// own multi-step click (locate -> wait stable -> scroll into view -> hit-test
+// -> click) has enough elapsed time between those steps for another scroll
+// to land in the middle of it — no amount of waiting *before* the click
+// closes a gap that occurs *during* it.
+//
+// Dispatching the click via el.click() instead of Playwright's own
+// pointer-based click() sidesteps this entirely: a native DOM click ignores
+// on-screen position and interception (unlike a real pointer event, it
+// isn't hit-tested against whatever else currently occupies that screen
+// coordinate), so it can't land on the wrong element no matter how much the
+// page scrolls around it mid-attempt. The explicit wait for the launcher's
+// own `is-open` class between the two clicks replaces the actionability
+// wait el.click() no longer performs — the bubble's own click handler may
+// assume the fan-out has already been triggered.
 async function openComposer(page, type = 'note') {
+	const launcher = page.locator('.daymark-launcher');
 	const bubble = page.locator(`[data-launcher-type="${type}"]`);
 	const footer = page.locator('.daymark-homefooter');
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
 			await page.evaluate(() => window.scrollTo(0, 0));
 			await expect(footer).not.toHaveClass(/is-footer-hidden/, { timeout: 2000 });
-			// An explicit, short timeout on both clicks — not just the
-			// bubble's — matters here: with no timeout of its own, the
-			// launcher click inherits Playwright's action timeout (0,
-			// meaning "wait for the whole test timeout"), so a single
-			// intercepted attempt could burn the entire 30s test budget
-			// before this loop ever got a second try, defeating the retry
-			// this function exists for.
-			await page.locator('[data-action="new-mark"]').click({ timeout: 8000 });
-			await bubble.click({ timeout: 8000 });
+			await page.locator('[data-action="new-mark"]').evaluate((el) => el.click());
+			await expect(launcher).toHaveClass(/is-open/, { timeout: 8000 });
+			await bubble.evaluate((el) => el.click());
 			return;
 		} catch (err) {
 			if (attempt === 3) {
