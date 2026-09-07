@@ -221,9 +221,13 @@ stubbed AT Protocol API — see the setup notes at the top of
   as appropriate — the `WordPress.WP.I18n` PHPCS sniff (already configured
   for this domain) catches a wrong or missing domain on what's already
   wrapped, but not a string that was never wrapped at all, so check by hand
-  too. JS (`assets/app.js`, once issue #253 lands): `wp.i18n.__()`/`_x()`/
-  `_n()`, with `wp.i18n.sprintf()` for a placeholder rather than string
-  concatenation, so a translation can reorder around an inserted value.
+  too. JS (`assets/app.js`): `wp.i18n.__()`/`_x()`/`_n()` (aliased once near
+  the top of the file's IIFE as `__`/`_x`/`_n`/`sprintf`), with
+  `wp.i18n.sprintf()` for a placeholder rather than string concatenation, so
+  a translation can reorder around an inserted value. Precede a `sprintf()`
+  call with a `/* translators: ... */` comment whenever its placeholder's
+  meaning isn't self-evident from the string alone, matching the PHP-side
+  convention.
   Leave untranslated: AI prompt strings sent to a provider in
   `Daymark_AI_Assist` (translating these changes model behavior, not
   user-facing text) and third-party plugin/service names (e.g. "Jetpack
