@@ -703,9 +703,14 @@ class Daymark_Subscription_Poller {
 	 *    anchor whose own class marks it as a skip link regardless of its
 	 *    text, and — the most reliable of the three, since a theme's
 	 *    displayed text/class can vary by translation or design while this
-	 *    doesn't — any anchor whose `href` points at one of WordPress's
-	 *    own conventional skip-link targets (`#content`/`#main`/`#primary`
-	 *    for a classic theme, `#wp--skip-link--target` for a block theme).
+	 *    doesn't — any anchor whose `href` points at one of several
+	 *    conventional skip-link targets: WordPress core's own
+	 *    (`#content`/`#main`/`#primary` for a classic theme,
+	 *    `#wp--skip-link--target` for a block theme) plus a handful of
+	 *    other widely-used theme/framework conventions
+	 *    (`#site-content`/`#main-content`/`#page`, `#genesis-content` for
+	 *    the Genesis Framework). Not exhaustive against every theme in
+	 *    existence — see this method's own closing note.
 	 * 5a. Prefer a nested `class="entry-content"`/`class="post-content"`
 	 *    element over the whole `<article>` once step 3 has already
 	 *    narrowed to it, when one is found — the near-universal WordPress
@@ -739,10 +744,15 @@ class Daymark_Subscription_Poller {
 	 *    `class="posts-navigation"`), again from the first one found to
 	 *    the end of the string. Some themes wrap this in a semantic
 	 *    `<nav>` element (already excluded by step 2), but just as many
-	 *    use a plain `<div>` instead — this is always appended at the
-	 *    very tail of a theme's single-post template, right alongside
-	 *    entry-footer/comments, so the same "drop to the end" approach is
-	 *    safe here too.
+	 *    use a plain `<div>` instead — matched here against a small,
+	 *    deliberately bounded set of realistic wrapper tags
+	 *    (`div`/`section`/`ul`/`ol`/`p`/`span`), not an unbounded "any
+	 *    element name" match: the latter would risk matching a coincidental
+	 *    class hit on `<body>`/`<html>`/`<article>` itself and dropping the
+	 *    entire remaining page. This is always appended at the very tail
+	 *    of a theme's single-post template, right alongside entry-footer/
+	 *    comments, so the same "drop to the end" approach is safe here
+	 *    too.
 	 *
 	 * None of this is exact against arbitrary, unknown page markup — an
 	 * unusual theme that skips `<article>` and/or gives its comments
@@ -758,7 +768,7 @@ class Daymark_Subscription_Poller {
 		$html = (string) preg_replace( '#<(nav|header|footer|aside)\b[^>]*>.*?</\1>#is', '', $html );
 		$html = (string) preg_replace( '#<a\b[^>]*>\s*Skip to[^<]*</a>#i', '', $html );
 		$html = (string) preg_replace( '#<a\b[^>]*\bclass=["\'][^"\']*skip-link[^"\']*["\'][^>]*>.*?</a>#is', '', $html );
-		$html = (string) preg_replace( '#<a\b[^>]*\bhref=["\']\#(?:content|main|primary|wp--skip-link--target)["\'][^>]*>.*?</a>#is', '', $html );
+		$html = (string) preg_replace( '#<a\b[^>]*\bhref=["\']\#(?:content|main|primary|wp--skip-link--target|site-content|main-content|genesis-content|page)["\'][^>]*>.*?</a>#is', '', $html );
 
 		if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
 			$html = $matches[1];
@@ -772,7 +782,7 @@ class Daymark_Subscription_Poller {
 
 		$html = (string) preg_replace( '#<[^>]+\bid=["\'](?:comments|respond)["\'][^>]*>.*$#is', '', $html );
 		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:sharedaddy|jp-relatedposts)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
-		$html = (string) preg_replace( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:post-navigation|posts-navigation|nav-links)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
+		$html = (string) preg_replace( '#<(?:div|section|ul|ol|p|span)\b[^>]*\bclass=["\'][^"\']*\b(?:post-navigation|posts-navigation|nav-links)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
 
 		return $html;
 	}

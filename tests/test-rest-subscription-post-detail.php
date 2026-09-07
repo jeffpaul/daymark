@@ -287,6 +287,60 @@ class Test_Rest_Subscription_Post_Detail extends WP_UnitTestCase {
 		$this->assertSame( 'daymark_subscription_post_not_found', $response->get_data()['code'] );
 	}
 
+	/**
+	 * `refresh=1` forces a live re-fetch/re-extraction even for an
+	 * already-'full' post, replacing its stored body_content — the one way
+	 * to pick up an extract_body_html() improvement for a post that was
+	 * cached before that improvement shipped.
+	 */
+	public function test_refresh_param_forces_a_fetch_on_an_already_full_post() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_subscription_post(
+			$subscription_id,
+			'https://example.com/refresh-me/',
+			'full',
+			'<p>Stale cached body.</p>'
+		);
+
+		$this->mock_response( 'https://example.com/refresh-me/', '<html><body><p>Freshly re-fetched content.</p></body></html>' );
+
+		$request = $this->request_for( $post_id );
+		$request->set_param( 'refresh', '1' );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$data = $response->get_data();
+		$this->assertStringContainsString( 'Freshly re-fetched content', $data['body_content'] );
+		$this->assertStringNotContainsString( 'Stale cached body', $data['body_content'] );
+
+		$this->assertSame( 1, $this->http_call_counts['https://example.com/refresh-me/'] ?? 0, 'refresh=1 triggers exactly one live fetch even though the post was already full' );
+		$this->assertStringContainsString( 'Freshly re-fetched content', (string) get_post_meta( $post_id, 'body_content', true ), 'The refreshed body replaces the stored one' );
+	}
+
+	/** Without `refresh`, an already-full post is unaffected — same behavior as before this param existed. */
+	public function test_omitting_refresh_still_serves_from_cache() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_subscription_post(
+			$subscription_id,
+			'https://example.com/no-refresh/',
+			'full',
+			'<p>Cached body.</p>'
+		);
+
+		// Deliberately not mocked: if a request were attempted, it would be
+		// blocked and surface as a non-200 response.
+		$response = rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '<p>Cached body.</p>', $response->get_data()['body_content'] );
+		$this->assertSame( 0, $this->http_call_counts['https://example.com/no-refresh/'] ?? 0 );
+	}
+
 	/** Past the configured per-user budget, the endpoint returns 429 + Retry-After. */
 	public function test_rate_limiting_returns_429_past_the_threshold() {
 		$this->set_limits( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH, 2, 5 * MINUTE_IN_SECONDS );

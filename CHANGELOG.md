@@ -27,12 +27,21 @@ can't act on them.
 - Notifications now groups a Mark's replies into one conversation card instead of scattering them as separate flat cards, and adds a source filter (once you have more than one) so you can narrow the list to just one reply origin. The per-Mark routing popover also now shows when a real syndicated target's replies were last checked. ([#258](https://github.com/jeffpaul/daymark/issues/258))
 - The composer's picker now accepts a dragged-and-dropped file on desktop, attaching it the same way picking it via the file input would. ([#260](https://github.com/jeffpaul/daymark/issues/260))
 - A Draft's ⋯ menu now has a "Publish" action, alongside Edit and Delete, that skips straight to the Publish screen for a draft that's already ready — no need to reopen the full composer first. ([#265](https://github.com/jeffpaul/daymark/issues/265))
+- A Mark's own card now shows your site's name on the same row as its timestamp, left-aligned — matching how a subscription post's card already shows its source site there. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- An expanded subscription post's panel now has a "Refresh content" action that forces a fresh live re-fetch, instead of the cached content being stuck at whatever it looked like the first time it was fetched. ([#267](https://github.com/jeffpaul/daymark/issues/267))
 
 ### Fixed
 
 - A syndication target that couldn't represent a Mark's type (e.g. selecting YouTube for a note) was silently dropped instead of being recorded as failed — `_daymark_syndication_status` could never actually show `failed` in practice. Every attempted target is now recorded with its own outcome, whether it succeeded or not. ([#255](https://github.com/jeffpaul/daymark/issues/255))
 - A syndication target whose connector plugin had been deactivated or uninstalled after it was selected was also silently dropped instead of recorded — the routing popover now shows it as "Not available" instead of it just vanishing. ([#263](https://github.com/jeffpaul/daymark/issues/263))
 - A resumed draft with existing media but no caption could get silently bounced back to the composer instead of reaching the Publish screen — the readiness check only ever looked at newly picked files, never a draft's own already-attached media. ([#265](https://github.com/jeffpaul/daymark/issues/265))
+- The Like/Repost toggle's own auto-published Mark (used to carry an outbound `u-like-of`/`u-repost-of` link) no longer shows up as its own card on the Timeline — it was never meant to be read as content. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- A long Timeline card title no longer gets cut off with an ellipsis — it now wraps onto as many lines as it needs, matching how the excerpt already displays in full. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- The Like-through-Share stat-row icons are now evenly spaced again — a read-only stat (a plain count, or the "Replied" indicator) previously had no minimum width of its own, throwing off the row's rhythm next to the interactive icons that did. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- The Timeline's vertical rail line no longer visibly breaks at a relative-date group header ("Today", "Last Week", ...), and now connects cleanly to the sunrise/sunset flourishes that bookend it. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- Explore/Search/Me's header icon and title no longer sit farther apart than Home's own icon and "Daymark" wordmark do. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- Broadened the "Skip to content"/post-navigation stripping in a subscription post's expanded content to catch a few more common theme/framework conventions (additional skip-link targets, a wider set of wrapper elements for the previous/next post links). ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- A Jetpack Tiled Gallery's images could overlap each other and surrounding text in a subscription post's expanded content, since the layout CSS that positions them never loads here — they now fall back to a plain stacked layout instead. ([#267](https://github.com/jeffpaul/daymark/issues/267))
 
 ### Developer
 
