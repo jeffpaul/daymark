@@ -23,6 +23,7 @@ can't act on them.
 ### Changed
 
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))
+- A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap. ([#225](https://github.com/jeffpaul/daymark/pull/225))
 
 ### Fixed
 
