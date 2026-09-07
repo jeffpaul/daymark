@@ -943,27 +943,23 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
 	// Confirm tabbing a footer control reveals both bars, even with the
-	// header currently hidden from a scroll-up. A scroll-anchor adjustment
-	// while this suite's real, never-cleaned-up subscription-post images
-	// are still loading (see openComposer()'s own docblock above) can fire
-	// bindChromeAutoHide()'s scroll listener again moments after focus()
-	// already cleared is-footer-hidden, re-hiding it before the assertion
-	// below gets a chance to see it cleared — refocus once more on a first
-	// miss rather than trusting a single attempt to outlast that.
+	// header currently hidden from a scroll-up. Playwright's own
+	// locator.focus() performs its usual actionability checks first,
+	// which can include scrolling the target into view — and since the
+	// button sits inside a footer that's currently translated off-screen
+	// (is-footer-hidden), that self-triggered scroll is itself a real
+	// `scroll` event bindChromeAutoHide() has no way to tell apart from a
+	// user's, immediately re-applying is-footer-hidden right after (or
+	// even before) the focus event's own handler clears it — a retry loop
+	// around the assertion doesn't help here, since every attempt hits
+	// the exact same self-inflicted scroll. A raw DOM .focus() (see
+	// openComposer()'s own docblock above for the same sidestep applied
+	// to a click) moves focus with no actionability checks and no scroll
+	// of its own, leaving only the real, intended state change.
 	await page.mouse.wheel(0, -200);
 	await expect(header).toHaveClass(/is-header-hidden/);
-	const launcherBtn = page.locator('[data-action="new-mark"]');
-	for (let attempt = 1; attempt <= 3; attempt++) {
-		await launcherBtn.focus();
-		try {
-			await expect(footer).not.toHaveClass(/is-footer-hidden/, { timeout: 1500 });
-			break;
-		} catch (err) {
-			if (attempt === 3) {
-				throw err;
-			}
-		}
-	}
+	await page.locator('[data-action="new-mark"]').evaluate((el) => el.focus());
+	await expect(footer).not.toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 });
 
