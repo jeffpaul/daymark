@@ -239,6 +239,19 @@ h2[tabindex='-1']:focus {
 .daymark-screen {
 	display: flex;
 	flex-direction: column;
+	/* .daymark-shell (the sole ancestor) is min-height: 100dvh, but that
+	   only guarantees *available* space — this screen (its only child)
+	   still has to actually claim it, or a short screen (e.g. a near-empty
+	   Timeline) leaves blank space below it instead. Without this, the
+	   bottom nav's own margin-top: auto push-to-bottom trick has nothing
+	   to push against, so it — and the "+New" launcher floating above it
+	   via a negative margin — end up sitting wherever this screen's own
+	   short content naturally ends, not pinned to the viewport's bottom;
+	   floating there mid-page, the launcher can visually collide with
+	   whatever content happens to render at that same point (confirmed via
+	   a flaky Playwright failure: the launcher click was intercepted by
+	   the Timeline's own end-of-list flourish). */
+	flex: 1;
 	gap: var(--daymark-spacing-lg);
 	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-lg);
 }
@@ -867,11 +880,16 @@ h2[tabindex='-1']:focus {
 	font-variant-numeric: tabular-nums;
 }
 
-/* The Bookmark toggle — the row's one interactive entry (see
-   renderBookmarkToggle(), app.js), pushed to the end of the row so it
-   reads as the last icon in the ordering, same as the request asked for. */
+/* The Bookmark toggle (see renderBookmarkToggle(), app.js). Ordering comes
+   from render call order alone (issue #247) — this rule used to also carry
+   `margin-left: auto` to push itself (and everything rendered after it) to
+   the row's right edge, back when Bookmark was the only entry after the
+   read-only stats; once Like/Repost/Replied/"open original"/Share joined
+   the row, that split it into two unevenly-spaced clusters instead of one
+   evenly-spaced row, so the auto-margin was dropped in favor of the row's
+   own shared `gap` (below) doing all the spacing, left-aligned like the
+   card content above it. */
 .daymark-stat--bookmark {
-	margin-left: auto;
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
@@ -892,11 +910,36 @@ h2[tabindex='-1']:focus {
 	fill: currentColor;
 }
 
+/* The Like/Repost toggles on a subscription post's own stats row (issue #41
+   follow-up) — the row's other two *interactive* entries besides Bookmark,
+   rendered first (see renderSubscriptionPostCard()) so they sit on the
+   left, matching where a Mark's own like/comment/reblog counts already sit. */
+.daymark-stat--like,
+.daymark-stat--repost {
+	cursor: pointer;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	justify-content: center;
+}
+
+.daymark-stat--like:focus-visible,
+.daymark-stat--repost:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* Filled heart/reblog glyph once liked/reposted — same
+   .daymark-stat--active-supplies-the-rest pattern as .daymark-stat--bookmarked
+   above. */
+.daymark-stat--liked svg,
+.daymark-stat--reposted svg {
+	fill: currentColor;
+}
+
 /* The "open original" toggle (see renderExternalLinkToggle(), app.js) —
-   sits between Bookmark and Share. Like Share below, it doesn't need its
-   own `margin-left: auto`: Bookmark's already pushed the whole trailing
-   group (itself + this + Share) to the row's end, so this just follows
-   in normal flex flow right after Bookmark. */
+   sits between Bookmark and Share, in normal flex flow like every other
+   entry in the row. */
 .daymark-stat--external {
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
@@ -911,8 +954,7 @@ h2[tabindex='-1']:focus {
 }
 
 /* The Share toggle (see renderShareToggle(), app.js) — the row's final
-   entry, immediately after the "open original" toggle above; same
-   reasoning applies (no `margin-left: auto` of its own needed). */
+   entry, immediately after the "open original" toggle above. */
 .daymark-stat--share {
 	position: relative;
 	cursor: pointer;
@@ -959,14 +1001,13 @@ h2[tabindex='-1']:focus {
 	z-index: 5;
 }
 
-/* A subscription-post card has no like/comment/reblog stats to share a
-   row with (see renderSubscriptionPostCard()) — this variant keeps the
-   row's height and end-alignment without those, so the Bookmark/Share
-   toggles still land in the same visual corner a Mark card's own row
-   places them. */
-.daymark-item-stats--minimal {
-	justify-content: flex-end;
-}
+/* .daymark-item-stats--minimal (renderSubscriptionPostCard()'s own stats
+   row) needs no CSS of its own: Like/Replied/Repost render first, left-
+   aligned in normal flex flow, and Bookmark's own `margin-left: auto` above
+   still pushes it plus "open original"/Share right — the same two-group
+   layout a Mark card's own row already has. (Previously this modifier set
+   `justify-content: flex-end`, back when Bookmark/Share were this row's
+   only entries; no longer needed now that a left-hand group exists too.) */
 
 .daymark-searchbookmarks-banner {
 	display: flex;

@@ -199,6 +199,36 @@ class Test_Microformats extends WP_UnitTestCase {
 		$this->assertSame( '', $this->microformats->reply_markup( $this->daymark_id ) );
 	}
 
+	/** repost_markup() emits a u-repost-of link when the Mark is a repost (issue #41 follow-up). */
+	public function test_repost_markup_renders_when_repost_of_is_set() {
+		update_post_meta( $this->daymark_id, '_daymark_repost_of', 'https://example.com/original-post/' );
+
+		$markup = $this->microformats->repost_markup( $this->daymark_id );
+
+		$this->assertStringContainsString( 'class="u-repost-of"', $markup );
+		$this->assertStringContainsString( 'href="https://example.com/original-post/"', $markup );
+	}
+
+	/** repost_markup() is empty for an ordinary (non-repost) Mark. */
+	public function test_repost_markup_empty_without_repost_of() {
+		$this->assertSame( '', $this->microformats->repost_markup( $this->daymark_id ) );
+	}
+
+	/** like_markup() emits a u-like-of link when the Mark is a like (issue #41 follow-up). */
+	public function test_like_markup_renders_when_like_of_is_set() {
+		update_post_meta( $this->daymark_id, '_daymark_like_of', 'https://example.com/original-post/' );
+
+		$markup = $this->microformats->like_markup( $this->daymark_id );
+
+		$this->assertStringContainsString( 'class="u-like-of"', $markup );
+		$this->assertStringContainsString( 'href="https://example.com/original-post/"', $markup );
+	}
+
+	/** like_markup() is empty for an ordinary (non-like) Mark. */
+	public function test_like_markup_empty_without_like_of() {
+		$this->assertSame( '', $this->microformats->like_markup( $this->daymark_id ) );
+	}
+
 	/** render_author_hcard() emits p-author h-card, p-name, and u-photo. */
 	public function test_author_hcard_has_required_properties() {
 		$markup = $this->microformats->render_author_hcard( $this->author_id );

@@ -834,6 +834,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Set only when composing a reply from a subscribed post's
 			// expanded card (issue #83) — see Daymark_Publisher::resolve_in_reply_to().
 			'in_reply_to'          => (string) $request->get_param( 'in_reply_to' ),
+			// Set only when composing a Repost/Like from a subscribed post's
+			// Timeline card (issue #41 follow-up) — see
+			// Daymark_Publisher::resolve_repost_of()/resolve_like_of().
+			'repost_of'            => (string) $request->get_param( 'repost_of' ),
+			'like_of'              => (string) $request->get_param( 'like_of' ),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -1808,6 +1813,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lng'        => $request->get_param( 'location_lng' ),
 			'location_accuracy'   => $request->get_param( 'location_accuracy' ),
 			'in_reply_to'         => (string) $request->get_param( 'in_reply_to' ),
+			'repost_of'           => (string) $request->get_param( 'repost_of' ),
+			'like_of'             => (string) $request->get_param( 'like_of' ),
 		);
 
 		if ( null !== $request->get_param( 'publish_helpers' ) ) {
@@ -2371,6 +2378,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
 		$content_state   = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
 		$published_at    = (string) get_post_meta( $post_id, 'published_at', true );
+		$permalink       = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
 
 		return array(
 			// Discriminator field a Timeline consumer branches on, mirroring
@@ -2396,7 +2404,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// "open this" action, not a link to render directly on this
 			// site (this CPT has no permalink of its own; see
 			// Daymark_Subscription_Post_Type's class docblock).
-			'permalink'          => esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) ),
+			'permalink'          => $permalink,
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
 			'post_format'        => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
@@ -2415,7 +2423,56 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'site_url'           => esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) ),
 			'site_title'         => sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
+			// Whether the current user has already published a Mark engaging
+			// with this exact post (issue #41 follow-up: "show whether I've
+			// liked, commented on, or reblogged a subscribed post"). '' when
+			// permalink is empty (never happens for a real ingested post) or
+			// no such Mark exists yet. Full remote engagement counts aren't
+			// obtainable in general (no built-in subscription source exposes
+			// a reliable like/repost count for someone else's post), so this
+			// is the buildable fallback: Daymark's own record of the user's
+			// own engagement, not the origin site's real totals.
+			'replied_mark_id'    => $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink ),
+			'liked_mark_id'      => $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ),
+			'reposted_mark_id'   => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
 		);
+	}
+
+	/**
+	 * The ID of the current user's own Mark, if any, carrying the given POSSE
+	 * target-URL meta value — used to detect "have I already replied to /
+	 * liked / reposted this exact subscription post" (issue #41 follow-up).
+	 *
+	 * A plain per-call `get_posts()` lookup, not a batched join — fine at
+	 * this codebase's personal-site scale, matching the precedent
+	 * prepare_subscription_post_summary()'s own per-row subscription lookup
+	 * already set (see that method's docblock).
+	 *
+	 * @param string $meta_key One of '_daymark_in_reply_to', '_daymark_like_of', '_daymark_repost_of'.
+	 * @param string $url      The subscription post's own permalink to match against.
+	 * @return int Mark post ID, or 0 when absent/no match.
+	 */
+	private function find_own_mark_id_by_target_url( string $meta_key, string $url ): int {
+		if ( '' === $url ) {
+			return 0;
+		}
+
+		$found = get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => array( 'publish', 'draft' ),
+				'author'         => get_current_user_id(),
+				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
+				'meta_value'     => $url, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact match is the point; see docblock above for scale reasoning.
+				'posts_per_page' => 1,
+				'orderby'        => 'ID',
+				'order'          => 'DESC',
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		return ! empty( $found ) ? absint( $found[0] ) : 0;
 	}
 
 	/**

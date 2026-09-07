@@ -658,6 +658,125 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $post_id, '_daymark_in_reply_to', true ) );
 	}
 
+	/**
+	 * A valid http(s) repost_of URL (set by the composer's "Repost" action
+	 * on a subscribed post, issue #41 follow-up) is stored as
+	 * _daymark_repost_of, and carried through an edit the same way
+	 * in_reply_to already is.
+	 */
+	public function test_publish_and_update_store_repost_of() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Reposted',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( 'https://example.com/original-post/', get_post_meta( $post_id, '_daymark_repost_of', true ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Reposted, edited',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/a-different-post/',
+			)
+		);
+
+		$this->assertSame(
+			'https://example.com/a-different-post/',
+			get_post_meta( $post_id, '_daymark_repost_of', true )
+		);
+	}
+
+	/** An ordinary Mark with no repost_of sent never gets the meta at all. */
+	public function test_repost_of_absent_when_not_sent() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Not a repost',
+				'primary_type' => 'note',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_repost_of', true ) );
+	}
+
+	/** A non-http(s) repost_of (e.g. javascript:) is silently dropped, never stored. */
+	public function test_repost_of_rejects_non_http_scheme() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Suspicious repost target',
+				'primary_type' => 'note',
+				'repost_of'    => 'javascript:alert(1)',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_repost_of', true ) );
+	}
+
+	/**
+	 * A valid http(s) like_of URL (set by the composer's "Like" action on a
+	 * subscribed post, issue #41 follow-up) is stored as _daymark_like_of,
+	 * and carried through an edit the same way in_reply_to already is.
+	 */
+	public function test_publish_and_update_store_like_of() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( 'https://example.com/original-post/', get_post_meta( $post_id, '_daymark_like_of', true ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Liked, edited',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/a-different-post/',
+			)
+		);
+
+		$this->assertSame(
+			'https://example.com/a-different-post/',
+			get_post_meta( $post_id, '_daymark_like_of', true )
+		);
+	}
+
+	/** An ordinary Mark with no like_of sent never gets the meta at all. */
+	public function test_like_of_absent_when_not_sent() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Not a like',
+				'primary_type' => 'note',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_like_of', true ) );
+	}
+
+	/** A non-http(s) like_of (e.g. javascript:) is silently dropped, never stored. */
+	public function test_like_of_rejects_non_http_scheme() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Suspicious like target',
+				'primary_type' => 'note',
+				'like_of'      => 'javascript:alert(1)',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_like_of', true ) );
+	}
+
 	/** A long caption/transcript gets a reading-time estimate stored. */
 	public function test_long_caption_gets_reading_time_meta() {
 		$publisher = new Daymark_Publisher();

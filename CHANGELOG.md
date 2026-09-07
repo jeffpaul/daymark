@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A subscribed post's Timeline card now has a "Replied" indicator plus real Like and Repost toggles — Like/Repost publish a small Mark of your own, letting an already-installed federation plugin (ActivityPub/Webmention/ATmosphere) send the actual outbound like/reblog, the same way the existing Reply action already works. Full engagement counts from the origin site aren't obtainable in general, so this shows your own engagement instead. ([#232](https://github.com/jeffpaul/daymark/issues/232))
+
 ### Changed
 
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))
@@ -40,6 +44,8 @@ can't act on them.
 - A Timeline card's date, once shown as an actual date rather than a relative "Xd ago" reading, now formats it using the site's own Settings -> General -> Date Format instead of the browser's locale default (previously always MM/DD/YYYY-style). ([#238](https://github.com/jeffpaul/daymark/issues/238))
 - A bookmarked post's images now render correctly when viewed offline — its cached content markup displayed fine with no connectivity, but its `<img>` tags still pointed at the live origin site, so images showed as broken links. Images are now cached alongside the content and swapped in from that local copy when offline. ([#236](https://github.com/jeffpaul/daymark/issues/236))
 - The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column. ([#240](https://github.com/jeffpaul/daymark/issues/240))
+- On a screen with very little content (e.g. a near-empty Timeline), the bottom nav and the floating "+New" launcher no longer float mid-page instead of pinned to the bottom — the screen itself now always claims the full available height it's meant to. ([#244](https://github.com/jeffpaul/daymark/issues/244))
+- A subscription post's Timeline stat row (Like, Comment, Repost, Bookmark, "open original", Share) now spaces every icon evenly instead of splitting into two unevenly-spaced clusters. ([#247](https://github.com/jeffpaul/daymark/issues/247))
 
 ## [0.11.0] - 2026-09-05
 
