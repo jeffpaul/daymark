@@ -13,6 +13,16 @@
  *    disabled, or the object simply didn't load — the form falls back to
  *    its plain admin-post.php submit, identical to this form's previous
  *    (page-reloading) behavior.
+ * 3. The per-row "Edit site name" pencil (a <details>/<summary> disclosure
+ *    on its own — see Daymark_Admin_Subscriptions::render_edit_title_form())
+ *    becomes a true inline editor: opening it focuses/selects the input,
+ *    and Enter, Tab, or clicking away — all of which end in the input's
+ *    own `blur` — saves via a background POST to the existing admin-post
+ *    handler instead of a full page reload, then updates the visible name
+ *    in place. Needs no REST endpoint or localized config of its own: the
+ *    form already carries everything a real submission needs (action,
+ *    subscription ID, nonce), so this is the exact same write, just not
+ *    navigated to.
  */
 (function () {
 	'use strict';
@@ -20,6 +30,7 @@
 	document.addEventListener( 'DOMContentLoaded', function () {
 		bindSubscribeLoadingState();
 		bindRefreshForms();
+		bindEditTitleDisclosures();
 	} );
 
 	/**
@@ -203,5 +214,112 @@
 
 		errorEl.textContent = message;
 		errorEl.hidden = false;
+	}
+
+	/**
+	 * Wires every per-subscription "Edit site name" <details> disclosure
+	 * (behavior 3) into an inline editor: focus/select the input the
+	 * moment it opens, and save on Enter, Tab, or clicking away — all of
+	 * which end in the input's own `blur` event, so that one handler
+	 * covers all three.
+	 *
+	 * @return void
+	 */
+	function bindEditTitleDisclosures() {
+		var disclosures = document.querySelectorAll( '.daymark-subscription-edit-title' );
+
+		disclosures.forEach( function ( details ) {
+			var input = details.querySelector( '.daymark-subscription-title-input' );
+			var form = details.querySelector( '.daymark-subscription-edit-title-form' );
+
+			if ( ! input || ! form ) {
+				return;
+			}
+
+			details.addEventListener( 'toggle', function () {
+				if ( details.open ) {
+					input.focus();
+					input.select();
+				}
+			} );
+
+			input.addEventListener( 'keydown', function ( event ) {
+				if ( 'Enter' === event.key ) {
+					// The default action here is a real form submission
+					// (the lone text field in this form), which would
+					// reload the page — blur instead, so the save below
+					// runs the same inline way a Tab or click-away would.
+					event.preventDefault();
+					input.blur();
+				}
+			} );
+
+			input.addEventListener( 'blur', function () {
+				saveTitleInline( details, form, input );
+			} );
+		} );
+	}
+
+	/**
+	 * Save one "Edit site name" input's current value via a background
+	 * POST to the exact same admin-post handler its form would otherwise
+	 * navigate to — reusing the real write path (validation, nonce check,
+	 * the DB update) unchanged, just not followed to its redirect. Updates
+	 * the visible name in place on success and always closes the
+	 * disclosure; a failure reverts the input to its last known-good value
+	 * and shows an inline error without closing, so the user can retry.
+	 *
+	 * @param {Element}            details The <details> disclosure.
+	 * @param {HTMLFormElement}    form    Its form (action/nonce/subscription id).
+	 * @param {HTMLInputElement}   input   The site-title text input.
+	 * @return void
+	 */
+	function saveTitleInline( details, form, input ) {
+		var titleText = details.parentElement
+			? details.parentElement.querySelector( '[data-daymark-title-text]' )
+			: null;
+		var errorEl = form.querySelector( '.daymark-subscription-title-error' );
+		var fallbackLabel = details.getAttribute( 'data-daymark-fallback-label' ) || '';
+		var newValue = input.value;
+		var priorValue = input.defaultValue;
+
+		if ( errorEl ) {
+			errorEl.hidden = true;
+			errorEl.textContent = '';
+		}
+
+		if ( newValue === priorValue ) {
+			details.open = false;
+			return;
+		}
+
+		fetch( form.getAttribute( 'action' ), {
+			method: 'POST',
+			credentials: 'same-origin',
+			body: new FormData( form )
+		} )
+			.then( function ( response ) {
+				if ( ! response.ok ) {
+					throw new Error( 'daymark_edit_title_failed' );
+				}
+
+				if ( titleText ) {
+					titleText.textContent = '' !== newValue ? newValue : fallbackLabel;
+				}
+
+				input.defaultValue = newValue;
+				details.open = false;
+			} )
+			.catch( function () {
+				input.value = priorValue;
+
+				if ( errorEl ) {
+					var config = window.daymarkAdminSubscriptions;
+					errorEl.textContent = config && config.i18n
+						? config.i18n.genericError
+						: 'Something went wrong. Please try again.';
+					errorEl.hidden = false;
+				}
+			} );
 	}
 }());
