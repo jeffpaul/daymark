@@ -3172,6 +3172,12 @@
 				return __('Mocked', 'daymark');
 			case 'unsupported':
 				return __('Not supported', 'daymark');
+			// The target's own connector plugin was deactivated/uninstalled
+			// after this was selected (issue #263) — distinct from
+			// 'unsupported' (the connector exists but can't represent this
+			// Mark's type) so the two read as the different problems they are.
+			case 'unavailable':
+				return __('Not available', 'daymark');
 			case 'failed':
 				return __('Failed', 'daymark');
 			default:
@@ -3183,7 +3189,7 @@
 		if ('published' === status) {
 			return 'success';
 		}
-		if ('failed' === status || 'unsupported' === status) {
+		if ('failed' === status || 'unsupported' === status || 'unavailable' === status) {
 			return 'danger';
 		}
 		return 'muted';

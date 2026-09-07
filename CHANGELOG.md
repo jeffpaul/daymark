@@ -30,12 +30,14 @@ can't act on them.
 ### Fixed
 
 - A syndication target that couldn't represent a Mark's type (e.g. selecting YouTube for a note) was silently dropped instead of being recorded as failed — `_daymark_syndication_status` could never actually show `failed` in practice. Every attempted target is now recorded with its own outcome, whether it succeeded or not. ([#255](https://github.com/jeffpaul/daymark/issues/255))
+- A syndication target whose connector plugin had been deactivated or uninstalled after it was selected was also silently dropped instead of recorded — the routing popover now shows it as "Not available" instead of it just vanishing. ([#263](https://github.com/jeffpaul/daymark/issues/263))
 
 ### Developer
 
 - Every user-facing PHP string now uses a WordPress translation function under the `daymark` text domain, and the app shell's script registers `wp-i18n` + `wp_set_script_translations()` — laying the groundwork for wordpress.org's own GlotPress translation system once the plugin ships there. No bundled translation files, no behavior change for an English-language site. ([#252](https://github.com/jeffpaul/daymark/issues/252))
 - Every user-facing string in the app shell's own JavaScript (`assets/app.js`) now uses `wp.i18n.__()`/`_n()`/`sprintf()` under the `daymark` text domain, completing the JS half of i18n readiness started in #252 — no wording or behavior change for an English-language site. ([#253](https://github.com/jeffpaul/daymark/issues/253))
 - The hooks reference site (<https://jeffpaul.github.io/daymark/>) now shows Daymark's own icon as its browser tab favicon instead of the Docusaurus generator's default.
+- The hooks reference site now includes a "Writing a Connector" guide — a complete, minimal `Daymark_Syndication_Connector` example (the interface, the `publish()` payload/result shapes, and the relevant hooks) for anyone building a real syndication destination. ([#263](https://github.com/jeffpaul/daymark/issues/263))
 
 ## [0.12.0] - 2026-09-07
 
