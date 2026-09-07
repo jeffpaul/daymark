@@ -185,6 +185,13 @@ $daymark_config = array(
 	// identify their source the same way (a site's icon), not one by site
 	// and the other by the logged-in user's personal Gravatar.
 	'siteIconUrl'           => esc_url_raw( Daymark_Routes::icon_url( 96 ) ),
+	// Always Daymark's own bundled icon, never the site's Site Icon — used
+	// for the app shell's own header/nav chrome (Home's wordmark, and the
+	// Explore/Search/Me/Notifications icon link), which is Daymark's own
+	// brand identity, not the site's. Deliberately a separate value from
+	// siteIconUrl above rather than reusing it, since a site owner who sets
+	// a Site Icon shouldn't see it silently take over Daymark's own header.
+	'daymarkIconUrl'        => esc_url_raw( Daymark_Routes::daymark_icon_url( 96 ) ),
 	'screen'                => $daymark_screen,
 	'connectors'            => $daymark_connectors,
 	'defaults'              => $daymark_type_defaults,

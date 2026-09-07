@@ -189,6 +189,17 @@ h2[tabindex='-1']:focus {
 	text-decoration: none;
 }
 
+/* Notifications' own back link: same arrow, but the Daymark icon stands in
+   for the "Back" text rather than a second word alongside the arrow. */
+.daymark-backlink--icon {
+	gap: 7px;
+}
+
+.daymark-backlink--icon img {
+	flex: none;
+	border-radius: var(--daymark-radius-sm);
+}
+
 .daymark-iconbtn {
 	display: inline-flex;
 	align-items: center;
@@ -211,6 +222,17 @@ h2[tabindex='-1']:focus {
 .daymark-iconbtn--plain {
 	border-color: transparent;
 	background: none;
+}
+
+/* Explore/Search/Me's header title sat farther from the icon than Home's
+   own "Daymark" wordmark text does from its icon, because .daymark-iconbtn's
+   44px tap-target box (required — see --daymark-tap-min) centers the 26px
+   icon graphic inside it, adding padding on top of the topbar's own flex
+   gap that .daymark-homelink's directly-adjacent icon+text never has. Pull
+   the title back by exactly that centering padding rather than shrinking
+   the tap target itself. */
+.daymark-iconbtn--plain + .daymark-topbar__title {
+	margin-left: calc((26px - var(--daymark-tap-min)) / 2);
 }
 
 /* --- Screen layout --- */
@@ -2356,22 +2378,14 @@ h2[tabindex='-1']:focus {
 	cursor: pointer;
 }
 
+/* Shows the server-provided excerpt in full (up to ~40 words for a
+   subscription post — see Daymark_Subscription_Source_Feed::normalize())
+   rather than clamping it to a fixed 1-2 lines: a card-height cap is an
+   arbitrary display constraint, not a reason to cut off real content the
+   server already decided was worth including. */
 .daymark-recent__excerpt {
 	font-size: 13px;
 	color: var(--daymark-text-secondary);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/* An article card earns a little more room for its excerpt than every
-   other kind's single-line preview — "title, excerpt, optional featured
-   image" per the brief means the excerpt is meant to be read, not just
-   glanced at. */
-.daymark-recent__item--article .daymark-recent__excerpt {
-	display: -webkit-box;
-	-webkit-line-clamp: 2;
-	-webkit-box-orient: vertical;
 	white-space: normal;
 }
 

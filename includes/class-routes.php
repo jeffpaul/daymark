@@ -318,6 +318,21 @@ class Daymark_Routes {
 			}
 		}
 
+		return self::daymark_icon_url( $size );
+	}
+
+	/**
+	 * Daymark's own bundled icon URL at (approximately) the given size —
+	 * never the site's own Site Icon, even when one is configured. Used for
+	 * the app shell's own header/nav chrome, which is Daymark's brand
+	 * identity, not the site's — see icon_url() for the Site-Icon-first
+	 * resolution used everywhere else (Timeline card site icons, browser
+	 * favicon, PWA manifest icons).
+	 *
+	 * @param int $size Desired square size in px.
+	 * @return string
+	 */
+	public static function daymark_icon_url( int $size ): string {
 		$file = 'icon-192.png';
 		if ( $size > 256 ) {
 			$file = 'icon-512.png';
