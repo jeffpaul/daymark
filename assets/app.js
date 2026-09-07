@@ -136,6 +136,117 @@
 		return Number.isNaN(date.getTime()) ? null : date;
 	}
 
+	const PHP_MONTH_NAMES = [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December',
+	];
+	const PHP_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	const PHP_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+	const PHP_DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+	function ordinalSuffix(day) {
+		if (day % 10 === 1 && day !== 11) {
+			return 'st';
+		}
+		if (day % 10 === 2 && day !== 12) {
+			return 'nd';
+		}
+		if (day % 10 === 3 && day !== 13) {
+			return 'rd';
+		}
+		return 'th';
+	}
+
+	// Formats a Date using the subset of PHP date() format tokens WordPress's
+	// own Date Format setting (Settings -> General; config.dateFormat below)
+	// can produce — that option is a raw PHP date() format string, and JS has
+	// no built-in equivalent, so each token is mapped by hand. Scoped to the
+	// tokens a *date* format realistically uses (day/month/year/weekday);
+	// time tokens aren't needed since this is specifically WP's Date Format
+	// option, not Time Format. A backslash escapes the following character
+	// as a literal, matching PHP's own date() syntax.
+	function formatDateWithPhpFormat(date, format) {
+		const day = date.getDate();
+		const month = date.getMonth();
+		const year = date.getFullYear();
+		const weekday = date.getDay();
+		let result = '';
+		for (let i = 0; i < format.length; i += 1) {
+			const char = format[i];
+			if ('\\' === char && i + 1 < format.length) {
+				result += format[i + 1];
+				i += 1;
+				continue;
+			}
+			switch (char) {
+				case 'd':
+					result += String(day).padStart(2, '0');
+					break;
+				case 'j':
+					result += String(day);
+					break;
+				case 'D':
+					result += PHP_DAY_ABBR[weekday];
+					break;
+				case 'l':
+					result += PHP_DAY_NAMES[weekday];
+					break;
+				case 'N':
+					result += String(0 === weekday ? 7 : weekday);
+					break;
+				case 'w':
+					result += String(weekday);
+					break;
+				case 'S':
+					result += ordinalSuffix(day);
+					break;
+				case 'F':
+					result += PHP_MONTH_NAMES[month];
+					break;
+				case 'M':
+					result += PHP_MONTH_ABBR[month];
+					break;
+				case 'm':
+					result += String(month + 1).padStart(2, '0');
+					break;
+				case 'n':
+					result += String(month + 1);
+					break;
+				case 'Y':
+					result += String(year);
+					break;
+				case 'y':
+					result += String(year).slice(-2);
+					break;
+				default:
+					result += char;
+			}
+		}
+		return result;
+	}
+
+	// The absolute-date display a card's timestamp falls back to once it's
+	// too old for a relative "Xd ago" reading — uses the site's own
+	// configured Date Format (Settings -> General -> Date Format,
+	// config.dateFormat) rather than the browser's locale default, so it
+	// reads the same way a site owner already sees dates everywhere else in
+	// wp-admin. Falls back to the browser's own locale formatting only if
+	// the server never sent a format (shouldn't happen — every WP install
+	// has this option set).
+	function formatAbsoluteDate(date) {
+		return config.dateFormat ? formatDateWithPhpFormat(date, config.dateFormat) : date.toLocaleDateString();
+	}
+
 	function relativeTime(value) {
 		const date = parseDate(value);
 		if (!date) {
@@ -157,7 +268,7 @@
 		if (days < 7) {
 			return days + 'd ago';
 		}
-		return date.toLocaleDateString();
+		return formatAbsoluteDate(date);
 	}
 
 	/**
@@ -173,7 +284,7 @@
 			return '';
 		}
 		const full =
-			date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) +
+			formatAbsoluteDate(date) +
 			' at ' +
 			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
