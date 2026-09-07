@@ -551,6 +551,27 @@ XML;
 		$this->assertSame( 'standard', $normalized['post_format'] );
 	}
 
+	/**
+	 * Scenario: a header image on a long article, lazy-loaded (a `data:`
+	 * placeholder `src` with the real URL in `data-src`, as several common
+	 * lazy-load implementations write) — the image still resolves as the
+	 * card's own featured_image_url even though there's no real downside to
+	 * a "maybe" there, while post_format itself correctly stays 'standard'
+	 * (illustrated article, not a photo post).
+	 */
+	public function test_normalize_resolves_lazy_loaded_image_src() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" '
+					. 'data-src="https://example.com/lazy-header.jpg" class="lazyload" /><p>' . $long_text . '</p>',
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
+		$this->assertSame( 'https://example.com/lazy-header.jpg', $normalized['featured_image_url'] );
+	}
+
 	/** An enclosure-confirmed signal always wins over content sniffing. */
 	public function test_normalize_prefers_enclosure_over_content_sniffing() {
 		$normalized = $this->source->normalize(
