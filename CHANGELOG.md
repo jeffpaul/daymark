@@ -37,6 +37,7 @@ can't act on them.
 - The Timeline could show a raw WordPress error ("Could not load your timeline. Cookie check failed") when the app-shell page's nonce went stale — most commonly a home-screen-installed PWA session resumed after a long background suspension. It now shows "Your session has expired" with a Reload button. ([#223](https://github.com/jeffpaul/daymark/pull/223))
 - A subscription post whose only image was lazy-loaded (a placeholder `src` with the real URL in `data-src`/`data-lazy-src`/`srcset`) previously showed no Timeline card thumbnail at all — the content sniffer now falls back through those common lazy-load attributes when `src` itself is empty or a placeholder. ([#227](https://github.com/jeffpaul/daymark/pull/227))
 - The Home/Explore/Search/Me header now always shows Daymark's own icon instead of the site's configured Site Icon, tightens Explore/Search/Me's header title spacing to match Home's, and replaces the Notifications page's "Back" text with the Daymark icon (keeping the arrow). ([#230](https://github.com/jeffpaul/daymark/issues/230))
+- Search's "Showing your bookmarks." banner text now matches the size of its "Show everything" link — they previously rendered at two different sizes. ([#229](https://github.com/jeffpaul/daymark/pull/229))
 
 ## [0.11.0] - 2026-09-05
 

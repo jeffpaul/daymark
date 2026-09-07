@@ -976,7 +976,7 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	align-items: center;
 	gap: var(--daymark-spacing-sm);
-	font-size: 13px;
+	font-size: 16px;
 	color: var(--daymark-text-muted);
 	margin: 0 0 var(--daymark-spacing-sm);
 }
