@@ -891,6 +891,20 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	});
 	await page.goto('/daymark');
 
+	// Real, live subscription-post images (this suite never cleans up its
+	// own real content — see openComposer()'s own docblock above) can
+	// still be loading in the background right after this goto. Each one
+	// completing changes the page's own height, and the browser's own
+	// scroll-anchoring can react to that with a scroll adjustment
+	// bindChromeAutoHide()'s scroll listener has no way to tell apart from
+	// a real one — landing right in between two of the deliberate wheel
+	// scrolls below and corrupting the very next one's own delta. Letting
+	// every currently-rendered Timeline image settle first closes that gap
+	// before the scroll calibration that follows depends on it.
+	await page.waitForFunction(() =>
+		Array.from(document.querySelectorAll('[data-recent-list] img')).every((img) => img.complete)
+	);
+
 	// Wait for the page to actually grow taller than the viewport, then
 	// pad it with a plain synthetic spacer well past the recent list —
 	// real seeded rows alone left too little scroll room to test the
