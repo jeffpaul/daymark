@@ -932,6 +932,18 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(footer).toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
+	// This 1000px scroll is easily enough to cross the recent list's own
+	// infinite-scroll sentinel (rootMargin: 200px — see setupObserver(),
+	// app.js), appending a further page of real subscription-post images
+	// this test's earlier image-settle wait never had a chance to cover
+	// (they didn't exist yet). One of those finishing mid-sequence is the
+	// same scroll-anchor risk that wait already guards against for the
+	// first page — settle this second batch too before the more delicate
+	// up/down calibration below depends on a stable scroll position.
+	await page.waitForFunction(() =>
+		Array.from(document.querySelectorAll('[data-recent-list] img')).every((img) => img.complete)
+	);
+
 	// Scroll up (still far from the top): footer returns, header hides.
 	await page.mouse.wheel(0, -200);
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
