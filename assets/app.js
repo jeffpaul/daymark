@@ -11,6 +11,8 @@
 (function () {
 	'use strict';
 
+	const { __, _n, _x, sprintf } = wp.i18n;
+
 	// --- Config ---
 	const config = window.daymarkApp || {};
 	const connectors = Array.isArray(config.connectors) ? config.connectors : [];
@@ -65,12 +67,12 @@
 	};
 
 	const TYPE_LABELS = {
-		note: 'Note',
-		image: 'Image',
-		gallery: 'Gallery',
-		video: 'Video',
-		audio: 'Audio',
-		mixed: 'Mixed media',
+		note: __('Note', 'daymark'),
+		image: __('Image', 'daymark'),
+		gallery: __('Gallery', 'daymark'),
+		video: __('Video', 'daymark'),
+		audio: __('Audio', 'daymark'),
+		mixed: __('Mixed media', 'daymark'),
 	};
 
 	// --- Helpers ---
@@ -137,22 +139,51 @@
 	}
 
 	const PHP_MONTH_NAMES = [
-		'January',
-		'February',
-		'March',
-		'April',
-		'May',
-		'June',
-		'July',
-		'August',
-		'September',
-		'October',
-		'November',
-		'December',
+		__('January', 'daymark'),
+		__('February', 'daymark'),
+		__('March', 'daymark'),
+		__('April', 'daymark'),
+		__('May', 'daymark'),
+		__('June', 'daymark'),
+		__('July', 'daymark'),
+		__('August', 'daymark'),
+		__('September', 'daymark'),
+		__('October', 'daymark'),
+		__('November', 'daymark'),
+		__('December', 'daymark'),
 	];
-	const PHP_MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-	const PHP_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-	const PHP_DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+	const PHP_MONTH_ABBR = [
+		__('Jan', 'daymark'),
+		__('Feb', 'daymark'),
+		__('Mar', 'daymark'),
+		__('Apr', 'daymark'),
+		__('May', 'daymark'),
+		__('Jun', 'daymark'),
+		__('Jul', 'daymark'),
+		__('Aug', 'daymark'),
+		__('Sep', 'daymark'),
+		__('Oct', 'daymark'),
+		__('Nov', 'daymark'),
+		__('Dec', 'daymark'),
+	];
+	const PHP_DAY_NAMES = [
+		__('Sunday', 'daymark'),
+		__('Monday', 'daymark'),
+		__('Tuesday', 'daymark'),
+		__('Wednesday', 'daymark'),
+		__('Thursday', 'daymark'),
+		__('Friday', 'daymark'),
+		__('Saturday', 'daymark'),
+	];
+	const PHP_DAY_ABBR = [
+		__('Sun', 'daymark'),
+		__('Mon', 'daymark'),
+		__('Tue', 'daymark'),
+		__('Wed', 'daymark'),
+		__('Thu', 'daymark'),
+		__('Fri', 'daymark'),
+		__('Sat', 'daymark'),
+	];
 
 	function ordinalSuffix(day) {
 		if (day % 10 === 1 && day !== 11) {
@@ -254,19 +285,19 @@
 		}
 		const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
 		if (seconds < 60) {
-			return 'Just now';
+			return __('Just now', 'daymark');
 		}
 		const minutes = Math.floor(seconds / 60);
 		if (minutes < 60) {
-			return minutes + 'm ago';
+			return sprintf(__('%dm ago', 'daymark'), minutes);
 		}
 		const hours = Math.floor(minutes / 60);
 		if (hours < 24) {
-			return hours + 'h ago';
+			return sprintf(__('%dh ago', 'daymark'), hours);
 		}
 		const days = Math.floor(hours / 24);
 		if (days < 7) {
-			return days + 'd ago';
+			return sprintf(__('%dd ago', 'daymark'), days);
 		}
 		return formatAbsoluteDate(date);
 	}
@@ -283,10 +314,12 @@
 		if (!date) {
 			return '';
 		}
-		const full =
-			formatAbsoluteDate(date) +
-			' at ' +
-			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+		const full = sprintf(
+			/* translators: 1: date, 2: time */
+			__('%1$s at %2$s', 'daymark'),
+			formatAbsoluteDate(date),
+			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+		);
 		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
 			relativeTime(value)
 		)}</time>`;
@@ -320,7 +353,7 @@
 		const day = startOfDay(date);
 
 		if (day.getTime() === today.getTime()) {
-			return { key: 'today', label: 'Today' };
+			return { key: 'today', label: __('Today', 'daymark') };
 		}
 
 		const startOfWeek = (d) => {
@@ -330,24 +363,24 @@
 		};
 		const thisWeekStart = startOfWeek(now);
 		if (day.getTime() >= thisWeekStart.getTime()) {
-			return { key: 'this_week', label: 'This Week' };
+			return { key: 'this_week', label: __('This Week', 'daymark') };
 		}
 		const lastWeekStart = new Date(thisWeekStart);
 		lastWeekStart.setDate(lastWeekStart.getDate() - 7);
 		if (day.getTime() >= lastWeekStart.getTime()) {
-			return { key: 'last_week', label: 'Last Week' };
+			return { key: 'last_week', label: __('Last Week', 'daymark') };
 		}
 
 		if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth()) {
-			return { key: 'this_month', label: 'This Month' };
+			return { key: 'this_month', label: __('This Month', 'daymark') };
 		}
 		const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 		if (date.getFullYear() === lastMonth.getFullYear() && date.getMonth() === lastMonth.getMonth()) {
-			return { key: 'last_month', label: 'Last Month' };
+			return { key: 'last_month', label: __('Last Month', 'daymark') };
 		}
 
 		if (date.getFullYear() === now.getFullYear()) {
-			return { key: 'this_year', label: 'This Year' };
+			return { key: 'this_year', label: __('This Year', 'daymark') };
 		}
 		return { key: 'year:' + date.getFullYear(), label: String(date.getFullYear()) };
 	}
@@ -368,11 +401,11 @@
 	// Search's type-filter chips, mapped to _daymark_primary_type values
 	// ('' = every type). Wired to GET /timeline?s=&type=.
 	const SEARCH_FILTERS = [
-		{ type: '', label: 'All' },
-		{ type: 'image', label: 'Images' },
-		{ type: 'video', label: 'Videos' },
-		{ type: 'audio', label: 'Audio' },
-		{ type: 'note', label: 'Notes' },
+		{ type: '', label: __('All', 'daymark') },
+		{ type: 'image', label: __('Images', 'daymark') },
+		{ type: 'video', label: __('Videos', 'daymark') },
+		{ type: 'audio', label: __('Audio', 'daymark') },
+		{ type: 'note', label: __('Notes', 'daymark') },
 	];
 
 	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
@@ -438,9 +471,8 @@
 	// `aria-label` as a native hover tooltip, matching the precedent
 	// renderSiteIconButton() already set: a screen reader needs the
 	// label; a sighted, non-touch hover wants to see it too.
-	function renderStat(glyph, count, modifier, singular, plural) {
+	function renderStat(glyph, count, modifier, label) {
 		const isActive = count > 0;
-		const label = `${count} ${count === 1 ? singular : plural}`;
 		return `<span class="daymark-stat daymark-stat--${modifier}${
 			isActive ? ' daymark-stat--active' : ''
 		}" aria-label="${esc(label)}" title="${esc(label)}">${statIcon(glyph)}${
@@ -464,7 +496,7 @@
 	function renderBookmarkToggle(item, kind) {
 		const bookmarked = !!item.bookmarked;
 		const id = esc(String(item.id));
-		const label = bookmarked ? 'Remove bookmark' : 'Bookmark for offline viewing';
+		const label = bookmarked ? __('Remove bookmark', 'daymark') : __('Bookmark for offline viewing', 'daymark');
 		return `<span class="daymark-stat daymark-stat--bookmark${
 			bookmarked ? ' daymark-stat--active daymark-stat--bookmarked' : ''
 		}" role="button" tabindex="0" aria-pressed="${bookmarked ? 'true' : 'false'}" aria-label="${esc(
@@ -488,7 +520,8 @@
 			return '';
 		}
 		const url = esc(item.permalink);
-		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="Open original" title="Open original" data-external-link="${url}">${statIcon(
+		const label = esc(__('Open original', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
 			EXTERNAL_LINK_GLYPH
 		)}</span>`;
 	}
@@ -506,7 +539,8 @@
 			return '';
 		}
 		const id = esc(String(item.id));
-		return `<span class="daymark-stat daymark-stat--routing" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="Where this went" title="Where this went" data-routing-toggle="${id}">${statIcon(
+		const label = esc(__('Where this went', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--routing" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-routing-toggle="${id}">${statIcon(
 			ROUTING_GLYPH
 		)}</span>`;
 	}
@@ -523,7 +557,8 @@
 			return '';
 		}
 		const id = esc(String(item.id));
-		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
+		const label = esc(__('Share', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="${label}" title="${label}" data-share-toggle="${id}">${statIcon(
 			SHARE_GLYPH
 		)}</span>`;
 	}
@@ -553,7 +588,7 @@
 		const liked = !!item.liked_mark_id;
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
-		const label = liked ? 'Unlike' : 'Like';
+		const label = liked ? __('Unlike', 'daymark') : __('Like', 'daymark');
 		return `<span class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
 		}" role="button" tabindex="0" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
@@ -568,7 +603,7 @@
 		const reposted = !!item.reposted_mark_id;
 		const id = esc(String(item.id));
 		const markId = esc(String(item.reposted_mark_id || 0));
-		const label = reposted ? 'Undo repost' : 'Repost';
+		const label = reposted ? __('Undo repost', 'daymark') : __('Repost', 'daymark');
 		return `<span class="daymark-stat daymark-stat--repost${
 			reposted ? ' daymark-stat--active daymark-stat--reposted' : ''
 		}" role="button" tabindex="0" aria-pressed="${reposted ? 'true' : 'false'}" aria-label="${esc(
@@ -579,18 +614,36 @@
 	}
 
 	function renderItemStats(item) {
+		const likeCount = item.like_count || 0;
+		const commentCount = item.comment_count || 0;
+		const repostCount = item.repost_count || 0;
 		return `<span class="daymark-item-stats">${renderStat(
 			HEART_GLYPH,
-			item.like_count || 0,
+			likeCount,
 			'likes',
-			'like',
-			'likes'
-		)}${renderStat(COMMENT_GLYPH, item.comment_count || 0, 'comments', 'comment', 'comments')}${renderStat(
+			sprintf(
+				/* translators: %d: number of likes */
+				_n('%d like', '%d likes', likeCount, 'daymark'),
+				likeCount
+			)
+		)}${renderStat(
+			COMMENT_GLYPH,
+			commentCount,
+			'comments',
+			sprintf(
+				/* translators: %d: number of comments */
+				_n('%d comment', '%d comments', commentCount, 'daymark'),
+				commentCount
+			)
+		)}${renderStat(
 			REPOST_GLYPH,
-			item.repost_count || 0,
+			repostCount,
 			'reposts',
-			'repost',
-			'reposts'
+			sprintf(
+				/* translators: %d: number of reposts */
+				_n('%d repost', '%d reposts', repostCount, 'daymark'),
+				repostCount
+			)
 		)}${renderBookmarkToggle(item, 'mark')}${renderExternalLinkToggle(item)}${renderRoutingToggle(
 			item
 		)}${renderShareToggle(item)}</span>`;
@@ -620,15 +673,15 @@
 	};
 
 	const CAPTURE_LABEL_BY_TYPE = {
-		image: 'Take Photo',
-		video: 'Record Video',
-		audio: 'Record Audio',
+		image: __('Take Photo', 'daymark'),
+		video: __('Record Video', 'daymark'),
+		audio: __('Record Audio', 'daymark'),
 	};
 
 	const CAPTURE_HINT_BY_TYPE = {
-		image: 'Opens your camera',
-		video: 'Opens your camera',
-		audio: 'Opens your microphone',
+		image: __('Opens your camera', 'daymark'),
+		video: __('Opens your camera', 'daymark'),
+		audio: __('Opens your microphone', 'daymark'),
 	};
 
 	function launcherIcon(glyph) {
@@ -832,13 +885,13 @@
 			return;
 		}
 		if (kind === 'saving') {
-			el.textContent = 'Saving…';
+			el.textContent = __('Saving…', 'daymark');
 		} else if (kind === 'saved') {
-			el.textContent = 'Saved';
+			el.textContent = __('Saved', 'daymark');
 		} else if (kind === 'offline') {
-			el.textContent = 'Saved offline — will sync automatically';
+			el.textContent = __('Saved offline — will sync automatically', 'daymark');
 		} else if (kind === 'error') {
-			el.textContent = 'Not saved yet — will retry';
+			el.textContent = __('Not saved yet — will retry', 'daymark');
 		} else {
 			el.textContent = '';
 		}
@@ -1722,7 +1775,11 @@
 	// --- API helpers ---
 
 	async function readError(res) {
-		let message = 'Request failed (' + res.status + ')';
+		let message = sprintf(
+			/* translators: %d: HTTP status code */
+			__('Request failed (%d)', 'daymark'),
+			res.status
+		);
 		let code = '';
 		let data = null;
 		try {
@@ -1770,8 +1827,11 @@
 
 	function authExpiredErrorHtml() {
 		return (
-			'<p class="daymark-error" role="alert">Your session has expired. ' +
-			'<button type="button" class="daymark-btn--text daymark-btn" data-reload-app>Reload</button></p>'
+			'<p class="daymark-error" role="alert">' +
+			esc(__('Your session has expired.', 'daymark')) +
+			' <button type="button" class="daymark-btn--text daymark-btn" data-reload-app>' +
+			esc(__('Reload', 'daymark')) +
+			'</button></p>'
 		);
 	}
 
@@ -1998,10 +2058,10 @@
 	let searchPreset = null;
 
 	const NAV_TABS = [
-		{ key: 'home', hash: '#home', label: 'Timeline', glyph: TIMELINE_GLYPH },
-		{ key: 'explore', hash: '#explore', label: 'Explore', glyph: EXPLORE_GLYPH },
-		{ key: 'search', hash: '#search', label: 'Search', glyph: SEARCH_GLYPH },
-		{ key: 'me', hash: '#me', label: 'Me', glyph: ME_GLYPH },
+		{ key: 'home', hash: '#home', label: __('Timeline', 'daymark'), glyph: TIMELINE_GLYPH },
+		{ key: 'explore', hash: '#explore', label: __('Explore', 'daymark'), glyph: EXPLORE_GLYPH },
+		{ key: 'search', hash: '#search', label: __('Search', 'daymark'), glyph: SEARCH_GLYPH },
+		{ key: 'me', hash: '#me', label: __('Me', 'daymark'), glyph: ME_GLYPH },
 	];
 
 	// The persistent footer: Timeline/Explore flank one side of the +New
@@ -2021,16 +2081,20 @@
 		const after = NAV_TABS.slice(2).map(navLink).join('');
 		const bubbles = LAUNCHER_TYPES.map(
 			(type) =>
-				`<button type="button" class="daymark-launcher__bubble" data-launcher-type="${type}" tabindex="-1" aria-hidden="true" aria-label="New ${esc(
-					TYPE_LABELS[type]
-				)} Mark">${launcherIcon(TYPE_ICONS[type])}</button>`
+				`<button type="button" class="daymark-launcher__bubble" data-launcher-type="${type}" tabindex="-1" aria-hidden="true" aria-label="${esc(
+					sprintf(
+						/* translators: %s: Mark type label (e.g. "Image") */
+						__('New %s Mark', 'daymark'),
+						TYPE_LABELS[type]
+					)
+				)}">${launcherIcon(TYPE_ICONS[type])}</button>`
 		).join('');
 		const launcher = `<div class="daymark-launcher" data-launcher>
 			<div class="daymark-launcher__scrim" aria-hidden="true"></div>
 			<div class="daymark-launcher__bubbles" data-launcher-bubbles>${bubbles}</div>
-			<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="New Mark" aria-expanded="false">${launcherIcon(
-				PLUS_GLYPH
-			)}</button>
+			<button type="button" class="daymark-launcher__btn" data-action="new-mark" aria-label="${esc(
+				__('New Mark', 'daymark')
+			)}" aria-expanded="false">${launcherIcon(PLUS_GLYPH)}</button>
 		</div>`;
 		return `<footer class="daymark-homefooter"><nav class="daymark-bottomnav" aria-label="Daymark">${before}${launcher}${after}</nav></footer>`;
 	}
@@ -2307,7 +2371,9 @@
 				return `<option value="${esc(String(sub.id))}">${esc(label)}</option>`;
 			})
 			.join('');
-		return `<option value="">All</option><option value="mine">My Marks</option>${subscriptionOptions}`;
+		return `<option value="">${esc(__('All', 'daymark'))}</option><option value="mine">${esc(
+			__('My Marks', 'daymark')
+		)}</option>${subscriptionOptions}`;
 	}
 
 	// Active subscriptions, for the Source filter and Explore's Following
@@ -2353,7 +2419,7 @@
 				// Falls through to the generic label below.
 			}
 		}
-		return 'this site';
+		return __('this site', 'daymark');
 	}
 
 	// The site icon that sits on every Timeline item except a Draft, as its
@@ -2409,7 +2475,7 @@
 		// place instead (see toggleExpand()/onFeedListClick()), the same
 		// as a subscription post's card; it never navigates away to the
 		// permalink or opens an overlay the way it used to.
-		const title = item.title || 'Untitled Mark';
+		const title = item.title || __('Untitled Mark', 'daymark');
 		const isDraft = item.status && 'publish' !== item.status;
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
@@ -2430,29 +2496,41 @@
 			? ''
 			: renderSiteIconButton({
 					iconSrc: config.siteIconUrl || '',
-					iconAlt: config.siteTitle || 'Site',
-					ariaLabel: 'Filter Timeline to your Marks',
+					iconAlt: config.siteTitle || __('Site', 'daymark'),
+					ariaLabel: __('Filter Timeline to your Marks', 'daymark'),
 					filterValue: 'mine',
 					siteUrl: config.siteUrl || '',
 			  });
 		const actions = !isDraft
 			? ''
 			: `<div class="daymark-recent__actions" data-actions>
-					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="Actions for ${esc(
-						title
+					<button type="button" class="daymark-recent__menubtn" data-menu-toggle aria-haspopup="true" aria-expanded="false" aria-label="${esc(
+						sprintf(
+							/* translators: %s: Mark title */
+							__('Actions for %s', 'daymark'),
+							title
+						)
 					)}">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>
 					</button>
-					<div class="daymark-menu" data-menu role="menu" aria-label="Mark actions" hidden>
+					<div class="daymark-menu" data-menu role="menu" aria-label="${esc(__('Mark actions', 'daymark'))}" hidden>
 						<div class="daymark-menu__actions" data-menu-actions>
-							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">Edit</button>
-							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">Delete</button>
+							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">${esc(
+								__('Edit', 'daymark')
+							)}</button>
+							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">${esc(
+								__('Delete', 'daymark')
+							)}</button>
 						</div>
 						<div class="daymark-menu__confirm" data-menu-confirm hidden>
-							<p class="daymark-menu__confirmtext">Delete this Mark? It&rsquo;ll move to Trash.</p>
+							<p class="daymark-menu__confirmtext">${esc(__('Delete this Mark? It’ll move to Trash.', 'daymark'))}</p>
 							<div class="daymark-menu__confirmactions">
-								<button type="button" class="daymark-btn daymark-btn--danger" data-menu-delete-confirm>Delete</button>
-								<button type="button" class="daymark-btn daymark-btn--secondary" data-menu-delete-cancel>Cancel</button>
+								<button type="button" class="daymark-btn daymark-btn--danger" data-menu-delete-confirm>${esc(
+									__('Delete', 'daymark')
+								)}</button>
+								<button type="button" class="daymark-btn daymark-btn--secondary" data-menu-delete-cancel>${esc(
+									__('Cancel', 'daymark')
+								)}</button>
 							</div>
 							<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
 						</div>
@@ -2820,7 +2898,10 @@
 		trigger.classList.toggle('daymark-stat--bookmarked', bookmarked);
 		trigger.classList.toggle('daymark-stat--active', bookmarked);
 		trigger.setAttribute('aria-pressed', bookmarked ? 'true' : 'false');
-		trigger.setAttribute('aria-label', bookmarked ? 'Remove bookmark' : 'Bookmark for offline viewing');
+		trigger.setAttribute(
+			'aria-label',
+			bookmarked ? __('Remove bookmark', 'daymark') : __('Bookmark for offline viewing', 'daymark')
+		);
 	}
 
 	// Toggles a bookmark for the Mark or subscription post this trigger
@@ -2866,11 +2947,11 @@
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
 		const label = active
 			? 'like' === kind
-				? 'Unlike'
-				: 'Undo repost'
+				? __('Unlike', 'daymark')
+				: __('Undo repost', 'daymark')
 			: 'like' === kind
-			? 'Like'
-			: 'Repost';
+			? __('Like', 'daymark')
+			: __('Repost', 'daymark');
 		trigger.classList.toggle(activeClass, active);
 		trigger.classList.toggle('daymark-stat--active', active);
 		trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -2893,9 +2974,9 @@
 	// Note-type default (see Daymark_Publisher::remember_destination_prefs()),
 	// silently overwriting their real preference for a background action
 	// they didn't consciously make a destination choice for.
-	function buildEngagementFormData(verb, item, targetField) {
+	function buildEngagementFormData(caption, item, targetField) {
 		const formData = new FormData();
-		formData.append('caption', `${verb} "${item.title || item.permalink}"`);
+		formData.append('caption', caption);
 		formData.append('primary_type', 'note');
 		formData.append('status', 'publish');
 		formData.append('ai_assist_used', '0');
@@ -2919,7 +3000,12 @@
 		setEngagementToggleState(trigger, 'like', !wasLiked, existingMarkId);
 		try {
 			if (!wasLiked) {
-				const mark = await apiUpload('marks', buildEngagementFormData('Liked', item, 'like_of'));
+				const caption = sprintf(
+					/* translators: %s: title of the liked post */
+					__('Liked "%s"', 'daymark'),
+					item.title || item.permalink
+				);
+				const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'like_of'));
 				setEngagementToggleState(trigger, 'like', true, mark.id);
 			} else {
 				await apiDelete('marks/' + existingMarkId);
@@ -2943,7 +3029,12 @@
 		setEngagementToggleState(trigger, 'repost', !wasReposted, existingMarkId);
 		try {
 			if (!wasReposted) {
-				const mark = await apiUpload('marks', buildEngagementFormData('Reposted', item, 'repost_of'));
+				const caption = sprintf(
+					/* translators: %s: title of the reposted post */
+					__('Reposted "%s"', 'daymark'),
+					item.title || item.permalink
+				);
+				const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'repost_of'));
 				setEngagementToggleState(trigger, 'repost', true, mark.id);
 			} else {
 				await apiDelete('marks/' + existingMarkId);
@@ -2991,13 +3082,16 @@
 		if (panel.dataset.loaded) {
 			return;
 		}
-		panel.innerHTML = '<p class="daymark-status">Loading…</p>';
+		panel.innerHTML = '<p class="daymark-status">' + esc(__('Loading…', 'daymark')) + '</p>';
 		try {
 			const mark = await apiGet('marks/' + id);
 			panel.innerHTML = routingPanelMarkup(mark);
 			panel.dataset.loaded = '1';
 		} catch (err) {
-			panel.innerHTML = '<p class="daymark-error" role="alert">Could not load routing detail.</p>';
+			panel.innerHTML =
+				'<p class="daymark-error" role="alert">' +
+				esc(__('Could not load routing detail.', 'daymark')) +
+				'</p>';
 		}
 	}
 
@@ -3013,8 +3107,10 @@
 		const externalPosts =
 			mark.external_posts && 'object' === typeof mark.external_posts ? mark.external_posts : {};
 		const siteLink = mark.permalink
-			? `<a class="daymark-btn daymark-btn--text" href="${esc(mark.permalink)}" target="_blank" rel="noopener">Your site</a>`
-			: '<span>Your site</span>';
+			? `<a class="daymark-btn daymark-btn--text" href="${esc(mark.permalink)}" target="_blank" rel="noopener">${esc(
+					__('Your site', 'daymark')
+			  )}</a>`
+			: `<span>${esc(__('Your site', 'daymark'))}</span>`;
 		const rows = targets
 			.map((connectorId) => {
 				const entry = externalPosts[connectorId] || {};
@@ -3032,10 +3128,10 @@
 				</li>`;
 			})
 			.join('');
-		return `<ul class="daymark-syndication" aria-label="Where this Mark was routed">
+		return `<ul class="daymark-syndication" aria-label="${esc(__('Where this Mark was routed', 'daymark'))}">
 			<li class="daymark-syndication__row">
 				${siteLink}
-				<span class="daymark-chip daymark-chip--success">Published</span>
+				<span class="daymark-chip daymark-chip--success">${esc(__('Published', 'daymark'))}</span>
 			</li>${rows}
 		</ul>`;
 	}
@@ -3043,15 +3139,15 @@
 	function routingStatusLabel(status) {
 		switch (status) {
 			case 'published':
-				return 'Published';
+				return __('Published', 'daymark');
 			case 'mocked':
-				return 'Mocked';
+				return __('Mocked', 'daymark');
 			case 'unsupported':
-				return 'Not supported';
+				return __('Not supported', 'daymark');
 			case 'failed':
-				return 'Failed';
+				return __('Failed', 'daymark');
 			default:
-				return status ? status : 'Unknown';
+				return status ? status : __('Unknown', 'daymark');
 		}
 	}
 
@@ -3112,7 +3208,7 @@
 	// they happen to hover the tiny icon afterward to catch the title
 	// tooltip.
 	function flashShareStatus(trigger, message) {
-		const original = trigger.getAttribute('aria-label') || 'Share';
+		const original = trigger.getAttribute('aria-label') || __('Share', 'daymark');
 		trigger.setAttribute('aria-label', message);
 		trigger.setAttribute('title', message);
 		trigger.classList.add('daymark-stat--share-copied');
@@ -3152,9 +3248,9 @@
 	async function copyLinkToClipboard(url, trigger) {
 		try {
 			await navigator.clipboard.writeText(url);
-			flashShareStatus(trigger, 'Link copied');
+			flashShareStatus(trigger, __('Link copied', 'daymark'));
 		} catch (err) {
-			flashShareStatus(trigger, "Couldn't copy link");
+			flashShareStatus(trigger, __("Couldn't copy link", 'daymark'));
 		}
 	}
 
@@ -3171,7 +3267,7 @@
 		if (cancelBtn) {
 			cancelBtn.disabled = true;
 		}
-		confirmBtn.textContent = 'Deleting…';
+		confirmBtn.textContent = __('Deleting…', 'daymark');
 		if (status) {
 			status.textContent = '';
 		}
@@ -3185,9 +3281,13 @@
 			if (cancelBtn) {
 				cancelBtn.disabled = false;
 			}
-			confirmBtn.textContent = 'Delete';
+			confirmBtn.textContent = __('Delete', 'daymark');
 			if (status) {
-				status.textContent = 'Could not delete. ' + err.message;
+				status.textContent = sprintf(
+					/* translators: %s: error message */
+					__('Could not delete. %s', 'daymark'),
+					err.message
+				);
 			}
 		}
 	}
@@ -3205,7 +3305,10 @@
 			}
 			screen._hasDrafts = false;
 		} else if (list.hasAttribute('data-search-results')) {
-			list.innerHTML = '<p class="daymark-empty">Nothing matches. Try a different search or filter.</p>';
+			list.innerHTML =
+				'<p class="daymark-empty">' +
+				esc(__('Nothing matches. Try a different search or filter.', 'daymark')) +
+				'</p>';
 		} else if (list.hasAttribute('data-recent-list')) {
 			screen.teardownObserver();
 			const sentinel = root.querySelector('[data-recent-sentinel]');
@@ -3216,10 +3319,14 @@
 			if (more) {
 				more.hidden = true;
 			}
-			list.innerHTML =
-				`<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or <a href="${esc(
-					config.adminSubscriptionsUrl || '#'
-				)}">subscribe to a site</a> to fill your timeline.</p>`;
+			list.innerHTML = `<p class="daymark-empty">${sprintf(
+				/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+				__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
+				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
+				`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
+					__('subscribe to a site', 'daymark')
+				)}</a>`
+			)}</p>`;
 		}
 	}
 
@@ -3233,7 +3340,7 @@
 	// instead of a link.
 	function renderPendingItem(record) {
 		const payload = record.payload || {};
-		const title = (payload.caption || '').trim() || 'Untitled Mark';
+		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
 		const firstFile = Array.isArray(payload.newFiles) ? payload.newFiles[0] : null;
 		let thumb = '';
 		if (firstFile && firstFile.kind === 'image') {
@@ -3248,10 +3355,16 @@
 		const status = record.status || 'queued';
 		const meta =
 			status === 'error'
-				? `<span class="daymark-chip daymark-chip--danger">Couldn't publish</span> Tap to review and retry`
+				? `<span class="daymark-chip daymark-chip--danger">${esc(
+						__("Couldn't publish", 'daymark')
+				  )}</span> ${esc(__('Tap to review and retry', 'daymark'))}`
 				: status === 'uploading'
-				? `<span class="daymark-chip daymark-chip--muted">Uploading</span> Publishing now&hellip;`
-				: `<span class="daymark-chip daymark-chip--draft">Offline</span> Will sync when you're back online`;
+				? `<span class="daymark-chip daymark-chip--muted">${esc(
+						__('Uploading', 'daymark')
+				  )}</span> ${esc(__('Publishing now…', 'daymark'))}`
+				: `<span class="daymark-chip daymark-chip--draft">${esc(__('Offline', 'daymark'))}</span> ${esc(
+						__("Will sync when you're back online", 'daymark')
+				  )}`;
 		const inner = `
 					${thumb}
 					<span class="daymark-recent__body">
@@ -3326,16 +3439,18 @@
 	// every one of them, matching the bottom nav's own always-present rows.
 
 	function daymarkIconLink() {
-		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="Daymark — go to Timeline"><img class="daymark-iconbtn__icon" src="${esc(
+		return `<a class="daymark-iconbtn daymark-iconbtn--plain" href="#home" aria-label="${esc(
+			__('Daymark — go to Timeline', 'daymark')
+		)}"><img class="daymark-iconbtn__icon" src="${esc(
 			config.daymarkIconUrl || ''
 		)}" alt="" width="26" height="26" /></a>`;
 	}
 
 	function notificationsIconButton() {
 		const hasUnread = config.notifications && config.notifications.hasUnread;
-		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${
-			hasUnread ? 'Notifications — unread replies' : 'Notifications'
-		}">
+		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${esc(
+			hasUnread ? __('Notifications — unread replies', 'daymark') : __('Notifications', 'daymark')
+		)}">
 			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
 			${hasUnread ? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>' : ''}
 		</a>`;
@@ -3414,20 +3529,20 @@
 					<span class="daymark-spinner" aria-hidden="true"></span>
 				</div>
 				<section class="daymark-recent" data-pending-section hidden aria-labelledby="daymark-pending-heading">
-					<h2 id="daymark-pending-heading" class="daymark-section-heading">Pending</h2>
+					<h2 id="daymark-pending-heading" class="daymark-section-heading">${esc(__('Pending', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-pending-list></div>
 				</section>
 				<section class="daymark-recent" data-drafts-section hidden aria-labelledby="daymark-drafts-heading">
-					<h2 id="daymark-drafts-heading" class="daymark-section-heading">Drafts</h2>
+					<h2 id="daymark-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-drafts-list></div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
-					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">Timeline</h2>
+					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
 					${timelineStartFlourish()}
 					<div class="daymark-recent__list" data-recent-list aria-live="polite">
 						${skeletonRows(3)}
-						<span class="daymark-visually-hidden">Loading your timeline</span>
+						<span class="daymark-visually-hidden">${esc(__('Loading your timeline', 'daymark'))}</span>
 					</div>
 					<div class="daymark-recent__sentinel" data-recent-sentinel aria-hidden="true"></div>
 					<p class="daymark-recent__more" data-recent-more hidden></p>
@@ -3519,7 +3634,7 @@
 			}
 			const heading = root.querySelector('#daymark-recent-heading');
 			if (heading) {
-				heading.textContent = 'Timeline';
+				heading.textContent = __('Timeline', 'daymark');
 			}
 			this.teardownObserver();
 			this.recentPage = 1;
@@ -3544,10 +3659,14 @@
 				this._lastGroupKey = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
-					list.innerHTML =
-						`<p class="daymark-empty">Nothing here yet. <a href="#create">Publish a Mark</a> or <a href="${esc(
-							config.adminSubscriptionsUrl || '#'
-						)}">subscribe to a site</a> to fill your timeline.</p>`;
+					list.innerHTML = `<p class="daymark-empty">${sprintf(
+						/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+						__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
+						'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
+						`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
+							__('subscribe to a site', 'daymark')
+						)}</a>`
+					)}</p>`;
 					this.recentDone = true;
 					if (sentinel) {
 						sentinel.hidden = true;
@@ -3573,7 +3692,9 @@
 					this.setupObserver();
 				} else if (more) {
 					more.innerHTML =
-						'<button type="button" class="daymark-btn daymark-btn--text" data-recent-loadmore>Load more</button>';
+						'<button type="button" class="daymark-btn daymark-btn--text" data-recent-loadmore>' +
+						esc(__('Load more', 'daymark')) +
+						'</button>';
 					more.hidden = false;
 					const btn = more.querySelector('[data-recent-loadmore]');
 					if (btn) {
@@ -3586,7 +3707,13 @@
 				}
 				list.innerHTML = isAuthExpiredError(err)
 					? authExpiredErrorHtml()
-					: '<p class="daymark-error" role="alert">Could not load your timeline. ' + esc(err.message) + '</p>';
+					: '<p class="daymark-error" role="alert">' +
+					  sprintf(
+							/* translators: %s: error message */
+							esc(__('Could not load your timeline. %s', 'daymark')),
+							esc(err.message)
+					  ) +
+					  '</p>';
 			}
 		},
 
@@ -3690,7 +3817,7 @@
 				indicator.style.transform = 'translateY(40px)';
 			}
 			if (status) {
-				status.textContent = 'Checking your subscriptions…';
+				status.textContent = __('Checking your subscriptions…', 'daymark');
 			}
 
 			let subscriptions = [];
@@ -3728,19 +3855,42 @@
 			}
 			if (status) {
 				if (!subscriptions.length) {
-					status.textContent = 'No subscriptions to refresh.';
+					status.textContent = __('No subscriptions to refresh.', 'daymark');
 				} else {
 					const parts = [];
 					if (refreshed) {
-						parts.push(refreshed + (1 === refreshed ? ' feed' : ' feeds') + ' updated');
+						parts.push(
+							sprintf(
+								/* translators: %d: number of feeds refreshed */
+								_n('%d feed updated', '%d feeds updated', refreshed, 'daymark'),
+								refreshed
+							)
+						);
 					}
 					if (skipped) {
-						parts.push(skipped + ' checked too recently, skipped');
+						parts.push(
+							sprintf(
+								/* translators: %d: number of feeds skipped */
+								_n(
+									'%d checked too recently, skipped',
+									'%d checked too recently, skipped',
+									skipped,
+									'daymark'
+								),
+								skipped
+							)
+						);
 					}
 					if (failed) {
-						parts.push(failed + (1 === failed ? ' feed' : ' feeds') + ' failed to refresh');
+						parts.push(
+							sprintf(
+								/* translators: %d: number of feeds that failed to refresh */
+								_n('%d feed failed to refresh', '%d feeds failed to refresh', failed, 'daymark'),
+								failed
+							)
+						);
 					}
-					status.textContent = parts.length ? parts.join('; ') + '.' : 'Up to date.';
+					status.textContent = parts.length ? parts.join('; ') + '.' : __('Up to date.', 'daymark');
 				}
 			}
 		},
@@ -3827,15 +3977,23 @@
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Search</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Search', 'daymark'))}</h1>
 				${notificationsIconButton()}
 			</header>
 			<div class="daymark-searchbar daymark-searchbar--screen">
-				<label class="daymark-visually-hidden" for="daymark-search-input">Search Daymark</label>
-				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="Search your Marks and the sites you follow" autocomplete="off" />
+				<label class="daymark-visually-hidden" for="daymark-search-input">${esc(
+					__('Search Daymark', 'daymark')
+				)}</label>
+				<input type="search" id="daymark-search-input" class="daymark-input" data-search-input placeholder="${esc(
+					__('Search your Marks and the sites you follow', 'daymark')
+				)}" autocomplete="off" />
 				<div class="daymark-searchfilters" data-search-filters>
-					<div class="daymark-filterchips" role="group" aria-label="Filter by type" data-filter-chips>${filterChips}</div>
-					<label class="daymark-visually-hidden" for="daymark-source-filter">Filter by source</label>
+					<div class="daymark-filterchips" role="group" aria-label="${esc(
+						__('Filter by type', 'daymark')
+					)}" data-filter-chips>${filterChips}</div>
+					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
+						__('Filter by source', 'daymark')
+					)}</label>
 					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
 						this._subscriptions
 					)}</select>
@@ -3843,14 +4001,16 @@
 			</div>
 			<section class="daymark-screen">
 				<p class="daymark-searchbookmarks-banner" data-search-bookmarks-banner hidden>
-					Showing your bookmarks.
-					<button type="button" class="daymark-btn daymark-btn--text" data-search-clear-bookmarks>Show everything</button>
+					${esc(__('Showing your bookmarks.', 'daymark'))}
+					<button type="button" class="daymark-btn daymark-btn--text" data-search-clear-bookmarks>${esc(
+						__('Show everything', 'daymark')
+					)}</button>
 				</p>
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
-					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">Results</h2>
+					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">${esc(__('Results', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-search-results aria-live="polite">
 						${skeletonRows(3)}
-						<span class="daymark-visually-hidden">Loading</span>
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 			</section>
@@ -3974,7 +4134,7 @@
 			}
 			const seq = ++this._searchSeq;
 			list.innerHTML =
-				skeletonRows(2) + '<span class="daymark-visually-hidden">Searching</span>';
+				skeletonRows(2) + '<span class="daymark-visually-hidden">' + esc(__('Searching', 'daymark')) + '</span>';
 			// Targets the merged Timeline endpoint (not /marks) so a search
 			// covers subscription posts too by default; the Source filter
 			// narrows that down to just Marks (`mine=1`) or just one
@@ -4011,7 +4171,9 @@
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
-						'<p class="daymark-empty">Nothing matches. Try a different search or filter.</p>';
+						'<p class="daymark-empty">' +
+						esc(__('Nothing matches. Try a different search or filter.', 'daymark')) +
+						'</p>';
 					return;
 				}
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
@@ -4029,7 +4191,13 @@
 					return;
 				}
 				list.innerHTML =
-					'<p class="daymark-error" role="alert">Search failed. ' + esc(err.message) + '</p>';
+					'<p class="daymark-error" role="alert">' +
+					sprintf(
+						/* translators: %s: error message */
+						esc(__('Search failed. %s', 'daymark')),
+						esc(err.message)
+					) +
+					'</p>';
 			}
 		},
 
@@ -4063,7 +4231,9 @@
 			items.forEach((item) => rememberItem(this, item));
 			if (!items.length) {
 				list.innerHTML =
-					'<p class="daymark-empty">No bookmarks cached for offline viewing yet.</p>';
+					'<p class="daymark-empty">' +
+					esc(__('No bookmarks cached for offline viewing yet.', 'daymark')) +
+					'</p>';
 				return;
 			}
 			list.innerHTML = items.map((item) => renderFeedItem(item)).join('');
@@ -4092,27 +4262,33 @@
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Explore</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Explore', 'daymark'))}</h1>
 				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
 				<section class="daymark-recent" aria-labelledby="daymark-explore-types-heading">
-					<h2 id="daymark-explore-types-heading" class="daymark-section-heading">Browse by type</h2>
+					<h2 id="daymark-explore-types-heading" class="daymark-section-heading">${esc(
+						__('Browse by type', 'daymark')
+					)}</h2>
 					<div class="daymark-exploretypes">${typeButtons}</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-bookmarks-heading">
-					<h2 id="daymark-explore-bookmarks-heading" class="daymark-section-heading">Bookmarks</h2>
+					<h2 id="daymark-explore-bookmarks-heading" class="daymark-section-heading">${esc(
+						__('Bookmarks', 'daymark')
+					)}</h2>
 					<div class="daymark-exploretypes">
 						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
 							BOOKMARK_GLYPH
-						)}<span>Saved for offline</span></button>
+						)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
-					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">Following</h2>
+					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
+						__('Following', 'daymark')
+					)}</h2>
 					<div class="daymark-recent__list" data-explore-following>
 						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">Loading</span>
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 			</section>
@@ -4161,9 +4337,13 @@
 				return;
 			}
 			if (!subscriptions.length) {
-				list.innerHTML = `<p class="daymark-empty">You're not following any sites yet. <a href="${esc(
-					config.adminSubscriptionsUrl || '#'
-				)}">Subscribe to one</a> to see its posts here.</p>`;
+				list.innerHTML = `<p class="daymark-empty">${sprintf(
+					/* translators: %s: "Subscribe to one" link */
+					__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
+					`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
+						__('Subscribe to one', 'daymark')
+					)}</a>`
+				)}</p>`;
 				return;
 			}
 			list.innerHTML = subscriptions
@@ -4205,7 +4385,7 @@
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Me</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Me', 'daymark'))}</h1>
 				${notificationsIconButton()}
 			</header>
 			<section class="daymark-screen">
@@ -4213,29 +4393,35 @@
 					${avatar}
 					<span class="daymark-mename">${esc(user.displayName || '')}</span>
 				</div>
-				<nav class="daymark-melinks" aria-label="Your Daymark">
-					<button type="button" class="daymark-melink" data-me-mymarks>Your Marks</button>
+				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
+					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('Your Marks', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
-							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">Subscriptions</a>`
+							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
+									__('Subscriptions', 'daymark')
+							  )}</a>`
 							: ''
 					}
 					${
 						user.profileEditUrl
-							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}">Edit profile</a>`
+							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}">${esc(
+									__('Edit profile', 'daymark')
+							  )}</a>`
 							: ''
 					}
 					${
 						user.logoutUrl
-							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}">Log out</a>`
+							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}">${esc(
+									__('Log out', 'daymark')
+							  )}</a>`
 							: ''
 					}
 				</nav>
 				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
-					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">Drafts</h2>
+					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-me-drafts>
 						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">Loading</span>
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 			</section>
@@ -4267,7 +4453,11 @@
 					return;
 				}
 				if (!draftItems.length) {
-					list.innerHTML = '<p class="daymark-empty">No drafts. <a href="#create">Start one</a>.</p>';
+					list.innerHTML = `<p class="daymark-empty">${sprintf(
+						/* translators: %s: "Start one" link */
+						__('No drafts. %s.', 'daymark'),
+						'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
+					)}</p>`;
 					return;
 				}
 				// View-only here (tap to resume editing) — full Edit/Delete
@@ -4286,7 +4476,13 @@
 			} catch (err) {
 				if (list.isConnected) {
 					list.innerHTML =
-						'<p class="daymark-error" role="alert">Could not load drafts. ' + esc(err.message) + '</p>';
+						'<p class="daymark-error" role="alert">' +
+						sprintf(
+							/* translators: %s: error message */
+							esc(__('Could not load drafts. %s', 'daymark')),
+							esc(err.message)
+						) +
+						'</p>';
 				}
 			}
 		},
@@ -4299,22 +4495,30 @@
 			const editing = state.editing;
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#home">&larr; Back</a>
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${
-					editing ? 'Edit Draft' : 'New Mark'
-				}</h1>
+				<a class="daymark-backlink" href="#home">&larr; ${esc(__('Back', 'daymark'))}</a>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
+					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
+				)}</h1>
 			</header>
 			<section class="daymark-screen">
 				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
 				${
 					editing
-						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">Draft</span> Changes save to this Mark — new media is added alongside what’s attached.</p>'
+						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">' +
+						  esc(__('Draft', 'daymark')) +
+						  '</span> ' +
+						  esc(__('Changes save to this Mark — new media is added alongside what’s attached.', 'daymark')) +
+						  '</p>'
 						: ''
 				}
 				${
 					state.replyTo
-						? `<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">Reply</span> Replying to ${esc(
-								state.replyTo.title || state.replyTo.url
+						? `<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">${esc(
+								__('Reply', 'daymark')
+						  )}</span> ${sprintf(
+								/* translators: %s: title or URL of the post being replied to */
+								esc(__('Replying to %s', 'daymark')),
+								esc(state.replyTo.title || state.replyTo.url)
 						  )}</p>`
 						: ''
 				}
@@ -4343,7 +4547,9 @@
 						<span>${esc(CAPTURE_LABEL_BY_TYPE[state.pendingType])}</span>
 						<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[state.pendingType])}</span>
 					</button>
-					<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>Choose from library instead</button>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>${esc(
+						__('Choose from library instead', 'daymark')
+					)}</button>
 				</div>`
 						: // Untyped entry (e.g. a Drafts/Explore empty-state link) —
 						  // the intended capture mode isn't known yet, so this stays
@@ -4352,32 +4558,40 @@
 					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*,audio/*" multiple />
 					<label for="daymark-file-input" class="daymark-picker__zone">
 						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-						<span>Tap to choose media</span>
-						<span class="daymark-picker__hint">Photos, videos, or audio from your device</span>
+						<span>${esc(__('Tap to choose media', 'daymark'))}</span>
+						<span class="daymark-picker__hint">${esc(
+							__('Photos, videos, or audio from your device', 'daymark')
+						)}</span>
 					</label>
 				</div>`
 				}
 				<div class="daymark-preview" data-preview></div>
-				<p class="daymark-typebadge">Mark type: <span class="daymark-chip" data-type-badge>${esc(
-					TYPE_LABELS[effectiveType()]
-				)}</span></p>
+				<p class="daymark-typebadge">${sprintf(
+					/* translators: %s: Mark type label (e.g. "Image") */
+					esc(__('Mark type: %s', 'daymark')),
+					`<span class="daymark-chip" data-type-badge>${esc(TYPE_LABELS[effectiveType()])}</span>`
+				)}</p>
 				<div class="daymark-field">
-					<label class="daymark-field__label" for="daymark-caption">Caption</label>
-					<textarea id="daymark-caption" class="daymark-textarea" rows="4" placeholder="What&#39;s happening?">${esc(
-						state.caption
-					)}</textarea>
+					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
+					<textarea id="daymark-caption" class="daymark-textarea" rows="4" placeholder="${esc(
+						__("What's happening?", 'daymark')
+					)}">${esc(state.caption)}</textarea>
 				</div>
 				<div data-title-slot></div>
 				<div data-transcript-slot></div>
 				${
 					config.ai && config.ai.available
-						? '<button type="button" class="daymark-btn daymark-btn--secondary" data-action="ai-assist">AI Assist</button>'
+						? '<button type="button" class="daymark-btn daymark-btn--secondary" data-action="ai-assist">' +
+						  esc(__('AI Assist', 'daymark')) +
+						  '</button>'
 						: '' /* No AI provider configured — no AI options offered. */
 				}
 			</section>
 			<footer class="daymark-actionbar">
 				<p class="daymark-status" data-create-status aria-live="polite"></p>
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="next">Next: Publish &rarr;</button>
+				<button type="button" class="daymark-btn daymark-btn--primary" data-action="next">${esc(
+					__('Next: Publish →', 'daymark')
+				)}</button>
 			</footer>`;
 		},
 
@@ -4392,26 +4606,34 @@
 			if (!editing || !editing.media.length) {
 				return '';
 			}
-			return `<ul class="daymark-editmedia" aria-label="Media already attached to this draft">${editing.media
+			return `<ul class="daymark-editmedia" aria-label="${esc(
+				__('Media already attached to this draft', 'daymark')
+			)}">${editing.media
 				.map(
 					(m) => `
 					<li class="daymark-editmedia__item">
 						${
 							m.thumbnail
-								? `<img class="daymark-editmedia__thumb" src="${esc(m.thumbnail)}" alt="Attached ${esc(
-										m.filename || m.kind
+								? `<img class="daymark-editmedia__thumb" src="${esc(m.thumbnail)}" alt="${esc(
+										sprintf(
+											/* translators: %s: filename or media kind */
+											__('Attached %s', 'daymark'),
+											m.filename || m.kind
+										)
 								  )}" />`
 								: `<span class="daymark-editmedia__glyph">${esc(m.kind)}</span>`
 						}
 						${
 							m.kind === 'image'
 								? `<span class="daymark-alt daymark-alt--edit">
-										<label class="daymark-alt__label" for="daymark-existing-alt-${esc(m.id)}">Alt text</label>
+										<label class="daymark-alt__label" for="daymark-existing-alt-${esc(m.id)}">${esc(
+										__('Alt text', 'daymark')
+								  )}</label>
 										<input type="text" class="daymark-input daymark-alt__input" id="daymark-existing-alt-${esc(
 											m.id
 										)}" data-existing-alt="${esc(m.id)}" value="${esc(
 										m.alt || ''
-								  )}" placeholder="Describe this image" />
+								  )}" placeholder="${esc(__('Describe this image', 'daymark'))}" />
 									</span>`
 								: `<span class="daymark-editmedia__name">${esc(m.filename || m.kind)}</span>`
 						}
@@ -4442,13 +4664,19 @@
 			const idAttr = 'existing' === scope ? 'data-move-existing-id' : 'data-move-file-id';
 			const disableUp = pos <= 0;
 			const disableDown = pos >= imageIds.length - 1;
-			return `<div class="daymark-reorder" role="group" aria-label="Reorder this image in the gallery">
+			return `<div class="daymark-reorder" role="group" aria-label="${esc(
+				__('Reorder this image in the gallery', 'daymark')
+			)}">
 				<button type="button" class="daymark-reorder__btn" ${action}="up" ${idAttr}="${esc(
 				id
-			)}" aria-label="Move image up" title="Move up"${disableUp ? ' disabled' : ''}><span aria-hidden="true">&uarr;</span></button>
+			)}" aria-label="${esc(__('Move image up', 'daymark'))}" title="${esc(
+				__('Move up', 'daymark')
+			)}"${disableUp ? ' disabled' : ''}><span aria-hidden="true">&uarr;</span></button>
 				<button type="button" class="daymark-reorder__btn" ${action}="down" ${idAttr}="${esc(
 				id
-			)}" aria-label="Move image down" title="Move down"${disableDown ? ' disabled' : ''}><span aria-hidden="true">&darr;</span></button>
+			)}" aria-label="${esc(__('Move image down', 'daymark'))}" title="${esc(
+				__('Move down', 'daymark')
+			)}"${disableDown ? ' disabled' : ''}><span aria-hidden="true">&darr;</span></button>
 			</div>`;
 		},
 
@@ -4599,7 +4827,7 @@
 				state.caption = caption.value;
 				const status = root.querySelector('[data-create-status]');
 				if (!state.files.length && !state.caption.trim()) {
-					status.textContent = 'Add media or write a caption to continue.';
+					status.textContent = __('Add media or write a caption to continue.', 'daymark');
 					return;
 				}
 				status.textContent = '';
@@ -4660,8 +4888,12 @@
 			const tiles = shown
 				.map((entry, index) => {
 					const media = entry.url
-						? `<img class="daymark-preview__img" src="${esc(entry.url)}" alt="Preview of ${esc(
-								entry.file.name
+						? `<img class="daymark-preview__img" src="${esc(entry.url)}" alt="${esc(
+								sprintf(
+									/* translators: %s: filename */
+									__('Preview of %s', 'daymark'),
+									entry.file.name
+								)
 						  )}" />`
 						: `<span class="daymark-preview__glyph">${esc(entry.kind)}</span>`;
 					const more =
@@ -4680,7 +4912,13 @@
 						<span class="daymark-filelist__name">${esc(entry.file.name)}</span>
 						<button type="button" class="daymark-filelist__clear" data-clear-file="${esc(
 							entry.id
-						)}" aria-label="Clear ${esc(entry.file.name)}">Clear</button>
+						)}" aria-label="${esc(
+						sprintf(
+							/* translators: %s: filename */
+							__('Clear %s', 'daymark'),
+							entry.file.name
+						)
+					)}">${esc(__('Clear', 'daymark'))}</button>
 					</div>
 					${entry.kind === 'image' ? this.altFieldMarkup(entry) : ''}
 					${entry.kind === 'image' ? this.reorderControlMarkup('file', state.files, entry.id) : ''}
@@ -4688,9 +4926,18 @@
 				)
 				.join('');
 
-			const extraLabel = extra > 0 ? `, plus ${extra} more` : '';
+			const extraLabel =
+				extra > 0
+					? sprintf(
+							/* translators: %d: number of additional media items */
+							__(', plus %d more', 'daymark'),
+							extra
+					  )
+					: '';
 			preview.innerHTML = `
-				<ul class="daymark-preview__grid" aria-label="Selected media previews${esc(extraLabel)}">${tiles}</ul>
+				<ul class="daymark-preview__grid" aria-label="${esc(
+					__('Selected media previews', 'daymark')
+				)}${esc(extraLabel)}">${tiles}</ul>
 				<ul class="daymark-filelist">${fileRows}</ul>`;
 
 			preview.querySelectorAll('[data-clear-file]').forEach((button) => {
@@ -4749,24 +4996,28 @@
 		altFieldMarkup(entry) {
 			const hint =
 				entry.altStatus === 'loading'
-					? '<span class="daymark-alt__hint">Generating alt text…</span>'
+					? '<span class="daymark-alt__hint">' + esc(__('Generating alt text…', 'daymark')) + '</span>'
 					: entry.altStatus === 'done'
-					? '<span class="daymark-alt__hint">AI-suggested — edit as needed</span>'
+					? '<span class="daymark-alt__hint">' +
+					  esc(__('AI-suggested — edit as needed', 'daymark')) +
+					  '</span>'
 					: '';
 			const canImprove = config.ai && config.ai.available && entry.altStatus !== 'loading';
 			const improveButton = canImprove
 				? `<button type="button" class="daymark-btn daymark-btn--text daymark-alt__improve" data-alt-improve="${esc(
 						entry.id
-				  )}">${entry.alt ? 'Improve with AI' : 'Suggest with AI'}</button>`
+				  )}">${esc(entry.alt ? __('Improve with AI', 'daymark') : __('Suggest with AI', 'daymark'))}</button>`
 				: '';
 			return `
 				<div class="daymark-alt">
-					<label class="daymark-alt__label" for="daymark-alt-${esc(entry.id)}">Alt text</label>
+					<label class="daymark-alt__label" for="daymark-alt-${esc(entry.id)}">${esc(
+				__('Alt text', 'daymark')
+			)}</label>
 					<input type="text" class="daymark-input daymark-alt__input" id="daymark-alt-${esc(
 						entry.id
-					)}" data-alt-for="${esc(entry.id)}" value="${esc(entry.alt)}" placeholder="Describe this image" ${
-				entry.altStatus === 'loading' ? 'aria-busy="true"' : ''
-			} />
+					)}" data-alt-for="${esc(entry.id)}" value="${esc(entry.alt)}" placeholder="${esc(
+				__('Describe this image', 'daymark')
+			)}" ${entry.altStatus === 'loading' ? 'aria-busy="true"' : ''} />
 					${hint}
 					${improveButton}
 				</div>`;
@@ -4825,12 +5076,12 @@
 			field.removeAttribute('aria-busy');
 			const hint = field.parentElement.querySelector('.daymark-alt__hint');
 			if (hint) {
-				hint.textContent = entry.altStatus === 'done' ? 'AI-suggested — edit as needed' : '';
+				hint.textContent = entry.altStatus === 'done' ? __('AI-suggested — edit as needed', 'daymark') : '';
 			}
 			const improveButton = field.parentElement.querySelector('.daymark-alt__improve');
 			if (improveButton) {
 				improveButton.disabled = false;
-				improveButton.textContent = entry.alt ? 'Improve with AI' : 'Suggest with AI';
+				improveButton.textContent = entry.alt ? __('Improve with AI', 'daymark') : __('Suggest with AI', 'daymark');
 			}
 		},
 
@@ -4844,15 +5095,19 @@
 			return `
 				<div class="daymark-field daymark-titlefield">
 					<div class="daymark-titlefield__labelrow">
-						<label class="daymark-field__label" for="daymark-title">Title (optional)</label>
-						<button type="button" class="daymark-infobtn" data-title-info aria-label="About the title field" aria-expanded="false" aria-controls="daymark-title-hint">
+						<label class="daymark-field__label" for="daymark-title">${esc(__('Title (optional)', 'daymark'))}</label>
+						<button type="button" class="daymark-infobtn" data-title-info aria-label="${esc(
+							__('About the title field', 'daymark')
+						)}" aria-expanded="false" aria-controls="daymark-title-hint">
 							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
 						</button>
 					</div>
 					<input type="text" class="daymark-input daymark-titlefield__input" id="daymark-title" data-title-input value="${esc(
 						state.title
-					)}" placeholder="Add a title"${busy} />
-					<p class="daymark-titlefield__hint" id="daymark-title-hint" data-title-hint hidden>If left blank, the title is generated from your Mark&#39;s text.</p>
+					)}" placeholder="${esc(__('Add a title', 'daymark'))}"${busy} />
+					<p class="daymark-titlefield__hint" id="daymark-title-hint" data-title-hint hidden>${esc(
+						__("If left blank, the title is generated from your Mark's text.", 'daymark')
+					)}</p>
 				</div>`;
 		},
 
@@ -4963,14 +5218,18 @@
 			const isLoading = state.transcriptStatus === 'loading';
 			const showButton = config.ai && config.ai.available && (hasCandidate || isLoading);
 			const buttonLabel = isLoading
-				? 'Generating transcript…'
+				? __('Generating transcript…', 'daymark')
 				: state.transcript
-				? 'Regenerate transcript'
-				: 'Generate transcript';
+				? __('Regenerate transcript', 'daymark')
+				: __('Generate transcript', 'daymark');
 			return `
 				<div class="daymark-field daymark-transcriptfield">
-					<label class="daymark-field__label" for="daymark-transcript">Transcript (optional)</label>
-					<textarea id="daymark-transcript" class="daymark-textarea" rows="4" placeholder="Add a transcript, or generate one with AI"${
+					<label class="daymark-field__label" for="daymark-transcript">${esc(
+						__('Transcript (optional)', 'daymark')
+					)}</label>
+					<textarea id="daymark-transcript" class="daymark-textarea" rows="4" placeholder="${esc(
+						__('Add a transcript, or generate one with AI', 'daymark')
+					)}"${
 						isLoading ? ' aria-busy="true"' : ''
 					} data-transcript-input>${esc(state.transcript)}</textarea>
 					${
@@ -5057,11 +5316,15 @@
 			}
 			this.el.hidden = false;
 			this.el.innerHTML = `
-			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="Dismiss AI Assist"></button>
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Dismiss AI Assist', 'daymark')
+			)}"></button>
 			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-sheet-title">
-				<h2 class="daymark-sheet__title" id="daymark-sheet-title" tabindex="-1">AI Assist</h2>
+				<h2 class="daymark-sheet__title" id="daymark-sheet-title" tabindex="-1">${esc(__('AI Assist', 'daymark'))}</h2>
 				<div class="daymark-sheet__body" data-sheet-body aria-live="polite">
-					<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Getting suggestions&hellip;</p>
+					<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ${esc(
+						__('Getting suggestions…', 'daymark')
+					)}</p>
 				</div>
 			</div>`;
 
@@ -5100,14 +5363,24 @@
 					return;
 				}
 				body.innerHTML = `
-					<p class="daymark-error" role="alert">Could not get suggestions. ${esc(err.message)}</p>
+					<p class="daymark-error" role="alert">${sprintf(
+						/* translators: %s: error message */
+						esc(__('Could not get suggestions. %s', 'daymark')),
+						esc(err.message)
+					)}</p>
 					<div class="daymark-sheet__actions">
-						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-retry>Retry</button>
-						<button type="button" class="daymark-btn daymark-btn--text" data-sheet-skip>Skip</button>
+						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-retry>${esc(
+							__('Retry', 'daymark')
+						)}</button>
+						<button type="button" class="daymark-btn daymark-btn--text" data-sheet-skip>${esc(
+							__('Skip', 'daymark')
+						)}</button>
 					</div>`;
 				body.querySelector('[data-sheet-retry]').addEventListener('click', () => {
 					body.innerHTML =
-						'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Getting suggestions&hellip;</p>';
+						'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
+						esc(__('Getting suggestions…', 'daymark')) +
+						'</p>';
 					this.fetchSuggestions();
 				});
 				body.querySelector('[data-sheet-skip]').addEventListener('click', () => this.hide());
@@ -5116,31 +5389,52 @@
 
 		renderForm(suggestions) {
 			const notice = suggestions.is_mocked
-				? '<p class="daymark-notice">Using demo suggestions — connect an AI provider in WordPress settings for real suggestions.</p>'
+				? '<p class="daymark-notice">' +
+				  esc(
+						__(
+							'Using demo suggestions — connect an AI provider in WordPress settings for real suggestions.',
+							'daymark'
+						)
+				  ) +
+				  '</p>'
 				: suggestions.provider_label
-				? `<p class="daymark-notice">Suggestions by ${esc(suggestions.provider_label)}.</p>`
+				? `<p class="daymark-notice">${sprintf(
+						/* translators: %s: AI provider name */
+						esc(__('Suggestions by %s.', 'daymark')),
+						esc(suggestions.provider_label)
+				  )}</p>`
 				: '';
 			return `
 			${notice}
 			<div class="daymark-field">
-				<label class="daymark-field__label" for="daymark-ai-caption">Suggested caption</label>
+				<label class="daymark-field__label" for="daymark-ai-caption">${esc(
+					__('Suggested caption', 'daymark')
+				)}</label>
 				<textarea id="daymark-ai-caption" class="daymark-textarea" rows="3">${esc(
 					suggestions.caption || ''
 				)}</textarea>
 			</div>
 			<fieldset class="daymark-tags">
-				<legend class="daymark-tags__legend">Suggested tags</legend>
+				<legend class="daymark-tags__legend">${esc(__('Suggested tags', 'daymark'))}</legend>
 				<ul class="daymark-tags__list" data-tag-list></ul>
 				<div class="daymark-tags__addrow">
-					<label class="daymark-visually-hidden" for="daymark-ai-newtag">Add a tag</label>
-					<input type="text" id="daymark-ai-newtag" class="daymark-input" placeholder="Add a tag" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-tag-suggest" />
-					<button type="button" class="daymark-btn daymark-btn--secondary" data-tag-add>+ Add</button>
+					<label class="daymark-visually-hidden" for="daymark-ai-newtag">${esc(__('Add a tag', 'daymark'))}</label>
+					<input type="text" id="daymark-ai-newtag" class="daymark-input" placeholder="${esc(
+						__('Add a tag', 'daymark')
+					)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-tag-suggest" />
+					<button type="button" class="daymark-btn daymark-btn--secondary" data-tag-add>${esc(
+						__('+ Add', 'daymark')
+					)}</button>
 				</div>
 				<ul class="daymark-tags__suggest" id="daymark-tag-suggest" data-tag-suggest hidden></ul>
 			</fieldset>
 			<div class="daymark-sheet__actions">
-				<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-accept>Accept All</button>
-				<button type="button" class="daymark-btn daymark-btn--text" data-sheet-skip>Skip</button>
+				<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-accept>${esc(
+					__('Accept All', 'daymark')
+				)}</button>
+				<button type="button" class="daymark-btn daymark-btn--text" data-sheet-skip>${esc(
+					__('Skip', 'daymark')
+				)}</button>
 			</div>`;
 		},
 
@@ -5220,13 +5514,17 @@
 							(tag, index) => `
 						<li class="daymark-tags__chip">
 							<span>${esc(tag)}</span>
-							<button type="button" class="daymark-tags__remove" data-tag-remove="${index}" aria-label="Remove tag ${esc(
-								tag
+							<button type="button" class="daymark-tags__remove" data-tag-remove="${index}" aria-label="${esc(
+								sprintf(
+									/* translators: %s: tag name */
+									__('Remove tag %s', 'daymark'),
+									tag
+								)
 							)}">&times;</button>
 						</li>`
 						)
 						.join('')
-				: '<li class="daymark-note-card__meta">No tags suggested.</li>';
+				: '<li class="daymark-note-card__meta">' + esc(__('No tags suggested.', 'daymark')) + '</li>';
 			list.querySelectorAll('[data-tag-remove]').forEach((button) => {
 				button.addEventListener('click', () => {
 					this.tags.splice(Number(button.getAttribute('data-tag-remove')), 1);
@@ -5330,7 +5628,10 @@
 
 	// Display labels for the same kind vocabulary — TYPE_LABELS covers a
 	// Mark's own 6, this adds the 2 a Mark never has.
-	const CARD_KIND_LABELS = Object.assign({}, TYPE_LABELS, { article: 'Article', link: 'Link' });
+	const CARD_KIND_LABELS = Object.assign({}, TYPE_LABELS, {
+		article: __('Article', 'daymark'),
+		link: __('Link', 'daymark'),
+	});
 
 	// Kinds that get the media-dominant layout — a full-width band above
 	// the caption, not a small thumb beside it — the ones a real
@@ -5423,7 +5724,7 @@
 	// stays out of the touch-target audit entirely.
 	function renderTypeIcon(kind) {
 		const glyph = CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note;
-		const label = CARD_KIND_LABELS[kind] || 'Post';
+		const label = CARD_KIND_LABELS[kind] || __('Post', 'daymark');
 		return `<span class="daymark-recent__typeicon" aria-hidden="true" title="${esc(
 			label
 		)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
@@ -5518,7 +5819,15 @@
 			parts.push(esc(item.author));
 		}
 		if (item.reading_time_minutes) {
-			parts.push(esc(item.reading_time_minutes + ' min read'));
+			parts.push(
+				esc(
+					sprintf(
+						/* translators: %d: reading time in minutes */
+						__('%d min read', 'daymark'),
+						item.reading_time_minutes
+					)
+				)
+			);
 		}
 		return parts.join(' &middot; ');
 	}
@@ -5544,13 +5853,15 @@
 	// in one place is what "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item) {
 		const kind = resolveCardKind(item);
-		const title = item.title || 'Untitled Mark';
+		const title = item.title || __('Untitled Mark', 'daymark');
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so say so. (The Timeline
 		// endpoint only ever returns published Marks, so this never fires
 		// there; Home's Recent/Drafts lists are what actually rely on it.)
 		const isDraft = item.status && 'publish' !== item.status;
-		const chip = isDraft ? '<span class="daymark-chip daymark-chip--draft">Draft</span>' : '';
+		const chip = isDraft
+			? '<span class="daymark-chip daymark-chip--draft">' + esc(__('Draft', 'daymark')) + '</span>'
+			: '';
 		// A caption longer than generate_title()'s own 8-word title trim
 		// (class-publisher.php) carries real content beyond the title —
 		// show it as a secondary line; a short caption's title already
@@ -5582,7 +5893,7 @@
 	// action itself lives in the expanded panel, see startReplyToSubscriptionPost()).
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
-		const title = item.title || 'Untitled post';
+		const title = item.title || __('Untitled post', 'daymark');
 		const excerpt = toPlainText(item.excerpt || '');
 		// Every kind but the media-dominant ones shows its excerpt — an
 		// image/video/gallery/mixed card already carries the point in its
@@ -5600,7 +5911,11 @@
 					${renderSiteIconButton({
 						iconSrc: item.site_icon_url || '',
 						iconAlt: siteLabel,
-						ariaLabel: 'Filter Timeline to posts from ' + siteLabel,
+						ariaLabel: sprintf(
+							/* translators: %s: site name */
+							__('Filter Timeline to posts from %s', 'daymark'),
+							siteLabel
+						),
 						filterValue: String(item.subscription_id),
 						siteUrl: item.site_url || '',
 					})}
@@ -5619,7 +5934,7 @@
 								COMMENT_GLYPH,
 								!!item.replied_mark_id,
 								'replied',
-								'Replied'
+								__('Replied', 'daymark')
 							)}${renderRepostToggle(item)}${renderBookmarkToggle(
 								item,
 								'subscription_post'
@@ -5660,7 +5975,7 @@
 	}
 
 	function expandErrorHtml() {
-		return '<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>';
+		return '<p class="daymark-error" role="alert">' + esc(__("Couldn't load full content.", 'daymark')) + '</p>';
 	}
 
 	// Swaps each <img src> in cached content for a local object URL built
@@ -5745,7 +6060,7 @@
 		const reply = item.permalink
 			? `<p class="daymark-note-card__links"><button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
 					item.permalink
-			  )}" data-reply-title="${esc(item.title || '')}">Reply</button></p>`
+			  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button></p>`
 			: '';
 		return body + reply;
 	}
@@ -5800,7 +6115,9 @@
 		}
 		screen._detailCache.set(cacheKey, { state: 'loading' });
 		panel.innerHTML =
-			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> Loading&hellip;</p>';
+			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
+			esc(__('Loading…', 'daymark')) +
+			'</p>';
 		try {
 			const html = await loader();
 			// Collapsed again, or a different card opened, while the fetch
@@ -5827,12 +6144,12 @@
 	function unsupportedReason(connector) {
 		const supports = Array.isArray(connector.supports) ? connector.supports : [];
 		if (supports.includes('video') && !supports.includes('image')) {
-			return 'Needs video';
+			return __('Needs video', 'daymark');
 		}
 		if (supports.includes('image') && !supports.includes('note')) {
-			return 'Needs an image';
+			return __('Needs an image', 'daymark');
 		}
-		return 'Unavailable';
+		return __('Unavailable', 'daymark');
 	}
 
 	function connectorSupportsType(connector, type) {
@@ -5853,7 +6170,12 @@
 				? '' // populated below
 				: `<li class="daymark-dest daymark-dest--locked">
 					<span class="daymark-dest__row"><span class="daymark-dest__info">
-						<span class="daymark-recent__meta">No social networks connected yet — your site is the only destination. Connect one via a Daymark connector plugin (Settings → Connectors).</span>
+						<span class="daymark-recent__meta">${esc(
+							__(
+								'No social networks connected yet — your site is the only destination. Connect one via a Daymark connector plugin (Settings → Connectors).',
+								'daymark'
+							)
+						)}</span>
 					</span></span>
 				</li>`;
 
@@ -5863,7 +6185,7 @@
 					const checked = supported && state.targets.includes(connector.id) ? ' checked' : '';
 					const chip = supported
 						? `<span class="daymark-chip ${connector.connected ? 'daymark-chip--success' : 'daymark-chip--muted'}">${esc(
-								connector.status_label || 'Mocked · Not connected'
+								connector.status_label || __('Mocked · Not connected', 'daymark')
 							)}</span>`
 						: `<span class="daymark-chip daymark-chip--muted">${esc(unsupportedReason(connector))}</span>`;
 					return `
@@ -5876,11 +6198,20 @@
 						<span class="daymark-toggle">
 							<input type="checkbox" class="daymark-toggle__input" id="daymark-dest-${esc(
 								connector.id
-							)}" data-connector="${esc(connector.id)}"${checked}${supported ? '' : ' disabled'} aria-label="${
+							)}" data-connector="${esc(connector.id)}"${checked}${supported ? '' : ' disabled'} aria-label="${esc(
 								supported
-									? `Publish to ${esc(connector.label)}`
-									: `${esc(connector.label)} does not support ${esc(TYPE_LABELS[state.primaryType] || state.primaryType)} Marks`
-							}" />
+									? sprintf(
+											/* translators: %s: connector name */
+											__('Publish to %s', 'daymark'),
+											connector.label
+									  )
+									: sprintf(
+											/* translators: 1: connector name, 2: Mark type label */
+											__('%1$s does not support %2$s Marks', 'daymark'),
+											connector.label,
+											TYPE_LABELS[state.primaryType] || state.primaryType
+									  )
+							)}" />
 							<span class="daymark-toggle__track" aria-hidden="true"></span>
 						</span>
 					</label>
@@ -5900,14 +6231,20 @@
 					<label class="daymark-dest__row" for="daymark-helper-${esc(helper.id)}">
 						<span class="daymark-dest__info">
 							<span class="daymark-dest__name">${esc(helper.label)}</span>
-							<span class="daymark-chip daymark-chip--muted">Via plugin</span>
+							<span class="daymark-chip daymark-chip--muted">${esc(__('Via plugin', 'daymark'))}</span>
 						</span>
 						<span class="daymark-toggle">
 							<input type="checkbox" class="daymark-toggle__input" id="daymark-helper-${esc(
 								helper.id
 							)}" data-helper="${esc(helper.id)}"${
 						state.helpers.includes(helper.id) ? ' checked' : ''
-					} aria-label="Also publish through ${esc(helper.label)}" />
+					} aria-label="${esc(
+						sprintf(
+							/* translators: %s: helper plugin name */
+							__('Also publish through %s', 'daymark'),
+							helper.label
+						)
+					)}" />
 							<span class="daymark-toggle__track" aria-hidden="true"></span>
 						</span>
 					</label>
@@ -5917,27 +6254,32 @@
 
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#create">&larr; Back</a>
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Where should this go?</h1>
+				<a class="daymark-backlink" href="#create">&larr; ${esc(__('Back', 'daymark'))}</a>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
+					__('Where should this go?', 'daymark')
+				)}</h1>
 			</header>
 			<section class="daymark-screen">
-				<p class="daymark-typebadge">Publishing ${
-					/^[aeiou]/i.test(TYPE_LABELS[state.primaryType] || '') ? 'an' : 'a'
-				} <span class="daymark-chip">${esc(
-					TYPE_LABELS[state.primaryType]
-				)}</span> Mark</p>
+				<p class="daymark-typebadge">${sprintf(
+					/* translators: 1: "a"/"an" article, 2: Mark type chip markup */
+					esc(__('Publishing %1$s %2$s Mark', 'daymark')),
+					/^[aeiou]/i.test(TYPE_LABELS[state.primaryType] || '') ? esc(__('an', 'daymark')) : esc(__('a', 'daymark')),
+					`<span class="daymark-chip">${esc(TYPE_LABELS[state.primaryType])}</span>`
+				)}</p>
 				<ul class="daymark-destlist">
 					<li class="daymark-dest daymark-dest--locked">
 						<span class="daymark-dest__row">
 							<span class="daymark-dest__info">
 								<span class="daymark-dest__name">
 									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-									Your Site
+									${esc(__('Your Site', 'daymark'))}
 								</span>
-								<span class="daymark-chip daymark-chip--success">Required</span>
+								<span class="daymark-chip daymark-chip--success">${esc(__('Required', 'daymark'))}</span>
 							</span>
 							<span class="daymark-toggle">
-								<input type="checkbox" class="daymark-toggle__input" checked disabled aria-label="Your Site (always included)" />
+								<input type="checkbox" class="daymark-toggle__input" checked disabled aria-label="${esc(
+									__('Your Site (always included)', 'daymark')
+								)}" />
 								<span class="daymark-toggle__track" aria-hidden="true"></span>
 							</span>
 						</span>
@@ -5951,14 +6293,27 @@
 						return '';
 					}
 					const names = helpers.map((h) => esc(h.label)).join(', ');
-					return `<p class="daymark-helpers-note">Your site’s publishing tools will also share this Mark, per their own settings: <strong>${names}</strong>.</p>`;
+					return `<p class="daymark-helpers-note">${sprintf(
+						/* translators: %s: list of publishing helper plugin names */
+						esc(
+							__(
+								'Your site’s publishing tools will also share this Mark, per their own settings: %s.',
+								'daymark'
+							)
+						),
+						`<strong>${names}</strong>`
+					)}</p>`;
 				})()}
 				${this.renderCategories()}
 			</section>
 			<footer class="daymark-actionbar">
 				<p class="daymark-status" data-publish-status aria-live="polite"></p>
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish">Publish Now</button>
-				<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">Save as Draft</button>
+				<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish">${esc(
+					__('Publish Now', 'daymark')
+				)}</button>
+				<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">${esc(
+					__('Save as Draft', 'daymark')
+				)}</button>
 			</footer>`;
 		},
 
@@ -5984,17 +6339,27 @@
 								cat.id
 							)}" data-category="${esc(cat.id)}"${
 						state.categories.includes(cat.id) ? ' checked' : ''
-					} aria-label="File under ${esc(cat.name)}" />
+					} aria-label="${esc(
+						sprintf(
+							/* translators: %s: category name */
+							__('File under %s', 'daymark'),
+							cat.name
+						)
+					)}" />
 							<span class="daymark-toggle__track" aria-hidden="true"></span>
 						</span>
 					</label>
 				</li>`
 				)
 				.join('');
-			const typeLabel = esc(TYPE_LABELS[state.primaryType] || 'these');
+			const typeLabel = esc(TYPE_LABELS[state.primaryType] || __('these', 'daymark'));
 			return `
-				<h2 class="daymark-section-heading daymark-publish-subhead">File under</h2>
-				<p class="daymark-publish-subnote">Saved as the default for ${typeLabel} Marks — change it any time.</p>
+				<h2 class="daymark-section-heading daymark-publish-subhead">${esc(__('File under', 'daymark'))}</h2>
+				<p class="daymark-publish-subnote">${sprintf(
+					/* translators: %s: Mark type label (e.g. "Image") */
+					esc(__('Saved as the default for %s Marks — change it any time.', 'daymark')),
+					typeLabel
+				)}</p>
 				<ul class="daymark-destlist">${items}</ul>`;
 		},
 
@@ -6065,7 +6430,7 @@
 			if (otherButton) {
 				otherButton.disabled = true;
 			}
-			button.textContent = isDraft ? 'Saving…' : 'Publishing…';
+			button.textContent = isDraft ? __('Saving…', 'daymark') : __('Publishing…', 'daymark');
 			status.textContent = '';
 
 			// A real Publish/Save as Draft supersedes any pending autosave —
@@ -6118,8 +6483,12 @@
 					if (otherButton) {
 						otherButton.disabled = false;
 					}
-					button.textContent = isDraft ? 'Save as Draft' : 'Publish Now';
-					status.textContent = (isDraft ? 'Save failed: ' : 'Publish failed: ') + err2.message;
+					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
+					status.textContent = sprintf(
+						/* translators: %s: error message */
+						isDraft ? __('Save failed: %s', 'daymark') : __('Publish failed: %s', 'daymark'),
+						err2.message
+					);
 				}
 			}
 		},
@@ -6141,20 +6510,24 @@
 			const publish = state.lastPublish || { targets: [], type: 'note', wasDraft: false, response: null };
 			return `
 			<header class="daymark-topbar">
-				<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>${
-					publish.wasDraft ? 'Draft saved' : 'Published'
-				}</h1>
+				<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>${esc(
+					publish.wasDraft ? __('Draft saved', 'daymark') : __('Published', 'daymark')
+				)}</h1>
 			</header>
 			<section class="daymark-screen daymark-success">
 				<span class="daymark-success__icon">
 					<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
 				</span>
 				<div data-success-detail aria-live="polite">${this.renderDetail(publish)}</div>
-				<a class="daymark-success__link" href="#home">View Timeline &rarr;</a>
+				<a class="daymark-success__link" href="#home">${esc(__('View Timeline →', 'daymark'))}</a>
 			</section>
 			<footer class="daymark-actionbar">
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">Create Another</button>
-				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">View Timeline &rarr;</a></p>
+				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">${esc(
+					__('Create Another', 'daymark')
+				)}</button>
+				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">${esc(
+					__('View Timeline →', 'daymark')
+				)}</a></p>
 			</footer>`;
 		},
 
@@ -6163,12 +6536,14 @@
 
 			if (!response) {
 				return `
-				<h2 class="daymark-screen__heading">${publish.wasDraft ? 'Saved as draft' : 'Published'}</h2>
-				<p class="daymark-note-card__meta">${
+				<h2 class="daymark-screen__heading">${esc(
+					publish.wasDraft ? __('Saved as draft', 'daymark') : __('Published', 'daymark')
+				)}</h2>
+				<p class="daymark-note-card__meta">${esc(
 					publish.wasDraft
-						? "Saving in the background — you'll find it under Drafts on Home once it's done."
-						: "Uploading in the background — it'll appear in Recent Marks as soon as it's done."
-				}</p>`;
+						? __("Saving in the background — you'll find it under Drafts on Home once it's done.", 'daymark')
+						: __("Uploading in the background — it'll appear in Recent Marks as soon as it's done.", 'daymark')
+				)}</p>`;
 			}
 
 			const permalink = response.permalink;
@@ -6184,28 +6559,34 @@
 				.join('');
 
 			return `
-			<h2 class="daymark-screen__heading">${
-				publish.wasDraft ? 'Saved as draft' : 'Published to your site'
-			}${
+			<h2 class="daymark-screen__heading">${esc(
+				publish.wasDraft ? __('Saved as draft', 'daymark') : __('Published to your site', 'daymark')
+			)}${
 				!publish.wasDraft && permalink
-					? ` <a class="daymark-success__viewlink" href="${esc(
-							permalink
-					  )}" target="_blank" rel="noopener">(view)</a>`
+					? ` <a class="daymark-success__viewlink" href="${esc(permalink)}" target="_blank" rel="noopener">(${esc(
+							__('view', 'daymark')
+					  )})</a>`
 					: ''
 			}</h2>
 			${
 				publish.wasDraft
-					? '<p class="daymark-note-card__meta">Finish it any time from Recent Marks on Home.</p>'
+					? '<p class="daymark-note-card__meta">' +
+					  esc(__('Finish it any time from Recent Marks on Home.', 'daymark')) +
+					  '</p>'
 					: ''
 			}
 			${
 				publish.wasDraft
 					? publish.targets.length
-						? '<p class="daymark-note-card__meta">Selected destinations will publish when this Mark goes live.</p>'
+						? '<p class="daymark-note-card__meta">' +
+						  esc(__('Selected destinations will publish when this Mark goes live.', 'daymark')) +
+						  '</p>'
 						: ''
 					: rows
-					? `<ul class="daymark-syndication" aria-label="Syndication status">${rows}</ul>`
-					: '<p class="daymark-note-card__meta">No social destinations selected.</p>'
+					? `<ul class="daymark-syndication" aria-label="${esc(
+							__('Syndication status', 'daymark')
+					  )}">${rows}</ul>`
+					: '<p class="daymark-note-card__meta">' + esc(__('No social destinations selected.', 'daymark')) + '</p>'
 			}`;
 		},
 
@@ -6240,9 +6621,15 @@
 			if (entry && entry.status) {
 				const label = String(entry.status);
 				const pretty = label.charAt(0).toUpperCase() + label.slice(1);
-				return label === 'published' ? pretty : pretty + ' (demo mode)';
+				return label === 'published'
+					? pretty
+					: sprintf(
+							/* translators: %s: status label (e.g. "Queued") */
+							__('%s (demo mode)', 'daymark'),
+							pretty
+					  );
 			}
-			return 'Mocked (demo mode)';
+			return __('Mocked (demo mode)', 'daymark');
 		},
 
 		bindEvents() {
@@ -6269,19 +6656,23 @@
 			// icon (config.daymarkIconUrl — never the site's Site Icon, same
 			// as the rest of the header chrome) instead, so the accessible
 			// name moves onto the link itself.
-			const backLink = `<a class="daymark-backlink daymark-backlink--icon" href="#home" aria-label="Back to Timeline"><span aria-hidden="true">&larr;</span><img src="${esc(
+			const backLink = `<a class="daymark-backlink daymark-backlink--icon" href="#home" aria-label="${esc(
+				__('Back to Timeline', 'daymark')
+			)}"><span aria-hidden="true">&larr;</span><img src="${esc(
 				config.daymarkIconUrl || ''
 			)}" alt="" width="26" height="26" /></a>`;
 			return `
 			<header class="daymark-topbar">
 				${backLink}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>Notifications</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
+					__('Notifications', 'daymark')
+				)}</h1>
 			</header>
 			<section class="daymark-screen">
-				<h2 class="daymark-section-heading">Recent Activity</h2>
+				<h2 class="daymark-section-heading">${esc(__('Recent Activity', 'daymark'))}</h2>
 				<div class="daymark-recent__list" data-notification-list aria-live="polite">
 					${skeletonRows(3)}
-					<span class="daymark-visually-hidden">Loading notifications</span>
+					<span class="daymark-visually-hidden">${esc(__('Loading notifications', 'daymark'))}</span>
 				</div>
 			</section>`;
 		},
@@ -6302,7 +6693,7 @@
 				}
 				if (!Array.isArray(items) || !items.length) {
 					list.innerHTML =
-						'<p class="daymark-empty">No new activity for your Marks.</p>';
+						'<p class="daymark-empty">' + esc(__('No new activity for your Marks.', 'daymark')) + '</p>';
 					return;
 				}
 				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
@@ -6328,8 +6719,12 @@
 			} catch (err) {
 				if (list && list.isConnected) {
 					list.innerHTML =
-						'<p class="daymark-error" role="alert">Could not load notifications. ' +
-						esc(err.message) +
+						'<p class="daymark-error" role="alert">' +
+						sprintf(
+							/* translators: %s: error message */
+							esc(__('Could not load notifications. %s', 'daymark')),
+							esc(err.message)
+						) +
 						'</p>';
 				}
 			}
@@ -6352,54 +6747,70 @@
 				metaParts.push(esc(relativeTime(item.comment_date)));
 			}
 			if (item.post_title) {
-				metaParts.push('on &ldquo;' + esc(item.post_title) + '&rdquo;');
+				metaParts.push(
+					sprintf(
+						/* translators: %s: post title */
+						esc(__('on “%s”', 'daymark')),
+						esc(item.post_title)
+					)
+				);
 			}
 			// A reply targets a specific comment; only offer it when we have a
 			// comment id to reply to.
 			const replyId = 'daymark-reply-' + commentId;
 			return `
 			<article class="daymark-note-card"${commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''}>
-				<span class="daymark-chip">${esc(item.source_label || 'Comment')}</span>
+				<span class="daymark-chip">${esc(item.source_label || __('Comment', 'daymark'))}</span>
 				<p class="daymark-note-card__text daymark-clamp">${esc(text)}</p>
 				${
 					long
-						? '<button type="button" class="daymark-note-card__showmore" data-showmore aria-expanded="false">Show more</button>'
+						? '<button type="button" class="daymark-note-card__showmore" data-showmore aria-expanded="false">' +
+						  esc(__('Show more', 'daymark')) +
+						  '</button>'
 						: ''
 				}
 				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
 				<div class="daymark-note-card__links">
 					${
 						item.post_url
-							? `<a class="daymark-note-card__link" href="${esc(
-									item.post_url
-							  )}">&rarr; View Mark</a>`
+							? `<a class="daymark-note-card__link" href="${esc(item.post_url)}">${esc(
+									__('→ View Mark', 'daymark')
+							  )}</a>`
 							: ''
 					}
 					${
 						item.source_url
-							? `<a class="daymark-note-card__link" href="${esc(
-									item.source_url
-							  )}" target="_blank" rel="noopener">&nearr; View on network</a>`
+							? `<a class="daymark-note-card__link" href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(
+									__('↗ View on network', 'daymark')
+							  )}</a>`
 							: ''
 					}
 					${
 						commentId
-							? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> Reply</button>`
+							? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> ${esc(
+									__('Reply', 'daymark')
+							  )}</button>`
 							: ''
 					}
 				</div>
 				${
 					commentId
 						? `<div class="daymark-reply" id="${replyId}" data-reply-form hidden>
-						<label class="daymark-visually-hidden" for="${replyId}-input">Your reply</label>
-						<textarea id="${replyId}-input" class="daymark-textarea daymark-reply__input" data-reply-input rows="2" placeholder="Write a reply&hellip;">${esc(replyDrafts[commentId] || '')}</textarea>
+						<label class="daymark-visually-hidden" for="${replyId}-input">${esc(__('Your reply', 'daymark'))}</label>
+						<textarea id="${replyId}-input" class="daymark-textarea daymark-reply__input" data-reply-input rows="2" placeholder="${esc(
+								__('Write a reply…', 'daymark')
+						  )}">${esc(replyDrafts[commentId] || '')}</textarea>
 						<div class="daymark-reply__actions">
-							<button type="button" class="daymark-btn daymark-btn--primary" data-reply-send>Send reply</button>
-							<button type="button" class="daymark-btn daymark-btn--text" data-reply-cancel>Cancel</button>
+							<button type="button" class="daymark-btn daymark-btn--primary" data-reply-send>${esc(
+								__('Send reply', 'daymark')
+							)}</button>
+							<button type="button" class="daymark-btn daymark-btn--text" data-reply-cancel>${esc(
+								__('Cancel', 'daymark')
+							)}</button>
 						</div>
 						<p class="daymark-reply__status" data-reply-status aria-live="polite"></p>
 					</div>
-					<p class="daymark-note-card__replied" data-replied hidden>Reply sent.</p>`
+					<p class="daymark-note-card__replied" data-replied hidden>${esc(__('Reply sent.', 'daymark'))}</p>`
 						: ''
 				}
 			</article>`;
@@ -6415,11 +6826,19 @@
 		// is managing the subscription itself, in wp-admin.
 		renderSubscriptionIssueItem(item) {
 			const isDead = 'dead_feed' === item.type;
-			const siteLabel = item.site_title || item.site_url || 'A subscribed site';
+			const siteLabel = item.site_title || item.site_url || __('A subscribed site', 'daymark');
 			const metaParts = [];
 			if (item.last_error) {
 				metaParts.push(
-					esc(isDead ? item.last_error : 'Recent fetch issue: ' + item.last_error)
+					esc(
+						isDead
+							? item.last_error
+							: sprintf(
+									/* translators: %s: fetch failure reason */
+									__('Recent fetch issue: %s', 'daymark'),
+									item.last_error
+							  )
+					)
 				);
 			}
 			if (item.last_checked_at) {
@@ -6430,13 +6849,15 @@
 			}
 			return `
 			<article class="daymark-note-card">
-				<span class="daymark-chip daymark-chip--danger">${esc(isDead ? 'Feed error' : 'Feed issue')}</span>
+				<span class="daymark-chip daymark-chip--danger">${esc(
+					isDead ? __('Feed error', 'daymark') : __('Feed issue', 'daymark')
+				)}</span>
 				<p class="daymark-note-card__text">${esc(siteLabel)}</p>
 				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
 				<div class="daymark-note-card__links">
-					<a class="daymark-note-card__link" href="${esc(
-						config.adminSubscriptionsUrl || '#'
-					)}">&rarr; Manage subscriptions</a>
+					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
+						__('→ Manage subscriptions', 'daymark')
+					)}</a>
 				</div>
 			</article>`;
 		},
@@ -6446,7 +6867,7 @@
 				button.addEventListener('click', () => {
 					const text = button.parentElement.querySelector('.daymark-note-card__text');
 					const expanded = text.classList.toggle('is-expanded');
-					button.textContent = expanded ? 'Show less' : 'Show more';
+					button.textContent = expanded ? __('Show less', 'daymark') : __('Show more', 'daymark');
 					button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 				});
 			});
@@ -6526,7 +6947,7 @@
 			const commentId = card.getAttribute('data-comment-id');
 			const content = (input.value || '').trim();
 			if (!content) {
-				status.textContent = 'Write a reply first.';
+				status.textContent = __('Write a reply first.', 'daymark');
 				input.focus();
 				return;
 			}
@@ -6534,7 +6955,7 @@
 			if (cancelBtn) {
 				cancelBtn.disabled = true;
 			}
-			sendBtn.textContent = 'Sending…';
+			sendBtn.textContent = __('Sending…', 'daymark');
 			status.textContent = '';
 			try {
 				await apiPost('notifications/' + commentId + '/reply', { content });
@@ -6554,8 +6975,12 @@
 				if (cancelBtn) {
 					cancelBtn.disabled = false;
 				}
-				sendBtn.textContent = 'Send reply';
-				status.textContent = 'Reply failed. ' + err.message;
+				sendBtn.textContent = __('Send reply', 'daymark');
+				status.textContent = sprintf(
+					/* translators: %s: error message */
+					__('Reply failed. %s', 'daymark'),
+					err.message
+				);
 			}
 		},
 	};
