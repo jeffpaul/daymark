@@ -953,6 +953,23 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* The "where did this go" routing toggle (issue #255 — see
+   renderRoutingToggle(), app.js) — sits between "open original" and
+   Share, only ever rendered for a Mark that's actually been routed
+   somewhere. */
+.daymark-stat--routing {
+	cursor: pointer;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	justify-content: center;
+}
+
+.daymark-stat--routing:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
 /* The Share toggle (see renderShareToggle(), app.js) — the row's final
    entry, immediately after the "open original" toggle above. */
 .daymark-stat--share {
@@ -2628,7 +2645,8 @@ h2[tabindex='-1']:focus {
    than the surface gray — the gray tint belongs to .daymark-expand-content
    alone, so the frame's own chrome (a subscription post's "Reply" action
    included) reads as clearly Daymark's, not part of the quoted content. */
-.daymark-recent__item-wrap:has(.daymark-recent__expand:not([hidden])) {
+.daymark-recent__item-wrap:has(.daymark-recent__expand:not([hidden])),
+.daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])) {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius);
 	background: var(--daymark-bg);
@@ -2636,6 +2654,18 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-recent__expand {
+	flex-basis: 100%;
+	width: 100%;
+	margin-top: var(--daymark-spacing-sm);
+	padding-top: var(--daymark-spacing-sm);
+	border-top: 1px solid var(--daymark-border);
+}
+
+/* The "where did this go" popover panel (issue #255) — same framing as
+   .daymark-recent__expand above, since both are siblings of the card
+   button that grow the item-wrap's own frame open rather than overlapping
+   adjacent Timeline items. */
+.daymark-recent__routing {
 	flex-basis: 100%;
 	width: 100%;
 	margin-top: var(--daymark-spacing-sm);

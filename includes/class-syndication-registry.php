@@ -266,6 +266,12 @@ class Daymark_Syndication_Registry {
 	 * carries what conversation backflow needs later: external ID/URL,
 	 * connector label, timestamp, status, and backflow capability.
 	 *
+	 * Every *attempted* target is recorded here, success or failure
+	 * (issue #255 — per-Mark routing transparency) — a failed or
+	 * unsupported target used to be silently discarded, which meant
+	 * `_daymark_external_posts` alone couldn't distinguish "never routed
+	 * anywhere" from "routed somewhere and it failed."
+	 *
 	 * @param int                                 $post_id Mark post ID.
 	 * @param array<string, array<string, mixed>> $results Publish results keyed by connector ID.
 	 * @return void
@@ -280,19 +286,20 @@ class Daymark_Syndication_Registry {
 		$any_success = false;
 
 		foreach ( $results as $connector_id => $result ) {
-			if ( empty( $result['success'] ) ) {
-				continue;
-			}
+			$connector = $this->get_connector( $connector_id );
+			$success   = ! empty( $result['success'] );
 
-			$any_success = true;
-			$connector   = $this->get_connector( $connector_id );
+			if ( $success ) {
+				$any_success = true;
+			}
 
 			$external_posts[ $connector_id ] = array(
 				'external_id'        => isset( $result['external_id'] ) ? (string) $result['external_id'] : null,
 				'external_url'       => isset( $result['external_url'] ) ? (string) $result['external_url'] : null,
 				'label'              => $connector ? $connector->get_label() : $connector_id,
 				'published_at'       => current_time( 'mysql' ),
-				'status'             => (string) ( $result['status'] ?? 'mocked' ),
+				'status'             => (string) ( $result['status'] ?? ( $success ? 'mocked' : 'failed' ) ),
+				'message'            => isset( $result['message'] ) ? (string) $result['message'] : '',
 				// Real connectors report backflow support in their publish result.
 				'backflow_supported' => ! empty( $result['backflow_supported'] ),
 			);
@@ -309,6 +316,10 @@ class Daymark_Syndication_Registry {
 				'_daymark_syndication_status',
 				in_array( 'published', $statuses, true ) ? 'published' : 'mocked'
 			);
+		} elseif ( $results ) {
+			// At least one target was attempted and none of them succeeded —
+			// distinct from 'not_attempted' (no targets were ever selected).
+			update_post_meta( $post_id, '_daymark_syndication_status', 'failed' );
 		}
 	}
 }

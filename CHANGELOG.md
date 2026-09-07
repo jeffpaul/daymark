@@ -23,6 +23,11 @@ can't act on them.
 ### Added
 
 - Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in. ([#250](https://github.com/jeffpaul/daymark/issues/250))
+- A published Mark's Timeline card now has a routing icon showing exactly where it was sent — your own site plus every syndication target attempted, each with its own status (published/mocked, failed, or unsupported) and a link out where one exists. ([#255](https://github.com/jeffpaul/daymark/issues/255))
+
+### Fixed
+
+- A syndication target that couldn't represent a Mark's type (e.g. selecting YouTube for a note) was silently dropped instead of being recorded as failed — `_daymark_syndication_status` could never actually show `failed` in practice. Every attempted target is now recorded with its own outcome, whether it succeeded or not. ([#255](https://github.com/jeffpaul/daymark/issues/255))
 
 ### Developer
 

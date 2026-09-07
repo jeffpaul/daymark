@@ -71,6 +71,65 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		$this->assertEquals( 'mocked', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
 	}
 
+	/**
+	 * A target that can't represent this Mark type (e.g. YouTube for a
+	 * note) is rejected before ever reaching the connector's own publish()
+	 * — but issue #255's routing-transparency view needs that rejection
+	 * recorded, not silently discarded, so it's distinguishable from a
+	 * target that was simply never attempted.
+	 */
+	public function test_unsupported_target_is_recorded_not_discarded() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Unsupported target test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'youtube' ),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$this->assertArrayHasKey( 'youtube', $external );
+		$this->assertSame( 'unsupported', $external['youtube']['status'] );
+		$this->assertNull( $external['youtube']['external_id'] );
+
+		$this->assertSame( 'failed', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
+	}
+
+	/**
+	 * A successful target's own result isn't lost when another target in
+	 * the same publish fails — both get recorded, and the overall status
+	 * still reflects the success (a real/mocked publish outranks a failure).
+	 */
+	public function test_failure_alongside_a_success_records_both() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Mixed outcome test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky', 'youtube' ),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$this->assertArrayHasKey( 'bluesky', $external );
+		$this->assertArrayHasKey( 'youtube', $external );
+		$this->assertSame( 'mocked', $external['bluesky']['status'] );
+		$this->assertSame( 'unsupported', $external['youtube']['status'] );
+
+		$this->assertSame( 'mocked', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
+	}
+
 	/** Your Site is always canonical — syndication never replaces the WP post. */
 	public function test_your_site_always_canonical() {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
