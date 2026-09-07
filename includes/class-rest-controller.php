@@ -1618,16 +1618,73 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
 		$helpers = json_decode( (string) get_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, true ), true );
 
+		$target_list = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+
 		$payload                = $this->prepare_mark_summary( $post_id );
 		$payload['caption']     = $caption;
 		$payload['transcript']  = (string) get_post_meta( $post_id, '_daymark_transcript', true );
 		$payload['media']       = $media;
-		$payload['targets']     = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+		$payload['targets']     = $target_list;
 		$payload['helpers']     = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
 		$payload['categories']  = array_map( 'intval', wp_get_post_categories( $post_id ) );
 		$payload['in_reply_to'] = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
+		// Per-connector routing detail (issue #255 — "where did this go"),
+		// server-resolved so it's accurate even for a connector that's
+		// since been disconnected/deactivated, unlike the client's own
+		// connectorLabel() (config.connectors is filtered to currently-
+		// connected connectors only).
+		$payload['external_posts'] = $this->prepare_external_posts( $post_id, $target_list );
 
 		return rest_ensure_response( $payload );
+	}
+
+	/**
+	 * Per-connector routing detail for a Mark's selected targets (issue
+	 * #255 — "where did this go"). Reads the stored _daymark_external_posts
+	 * reference — label/status/url captured at syndication time, including
+	 * a failed/unsupported attempt since
+	 * Daymark_Syndication_Registry::store_results() started recording
+	 * those too — for every target that was actually attempted. A target
+	 * present in _daymark_syndication_targets but absent from
+	 * _daymark_external_posts (a Mark published before that fix shipped)
+	 * falls back to a live-resolved label with an 'unknown' outcome rather
+	 * than silently vanishing from the response.
+	 *
+	 * @param int      $post_id Mark post ID.
+	 * @param string[] $targets Sanitized target connector IDs.
+	 * @return array<string, array<string, mixed>> Keyed by connector ID.
+	 */
+	private function prepare_external_posts( int $post_id, array $targets ): array {
+		$stored   = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$stored   = is_array( $stored ) ? $stored : array();
+		$registry = Daymark_Syndication_Registry::instance();
+		$result   = array();
+
+		foreach ( $targets as $connector_id ) {
+			$entry = isset( $stored[ $connector_id ] ) && is_array( $stored[ $connector_id ] ) ? $stored[ $connector_id ] : null;
+
+			if ( null !== $entry ) {
+				$result[ $connector_id ] = array(
+					'label'              => sanitize_text_field( (string) ( $entry['label'] ?? $connector_id ) ),
+					'status'             => sanitize_key( (string) ( $entry['status'] ?? 'unknown' ) ),
+					'external_url'       => ! empty( $entry['external_url'] ) ? esc_url_raw( (string) $entry['external_url'] ) : '',
+					'message'            => sanitize_text_field( (string) ( $entry['message'] ?? '' ) ),
+					'backflow_supported' => ! empty( $entry['backflow_supported'] ),
+				);
+				continue;
+			}
+
+			$connector               = $registry->get_connector( $connector_id );
+			$result[ $connector_id ] = array(
+				'label'              => $connector ? $connector->get_label() : $connector_id,
+				'status'             => 'unknown',
+				'external_url'       => '',
+				'message'            => '',
+				'backflow_supported' => false,
+			);
+		}
+
+		return $result;
 	}
 
 	/**

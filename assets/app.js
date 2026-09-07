@@ -426,6 +426,8 @@
 		'<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>';
 	const EXTERNAL_LINK_GLYPH =
 		'<line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline>';
+	const ROUTING_GLYPH =
+		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -488,6 +490,24 @@
 		const url = esc(item.permalink);
 		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="Open original" title="Open original" data-external-link="${url}">${statIcon(
 			EXTERNAL_LINK_GLYPH
+		)}</span>`;
+	}
+
+	// "Where did this go" (issue #255) — a Mark-only affordance, shown once
+	// the Mark has actually been routed somewhere (syndication_status isn't
+	// 'not_attempted'; a Mark with no selected destinations has nothing to
+	// report here, and a subscription post has no syndication targets of
+	// its own at all). Tapping it opens a small popover — a sibling panel
+	// in the item-wrap, not nested content, since a target's own link
+	// can't validly live inside the card's own expand-trigger <button> —
+	// populated lazily via toggleRoutingPanel().
+	function renderRoutingToggle(item) {
+		if (!item.syndication_status || 'not_attempted' === item.syndication_status) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		return `<span class="daymark-stat daymark-stat--routing" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="Where this went" title="Where this went" data-routing-toggle="${id}">${statIcon(
+			ROUTING_GLYPH
 		)}</span>`;
 	}
 
@@ -571,7 +591,9 @@
 			'reposts',
 			'repost',
 			'reposts'
-		)}${renderBookmarkToggle(item, 'mark')}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>`;
+		)}${renderBookmarkToggle(item, 'mark')}${renderExternalLinkToggle(item)}${renderRoutingToggle(
+			item
+		)}${renderShareToggle(item)}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -2250,9 +2272,16 @@
 	// Mark's or subscription post's site icon has no popover of its own to
 	// close (see renderSiteIconButton() below) — a plain click fires
 	// applySourceFilter() straight away — so this only ever needs to guard
-	// the one [data-menu] show/hide machinery the ⋯ menu still uses.
+	// the ⋯ menu's [data-menu] show/hide machinery and the routing
+	// popover's [data-routing-panel] (issue #255), both closed together by
+	// closeItemMenus(). The routing toggle and its panel live in different
+	// parts of the item-wrap (see renderMarkItem()'s own comment on why),
+	// so both are named directly here rather than a single shared wrapper.
 	function itemMenusDismissEntry() {
-		return { selector: '[data-actions]', close: () => closeItemMenus() };
+		return {
+			selector: '[data-actions], [data-routing-toggle], [data-routing-panel]',
+			close: () => closeItemMenus(),
+		};
 	}
 
 	// The site icon's one action, shared by a Mark's own icon and a
@@ -2436,6 +2465,12 @@
 			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 					kind
 			  )}" data-expand-post="${id}" aria-expanded="false">${renderMarkCore(item)}</button>`;
+		// The routing popover's own panel — a sibling of the card button,
+		// not nested inside it, same reasoning as the expand panel below:
+		// a target's own link can't validly live inside another <button>.
+		// Gated on the same condition as renderRoutingToggle() itself, so
+		// there's no unused empty panel for a Mark with nothing to route.
+		const hasRouting = !isDraft && item.syndication_status && 'not_attempted' !== item.syndication_status;
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				${siteIcon}
@@ -2443,6 +2478,7 @@
 				${card}
 				${actions}
 				${isDraft ? '' : '<div class="daymark-recent__expand" data-expand-panel hidden></div>'}
+				${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 			</div>`;
 	}
 
@@ -2522,6 +2558,18 @@
 				toggle.setAttribute('aria-expanded', 'false');
 			}
 		});
+		// The routing popover (issue #255) — a sibling of its own toggle,
+		// not nested inside a shared wrapper (see renderMarkItem()), so its
+		// toggle is found via the shared item-wrap ancestor instead of
+		// menu.parentElement the way the ⋯ menu's toggle is found above.
+		root.querySelectorAll('[data-routing-panel]').forEach((panel) => {
+			panel.hidden = true;
+			const wrap = panel.closest('.daymark-recent__item-wrap');
+			const toggle = wrap ? wrap.querySelector('[data-routing-toggle]') : null;
+			if (toggle) {
+				toggle.setAttribute('aria-expanded', 'false');
+			}
+		});
 	}
 
 	function onFeedListClick(screen, event) {
@@ -2575,6 +2623,17 @@
 			event.preventDefault();
 			event.stopPropagation();
 			openExternalLink(externalLinkToggle);
+			return;
+		}
+
+		// The routing toggle — same reasoning/placement as the Bookmark
+		// toggle above; opens/closes the sibling "where did this go" panel
+		// (see toggleRoutingPanel()).
+		const routingToggle = target.closest('[data-routing-toggle]');
+		if (routingToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleRoutingPanel(screen, routingToggle);
 			return;
 		}
 
@@ -2744,6 +2803,12 @@
 			openExternalLink(externalLinkToggle);
 			return;
 		}
+		const routingToggle = event.target.closest('[data-routing-toggle]');
+		if (routingToggle) {
+			event.preventDefault();
+			toggleRoutingPanel(screen, routingToggle);
+			return;
+		}
 		const shareToggle = event.target.closest('[data-share-toggle]');
 		if (shareToggle) {
 			event.preventDefault();
@@ -2899,6 +2964,105 @@
 		if (url) {
 			window.open(url, '_blank', 'noopener');
 		}
+	}
+
+	// Opens/closes a Mark's "where did this go" popover (issue #255).
+	// Fetches per-connector routing detail on first open via GET
+	// /marks/{id} — the same endpoint openDraft() already uses for the
+	// composer's full payload — and caches the rendered result on the
+	// panel itself (data-loaded) so reopening never refetches. Only one
+	// item popover (this or the ⋯ menu) is ever open at a time, so this
+	// closes whatever else was open first, the same way the ⋯ menu's own
+	// toggle handler already does.
+	async function toggleRoutingPanel(screen, trigger) {
+		const id = trigger.getAttribute('data-routing-toggle');
+		const wrap = trigger.closest('.daymark-recent__item-wrap');
+		const panel = wrap ? wrap.querySelector('[data-routing-panel]') : null;
+		if (!id || !panel) {
+			return;
+		}
+		const wasOpen = !panel.hidden;
+		closeItemMenus();
+		if (wasOpen) {
+			return;
+		}
+		panel.hidden = false;
+		trigger.setAttribute('aria-expanded', 'true');
+		if (panel.dataset.loaded) {
+			return;
+		}
+		panel.innerHTML = '<p class="daymark-status">Loading…</p>';
+		try {
+			const mark = await apiGet('marks/' + id);
+			panel.innerHTML = routingPanelMarkup(mark);
+			panel.dataset.loaded = '1';
+		} catch (err) {
+			panel.innerHTML = '<p class="daymark-error" role="alert">Could not load routing detail.</p>';
+		}
+	}
+
+	// Builds the popover's content from GET /marks/{id}'s response — reuses
+	// the exact daymark-syndication/daymark-chip classes the Success
+	// screen's own per-connector status list already established (see
+	// SuccessScreen.renderDetail()), so a Mark's routing reads consistently
+	// whether you're looking right after publishing or later from the
+	// Timeline. "Your site" is always first and always "Published" — the
+	// canonical destination is never itself a syndication target.
+	function routingPanelMarkup(mark) {
+		const targets = Array.isArray(mark.targets) ? mark.targets : [];
+		const externalPosts =
+			mark.external_posts && 'object' === typeof mark.external_posts ? mark.external_posts : {};
+		const siteLink = mark.permalink
+			? `<a class="daymark-btn daymark-btn--text" href="${esc(mark.permalink)}" target="_blank" rel="noopener">Your site</a>`
+			: '<span>Your site</span>';
+		const rows = targets
+			.map((connectorId) => {
+				const entry = externalPosts[connectorId] || {};
+				const label = entry.label || connectorId;
+				const modifier = routingChipModifier(entry.status);
+				const target = entry.external_url
+					? `<a class="daymark-btn daymark-btn--text" href="${esc(
+							entry.external_url
+					  )}" target="_blank" rel="noopener">${esc(label)}</a>`
+					: `<span>${esc(label)}</span>`;
+				return `
+				<li class="daymark-syndication__row">
+					${target}
+					<span class="daymark-chip daymark-chip--${modifier}">${esc(routingStatusLabel(entry.status))}</span>
+				</li>`;
+			})
+			.join('');
+		return `<ul class="daymark-syndication" aria-label="Where this Mark was routed">
+			<li class="daymark-syndication__row">
+				${siteLink}
+				<span class="daymark-chip daymark-chip--success">Published</span>
+			</li>${rows}
+		</ul>`;
+	}
+
+	function routingStatusLabel(status) {
+		switch (status) {
+			case 'published':
+				return 'Published';
+			case 'mocked':
+				return 'Mocked';
+			case 'unsupported':
+				return 'Not supported';
+			case 'failed':
+				return 'Failed';
+			default:
+				return status ? status : 'Unknown';
+		}
+	}
+
+	function routingChipModifier(status) {
+		if ('published' === status) {
+			return 'success';
+		}
+		if ('failed' === status || 'unsupported' === status) {
+			return 'danger';
+		}
+		return 'muted';
 	}
 
 	// Shares a Mark's or a subscription post's real permalink: the OS
