@@ -516,7 +516,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	// Editable site name (issue #180).
 	// -----------------------------------------------------------------
 
-	/** The "Edit name" form carries the subscription's current site_title, ready to submit back unchanged or edited. */
+	/** The inline name editor's form carries the subscription's current site_title, ready to submit back unchanged or edited, behind a pencil-icon trigger. */
 	public function test_edit_title_form_renders_with_current_site_title(): void {
 		$this->subscriptions->create(
 			array(
@@ -530,7 +530,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'daymark_subscription_edit_title', $output );
 		$this->assertStringContainsString( 'name="daymark_site_title" value="cryptic-friend-handle"', $output );
-		$this->assertStringContainsString( 'Edit name', $output );
+		$this->assertStringContainsString( 'dashicons-edit', $output );
+		$this->assertStringContainsString( 'Edit site name', $output );
 	}
 
 	/** With no site_title set, the edit form's input is empty but hints at the site URL via its placeholder. */
