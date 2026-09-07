@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-07
+
 ### Added
 
 - A subscribed post's Timeline card now has a "Replied" indicator plus real Like and Repost toggles — Like/Repost publish a small Mark of your own, letting an already-installed federation plugin (ActivityPub/Webmention/ATmosphere) send the actual outbound like/reblog, the same way the existing Reply action already works. Full engagement counts from the origin site aren't obtainable in general, so this shows your own engagement instead. ([#232](https://github.com/jeffpaul/daymark/issues/232))
@@ -382,7 +384,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.11.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.12.0...HEAD
+[0.12.0]: https://github.com/jeffpaul/daymark/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/jeffpaul/daymark/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/jeffpaul/daymark/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/jeffpaul/daymark/compare/0.8.0...0.9.0
