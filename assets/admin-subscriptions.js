@@ -5,9 +5,13 @@
  *    that form still POSTs and reloads the page the normal wp-admin way, so
  *    this has nothing to reset if the request fails; the fresh page load
  *    does that.
- * 2. Per-row Refresh forms submit via the REST refresh endpoint instead
- *    (issue #175), updating that row's Status/Last fetched cells in place
- *    rather than reloading the whole page. Requires the localized
+ * 2. Per-row Refresh forms — rendered as a small circular-arrows icon next
+ *    to "Last fetched" rather than a labeled Actions-column button (see
+ *    Daymark_Admin_Subscriptions::render_refresh_form()) — submit via the
+ *    REST refresh endpoint instead (issue #175), updating that row's
+ *    Status/Last fetched cells in place rather than reloading the whole
+ *    page, and spinning the icon (`daymark-is-refreshing`) while the
+ *    request is in flight. Requires the localized
  *    `daymarkAdminSubscriptions` config (see
  *    Daymark_Admin_Subscriptions::enqueue_assets()); without it — REST
  *    disabled, or the object simply didn't load — the form falls back to
@@ -92,7 +96,7 @@
 	function refreshSubscription( form, config ) {
 		var id = form.getAttribute( 'data-daymark-subscription-id' );
 		var row = form.closest( 'tr' );
-		var button = form.querySelector( 'input[type="submit"], button[type="submit"]' );
+		var button = form.querySelector( '.daymark-subscription-refresh-trigger' );
 		var errorEl = form.querySelector( '.daymark-subscription-refresh-error' );
 
 		if ( ! id || ! row ) {
@@ -132,19 +136,28 @@
 	}
 
 	/**
-	 * Toggle a Refresh button's disabled/label state while a request is in
-	 * flight, and clear any previous inline error when starting a new one.
+	 * Toggle the Refresh icon button's disabled/processing state while a
+	 * request is in flight, and clear any previous inline error when
+	 * starting a new one. An icon-only control has no label to swap the
+	 * way the old text button did — `daymark-is-refreshing` is what
+	 * actually spins the dashicon (see enqueue_assets()'s inline style),
+	 * and the `aria-label`/`title` swap to a "Refreshing…" announcement
+	 * carries the same information a screen reader or hover previously got
+	 * from the button's own visible text.
 	 *
-	 * @param {HTMLInputElement|null} button
-	 * @param {Element|null}          errorEl
-	 * @param {boolean}               busy
-	 * @param {Object}                config
+	 * @param {HTMLButtonElement|null} button
+	 * @param {Element|null}           errorEl
+	 * @param {boolean}                busy
+	 * @param {Object}                 config
 	 * @return void
 	 */
 	function setFormBusy( button, errorEl, busy, config ) {
 		if ( button ) {
 			button.disabled = busy;
-			button.value = busy ? config.i18n.refreshingLabel : config.i18n.refreshLabel;
+			button.classList.toggle( 'daymark-is-refreshing', busy );
+			var label = busy ? config.i18n.refreshingLabel : config.i18n.refreshLabel;
+			button.setAttribute( 'aria-label', label );
+			button.setAttribute( 'title', label );
 		}
 
 		if ( busy && errorEl ) {

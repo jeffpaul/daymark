@@ -25,6 +25,7 @@ can't act on them.
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))
 - A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap. ([#225](https://github.com/jeffpaul/daymark/pull/225))
 - The Settings -> Daymark subscriptions table's "Edit name" text link is now a pencil icon next to the site name — clicking it makes the name editable inline, saving on Enter, Tab, or clicking away instead of a separate Save button. ([#242](https://github.com/jeffpaul/daymark/issues/242))
+- The Settings -> Daymark subscriptions table's Refresh action is now a circular-arrows icon next to "Last fetched" instead of a labeled button in the Actions column — clicking it spins the icon while the refresh is in flight. ([#245](https://github.com/jeffpaul/daymark/issues/245))
 
 ### Fixed
 
