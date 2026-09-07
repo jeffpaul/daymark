@@ -37,29 +37,35 @@ async function loginAs(page) {
 // the old single click straight into #create now that the launcher sits in
 // front of it.
 //
-// Home's chrome auto-hide closes the launcher on any real scroll (see
+// Home's chrome auto-hide closes the launcher/footer on any real scroll (see
 // bindLauncher()/bindChromeAutoHide() in app.js) — including a scroll-anchor
 // adjustment the browser can fire on its own while Home's Timeline content is
-// still settling height, with no user interaction at all. That can race the
-// launcher's own fan-out animation and leave the bubble click intercepted by
-// whatever's now underneath for the rest of the test timeout, so this retries
-// the whole open sequence a couple of times rather than fighting one flaky
-// click to the end.
-//
-// Waiting for the network to go idle first (every caller navigates to
-// /daymark immediately beforehand) closes off the single biggest source of
-// that settling — a Timeline with several prior Marks/subscription posts
+// still settling height, with no user interaction at all. A longer Timeline
 // (this suite never cleans up after itself, and each subscription post's
-// card now renders its own site icon plus a 6-icon engagement row) still has
-// site-icon/thumbnail images loading well after the page's own 'load' event,
-// each one a potential height/scroll-anchor shift; this doesn't reach zero
-// (a scroll-anchor adjustment from something other than an image load is
-// still possible), which is exactly why the retry loop below stays too.
+// card now renders its own site icon plus a 6-icon engagement row, both
+// making cards taller) makes this more likely two ways: more settling height
+// changes to trigger a scroll-anchor adjustment in the first place, and — if
+// the launcher isn't already fully in view because of that same extra
+// height — Playwright's own click action auto-scrolling it into view, which
+// is itself a real `scroll` event bindChromeAutoHide() has no way to tell
+// apart from a user's. Either one can hide the footer out from under the
+// click and race the launcher's own fan-out animation, defeating a single
+// attempt for the rest of the test timeout.
+//
+// bindChromeAutoHide() already carves out one escape hatch for this: within
+// 80px of the very top, it always shows both bars regardless of direction
+// (see its own "y < 80" branch). Forcing the page back to the true top
+// before every attempt — not just the first — lands inside that branch
+// directly, which is far more reliable than trying to outlast whatever
+// caused the scroll in the first place (an earlier attempt at that — waiting
+// for the network to go idle before the first attempt only — closed off
+// image-load-driven settling specifically, but measurably made the flakiness
+// worse rather than better, so it's gone in favor of this instead).
 async function openComposer(page, type = 'note') {
-	await page.waitForLoadState('networkidle');
 	const bubble = page.locator(`[data-launcher-type="${type}"]`);
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
+			await page.evaluate(() => window.scrollTo(0, 0));
 			// An explicit, short timeout on both clicks — not just the
 			// bubble's — matters here: with no timeout of its own, the
 			// launcher click inherits Playwright's action timeout (0,
