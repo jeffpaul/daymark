@@ -1142,6 +1142,14 @@ class Test_Publisher extends WP_UnitTestCase {
 	 */
 	public function test_update_honors_valid_media_order() {
 		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		// wp_handle_sideload() moves (rename()s) its source file rather than
+		// copying it, so two files in one request can never safely share a
+		// single tmp_name — each needs its own disposable copy, the same
+		// pattern every other real-upload test in this file already uses.
+		$tmp_one = wp_tempnam( 'daymark-order-' ) . '.png';
+		$tmp_two = wp_tempnam( 'daymark-order-' ) . '.png';
+		copy( $fixture, $tmp_one );
+		copy( $fixture, $tmp_two );
 
 		$publisher = new Daymark_Publisher();
 		$post_id   = (int) $publisher->publish(
@@ -1150,9 +1158,9 @@ class Test_Publisher extends WP_UnitTestCase {
 				'files' => array(
 					'name'     => array( 'one.png', 'two.png' ),
 					'type'     => array( 'image/png', 'image/png' ),
-					'tmp_name' => array( $fixture, $fixture ),
+					'tmp_name' => array( $tmp_one, $tmp_two ),
 					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
-					'size'     => array( filesize( $fixture ), filesize( $fixture ) ),
+					'size'     => array( filesize( $tmp_one ), filesize( $tmp_two ) ),
 				),
 			)
 		);
@@ -1190,6 +1198,12 @@ class Test_Publisher extends WP_UnitTestCase {
 	 */
 	public function test_update_rejects_invalid_media_order() {
 		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		// See test_update_honors_valid_media_order()'s comment: each file in
+		// a multi-file sideload needs its own disposable copy.
+		$tmp_one = wp_tempnam( 'daymark-order-' ) . '.png';
+		$tmp_two = wp_tempnam( 'daymark-order-' ) . '.png';
+		copy( $fixture, $tmp_one );
+		copy( $fixture, $tmp_two );
 
 		$publisher = new Daymark_Publisher();
 		$post_id   = (int) $publisher->publish(
@@ -1198,9 +1212,9 @@ class Test_Publisher extends WP_UnitTestCase {
 				'files' => array(
 					'name'     => array( 'one.png', 'two.png' ),
 					'type'     => array( 'image/png', 'image/png' ),
-					'tmp_name' => array( $fixture, $fixture ),
+					'tmp_name' => array( $tmp_one, $tmp_two ),
 					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
-					'size'     => array( filesize( $fixture ), filesize( $fixture ) ),
+					'size'     => array( filesize( $tmp_one ), filesize( $tmp_two ) ),
 				),
 			)
 		);
