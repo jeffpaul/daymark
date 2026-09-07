@@ -35,6 +35,7 @@ can't act on them.
 - The Home/Explore/Search/Me header now always shows Daymark's own icon instead of the site's configured Site Icon, tightens Explore/Search/Me's header title spacing to match Home's, and replaces the Notifications page's "Back" text with the Daymark icon (keeping the arrow). ([#230](https://github.com/jeffpaul/daymark/issues/230))
 - Search's "Showing your bookmarks." banner text now matches the size of its "Show everything" link — they previously rendered at two different sizes. ([#229](https://github.com/jeffpaul/daymark/pull/229))
 - The Share icon's clipboard-copy fallback (used on any browser without a native share sheet, e.g. Firefox) now shows a visible on-screen "Link copied" confirmation instead of only a subtle color change — it previously looked like nothing had happened. ([#234](https://github.com/jeffpaul/daymark/issues/234))
+- The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column. ([#240](https://github.com/jeffpaul/daymark/issues/240))
 
 ## [0.11.0] - 2026-09-05
 
