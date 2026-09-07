@@ -4794,43 +4794,32 @@
 
 			if (input) {
 				input.addEventListener('change', () => {
-					const picked = Array.from(input.files || []);
-					picked.forEach((file) => {
-						const duplicate = state.files.some(
-							(entry) =>
-								entry.file.name === file.name &&
-								entry.file.size === file.size &&
-								entry.file.lastModified === file.lastModified
-						);
-						if (duplicate) {
-							return;
-						}
-						state.fileCounter += 1;
-						const isImage = file.type.indexOf('image/') === 0;
-						const entry = {
-							id: 'f' + state.fileCounter,
-							file,
-							url: isImage ? URL.createObjectURL(file) : '',
-							kind: (file.type || '').split('/')[0] || 'file',
-							alt: '',
-							altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
-							altEdited: false,
-						};
-						state.files.push(entry);
-						// Pre-fill alt text from the AI provider (if one is
-						// connected); the author can edit it before publishing.
-						if (entry.altStatus === 'loading') {
-							this.generateAltFor(entry);
-						}
-					});
+					this.addPickedFiles(input.files);
 					input.value = '';
-					this.refreshMedia();
-					// Protect the actual picked media as soon as possible —
-					// don't wait for Publish/Save as Draft to upload it.
-					runAutosave();
-					// Picked media alone is enough to ground a quiet tag
-					// suggestion (same bar as the caption trigger below).
-					scheduleQuietTagSuggestion();
+				});
+			}
+
+			// Drag-and-drop (issue #260): the picker zone already renders
+			// with a dashed border, so it already reads as a drop target —
+			// dragover/drop just wire up the actual behavior and a hover
+			// highlight to confirm it. Feeds the exact same addPickedFiles()
+			// path as the file input, so a dropped file is indistinguishable
+			// from a picked one downstream (dedup, alt-text pre-fill,
+			// autosave, all included). Inert on touch devices, which never
+			// fire drag events — no behavior change there.
+			const pickerZone = root.querySelector('.daymark-picker');
+			if (pickerZone) {
+				pickerZone.addEventListener('dragover', (event) => {
+					event.preventDefault();
+					pickerZone.classList.add('is-dragover');
+				});
+				pickerZone.addEventListener('dragleave', () => {
+					pickerZone.classList.remove('is-dragover');
+				});
+				pickerZone.addEventListener('drop', (event) => {
+					event.preventDefault();
+					pickerZone.classList.remove('is-dragover');
+					this.addPickedFiles(event.dataTransfer && event.dataTransfer.files);
 				});
 			}
 
@@ -4887,6 +4876,52 @@
 					focus: () => root.querySelector('[data-title-info]'),
 				},
 			]);
+		},
+
+		// Shared file-intake path for the picker's file input and drag-and-
+		// drop (issue #260) alike — a `FileList` (or anything array-like
+		// enough for Array.from) in, deduped/entry-constructed/autosaved
+		// the exact same way regardless of which one handed it over.
+		addPickedFiles(fileList) {
+			const picked = Array.from(fileList || []);
+			if (!picked.length) {
+				return;
+			}
+			picked.forEach((file) => {
+				const duplicate = state.files.some(
+					(entry) =>
+						entry.file.name === file.name &&
+						entry.file.size === file.size &&
+						entry.file.lastModified === file.lastModified
+				);
+				if (duplicate) {
+					return;
+				}
+				state.fileCounter += 1;
+				const isImage = file.type.indexOf('image/') === 0;
+				const entry = {
+					id: 'f' + state.fileCounter,
+					file,
+					url: isImage ? URL.createObjectURL(file) : '',
+					kind: (file.type || '').split('/')[0] || 'file',
+					alt: '',
+					altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
+					altEdited: false,
+				};
+				state.files.push(entry);
+				// Pre-fill alt text from the AI provider (if one is
+				// connected); the author can edit it before publishing.
+				if (entry.altStatus === 'loading') {
+					this.generateAltFor(entry);
+				}
+			});
+			this.refreshMedia();
+			// Protect the actual picked media as soon as possible — don't
+			// wait for Publish/Save as Draft to upload it.
+			runAutosave();
+			// Picked media alone is enough to ground a quiet tag
+			// suggestion (same bar as the caption trigger below).
+			scheduleQuietTagSuggestion();
 		},
 
 		refreshMedia() {
@@ -7170,6 +7205,17 @@
 	window.addEventListener('hashchange', () => {
 		showScreen(window.location.hash);
 	});
+
+	// A drop landing outside the composer's own picker zone (issue #260)
+	// would otherwise fall through to the browser's default behavior —
+	// navigating the whole app away to the dropped file's raw content,
+	// losing whatever composer state was in progress. This permanent,
+	// app-wide guard runs regardless of which screen is open (not just
+	// Create), since the cost of getting it wrong (a lost draft) is the
+	// same everywhere; the picker zone's own dragover/drop handlers
+	// (CreateScreen.bindEvents()) still run first and do the real work.
+	window.addEventListener('dragover', (event) => event.preventDefault());
+	window.addEventListener('drop', (event) => event.preventDefault());
 
 	// A broken `data-img-fallback`-carrying <img> (see imgWithFallback()
 	// above) degrades to a glyph span in its place instead of the browser's

@@ -466,11 +466,13 @@ that loop without new destinations or a new social network.
   Grow it deliberately: a documented reference connector, a registry of known
   connectors, and graceful in-app messaging when a Mark's destination plugin is
   deactivated.
-- **Publish-loop polish.** Larger media sources (photo picker, drag-and-drop on
-  desktop) and draft → publish continuation are candidates — each judged by
-  whether it makes publishing faster (Publish First), not more powerful.
-  Gallery reordering (the other item this bucket used to name) shipped —
-  it's also the prerequisite for an AI-assisted ordering suggestion
+- **Publish-loop polish.** Draft → publish continuation is the remaining
+  candidate here — judged by whether it makes publishing faster (Publish
+  First), not more powerful. Drag-and-drop onto the composer's picker
+  (desktop) and gallery reordering, the other two items this bucket used to
+  name, both shipped ([#260](https://github.com/jeffpaul/daymark/issues/260),
+  [#250](https://github.com/jeffpaul/daymark/issues/250)) — gallery
+  reordering is also the prerequisite for an AI-assisted ordering suggestion
   (CLAUDE.md's "AI as an assistant" decision; tracked as
   [#134](https://github.com/jeffpaul/daymark/issues/134)) — the manual
   override surface now exists for an AI to propose anything on top of.

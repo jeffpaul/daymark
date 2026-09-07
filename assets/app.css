@@ -1228,6 +1228,15 @@ h2[tabindex='-1']:focus {
 	outline-offset: 2px;
 }
 
+/* A drag hovering the picker (issue #260, desktop only — drag events never
+   fire from touch) — the zone's own dashed border already reads as a drop
+   target; this just confirms it. */
+.daymark-picker.is-dragover .daymark-picker__zone {
+	border-color: var(--daymark-accent);
+	border-style: solid;
+	background: var(--daymark-accent-wash);
+}
+
 .daymark-picker__hint {
 	font-size: 13px;
 	font-weight: 400;
