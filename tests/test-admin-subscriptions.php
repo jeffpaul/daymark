@@ -82,6 +82,37 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Refresh', $output );
 	}
 
+	/**
+	 * Scenario (Unreleased — moved the content Refresh action out of the
+	 * Actions column into a circular-arrows icon next to "Last fetched"):
+	 * the icon button carries dashicons-update, not the old labeled
+	 * secondary-button markup, and renders inside the same cell as the
+	 * last-fetched text rather than alongside Unsubscribe.
+	 */
+	public function test_refresh_trigger_renders_as_icon_next_to_last_fetched(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://icon-refresh.example',
+				'feed_url' => 'https://icon-refresh.example/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark-subscription-refresh-trigger', $output );
+		$this->assertStringContainsString( 'dashicons-update', $output );
+
+		// The refresh trigger's form appears after the last-fetched span,
+		// within the same table cell — not down in the Actions column.
+		$last_fetched_pos = strpos( $output, 'daymark-subscription-last-fetched' );
+		$refresh_pos      = strpos( $output, 'daymark-subscription-refresh-form' );
+
+		$this->assertIsInt( $last_fetched_pos );
+		$this->assertIsInt( $refresh_pos );
+		$this->assertGreaterThan( $last_fetched_pos, $refresh_pos );
+	}
+
 	public function test_refresh_button_shown_for_error_subscription(): void {
 		$this->subscriptions->create(
 			array(

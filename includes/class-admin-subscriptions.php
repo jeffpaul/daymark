@@ -154,6 +154,19 @@ class Daymark_Admin_Subscriptions {
 			'.daymark-edit-title-trigger::-webkit-details-marker { display: none; }'
 		);
 
+		// The Refresh control's "processing" state (this method's own
+		// docblock on render_refresh_form()): admin-subscriptions.js toggles
+		// a `daymark-is-refreshing` class on the button while its request is
+		// in flight, and this is what actually spins the dashicon while
+		// that class is present — a plain `button:disabled` state alone
+		// wouldn't communicate "this is working," only "you can't click it
+		// again yet." Attached to core's 'common' handle rather than a new
+		// stylesheet, matching the rule immediately above.
+		wp_add_inline_style(
+			'common',
+			'@keyframes daymark-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .daymark-subscription-refresh-trigger.daymark-is-refreshing .dashicons { animation: daymark-spin 1s linear infinite; }'
+		);
+
 		wp_localize_script(
 			'daymark-admin-subscriptions',
 			'daymarkAdminSubscriptions',
@@ -640,13 +653,12 @@ class Daymark_Admin_Subscriptions {
 				?>
 				<div class="description daymark-subscription-status-error" <?php echo $has_error_message ? '' : 'hidden'; ?>><?php echo esc_html( $error_message ); ?></div>
 			</td>
-			<td class="daymark-subscription-last-fetched">
-				<?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?>
+			<td>
+				<span class="daymark-subscription-last-fetched"><?php echo esc_html( $this->format_last_checked( (string) ( $subscription['last_checked_at'] ?? '' ) ) ); ?></span>
+				<?php $this->render_refresh_form( $id ); ?>
 			</td>
 			<td>
 				<?php
-				$this->render_refresh_form( $id );
-
 				$this->render_refresh_icon_form( $id );
 
 				$this->render_unsubscribe_form( $id, $row_label );
@@ -657,29 +669,40 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's Refresh form. Shown on every row, not only
-	 * a failing one — it fetches on demand instead of waiting for the next
-	 * scheduled poll, and doubles as the retry action when status is
-	 * 'error'. Delegates to the same Daymark_Subscription_Poller::manual_refresh()
-	 * as the REST refresh endpoint, including its per-subscription cooldown.
+	 * Render one subscription's Refresh control: a small circular-arrows
+	 * icon (dashicons-update — WordPress core's own bundled refresh glyph,
+	 * so no new icon asset) sitting immediately after the "Last fetched"
+	 * text, rather than a labeled button in the Actions column (issue
+	 * #240's own "move it next to what it refreshes" precedent for the
+	 * site-icon placement). Shown on every row, not only a failing one — it
+	 * fetches on demand instead of waiting for the next scheduled poll, and
+	 * doubles as the retry action when status is 'error'. Delegates to the
+	 * same Daymark_Subscription_Poller::manual_refresh() as the REST
+	 * refresh endpoint, including its per-subscription cooldown.
 	 *
 	 * When JS is available (issue #175), `assets/admin-subscriptions.js`
 	 * intercepts this form's submit and calls the REST refresh endpoint
 	 * directly instead, updating this row's Status/Last fetched cells in
-	 * place — see enqueue_assets()'s localized config. The form itself still
-	 * posts to admin_post_daymark_subscription_refresh as a no-JS fallback,
-	 * identical to this form's previous (page-reloading) behavior.
+	 * place — see enqueue_assets()'s localized config. It also toggles a
+	 * `daymark-is-refreshing` class on this button (spinning the icon via
+	 * the inline animation enqueue_assets() attaches — see its own
+	 * docblock) instead of swapping button text, since an icon-only control
+	 * has no label to swap. The form itself still posts to
+	 * admin_post_daymark_subscription_refresh as a no-JS fallback,
+	 * identical to this control's previous (page-reloading) behavior.
 	 *
 	 * @param int $id Subscription ID.
 	 * @return void
 	 */
 	private function render_refresh_form( int $id ): void {
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-refresh-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;margin-right:6px;">
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-refresh-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;">
 			<input type="hidden" name="action" value="daymark_subscription_refresh" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_refresh_' . $id, 'daymark_subscription_refresh_nonce' ); ?>
-			<?php submit_button( __( 'Refresh', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			<button type="submit" class="button-link daymark-subscription-refresh-trigger" aria-label="<?php esc_attr_e( 'Refresh', 'daymark' ); ?>" title="<?php esc_attr_e( 'Refresh', 'daymark' ); ?>">
+				<span class="dashicons dashicons-update" aria-hidden="true"></span>
+			</button>
 			<span class="description daymark-subscription-refresh-error" role="alert" hidden></span>
 		</form>
 		<?php
