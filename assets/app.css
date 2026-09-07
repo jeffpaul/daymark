@@ -1428,6 +1428,42 @@ h2[tabindex='-1']:focus {
 	min-width: 0;
 }
 
+/* Manual gallery reordering (issue #250) — move-up/move-down buttons shared
+   by the new-picks file list (.daymark-filelist__item) and the
+   already-attached media list (.daymark-editmedia__item) above. Buttons
+   rather than drag-and-drop: identical by tap, mouse, or keyboard, and
+   meet --daymark-tap-min without a custom touch-drag implementation.
+   flex-shrink: 0 + align-self: center keep this compact and vertically
+   centered as a third child in .daymark-editmedia__item's row (thumb +
+   flex:1 alt field + this), and it simply stacks as its own row at the
+   end of .daymark-filelist__item's column layout. */
+.daymark-reorder {
+	display: flex;
+	gap: var(--daymark-spacing-xs);
+	align-self: center;
+	flex-shrink: 0;
+}
+
+.daymark-reorder__btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
+	font-size: 16px;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.daymark-reorder__btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
 /* --- Forms --- */
 .daymark-field {
 	display: flex;
