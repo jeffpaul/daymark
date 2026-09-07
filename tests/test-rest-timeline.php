@@ -521,4 +521,27 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 
 		$this->assertEqualsCanonicalizing( array( $mark_id, $sub_post_id ), $ids );
 	}
+
+	/**
+	 * A Mark auto-published by the Like/Repost toggle on a subscribed post
+	 * (_daymark_like_of/_daymark_repost_of) is excluded from the Timeline —
+	 * it exists only to carry an outbound u-like-of/u-repost-of link for a
+	 * federation plugin, not as content meant to be read there.
+	 */
+	public function test_like_and_repost_marks_are_excluded_from_the_timeline() {
+		wp_set_current_user( $this->author_a );
+
+		$ordinary_mark_id = $this->create_mark( '2024-01-01 00:00:00', 'An ordinary Mark' );
+
+		$like_mark_id = $this->create_mark( '2024-01-02 00:00:00', 'Liked "Some Post"' );
+		update_post_meta( $like_mark_id, '_daymark_like_of', 'https://example.com/some-post/' );
+
+		$repost_mark_id = $this->create_mark( '2024-01-03 00:00:00', 'Reposted "Some Post"' );
+		update_post_meta( $repost_mark_id, '_daymark_repost_of', 'https://example.com/some-post/' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$ids     = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $ordinary_mark_id ), $ids );
+	}
 }

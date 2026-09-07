@@ -155,11 +155,17 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
-/* Daymark's own icon + wordmark act as one home-link. */
+/* Daymark's own icon + wordmark act as one home-link. `gap` matches
+   .daymark-topbar's own flex gap (var(--daymark-spacing-sm), see below) —
+   deliberately the same token, not a separately hand-picked value, so the
+   icon-to-text distance here is provably identical to the icon-to-title
+   distance on Explore/Search/Me's own header (.daymark-iconbtn--plain +
+   .daymark-topbar__title, below), rather than two close-but-not-quite
+   values that can drift apart. */
 .daymark-homelink {
 	display: inline-flex;
 	align-items: center;
-	gap: 7px;
+	gap: var(--daymark-spacing-sm);
 	min-height: var(--daymark-tap-min);
 	color: inherit;
 	text-decoration: none;
@@ -214,25 +220,28 @@ h2[tabindex='-1']:focus {
 }
 
 /* The Explore/Search/Me headers' Daymark icon link reuses .daymark-iconbtn
-   for its tap-target sizing/centering, but drops the bordered-square button
-   chrome — same plain, unboxed feel as Home's own wordmark icon
-   (.daymark-homelink), just without the "Daymark" text label alongside it.
-   The Notifications icon button on every screen keeps the bordered square
-   unchanged; this modifier is scoped to the Daymark icon link alone. */
+   for its tap-target sizing, but drops the bordered-square button chrome —
+   same plain, unboxed feel as Home's own wordmark icon (.daymark-homelink),
+   just without the "Daymark" text label alongside it. The Notifications
+   icon button on every screen keeps the bordered square (and centered icon)
+   unchanged; this modifier is scoped to the Daymark icon link alone.
+   `justify-content: flex-end` (rather than the base rule's `center`) sits
+   the icon graphic flush against the box's own trailing edge instead of
+   centered within it — the tap target's required extra width (26px icon in
+   a 44px box) sits entirely on the icon's *leading* side instead, where it
+   costs nothing (there's no adjacent element there to visually crowd). This
+   is what makes the topbar's own flex `gap` (below the header title rule)
+   the *only* contributor to the icon-to-title distance, provably equal to
+   .daymark-homelink's own icon-to-text `gap` once both use the same
+   var(--daymark-spacing-sm) token — a previous attempt to match this
+   distance instead centered the icon and tried to cancel the resulting
+   padding with a computed negative margin on the title, three separately-
+   reasoned values with more room to drift out of sync than this two-value,
+   single-token approach has. */
 .daymark-iconbtn--plain {
 	border-color: transparent;
 	background: none;
-}
-
-/* Explore/Search/Me's header title sat farther from the icon than Home's
-   own "Daymark" wordmark text does from its icon, because .daymark-iconbtn's
-   44px tap-target box (required — see --daymark-tap-min) centers the 26px
-   icon graphic inside it, adding padding on top of the topbar's own flex
-   gap that .daymark-homelink's directly-adjacent icon+text never has. Pull
-   the title back by exactly that centering padding rather than shrinking
-   the tap target itself. */
-.daymark-iconbtn--plain + .daymark-topbar__title {
-	margin-left: calc((26px - var(--daymark-tap-min)) / 2);
+	justify-content: flex-end;
 }
 
 /* --- Screen layout --- */
@@ -821,11 +830,14 @@ h2[tabindex='-1']:focus {
 	gap: 2px;
 }
 
+/* Shows in full, however many lines that takes, rather than truncating with
+   an ellipsis at a fixed single line — the same "don't withhold content the
+   server already decided was worth including" reasoning already applied to
+   the excerpt (see the "Timeline card excerpt no longer line-clamped"
+   decision, CLAUDE.md). */
 .daymark-recent__title {
 	font-weight: 600;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	white-space: normal;
 }
 
 .daymark-recent__meta {
@@ -834,16 +846,37 @@ h2[tabindex='-1']:focus {
 }
 
 /* A card's timestamp, pulled out of .daymark-recent__meta's own line (see
-   renderCardTimestampRow(), app.js) and given its own bottom-right-anchored
-   row instead — a quiet, corner-anchored detail rather than one more item
-   in the meta line's list. .daymark-recent__body is a flex column for
-   every card kind, so align-self alone pushes this row to the right; no
-   absolute positioning, so it can never overlap a stats row or an excerpt
-   of unpredictable height above it. */
-.daymark-recent__timestamp {
-	align-self: flex-end;
+   renderCardTimestampRow(), app.js) and given its own bottom row instead —
+   a quiet, corner-anchored detail rather than one more item in the meta
+   line's list. Now shares that row with the site name (a Mark's own site,
+   or a subscription post's source site — same left-aligned placement both
+   card kinds already established elsewhere), left-aligned opposite the
+   timestamp. .daymark-recent__body is a flex column for every card kind, so
+   this row (itself a flex row) doesn't need absolute positioning — it can
+   never overlap a stats row or an excerpt of unpredictable height above
+   it. */
+.daymark-recent__timestamprow {
+	display: flex;
+	align-items: baseline;
+	gap: var(--daymark-spacing-sm);
 	font-size: 12px;
 	color: var(--daymark-text-muted);
+}
+
+.daymark-recent__sitename {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+/* Pushed to the row's right edge via its own margin (not the row's
+   `justify-content`) so this still right-aligns correctly even on the one
+   caller (a Draft's card) that renders no site name at all — an auto
+   margin on a lone flex child still pushes itself to the container's end. */
+.daymark-recent__timestamprow time {
+	margin-left: auto;
+	flex-shrink: 0;
 }
 
 /* Same stat-row look as the public views' .daymark-item-stats (views.css),
@@ -855,10 +888,23 @@ h2[tabindex='-1']:focus {
 	margin-top: 2px;
 }
 
+/* min-width/justify-content live here, on the shared base class every stat
+   in the row carries — not only the interactive ones — so a read-only entry
+   (a plain count, or the "Replied" indicator) occupies the same minimum
+   icon-slot width as Bookmark/Like/Repost/"open original"/Share, and every
+   icon centers the same way within it. Before this, only the interactive
+   entries had their own min-width, so a boxed icon sitting next to an
+   unboxed one threw off the row's spacing rhythm — worse once a count
+   badge (e.g. Repost's own number) widened one boxed entry unevenly against
+   its unboxed neighbors (issue #247 follow-up). min-width is a floor, not a
+   cap: an entry with a count wider than the tap-min stays exactly as wide
+   as its own content needs. */
 .daymark-stat {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: 4px;
+	min-width: var(--daymark-tap-min);
 	font-size: 13px;
 	color: var(--daymark-text-muted);
 }
@@ -891,9 +937,7 @@ h2[tabindex='-1']:focus {
    card content above it. */
 .daymark-stat--bookmark {
 	cursor: pointer;
-	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
-	justify-content: center;
 }
 
 .daymark-stat--bookmark:focus-visible {
@@ -917,9 +961,7 @@ h2[tabindex='-1']:focus {
 .daymark-stat--like,
 .daymark-stat--repost {
 	cursor: pointer;
-	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
-	justify-content: center;
 }
 
 .daymark-stat--like:focus-visible,
@@ -942,9 +984,7 @@ h2[tabindex='-1']:focus {
    entry in the row. */
 .daymark-stat--external {
 	cursor: pointer;
-	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
-	justify-content: center;
 }
 
 .daymark-stat--external:focus-visible {
@@ -959,9 +999,7 @@ h2[tabindex='-1']:focus {
    somewhere. */
 .daymark-stat--routing {
 	cursor: pointer;
-	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
-	justify-content: center;
 }
 
 .daymark-stat--routing:focus-visible {
@@ -975,9 +1013,7 @@ h2[tabindex='-1']:focus {
 .daymark-stat--share {
 	position: relative;
 	cursor: pointer;
-	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
-	justify-content: center;
 }
 
 .daymark-stat--share:focus-visible {
@@ -2319,11 +2355,34 @@ h2[tabindex='-1']:focus {
    block's own header comment) covers exactly the segment behind it, the
    same way each type icon's own opaque background already does. Left
    padding aligns its text with a card's own content, past the leading
-   site-icon/type-icon columns, rather than starting flush with the rail. */
+   site-icon/type-icon columns, rather than starting flush with the rail.
+   Unlike a type icon (whose own background only masks its own small
+   icon-sized footprint, leaving the line visible in the surrounding
+   whitespace), this header is a full-width block, so its own solid
+   background necessarily paints over the rail's entire pixel column for
+   the header's whole height — visually breaking the line instead of just
+   passing behind it. The `::before` below redraws the same 1px line, at
+   the same x-position/color, for exactly this header's own height, so the
+   rail reads as continuous through the header rather than pausing for it. */
 .daymark-recent__groupheader {
+	position: relative;
 	margin: var(--daymark-spacing-md) 0 0;
 	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 28px + var(--daymark-spacing-sm));
 	background: var(--daymark-bg);
+}
+
+.daymark-recent__groupheader::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	/* Same x-position as .daymark-recent__list's own rail line above — group
+	   headers only ever render on Home's own Timeline (renderFeedItemsWithGroups()),
+	   which always has a leading site icon (see the flourish's own comment
+	   below), so this never needs the Drafts-style no-site-icon offset. */
+	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
+	width: 1px;
+	background: var(--daymark-border);
 }
 
 /* The very first header in the list needs no extra clearance above it —
@@ -2352,6 +2411,20 @@ h2[tabindex='-1']:focus {
 
 .daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish {
 	display: block;
+}
+
+/* Cancels .daymark-recent's own flex `gap` between each flourish and the
+   list itself — without this, the sunrise/sunset graphic sits a full gap's
+   width away from where the rail line actually starts/ends, reading as a
+   disconnected decoration rather than a cap on the line it's meant to
+   bookend. Matches the negative-margin gap-cancelling pattern already
+   established for the pull-to-refresh indicator (issue #213). */
+.daymark-timeline-flourish--start {
+	margin-bottom: calc(-1 * var(--daymark-spacing-sm));
+}
+
+.daymark-timeline-flourish--end {
+	margin-top: calc(-1 * var(--daymark-spacing-sm));
 }
 
 .daymark-timeline-flourish svg {
@@ -2669,6 +2742,32 @@ h2[tabindex='-1']:focus {
 .daymark-expand-content .alignright,
 .daymark-expand-content .wp-caption {
 	float: none !important;
+}
+
+/* Same "no supporting theme CSS" gap as the float fix above, for a
+ * different layout mechanism: Jetpack's Tiled Gallery (both the classic
+ * `tiled-gallery`/`tiled-gallery-item` shortcode markup and the newer
+ * `tiled-gallery__*` block markup — matched broadly by a class *containing*
+ * "tiled-gallery" rather than one exact name, since it's varied across
+ * Jetpack versions) positions its own images absolutely, with the
+ * container's own height and each image's own top/left resolved by CSS this
+ * content's real page loads but this app shell never does — without that,
+ * the images stack on top of each other and on top of whatever text follows
+ * instead of laying out as a grid. Reset to plain, unpositioned block flow
+ * (the exact fallback every other image in this content already gets) so a
+ * tiled gallery reads as a plain vertical stack of full-size photos instead
+ * of overlapping wreckage — not a recreation of the original grid, which
+ * would need real layout logic this bounded, regex-based extraction has no
+ * way to reconstruct (there's no theme CSS left to infer column widths
+ * from). */
+.daymark-expand-content [class*='tiled-gallery'] {
+	position: static !important;
+	float: none !important;
+	width: auto !important;
+	height: auto !important;
+	top: auto !important;
+	left: auto !important;
+	margin: var(--daymark-spacing-sm) 0 !important;
 }
 
 /* A Timeline card's inline-expand panel — a Mark/ordinary post's own

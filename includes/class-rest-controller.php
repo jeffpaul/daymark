@@ -528,10 +528,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'get_subscription_post_full_content' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'id' => array(
+					'id'      => array(
 						'type'              => 'integer',
 						'required'          => true,
 						'sanitize_callback' => 'absint',
+					),
+					// Forces a live re-fetch/re-extraction even for an
+					// already-'full'-cached post — see
+					// get_subscription_post_full_content()'s own docblock.
+					'refresh' => array(
+						'type'              => 'boolean',
+						'required'          => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
 				),
 			)
@@ -986,6 +994,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * stay scoped to Daymark's own type vocabulary, not a guess at an
 	 * arbitrary post's content.
 	 *
+	 * A Mark carrying `_daymark_like_of` or `_daymark_repost_of` (the
+	 * Like/Repost toggle's own auto-published Mark — see "Subscribed-post
+	 * engagement", CLAUDE.md) is unconditionally excluded from the Marks
+	 * side of this query: it exists purely to carry an outbound
+	 * `u-like-of`/`u-repost-of` link for a federation plugin to send, not
+	 * as content meant to appear on the Timeline. This is a Timeline-only
+	 * exclusion — the Mark itself is untouched everywhere else.
+	 *
+
 	 * Five optional filter params, combinable with the pagination params
 	 * above: `s` (keyword search, applied identically to both source
 	 * queries), `type` (content-type filter — `_daymark_primary_type` on
@@ -1057,23 +1074,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'no_found_rows'  => true,
 			);
 
+			// A Like/Repost toggle's own Mark (_daymark_like_of/_daymark_repost_of
+			// — see the "Subscribed-post engagement" decision, CLAUDE.md) exists
+			// purely to give an outbound u-like-of/u-repost-of link for a
+			// federation plugin to send; it's not content meant to be read on
+			// the Timeline, so both are excluded here unconditionally. Only the
+			// Timeline listing is affected — the underlying Mark is still a
+			// normal published post everywhere else (Search, wp-admin, the REST
+			// API directly).
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
+			$marks_args['meta_query'] = array(
+				'relation' => 'AND',
+				array(
+					'key'     => '_daymark_like_of',
+					'compare' => 'NOT EXISTS',
+				),
+				array(
+					'key'     => '_daymark_repost_of',
+					'compare' => 'NOT EXISTS',
+				),
+			);
+
 			// Optional content-type filter: narrow to one
 			// _daymark_primary_type — only a true Mark carries this meta,
 			// so this is the one Marks-query path that still requires
 			// _daymark_is_mark (mirrors get_marks()'s own type-filter
 			// handling).
 			if ( '' !== $type ) {
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
-				$marks_args['meta_query'] = array(
-					'relation' => 'AND',
-					array(
-						'key'   => '_daymark_is_mark',
-						'value' => '1',
-					),
-					array(
-						'key'   => '_daymark_primary_type',
-						'value' => $type,
-					),
+				$marks_args['meta_query'][] = array(
+					'key'   => '_daymark_is_mark',
+					'value' => '1',
+				);
+				$marks_args['meta_query'][] = array(
+					'key'   => '_daymark_primary_type',
+					'value' => $type,
 				);
 			}
 
@@ -2361,7 +2395,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * this fetches it live via
 	 * Daymark_Subscription_Poller::fetch_full_content() first; an
 	 * already-'full' post is returned from cache without re-hitting the
-	 * source site.
+	 * source site — unless the optional `refresh` param is truthy, which
+	 * forces a live re-fetch regardless of the cached content_state. This is
+	 * the one way to pick up an improvement to extract_body_html() (a new
+	 * stripping pass, say) for a post that was already fully cached before
+	 * that improvement shipped — otherwise its stored body_content would
+	 * never change again short of being pruned and re-polled, or the whole
+	 * subscription being removed and re-added.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -2373,11 +2413,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id = absint( $request->get_param( 'id' ) );
+		$id      = absint( $request->get_param( 'id' ) );
+		$refresh = rest_sanitize_boolean( $request->get_param( 'refresh' ) );
 
 		$content_state = get_post_meta( $id, 'content_state', true );
 
-		if ( 'full' !== $content_state ) {
+		if ( $refresh || 'full' !== $content_state ) {
 			$fetch = Daymark_Plugin::instance()->subscription_poller->fetch_full_content( $id );
 
 			if ( is_wp_error( $fetch ) ) {

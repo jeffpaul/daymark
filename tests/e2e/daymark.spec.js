@@ -891,6 +891,20 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	});
 	await page.goto('/daymark');
 
+	// Real, live subscription-post images (this suite never cleans up its
+	// own real content — see openComposer()'s own docblock above) can
+	// still be loading in the background right after this goto. Each one
+	// completing changes the page's own height, and the browser's own
+	// scroll-anchoring can react to that with a scroll adjustment
+	// bindChromeAutoHide()'s scroll listener has no way to tell apart from
+	// a real one — landing right in between two of the deliberate wheel
+	// scrolls below and corrupting the very next one's own delta. Letting
+	// every currently-rendered Timeline image settle first closes that gap
+	// before the scroll calibration that follows depends on it.
+	await page.waitForFunction(() =>
+		Array.from(document.querySelectorAll('[data-recent-list] img')).every((img) => img.complete)
+	);
+
 	// Wait for the page to actually grow taller than the viewport, then
 	// pad it with a plain synthetic spacer well past the recent list —
 	// real seeded rows alone left too little scroll room to test the
@@ -918,6 +932,18 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(footer).toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
+	// This 1000px scroll is easily enough to cross the recent list's own
+	// infinite-scroll sentinel (rootMargin: 200px — see setupObserver(),
+	// app.js), appending a further page of real subscription-post images
+	// this test's earlier image-settle wait never had a chance to cover
+	// (they didn't exist yet). One of those finishing mid-sequence is the
+	// same scroll-anchor risk that wait already guards against for the
+	// first page — settle this second batch too before the more delicate
+	// up/down calibration below depends on a stable scroll position.
+	await page.waitForFunction(() =>
+		Array.from(document.querySelectorAll('[data-recent-list] img')).every((img) => img.complete)
+	);
+
 	// Scroll up (still far from the top): footer returns, header hides.
 	await page.mouse.wheel(0, -200);
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
@@ -929,10 +955,22 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
 	// Confirm tabbing a footer control reveals both bars, even with the
-	// header currently hidden from a scroll-up.
+	// header currently hidden from a scroll-up. Playwright's own
+	// locator.focus() performs its usual actionability checks first,
+	// which can include scrolling the target into view — and since the
+	// button sits inside a footer that's currently translated off-screen
+	// (is-footer-hidden), that self-triggered scroll is itself a real
+	// `scroll` event bindChromeAutoHide() has no way to tell apart from a
+	// user's, immediately re-applying is-footer-hidden right after (or
+	// even before) the focus event's own handler clears it — a retry loop
+	// around the assertion doesn't help here, since every attempt hits
+	// the exact same self-inflicted scroll. A raw DOM .focus() (see
+	// openComposer()'s own docblock above for the same sidestep applied
+	// to a click) moves focus with no actionability checks and no scroll
+	// of its own, leaving only the real, intended state change.
 	await page.mouse.wheel(0, -200);
 	await expect(header).toHaveClass(/is-header-hidden/);
-	await page.locator('[data-action="new-mark"]').focus();
+	await page.locator('[data-action="new-mark"]').evaluate((el) => el.focus());
 	await expect(footer).not.toHaveClass(/is-footer-hidden/);
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 });
@@ -1346,7 +1384,19 @@ test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => 
 	await menuToggle.click(); // close the menu
 
 	// Search screen: type filter chip and Source filter select.
-	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	//
+	// A raw DOM click (not Playwright's own pointer-based one) — the same
+	// sidestep openComposer() above documents in full: this suite's
+	// accumulated, never-cleaned-up Timeline content (plus every card now
+	// rendering a full engagement row and, per this same PR, a wrapping
+	// multi-line title) makes bindChromeAutoHide()'s scroll-driven
+	// is-footer-hidden race reliably lose here once enough of it has piled
+	// up, and only el.click() — which skips hit-testing against whatever
+	// real content the page has scrolled to at that screen position —
+	// sidesteps it for good.
+	await page
+		.locator('.daymark-bottomnav__link', { hasText: 'Search' })
+		.evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#search$/);
 	box = await page.locator('[data-filter-chips] [data-filter="note"]').boundingBox();
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
@@ -1822,8 +1872,11 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 	// styling itself.
 	await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
 
-	// Navigating to another destination moves the active indicator.
-	await nav.getByRole('link', { name: 'Explore', exact: true }).click();
+	// Navigating to another destination moves the active indicator. A raw
+	// DOM click (see openComposer()'s own docblock above) — this suite's
+	// accumulated Timeline content makes the footer's scroll-driven
+	// is-footer-hidden race a real, reliable failure here otherwise.
+	await nav.getByRole('link', { name: 'Explore', exact: true }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#explore$/);
 	await expect(nav.getByRole('link', { name: 'Explore', exact: true })).toHaveClass(/is-active/);
 	await expect(timeline).not.toHaveClass(/is-active/);
@@ -1974,11 +2027,20 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	await loginAs(page);
 	await page.goto('/daymark');
 
+	// Every click below on the launcher/scrim uses a raw DOM click (see
+	// openComposer()'s own docblock above) rather than Playwright's own
+	// pointer-based one: this suite's never-cleaned-up Timeline content
+	// (real subscription posts whose images keep arriving well after the
+	// page itself has settled) makes any footer-hosted click here a race
+	// against whatever real content the page has scrolled to at that
+	// screen position — not just the scroll-driven is-footer-hidden case
+	// this comment originally called out, but the exact same "intercepts
+	// pointer events" symptom on a plain first click too.
 	const btn = page.locator('[data-action="new-mark"]');
 	await expect(btn).toHaveAttribute('aria-label', 'New Mark');
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 
-	await btn.click();
+	await btn.evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'true');
 
 	for (const type of ['Image', 'Video', 'Audio', 'Note']) {
@@ -1988,11 +2050,11 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	// An outside tap (the dimming scrim over the recent list) closes it —
 	// the scrim covers that area while open and is the real hit target,
 	// since it sits on top of the content underneath it.
-	await page.locator('.daymark-launcher__scrim').click();
+	await page.locator('.daymark-launcher__scrim').evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 
 	// Escape closes it too, and returns focus to the launcher button.
-	await btn.click();
+	await btn.evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'true');
 	await page.keyboard.press('Escape');
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');

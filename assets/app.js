@@ -2773,6 +2773,19 @@
 			return;
 		}
 
+		// The "Refresh content" action inside an expanded subscription
+		// post's panel (see fetchSubscriptionExpandBody()): forces a fresh
+		// live re-fetch/re-extraction instead of the already-cached body.
+		const refreshTrigger = target.closest('[data-refresh-subpost]');
+		if (refreshTrigger) {
+			const item = screen._bySubId.get(refreshTrigger.getAttribute('data-refresh-subpost'));
+			const panel = refreshTrigger.closest('[data-expand-panel]');
+			if (item && panel) {
+				refreshSubscriptionExpandContent(screen, item, panel);
+			}
+			return;
+		}
+
 		// A subscription-post card's tap: expand its content inline, right
 		// below the card (see toggleExpand()) — fetched externally via the
 		// click-through endpoint.
@@ -5926,9 +5939,9 @@
 	// type icon (see renderTypeIcon()) already says that now, so the text
 	// stays free for what the icon can't show. Camera and weather metadata
 	// stay server-stored-only for now — deliberately not rendered here, to
-	// keep this compact card from getting cluttered. The timestamp itself
-	// isn't part of this line — see renderCardTimestampRow(), rendered as
-	// its own bottom-right-anchored row instead.
+	// keep this compact card from getting cluttered. The timestamp (and the
+	// site name) aren't part of this line — see renderCardTimestampRow(),
+	// rendered as their own bottom row instead.
 	function renderCardMeta(item, chipHtml) {
 		const parts = [];
 		if (chipHtml) {
@@ -5958,11 +5971,22 @@
 	// app.css) is enough to push this row to the right without needing
 	// absolute positioning that would risk overlapping the stats row or an
 	// excerpt of unpredictable height.
-	function renderCardTimestampRow(item) {
-		if (!item.date) {
+	// `siteLabel` (issue: "site name on the date row") sits on the same row
+	// as the timestamp, left-aligned — a Mark's own site name
+	// (config.siteTitle) or a subscription post's source site
+	// (subscriptionSiteLabel(item)), matching how a subscription post's
+	// card already shows whose content it is. Omitted for a Draft (its
+	// caller passes '' — a draft has no separate "published to" site yet,
+	// the same reasoning renderMarkItem() already applies to skipping its
+	// site icon). `time`'s own `margin-left: auto` (CSS) keeps it
+	// right-aligned whether or not a site name precedes it.
+	function renderCardTimestampRow(item, siteLabel) {
+		if (!item.date && !siteLabel) {
 			return '';
 		}
-		return `<span class="daymark-recent__timestamp">${renderCardTimestamp(item.date)}</span>`;
+		const site = siteLabel ? `<span class="daymark-recent__sitename">${esc(siteLabel)}</span>` : '';
+		const time = item.date ? renderCardTimestamp(item.date) : '';
+		return `<span class="daymark-recent__timestamprow">${site}${time}</span>`;
 	}
 
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
@@ -5995,7 +6019,7 @@
 						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						${isDraft ? '' : renderItemStats(item)}
-						${renderCardTimestampRow(item)}
+						${renderCardTimestampRow(item, isDraft ? '' : config.siteTitle || __('Site', 'daymark'))}
 					</span>`;
 	}
 
@@ -6058,7 +6082,7 @@
 								item,
 								'subscription_post'
 							)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>
-							${renderCardTimestampRow(item)}
+							${renderCardTimestampRow(item, siteLabel)}
 						</span>
 					</button>
 					<div class="daymark-recent__expand" data-expand-panel hidden></div>
@@ -6157,16 +6181,25 @@
 		return expandBodyHtml(content);
 	}
 
-	// A subscription post's full content, click-through-fetched (and
-	// narrowed/cached server-side) from its source site on first open —
-	// body_content is never present in the merged Timeline feed response,
-	// even for an already-'full' post.
-	async function loadSubscriptionExpandHtml(item) {
+	// Shared by loadSubscriptionExpandHtml() (the normal, cache-preferring
+	// load) and refreshSubscriptionExpandContent() (a forced re-fetch/
+	// re-extraction — see the `refresh` REST param's own docblock): builds
+	// the same body+Reply+"Refresh content" markup either way, so the two
+	// call paths can never render this panel differently. A forced refresh
+	// has no offline fallback worth falling back *to* (the whole point is a
+	// fresh live copy) — its own failure is left to propagate rather than
+	// silently masked by stale cached content the way a normal load's
+	// connectivity-shaped failure already is.
+	async function fetchSubscriptionExpandBody(item, forceRefresh) {
 		let content;
 		try {
-			const full = await apiGet('subscription-posts/' + item.id);
+			const path = 'subscription-posts/' + item.id + (forceRefresh ? '?refresh=1' : '');
+			const full = await apiGet(path);
 			content = full && full.body_content ? String(full.body_content) : '';
 		} catch (err) {
+			if (forceRefresh) {
+				throw err;
+			}
 			content = await loadExpandHtmlOffline(err, item.id);
 		}
 		const body = expandBodyHtml(content);
@@ -6177,11 +6210,51 @@
 		// CLAUDE.md's "Webmention: rescoped to lean on ecosystem plugins"
 		// decision for why nothing here sends/verifies a Webmention itself.
 		const reply = item.permalink
-			? `<p class="daymark-note-card__links"><button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
+			? `<button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
 					item.permalink
-			  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button></p>`
+			  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button>`
 			: '';
-		return body + reply;
+		// A cached post's own content is only ever extracted once, at fetch
+		// time — an improvement to the server's own extraction logic (a new
+		// stripping pass, say) never reaches an already-cached post again on
+		// its own. This is the one way to force that: re-fetch the source
+		// page live and re-run extraction against it right now.
+		const refresh = `<button type="button" class="daymark-btn daymark-btn--text" data-refresh-subpost="${esc(
+			String(item.id)
+		)}">${esc(__('Refresh content', 'daymark'))}</button>`;
+		return body + `<p class="daymark-note-card__links">${reply}${refresh}</p>`;
+	}
+
+	// A subscription post's full content, click-through-fetched (and
+	// narrowed/cached server-side) from its source site on first open —
+	// body_content is never present in the merged Timeline feed response,
+	// even for an already-'full' post.
+	async function loadSubscriptionExpandHtml(item) {
+		return fetchSubscriptionExpandBody(item, false);
+	}
+
+	// The "Refresh content" action inside an expanded subscription post's
+	// panel: forces a fresh live re-fetch/re-extraction, replaces the
+	// panel's own content, and updates the shared _detailCache so
+	// re-opening this same card later (without refreshing again) shows the
+	// refreshed result too, not the stale pre-refresh one.
+	async function refreshSubscriptionExpandContent(screen, item, panel) {
+		panel.innerHTML =
+			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
+			esc(__('Loading…', 'daymark')) +
+			'</p>';
+		try {
+			const html = await fetchSubscriptionExpandBody(item, true);
+			screen._detailCache.set('sub-' + item.id, { state: 'done', html });
+			if (screen._openExpand && screen._openExpand.panel === panel) {
+				panel.innerHTML = html || expandErrorHtml();
+			}
+		} catch (err) {
+			screen._detailCache.set('sub-' + item.id, { state: 'error' });
+			if (screen._openExpand && screen._openExpand.panel === panel) {
+				panel.innerHTML = expandErrorHtml();
+			}
+		}
 	}
 
 	// Jump into a fresh composer seeded to reply to a subscribed post —

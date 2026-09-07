@@ -691,6 +691,35 @@ XML;
 	}
 
 	/**
+	 * The broader, non-WP-core skip-link target set (issue #267 batch) —
+	 * `#genesis-content` here, standing in for the Genesis Framework and
+	 * similar theme/framework conventions beyond WordPress core's own four.
+	 */
+	public function test_fetch_full_content_strips_skip_link_by_genesis_style_href_target() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/genesis-skip-link/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/genesis-skip-link/',
+			'<html><body>'
+			. '<a href="#genesis-content">Skip to content</a>'
+			. '<article><p>The genuine post body.</p></article>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The genuine post body', $body );
+		$this->assertStringNotContainsString( 'Skip to content', $body, 'A Genesis-Framework-style #genesis-content skip-link target is also recognized' );
+	}
+
+	/**
 	 * A theme nesting its entry-header (title, publish date, category
 	 * links) and entry-footer inside the same <article> as a dedicated
 	 * `entry-content` div: preferring that inner div excludes both, leaving
@@ -789,6 +818,38 @@ XML;
 
 		$this->assertStringContainsString( 'The real post body text', $body );
 		$this->assertStringNotContainsString( 'Previous:', $body, 'A div-wrapped post-navigation block is dropped' );
+	}
+
+	/**
+	 * The same post-navigation block, wrapped in a `<ul>` rather than a
+	 * `<div>`/`<section>` (issue #267 batch) — the class match is now
+	 * bounded to a small set of realistic wrapper tags rather than only
+	 * those two, so a theme's own choice of container element doesn't
+	 * matter as much.
+	 */
+	public function test_fetch_full_content_strips_post_navigation_wrapped_in_a_list() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/post-nav-list/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/post-nav-list/',
+			'<html><body><article class="post">'
+			. '<div class="entry-content"><p>The real post body text.</p></div>'
+			. '<ul class="post-navigation"><li>'
+			. '<a href="/prev/">Previous: My Plugins Compatibility for WordPress 7.0</a></li></ul>'
+			. '</article></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real post body text', $body );
+		$this->assertStringNotContainsString( 'Previous:', $body, 'A <ul>-wrapped post-navigation block is also dropped' );
 	}
 
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
