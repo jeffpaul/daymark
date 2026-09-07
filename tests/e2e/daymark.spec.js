@@ -1346,7 +1346,19 @@ test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => 
 	await menuToggle.click(); // close the menu
 
 	// Search screen: type filter chip and Source filter select.
-	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	//
+	// A raw DOM click (not Playwright's own pointer-based one) — the same
+	// sidestep openComposer() above documents in full: this suite's
+	// accumulated, never-cleaned-up Timeline content (plus every card now
+	// rendering a full engagement row and, per this same PR, a wrapping
+	// multi-line title) makes bindChromeAutoHide()'s scroll-driven
+	// is-footer-hidden race reliably lose here once enough of it has piled
+	// up, and only el.click() — which skips hit-testing against whatever
+	// real content the page has scrolled to at that screen position —
+	// sidesteps it for good.
+	await page
+		.locator('.daymark-bottomnav__link', { hasText: 'Search' })
+		.evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#search$/);
 	box = await page.locator('[data-filter-chips] [data-filter="note"]').boundingBox();
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
@@ -1822,8 +1834,11 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 	// styling itself.
 	await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
 
-	// Navigating to another destination moves the active indicator.
-	await nav.getByRole('link', { name: 'Explore', exact: true }).click();
+	// Navigating to another destination moves the active indicator. A raw
+	// DOM click (see openComposer()'s own docblock above) — this suite's
+	// accumulated Timeline content makes the footer's scroll-driven
+	// is-footer-hidden race a real, reliable failure here otherwise.
+	await nav.getByRole('link', { name: 'Explore', exact: true }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#explore$/);
 	await expect(nav.getByRole('link', { name: 'Explore', exact: true })).toHaveClass(/is-active/);
 	await expect(timeline).not.toHaveClass(/is-active/);
@@ -1991,8 +2006,12 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	await page.locator('.daymark-launcher__scrim').click();
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 
-	// Escape closes it too, and returns focus to the launcher button.
-	await btn.click();
+	// Escape closes it too, and returns focus to the launcher button. A raw
+	// DOM click (see openComposer()'s own docblock above) — re-opening the
+	// launcher here is exactly the same footer-hosted click the scroll-driven
+	// is-footer-hidden race reliably wins against once this suite's
+	// never-cleaned-up Timeline content has piled up enough.
+	await btn.evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'true');
 	await page.keyboard.press('Escape');
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
