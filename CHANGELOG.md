@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A subscribed post's Timeline card now has a "Replied" indicator plus real Like and Repost toggles — Like/Repost publish a small Mark of your own, letting an already-installed federation plugin (ActivityPub/Webmention/ATmosphere) send the actual outbound like/reblog, the same way the existing Reply action already works. Full engagement counts from the origin site aren't obtainable in general, so this shows your own engagement instead. ([#232](https://github.com/jeffpaul/daymark/issues/232))
+
 ### Changed
 
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))

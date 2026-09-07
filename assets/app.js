@@ -397,20 +397,53 @@
 		)}</span>`;
 	}
 
-	// The row's other interactive entry, same span[role="button"] reasoning
-	// as renderBookmarkToggle() above (nested inside the card's own
-	// expand-trigger button either way). Shares a Mark's or a subscription
-	// post's real permalink — identical behavior for either, so unlike the
-	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
-	// when an item has no permalink at all (should not normally happen for
-	// anything actually published), since there'd be nothing to share.
-	function renderShareToggle(item) {
-		if (!item.permalink) {
-			return '';
-		}
+	// A read-only indicator — not a toggle, no click handler — showing
+	// whether the current user has already published a Mark engaging with
+	// this exact subscription post (a reply, via the existing "Reply"
+	// action). Same reasoning renderStat() already gives for the row's
+	// numeric stats (always visible, never a real `<button>`, since it lives
+	// nested inside the card's own expand-trigger button), but binary rather
+	// than counted: Daymark only ever knows its own record of "did I engage
+	// with this," never the origin site's real comment count.
+	function renderEngagementIndicator(glyph, active, modifier, label) {
+		return `<span class="daymark-stat daymark-stat--${modifier}${
+			active ? ' daymark-stat--active' : ''
+		}" aria-label="${esc(label)}" title="${esc(label)}">${statIcon(glyph)}</span>`;
+	}
+
+	// The Like toggle for a subscription post — the row's other *interactive*
+	// entry besides Bookmark/Repost, same span[role="button"] reasoning as
+	// renderBookmarkToggle() (nested inside the card's own expand-trigger
+	// button). Unlike Bookmark, activating this publishes (or, to undo,
+	// trashes) a small Mark of the site owner's own — see toggleLike() — so
+	// `data-like-mark-id` carries that Mark's ID once one exists, letting the
+	// toggle undo itself without a second lookup.
+	function renderLikeToggle(item) {
+		const liked = !!item.liked_mark_id;
 		const id = esc(String(item.id));
-		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
-			SHARE_GLYPH
+		const markId = esc(String(item.liked_mark_id || 0));
+		const label = liked ? 'Unlike' : 'Like';
+		return `<span class="daymark-stat daymark-stat--like${
+			liked ? ' daymark-stat--active daymark-stat--liked' : ''
+		}" role="button" tabindex="0" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
+			label
+		)}" title="${esc(label)}" data-like-toggle="${id}" data-like-mark-id="${markId}">${statIcon(
+			HEART_GLYPH
+		)}</span>`;
+	}
+
+	// The Repost toggle — same shape/reasoning as renderLikeToggle() above.
+	function renderRepostToggle(item) {
+		const reposted = !!item.reposted_mark_id;
+		const id = esc(String(item.id));
+		const markId = esc(String(item.reposted_mark_id || 0));
+		const label = reposted ? 'Undo repost' : 'Repost';
+		return `<span class="daymark-stat daymark-stat--repost${
+			reposted ? ' daymark-stat--active daymark-stat--reposted' : ''
+		}" role="button" tabindex="0" aria-pressed="${reposted ? 'true' : 'false'}" aria-label="${esc(
+			label
+		)}" title="${esc(label)}" data-repost-toggle="${id}" data-repost-mark-id="${markId}">${statIcon(
+			REPOST_GLYPH
 		)}</span>`;
 	}
 
@@ -2313,6 +2346,24 @@
 			return;
 		}
 
+		// The Like/Repost toggles — same reasoning/placement as Bookmark
+		// above.
+		const likeToggle = target.closest('[data-like-toggle]');
+		if (likeToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleLike(screen, likeToggle);
+			return;
+		}
+
+		const repostToggle = target.closest('[data-repost-toggle]');
+		if (repostToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleRepost(screen, repostToggle);
+			return;
+		}
+
 		// The "open original" toggle — same reasoning/placement as the
 		// Bookmark toggle above; the permanent replacement for the old
 		// "View full post"/"View original" footer link, so this now works
@@ -2473,6 +2524,18 @@
 			toggleBookmark(screen, bookmarkToggle);
 			return;
 		}
+		const likeToggle = event.target.closest('[data-like-toggle]');
+		if (likeToggle) {
+			event.preventDefault();
+			toggleLike(screen, likeToggle);
+			return;
+		}
+		const repostToggle = event.target.closest('[data-repost-toggle]');
+		if (repostToggle) {
+			event.preventDefault();
+			toggleRepost(screen, repostToggle);
+			return;
+		}
 		const externalLinkToggle = event.target.closest('[data-external-link]');
 		if (externalLinkToggle) {
 			event.preventDefault();
@@ -2525,6 +2588,102 @@
 			}
 		} catch (err) {
 			setBookmarkToggleState(trigger, wasBookmarked);
+		}
+	}
+
+	// Shared optimistic-state flip for the Like/Repost toggles below — same
+	// shape as setBookmarkToggleState() above, parameterized on which of the
+	// two this is. `markId` is stashed on the element itself so a later undo
+	// tap knows which Mark to delete without a second lookup.
+	function setEngagementToggleState(trigger, kind, active, markId) {
+		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
+		const label = active
+			? 'like' === kind
+				? 'Unlike'
+				: 'Undo repost'
+			: 'like' === kind
+			? 'Like'
+			: 'Repost';
+		trigger.classList.toggle(activeClass, active);
+		trigger.classList.toggle('daymark-stat--active', active);
+		trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
+		trigger.setAttribute('aria-label', label);
+		trigger.setAttribute('title', label);
+		trigger.setAttribute('data-' + kind + '-mark-id', String(markId || 0));
+	}
+
+	// The minimal Mark a Like/Repost tap publishes: a plain 'note' with no
+	// media, carrying only the one POSSE target-URL field the server needs
+	// (like_of/repost_of) to render u-like-of/u-repost-of and let whichever
+	// federation plugin the site owner runs discover and act on it — the
+	// same "compose a real Mark, let an already-installed plugin do the
+	// actual outbound protocol work" pattern the existing Reply action
+	// already established (see startReplyToSubscriptionPost()). Deliberately
+	// omits targets[]/categories[] entirely (not even an explicit empty
+	// array) so this call gets exactly the same type-based default
+	// destination/category resolution any other Note Mark would — sending
+	// an explicit empty selection would get *remembered* as the user's new
+	// Note-type default (see Daymark_Publisher::remember_destination_prefs()),
+	// silently overwriting their real preference for a background action
+	// they didn't consciously make a destination choice for.
+	function buildEngagementFormData(verb, item, targetField) {
+		const formData = new FormData();
+		formData.append('caption', `${verb} "${item.title || item.permalink}"`);
+		formData.append('primary_type', 'note');
+		formData.append('status', 'publish');
+		formData.append('ai_assist_used', '0');
+		formData.append(targetField, item.permalink);
+		return formData;
+	}
+
+	// Toggles a Like for the subscription post this trigger belongs to.
+	// Optimistic, same as toggleBookmark() above, but — unlike a bookmark,
+	// which is pure per-user set membership — liking actually publishes (or,
+	// to undo, trashes) a small Mark of the site owner's own; see
+	// buildEngagementFormData()'s own docblock for why.
+	async function toggleLike(screen, trigger) {
+		const id = trigger.getAttribute('data-like-toggle');
+		const item = screen && screen._bySubId && screen._bySubId.get(id);
+		if (!id || !item || !item.permalink) {
+			return;
+		}
+		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
+		const existingMarkId = trigger.getAttribute('data-like-mark-id') || '0';
+		setEngagementToggleState(trigger, 'like', !wasLiked, existingMarkId);
+		try {
+			if (!wasLiked) {
+				const mark = await apiUpload('marks', buildEngagementFormData('Liked', item, 'like_of'));
+				setEngagementToggleState(trigger, 'like', true, mark.id);
+			} else {
+				await apiDelete('marks/' + existingMarkId);
+				setEngagementToggleState(trigger, 'like', false, 0);
+			}
+		} catch (err) {
+			setEngagementToggleState(trigger, 'like', wasLiked, existingMarkId);
+		}
+	}
+
+	// Toggles a Repost for the subscription post this trigger belongs to —
+	// same shape/reasoning as toggleLike() above.
+	async function toggleRepost(screen, trigger) {
+		const id = trigger.getAttribute('data-repost-toggle');
+		const item = screen && screen._bySubId && screen._bySubId.get(id);
+		if (!id || !item || !item.permalink) {
+			return;
+		}
+		const wasReposted = 'true' === trigger.getAttribute('aria-pressed');
+		const existingMarkId = trigger.getAttribute('data-repost-mark-id') || '0';
+		setEngagementToggleState(trigger, 'repost', !wasReposted, existingMarkId);
+		try {
+			if (!wasReposted) {
+				const mark = await apiUpload('marks', buildEngagementFormData('Reposted', item, 'repost_of'));
+				setEngagementToggleState(trigger, 'repost', true, mark.id);
+			} else {
+				await apiDelete('marks/' + existingMarkId);
+				setEngagementToggleState(trigger, 'repost', false, 0);
+			}
+		} catch (err) {
+			setEngagementToggleState(trigger, 'repost', wasReposted, existingMarkId);
 		}
 	}
 
@@ -4925,13 +5084,14 @@
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
 	// expands its content inline, right below the card, rather than
 	// navigating — its permalink points at the *source* site, not anywhere
-	// in this app. No comment/like/reblog stat row: those only ever exist
-	// for a Mark — Daymark doesn't (and, for someone else's post, can't
-	// cheaply) track engagement data of its own for a subscription post.
-	// Bookmarking and sharing are different: they're this user's own
-	// actions on anything they can see on their Timeline, independent of
-	// engagement data, so they get their own minimal stats row here even
-	// though the other three stats don't apply.
+	// in this app. No *counted* like/comment/reblog stats: those only ever
+	// exist for a Mark — Daymark doesn't (and, for someone else's post,
+	// can't cheaply) track the origin site's real engagement totals. What it
+	// *can* track is its own record of the user's own engagement (issue #41
+	// follow-up) — Like and Repost toggle a small Mark of the site owner's
+	// own (see toggleLike()/toggleRepost()), and the Reply indicator is
+	// read-only, reflecting whether a reply Mark already exists (the "Reply"
+	// action itself lives in the expanded panel, see startReplyToSubscriptionPost()).
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || 'Untitled post';
@@ -4965,7 +5125,14 @@
 							<span class="daymark-recent__title">${esc(title)}</span>
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
-							<span class="daymark-item-stats daymark-item-stats--minimal">${renderBookmarkToggle(
+							<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
+								item
+							)}${renderEngagementIndicator(
+								COMMENT_GLYPH,
+								!!item.replied_mark_id,
+								'replied',
+								'Replied'
+							)}${renderRepostToggle(item)}${renderBookmarkToggle(
 								item,
 								'subscription_post'
 							)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>

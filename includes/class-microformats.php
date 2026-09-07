@@ -19,6 +19,14 @@
  * the Mark publishes. See CLAUDE.md's Webmention decision for why Daymark
  * itself never sends, receives, or verifies a Webmention.
  *
+ * u-repost-of/u-like-of render the same way, from `_daymark_repost_of`/
+ * `_daymark_like_of` — see repost_markup()/like_markup(). Set only by the
+ * composer's "Repost"/"Like" actions on a subscribed post's Timeline card
+ * (issue #41 follow-up). Same POSSE-only contract as u-in-reply-to: no
+ * Daymark-owned outbound protocol call, just markup a federation plugin the
+ * site owner already runs (ActivityPub, Webmention, ATmosphere) discovers
+ * and acts on in its own already-established way.
+ *
  * u-email is deliberately left off the h-card. WordPress account emails are
  * not meant to be public and there is no separate public-contact-address
  * field to source one from instead. u-email is optional in the h-card spec,
@@ -163,6 +171,8 @@ class Daymark_Microformats {
 		$html .= '<time class="dt-published" datetime="' . esc_attr( $published ) . '">' . esc_html( (string) get_the_date( '', $post_id ) ) . '</time>';
 		$html .= $this->rich_media_markup( $post_id );
 		$html .= $this->reply_markup( $post_id );
+		$html .= $this->repost_markup( $post_id );
+		$html .= $this->like_markup( $post_id );
 
 		/**
 		 * Whether a Mark's quietly-captured location (see the "quiet Mark
@@ -256,13 +266,55 @@ class Daymark_Microformats {
 	 * @return string Escaped HTML, or '' when the Mark isn't a reply.
 	 */
 	public function reply_markup( int $post_id ): string {
-		$url = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
+		return $this->target_url_markup( $post_id, '_daymark_in_reply_to', 'u-in-reply-to' );
+	}
+
+	/**
+	 * Build u-repost-of markup from a Mark's repost-of URL, when present.
+	 *
+	 * Reads `_daymark_repost_of` — set only when the Mark was composed via
+	 * the "Repost" action on a subscribed post's Timeline card (issue #41
+	 * follow-up) — same reasoning as reply_markup() above.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Escaped HTML, or '' when the Mark isn't a repost.
+	 */
+	public function repost_markup( int $post_id ): string {
+		return $this->target_url_markup( $post_id, '_daymark_repost_of', 'u-repost-of' );
+	}
+
+	/**
+	 * Build u-like-of markup from a Mark's like-of URL, when present.
+	 *
+	 * Reads `_daymark_like_of` — set only when the Mark was composed via the
+	 * "Like" action on a subscribed post's Timeline card (issue #41
+	 * follow-up) — same reasoning as reply_markup() above.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return string Escaped HTML, or '' when the Mark isn't a like.
+	 */
+	public function like_markup( int $post_id ): string {
+		return $this->target_url_markup( $post_id, '_daymark_like_of', 'u-like-of' );
+	}
+
+	/**
+	 * Shared rendering for the three POSSE target-URL properties above: a
+	 * plain link tagged with the given microformats2 class, or '' when the
+	 * Mark carries no value for that meta key.
+	 *
+	 * @param int    $post_id   Mark post ID.
+	 * @param string $meta_key  One of '_daymark_in_reply_to', '_daymark_repost_of', '_daymark_like_of'.
+	 * @param string $mf_class  The microformats2 class to render ('u-in-reply-to', 'u-repost-of', 'u-like-of').
+	 * @return string Escaped HTML, or ''.
+	 */
+	private function target_url_markup( int $post_id, string $meta_key, string $mf_class ): string {
+		$url = (string) get_post_meta( $post_id, $meta_key, true );
 
 		if ( '' === $url ) {
 			return '';
 		}
 
-		return '<a class="u-in-reply-to" href="' . esc_url( $url ) . '">' . esc_html( $url ) . '</a>';
+		return '<a class="' . esc_attr( $mf_class ) . '" href="' . esc_url( $url ) . '">' . esc_html( $url ) . '</a>';
 	}
 
 	/**

@@ -495,6 +495,18 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_in_reply_to', $in_reply_to );
 		}
 
+		$repost_of = $this->resolve_repost_of( $data );
+
+		if ( null !== $repost_of ) {
+			update_post_meta( $post_id, '_daymark_repost_of', $repost_of );
+		}
+
+		$like_of = $this->resolve_like_of( $data );
+
+		if ( null !== $like_of ) {
+			update_post_meta( $post_id, '_daymark_like_of', $like_of );
+		}
+
 		$this->apply_reading_time( $post_id, $caption, $transcript );
 
 		if ( $has_helper_selection ) {
@@ -760,6 +772,18 @@ class Daymark_Publisher {
 
 		if ( null !== $in_reply_to ) {
 			update_post_meta( $post_id, '_daymark_in_reply_to', $in_reply_to );
+		}
+
+		$repost_of = $this->resolve_repost_of( $data );
+
+		if ( null !== $repost_of ) {
+			update_post_meta( $post_id, '_daymark_repost_of', $repost_of );
+		}
+
+		$like_of = $this->resolve_like_of( $data );
+
+		if ( null !== $like_of ) {
+			update_post_meta( $post_id, '_daymark_like_of', $like_of );
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
@@ -1512,7 +1536,52 @@ class Daymark_Publisher {
 	 * @return string|null The URL, or null when absent/invalid.
 	 */
 	private function resolve_in_reply_to( array $data ): ?string {
-		$url = isset( $data['in_reply_to'] ) ? trim( (string) $data['in_reply_to'] ) : '';
+		return $this->resolve_target_url( $data, 'in_reply_to' );
+	}
+
+	/**
+	 * Resolve a repost-of URL sent by the composer's "Repost" action on a
+	 * subscribed post's Timeline card (issue #41 follow-up), if present and
+	 * a well-formed http(s) URL.
+	 *
+	 * Same POSSE-only contract as resolve_in_reply_to(): a plain URL stored
+	 * as-is, rendered by Daymark_Microformats as u-repost-of, never fetched
+	 * or verified server-side, and never itself the source of an outbound
+	 * protocol call — whichever federation plugin the site owner has active
+	 * already discovers the outbound link and reposts/reshares through its
+	 * own mechanism when the Mark publishes.
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @return string|null The URL, or null when absent/invalid.
+	 */
+	private function resolve_repost_of( array $data ): ?string {
+		return $this->resolve_target_url( $data, 'repost_of' );
+	}
+
+	/**
+	 * Resolve a like-of URL sent by the composer's "Like" action on a
+	 * subscribed post's Timeline card (issue #41 follow-up), if present and
+	 * a well-formed http(s) URL. Same POSSE-only contract as
+	 * resolve_in_reply_to()/resolve_repost_of() above — see those docblocks.
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @return string|null The URL, or null when absent/invalid.
+	 */
+	private function resolve_like_of( array $data ): ?string {
+		return $this->resolve_target_url( $data, 'like_of' );
+	}
+
+	/**
+	 * Shared validation for the three POSSE target-URL fields above: trims,
+	 * escapes, and requires an http(s) scheme — a non-conforming or absent
+	 * value resolves to null so the caller skips storing any meta at all.
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @param string               $key  One of 'in_reply_to', 'repost_of', 'like_of'.
+	 * @return string|null The URL, or null when absent/invalid.
+	 */
+	private function resolve_target_url( array $data, string $key ): ?string {
+		$url = isset( $data[ $key ] ) ? trim( (string) $data[ $key ] ) : '';
 
 		if ( '' === $url ) {
 			return null;
