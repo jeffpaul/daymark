@@ -28,6 +28,7 @@ can't act on them.
 
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))
 - A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap. ([#225](https://github.com/jeffpaul/daymark/pull/225))
+- The Settings -> Daymark subscriptions table's "Edit name" text link is now a pencil icon next to the site name — clicking it makes the name editable inline, saving on Enter, Tab, or clicking away instead of a separate Save button. ([#242](https://github.com/jeffpaul/daymark/issues/242))
 
 ### Fixed
 
@@ -41,6 +42,7 @@ can't act on them.
 - The Share icon's clipboard-copy fallback (used on any browser without a native share sheet, e.g. Firefox) now shows a visible on-screen "Link copied" confirmation instead of only a subtle color change — it previously looked like nothing had happened. ([#234](https://github.com/jeffpaul/daymark/issues/234))
 - A Timeline card's date, once shown as an actual date rather than a relative "Xd ago" reading, now formats it using the site's own Settings -> General -> Date Format instead of the browser's locale default (previously always MM/DD/YYYY-style). ([#238](https://github.com/jeffpaul/daymark/issues/238))
 - A bookmarked post's images now render correctly when viewed offline — its cached content markup displayed fine with no connectivity, but its `<img>` tags still pointed at the live origin site, so images showed as broken links. Images are now cached alongside the content and swapped in from that local copy when offline. ([#236](https://github.com/jeffpaul/daymark/issues/236))
+- The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column. ([#240](https://github.com/jeffpaul/daymark/issues/240))
 - On a screen with very little content (e.g. a near-empty Timeline), the bottom nav and the floating "+New" launcher no longer float mid-page instead of pinned to the bottom — the screen itself now always claims the full available height it's meant to. ([#244](https://github.com/jeffpaul/daymark/issues/244))
 
 ## [0.11.0] - 2026-09-05
