@@ -178,6 +178,12 @@ $daymark_config = array(
 	'nonce'                 => wp_create_nonce( 'wp_rest' ),
 	'siteUrl'               => esc_url_raw( home_url( '/' ) ),
 	'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
+	// A raw PHP date() format string (Settings -> General -> Date Format) —
+	// assets/app.js's formatDateWithPhpFormat() maps it token-by-token onto
+	// a Timeline card's own absolute-date display, so a card reads dates
+	// the same way the rest of wp-admin already does rather than the
+	// browser's own locale default.
+	'dateFormat'            => sanitize_text_field( get_option( 'date_format' ) ),
 	// Site Icon first, Daymark's own bundled icon otherwise — same
 	// resolution Daymark_Routes::icon_url() already uses for the browser
 	// favicon and PWA manifest icons. Timeline's own-Mark leading icon
