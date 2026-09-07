@@ -1482,6 +1482,39 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
 });
 
+// One-tap "Publish" from the Drafts list (issue #265): a draft that already
+// has a caption skips the composer entirely — no #create, no "Next" tap —
+// straight to #publish and out.
+test('draft → publish continuation: Publish from the ⋯ menu skips the composer', async ({
+	page,
+}) => {
+	const caption = `E2E quickpublish ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="save-draft"]').click();
+	await expect(page.getByText('Saved as draft')).toBeVisible();
+
+	await page.goto('/daymark');
+	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
+	await expect(card).toBeVisible();
+	const menu = card.locator('[data-actions]');
+	await menu.locator('[data-menu-toggle]').click();
+	await menu.locator('[data-menu-publish]').click();
+
+	// Lands directly on the Publish screen, never touching #create.
+	await expect(page).toHaveURL(/#publish$/);
+	await expect(page.getByText('Edit Draft')).toHaveCount(0);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark');
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
+});
+
 // Autosave: "nothing gets lost" even without tapping Save as Draft.
 // Typing a caption and abandoning the composer (navigating straight back to
 // Home, the way a closed tab or a killed app would) still leaves a
