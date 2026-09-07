@@ -943,6 +943,7 @@ h2[tabindex='-1']:focus {
    entry, immediately after the "open original" toggle above; same
    reasoning applies (no `margin-left: auto` of its own needed). */
 .daymark-stat--share {
+	position: relative;
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
@@ -962,6 +963,29 @@ h2[tabindex='-1']:focus {
 .daymark-stat--share-copied {
 	color: var(--daymark-accent);
 	font-weight: 600;
+}
+
+/* The visible bubble showShareFlashBubble() (app.js) appends as the Share
+   icon's own child on a clipboard-copy fallback — a color-only change with
+   no on-screen text (the two rules above) is easy to miss on a desktop
+   browser with no navigator.share() (e.g. Firefox), so this makes "Link
+   copied"/"Couldn't copy link" genuinely visible without hovering.
+   Positioned off .daymark-stat--share's own `position: relative` so it
+   never depends on whatever row/card layout contains it. */
+.daymark-share-flash {
+	position: absolute;
+	bottom: calc(100% + 6px);
+	left: 50%;
+	transform: translateX(-50%);
+	background: var(--daymark-text-primary);
+	color: var(--daymark-bg);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	padding: 4px 8px;
+	border-radius: var(--daymark-radius-sm);
+	pointer-events: none;
+	z-index: 5;
 }
 
 /* .daymark-item-stats--minimal (renderSubscriptionPostCard()'s own stats
