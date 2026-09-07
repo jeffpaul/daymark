@@ -121,15 +121,20 @@ async function openComposer(page, type = 'note') {
 // Simulates dropping a local file onto `selector` (issue #260) — Playwright
 // has no built-in drag-and-drop-a-real-file API, so this builds a real
 // `DataTransfer`/`File` in-page (base64-encoded fixture bytes, decoded via
-// `fetch()` of a data: URL back into a Blob) and dispatches a synthetic
-// `drop` event carrying it, matching how a browser's own native drop event
-// shape looks to the page's own listeners.
+// `atob()` into raw bytes — never `fetch()` of a data: URL, which the app
+// shell's own strict CSP `connect-src 'self'` blocks) and dispatches a
+// synthetic `drop` event carrying it, matching how a browser's own native
+// drop event shape looks to the page's own listeners.
 async function dropFile(page, selector, filePath, fileName, mimeType) {
 	const base64 = readFileSync(filePath).toString('base64');
 	const dataTransfer = await page.evaluateHandle(
-		async ({ base64Data, name, type }) => {
-			const blob = await fetch(`data:${type};base64,${base64Data}`).then((res) => res.blob());
-			const file = new File([blob], name, { type });
+		({ base64Data, name, type }) => {
+			const binary = atob(base64Data);
+			const bytes = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) {
+				bytes[i] = binary.charCodeAt(i);
+			}
+			const file = new File([bytes], name, { type });
 			const dt = new DataTransfer();
 			dt.items.add(file);
 			return dt;
