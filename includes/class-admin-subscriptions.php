@@ -142,6 +142,20 @@ class Daymark_Admin_Subscriptions {
 			true
 		);
 
+		// Suppresses the <details> disclosure triangle Chrome/Safari render
+		// via ::-webkit-details-marker (Firefox already respects list-style
+		// alone) so the "Edit site name" trigger reads as a bare pencil
+		// icon — the one thing an inline style="" attribute on the element
+		// itself can't reach, since pseudo-elements aren't stylable inline.
+		// Attached to core's own always-loaded 'common' handle rather than
+		// registering a new stylesheet for two rules, matching this
+		// screen's existing no-extra-asset posture for small decorative
+		// touches (e.g. the sortable-column arrow).
+		wp_add_inline_style(
+			'common',
+			'.daymark-edit-title-trigger::-webkit-details-marker { display: none; }'
+		);
+
 		wp_localize_script(
 			'daymark-admin-subscriptions',
 			'daymarkAdminSubscriptions',
@@ -602,12 +616,12 @@ class Daymark_Admin_Subscriptions {
 				<?php if ( '' !== $icon_url ) : ?>
 					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;margin-right:6px;" onerror="this.remove()" />
 				<?php endif; ?>
-				<strong><?php echo esc_html( $row_label ); ?></strong>
+				<strong data-daymark-title-text><?php echo esc_html( $row_label ); ?></strong>
+				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
 				<?php if ( '' !== $site_url ) : ?>
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
 				<?php endif; ?>
-				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
 			</td>
 			<td>
 				<span class="daymark-subscription-status-text"><?php echo $is_error ? esc_html__( 'Error', 'daymark' ) : esc_html__( 'Active', 'daymark' ); ?></span>
@@ -701,14 +715,22 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's "Edit name" disclosure (issue #180): a
-	 * collapsed-by-default `<details>`/`<summary>` revealing a text input
-	 * pre-filled with the subscription's own `site_title`, so overriding it
-	 * needs no toggle JS at all — matching this screen's plain-forms
-	 * posture for every action except the JS-enhanced Refresh form. Useful
-	 * in particular for a Friends-plugin-sourced subscription (issue #88),
-	 * whose `site_title` is whatever that friend's own site calls itself —
-	 * not necessarily the name the site owner would recognize them by.
+	 * Render one subscription's inline name editor: a small pencil-icon
+	 * trigger — WordPress's own bundled `dashicons-edit`, so no new asset —
+	 * sitting immediately to the right of the site name. Built on a
+	 * `<details>`/`<summary>` disclosure (the pencil icon is the summary)
+	 * so it works with no JS at all as its own foundation: clicking it
+	 * reveals a text input pre-filled with the subscription's own
+	 * `site_title`, and the kept Save button submits normally.
+	 * `assets/admin-subscriptions.js` progressively enhances this into the
+	 * requested inline-edit interaction — focusing/selecting the input the
+	 * moment it opens, and saving on Enter, Tab, or clicking away (all of
+	 * which end in the input's own `blur` event) via a background request
+	 * to the same admin-post handler, instead of a full page reload.
+	 * Useful in particular for a Friends-plugin-sourced subscription (issue
+	 * #88), whose `site_title` is whatever that friend's own site calls
+	 * itself — not necessarily the name the site owner would recognize
+	 * them by.
 	 *
 	 * Submitting a blank value is allowed on purpose: it clears a bad
 	 * override back to '', which subscription_label() already falls back
@@ -720,19 +742,24 @@ class Daymark_Admin_Subscriptions {
 	 * @param int    $id          Subscription ID.
 	 * @param string $site_title  Current raw site_title (may be '').
 	 * @param string $site_url    Current site_url, shown as the input's
-	 *                            placeholder when site_title is ''.
+	 *                            placeholder when site_title is '', and as
+	 *                            the fallback display name JS restores if
+	 *                            the saved value ends up blank.
 	 * @return void
 	 */
 	private function render_edit_title_form( int $id, string $site_title, string $site_url ): void {
 		?>
-		<details class="daymark-subscription-edit-title" style="margin-top:4px;">
-			<summary style="cursor:pointer;color:var(--wp-admin-theme-color,#2271b1);"><?php esc_html_e( 'Edit name', 'daymark' ); ?></summary>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:6px;">
+		<details class="daymark-subscription-edit-title" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" data-daymark-fallback-label="<?php echo esc_attr( $site_url ); ?>" style="display:inline-block;vertical-align:middle;margin-left:4px;">
+			<summary class="daymark-edit-title-trigger" aria-label="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>" title="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>" style="cursor:pointer;list-style:none;display:inline-block;">
+				<span class="dashicons dashicons-edit" aria-hidden="true" style="font-size:16px;width:16px;height:16px;vertical-align:text-bottom;"></span>
+			</summary>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-edit-title-form" style="margin-top:6px;">
 				<input type="hidden" name="action" value="daymark_subscription_edit_title" />
 				<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 				<?php wp_nonce_field( 'daymark_subscription_edit_title_' . $id, 'daymark_subscription_edit_title_nonce' ); ?>
-				<input type="text" name="daymark_site_title" value="<?php echo esc_attr( $site_title ); ?>" placeholder="<?php echo esc_attr( $site_url ); ?>" style="width:100%;max-width:220px;" />
+				<input type="text" name="daymark_site_title" value="<?php echo esc_attr( $site_title ); ?>" placeholder="<?php echo esc_attr( $site_url ); ?>" class="daymark-subscription-title-input" style="width:100%;max-width:220px;" />
 				<?php submit_button( __( 'Save', 'daymark' ), 'secondary small', 'submit', false ); ?>
+				<span class="description daymark-subscription-title-error" role="alert" hidden></span>
 			</form>
 		</details>
 		<?php
