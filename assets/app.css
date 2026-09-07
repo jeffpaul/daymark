@@ -239,6 +239,19 @@ h2[tabindex='-1']:focus {
 .daymark-screen {
 	display: flex;
 	flex-direction: column;
+	/* .daymark-shell (the sole ancestor) is min-height: 100dvh, but that
+	   only guarantees *available* space — this screen (its only child)
+	   still has to actually claim it, or a short screen (e.g. a near-empty
+	   Timeline) leaves blank space below it instead. Without this, the
+	   bottom nav's own margin-top: auto push-to-bottom trick has nothing
+	   to push against, so it — and the "+New" launcher floating above it
+	   via a negative margin — end up sitting wherever this screen's own
+	   short content naturally ends, not pinned to the viewport's bottom;
+	   floating there mid-page, the launcher can visually collide with
+	   whatever content happens to render at that same point (confirmed via
+	   a flaky Playwright failure: the launcher click was intercepted by
+	   the Timeline's own end-of-list flourish). */
+	flex: 1;
 	gap: var(--daymark-spacing-lg);
 	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-lg);
 }
