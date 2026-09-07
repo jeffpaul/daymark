@@ -29,6 +29,56 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Subscription_Content_Sniffer {
 
 	/**
+	 * An `<img>`'s own `src`, when a lazy-loading pattern leaves it empty or
+	 * pointing at a placeholder (most commonly a `data:` URI blank pixel,
+	 * swapped for the real image by JavaScript this sniffer never runs),
+	 * checked in the order a real browser's own lazy-load fallback chain
+	 * typically uses: the common `data-src`/`data-lazy-src`/`data-original`
+	 * attributes several major lazy-load implementations (native WP lazy
+	 * loading's own JS shims, common caching/performance plugins) write
+	 * alongside `src`, then the first URL in `srcset`/`data-srcset` if
+	 * present. Falls back to whatever `src` already had (even if empty) when
+	 * none of these resolve anything — this is a best-effort improvement,
+	 * not a guarantee every lazy-load pattern is covered.
+	 *
+	 * @param WP_HTML_Tag_Processor $processor Positioned on an `<img>` tag.
+	 * @return string Best available image URL, or '' when nothing usable was found.
+	 */
+	private static function resolve_image_src( WP_HTML_Tag_Processor $processor ): string {
+		$src = (string) ( $processor->get_attribute( 'src' ) ?? '' );
+
+		if ( '' !== $src && ! str_starts_with( $src, 'data:' ) ) {
+			return $src;
+		}
+
+		foreach ( array( 'data-src', 'data-lazy-src', 'data-original' ) as $lazy_attr ) {
+			$lazy = (string) ( $processor->get_attribute( $lazy_attr ) ?? '' );
+
+			if ( '' !== $lazy && ! str_starts_with( $lazy, 'data:' ) ) {
+				return $lazy;
+			}
+		}
+
+		foreach ( array( 'srcset', 'data-srcset' ) as $srcset_attr ) {
+			$srcset = (string) ( $processor->get_attribute( $srcset_attr ) ?? '' );
+
+			if ( '' === $srcset ) {
+				continue;
+			}
+
+			$candidates = explode( ',', $srcset );
+			$first      = trim( (string) ( $candidates[0] ?? '' ) );
+			$url        = trim( (string) strtok( $first, ' ' ) );
+
+			if ( '' !== $url ) {
+				return $url;
+			}
+		}
+
+		return $src;
+	}
+
+	/**
 	 * Scan a fragment of content HTML for inline media a structured signal
 	 * (an RSS enclosure, a real `format` field, an already-assigned
 	 * post_format) didn't already account for — an ordinary
@@ -89,7 +139,7 @@ class Daymark_Subscription_Content_Sniffer {
 					}
 
 					if ( '' === $result['image_src'] ) {
-						$result['image_src'] = (string) ( $processor->get_attribute( 'src' ) ?? '' );
+						$result['image_src'] = self::resolve_image_src( $processor );
 					}
 				}
 			}

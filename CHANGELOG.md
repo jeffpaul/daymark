@@ -23,6 +23,7 @@ can't act on them.
 ### Changed
 
 - An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page. ([#222](https://github.com/jeffpaul/daymark/pull/222))
+- A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap. ([#225](https://github.com/jeffpaul/daymark/pull/225))
 
 ### Fixed
 
@@ -30,6 +31,7 @@ can't act on them.
 - A subscription post's expanded content could show a Jetpack "Share this:" block, a Jetpack "Related" posts block, floated images overlapping surrounding text, a "Skip to content" link the existing stripping didn't catch, a theme's own publish-date/category markup nested alongside the real post body, and a "Previous:"/"Next:" post-navigation link — none of that is part of the post content from an RSS-feed point of view. ([#218](https://github.com/jeffpaul/daymark/pull/218))
 - A Timeline card for a post with no featured image and no cached site icon no longer shows a manufactured placeholder icon — the title/excerpt/date now use the card's full width instead. ([#220](https://github.com/jeffpaul/daymark/pull/220))
 - The Timeline could show a raw WordPress error ("Could not load your timeline. Cookie check failed") when the app-shell page's nonce went stale — most commonly a home-screen-installed PWA session resumed after a long background suspension. It now shows "Your session has expired" with a Reload button. ([#223](https://github.com/jeffpaul/daymark/pull/223))
+- A subscription post whose only image was lazy-loaded (a placeholder `src` with the real URL in `data-src`/`data-lazy-src`/`srcset`) previously showed no Timeline card thumbnail at all — the content sniffer now falls back through those common lazy-load attributes when `src` itself is empty or a placeholder. ([#227](https://github.com/jeffpaul/daymark/pull/227))
 - The Home/Explore/Search/Me header now always shows Daymark's own icon instead of the site's configured Site Icon, tightens Explore/Search/Me's header title spacing to match Home's, and replaces the Notifications page's "Back" text with the Daymark icon (keeping the arrow). ([#230](https://github.com/jeffpaul/daymark/issues/230))
 
 ## [0.11.0] - 2026-09-05
