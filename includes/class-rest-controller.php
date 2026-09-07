@@ -1805,6 +1805,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// map keyed by attachment ID for media already on the Mark.
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
+			// Author-chosen reorder of the Mark's already-attached media
+			// (issue #250) — an ordered list of attachment IDs, honored only
+			// when it's an exact permutation of the stored media list. See
+			// Daymark_Publisher::apply_media_order().
+			'media_order'         => $request->get_param( 'media_order' ),
 			'tags'                => $request->get_param( 'tags' ),
 			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture — see create_mark()'s matching comment.

@@ -1133,4 +1133,108 @@ class Test_Publisher extends WP_UnitTestCase {
 
 		$this->assertSame( '', get_post_meta( $post_id, '_daymark_camera', true ) );
 	}
+
+	/**
+	 * Manual gallery reordering (issue #250): a valid client-supplied
+	 * media_order — an exact permutation of the Mark's own stored media —
+	 * is honored, both in _daymark_media_ids and in the resulting gallery
+	 * block's own image order.
+	 */
+	public function test_update_honors_valid_media_order() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		// wp_handle_sideload() moves (rename()s) its source file rather than
+		// copying it, so two files in one request can never safely share a
+		// single tmp_name — each needs its own disposable copy, the same
+		// pattern every other real-upload test in this file already uses.
+		$tmp_one = wp_tempnam( 'daymark-order-' ) . '.png';
+		$tmp_two = wp_tempnam( 'daymark-order-' ) . '.png';
+		copy( $fixture, $tmp_one );
+		copy( $fixture, $tmp_two );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'A gallery' ),
+			array(
+				'files' => array(
+					'name'     => array( 'one.png', 'two.png' ),
+					'type'     => array( 'image/png', 'image/png' ),
+					'tmp_name' => array( $tmp_one, $tmp_two ),
+					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
+					'size'     => array( filesize( $tmp_one ), filesize( $tmp_two ) ),
+				),
+			)
+		);
+
+		$original_order = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertCount( 2, $original_order );
+		$reversed_order = array_reverse( $original_order );
+
+		$result = $publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'A gallery',
+				'primary_type' => 'gallery',
+				'media_order'  => wp_json_encode( $reversed_order ),
+			)
+		);
+
+		$this->assertIsInt( $result );
+
+		$stored_order = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertSame( $reversed_order, $stored_order );
+
+		$post_content     = get_post( $post_id )->post_content;
+		$first_image_pos  = strpos( $post_content, '"id":' . $reversed_order[0] );
+		$second_image_pos = strpos( $post_content, '"id":' . $reversed_order[1] );
+		$this->assertNotFalse( $first_image_pos );
+		$this->assertNotFalse( $second_image_pos );
+		$this->assertLessThan( $second_image_pos, $first_image_pos, 'The gallery block should render images in the reordered sequence.' );
+	}
+
+	/**
+	 * A media_order that isn't an exact permutation of the Mark's own
+	 * stored media (missing an ID, a foreign ID, a duplicate) is rejected
+	 * outright — the original stored order is kept rather than guessed at.
+	 */
+	public function test_update_rejects_invalid_media_order() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		// See test_update_honors_valid_media_order()'s comment: each file in
+		// a multi-file sideload needs its own disposable copy.
+		$tmp_one = wp_tempnam( 'daymark-order-' ) . '.png';
+		$tmp_two = wp_tempnam( 'daymark-order-' ) . '.png';
+		copy( $fixture, $tmp_one );
+		copy( $fixture, $tmp_two );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'A gallery' ),
+			array(
+				'files' => array(
+					'name'     => array( 'one.png', 'two.png' ),
+					'type'     => array( 'image/png', 'image/png' ),
+					'tmp_name' => array( $tmp_one, $tmp_two ),
+					'error'    => array( UPLOAD_ERR_OK, UPLOAD_ERR_OK ),
+					'size'     => array( filesize( $tmp_one ), filesize( $tmp_two ) ),
+				),
+			)
+		);
+
+		$original_order = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+
+		// A foreign attachment ID standing in for one of the Mark's own —
+		// same count, wrong membership, so this must not be honored.
+		$bogus_order = array( $original_order[0], 999999 );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'A gallery',
+				'primary_type' => 'gallery',
+				'media_order'  => wp_json_encode( $bogus_order ),
+			)
+		);
+
+		$stored_order = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertSame( $original_order, $stored_order );
+	}
 }

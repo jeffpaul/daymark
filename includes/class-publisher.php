@@ -584,14 +584,15 @@ class Daymark_Publisher {
 	 *
 	 * Meta is written before the post update so a draft→publish here
 	 * fires syndicate_on_publish() against the fresh targets. Existing
-	 * media is kept; new files are appended.
+	 * media is kept (reordered first if a valid media_order was given —
+	 * see apply_media_order()); new files are appended after it.
 	 *
 	 * @param int                                 $post_id The Mark post ID.
 	 * @param array<string, mixed>                $data    Sanitized input: caption, title,
 	 *                                                     primary_type, syndication_targets,
 	 *                                                     status, tags, alt_text, captured_at,
 	 *                                                     location_lat, location_lng,
-	 *                                                     location_accuracy.
+	 *                                                     location_accuracy, media_order.
 	 * @param array<string, array<string, mixed>> $files   $_FILES-style array of new media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -611,6 +612,14 @@ class Daymark_Publisher {
 
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
+
+		// Manual gallery reordering (issue #250): a client-chosen order for
+		// media already attached to this Mark. Newly uploaded files below
+		// are still appended after this, in upload order — interleaving a
+		// reorder with brand-new uploads in one request is out of scope.
+		if ( ! empty( $existing_media ) ) {
+			$existing_media = $this->apply_media_order( $existing_media, $data['media_order'] ?? null );
+		}
 
 		$file_list = $this->normalize_files( $files );
 
@@ -1346,6 +1355,45 @@ class Daymark_Publisher {
 				update_post_meta( $id, '_wp_attachment_image_alt', sanitize_text_field( (string) $alt ) );
 			}
 		}
+	}
+
+	/**
+	 * Reorder a Mark's already-attached media per a client-supplied order
+	 * (issue #250 — manual gallery reordering).
+	 *
+	 * Honored only when $requested_order is an exact permutation of
+	 * $existing_media — same IDs, same count, just reshuffled. Anything
+	 * else (a stale order from a race with another edit, a tampered
+	 * request, garbage input) is rejected outright and the original stored
+	 * order is kept rather than guessed at: this only ever reorders media
+	 * this Mark already owns, never adds, drops, or reassigns any of it.
+	 *
+	 * @param int[] $existing_media  Current, already-validated order.
+	 * @param mixed $requested_order Client-supplied order (array or JSON string of attachment IDs).
+	 * @return int[] The reordered list, or $existing_media unchanged if $requested_order isn't a valid permutation of it.
+	 */
+	private function apply_media_order( array $existing_media, $requested_order ): array {
+		if ( is_string( $requested_order ) ) {
+			$decoded         = json_decode( $requested_order, true );
+			$requested_order = is_array( $decoded ) ? $decoded : null;
+		}
+
+		if ( ! is_array( $requested_order ) ) {
+			return $existing_media;
+		}
+
+		$requested_order = array_map( 'intval', $requested_order );
+
+		$sorted_existing  = $existing_media;
+		$sorted_requested = $requested_order;
+		sort( $sorted_existing );
+		sort( $sorted_requested );
+
+		if ( $sorted_existing !== $sorted_requested ) {
+			return $existing_media;
+		}
+
+		return array_values( $requested_order );
 	}
 
 	/**
