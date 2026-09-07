@@ -45,7 +45,18 @@ async function loginAs(page) {
 // whatever's now underneath for the rest of the test timeout, so this retries
 // the whole open sequence a couple of times rather than fighting one flaky
 // click to the end.
+//
+// Waiting for the network to go idle first (every caller navigates to
+// /daymark immediately beforehand) closes off the single biggest source of
+// that settling — a Timeline with several prior Marks/subscription posts
+// (this suite never cleans up after itself, and each subscription post's
+// card now renders its own site icon plus a 6-icon engagement row) still has
+// site-icon/thumbnail images loading well after the page's own 'load' event,
+// each one a potential height/scroll-anchor shift; this doesn't reach zero
+// (a scroll-anchor adjustment from something other than an image load is
+// still possible), which is exactly why the retry loop below stays too.
 async function openComposer(page, type = 'note') {
+	await page.waitForLoadState('networkidle');
 	const bubble = page.locator(`[data-launcher-type="${type}"]`);
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
