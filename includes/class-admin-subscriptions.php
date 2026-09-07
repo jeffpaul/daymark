@@ -74,8 +74,10 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * Subscriptions table columns a visitor can sort by (issue #178), via
 	 * `?orderby=` — anything else falls back to the table's default order
-	 * (get_all()'s own `created_at DESC`). Icon and Actions are not
-	 * meaningful to sort by, so they're left out.
+	 * (get_all()'s own `created_at DESC`). Actions is not meaningful to sort
+	 * by, so it's left out (the site icon has its own column no longer —
+	 * it renders inline with the Site column's title instead — so there's
+	 * nothing to exclude for it here either).
 	 *
 	 * @var string[]
 	 */
@@ -430,7 +432,6 @@ class Daymark_Admin_Subscriptions {
 			<thead>
 				<tr>
 					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order ); ?>
-					<th scope="col"><?php esc_html_e( 'Icon', 'daymark' ); ?></th>
 					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order ); ?>
 					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order ); ?>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
@@ -572,17 +573,20 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render one subscription's row: site title/URL, its cached icon, status,
-	 * when it was last fetched, and its Refresh / Unsubscribe actions.
+	 * Render one subscription's row: site icon/title/URL, status, when it
+	 * was last fetched, and its Refresh / Unsubscribe actions.
 	 *
-	 * The icon cell renders nothing at all (not a placeholder glyph) when
+	 * The icon renders nothing at all (not a placeholder glyph) when
 	 * `site_icon_url` is empty or fails to load — a bare `/favicon.ico`
 	 * fallback guess (see `Daymark_Subscription_Source_Feed::get_favicon_url()`)
 	 * is not verified to resolve to a real image, and this screen has no
 	 * enqueued JS/CSS asset of its own worth adding just for a fallback
 	 * glyph the app shell already provides its own version of
 	 * (`imgWithFallback()`, `assets/app.js`) for the exact same "a
-	 * subscription's icon might 404" case.
+	 * subscription's icon might 404" case. Rendered inline immediately to
+	 * the left of the site title/URL, in the Site column itself, rather
+	 * than in its own column (its original shape when this shipped —
+	 * issue #171).
 	 *
 	 * @param array<string, mixed> $subscription A `daymark_subscription` row.
 	 * @return void
@@ -609,16 +613,14 @@ class Daymark_Admin_Subscriptions {
 		?>
 		<tr data-daymark-subscription-row="<?php echo esc_attr( (string) $id ); ?>">
 			<td>
+				<?php if ( '' !== $icon_url ) : ?>
+					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;margin-right:6px;" onerror="this.remove()" />
+				<?php endif; ?>
 				<strong data-daymark-title-text><?php echo esc_html( $row_label ); ?></strong>
 				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
 				<?php if ( '' !== $site_url ) : ?>
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
-				<?php endif; ?>
-			</td>
-			<td>
-				<?php if ( '' !== $icon_url ) : ?>
-					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;" onerror="this.remove()" />
 				<?php endif; ?>
 			</td>
 			<td>

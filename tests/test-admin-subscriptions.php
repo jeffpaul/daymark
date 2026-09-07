@@ -96,7 +96,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'daymark_subscription_refresh', $output );
 	}
 
-	public function test_icon_column_renders_image_when_site_icon_url_set(): void {
+	/** The site icon renders inline with the Site column's title, not in its own column. */
+	public function test_site_icon_renders_inline_with_title_when_site_icon_url_set(): void {
 		$this->subscriptions->create(
 			array(
 				'site_url'      => 'https://example.com',
@@ -107,11 +108,11 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		$this->assertStringContainsString( 'Icon', $output );
+		$this->assertStringNotContainsString( '<th scope="col">Icon</th>', $output );
 		$this->assertStringContainsString( '<img src="https://example.com/favicon.ico"', $output );
 	}
 
-	public function test_icon_column_renders_nothing_when_site_icon_url_empty(): void {
+	public function test_site_icon_renders_nothing_when_site_icon_url_empty(): void {
 		$this->subscriptions->create(
 			array(
 				'site_url' => 'https://example.org',
@@ -121,7 +122,6 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		$this->assertStringContainsString( 'Icon', $output );
 		$this->assertStringNotContainsString( '<img', $output );
 	}
 
