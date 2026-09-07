@@ -397,23 +397,6 @@
 		)}</span>`;
 	}
 
-	// The row's other interactive entry, same span[role="button"] reasoning
-	// as renderBookmarkToggle() above (nested inside the card's own
-	// expand-trigger button either way). Shares a Mark's or a subscription
-	// post's real permalink — identical behavior for either, so unlike the
-	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
-	// when an item has no permalink at all (should not normally happen for
-	// anything actually published), since there'd be nothing to share.
-	function renderShareToggle(item) {
-		if (!item.permalink) {
-			return '';
-		}
-		const id = esc(String(item.id));
-		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="Share" title="Share" data-share-toggle="${id}">${statIcon(
-			SHARE_GLYPH
-		)}</span>`;
-	}
-
 	function renderItemStats(item) {
 		return `<span class="daymark-item-stats">${renderStat(
 			HEART_GLYPH,
@@ -2578,20 +2561,49 @@
 	// Transient inline confirmation right on the tapped icon itself — no
 	// separate toast/status region exists for a Timeline card's stat row
 	// (unlike full-screen actions elsewhere, which each have their own
-	// dedicated aria-live status paragraph), so this doubles as both the
-	// visual and the accessible-name update or an assistive-tech user
-	// would otherwise miss.
+	// dedicated aria-live status paragraph). The aria-label/title swap
+	// covers assistive tech; the on-screen bubble (see
+	// showShareFlashBubble() below) covers a sighted desktop user, since
+	// a color-only change with no visible text reads as "nothing
+	// happened" on a browser with no navigator.share() (e.g. Firefox,
+	// which the clipboard-copy fallback below always runs on) unless
+	// they happen to hover the tiny icon afterward to catch the title
+	// tooltip.
 	function flashShareStatus(trigger, message) {
 		const original = trigger.getAttribute('aria-label') || 'Share';
 		trigger.setAttribute('aria-label', message);
 		trigger.setAttribute('title', message);
 		trigger.classList.add('daymark-stat--share-copied');
+		showShareFlashBubble(trigger, message);
 		window.setTimeout(() => {
 			if (trigger.isConnected) {
 				trigger.setAttribute('aria-label', original);
 				trigger.setAttribute('title', original);
 				trigger.classList.remove('daymark-stat--share-copied');
 			}
+		}, 2000);
+	}
+
+	// A small floating label above the Share icon, visible without hovering
+	// or a screen reader — appended as the trigger's own child (rather than
+	// a sibling in the shared flex row) so its `position: absolute` only
+	// ever needs the trigger's own `position: relative`, regardless of
+	// whatever row/card layout happens to contain it. Purely decorative
+	// (aria-hidden — flashShareStatus()'s aria-label swap already carries
+	// the accessible announcement) and self-removing on the same timer,
+	// so a rapid double-tap never leaves two stacked bubbles behind.
+	function showShareFlashBubble(trigger, message) {
+		const existing = trigger.querySelector('.daymark-share-flash');
+		if (existing) {
+			existing.remove();
+		}
+		const bubble = document.createElement('span');
+		bubble.className = 'daymark-share-flash';
+		bubble.setAttribute('aria-hidden', 'true');
+		bubble.textContent = message;
+		trigger.appendChild(bubble);
+		window.setTimeout(() => {
+			bubble.remove();
 		}, 2000);
 	}
 
