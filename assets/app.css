@@ -1935,6 +1935,11 @@ h2[tabindex='-1']:focus {
 	text-align: left;
 }
 
+.daymark-syndication__item {
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+}
+
 .daymark-syndication__row {
 	display: flex;
 	align-items: center;
@@ -1942,12 +1947,47 @@ h2[tabindex='-1']:focus {
 	gap: var(--daymark-spacing-md);
 	min-height: var(--daymark-tap-min);
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
-	border: 1px solid var(--daymark-border);
-	border-radius: var(--daymark-radius-sm);
 	font-size: 14px;
 }
 
+/* A backflow_supported target's sync recency (issue #258) — a quieter
+   second line under its row, not another chip, since it's informational
+   rather than a status to react to. */
+.daymark-syndication__recency {
+	margin: 0;
+	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-sm);
+	font-size: 12px;
+	color: var(--daymark-text-muted);
+}
+
 /* --- Notifications --- */
+.daymark-notif-filter {
+	margin-bottom: var(--daymark-spacing-sm);
+}
+
+/* One conversation — a Mark plus every reply on it (issue #258) — as a
+   single frame, so a multi-reply Mark reads as one thread instead of
+   several unrelated-looking cards. */
+.daymark-conversation {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-sm);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+}
+
+.daymark-conversation__heading {
+	margin: 0;
+	padding: 0 var(--daymark-spacing-xs);
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.daymark-conversation__heading a {
+	color: inherit;
+}
+
 .daymark-note-card {
 	display: flex;
 	flex-direction: column;

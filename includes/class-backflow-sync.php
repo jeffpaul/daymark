@@ -69,6 +69,20 @@ class Daymark_Backflow_Sync {
 	private const POST_COOLDOWN_CACHE_GROUP = 'daymark_backflow_cooldown';
 
 	/**
+	 * Post meta key holding a JSON object of network => MySQL datetime,
+	 * recording the last time each network's replies were actually checked
+	 * (issue #258) — written by Daymark_Notifications::import_responses()
+	 * on every completed attempt, real or mock, whether or not it found
+	 * anything new. Makes sync *cadence* observable, distinct from
+	 * `_daymark_backflow_synced_{network}` (a one-time mock dedup flag) and
+	 * from the cooldown state below (a short anti-hammering window, not a
+	 * record of when a check actually ran).
+	 *
+	 * @var string
+	 */
+	public const LAST_SYNCED_META = '_daymark_backflow_last_synced_at';
+
+	/**
 	 * Hook up.
 	 *
 	 * @return void
@@ -217,6 +231,26 @@ class Daymark_Backflow_Sync {
 		}
 
 		return false !== wp_cache_get( $key, self::POST_COOLDOWN_CACHE_GROUP );
+	}
+
+	/**
+	 * When a network's replies were last actually checked for a Mark
+	 * (issue #258) — a MySQL datetime string (site timezone, matching
+	 * `current_time( 'mysql' )`'s own convention), or '' when that network
+	 * has never been synced for this post.
+	 *
+	 * @param int    $post_id Mark post ID.
+	 * @param string $network Network ID, e.g. 'bluesky'.
+	 * @return string
+	 */
+	public function last_synced_at( int $post_id, string $network ): string {
+		$synced = json_decode( (string) get_post_meta( $post_id, self::LAST_SYNCED_META, true ), true );
+
+		if ( ! is_array( $synced ) || ! isset( $synced[ $network ] ) ) {
+			return '';
+		}
+
+		return sanitize_text_field( (string) $synced[ $network ] );
 	}
 
 	/**

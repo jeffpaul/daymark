@@ -24,6 +24,7 @@ can't act on them.
 
 - Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in. ([#250](https://github.com/jeffpaul/daymark/issues/250))
 - A published Mark's Timeline card now has a routing icon showing exactly where it was sent — your own site plus every syndication target attempted, each with its own status (published/mocked, failed, or unsupported) and a link out where one exists. ([#255](https://github.com/jeffpaul/daymark/issues/255))
+- Notifications now groups a Mark's replies into one conversation card instead of scattering them as separate flat cards, and adds a source filter (once you have more than one) so you can narrow the list to just one reply origin. The per-Mark routing popover also now shows when a real syndicated target's replies were last checked. ([#258](https://github.com/jeffpaul/daymark/issues/258))
 
 ### Fixed
 

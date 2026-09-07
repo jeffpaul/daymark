@@ -3122,18 +3122,46 @@
 					  )}" target="_blank" rel="noopener">${esc(label)}</a>`
 					: `<span>${esc(label)}</span>`;
 				return `
-				<li class="daymark-syndication__row">
-					${target}
-					<span class="daymark-chip daymark-chip--${modifier}">${esc(routingStatusLabel(entry.status))}</span>
+				<li class="daymark-syndication__item">
+					<div class="daymark-syndication__row">
+						${target}
+						<span class="daymark-chip daymark-chip--${modifier}">${esc(routingStatusLabel(entry.status))}</span>
+					</div>
+					${syncRecencyMarkup(entry)}
 				</li>`;
 			})
 			.join('');
 		return `<ul class="daymark-syndication" aria-label="${esc(__('Where this Mark was routed', 'daymark'))}">
-			<li class="daymark-syndication__row">
-				${siteLink}
-				<span class="daymark-chip daymark-chip--success">${esc(__('Published', 'daymark'))}</span>
+			<li class="daymark-syndication__item">
+				<div class="daymark-syndication__row">
+					${siteLink}
+					<span class="daymark-chip daymark-chip--success">${esc(__('Published', 'daymark'))}</span>
+				</div>
 			</li>${rows}
 		</ul>`;
+	}
+
+	// A backflow_supported target's replies are checked on a cadence
+	// (hourly cron, plus a freshen when Notifications is viewed) that was
+	// previously invisible — issue #258 surfaces it here rather than a new
+	// UI element, since this popover is already "where did this go" for a
+	// Mark and sync recency is the corresponding "did anything come back"
+	// half of that picture. Deliberately just a "last checked" reading, not
+	// a cooldown countdown: the underlying mechanism is an anti-hammering
+	// window, not a promised schedule, so "checked 2 minutes ago" is the
+	// accurate, sufficient signal rather than invented precision.
+	function syncRecencyMarkup(entry) {
+		if (!entry || !entry.backflow_supported) {
+			return '';
+		}
+		const text = entry.backflow_last_synced_at
+			? sprintf(
+					/* translators: %s: relative time, e.g. "5 minutes ago" */
+					__('Replies last checked %s', 'daymark'),
+					relativeTime(entry.backflow_last_synced_at)
+			  )
+			: __('Replies not checked yet', 'daymark');
+		return `<p class="daymark-syndication__recency">${esc(text)}</p>`;
 	}
 
 	function routingStatusLabel(status) {
@@ -6644,6 +6672,43 @@
 
 	// --- Screen: Notifications ---
 
+	// Groups a newest-first notification list into conversations (issue
+	// #258): every 'comment' item belonging to the same Mark (post_id)
+	// becomes one entry's `comments` array instead of scattering across the
+	// list as separate items. A group's position is set by its *first*
+	// occurrence — since the input is already sorted newest-first overall,
+	// the first time a post_id appears is guaranteed to carry that
+	// conversation's own most recent reply, so no separate re-sort is
+	// needed to keep conversations themselves ordered newest-first.
+	// Subscription-issue items ('dead_feed'/'feed_issue') aren't part of
+	// any conversation and pass through as their own single-item group,
+	// keeping their exact position in the merged, timestamp-sorted list.
+	function groupNotificationItems(items) {
+		const groups = [];
+		const byPostId = new Map();
+		items.forEach((item) => {
+			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
+				groups.push({ kind: 'issue', item });
+				return;
+			}
+			const postId = item.post_id;
+			let group = byPostId.get(postId);
+			if (!group) {
+				group = {
+					kind: 'conversation',
+					postId,
+					postTitle: item.post_title || '',
+					postUrl: item.post_url || '',
+					comments: [],
+				};
+				byPostId.set(postId, group);
+				groups.push(group);
+			}
+			group.comments.push(item);
+		});
+		return groups;
+	}
+
 	// Reply text a user has started typing, keyed by comment ID — kept in
 	// memory (not sent anywhere) so switching between replies, closing and
 	// reopening the same one, or navigating back to Notifications never
@@ -6670,6 +6735,14 @@
 			</header>
 			<section class="daymark-screen">
 				<h2 class="daymark-section-heading">${esc(__('Recent Activity', 'daymark'))}</h2>
+				<div class="daymark-notif-filter" data-notif-filter hidden>
+					<label class="daymark-visually-hidden" for="daymark-notif-source">${esc(
+						__('Filter by source', 'daymark')
+					)}</label>
+					<select id="daymark-notif-source" class="daymark-sourcefilter" data-notif-source-filter>
+						<option value="">${esc(__('All', 'daymark'))}</option>
+					</select>
+				</div>
 				<div class="daymark-recent__list" data-notification-list aria-live="polite">
 					${skeletonRows(3)}
 					<span class="daymark-visually-hidden">${esc(__('Loading notifications', 'daymark'))}</span>
@@ -6679,7 +6752,16 @@
 
 		bindEvents() {},
 
+		// The full, unfiltered fetch — items are grouped/filtered from this
+		// in memory (issue #258), never re-fetched, since the endpoint
+		// already returns its whole (capped, unpaginated) result in one
+		// request.
+		items: [],
+		sourceFilter: '',
+
 		async init() {
+			this.items = [];
+			this.sourceFilter = '';
 			const list = root.querySelector('[data-notification-list]');
 			try {
 				const items = await apiGet('notifications');
@@ -6696,8 +6778,9 @@
 						'<p class="daymark-empty">' + esc(__('No new activity for your Marks.', 'daymark')) + '</p>';
 					return;
 				}
-				list.innerHTML = items.map((item) => this.renderItem(item)).join('');
-				this.bindShowMore(list);
+				this.items = items;
+				this.bindSourceFilter(root.querySelector('[data-notif-filter]'), root.querySelector('[data-notif-source-filter]'));
+				this.renderList(list);
 				// Reply interactions are delegated on the list so appended /
 				// re-rendered cards stay wired.
 				list.addEventListener('click', (event) => this.onReplyClick(event));
@@ -6730,6 +6813,98 @@
 			}
 		},
 
+		// A subscription-issue item isn't "from" a reply source the way a
+		// comment is (it's a feed-health alert, not a reply) — it stays
+		// visible regardless of the source filter (issue #258).
+		isIssueItem(item) {
+			return 'dead_feed' === item.type || 'feed_issue' === item.type;
+		},
+
+		// The source filter's options, derived from what's actually in this
+		// user's own notifications rather than a hardcoded network list —
+		// so it never offers a source that has nothing to show, and never
+		// needs updating when a new connector or federation protocol
+		// starts appearing here. Built once per fetch, not per filter
+		// change.
+		sourceFilterOptions() {
+			const seen = new Map();
+			this.items.forEach((item) => {
+				if (this.isIssueItem(item)) {
+					return;
+				}
+				const value = item.source || 'site';
+				if (!seen.has(value)) {
+					seen.set(value, item.source_label || __('On-site comment', 'daymark'));
+				}
+			});
+			return Array.from(seen, ([value, label]) => ({ value, label }));
+		},
+
+		// Only rendered/shown once there's more than one source to choose
+		// between — a single-source inbox (the common case for a new
+		// install) has nothing to filter.
+		bindSourceFilter(wrap, select) {
+			if (!wrap || !select) {
+				return;
+			}
+			const options = this.sourceFilterOptions();
+			if (options.length < 2) {
+				wrap.hidden = true;
+				return;
+			}
+			select.innerHTML =
+				`<option value="">${esc(__('All', 'daymark'))}</option>` +
+				options.map((opt) => `<option value="${esc(opt.value)}">${esc(opt.label)}</option>`).join('');
+			wrap.hidden = false;
+			select.value = this.sourceFilter;
+			select.addEventListener('change', () => {
+				this.sourceFilter = select.value;
+				this.renderList(root.querySelector('[data-notification-list]'));
+			});
+		},
+
+		filteredItems() {
+			if (!this.sourceFilter) {
+				return this.items;
+			}
+			return this.items.filter((item) => this.isIssueItem(item) || item.source === this.sourceFilter);
+		},
+
+		// Renders the (already-fetched, in-memory) list: comment items are
+		// grouped into one conversation card per Mark (issue #258) instead
+		// of each reply scattering as its own flat card; subscription-issue
+		// items stay standalone, interleaved by their own position in the
+		// server's newest-first ordering — unaffected by grouping since
+		// they were never part of any conversation.
+		renderList(list) {
+			if (!list || !list.isConnected) {
+				return;
+			}
+			const filtered = this.filteredItems();
+			if (!filtered.length) {
+				list.innerHTML = '<p class="daymark-empty">' + esc(__('Nothing matches this filter.', 'daymark')) + '</p>';
+				return;
+			}
+			list.innerHTML = groupNotificationItems(filtered)
+				.map((group) => this.renderGroup(group))
+				.join('');
+			this.bindShowMore(list);
+		},
+
+		renderGroup(group) {
+			if ('conversation' !== group.kind) {
+				return this.renderItem(group.item);
+			}
+			const heading = group.postUrl
+				? `<a href="${esc(group.postUrl)}">${esc(group.postTitle || __('(untitled Mark)', 'daymark'))}</a>`
+				: esc(group.postTitle || __('(untitled Mark)', 'daymark'));
+			return `
+			<section class="daymark-conversation">
+				<h3 class="daymark-conversation__heading">${heading}</h3>
+				${group.comments.map((comment) => this.renderItem(comment)).join('')}
+			</section>`;
+		},
+
 		renderItem(item) {
 			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
 				return this.renderSubscriptionIssueItem(item);
@@ -6746,15 +6921,9 @@
 			if (item.comment_date) {
 				metaParts.push(esc(relativeTime(item.comment_date)));
 			}
-			if (item.post_title) {
-				metaParts.push(
-					sprintf(
-						/* translators: %s: post title */
-						esc(__('on “%s”', 'daymark')),
-						esc(item.post_title)
-					)
-				);
-			}
+			// No "on {post title}" meta part here — every comment now
+			// renders inside its own conversation card (issue #258), whose
+			// own heading already names the Mark it belongs to.
 			// A reply targets a specific comment; only offer it when we have a
 			// comment id to reply to.
 			const replyId = 'daymark-reply-' + commentId;

@@ -462,25 +462,18 @@ record.
 The product's core is "fast publish, site-first". These directions deepen
 that loop without new destinations or a new social network.
 
-- **Routing transparency.** The type→destination model works (image→Instagram,
-  note→Bluesky, per-user memory). Next: make the effective routing for a Mark
-  visible and editable *after* publish (a per-Mark "where did this go" view on
-  the Mark, so backflow and distribution line up).
-- **Backflow, not just import.** Replies already return as native comments with
-  source labels. Next: thread them per conversation in notifications, filter by
-  source, and make the sync cadence/cooldown observable instead of implicit.
 - **Connector ecosystem.** The extension seam exists (`daymark_register_connectors`).
   Grow it deliberately: a documented reference connector, a registry of known
   connectors, and graceful in-app messaging when a Mark's destination plugin is
   deactivated.
 - **Publish-loop polish.** Larger media sources (photo picker, drag-and-drop on
-  desktop), gallery reordering, and draft → publish continuation are all
-  candidates — each judged by whether it makes publishing faster (Publish First),
-  not more powerful. Gallery reordering is also the prerequisite for an
-  AI-assisted ordering suggestion (CLAUDE.md's "AI as an assistant" decision;
-  tracked as [#134](https://github.com/jeffpaul/daymark/issues/134)) — the
-  manual override surface needs to exist before an AI proposes anything on
-  top of it.
+  desktop) and draft → publish continuation are candidates — each judged by
+  whether it makes publishing faster (Publish First), not more powerful.
+  Gallery reordering (the other item this bucket used to name) shipped —
+  it's also the prerequisite for an AI-assisted ordering suggestion
+  (CLAUDE.md's "AI as an assistant" decision; tracked as
+  [#134](https://github.com/jeffpaul/daymark/issues/134)) — the manual
+  override surface now exists for an AI to propose anything on top of.
 
 ---
 
