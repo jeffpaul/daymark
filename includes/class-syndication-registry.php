@@ -198,10 +198,13 @@ class Daymark_Syndication_Registry {
 	 * connectors mock; connector plugins publish for real) and record the
 	 * results in post meta.
 	 *
-	 * Unknown connector IDs are skipped. Successful results are merged
-	 * into `_daymark_external_posts` (a JSON object keyed by connector
-	 * ID) and `_daymark_syndication_status` becomes 'mocked' when at
-	 * least one destination succeeded.
+	 * An unknown connector ID (a target selected before its connector
+	 * plugin was deactivated/uninstalled — issue #263) is still recorded,
+	 * with `status: 'unavailable'`, rather than silently skipped. Every
+	 * result is merged into `_daymark_external_posts` (a JSON object keyed
+	 * by connector ID) and `_daymark_syndication_status` becomes
+	 * 'published'/'mocked' when at least one destination succeeded, else
+	 * 'failed' when every attempted target failed or was unavailable.
 	 *
 	 * @param int                  $post_id    Mark post ID.
 	 * @param string[]             $target_ids Selected connector IDs.
@@ -213,9 +216,24 @@ class Daymark_Syndication_Registry {
 		$type    = sanitize_key( (string) ( $payload['primary_type'] ?? '' ) );
 
 		foreach ( $target_ids as $id ) {
-			$connector = $this->get_connector( (string) $id );
+			$id        = sanitize_key( (string) $id );
+			$connector = $this->get_connector( $id );
 
 			if ( ! $connector ) {
+				// A target selected before its connector plugin was
+				// deactivated/uninstalled (issue #263) — record it instead
+				// of silently vanishing, the same reasoning issue #255
+				// already applied to an unsupported target: a documented
+				// status a code path could never actually produce is a
+				// real, if quiet, gap.
+				if ( '' !== $id ) {
+					$results[ $id ] = array(
+						'success' => false,
+						'status'  => 'unavailable',
+						'message' => __( 'This destination is no longer available.', 'daymark' ),
+					);
+				}
+
 				continue;
 			}
 

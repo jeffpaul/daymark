@@ -54,11 +54,9 @@ new product surface. Released on GitHub and wordpress.org.
   A site still on Moment (≤ 0.5.0) must now upgrade through an intermediate
   0.6.x–0.8.x release before jumping to 0.9.0 or later.
 
-**Still open from this era:**
-
-- [ ] First-party connector ecosystem docs: a worked example of
-  `daymark_register_connectors` for plugin authors, published alongside the
-  hooks reference.
+First-party connector ecosystem docs (a worked `daymark_register_connectors`
+example, published alongside the hooks reference) shipped as part of
+"Connector ecosystem basics" — see "Next — building on the loop" below.
 
 ---
 
@@ -462,10 +460,21 @@ record.
 The product's core is "fast publish, site-first". These directions deepen
 that loop without new destinations or a new social network.
 
-- **Connector ecosystem.** The extension seam exists (`daymark_register_connectors`).
-  Grow it deliberately: a documented reference connector, a registry of known
-  connectors, and graceful in-app messaging when a Mark's destination plugin is
-  deactivated.
+- **Connector ecosystem basics** ([#263](https://github.com/jeffpaul/daymark/issues/263)).
+  The extension seam exists (`daymark_register_connectors`); this closes the two
+  concrete gaps growing it deliberately turned up. **Fixed a real bug**: a Mark
+  published to a destination whose connector plugin was later deactivated/
+  uninstalled had that target silently dropped from `publish_to_targets()` —
+  the exact same "attempt discarded, not recorded" gap issue #255 already fixed
+  for an unsupported-type target. Now recorded as `status: 'unavailable'` in
+  `_daymark_external_posts`, surfaced in the Timeline's routing popover as "Not
+  available" — graceful in-app messaging for a deactivated destination, closing
+  that half of this bucket. **Documented a reference connector**: a complete,
+  minimal `Daymark_Syndication_Connector` implementation (the interface, the
+  publish payload/result shape, and the three relevant hooks) published
+  alongside the hooks reference site. **Deliberately deferred**: a registry of
+  known third-party connectors — no real one exists yet to list, so a registry
+  would have nothing in it; revisit once a connector plugin actually ships.
 - **Publish-loop polish.** Draft → publish continuation is the remaining
   candidate here — judged by whether it makes publishing faster (Publish
   First), not more powerful. Drag-and-drop onto the composer's picker

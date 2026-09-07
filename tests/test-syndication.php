@@ -130,6 +130,65 @@ class Test_Syndication_Registry extends WP_UnitTestCase {
 		$this->assertSame( 'mocked', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
 	}
 
+	/**
+	 * A target ID with no registered connector at all (its plugin was
+	 * deactivated/uninstalled after the Mark's destinations were selected —
+	 * issue #263) is recorded as 'unavailable' rather than silently
+	 * vanishing, mirroring how an unsupported-type target is already
+	 * recorded above instead of discarded.
+	 */
+	public function test_unavailable_connector_is_recorded_not_discarded() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Unavailable connector test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'no-longer-installed' ),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$this->assertArrayHasKey( 'no-longer-installed', $external );
+		$this->assertSame( 'unavailable', $external['no-longer-installed']['status'] );
+		$this->assertNull( $external['no-longer-installed']['external_id'] );
+		$this->assertNotEmpty( $external['no-longer-installed']['message'] );
+
+		$this->assertSame( 'failed', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
+	}
+
+	/**
+	 * A success and an unavailable-connector failure in the same publish
+	 * both get recorded, and the overall status still reflects the success —
+	 * same "success outranks failure" rule already covered above for an
+	 * unsupported-type failure.
+	 */
+	public function test_unavailable_connector_alongside_a_success_records_both() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'             => 'Mixed unavailable outcome test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky', 'no-longer-installed' ),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		$this->assertSame( 'mocked', $external['bluesky']['status'] );
+		$this->assertSame( 'unavailable', $external['no-longer-installed']['status'] );
+
+		$this->assertSame( 'mocked', get_post_meta( $post_id, '_daymark_syndication_status', true ) );
+	}
+
 	/** Your Site is always canonical — syndication never replaces the WP post. */
 	public function test_your_site_always_canonical() {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
