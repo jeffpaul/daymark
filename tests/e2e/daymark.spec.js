@@ -61,11 +61,25 @@ async function loginAs(page) {
 // for the network to go idle before the first attempt only — closed off
 // image-load-driven settling specifically, but measurably made the flakiness
 // worse rather than better, so it's gone in favor of this instead).
+//
+// That escape hatch only actually fires once bindChromeAutoHide()'s own
+// `scroll` listener runs — it's throttled to once per animation frame (the
+// `ticking` guard), so the moment right after scrollTo(0, 0) resolves can
+// still have `is-footer-hidden` applied from whatever scroll state came
+// before it. A first pass at this fix scrolled and clicked in the same
+// breath and CI still failed, landing on real Timeline content instead of
+// the flourish/screen this time — confirming the click was hitting the
+// footer's own off-screen (translateY(100%)) position, not a still-visible
+// footer with something on top of it. Waiting for that class to actually
+// clear closes that gap directly, instead of guessing at how many
+// milliseconds one animation frame takes in CI.
 async function openComposer(page, type = 'note') {
 	const bubble = page.locator(`[data-launcher-type="${type}"]`);
+	const footer = page.locator('.daymark-homefooter');
 	for (let attempt = 1; attempt <= 3; attempt++) {
 		try {
 			await page.evaluate(() => window.scrollTo(0, 0));
+			await expect(footer).not.toHaveClass(/is-footer-hidden/, { timeout: 2000 });
 			// An explicit, short timeout on both clicks — not just the
 			// bubble's — matters here: with no timeout of its own, the
 			// launcher click inherits Playwright's action timeout (0,
