@@ -92,6 +92,25 @@ class Test_App_Shell extends WP_UnitTestCase {
 		$this->assertStringContainsString( '"dateFormat":"F j, Y"', $html );
 	}
 
+	/**
+	 * i18n readiness (issue #252): the app script depends on WordPress
+	 * core's own 'wp-i18n' handle and is registered under the 'daymark'
+	 * text domain, so wp.org's automated JS-string extraction has
+	 * something to key off once assets/app.js itself calls wp.i18n.__()
+	 * (tracked separately, issue #253). Checking the registered dependency
+	 * object directly (rather than the rendered HTML) since a default
+	 * en_US test environment has no translation file to load and so never
+	 * prints the translations script this wiring exists to support.
+	 */
+	public function test_app_script_registers_i18n_dependency_and_textdomain() {
+		$this->render_shell();
+
+		$script = wp_scripts()->registered['daymark-app'];
+
+		$this->assertContains( 'wp-i18n', $script->deps );
+		$this->assertSame( 'daymark', $script->textdomain );
+	}
+
 	/** The shell stays hermetic: no admin bar, no theme head/footer output. */
 	public function test_shell_has_no_admin_chrome() {
 		$html = $this->render_shell();

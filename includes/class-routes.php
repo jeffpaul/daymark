@@ -272,9 +272,9 @@ class Daymark_Routes {
 			// want to publish right now" case.
 			'shortcuts'        => array(
 				array(
-					'name'        => 'New Mark',
-					'short_name'  => 'New Mark',
-					'description' => 'Jump straight to the composer.',
+					'name'        => __( 'New Mark', 'daymark' ),
+					'short_name'  => __( 'New Mark', 'daymark' ),
+					'description' => __( 'Jump straight to the composer.', 'daymark' ),
 					'url'         => self::app_url() . '#create',
 					'icons'       => array( self::icon_descriptor( 192 ) ),
 				),

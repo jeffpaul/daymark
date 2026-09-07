@@ -23,11 +23,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_AI_Assist {
 
 	/**
-	 * Provider label reported when suggestions are mocked.
+	 * Provider label reported when suggestions are mocked (i18n readiness
+	 * pass, issue #252) — a class constant can't hold a translation-function
+	 * call, so this replaced the former MOCK_PROVIDER_LABEL constant.
 	 *
-	 * @var string
+	 * @return string
 	 */
-	private const MOCK_PROVIDER_LABEL = 'Demo Mode';
+	private function mock_provider_label(): string {
+		return __( 'Demo Mode', 'daymark' );
+	}
 
 	/**
 	 * Maximum number of suggested tags returned.
@@ -121,7 +125,7 @@ class Daymark_AI_Assist {
 	 */
 	public function get_provider_label(): string {
 		if ( ! $this->is_available() || '' === $this->provider_label ) {
-			return self::MOCK_PROVIDER_LABEL;
+			return $this->mock_provider_label();
 		}
 
 		return $this->provider_label;
@@ -259,7 +263,7 @@ class Daymark_AI_Assist {
 		return array(
 			'alt_text'       => $this->mock_alt_text( $context ),
 			'is_mocked'      => true,
-			'provider_label' => self::MOCK_PROVIDER_LABEL,
+			'provider_label' => $this->mock_provider_label(),
 		);
 	}
 
@@ -354,7 +358,7 @@ class Daymark_AI_Assist {
 		return array(
 			'transcript'     => '',
 			'is_mocked'      => true,
-			'provider_label' => self::MOCK_PROVIDER_LABEL,
+			'provider_label' => $this->mock_provider_label(),
 		);
 	}
 
@@ -471,7 +475,7 @@ class Daymark_AI_Assist {
 			'alt_text'       => $this->mock_alt_text( $context ),
 			'tags'           => $this->mock_tags( $context ),
 			'is_mocked'      => true,
-			'provider_label' => self::MOCK_PROVIDER_LABEL,
+			'provider_label' => $this->mock_provider_label(),
 		);
 	}
 

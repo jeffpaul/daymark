@@ -216,6 +216,22 @@ stubbed AT Protocol API — see the setup notes at the top of
   into) should follow this pattern rather than skipping nonce
   verification with no replacement. See CLAUDE.md's "Share sheet
   integration" decision row.
+- **Every user-facing string needs a translation function, text domain
+  `daymark`.** PHP: `__()`/`_e()`/`esc_html__()`/`esc_attr__()`/`_n()`/`_x()`
+  as appropriate — the `WordPress.WP.I18n` PHPCS sniff (already configured
+  for this domain) catches a wrong or missing domain on what's already
+  wrapped, but not a string that was never wrapped at all, so check by hand
+  too. JS (`assets/app.js`, once issue #253 lands): `wp.i18n.__()`/`_x()`/
+  `_n()`, with `wp.i18n.sprintf()` for a placeholder rather than string
+  concatenation, so a translation can reorder around an inserted value.
+  Leave untranslated: AI prompt strings sent to a provider in
+  `Daymark_AI_Assist` (translating these changes model behavior, not
+  user-facing text) and third-party plugin/service names (e.g. "Jetpack
+  Social", "ATmosphere") — proper nouns stay as-is across locales. This
+  plugin relies entirely on wp.org's own GlotPress/language-pack system
+  once published there — never add a bundled `languages/` folder, `.pot`/
+  `.mo`/`.json` file, or a `Domain Path` header. See CLAUDE.md's "i18n
+  readiness" decision row.
 
 ## Hook documentation
 
