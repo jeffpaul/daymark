@@ -481,9 +481,15 @@ that loop without new destinations or a new social network.
   tracked as [#134](https://github.com/jeffpaul/daymark/issues/134)) — the
   manual override surface needs to exist before an AI proposes anything on
   top of it.
-- **i18n readiness.** The plugin is en_US-only today. Wire the text domain into
-  a translation scaffold so translators can work before a multilingual release,
-  without changing any shipped strings' behavior.
+- **i18n readiness.** PHP-side done — every user-facing PHP string uses a
+  WordPress translation function under the `daymark` text domain, and
+  `daymark-app` registers `wp-i18n` + `wp_set_script_translations()`, relying
+  entirely on wp.org's own GlotPress/language-pack system once the plugin
+  ships there (no bundled translation files of our own). See CLAUDE.md's
+  "i18n readiness" decision row. Still open: `assets/app.js`'s own UI strings
+  are still hardcoded, not yet wrapped in `wp.i18n.__()` — deliberately
+  deferred to avoid colliding with the gallery-reordering PR touching the
+  same file; tracked as [#253](https://github.com/jeffpaul/daymark/issues/253).
 
 ---
 

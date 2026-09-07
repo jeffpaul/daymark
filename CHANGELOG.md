@@ -24,6 +24,10 @@ can't act on them.
 
 - Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in. ([#250](https://github.com/jeffpaul/daymark/issues/250))
 
+### Developer
+
+- Every user-facing PHP string now uses a WordPress translation function under the `daymark` text domain, and the app shell's script registers `wp-i18n` + `wp_set_script_translations()` — laying the groundwork for wordpress.org's own GlotPress translation system once the plugin ships there. No bundled translation files, no behavior change for an English-language site. ([#252](https://github.com/jeffpaul/daymark/issues/252))
+
 ## [0.12.0] - 2026-09-07
 
 ### Added

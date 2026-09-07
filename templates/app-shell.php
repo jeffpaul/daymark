@@ -258,26 +258,42 @@ wp_register_style( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.css', array()
 wp_register_script(
 	'daymark-app',
 	DAYMARK_PLUGIN_URL . 'assets/app.js',
-	array(),
+	// 'wp-i18n' is a WordPress core script (no new dependency) — this is
+	// the i18n-readiness plumbing (issue #252) wp.org's own automated
+	// JS-string extraction needs. assets/app.js itself doesn't call
+	// wp.i18n.__() yet (tracked separately, issue #253, to avoid
+	// colliding with the in-flight gallery-reordering PR touching this
+	// same file); registering the dependency and translations now means
+	// nothing else has to change here once that follow-up lands.
+	array( 'wp-i18n' ),
 	DAYMARK_VERSION,
 	array(
 		'in_footer' => true,
 		'strategy'  => 'defer',
 	)
 );
+// No bundled languages/ folder or .json files: for a wordpress.org-hosted
+// plugin, wp.org's own translation API serves the JSON translation
+// files it generates from GlotPress automatically, keyed off this exact
+// script handle + text domain pairing.
+wp_set_script_translations( 'daymark-app', 'daymark' );
 wp_add_inline_script(
 	'daymark-app',
 	'window.daymarkApp = ' . wp_json_encode( $daymark_config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';',
 	'before'
 );
 
-// Matches the script-src nonce above onto this specific inline script only
+// Matches the script-src nonce above onto specific inline scripts only
 // (id format per WP_Scripts::get_inline_script_tag(): "{handle}-js-{position}") —
-// every other inline script on the page, if any, is untouched.
+// every other inline script on the page, if any, is untouched. Covers both
+// the bootstrap config above and the "daymark-app-js-translations" block
+// wp_set_script_translations() (see above) prints through the same
+// mechanism — without this, our own strict script-src (no 'unsafe-inline')
+// would silently block the translation data from ever reaching wp.i18n.
 add_filter(
 	'wp_inline_script_attributes',
 	static function ( array $attributes ) use ( $daymark_csp_nonce ): array {
-		if ( isset( $attributes['id'] ) && 'daymark-app-js-before' === $attributes['id'] ) {
+		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'daymark-app-js-before', 'daymark-app-js-translations' ), true ) ) {
 			$attributes['nonce'] = $daymark_csp_nonce;
 		}
 
