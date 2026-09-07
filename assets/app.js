@@ -941,13 +941,17 @@
 	// something to show with no connectivity — the same
 	// content-fetch endpoints the inline-expand feature already uses
 	// (GET /marks/{id}/content, GET /subscription-posts/{id}), just
-	// persisted locally instead of fetched fresh every time. Every
+	// persisted locally instead of fetched fresh every time. Every image
+	// the cached content markup references is cached alongside it, as a
+	// Blob (see cacheContentImages()) — the markup alone still pointed at
+	// live, offline-broken image URLs otherwise (issue #236). Every
 	// function here is best-effort: a failed cache write or read never
 	// blocks the bookmark action itself (the server-side bookmark already
 	// succeeded/failed independently) — it just means this device won't
-	// have that one item available offline until the next successful
-	// cache attempt (a retry on toggling it again, or syncBookmarkCache()
-	// on the next app boot).
+	// have that one item (or, for a single failed image, just that one
+	// image) available offline until the next successful cache attempt
+	// (a retry on toggling it again, or syncBookmarkCache() on the next
+	// app boot).
 	async function putCachedBookmark(record) {
 		const db = await openOfflineDB();
 		const store = db.transaction(BOOKMARK_STORE, 'readwrite').objectStore(BOOKMARK_STORE);
@@ -986,6 +990,56 @@
 		}
 	}
 
+	// Every <img src> an item's cached content markup references — walked
+	// via a <template> (its .content is an inert DocumentFragment, so
+	// parsing arbitrary bookmarked HTML here never runs any script/loads
+	// any resource by itself) rather than a regex, since this runs in the
+	// browser with a real DOM available, unlike the PHP-side content
+	// extraction this codebase otherwise favors regex for.
+	function extractImageUrls(html) {
+		if (!html) {
+			return [];
+		}
+		const template = document.createElement('template');
+		template.innerHTML = html;
+		const urls = new Set();
+		template.content.querySelectorAll('img[src]').forEach((img) => {
+			const src = img.getAttribute('src');
+			if (src) {
+				urls.add(src);
+			}
+		});
+		return Array.from(urls);
+	}
+
+	// Fetches and caches, as Blobs, every image a bookmarked item's content
+	// references — the markup itself is cached verbatim (see
+	// cacheBookmarkOffline() below), but its <img src> attributes still
+	// point at the live origin site; with no connectivity those rendered
+	// as broken images even though the surrounding text displayed fine
+	// from cache (issue #236). IndexedDB natively stores Blobs, the same
+	// mechanism the offline-creation feature already relies on for picked
+	// media. Best-effort per image: a failed fetch just leaves that one
+	// image pointing at its original, still-offline-broken URL — never
+	// blocks caching the rest of the item.
+	async function cacheContentImages(html) {
+		const urls = extractImageUrls(html);
+		const images = {};
+		await Promise.all(
+			urls.map(async (url) => {
+				try {
+					const response = await fetch(url);
+					if (response.ok) {
+						images[url] = await response.blob();
+					}
+				} catch (err) {
+					// Best-effort — see this function's own docblock.
+				}
+			})
+		);
+		return images;
+	}
+
 	// Fetches one bookmarked item's full content and caches it. `screen`
 	// (when given) supplies the item's own already-fetched Timeline
 	// summary via its `_byMarkId`/`_bySubId` map (see rememberItem()) — no
@@ -1007,11 +1061,13 @@
 				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
 			);
 			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
+			const images = await cacheContentImages(content);
 			await putCachedBookmark({
 				id: Number(id),
 				kind,
 				item,
 				content,
+				images,
 				cachedAt: Date.now(),
 			});
 		} catch (err) {
@@ -5315,6 +5371,35 @@
 		return '<p class="daymark-error" role="alert">Couldn&#39;t load full content.</p>';
 	}
 
+	// Swaps each <img src> in cached content for a local object URL built
+	// from that image's own cached Blob (see cacheContentImages()), so a
+	// bookmarked item's images still render with no connectivity instead
+	// of showing as broken links (issue #236) — the surrounding markup
+	// was already viewable offline; only its images weren't, since they
+	// were still just live URLs. An image with no cached Blob (its own
+	// fetch failed at cache time, or the source added it since) is left
+	// pointing at its original, still-offline-broken URL — nothing new to
+	// fall back to for that one. The object URLs created here are never
+	// explicitly revoked; the browser reclaims them at the latest on page
+	// unload, and a bookmarked item's own image count is small enough at
+	// personal-site scale that this is no different from any other
+	// offline Blob this codebase already keeps for a session's duration.
+	function rewriteContentImagesForOffline(html, images) {
+		if (!html || !images || !Object.keys(images).length) {
+			return html;
+		}
+		const template = document.createElement('template');
+		template.innerHTML = html;
+		template.content.querySelectorAll('img[src]').forEach((img) => {
+			const src = img.getAttribute('src');
+			const blob = src && images[src];
+			if (blob) {
+				img.setAttribute('src', URL.createObjectURL(blob));
+			}
+		});
+		return template.innerHTML;
+	}
+
 	// A bookmarked item's cached content (see cacheBookmarkOffline()) is
 	// the fallback for both loaders below, only reached on a
 	// connectivity-shaped failure of the live fetch — an actual server
@@ -5328,7 +5413,7 @@
 		if (!cached || !cached.content) {
 			throw err;
 		}
-		return String(cached.content);
+		return rewriteContentImagesForOffline(String(cached.content), cached.images);
 	}
 
 	// A Mark or ordinary post's own content — straight from the site's own
