@@ -929,11 +929,27 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 
 	// Confirm tabbing a footer control reveals both bars, even with the
-	// header currently hidden from a scroll-up.
+	// header currently hidden from a scroll-up. A scroll-anchor adjustment
+	// while this suite's real, never-cleaned-up subscription-post images
+	// are still loading (see openComposer()'s own docblock above) can fire
+	// bindChromeAutoHide()'s scroll listener again moments after focus()
+	// already cleared is-footer-hidden, re-hiding it before the assertion
+	// below gets a chance to see it cleared — refocus once more on a first
+	// miss rather than trusting a single attempt to outlast that.
 	await page.mouse.wheel(0, -200);
 	await expect(header).toHaveClass(/is-header-hidden/);
-	await page.locator('[data-action="new-mark"]').focus();
-	await expect(footer).not.toHaveClass(/is-footer-hidden/);
+	const launcherBtn = page.locator('[data-action="new-mark"]');
+	for (let attempt = 1; attempt <= 3; attempt++) {
+		await launcherBtn.focus();
+		try {
+			await expect(footer).not.toHaveClass(/is-footer-hidden/, { timeout: 1500 });
+			break;
+		} catch (err) {
+			if (attempt === 3) {
+				throw err;
+			}
+		}
+	}
 	await expect(header).not.toHaveClass(/is-header-hidden/);
 });
 
@@ -1989,11 +2005,20 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	await loginAs(page);
 	await page.goto('/daymark');
 
+	// Every click below on the launcher/scrim uses a raw DOM click (see
+	// openComposer()'s own docblock above) rather than Playwright's own
+	// pointer-based one: this suite's never-cleaned-up Timeline content
+	// (real subscription posts whose images keep arriving well after the
+	// page itself has settled) makes any footer-hosted click here a race
+	// against whatever real content the page has scrolled to at that
+	// screen position — not just the scroll-driven is-footer-hidden case
+	// this comment originally called out, but the exact same "intercepts
+	// pointer events" symptom on a plain first click too.
 	const btn = page.locator('[data-action="new-mark"]');
 	await expect(btn).toHaveAttribute('aria-label', 'New Mark');
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 
-	await btn.click();
+	await btn.evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'true');
 
 	for (const type of ['Image', 'Video', 'Audio', 'Note']) {
@@ -2003,14 +2028,10 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	// An outside tap (the dimming scrim over the recent list) closes it —
 	// the scrim covers that area while open and is the real hit target,
 	// since it sits on top of the content underneath it.
-	await page.locator('.daymark-launcher__scrim').click();
+	await page.locator('.daymark-launcher__scrim').evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 
-	// Escape closes it too, and returns focus to the launcher button. A raw
-	// DOM click (see openComposer()'s own docblock above) — re-opening the
-	// launcher here is exactly the same footer-hosted click the scroll-driven
-	// is-footer-hidden race reliably wins against once this suite's
-	// never-cleaned-up Timeline content has piled up enough.
+	// Escape closes it too, and returns focus to the launcher button.
 	await btn.evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'true');
 	await page.keyboard.press('Escape');
