@@ -1736,8 +1736,11 @@
 		return state.files.find((entry) => entry.kind === 'audio' || entry.kind === 'video') || null;
 	}
 
-	// Load a draft into the composer for continued editing.
-	async function openDraft(id) {
+	// Fetches a draft and populates the composer's state for it — shared by
+	// openDraft() (continues into #create) and openDraftAndPublish() (issue
+	// #265, skips straight to #publish), so the two entry points can never
+	// populate state differently.
+	async function loadDraftIntoState(id) {
 		const mark = await apiGet('marks/' + id);
 		abandonComposer();
 		state.editing = {
@@ -1761,7 +1764,37 @@
 		// No cached title to show for a resumed draft — the chip falls back
 		// to the URL itself (see CreateScreen.render()).
 		state.replyTo = mark.in_reply_to ? { url: mark.in_reply_to, title: '' } : null;
+		return mark;
+	}
+
+	// Load a draft into the composer for continued editing.
+	async function openDraft(id) {
+		await loadDraftIntoState(id);
 		navigate('#create');
+	}
+
+	// One-tap "Publish" from the Drafts list (issue #265): populates the
+	// composer's state exactly like openDraft() does, but skips #create
+	// entirely for a draft that's already ready — the same readiness bar
+	// showScreen()'s own #publish guard already enforces (hasComposerContent()).
+	// A draft with neither a caption nor any media (existing or newly picked)
+	// falls back to #create instead, same as tapping the row/Edit would.
+	async function openDraftAndPublish(id) {
+		await loadDraftIntoState(id);
+		navigate(hasComposerContent() ? '#publish' : '#create');
+	}
+
+	// Whether the composer currently has enough to publish: a caption, a
+	// newly picked file, or (a draft resumed via loadDraftIntoState())
+	// already-attached media — the last of these was missing from this
+	// check for a long time (issue #265), so a media-only draft with no
+	// caption could silently bounce from #publish back to #create.
+	function hasComposerContent() {
+		return (
+			Boolean(state.caption.trim()) ||
+			state.files.length > 0 ||
+			Boolean(state.editing && state.editing.media && state.editing.media.length)
+		);
 	}
 
 	function skeletonRows(count) {
@@ -2006,7 +2039,7 @@
 		let target = SCREENS[hash] ? hash : '#home';
 
 		// Guards: never land on screens whose state is missing.
-		if (target === '#publish' && !state.files.length && !state.caption.trim()) {
+		if (target === '#publish' && !hasComposerContent()) {
 			target = '#create';
 		}
 		if (target === '#success' && !state.lastPublish) {
@@ -2518,6 +2551,9 @@
 							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">${esc(
 								__('Edit', 'daymark')
 							)}</button>
+							<button type="button" class="daymark-menu__item" data-menu-publish role="menuitem">${esc(
+								__('Publish', 'daymark')
+							)}</button>
 							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">${esc(
 								__('Delete', 'daymark')
 							)}</button>
@@ -2799,6 +2835,20 @@
 			closeItemMenus();
 			if (wrap) {
 				openDraft(wrap.getAttribute('data-item')).catch(() => {});
+			}
+			return;
+		}
+
+		// One-tap "Publish" from the Drafts list (issue #265) — skips #create
+		// entirely for a draft that's already ready; falls back to it
+		// otherwise (openDraftAndPublish()'s own hasComposerContent() check).
+		const publishNow = target.closest('[data-menu-publish]');
+		if (publishNow) {
+			event.preventDefault();
+			const wrap = publishNow.closest('[data-item]');
+			closeItemMenus();
+			if (wrap) {
+				openDraftAndPublish(wrap.getAttribute('data-item')).catch(() => {});
 			}
 			return;
 		}
@@ -4849,7 +4899,7 @@
 			root.querySelector('[data-action="next"]').addEventListener('click', () => {
 				state.caption = caption.value;
 				const status = root.querySelector('[data-create-status]');
-				if (!state.files.length && !state.caption.trim()) {
+				if (!hasComposerContent()) {
 					status.textContent = __('Add media or write a caption to continue.', 'daymark');
 					return;
 				}

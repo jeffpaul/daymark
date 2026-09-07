@@ -475,16 +475,24 @@ that loop without new destinations or a new social network.
   alongside the hooks reference site. **Deliberately deferred**: a registry of
   known third-party connectors — no real one exists yet to list, so a registry
   would have nothing in it; revisit once a connector plugin actually ships.
-- **Publish-loop polish.** Draft → publish continuation is the remaining
-  candidate here — judged by whether it makes publishing faster (Publish
-  First), not more powerful. Drag-and-drop onto the composer's picker
-  (desktop) and gallery reordering, the other two items this bucket used to
-  name, both shipped ([#260](https://github.com/jeffpaul/daymark/issues/260),
+- **Publish-loop polish** — all three named candidates have shipped.
+  Drag-and-drop onto the composer's picker (desktop) and gallery reordering
+  shipped first ([#260](https://github.com/jeffpaul/daymark/issues/260),
   [#250](https://github.com/jeffpaul/daymark/issues/250)) — gallery
   reordering is also the prerequisite for an AI-assisted ordering suggestion
   (CLAUDE.md's "AI as an assistant" decision; tracked as
   [#134](https://github.com/jeffpaul/daymark/issues/134)) — the manual
   override surface now exists for an AI to propose anything on top of.
+  **Draft → publish continuation** ([#265](https://github.com/jeffpaul/daymark/issues/265))
+  closes the bucket: a Draft's ⋯ menu now has a one-tap "Publish" action
+  (alongside Edit/Delete) that skips the composer entirely for a draft
+  that's already ready — 3 taps down to 2, judged by the bucket's own
+  rubric (does it make publishing faster, not more powerful). Building it
+  surfaced a real, pre-existing bug in the `#publish` navigation guard,
+  fixed in the same change: it only ever checked newly picked files and the
+  caption, never a resumed draft's own already-attached media, so a
+  plain photo draft with no caption could silently bounce back to the
+  composer even before this shortcut existed.
 
 ---
 
