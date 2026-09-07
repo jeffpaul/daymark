@@ -78,6 +78,20 @@ class Test_App_Shell extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * The bootstrap config carries the site's Date Format option
+	 * (Settings -> General), which assets/app.js uses to render a Timeline
+	 * card's absolute-date display the same way wp-admin already does,
+	 * rather than the browser's own locale default.
+	 */
+	public function test_config_carries_date_format() {
+		update_option( 'date_format', 'F j, Y' );
+
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( '"dateFormat":"F j, Y"', $html );
+	}
+
 	/** The shell stays hermetic: no admin bar, no theme head/footer output. */
 	public function test_shell_has_no_admin_chrome() {
 		$html = $this->render_shell();
