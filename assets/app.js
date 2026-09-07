@@ -640,6 +640,32 @@
 		return 'mixed';
 	}
 
+	// Manual gallery reordering (issue #250): moves an image entry one slot
+	// up/down among the *other images* in the same list, ignoring any
+	// non-image entries interleaved with them (a mixed-type Mark can carry
+	// video/audio alongside a gallery's worth of images) — mutates the list
+	// in place, since both state.files and state.editing.media are Object
+	// references the composer already holds. Returns whether anything moved.
+	function moveImageInList(list, id, direction) {
+		const imageIndices = [];
+		list.forEach((item, index) => {
+			if (item.kind === 'image') {
+				imageIndices.push(index);
+			}
+		});
+		const currentPos = imageIndices.findIndex((index) => String(list[index].id) === String(id));
+		const targetPos = currentPos + direction;
+		if (currentPos === -1 || targetPos < 0 || targetPos >= imageIndices.length) {
+			return false;
+		}
+		const i = imageIndices[currentPos];
+		const j = imageIndices[targetPos];
+		const swap = list[i];
+		list[i] = list[j];
+		list[j] = swap;
+		return true;
+	}
+
 	function defaultTargetsFor(type) {
 		const defaults = typeDefaults[type];
 		return Array.isArray(defaults) ? defaults.slice() : [];
@@ -1142,11 +1168,16 @@
 	function buildMarkPayload(status, opts) {
 		opts = opts || {};
 		const existingAlt = {};
+		// The author's chosen order for already-attached media (issue #250)
+		// — state.editing.media's own array order, which moveExistingMedia()
+		// mutates in place. Empty when there's nothing existing to reorder.
+		const mediaOrder = [];
 		if (state.editing && Array.isArray(state.editing.media)) {
 			state.editing.media.forEach((m) => {
 				if (m.kind === 'image') {
 					existingAlt[m.id] = m.alt || '';
 				}
+				mediaOrder.push(m.id);
 			});
 		}
 		const newFiles = [];
@@ -1188,6 +1219,7 @@
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
+			mediaOrder,
 		};
 	}
 
@@ -1217,6 +1249,9 @@
 		});
 		if (Object.keys(payload.existingAlt).length) {
 			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
+		}
+		if (payload.mediaOrder && payload.mediaOrder.length) {
+			formData.append('media_order', JSON.stringify(payload.mediaOrder));
 		}
 		payload.tags.forEach((tag) => formData.append('tags[]', tag));
 		if (payload.capturedAt) {
@@ -4098,35 +4133,6 @@
 	const CreateScreen = {
 		render() {
 			const editing = state.editing;
-			const existingTiles =
-				editing && editing.media.length
-					? `<ul class="daymark-editmedia" aria-label="Media already attached to this draft">${editing.media
-							.map(
-								(m) =>
-									`<li class="daymark-editmedia__item">
-										${
-											m.thumbnail
-												? `<img class="daymark-editmedia__thumb" src="${esc(m.thumbnail)}" alt="Attached ${esc(
-														m.filename || m.kind
-												  )}" />`
-												: `<span class="daymark-editmedia__glyph">${esc(m.kind)}</span>`
-										}
-										${
-											m.kind === 'image'
-												? `<span class="daymark-alt daymark-alt--edit">
-														<label class="daymark-alt__label" for="daymark-existing-alt-${esc(m.id)}">Alt text</label>
-														<input type="text" class="daymark-input daymark-alt__input" id="daymark-existing-alt-${esc(
-															m.id
-														)}" data-existing-alt="${esc(m.id)}" value="${esc(
-														m.alt || ''
-												  )}" placeholder="Describe this image" />
-													</span>`
-												: `<span class="daymark-editmedia__name">${esc(m.filename || m.kind)}</span>`
-										}
-									</li>`
-							)
-							.join('')}</ul>`
-					: '';
 			return `
 			<header class="daymark-topbar">
 				<a class="daymark-backlink" href="#home">&larr; Back</a>
@@ -4148,7 +4154,7 @@
 						  )}</p>`
 						: ''
 				}
-				${existingTiles}
+				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				${
 					// The Home launcher's Note bubble jumps straight past the
 					// picker into a focused writing flow — attaching any file
@@ -4209,6 +4215,129 @@
 				<p class="daymark-status" data-create-status aria-live="polite"></p>
 				<button type="button" class="daymark-btn daymark-btn--primary" data-action="next">Next: Publish &rarr;</button>
 			</footer>`;
+		},
+
+		// Media already attached to a draft (state.editing.media) — its own
+		// re-renderable slot, separate from refreshMedia()'s new-picks grid,
+		// since the two are unrelated arrays with unrelated layouts (see
+		// buildMarkPayload()'s existingAlt/mediaOrder split). Re-run after a
+		// reorder via refreshExistingMedia(); render() calls this once for
+		// the initial paint.
+		existingMediaMarkup() {
+			const editing = state.editing;
+			if (!editing || !editing.media.length) {
+				return '';
+			}
+			return `<ul class="daymark-editmedia" aria-label="Media already attached to this draft">${editing.media
+				.map(
+					(m) => `
+					<li class="daymark-editmedia__item">
+						${
+							m.thumbnail
+								? `<img class="daymark-editmedia__thumb" src="${esc(m.thumbnail)}" alt="Attached ${esc(
+										m.filename || m.kind
+								  )}" />`
+								: `<span class="daymark-editmedia__glyph">${esc(m.kind)}</span>`
+						}
+						${
+							m.kind === 'image'
+								? `<span class="daymark-alt daymark-alt--edit">
+										<label class="daymark-alt__label" for="daymark-existing-alt-${esc(m.id)}">Alt text</label>
+										<input type="text" class="daymark-input daymark-alt__input" id="daymark-existing-alt-${esc(
+											m.id
+										)}" data-existing-alt="${esc(m.id)}" value="${esc(
+										m.alt || ''
+								  )}" placeholder="Describe this image" />
+									</span>`
+								: `<span class="daymark-editmedia__name">${esc(m.filename || m.kind)}</span>`
+						}
+						${m.kind === 'image' ? this.reorderControlMarkup('existing', editing.media, m.id) : ''}
+					</li>`
+				)
+				.join('')}</ul>`;
+		},
+
+		// Move/reorder controls for one image entry (issue #250) — shared by
+		// both the new-picks file list (refreshMedia()) and the
+		// already-attached media list (existingMediaMarkup()) above. Up/down
+		// buttons rather than drag-and-drop: drag alone has no keyboard
+		// equivalent and is fussy on touch inside a scrolling list, while a
+		// button meets --daymark-tap-min and works identically by tap,
+		// mouse, or keyboard. Only rendered when the list has 2+ images —
+		// reordering a lone image has nothing to reorder against.
+		reorderControlMarkup(scope, list, id) {
+			const imageIds = list.filter((item) => item.kind === 'image').map((item) => item.id);
+			if (imageIds.length < 2) {
+				return '';
+			}
+			const pos = imageIds.findIndex((itemId) => String(itemId) === String(id));
+			if (pos === -1) {
+				return '';
+			}
+			const action = 'existing' === scope ? 'data-move-existing' : 'data-move-file';
+			const idAttr = 'existing' === scope ? 'data-move-existing-id' : 'data-move-file-id';
+			const disableUp = pos <= 0;
+			const disableDown = pos >= imageIds.length - 1;
+			return `<div class="daymark-reorder" role="group" aria-label="Reorder this image in the gallery">
+				<button type="button" class="daymark-reorder__btn" ${action}="up" ${idAttr}="${esc(
+				id
+			)}" aria-label="Move image up" title="Move up"${disableUp ? ' disabled' : ''}><span aria-hidden="true">&uarr;</span></button>
+				<button type="button" class="daymark-reorder__btn" ${action}="down" ${idAttr}="${esc(
+				id
+			)}" aria-label="Move image down" title="Move down"${disableDown ? ' disabled' : ''}><span aria-hidden="true">&darr;</span></button>
+			</div>`;
+		},
+
+		// Reorder a not-yet-uploaded (or already-uploaded-this-session) pick.
+		moveFile(id, direction) {
+			if (moveImageInList(state.files, id, direction)) {
+				scheduleAutosave();
+				this.refreshMedia();
+			}
+		},
+
+		// Reorder media already attached to a draft being edited.
+		moveExistingMedia(id, direction) {
+			if (state.editing && moveImageInList(state.editing.media, id, direction)) {
+				scheduleAutosave();
+				this.refreshExistingMedia();
+			}
+		},
+
+		// Re-render existingMediaMarkup() into its own slot (see render())
+		// without touching the rest of the screen, and rebind the listeners
+		// that live inside it.
+		refreshExistingMedia() {
+			const slot = root.querySelector('[data-existing-media-slot]');
+			if (!slot) {
+				return;
+			}
+			slot.innerHTML = this.existingMediaMarkup();
+			this.bindExistingMediaEvents();
+		},
+
+		// Alt-text input and reorder-button listeners for the already-attached
+		// media list — factored out so both the initial bindEvents() call and
+		// every refreshExistingMedia() re-render wire the same handlers.
+		bindExistingMediaEvents() {
+			root.querySelectorAll('[data-existing-alt]').forEach((field) => {
+				field.addEventListener('input', () => {
+					const id = field.getAttribute('data-existing-alt');
+					const media = (state.editing && state.editing.media) || [];
+					const item = media.find((m) => String(m.id) === String(id));
+					if (item) {
+						item.alt = field.value;
+						scheduleAutosave();
+					}
+				});
+			});
+			root.querySelectorAll('[data-move-existing]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const id = button.getAttribute('data-move-existing-id');
+					const direction = 'up' === button.getAttribute('data-move-existing') ? -1 : 1;
+					this.moveExistingMedia(id, direction);
+				});
+			});
 		},
 
 		bindEvents() {
@@ -4291,18 +4420,8 @@
 				scheduleQuietTagSuggestion();
 			});
 
-			// Alt edits on media already attached to a draft, keyed by ID.
-			root.querySelectorAll('[data-existing-alt]').forEach((field) => {
-				field.addEventListener('input', () => {
-					const id = field.getAttribute('data-existing-alt');
-					const media = (state.editing && state.editing.media) || [];
-					const item = media.find((m) => String(m.id) === String(id));
-					if (item) {
-						item.alt = field.value;
-						scheduleAutosave();
-					}
-				});
-			});
+			// Alt edits and reorder taps on media already attached to a draft.
+			this.bindExistingMediaEvents();
 
 			const aiButton = root.querySelector('[data-action="ai-assist"]');
 			if (aiButton) {
@@ -4400,6 +4519,7 @@
 						)}" aria-label="Clear ${esc(entry.file.name)}">Clear</button>
 					</div>
 					${entry.kind === 'image' ? this.altFieldMarkup(entry) : ''}
+					${entry.kind === 'image' ? this.reorderControlMarkup('file', state.files, entry.id) : ''}
 				</li>`
 				)
 				.join('');
@@ -4448,6 +4568,14 @@
 						entry.alt = field.value;
 					}
 					this.generateAltFor(entry, { force: true, existingAlt: entry.alt });
+				});
+			});
+
+			preview.querySelectorAll('[data-move-file]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const id = button.getAttribute('data-move-file-id');
+					const direction = 'up' === button.getAttribute('data-move-file') ? -1 : 1;
+					this.moveFile(id, direction);
 				});
 			});
 		},
