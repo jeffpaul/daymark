@@ -59,6 +59,15 @@ jobs:
         # the tool's structural styles reference these palette variables.
         run: cat .github/hooks-docs/brand.css >> wp-hooks-docs/src/css/custom.css
 
+      - name: Apply Daymark favicon
+        # Overwrites the generator's default favicon with Daymark's own
+        # icon — the generated docusaurus.config.js points `favicon` at
+        # exactly this path (confirmed by running the generator locally),
+        # so replacing the file needs no config edit.
+        run: |
+          mkdir -p wp-hooks-docs/static/img
+          cp .github/hooks-docs/favicon.png wp-hooks-docs/static/img/favicon.png
+
       - name: Build static site
         run: |
           test -d wp-hooks-docs/docs/hooks || { echo "::error::hook docs were not generated"; exit 1; }
