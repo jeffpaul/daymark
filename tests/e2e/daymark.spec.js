@@ -118,6 +118,27 @@ async function openComposer(page, type = 'note') {
 	}
 }
 
+// Simulates dropping a local file onto `selector` (issue #260) — Playwright
+// has no built-in drag-and-drop-a-real-file API, so this builds a real
+// `DataTransfer`/`File` in-page (base64-encoded fixture bytes, decoded via
+// `fetch()` of a data: URL back into a Blob) and dispatches a synthetic
+// `drop` event carrying it, matching how a browser's own native drop event
+// shape looks to the page's own listeners.
+async function dropFile(page, selector, filePath, fileName, mimeType) {
+	const base64 = readFileSync(filePath).toString('base64');
+	const dataTransfer = await page.evaluateHandle(
+		async ({ base64Data, name, type }) => {
+			const blob = await fetch(`data:${type};base64,${base64Data}`).then((res) => res.blob());
+			const file = new File([blob], name, { type });
+			const dt = new DataTransfer();
+			dt.items.add(file);
+			return dt;
+		},
+		{ base64Data: base64, name: fileName, type: mimeType }
+	);
+	await page.dispatchEvent(selector, 'drop', { dataTransfer });
+}
+
 // --- Subscriptions & Timeline (issue #78) helpers ---
 //
 // Subscribing and refreshing a feed hits a real external site
@@ -649,6 +670,29 @@ test('camera-first: the Image picker offers capture first, with a library fallba
 
 	await libraryBtn.click();
 	await expect(input).not.toHaveAttribute('capture');
+});
+
+// Drag-and-drop (issue #260): dropping a file onto the picker zone attaches
+// it the same way picking it via the file input would — same alt-text
+// field, same type badge, same publish flow.
+test('drag-and-drop: dropping an image onto the picker attaches it', async ({ page }) => {
+	const caption = `E2E drop ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+
+	await dropFile(page, '.daymark-picker', 'tests/e2e/fixtures/test-image.png', 'test-image.png', 'image/png');
+
+	await expect(page.locator('[data-type-badge]')).toHaveText(/image/i);
+	const altField = page.locator('[data-alt-for]').first();
+	await expect(altField).toBeVisible();
+	await altField.fill(`E2E alt ${RUN_ID}`);
+
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
 });
 
 // Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
