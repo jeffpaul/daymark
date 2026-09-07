@@ -44,6 +44,7 @@ can't act on them.
 - A bookmarked post's images now render correctly when viewed offline — its cached content markup displayed fine with no connectivity, but its `<img>` tags still pointed at the live origin site, so images showed as broken links. Images are now cached alongside the content and swapped in from that local copy when offline. ([#236](https://github.com/jeffpaul/daymark/issues/236))
 - The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column. ([#240](https://github.com/jeffpaul/daymark/issues/240))
 - On a screen with very little content (e.g. a near-empty Timeline), the bottom nav and the floating "+New" launcher no longer float mid-page instead of pinned to the bottom — the screen itself now always claims the full available height it's meant to. ([#244](https://github.com/jeffpaul/daymark/issues/244))
+- A subscription post's Timeline stat row (Like, Comment, Repost, Bookmark, "open original", Share) now spaces every icon evenly instead of splitting into two unevenly-spaced clusters. ([#247](https://github.com/jeffpaul/daymark/issues/247))
 
 ## [0.11.0] - 2026-09-05
 

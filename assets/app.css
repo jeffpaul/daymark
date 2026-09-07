@@ -880,11 +880,16 @@ h2[tabindex='-1']:focus {
 	font-variant-numeric: tabular-nums;
 }
 
-/* The Bookmark toggle — the row's one interactive entry (see
-   renderBookmarkToggle(), app.js), pushed to the end of the row so it
-   reads as the last icon in the ordering, same as the request asked for. */
+/* The Bookmark toggle (see renderBookmarkToggle(), app.js). Ordering comes
+   from render call order alone (issue #247) — this rule used to also carry
+   `margin-left: auto` to push itself (and everything rendered after it) to
+   the row's right edge, back when Bookmark was the only entry after the
+   read-only stats; once Like/Repost/Replied/"open original"/Share joined
+   the row, that split it into two unevenly-spaced clusters instead of one
+   evenly-spaced row, so the auto-margin was dropped in favor of the row's
+   own shared `gap` (below) doing all the spacing, left-aligned like the
+   card content above it. */
 .daymark-stat--bookmark {
-	margin-left: auto;
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
 	min-height: var(--daymark-tap-min);
@@ -908,9 +913,7 @@ h2[tabindex='-1']:focus {
 /* The Like/Repost toggles on a subscription post's own stats row (issue #41
    follow-up) — the row's other two *interactive* entries besides Bookmark,
    rendered first (see renderSubscriptionPostCard()) so they sit on the
-   left, matching where a Mark's own like/comment/reblog counts already sit;
-   Bookmark's own `margin-left: auto` above is what still pushes it (plus
-   the "open original"/Share toggles after it) to the row's right side. */
+   left, matching where a Mark's own like/comment/reblog counts already sit. */
 .daymark-stat--like,
 .daymark-stat--repost {
 	cursor: pointer;
@@ -935,10 +938,8 @@ h2[tabindex='-1']:focus {
 }
 
 /* The "open original" toggle (see renderExternalLinkToggle(), app.js) —
-   sits between Bookmark and Share. Like Share below, it doesn't need its
-   own `margin-left: auto`: Bookmark's already pushed the whole trailing
-   group (itself + this + Share) to the row's end, so this just follows
-   in normal flex flow right after Bookmark. */
+   sits between Bookmark and Share, in normal flex flow like every other
+   entry in the row. */
 .daymark-stat--external {
 	cursor: pointer;
 	min-width: var(--daymark-tap-min);
@@ -953,8 +954,7 @@ h2[tabindex='-1']:focus {
 }
 
 /* The Share toggle (see renderShareToggle(), app.js) — the row's final
-   entry, immediately after the "open original" toggle above; same
-   reasoning applies (no `margin-left: auto` of its own needed). */
+   entry, immediately after the "open original" toggle above. */
 .daymark-stat--share {
 	position: relative;
 	cursor: pointer;
