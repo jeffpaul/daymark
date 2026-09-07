@@ -39,6 +39,7 @@ can't act on them.
 - The Share icon's clipboard-copy fallback (used on any browser without a native share sheet, e.g. Firefox) now shows a visible on-screen "Link copied" confirmation instead of only a subtle color change — it previously looked like nothing had happened. ([#234](https://github.com/jeffpaul/daymark/issues/234))
 - A Timeline card's date, once shown as an actual date rather than a relative "Xd ago" reading, now formats it using the site's own Settings -> General -> Date Format instead of the browser's locale default (previously always MM/DD/YYYY-style). ([#238](https://github.com/jeffpaul/daymark/issues/238))
 - A bookmarked post's images now render correctly when viewed offline — its cached content markup displayed fine with no connectivity, but its `<img>` tags still pointed at the live origin site, so images showed as broken links. Images are now cached alongside the content and swapped in from that local copy when offline. ([#236](https://github.com/jeffpaul/daymark/issues/236))
+- The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column. ([#240](https://github.com/jeffpaul/daymark/issues/240))
 
 ## [0.11.0] - 2026-09-05
 
