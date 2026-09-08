@@ -296,8 +296,8 @@ test('home Timeline blends a subscribed feed post with the user’s own Mark', a
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	// The Mark card: a <button> (expands its own content inline), not an
-	// <a> anymore.
+	// The Mark card: a <button> (opens its full content on the post-view
+	// screen), not an <a> anymore.
 	const markWrap = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
 	await expect(markWrap).toBeVisible();
 	await expect(markWrap.locator('[data-expand-post]')).toBeVisible();
@@ -308,19 +308,19 @@ test('home Timeline blends a subscribed feed post with the user’s own Mark', a
 	await expect(subCard).toHaveClass(/daymark-recent__item--button/);
 });
 
-// Clicking a Timeline card expands its own content in place, directly
-// below the card — never a modal/overlay, and never (for a Mark or
-// ordinary post) a navigation away from the app to the permalink the way
-// it used to. Covers both a Mark and a subscription post, since both share
-// the same inline-expand mechanism (toggleExpand()/onFeedListClick() in
-// assets/app.js) and the same "just the post's own content, no
-// nav/header/footer/comments" contract — a Mark/ordinary post's comes
-// straight from the site's own post_content (GET /marks/{id}/content); a
-// subscription post's is the existing external click-through fetch
-// (GET /subscription-posts/{id}), which can plausibly fail in CI (timeout,
-// 404, etc.), so that half asserts on whichever state the panel actually
-// reaches rather than a hard-coded outcome.
-test('clicking a Timeline card expands its content in place, not a modal or a navigation', async ({
+// Clicking a Timeline card opens its own content on a dedicated full-screen
+// post view (issue #270) — never a modal/overlay, and never (for a Mark or
+// ordinary post) a navigation away from the app to the real permalink.
+// Covers both a Mark and a subscription post, since both share the same
+// mechanism (openPostView()/PostScreen in assets/app.js) and the same
+// "just the post's own content, no nav/header/footer/comments" contract —
+// a Mark/ordinary post's comes straight from the site's own post_content
+// (GET /marks/{id}/content); a subscription post's is the existing
+// external click-through fetch (GET /subscription-posts/{id}), which can
+// plausibly fail in CI (timeout, 404, etc.), so that half asserts on
+// whichever state the screen actually reaches rather than a hard-coded
+// outcome.
+test('clicking a Timeline card opens its content on a full-screen post view, not a modal or the real permalink', async ({
 	page,
 }) => {
 	const caption = `E2E expand mark ${RUN_ID}`;
@@ -341,7 +341,7 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	// A Mark card: expands its own content inline, sourced straight from
+	// A Mark card: opens its own content on #post, sourced straight from
 	// this site's own database — no external fetch, so this can assert a
 	// hard-coded outcome (the caption's own text, since a note Mark's
 	// content is just its caption as a paragraph block).
@@ -357,43 +357,36 @@ test('clicking a Timeline card expands its content in place, not a modal or a na
 	// would never do either.
 	const markTitle = markCard.locator('.daymark-recent__title');
 	await markTitle.click();
-	const markPanel = markWrap.locator('[data-expand-panel]');
-	await expect(markPanel).toBeVisible();
-	await expect(markPanel.locator('.daymark-expand-content')).toContainText(caption);
-	// Still on the app shell (its own default-screen hash, #home, included)
-	// — never navigated off to the Mark's real permalink.
-	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect(page).toHaveURL(/#post$/);
+	const postBody = page.locator('[data-postview-body]');
+	await expect(postBody.locator('.daymark-expand-content')).toContainText(caption);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 
-	// Clicking it again collapses it back in place.
-	await markTitle.click();
-	await expect(markPanel).toBeHidden();
+	// The back link (icon + arrow, matching Notifications) returns to
+	// Home, not the Mark's real permalink.
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect(markCard).toBeVisible();
 
 	// A subscription-post card: same mechanism, external content instead —
 	// settles on success (`.daymark-expand-content`) or a graceful failure
-	// (`.daymark-error`), never a modal or a navigation. The "Open
-	// original" stat-row icon (a real http(s) href) is a permanent part of
-	// the card itself now, not something that only appears once expanded
-	// — see the card-frame/icon-row decision. The external fetch has its
-	// own 15s server-side timeout, so this allows generous headroom.
+	// (`.daymark-error`), never a modal or a navigation to the real
+	// permalink. The "Open original" stat-row icon (a real http(s) href)
+	// is a permanent part of the card itself, unaffected by any of this.
+	// The external fetch has its own 15s server-side timeout, so this
+	// allows generous headroom.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
 	const externalLink = subCard.locator('[data-external-link]');
 	await expect(externalLink).toHaveCount(1);
 	expect(await externalLink.getAttribute('data-external-link')).toMatch(/^https?:\/\//);
-	// A direct following-sibling of the card itself (same DOM shape
-	// onFeedListClick()'s own closest('.daymark-recent__item-wrap') relies
-	// on) — more precise than re-deriving the wrap via a `has:` filter,
-	// which re-resolves subCard's own selector independently and can
-	// disagree with which element was actually clicked.
-	const subPanel = subCard.locator('xpath=following-sibling::*[@data-expand-panel]');
 	// Same title-click reasoning as the Mark card above — this card's own
 	// stat row (Bookmark, Open original, Share) sits at the bottom of the
 	// same button.
 	await subCard.locator('.daymark-recent__title').click();
-	await expect(subPanel).toBeVisible();
-	await expect(subPanel.locator('.daymark-loading')).toHaveCount(0, { timeout: 20000 });
-	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect(page).toHaveURL(/#post$/);
+	await expect(postBody.locator('.daymark-loading')).toHaveCount(0, { timeout: 20000 });
+	await expect(postBody.locator('.daymark-expand-content, .daymark-error')).toHaveCount(1);
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });
 

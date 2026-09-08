@@ -1,7 +1,7 @@
 <?php
 /**
- * REST tests for GET /daymark/v1/marks/{id}/content — a Timeline card's
- * inline-expand fetch: just the post's own rendered content (`the_content`
+ * REST tests for GET /daymark/v1/marks/{id}/content — the full-screen post
+ * view's own fetch: just the post's own rendered content (`the_content`
  * on `post_content`), not the page a permalink visit would otherwise
  * render around it (theme chrome, comments, etc.).
  *
@@ -13,7 +13,7 @@
  */
 
 /**
- * Exercises the Mark/ordinary-post inline-expand content endpoint.
+ * Exercises the Mark/ordinary-post full-screen post-view content endpoint.
  */
 class Test_Rest_Mark_Content extends WP_UnitTestCase {
 

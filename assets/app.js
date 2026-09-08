@@ -49,7 +49,7 @@
 		// draft still wins, exactly as effectiveType() already resolves.
 		pendingType: null,
 		// { url, title } | null — set by startReplyToSubscriptionPost() when
-		// composing a reply from a subscribed post's expanded card, or
+		// composing a reply from a subscribed post's full-screen view, or
 		// restored from an existing draft's own in_reply_to (openDraft()).
 		// Unlike pendingType this isn't a one-shot UI hint: url travels with
 		// every buildMarkPayload() call for the rest of the session (autosave,
@@ -1040,8 +1040,8 @@
 	// BOOKMARK_STORE (see openOfflineDB() above) so Explore's Bookmarks
 	// section (a Search view filtered to `bookmarked=1`) still has
 	// something to show with no connectivity — the same
-	// content-fetch endpoints the inline-expand feature already uses
-	// (GET /marks/{id}/content, GET /subscription-posts/{id}), just
+	// content-fetch endpoints the full-screen post view uses (GET
+	// /marks/{id}/content, GET /subscription-posts/{id}), just
 	// persisted locally instead of fetched fresh every time. Every image
 	// the cached content markup references is cached alongside it, as a
 	// Blob (see cacheContentImages()) — the markup alone still pointed at
@@ -2045,6 +2045,9 @@
 		if (target === '#success' && !state.lastPublish) {
 			target = '#home';
 		}
+		if (target === '#post' && !pendingPostView) {
+			target = '#home';
+		}
 
 		AIAssistSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
@@ -2502,12 +2505,13 @@
 	function renderMarkItem(item) {
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so tapping one reopens the
-		// composer instead of expanding it. (renderMarkCore() handles the
-		// visible "Draft" chip itself.) A published item — a true Mark or
-		// an ordinary block-editor post alike — expands its own content in
-		// place instead (see toggleExpand()/onFeedListClick()), the same
-		// as a subscription post's card; it never navigates away to the
-		// permalink or opens an overlay the way it used to.
+		// composer instead of opening it on the post-view screen.
+		// (renderMarkCore() handles the visible "Draft" chip itself.) A
+		// published item — a true Mark or an ordinary block-editor post
+		// alike — opens its own content on the full-screen post view
+		// instead (see openPostView()/onFeedListClick()), the same as a
+		// subscription post's card; it never navigates away to the real
+		// permalink.
 		const title = item.title || __('Untitled Mark', 'daymark');
 		const isDraft = item.status && 'publish' !== item.status;
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
@@ -2578,12 +2582,12 @@
 			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
 			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 					kind
-			  )}" data-expand-post="${id}" aria-expanded="false">${renderMarkCore(item)}</button>`;
-		// The routing popover's own panel — a sibling of the card button,
-		// not nested inside it, same reasoning as the expand panel below:
-		// a target's own link can't validly live inside another <button>.
-		// Gated on the same condition as renderRoutingToggle() itself, so
-		// there's no unused empty panel for a Mark with nothing to route.
+			  )}" data-expand-post="${id}">${renderMarkCore(item)}</button>`;
+		// The routing popover's own panel — a sibling of the card button, not
+		// nested inside it: a target's own link can't validly live inside
+		// another <button>. Gated on the same condition as
+		// renderRoutingToggle() itself, so there's no unused empty panel for
+		// a Mark with nothing to route.
 		const hasRouting = !isDraft && item.syndication_status && 'not_attempted' !== item.syndication_status;
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
@@ -2591,7 +2595,6 @@
 				${renderTypeIcon(kind)}
 				${card}
 				${actions}
-				${isDraft ? '' : '<div class="daymark-recent__expand" data-expand-panel hidden></div>'}
 				${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 			</div>`;
 	}
@@ -2636,11 +2639,11 @@
 		return html;
 	}
 
-	// Track every feed item by id so an inline-expand tap can hand the
-	// panel everything it already has without re-querying the DOM. A
-	// subscription post and a Mark/ordinary post keep separate Maps (their
-	// ids come from different post types and could otherwise collide) —
-	// `screen` owns both (Home and Search each keep their own pair).
+	// Track every feed item by id so a card tap can hand openPostView()
+	// everything it already has without re-querying the DOM. A subscription
+	// post and a Mark/ordinary post keep separate Maps (their ids come from
+	// different post types and could otherwise collide) — `screen` owns
+	// both (Home and Search each keep their own pair).
 	function rememberItem(screen, item) {
 		if (!item) {
 			return;
@@ -2761,54 +2764,25 @@
 			return;
 		}
 
-		// The "Reply" action inside an expanded subscription post's panel
-		// (see loadSubscriptionExpandHtml()): jump into the composer seeded
-		// to reply to that post.
-		const replyTrigger = target.closest('[data-reply-to]');
-		if (replyTrigger) {
-			startReplyToSubscriptionPost(
-				replyTrigger.getAttribute('data-reply-to'),
-				replyTrigger.getAttribute('data-reply-title') || ''
-			);
-			return;
-		}
-
-		// The "Refresh content" action inside an expanded subscription
-		// post's panel (see fetchSubscriptionExpandBody()): forces a fresh
-		// live re-fetch/re-extraction instead of the already-cached body.
-		const refreshTrigger = target.closest('[data-refresh-subpost]');
-		if (refreshTrigger) {
-			const item = screen._bySubId.get(refreshTrigger.getAttribute('data-refresh-subpost'));
-			const panel = refreshTrigger.closest('[data-expand-panel]');
-			if (item && panel) {
-				refreshSubscriptionExpandContent(screen, item, panel);
-			}
-			return;
-		}
-
-		// A subscription-post card's tap: expand its content inline, right
-		// below the card (see toggleExpand()) — fetched externally via the
-		// click-through endpoint.
+		// A subscription-post card's tap: open its full content on the
+		// dedicated post-view screen (see openPostView()) — fetched
+		// externally via the click-through endpoint.
 		const subTrigger = target.closest('[data-subpost]');
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
-			const wrap = subTrigger.closest('.daymark-recent__item-wrap');
-			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
-			if (item && panel) {
-				toggleExpand(screen, subTrigger, panel, 'sub-' + item.id, () => loadSubscriptionExpandHtml(item));
+			if (item) {
+				openPostView('sub', item);
 			}
 			return;
 		}
 
-		// A Mark or ordinary post's own tap: same inline expand, sourced
+		// A Mark or ordinary post's own tap: same post-view screen, sourced
 		// straight from this site's own database instead.
 		const markTrigger = target.closest('[data-expand-post]');
 		if (markTrigger) {
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
-			const wrap = markTrigger.closest('.daymark-recent__item-wrap');
-			const panel = wrap ? wrap.querySelector('[data-expand-panel]') : null;
-			if (item && panel) {
-				toggleExpand(screen, markTrigger, panel, 'mark-' + item.id, () => loadMarkExpandHtml(item));
+			if (item) {
+				openPostView('mark', item);
 			}
 			return;
 		}
@@ -3543,6 +3517,20 @@
 		)}" alt="" width="26" height="26" /></a>`;
 	}
 
+	// A "go back" link — the arrow keeps its usual meaning, but Daymark's own
+	// icon (never the site's Site Icon, same as every other header chrome
+	// use of it) stands in for a second word alongside it, so the accessible
+	// name lives on the link itself instead. Shared by every screen that
+	// needs an explicit back destination (Notifications, the full-screen
+	// post view) rather than each hand-rolling its own copy.
+	function backLinkWithIcon(hash, label) {
+		return `<a class="daymark-backlink daymark-backlink--icon" href="${esc(hash)}" aria-label="${esc(
+			label
+		)}"><span aria-hidden="true">&larr;</span><img src="${esc(
+			config.daymarkIconUrl || ''
+		)}" alt="" width="26" height="26" /></a>`;
+	}
+
 	function notificationsIconButton() {
 		const hasUnread = config.notifications && config.notifications.hasUnread;
 		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${esc(
@@ -3675,23 +3663,13 @@
 			this.recentDone = false;
 			this.recentLoading = false;
 			this._refreshing = false;
-			// Keyed by id (string) → the list item, so an inline-expand tap
-			// can hand toggleExpand() everything it already has
-			// (title/permalink/etc.) without re-querying the DOM. Separate
-			// Maps per source, since a subscription post's id and a Mark's
-			// own post id share no relationship and could otherwise collide.
+			// Keyed by id (string) → the list item, so tapping a card can
+			// hand openPostView() everything it already has (title/
+			// permalink/etc.) without re-querying the DOM. Separate Maps per
+			// source, since a subscription post's id and a Mark's own post
+			// id share no relationship and could otherwise collide.
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
-			// Cache of fetched expand-panel content, keyed 'sub-{id}' /
-			// 'mark-{id}': { state: 'loading'|'done'|'error', html }.
-			// Persists on this singleton across re-inits (leaving and
-			// returning to Home) so a card already opened once never
-			// re-fetches. this._openExpand (which card, if any, is
-			// currently expanded) does not persist — a re-init already
-			// rebuilds the list from scratch, so any DOM it pointed at is
-			// gone anyway.
-			this._detailCache = this._detailCache || new Map();
-			this._openExpand = null;
 			// Most recent relative-period bucket rendered so far (issue
 			// #145) — reset on every fresh init/loadRecent(), left alone by
 			// loadMorePage() so an appended page continues the same run of
@@ -3752,7 +3730,6 @@
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
 				this._byMarkId.clear();
-				this._openExpand = null;
 				this._lastGroupKey = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
@@ -4164,8 +4141,6 @@
 			this.searchBookmarked = false;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
-			this._detailCache = this._detailCache || new Map();
-			this._openExpand = null;
 			this._subscriptions = [];
 
 			// A preset handed from Explore/Me ("browse by type", "your
@@ -4264,7 +4239,6 @@
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
 				this._byMarkId.clear();
-				this._openExpand = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -4324,7 +4298,6 @@
 			}
 			this._bySubId.clear();
 			this._byMarkId.clear();
-			this._openExpand = null;
 			items.forEach((item) => rememberItem(this, item));
 			if (!items.length) {
 				list.innerHTML =
@@ -6024,16 +5997,17 @@
 	}
 
 	// One subscription-post Timeline card. A <button>, not an <a>: opening it
-	// expands its content inline, right below the card, rather than
-	// navigating — its permalink points at the *source* site, not anywhere
-	// in this app. No *counted* like/comment/reblog stats: those only ever
-	// exist for a Mark — Daymark doesn't (and, for someone else's post,
-	// can't cheaply) track the origin site's real engagement totals. What it
-	// *can* track is its own record of the user's own engagement (issue #41
-	// follow-up) — Like and Repost toggle a small Mark of the site owner's
-	// own (see toggleLike()/toggleRepost()), and the Reply indicator is
-	// read-only, reflecting whether a reply Mark already exists (the "Reply"
-	// action itself lives in the expanded panel, see startReplyToSubscriptionPost()).
+	// navigates to the full-screen post view (openPostView(), issue #270),
+	// rather than following its own href — its permalink points at the
+	// *source* site, not anywhere in this app. No *counted* like/comment/
+	// reblog stats: those only ever exist for a Mark — Daymark doesn't (and,
+	// for someone else's post, can't cheaply) track the origin site's real
+	// engagement totals. What it *can* track is its own record of the user's
+	// own engagement (issue #41 follow-up) — Like and Repost toggle a small
+	// Mark of the site owner's own (see toggleLike()/toggleRepost()), and the
+	// Reply indicator is read-only, reflecting whether a reply Mark already
+	// exists (the "Reply" action itself lives on the post view screen, see
+	// startReplyToSubscriptionPost()).
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || __('Untitled post', 'daymark');
@@ -6085,22 +6059,22 @@
 							${renderCardTimestampRow(item, siteLabel)}
 						</span>
 					</button>
-					<div class="daymark-recent__expand" data-expand-panel hidden></div>
 				</div>`;
 	}
 
-	// --- Inline expand: a Timeline card's own content, shown in place ---
+	// --- Full-screen post view: a Timeline card's own content, read on a
+	// dedicated screen (issue #270) ---
 	//
-	// Replaces the old subscription-only modal/overlay detail sheet — every
-	// card (a Mark, an ordinary block-editor post, or a subscription post)
-	// now expands its own content directly below itself in the list
-	// instead: no dialog overlaying the Timeline, and — for a Mark or
-	// ordinary post — no navigating away to the permalink either. Only one
-	// card is expanded at a time per screen; opening another collapses
-	// whichever was open first, so the list doesn't grow unboundedly tall
-	// as you tap around. `screen._detailCache` (a Map keyed 'mark-{id}' /
-	// 'sub-{id}' so the two id spaces can never collide) persists across
-	// re-visiting the screen, so a card already opened once never re-fetches.
+	// Replaces the old inline-expand panel (a Mark, an ordinary block-editor
+	// post, or a subscription post used to expand its own content directly
+	// below the card) with a full-screen takeover instead — the same
+	// pattern Notifications already uses, and reached the same way: a back
+	// arrow next to the Daymark icon in the upper-left (backLinkWithIcon()),
+	// not a small panel fighting a Timeline card for space. See PostScreen
+	// below for the screen itself; the content-loading functions here
+	// (loadMarkExpandHtml()/fetchSubscriptionExpandBody(), the offline
+	// fallback, the shared HTML wrapper) are unchanged from the inline-panel
+	// era — only where their result gets rendered changed.
 
 	// Renders whatever HTML a card's content loader resolved to. Used to
 	// also append a "View full post"/"View original" link out to the real
@@ -6181,15 +6155,16 @@
 		return expandBodyHtml(content);
 	}
 
-	// Shared by loadSubscriptionExpandHtml() (the normal, cache-preferring
-	// load) and refreshSubscriptionExpandContent() (a forced re-fetch/
-	// re-extraction — see the `refresh` REST param's own docblock): builds
-	// the same body+Reply+"Refresh content" markup either way, so the two
-	// call paths can never render this panel differently. A forced refresh
-	// has no offline fallback worth falling back *to* (the whole point is a
-	// fresh live copy) — its own failure is left to propagate rather than
-	// silently masked by stale cached content the way a normal load's
-	// connectivity-shaped failure already is.
+	// Shared by the normal load and a forced refresh (the "Refresh content"
+	// action, PostScreen.load(true) below — see the `refresh` REST param's
+	// own docblock) so the two call paths can never resolve to different
+	// content. A forced refresh has no offline fallback worth falling back
+	// *to* (the whole point is a fresh live copy) — its own failure is left
+	// to propagate rather than silently masked by stale cached content the
+	// way a normal load's connectivity-shaped failure already is. Returns
+	// just the body — the Reply/"Refresh content" actions are chrome around
+	// it now, part of PostScreen's own actionsHtml(), not baked into the
+	// loaded content string.
 	async function fetchSubscriptionExpandBody(item, forceRefresh) {
 		let content;
 		try {
@@ -6202,59 +6177,7 @@
 			}
 			content = await loadExpandHtmlOffline(err, item.id);
 		}
-		const body = expandBodyHtml(content);
-		// A reply here rides Daymark's own POSSE markup rather than a real
-		// Webmention protocol implementation: the published Mark's
-		// u-in-reply-to link (Daymark_Microformats) is what any Webmention
-		// plugin the site owner already runs auto-notifies on publish. See
-		// CLAUDE.md's "Webmention: rescoped to lean on ecosystem plugins"
-		// decision for why nothing here sends/verifies a Webmention itself.
-		const reply = item.permalink
-			? `<button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
-					item.permalink
-			  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button>`
-			: '';
-		// A cached post's own content is only ever extracted once, at fetch
-		// time — an improvement to the server's own extraction logic (a new
-		// stripping pass, say) never reaches an already-cached post again on
-		// its own. This is the one way to force that: re-fetch the source
-		// page live and re-run extraction against it right now.
-		const refresh = `<button type="button" class="daymark-btn daymark-btn--text" data-refresh-subpost="${esc(
-			String(item.id)
-		)}">${esc(__('Refresh content', 'daymark'))}</button>`;
-		return body + `<p class="daymark-note-card__links">${reply}${refresh}</p>`;
-	}
-
-	// A subscription post's full content, click-through-fetched (and
-	// narrowed/cached server-side) from its source site on first open —
-	// body_content is never present in the merged Timeline feed response,
-	// even for an already-'full' post.
-	async function loadSubscriptionExpandHtml(item) {
-		return fetchSubscriptionExpandBody(item, false);
-	}
-
-	// The "Refresh content" action inside an expanded subscription post's
-	// panel: forces a fresh live re-fetch/re-extraction, replaces the
-	// panel's own content, and updates the shared _detailCache so
-	// re-opening this same card later (without refreshing again) shows the
-	// refreshed result too, not the stale pre-refresh one.
-	async function refreshSubscriptionExpandContent(screen, item, panel) {
-		panel.innerHTML =
-			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
-			esc(__('Loading…', 'daymark')) +
-			'</p>';
-		try {
-			const html = await fetchSubscriptionExpandBody(item, true);
-			screen._detailCache.set('sub-' + item.id, { state: 'done', html });
-			if (screen._openExpand && screen._openExpand.panel === panel) {
-				panel.innerHTML = html || expandErrorHtml();
-			}
-		} catch (err) {
-			screen._detailCache.set('sub-' + item.id, { state: 'error' });
-			if (screen._openExpand && screen._openExpand.panel === panel) {
-				panel.innerHTML = expandErrorHtml();
-			}
-		}
+		return expandBodyHtml(content);
 	}
 
 	// Jump into a fresh composer seeded to reply to a subscribed post —
@@ -6269,64 +6192,145 @@
 		navigate('#create');
 	}
 
-	// Collapses whichever card is currently expanded on this screen, if any.
-	function closeOpenExpand(screen) {
-		if (!screen._openExpand) {
-			return;
-		}
-		const { trigger, panel } = screen._openExpand;
-		panel.hidden = true;
-		panel.innerHTML = '';
-		if (trigger.isConnected) {
-			trigger.setAttribute('aria-expanded', 'false');
-		}
-		screen._openExpand = null;
+	// One-shot hand-off from whichever feed-list screen (Home or Search) a
+	// post's card was tapped on to PostScreen — the same pattern
+	// state.pendingType/searchPreset already use for a screen-to-screen
+	// seed. Carries the item data the calling screen already has (from its
+	// own _byMarkId/_bySubId) so PostScreen never needs to re-fetch a
+	// summary it was just shown, plus `returnTo` (the hash to go back to)
+	// since #post has no fixed back destination the way Notifications/
+	// Create/Publish do.
+	let pendingPostView = null;
+
+	function openPostView(kind, item) {
+		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };
+		navigate('#post');
 	}
 
-	// Toggles one card's expand panel: closes it if it's the one already
-	// open, otherwise closes whatever else was open and opens this one,
-	// fetching (or reusing the cached) content as needed.
-	async function toggleExpand(screen, trigger, panel, cacheKey, loader) {
-		const reopening = screen._openExpand && screen._openExpand.panel === panel;
-		closeOpenExpand(screen);
-		if (reopening) {
-			return;
-		}
-		trigger.setAttribute('aria-expanded', 'true');
-		panel.hidden = false;
-		screen._openExpand = { trigger, panel };
+	// --- Screen: full-screen post view ---
+	//
+	// A client-side-only screen (like #create/#publish/#success — no PHP
+	// route; see Daymark_Routes::SCREENS) since the post being shown is
+	// handed off in memory via pendingPostView, not encoded in the URL —
+	// there's nothing to deep-link to on a cold load. showScreen()'s own
+	// guard sends a direct/refreshed #post with no pending hand-off back to
+	// Home, matching #publish/#success's existing missing-state guards.
+	const PostScreen = {
+		render() {
+			const view = pendingPostView;
+			const item = view && view.item ? view.item : {};
+			const title = item.title || __('Post', 'daymark');
+			return `
+			<header class="daymark-topbar">
+				${backLinkWithIcon(
+					view && view.returnTo ? view.returnTo : '#home',
+					__('Back to Timeline', 'daymark')
+				)}
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(title)}</h1>
+			</header>
+			<section class="daymark-screen">
+				<div class="daymark-postview" data-postview-body>
+					${skeletonRows(3)}
+					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
+				</div>
+			</section>`;
+		},
 
-		const cached = screen._detailCache.get(cacheKey);
-		if (cached && 'done' === cached.state) {
-			panel.innerHTML = cached.html || expandErrorHtml();
-			return;
-		}
-		if (cached && 'error' === cached.state) {
-			panel.innerHTML = expandErrorHtml();
-			return;
-		}
-		screen._detailCache.set(cacheKey, { state: 'loading' });
-		panel.innerHTML =
-			'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
-			esc(__('Loading…', 'daymark')) +
-			'</p>';
-		try {
-			const html = await loader();
-			// Collapsed again, or a different card opened, while the fetch
-			// was in flight — the result is still worth caching, just not
-			// worth rendering into a panel nobody's looking at anymore.
-			const stillOpen = screen._openExpand && screen._openExpand.panel === panel;
-			screen._detailCache.set(cacheKey, { state: 'done', html });
-			if (stillOpen) {
-				panel.innerHTML = html || expandErrorHtml();
+		bindEvents() {
+			const body = root.querySelector('[data-postview-body]');
+			if (body) {
+				body.addEventListener('click', (event) => this.onClick(event));
 			}
-		} catch (err) {
-			screen._detailCache.set(cacheKey, { state: 'error' });
-			if (screen._openExpand && screen._openExpand.panel === panel) {
-				panel.innerHTML = expandErrorHtml();
+		},
+
+		onClick(event) {
+			const replyTrigger = event.target.closest('[data-reply-to]');
+			if (replyTrigger) {
+				event.preventDefault();
+				startReplyToSubscriptionPost(
+					replyTrigger.getAttribute('data-reply-to') || '',
+					replyTrigger.getAttribute('data-reply-title') || ''
+				);
+				return;
 			}
-		}
-	}
+			const refreshTrigger = event.target.closest('[data-refresh-subpost]');
+			if (refreshTrigger) {
+				event.preventDefault();
+				this.load(true);
+			}
+		},
+
+		// showScreen()'s own guard already redirects a direct/refreshed
+		// #post with no pending hand-off back to Home before this ever
+		// runs — same trust its #publish/#success guards get from their
+		// own render()/init().
+		async init() {
+			this.view = pendingPostView;
+			pendingPostView = null;
+			await this.load(false);
+		},
+
+		// `forceRefresh` only ever applies to a subscription post — a Mark
+		// or ordinary post's own content has no separate cached-vs-live
+		// state to force past (loadMarkExpandHtml() always reads straight
+		// from this site's own database).
+		async load(forceRefresh) {
+			const body = root.querySelector('[data-postview-body]');
+			if (!body) {
+				return;
+			}
+			const { kind, item } = this.view;
+			body.innerHTML =
+				'<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ' +
+				esc(__('Loading…', 'daymark')) +
+				'</p>';
+			try {
+				const html =
+					'sub' === kind
+						? await fetchSubscriptionExpandBody(item, forceRefresh)
+						: await loadMarkExpandHtml(item);
+				if (body.isConnected) {
+					body.innerHTML = (html || expandErrorHtml()) + this.actionsHtml();
+				}
+			} catch (err) {
+				if (body.isConnected) {
+					body.innerHTML = expandErrorHtml();
+				}
+			}
+		},
+
+		// A subscription post's own actions — a Mark/ordinary post's own
+		// content has neither: replying to yourself makes no sense, and
+		// there's no separate cached-vs-live copy to force a refresh past.
+		actionsHtml() {
+			const item = this.view.item;
+			if ('sub' !== this.view.kind) {
+				return '';
+			}
+			// A reply here rides Daymark's own POSSE markup rather than a
+			// real Webmention protocol implementation: the published Mark's
+			// u-in-reply-to link (Daymark_Microformats) is what any
+			// Webmention plugin the site owner already runs auto-notifies
+			// on publish. See CLAUDE.md's "Webmention: rescoped to lean on
+			// ecosystem plugins" decision for why nothing here sends/
+			// verifies a Webmention itself.
+			const reply = item.permalink
+				? `<button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
+						item.permalink
+				  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button>`
+				: '';
+			// A cached post's own content is only ever extracted once, at
+			// fetch time — an improvement to the server's own extraction
+			// logic (a new stripping pass, say) never reaches an
+			// already-cached post again on its own. This is the one way to
+			// force that: re-fetch the source page live and re-run
+			// extraction against it right now.
+			const refresh = `<button type="button" class="daymark-btn daymark-btn--text" data-refresh-subpost="${esc(
+				String(item.id)
+			)}">${esc(__('Refresh content', 'daymark'))}</button>`;
+			return `<p class="daymark-note-card__links">${reply}${refresh}</p>`;
+		},
+	};
 
 	// --- Screen: Publish ---
 
@@ -6881,15 +6885,7 @@
 
 	const NotificationsScreen = {
 		render() {
-			// Keeps the arrow but replaces the "Back" text with Daymark's own
-			// icon (config.daymarkIconUrl — never the site's Site Icon, same
-			// as the rest of the header chrome) instead, so the accessible
-			// name moves onto the link itself.
-			const backLink = `<a class="daymark-backlink daymark-backlink--icon" href="#home" aria-label="${esc(
-				__('Back to Timeline', 'daymark')
-			)}"><span aria-hidden="true">&larr;</span><img src="${esc(
-				config.daymarkIconUrl || ''
-			)}" alt="" width="26" height="26" /></a>`;
+			const backLink = backLinkWithIcon('#home', __('Back to Timeline', 'daymark'));
 			return `
 			<header class="daymark-topbar">
 				${backLink}
@@ -7325,6 +7321,7 @@
 		'#create': CreateScreen,
 		'#publish': PublishScreen,
 		'#success': SuccessScreen,
+		'#post': PostScreen,
 		'#notifications': NotificationsScreen,
 		'#explore': ExploreScreen,
 		'#search': SearchScreen,
