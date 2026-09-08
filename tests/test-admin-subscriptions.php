@@ -1104,6 +1104,36 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A 'service' entry (issue #91's Bridgy Fed) links out to its own URL
+	 * with a "Get started" action — never a WPORG link, an Install/Activate
+	 * button, or an Active/"Installed, not active" status string, since
+	 * there is no plugin file to detect a state for.
+	 */
+	public function test_connectors_tab_renders_bridgy_fed_as_an_external_service(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'Bridgy Fed', $output );
+		$this->assertStringContainsString( 'https://fed.brid.gy/', $output );
+		$this->assertStringContainsString( 'Get started', $output );
+		$this->assertStringNotContainsString( 'https://wordpress.org/plugins/bridgy', $output );
+	}
+
+	/**
+	 * Bridgy Fed renders unconditionally as an external link regardless of
+	 * capability — unlike a 'plugin' entry, there is no Install/Activate
+	 * action gated on install_plugins/activate_plugins to fall back from.
+	 */
+	public function test_connectors_tab_bridgy_fed_get_started_shown_for_author(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertMatchesRegularExpression( '/href="https:\/\/fed\.brid\.gy\/"[^>]*class="button button-secondary"[^>]*>Get started</', $output );
+	}
+
+	/**
 	 * A not-installed connector, viewed by the set_up() 'author' test user
 	 * (who has neither install_plugins nor activate_plugins by default),
 	 * only ever gets a plain WPORG link — never an Install button implying

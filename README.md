@@ -222,6 +222,19 @@ from across the web show up in your Notifications automatically. Settings
 -> Daymark's Connectors tab lists all three with an Install/Activate button
 right there, so you don't need to leave wp-admin to set any of them up.
 
+Don't want to install the ActivityPub plugin at all? [Bridgy
+Fed](https://fed.brid.gy/) (a different project from the classic Bridgy
+above, despite the name) is a free, hosted bridge rather than a plugin: it
+gives your site a fediverse and Bluesky presence through the same
+Webmention support, translating your posts into ActivityPub/AT Protocol
+activities and replies/likes/reposts back into webmentions your site
+already knows how to receive. The tradeoff versus the ActivityPub plugin is
+identity — Bridgy Fed bridges you in under an auto-generated handle on its
+own domain (`@yourdomain@web.brid.gy`), while the ActivityPub plugin gives
+your site its own native handle on your own domain — so most sites want
+one or the other, not both. It's listed on the Connectors tab too, right
+alongside the plugin options.
+
 ### Does Daymark work with the Friends plugin?
 
 Yes. If you already follow someone through the

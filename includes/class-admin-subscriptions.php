@@ -1230,7 +1230,17 @@ class Daymark_Admin_Subscriptions {
 	 * description here is genuinely user-facing (issue #252's own i18n
 	 * audit already established this exact distinction for this codebase).
 	 *
-	 * @return array<string, array{label: string, wporg_slug: string, folder_slug: string, description: string}>
+	 * An entry's `type` is either 'plugin' (the default when omitted — a
+	 * wordpress.org plugin with `wporg_slug`/`folder_slug` driving a real
+	 * install/active state and Install/Activate actions, per the three
+	 * entries below) or 'service' (an external, non-WordPress service with
+	 * a plain `url` instead — see 'bridgy_fed' below and issue #91's own
+	 * framing: "this is not a WordPress plugin... so this issue is scoped
+	 * differently from Issue 14's [now #86's] plugin-recommendation
+	 * pattern"). render_connectors_tab() branches on this to skip
+	 * connector_status()/Install/Activate entirely for a 'service' entry.
+	 *
+	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, folder_slug?: string, url?: string, description: string}>
 	 */
 	private static function recommended_connectors(): array {
 		return array(
@@ -1253,6 +1263,12 @@ class Daymark_Admin_Subscriptions {
 				'folder_slug' => 'wordpress-atmosphere',
 				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
 				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
+			),
+			'bridgy_fed'  => array(
+				'label'       => 'Bridgy Fed',
+				'type'        => 'service',
+				'url'         => 'https://fed.brid.gy/',
+				'description' => __( 'A free, hosted bridge — not a plugin to install — that gives your site a fediverse and Bluesky presence through the Webmention support above, with no ActivityPub or AT Protocol plugin of its own required. An alternative to the ActivityPub plugin above rather than an addition to it: Bridgy Fed bridges you in under an auto-generated handle tied to its own domain, where the ActivityPub plugin gives your site its own native handle on your own domain. See CLAUDE.md for the full comparison.', 'daymark' ),
 			),
 		);
 	}
@@ -1353,44 +1369,58 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Render the Connectors tab (issue #86): one card per
-	 * RECOMMENDED_CONNECTORS entry with a Daymark-specific benefit
-	 * description, a WPORG link, and an inline Install/Activate action
-	 * reflecting the plugin's real current state — never a hard dependency,
-	 * per the issue's own framing.
+	 * Render the Connectors tab (issue #86, extended for a 'service' entry
+	 * by issue #91): one card per RECOMMENDED_CONNECTORS entry with a
+	 * Daymark-specific benefit description. A 'plugin' entry (the default)
+	 * gets a WPORG link and an inline Install/Activate action reflecting
+	 * the plugin's real current state; a 'service' entry gets a plain
+	 * external link instead — there is no plugin file to detect a state
+	 * for, and nothing to install. Never a hard dependency either way, per
+	 * issue #86's own framing.
 	 *
 	 * @return void
 	 */
 	private function render_connectors_tab(): void {
 		?>
-		<p><?php esc_html_e( 'Daymark works best when paired with IndieWeb plugins such as these — each one extends what Daymark already does, at the protocol level, without Daymark needing to reimplement it.', 'daymark' ); ?></p>
+		<p><?php esc_html_e( 'Daymark works best when paired with IndieWeb plugins and services such as these — each one extends what Daymark already does, at the protocol level, without Daymark needing to reimplement it.', 'daymark' ); ?></p>
 		<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:1em;max-width:900px;">
 			<?php foreach ( self::recommended_connectors() as $connector ) : ?>
-				<?php
-				$status  = $this->connector_status( $connector );
-				$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
-				?>
+				<?php $is_service = 'service' === ( $connector['type'] ?? 'plugin' ); ?>
 				<div class="card" style="max-width:none;margin:0;">
-					<h3>
-						<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
-					</h3>
-					<p><?php echo esc_html( $connector['description'] ); ?></p>
-					<p>
-						<?php if ( 'active' === $status ) : ?>
-							<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
-							<?php esc_html_e( 'Active', 'daymark' ); ?>
-						<?php elseif ( 'inactive' === $status ) : ?>
-							<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
-							<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
-							<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
-								<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
+					<?php if ( $is_service ) : ?>
+						<h3>
+							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
+						</h3>
+						<p><?php echo esc_html( $connector['description'] ); ?></p>
+						<p>
+							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get started', 'daymark' ); ?></a>
+						</p>
+					<?php else : ?>
+						<?php
+						$status  = $this->connector_status( $connector );
+						$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+						?>
+						<h3>
+							<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
+						</h3>
+						<p><?php echo esc_html( $connector['description'] ); ?></p>
+						<p>
+							<?php if ( 'active' === $status ) : ?>
+								<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
+								<?php esc_html_e( 'Active', 'daymark' ); ?>
+							<?php elseif ( 'inactive' === $status ) : ?>
+								<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
+								<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
+								<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
+									<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
+								<?php endif; ?>
+							<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
+								<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
+							<?php else : ?>
+								<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
 							<?php endif; ?>
-						<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
-							<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
-						<?php else : ?>
-							<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
-						<?php endif; ?>
-					</p>
+						</p>
+					<?php endif; ?>
 				</div>
 			<?php endforeach; ?>
 		</div>
