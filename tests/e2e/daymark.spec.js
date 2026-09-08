@@ -1757,12 +1757,31 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 						cache.match(new URL('offline.html', controller.scriptURL)),
 					]);
 					const cacheKeys = (await cache.keys()).map((request) => request.url);
+					let directFetch = null;
+					if (!config) {
+						// The redacted config.json entry still isn't there —
+						// try the exact same fetch this page's own boot
+						// sequence attempts, directly, to see whether it's a
+						// network/auth problem (a non-ok response, or a
+						// thrown error) versus the service worker simply not
+						// writing a genuinely successful response to cache.
+						try {
+							const res = await fetch(window.daymarkApp.appUrl + 'config.json', {
+								credentials: 'same-origin',
+							});
+							const bodyText = await res.text();
+							directFetch = { ok: res.ok, status: res.status, bodyPreview: bodyText.slice(0, 200) };
+						} catch (err) {
+							directFetch = { threw: String(err) };
+						}
+					}
 					return {
 						controller: true,
 						scriptURL: controller.scriptURL,
 						config: Boolean(config),
 						offline: Boolean(offline),
 						cacheKeys,
+						directFetch,
 					};
 				});
 				return Boolean(lastDiagnosticState.controller && lastDiagnosticState.config && lastDiagnosticState.offline);
