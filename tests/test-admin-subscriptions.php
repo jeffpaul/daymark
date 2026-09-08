@@ -1127,7 +1127,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'Install Now', $output );
-		$this->assertMatchesRegularExpression( '#update\.php\?action=install-plugin&(?:amp;)?plugin=webmention&(?:amp;)?_wpnonce=#', $output );
+		$this->assertMatchesRegularExpression( '/update\.php\?action=install-plugin(?:&amp;|&#038;|&)plugin=webmention(?:&amp;|&#038;|&)_wpnonce=/', $output );
 	}
 
 	/** A connector that's installed and active shows an "Active" state, not an Install/Activate action. */
@@ -1178,6 +1178,6 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->remove_fake_plugin( 'activitypub' );
 
 		$this->assertMatchesRegularExpression( '/>Activate</', $output );
-		$this->assertMatchesRegularExpression( '#plugins\.php\?action=activate&(?:amp;)?plugin=activitypub%2Factivitypub\.php#', $output );
+		$this->assertMatchesRegularExpression( '/plugins\.php\?action=activate(?:&amp;|&#038;|&)plugin=activitypub%2Factivitypub\.php/', $output );
 	}
 }
