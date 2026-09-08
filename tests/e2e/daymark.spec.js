@@ -1139,7 +1139,16 @@ test('search: the Search tab shows a query + type filter that narrow the results
 	);
 
 	await page.goto('/daymark');
-	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	// A raw DOM click, not Playwright's own pointer-based one — same reason
+	// as the identical bottom-nav Search click further down in this file
+	// (see its own comment): Playwright's click first scrollIntoViewIfNeeded()s
+	// the target, and on this suite's accumulated, never-cleaned-up Timeline
+	// content that scroll itself triggers bindChromeAutoHide()'s scroll-down
+	// listener, which starts sliding the footer out of view (is-footer-hidden)
+	// mid-click — so Playwright's hit-test at that point lands on whatever
+	// Timeline card is now revealed underneath instead. el.click() skips that
+	// hit-testing entirely.
+	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#search$/);
 	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Search');
 	await expect(page.locator('h1', { hasText: 'Search' })).toBeVisible();
@@ -2179,6 +2188,9 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 }) => {
 	await loginAs(page);
 
+	await page.goto('/daymark#home');
+	const homeIconBox = await page.locator('.daymark-homelink__icon').boundingBox();
+
 	for (const hash of ['#explore', '#search', '#me']) {
 		await page.goto('/daymark' + hash);
 
@@ -2188,6 +2200,17 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 		const homeIconImg = homeIcon.locator('img');
 		await expect(homeIconImg).toBeVisible();
 		expect(await homeIconImg.getAttribute('width')).toBe('26');
+
+		// A regression here (issue #276) is invisible to a class/attribute
+		// check alone — the icon *graphic* itself has to start at the same x
+		// as Home's own icon, not just carry the right modifier class, since
+		// the tap target's own reserved width (or, as first shipped, its
+		// still-reserved-under-border-box 1px transparent border) can
+		// silently shift it. A couple of px of tolerance absorbs ordinary
+		// flexbox subpixel rounding without masking the original 18px
+		// regression this test exists to catch.
+		const iconBox = await homeIconImg.boundingBox();
+		expect(Math.abs(iconBox.x - homeIconBox.x)).toBeLessThanOrEqual(2);
 
 		await expect(
 			page.locator('header.daymark-topbar a.daymark-iconbtn[href="#notifications"]')

@@ -227,23 +227,36 @@ h2[tabindex='-1']:focus {
    just without the "Daymark" text label alongside it. The Notifications
    icon button on every screen keeps the bordered square (and centered icon)
    unchanged; this modifier is scoped to the Daymark icon link alone.
-   `justify-content: flex-end` (rather than the base rule's `center`) sits
-   the icon graphic flush against the box's own trailing edge instead of
-   centered within it — the tap target's required extra width (26px icon in
-   a 44px box) sits entirely on the icon's *leading* side instead, where it
-   costs nothing (there's no adjacent element there to visually crowd). This
-   is what makes the topbar's own flex `gap` (below the header title rule)
+   `justify-content: flex-end` sits the icon graphic flush against the box's
+   own trailing edge instead of centered within it, so the tap target's
+   required extra width (26px icon in a 44px box) sits entirely on the
+   icon's *leading* side — that's what makes the topbar's own flex `gap`
    the *only* contributor to the icon-to-title distance, provably equal to
    .daymark-homelink's own icon-to-text `gap` once both use the same
-   var(--daymark-spacing-sm) token — a previous attempt to match this
-   distance instead centered the icon and tried to cancel the resulting
-   padding with a computed negative margin on the title, three separately-
-   reasoned values with more room to drift out of sync than this two-value,
-   single-token approach has. */
+   var(--daymark-spacing-sm) token.
+   That leading 18px isn't actually free, though (issue #276): as the
+   topbar's first flex child, this box's own leading edge lines up with
+   Home's icon, but the icon graphic itself sits 18px further in — pushing
+   the icon, the gap, and the title all 18px to the right of where Home's
+   equivalents land. `margin-left` cancels exactly that leading overhang
+   (same "negative margin cancels a box's own reserved space" pattern as
+   .daymark-pullrefresh and .daymark-timeline-flourish), pulling the icon
+   graphic's leading edge back to Home's, without touching the
+   `justify-content: flex-end` that keeps the icon-to-title gap matched.
+   One more pixel of that same overhang hid in the border: under this
+   file's global `box-sizing: border-box`, `.daymark-iconbtn`'s own
+   `border: 1px solid` still reserves its 1px on every side even once
+   `border-color` alone is set to transparent — content-box width shrinks
+   by 2px, so the flush-right icon sat 1px left of where a truly borderless
+   box like .daymark-homelink would put it. `border: none` (rather than
+   only overriding the color) removes that reservation instead of just
+   the paint, with no change to the box's own 44px outer footprint — that
+   comes from `min-width`, measured on the border-box either way. */
 .daymark-iconbtn--plain {
-	border-color: transparent;
+	border: none;
 	background: none;
 	justify-content: flex-end;
+	margin-left: calc(26px - var(--daymark-tap-min));
 }
 
 /* --- Screen layout --- */
