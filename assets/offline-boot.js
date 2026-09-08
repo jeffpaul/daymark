@@ -22,6 +22,12 @@
 (function () {
 	'use strict';
 
+	// TEMPORARY (issue #126 CI investigation): records each step this
+	// script reaches, so a failure here is diagnosable from the outside
+	// without any other console/error signal — this file has none of its
+	// own, and the boot chain below swallows every failure by design.
+	window.__offlineBootDebug = { started: true };
+
 	// Both attributes are server-rendered by templates/offline-shell.php from
 	// DAYMARK_PLUGIN_URL (never user input), but resolving and re-checking
 	// them as same-origin URLs here — rather than trusting the attribute
@@ -41,14 +47,22 @@
 	}
 
 	var thisScript = document.currentScript;
+	window.__offlineBootDebug.hasCurrentScript = Boolean(thisScript);
+	window.__offlineBootDebug.rawConfigUrl = thisScript && thisScript.getAttribute('data-config-url');
+	window.__offlineBootDebug.rawAppJsUrl = thisScript && thisScript.getAttribute('data-app-js-url');
+
 	var configUrl = sameOriginUrl(thisScript && thisScript.getAttribute('data-config-url'));
 	var appJsUrl = sameOriginUrl(thisScript && thisScript.getAttribute('data-app-js-url'));
+	window.__offlineBootDebug.configUrl = configUrl;
+	window.__offlineBootDebug.appJsUrl = appJsUrl;
 
 	if (!configUrl || !appJsUrl) {
+		window.__offlineBootDebug.earlyReturn = true;
 		return;
 	}
 
 	function loadAppJs() {
+		window.__offlineBootDebug.loadingAppJs = true;
 		var script = document.createElement('script');
 		script.src = appJsUrl;
 		document.body.appendChild(script);
@@ -56,9 +70,12 @@
 
 	fetch(configUrl, { credentials: 'same-origin' })
 		.then(function (res) {
+			window.__offlineBootDebug.fetchOk = res.ok;
+			window.__offlineBootDebug.fetchStatus = res.status;
 			return res.ok ? res.json() : {};
 		})
-		.catch(function () {
+		.catch(function (err) {
+			window.__offlineBootDebug.fetchThrew = String(err);
 			return {};
 		})
 		.then(function (configData) {
@@ -69,6 +86,7 @@
 			// already-running session (see that listener's own comment).
 			configData.offlineShell = true;
 			window.daymarkApp = configData;
+			window.__offlineBootDebug.reachedEnd = true;
 			loadAppJs();
 		});
 })();

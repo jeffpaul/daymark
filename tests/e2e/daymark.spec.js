@@ -1821,6 +1821,7 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 				appContainerHtml: (document.getElementById('daymark-app') || {}).innerHTML,
 				bodyHtmlPreview: document.body ? document.body.innerHTML.slice(0, 1500) : null,
 				daymarkAppConfig: window.daymarkApp || null,
+				offlineBootDebug: window.__offlineBootDebug || null,
 			}));
 			console.log('cold-offline post-reload page state:', JSON.stringify(pageState));
 			throw err;
