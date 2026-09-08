@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-08
+
 ### Added
 
 - Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in. ([#250](https://github.com/jeffpaul/daymark/issues/250))
@@ -420,7 +422,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.12.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.13.0...HEAD
+[0.13.0]: https://github.com/jeffpaul/daymark/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/jeffpaul/daymark/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/jeffpaul/daymark/compare/0.10.0...0.11.0
 [0.10.0]: https://github.com/jeffpaul/daymark/compare/0.9.0...0.10.0
