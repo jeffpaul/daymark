@@ -6453,12 +6453,15 @@
 			// the ability to like/reply/repost/bookmark/share it. Rendered
 			// below the post body — a sibling of [data-postview-body], never
 			// inside it, since load() below replaces that element's own
-			// innerHTML wholesale on every load/refresh. A Mark gets the
-			// same full stat row its own card shows (renderItemStats()); a
-			// subscription post gets its own narrower row
-			// (renderSubscriptionItemStats()) — no counted like/comment/
-			// repost stats or Routing toggle, matching its card's own
-			// reasoning for the same omissions.
+			// innerHTML wholesale on every load/refresh — and, within that
+			// block, in the same order a card itself renders them
+			// (renderMarkCore()/renderSubscriptionPostCard()): the
+			// interaction row first, the site name/date row last. A Mark
+			// gets the same full stat row its own card shows
+			// (renderItemStats()); a subscription post gets its own
+			// narrower row (renderSubscriptionItemStats()) — no counted
+			// like/comment/repost stats or Routing toggle, matching its
+			// card's own reasoning for the same omissions.
 			const isMark = !!(view && 'mark' === view.kind);
 			const siteLabel = isMark ? config.siteTitle || __('Site', 'daymark') : subscriptionSiteLabel(item);
 			const stats = isMark ? renderItemStats(item) : renderSubscriptionItemStats(item);
@@ -6478,8 +6481,8 @@
 					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
 				</div>
 				<div class="daymark-postview-meta">
-					${renderCardTimestampRow(item, siteLabel)}
 					${stats}
+					${renderCardTimestampRow(item, siteLabel)}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
 			</section>`;
