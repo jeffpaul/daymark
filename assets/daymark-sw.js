@@ -113,7 +113,11 @@ self.addEventListener('fetch', (event) => {
 				return fetch(event.request).then((response) => {
 					if (response.ok) {
 						const copy = response.clone();
-						caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+						// Same event.waitUntil() reasoning as the config.json
+						// branch below: without it, the cache write can lose
+						// the race against the worker being torn down once
+						// respondWith()'s own promise has already resolved.
+						event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
 					}
 					return response;
 				});
@@ -125,24 +129,34 @@ self.addEventListener('fetch', (event) => {
 	// config.json: network-first, since a live fetch always carries a fresh
 	// nonce a cached copy never should. The redacted (nonce-stripped) copy
 	// is what actually answers a later offline request.
+	//
+	// The redaction + cache.put() is wrapped in event.waitUntil() — without
+	// it, this is a real bug: respondWith()'s own promise resolves (and the
+	// response reaches the page) as soon as the outer .then() returns
+	// `response`, before the inner .json()/cache.put() chain has settled,
+	// and the browser is free to consider the fetch event fully handled
+	// and tear the worker down at that point, aborting the still-in-flight
+	// cache write. waitUntil() tells it there's more work to wait for.
 	if (url.pathname === scopePath + 'config.json') {
 		event.respondWith(
 			fetch(event.request)
 				.then((response) => {
 					if (response.ok) {
-						response
-							.clone()
-							.json()
-							.then((data) => {
-								delete data.nonce;
-								const redacted = new Response(JSON.stringify(data), {
-									headers: { 'Content-Type': 'application/json' },
-								});
-								caches.open(CACHE_NAME).then((cache) => cache.put(event.request, redacted));
-							})
-							.catch(() => {
-								/* Malformed/non-JSON response: nothing to cache. */
-							});
+						event.waitUntil(
+							response
+								.clone()
+								.json()
+								.then((data) => {
+									delete data.nonce;
+									const redacted = new Response(JSON.stringify(data), {
+										headers: { 'Content-Type': 'application/json' },
+									});
+									return caches.open(CACHE_NAME).then((cache) => cache.put(event.request, redacted));
+								})
+								.catch(() => {
+									/* Malformed/non-JSON response: nothing to cache. */
+								})
+						);
 					}
 					return response;
 				})
