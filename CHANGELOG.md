@@ -30,6 +30,7 @@ can't act on them.
 - A Mark's own card now shows your site's name on the same row as its timestamp, left-aligned — matching how a subscription post's card already shows its source site there. ([#267](https://github.com/jeffpaul/daymark/issues/267))
 - A subscription post's own full-screen view now has a "Refresh content" action that forces a fresh live re-fetch, instead of the cached content being stuck at whatever it looked like the first time it was fetched. ([#267](https://github.com/jeffpaul/daymark/issues/267))
 - A subscribed feed post whose content hasn't been fetched yet now rehydrates automatically as its Timeline card scrolls near the viewport, instead of waiting for you to tap it — the same background fetch a click-through already used, just triggered earlier so opening it moments later is instant. ([#93](https://github.com/jeffpaul/daymark/issues/93))
+- `/daymark` now loads and the composer works even on a cold, zero-connectivity load — open it once online, then a later relaunch with no signal at all (a subway, a flight, a dead zone) still gets you a working composer that queues locally, instead of a browser error page. ([#126](https://github.com/jeffpaul/daymark/issues/126))
 
 ### Changed
 

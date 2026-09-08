@@ -11,7 +11,36 @@
 (function () {
 	'use strict';
 
-	const { __, _n, _x, sprintf } = wp.i18n;
+	// wp.i18n backs every translated string (issue #253) — always present
+	// on the normal online app shell, which registers it as a hard script
+	// dependency (templates/app-shell.php). The offline-fallback shell
+	// (templates/offline-shell.php) deliberately loads nothing but this
+	// file and its own bootstrap script — see that template's own
+	// docblock — so wp.i18n is never available there. Without this
+	// fallback, destructuring it throws immediately and aborts this
+	// entire script before anything renders: the offline shell's own
+	// "Loading Daymark…" placeholder never resolves (found via a Playwright
+	// cold-offline test's page-error relay, issue #126). Plain,
+	// untranslated implementations here match this codebase's "never
+	// throws" posture elsewhere — English-only output is an acceptable
+	// trade for a resilience fallback that exists for when nothing else is
+	// working either. sprintf's own subset (this file only ever uses %s,
+	// %d, and positional %1$s/%2$s) is small enough to reimplement
+	// directly rather than pull in a library for a path that only runs
+	// offline.
+	const i18n = (window.wp && window.wp.i18n) || {
+		__: (text) => text,
+		_n: (single, plural, count) => (count === 1 ? single : plural),
+		_x: (text) => text,
+		sprintf: (format, ...args) => {
+			let next = 0;
+			return format.replace(/%(\d+\$)?[sd]/g, (match, position) => {
+				const index = position ? parseInt(position, 10) - 1 : next++;
+				return args[index];
+			});
+		},
+	};
+	const { __, _n, _x, sprintf } = i18n;
 
 	// --- Config ---
 	const config = window.daymarkApp || {};
@@ -1460,6 +1489,31 @@
 			offlineFlushInFlight = false;
 			refreshPendingSection();
 		}
+	}
+
+	// Shared-device safeguard (issue #126): asks the active service worker
+	// to clear its cached offline-fallback shell/config before a deliberate
+	// Log out proceeds to WordPress's own logout URL, so a stale cached
+	// config (branding, connector/category lists) never lingers into
+	// whoever uses this browser next. Best-effort with a short timeout —
+	// no controller yet, no response in time, or the feature simply
+	// unsupported all resolve the same way: proceed with the real logout
+	// regardless, never block it on this.
+	function clearOfflineShellCache() {
+		return new Promise((resolve) => {
+			const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
+			if (!controller) {
+				resolve();
+				return;
+			}
+			const channel = new MessageChannel();
+			const timer = setTimeout(resolve, 800);
+			channel.port1.onmessage = () => {
+				clearTimeout(timer);
+				resolve();
+			};
+			controller.postMessage({ type: 'daymark-clear-offline-cache' }, [channel.port2]);
+		});
 	}
 
 	// Loads a Mark that's still only queued locally (never reached the
@@ -4619,7 +4673,7 @@
 					}
 					${
 						user.logoutUrl
-							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}">${esc(
+							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}" data-me-logout>${esc(
 									__('Log out', 'daymark')
 							  )}</a>`
 							: ''
@@ -4642,6 +4696,17 @@
 				myMarks.addEventListener('click', () => {
 					searchPreset = { source: 'mine' };
 					navigate('#search');
+				});
+			}
+
+			const logout = root.querySelector('[data-me-logout]');
+			if (logout) {
+				logout.addEventListener('click', (event) => {
+					event.preventDefault();
+					const href = logout.href;
+					clearOfflineShellCache().then(() => {
+						window.location.href = href;
+					});
 				});
 			}
 
@@ -7543,7 +7608,20 @@
 	// once at boot, in case items are still pending from a previous
 	// offline session and connectivity is already back by the time this
 	// load happens.
+	//
+	// A session that booted from the offline-fallback shell (issue #126;
+	// assets/offline-boot.js sets config.offlineShell) reloads instead of
+	// flushing in place — that config is deliberately nonce-less and
+	// connector/category-empty (see build_app_config()'s own docblock), so
+	// the only way back to a fully real session is the same fresh
+	// /daymark navigation any other cold load gets. Nothing already queued
+	// is lost: IndexedDB survives the reload and flushes again on the very
+	// next boot, same as this listener already does below.
 	window.addEventListener('online', () => {
+		if (config.offlineShell) {
+			window.location.reload();
+			return;
+		}
 		flushOfflineQueue().catch(() => {});
 	});
 	// A record still marked 'uploading' at boot means the page that started
@@ -7573,22 +7651,85 @@
 	// is already best-effort end to end (see its own docblock).
 	syncBookmarkCache().catch(() => {});
 
-	// --- Service worker (PWA, Phase 8) ---
+	// --- Service worker (PWA; cold-offline-load support, issue #126) ---
 	//
-	// The worker lives in the plugin assets directory, so its maximum
-	// scope is /wp-content/plugins/daymark/assets/ — it cannot (and is not
-	// meant to) control the /daymark page itself. We register with that
-	// explicit narrow scope on purpose: install-time precaching still
-	// stores app.css and app.js in Cache Storage, and the narrow scope
-	// guarantees the worker can never intercept REST calls, nonces, or
-	// the app-shell HTML. No Service-Worker-Allowed header hacks.
-	// Feature-detected and failure-tolerant: if registration fails
-	// (HTTP-only local sites, older browsers), the app works unchanged.
-	if ('serviceWorker' in navigator && config.assetsUrl) {
+	// Registered at /daymark/sw.js (a plain templated echo of
+	// assets/daymark-sw.js — see Daymark_Routes::maybe_load_app_shell()),
+	// not the static file under the plugin's own assets/ directory, and
+	// with an explicit scope covering the app's own base (config.appUrl,
+	// e.g. /daymark/) — this is what lets the worker actually control
+	// /daymark* navigations, unlike the narrower, effectively-inert
+	// assets-directory-only scope this registration used before. See
+	// assets/daymark-sw.js's own docblock for exactly what that worker
+	// does and doesn't cache under this wider scope.
+	//
+	// A stale registration at the old, narrower scope (assetsUrl) is
+	// explicitly unregistered first — it never controlled any real page
+	// anyway (see daymark-sw.js's own history), so this is just cleanup,
+	// not a behavior change for anyone already running it.
+	//
+	// Feature-detected and failure-tolerant throughout: if registration
+	// fails (HTTP-only local sites, older browsers), the app works
+	// unchanged, exactly as before this feature existed.
+	if ('serviceWorker' in navigator && config.appUrl) {
 		navigator.serviceWorker
-			.register(config.assetsUrl + 'daymark-sw.js', { scope: config.assetsUrl })
-			.catch(() => {
-				/* Never let SW registration break the app. */
-			});
+			.getRegistrations()
+			.then((registrations) => {
+				registrations.forEach((registration) => {
+					if (config.assetsUrl && registration.scope === config.assetsUrl) {
+						registration.unregister().catch(() => {});
+					}
+				});
+			})
+			.catch(() => {})
+			.then(() =>
+				navigator.serviceWorker.register(config.appUrl + 'sw.js', { scope: config.appUrl }).catch(() => {
+					/* Never let SW registration break the app. */
+				})
+			)
+			.then(() => {
+				// Warms the service worker's own redacted config.json cache
+				// (issue #126) — this normal, inline-configured boot path
+				// never otherwise has a reason to fetch that endpoint (it
+				// already has window.daymarkApp), but without this, a
+				// device's very first-ever cold-offline load would find
+				// nothing cached there at all: assets/offline-boot.js is the
+				// only other caller, and it only ever runs on the
+				// offline-fallback shell itself.
+				//
+				// Deliberately gated on navigator.serviceWorker.ready, and
+				// posted as a message to registration.active rather than
+				// issued as a plain page-side fetch() for the service
+				// worker's own fetch handler to intercept — CI investigation
+				// (issue #126) found that a runtime fetch dispatched
+				// immediately after .ready resolves on a registration that
+				// only just finished activating is not reliably routed
+				// through that worker's fetch handler yet, even though
+				// .ready has already resolved: the page's own fetch settled
+				// fine (a live 200 reached it in well under a second) while
+				// the redact+cache.put side effect the fetch handler is
+				// supposed to trigger never ran. A message posted directly
+				// to the active worker has no such dependency on
+				// fetch-interception timing — see assets/daymark-sw.js's
+				// 'daymark-warm-config-cache' handler, which does the
+				// identical fetch-and-cache work from inside the worker
+				// itself instead. Fire-and-forget beyond that, like every
+				// other best-effort boot task above. Skipped on the offline
+				// shell itself (config.offlineShell), which already made
+				// this exact fetch moments ago during its own boot.
+				if (config.appUrl && !config.offlineShell) {
+					navigator.serviceWorker.ready
+						.then((registration) => {
+							if (registration.active) {
+								registration.active.postMessage({
+									type: 'daymark-warm-config-cache',
+									url: config.appUrl + 'config.json',
+								});
+							}
+						})
+						.catch(() => {});
+				}
+			})
+			.catch(() => {});
 	}
 })();

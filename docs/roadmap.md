@@ -346,11 +346,9 @@ full technical record.
   online-only) now falls back to the same offline queue, so "nothing gets
   lost" holds even when a session starts or goes offline mid-composition.
 
-**Still open from this era:**
-
-- [ ] **Cold app-shell load while offline** is explicitly out of scope here
-  — see "Offline app-shell load (revisit)" under Longer term and
-  [issue #126](https://github.com/jeffpaul/daymark/issues/126).
+**Cold app-shell load while offline**, originally out of scope here, shipped
+separately as [issue #126](https://github.com/jeffpaul/daymark/issues/126) —
+see CLAUDE.md's "Cold-offline-load support" decision row.
 
 ---
 
@@ -505,16 +503,6 @@ decision-table row) before it becomes "next".
   Long-term: make Daymark the default recommendation for social-shaped posting —
   surfaced in onboarding, discoverable from wp-admin without being wp-admin, and
   functional the moment the plugin activates (it already is).
-- **Offline app-shell load (revisit).** Composing and publishing while
-  offline shipped (see "Shipped — Offline-first creation" below) for a
-  session already open when connectivity drops. A *cold* load of `/daymark`
-  itself with zero connectivity still doesn't work: the service worker's
-  scope is deliberately restricted to the plugin assets directory so it can
-  never cache the app-shell HTML or its per-request CSP nonce. Widening
-  that scope (and handling the nonce safely) is a separate,
-  security-sensitive decision, tracked in
-  [issue #126](https://github.com/jeffpaul/daymark/issues/126) rather than
-  assumed as part of the creation work.
 - **Measured success.** The candidate signals in
   [planning §10](planning/README.md#10-success-metrics--e2e-acceptance) — first-
   publish completion, time-to-first-Mark, repeat publishing — stay unmeasured by

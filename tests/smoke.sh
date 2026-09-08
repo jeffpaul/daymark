@@ -361,6 +361,19 @@ $has_route = static function ($screen) use ($rules) {
 foreach (array("explore", "search", "me") as $screen) {
   echo $has_route($screen) ? "PASS: /daymark/{$screen} rewrite rule registered\n" : "FAIL: no rewrite rule maps to daymark_app={$screen}\n";
 }
+
+// Cold-offline-load support (issue #126): config.json/sw.js/offline.html
+// rewrite rules registered the same way. Not exercising the actual
+// header()+exit-calling branches here (same posture this suite already
+// takes toward the pre-existing manifest.json branch) — that live HTTP
+// behavior is covered by PHPUnit's non-exiting building blocks
+// (Test_Cold_Offline_Shell) and manual/Playwright verification instead.
+$has_asset_route = static function ($screen, $pattern) use ($rules) {
+  return isset($rules[$pattern]) && false !== strpos($rules[$pattern], "daymark_app={$screen}");
+};
+echo $has_asset_route("config", "^daymark/config\.json$") ? "PASS: /daymark/config.json rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/config.json to daymark_app=config\n";
+echo $has_asset_route("sw", "^daymark/sw\.js$") ? "PASS: /daymark/sw.js rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/sw.js to daymark_app=sw\n";
+echo $has_asset_route("offline", "^daymark/offline\.html$") ? "PASS: /daymark/offline.html rewrite rule registered\n" : "FAIL: no rewrite rule maps /daymark/offline.html to daymark_app=offline\n";
 PHP
 run_eval "content-type pages retired" "$PHP"
 
