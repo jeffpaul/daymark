@@ -26,6 +26,7 @@ can't act on them.
 
 ### Changed
 
+- Search's Source filter dropdown now lists subscribed sites alphabetically by name, with "All" and "My Marks" pinned first — previously they appeared in subscribe order. ([#283](https://github.com/jeffpaul/daymark/issues/283))
 - A "link"-format Timeline card no longer stands out with its own orange-tinted background — it now reads like a plain Note/Article card, matching the rest of the Timeline. Its full-screen post view also shows a best-effort oEmbed preview of the post's own detected outbound link (e.g. an embedded Mastodon post, a video player) when one is available. ([#279](https://github.com/jeffpaul/daymark/issues/279))
 
 ### Fixed

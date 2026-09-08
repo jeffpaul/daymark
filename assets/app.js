@@ -2451,15 +2451,18 @@
 	}
 
 	// The Source filter's <option>s: "All" and "My Marks" always render
-	// immediately; the per-subscription options only appear once the
-	// subscriptions fetch below resolves.
+	// first, in that order; the per-subscription options appear after them,
+	// alphabetized by their own displayed label, once the subscriptions
+	// fetch below resolves.
 	function sourceOptionsMarkup(subscriptions) {
 		const list = Array.isArray(subscriptions) ? subscriptions : [];
 		const subscriptionOptions = list
 			.map((sub) => {
 				const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
-				return `<option value="${esc(String(sub.id))}">${esc(label)}</option>`;
+				return { id: sub.id, label };
 			})
+			.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+			.map((sub) => `<option value="${esc(String(sub.id))}">${esc(sub.label)}</option>`)
 			.join('');
 		return `<option value="">${esc(__('All', 'daymark'))}</option><option value="mine">${esc(
 			__('My Marks', 'daymark')
