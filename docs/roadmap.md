@@ -274,11 +274,12 @@ malformed/malicious feed hardening, OPML import/export, an admin page
 recommending complementary IndieWeb plugins, scroll-triggered rehydration of
 pruned content, on-demand site-icon refresh, and Bridgy Fed integration).
 Inbound microformats2 parsing (#84), Webmention support (#83), WebSub/PuSH
-(#82), WordPress REST API preference for WP-to-WP subscriptions (#137), and
-the Friends-plugin half of additional source connectors (#88) have since
-shipped — see the entries above. #88's own ActivityPub/Microsub half
-remains deferred, per that entry's own reasoning above. None of what
-remains otherwise is prioritized yet.
+(#82), WordPress REST API preference for WP-to-WP subscriptions (#137), the
+Friends-plugin half of additional source connectors (#88), and the admin
+page recommending complementary IndieWeb plugins (#86) have since shipped —
+see the entries above. #88's own ActivityPub/Microsub half remains
+deferred, per that entry's own reasoning above. None of what remains
+otherwise is prioritized yet.
 
 ---
 

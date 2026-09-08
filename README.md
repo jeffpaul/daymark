@@ -218,7 +218,9 @@ sends, receives, or verifies a Webmention; it just makes sure the markup
 a Webmention plugin looks for is there. **For the best Daymark + IndieWeb
 experience, install [Webmention](https://wordpress.org/plugins/webmention/)**
 (and ActivityPub/ATmosphere, per the table above) so replies and mentions
-from across the web show up in your Notifications automatically.
+from across the web show up in your Notifications automatically. Settings
+-> Daymark's Connectors tab lists all three with an Install/Activate button
+right there, so you don't need to leave wp-admin to set any of them up.
 
 ### Does Daymark work with the Friends plugin?
 

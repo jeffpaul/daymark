@@ -242,15 +242,22 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 	/** Scenario (issue #80): the settings page renders an OPML Export link. */
 	public function test_export_link_rendered(): void {
-		$output = $this->render();
+		$_GET['tab'] = 'import-export';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'daymark_subscriptions_export', $output );
 		$this->assertStringContainsString( 'Export subscriptions (OPML)', $output );
 	}
 
-	/** Scenario (issue #80): the settings page renders an OPML Import form. */
+	/**
+	 * Scenario (issue #80, issue #86's tab restructuring): the Import/Export
+	 * tab renders an OPML Import form.
+	 */
 	public function test_import_form_rendered(): void {
-		$output = $this->render();
+		$_GET['tab'] = 'import-export';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'daymark_subscriptions_import', $output );
 		$this->assertStringContainsString( 'enctype="multipart/form-data"', $output );
@@ -332,7 +339,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * on this screen.
 	 */
 	public function test_enqueue_assets_localizes_rest_config_on_settings_screen(): void {
-		$this->admin_subscriptions->enqueue_assets( 'settings_page_' . Daymark_Admin_Subscriptions::PAGE_SLUG );
+		$this->admin_subscriptions->enqueue_assets( 'toplevel_page_' . Daymark_Admin_Subscriptions::PAGE_SLUG );
 
 		$this->assertTrue( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
 
@@ -874,9 +881,11 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * except "Publish location publicly," which defaults unchecked.
 	 */
 	public function test_privacy_section_renders_default_checked_states(): void {
-		$output = $this->render();
+		$_GET['tab'] = 'privacy';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
 
-		$this->assertStringContainsString( '<h2>Privacy</h2>', $output );
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Privacy<\/a>/', $output );
 
 		foreach ( array( 'daymark_capture_location', 'daymark_capture_weather', 'daymark_capture_camera_metadata' ) as $option ) {
 			$this->assertMatchesRegularExpression(
@@ -898,7 +907,9 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		update_option( 'daymark_capture_location', '' );
 		update_option( 'daymark_publish_location_publicly', '1' );
 
-		$output = $this->render();
+		$_GET['tab'] = 'privacy';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
 
 		delete_option( 'daymark_capture_location' );
 		delete_option( 'daymark_publish_location_publicly' );
@@ -942,5 +953,231 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 			'/<option value="' . HOUR_IN_SECONDS . '"[^>]*selected[^>]*>Hourly<\/option>/',
 			$output
 		);
+	}
+
+	// -----------------------------------------------------------------
+	// Tab nav + legacy URL (issue #86 restructuring)
+	// -----------------------------------------------------------------
+
+	/** With no ?tab=, the Subscriptions tab renders and is marked active. */
+	public function test_tab_nav_renders_all_tabs_with_subscriptions_default_active(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'nav-tab-wrapper', $output );
+		foreach ( array( 'Subscriptions', 'Connectors', 'Import / Export', 'Privacy' ) as $label ) {
+			$this->assertStringContainsString( $label, $output );
+		}
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Subscriptions<\/a>/', $output );
+		// The Subscriptions tab's own content (the subscribe form) rendered too.
+		$this->assertStringContainsString( 'daymark_site_url', $output );
+	}
+
+	/** ?tab= switches both which nav item is marked active and which content renders. */
+	public function test_tab_nav_switches_active_tab_via_query_var(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Connectors<\/a>/', $output );
+		$this->assertStringContainsString( 'Webmention', $output );
+		// The Subscriptions tab's own content did not also render.
+		$this->assertStringNotContainsString( 'daymark_site_url', $output );
+	}
+
+	/** An unrecognized ?tab= value falls back to the default (Subscriptions) tab. */
+	public function test_invalid_tab_falls_back_to_subscriptions(): void {
+		$_GET['tab'] = 'not-a-real-tab';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Subscriptions<\/a>/', $output );
+	}
+
+	/** page_url() now points at the short, top-level admin.php URL (issue #86). */
+	public function test_page_url_points_at_top_level_admin_page(): void {
+		$this->assertSame( admin_url( 'admin.php?page=daymark' ), Daymark_Admin_Subscriptions::page_url() );
+	}
+
+	/** tab_url() appends the requested tab as a query arg onto page_url(). */
+	public function test_tab_url_appends_tab_query_arg(): void {
+		$this->assertSame( admin_url( 'admin.php?page=daymark&tab=connectors' ), Daymark_Admin_Subscriptions::tab_url( 'connectors' ) );
+	}
+
+	/**
+	 * Scenario (issue #86): a visit to the pre-0.14.0 Settings submenu page
+	 * (any other than the legacy Daymark slug) is left alone —
+	 * maybe_redirect_legacy_url() only ever acts on its own specific old
+	 * URL. Its true (redirecting) branch ends in exit(), which PHPUnit
+	 * cannot safely intercept — the same reason this file's own admin_post
+	 * handlers aren't exercised directly (see the class docblock) — so only
+	 * this guard-clause-miss path is safe to call directly.
+	 */
+	public function test_maybe_redirect_legacy_url_does_nothing_for_an_unrelated_page(): void {
+		global $pagenow;
+		$original_pagenow = $pagenow;
+		$pagenow          = 'options-general.php';
+		$_GET['page']     = 'some-other-plugin-settings';
+
+		$this->admin_subscriptions->maybe_redirect_legacy_url();
+
+		unset( $_GET['page'] );
+		$pagenow = $original_pagenow;
+
+		// Reaching this assertion at all means the method returned instead of exit()-ing.
+		$this->assertTrue( true );
+	}
+
+	/** Likewise, visiting options-general.php for the legacy slug is a no-op when $pagenow isn't options-general.php. */
+	public function test_maybe_redirect_legacy_url_does_nothing_off_options_general(): void {
+		global $pagenow;
+		$original_pagenow = $pagenow;
+		$pagenow          = 'edit.php';
+		$_GET['page']     = 'daymark-subscriptions';
+
+		$this->admin_subscriptions->maybe_redirect_legacy_url();
+
+		unset( $_GET['page'] );
+		$pagenow = $original_pagenow;
+
+		$this->assertTrue( true );
+	}
+
+	// -----------------------------------------------------------------
+	// Connectors tab (issue #86)
+	// -----------------------------------------------------------------
+
+	/**
+	 * Writes a minimal, real plugin file under WP_PLUGIN_DIR so
+	 * get_plugins() (a filesystem scan, not filterable) actually finds it —
+	 * the same technique WordPress core's own plugin-detection tests use,
+	 * since Daymark_Admin_Subscriptions::connector_plugin_file() has to
+	 * match a real installed folder, not merely an option value.
+	 *
+	 * @param string $folder    Plugin folder name (e.g. 'webmention').
+	 * @param string $main_file Main plugin file's basename (e.g. 'webmention.php').
+	 * @return void
+	 */
+	private function install_fake_plugin( string $folder, string $main_file ): void {
+		$dir = WP_PLUGIN_DIR . '/' . $folder;
+		wp_mkdir_p( $dir );
+		file_put_contents( // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture, not a runtime code path.
+			$dir . '/' . $main_file,
+			"<?php\n/**\n * Plugin Name: Fake {$folder}\n */\n"
+		);
+
+		if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+			wp_clean_plugins_cache( false );
+		}
+	}
+
+	/**
+	 * Removes a fixture plugin written by install_fake_plugin().
+	 *
+	 * @param string $folder Plugin folder name.
+	 * @return void
+	 */
+	private function remove_fake_plugin( string $folder ): void {
+		$dir = WP_PLUGIN_DIR . '/' . $folder;
+
+		if ( is_dir( $dir ) ) {
+			array_map( 'unlink', glob( $dir . '/*' ) ?: array() ); // phpcs:ignore WordPress.PHP.DisallowShortTernary.Found -- glob() can return false; empty-array fallback for array_map().
+			rmdir( $dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup, not a runtime code path.
+		}
+
+		if ( function_exists( 'wp_clean_plugins_cache' ) ) {
+			wp_clean_plugins_cache( false );
+		}
+	}
+
+	/** The Connectors tab lists all three recommended IndieWeb plugins with their WPORG links. */
+	public function test_connectors_tab_lists_recommended_plugins(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'https://wordpress.org/plugins/webmention/', $output );
+		$this->assertStringContainsString( 'https://wordpress.org/plugins/activitypub/', $output );
+		$this->assertStringContainsString( 'https://wordpress.org/plugins/atmosphere/', $output );
+		$this->assertStringContainsString( 'Webmention', $output );
+		$this->assertStringContainsString( 'ActivityPub', $output );
+		$this->assertStringContainsString( 'ATmosphere', $output );
+	}
+
+	/**
+	 * A not-installed connector, viewed by the set_up() 'author' test user
+	 * (who has neither install_plugins nor activate_plugins by default),
+	 * only ever gets a plain WPORG link — never an Install button implying
+	 * an action this user can't actually take.
+	 */
+	public function test_connectors_tab_shows_wporg_link_only_when_user_cannot_install(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'Get it from WordPress.org', $output );
+		$this->assertStringNotContainsString( 'Install Now', $output );
+	}
+
+	/** An administrator (who has install_plugins) sees a real, nonced "Install Now" link for a not-yet-installed connector. */
+	public function test_connectors_tab_shows_install_button_for_administrator(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'Install Now', $output );
+		$this->assertMatchesRegularExpression( '#update\.php\?action=install-plugin&(?:amp;)?plugin=webmention&(?:amp;)?_wpnonce=#', $output );
+	}
+
+	/** A connector that's installed and active shows an "Active" state, not an Install/Activate action. */
+	public function test_connectors_tab_shows_active_state_for_an_active_connector(): void {
+		$this->install_fake_plugin( 'webmention', 'webmention.php' );
+
+		$filter = static function ( $value ) {
+			$value   = (array) $value;
+			$value[] = 'webmention/webmention.php';
+
+			return $value;
+		};
+		add_filter( 'option_active_plugins', $filter );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		remove_filter( 'option_active_plugins', $filter );
+		$this->remove_fake_plugin( 'webmention' );
+
+		$this->assertStringContainsString( 'Active', $output );
+		$this->assertStringNotContainsString( 'Install Now', $output );
+	}
+
+	/** A connector that's installed but not active shows its own status text, distinct from "not installed" or "active." */
+	public function test_connectors_tab_shows_inactive_state_for_installed_but_inactive_connector(): void {
+		$this->install_fake_plugin( 'activitypub', 'activitypub.php' );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->remove_fake_plugin( 'activitypub' );
+
+		$this->assertStringContainsString( 'Installed, not active.', $output );
+	}
+
+	/** An administrator sees a real, nonced Activate link for an installed-but-inactive connector. */
+	public function test_connectors_tab_shows_activate_button_for_administrator(): void {
+		$this->install_fake_plugin( 'activitypub', 'activitypub.php' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->remove_fake_plugin( 'activitypub' );
+
+		$this->assertMatchesRegularExpression( '/>Activate</', $output );
+		$this->assertMatchesRegularExpression( '#plugins\.php\?action=activate&(?:amp;)?plugin=activitypub%2Factivitypub\.php#', $output );
 	}
 }

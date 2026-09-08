@@ -51,11 +51,30 @@ class Daymark_Admin_Subscriptions {
 	public const CAPABILITY = 'edit_posts';
 
 	/**
-	 * Settings page slug (Settings -> Daymark).
+	 * Settings page slug — a top-level admin menu item (issue #86's own
+	 * restructuring), not a Settings submenu page. Shortened from the
+	 * original `daymark-subscriptions` (which only ever covered one of
+	 * what's now four tabs — see resolve_active_tab()) to plain `daymark`,
+	 * giving the page a short, stable `admin.php?page=daymark` URL ahead of
+	 * a 1.0.0 release rather than after, when it would need a redirect
+	 * forever.
 	 *
 	 * @var string
 	 */
-	public const PAGE_SLUG = 'daymark-subscriptions';
+	public const PAGE_SLUG = 'daymark';
+
+	/**
+	 * The pre-0.14.0 page slug (`options-general.php?page=daymark-subscriptions`,
+	 * a Settings submenu item covering only what's now the Subscriptions
+	 * tab) — kept only so maybe_redirect_legacy_url() can send an old
+	 * bookmark/link somewhere real instead of a 404, the same "redirect a
+	 * legacy URL rather than leave it dead" precedent `Daymark_Routes`
+	 * already established for the app's own legacy base and for a trashed
+	 * content-type page's old URL.
+	 *
+	 * @var string
+	 */
+	private const LEGACY_PAGE_SLUG = 'daymark-subscriptions';
 
 	/**
 	 * Query var carrying the post-redirect status notice.
@@ -101,6 +120,7 @@ class Daymark_Admin_Subscriptions {
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'admin_init', array( $this, 'maybe_redirect_legacy_url' ) );
 		add_action( 'admin_post_daymark_subscribe', array( $this, 'handle_subscribe' ) );
 		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
 		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
@@ -113,18 +133,57 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Register Settings -> Daymark.
+	 * Register the Daymark top-level admin menu page (issue #86's own
+	 * restructuring; previously a Settings submenu item via
+	 * `add_options_page()`). Promoted so the four tabs this page now holds
+	 * (Subscriptions, Import/Export, Privacy, Connectors — see
+	 * resolve_active_tab()) read as one coherent settings area rather than
+	 * a single overloaded Settings submenu screen, and so its URL becomes
+	 * the short, memorable `admin.php?page=daymark` rather than staying
+	 * nested a level deeper under Settings. No explicit `$position`
+	 * argument — WordPress appends it after every other top-level menu
+	 * item, which keeps it out of the way of core's own fixed ordering
+	 * without this plugin needing to guess a numeric slot that might
+	 * collide with another plugin's own top-level menu.
 	 *
 	 * @return void
 	 */
 	public function add_settings_page(): void {
-		add_options_page(
+		add_menu_page(
 			__( 'Daymark', 'daymark' ),
 			__( 'Daymark', 'daymark' ),
 			self::CAPABILITY,
 			self::PAGE_SLUG,
-			array( $this, 'render_page' )
+			array( $this, 'render_page' ),
+			'dashicons-admin-site-alt3'
 		);
+	}
+
+	/**
+	 * Redirect the pre-0.14.0 Settings submenu URL
+	 * (`options-general.php?page=daymark-subscriptions`) to this page's new
+	 * top-level location, preserving every other query arg (a notice, a
+	 * search term, a sort column) so an old bookmark or a home-screen
+	 * shortcut still lands somewhere useful instead of wp-admin's own
+	 * "Sorry, you are not allowed..." page a since-renamed submenu slug
+	 * would otherwise produce.
+	 *
+	 * @return void
+	 */
+	public function maybe_redirect_legacy_url(): void {
+		global $pagenow;
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect decision, not a state-changing action.
+		if ( 'options-general.php' !== $pagenow || ! isset( $_GET['page'] ) || self::LEGACY_PAGE_SLUG !== $_GET['page'] ) {
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect decision, not a state-changing action.
+		$args = wp_unslash( $_GET );
+		unset( $args['page'] );
+
+		wp_safe_redirect( add_query_arg( $args, self::page_url() ) );
+		exit;
 	}
 
 	/**
@@ -142,7 +201,7 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
-		if ( 'settings_page_' . self::PAGE_SLUG !== $hook_suffix ) {
+		if ( 'toplevel_page_' . self::PAGE_SLUG !== $hook_suffix ) {
 			return;
 		}
 
@@ -207,17 +266,88 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * This screen's admin URL, e.g. for the plugin action link.
+	 * This screen's admin URL, e.g. for the plugin action link. Points at
+	 * the default (first) tab — see resolve_active_tab().
 	 *
 	 * @return string
 	 */
 	public static function page_url(): string {
-		return admin_url( 'options-general.php?page=' . self::PAGE_SLUG );
+		return admin_url( 'admin.php?page=' . self::PAGE_SLUG );
 	}
 
 	/**
-	 * Render the settings page: a status notice (if any), the subscribe-by-URL
-	 * form, and the list of existing subscriptions.
+	 * This screen's admin URL for a specific tab.
+	 *
+	 * @param string $tab One of TABS' own keys.
+	 * @return string
+	 */
+	public static function tab_url( string $tab ): string {
+		return add_query_arg( 'tab', $tab, self::page_url() );
+	}
+
+	/**
+	 * Tab key => nav label. Order is display order; the first entry is the
+	 * default tab (resolve_active_tab()'s own fallback). Introduced in
+	 * issue #86's own restructuring once a fourth section (Connectors)
+	 * would otherwise have made a single, unbroken page read as one
+	 * overloaded settings screen — see CLAUDE.md's own architectural
+	 * decision row for the full rationale.
+	 *
+	 * @var array<string, string>
+	 */
+	private const TABS = array(
+		'subscriptions' => 'Subscriptions',
+		'connectors'    => 'Connectors',
+		'import-export' => 'Import / Export',
+		'privacy'       => 'Privacy',
+	);
+
+	/**
+	 * Resolve which tab to render from `?tab=`, falling back to the first
+	 * TABS entry for a missing or unrecognized value — the same
+	 * whitelist-or-default posture resolve_sort_request() already uses for
+	 * `?orderby=`.
+	 *
+	 * @return string One of TABS' own keys.
+	 */
+	private function resolve_active_tab(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab selection, not a state-changing action.
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
+
+		if ( ! isset( self::TABS[ $tab ] ) ) {
+			$tab = array_key_first( self::TABS );
+		}
+
+		return $tab;
+	}
+
+	/**
+	 * Render the tab nav using WP core's own bundled `nav-tab-wrapper`
+	 * markup/CSS (already loaded on every wp-admin screen) rather than a
+	 * new stylesheet, matching this screen's established "no new asset for
+	 * a small, standard piece of chrome" posture (e.g. the sortable-column
+	 * arrow, the pencil-icon disclosure).
+	 *
+	 * @param string $active One of TABS' own keys.
+	 * @return void
+	 */
+	private function render_tab_nav( string $active ): void {
+		?>
+		<h2 class="nav-tab-wrapper">
+			<?php foreach ( self::TABS as $tab => $label ) : ?>
+				<a
+					href="<?php echo esc_url( self::tab_url( $tab ) ); ?>"
+					class="nav-tab<?php echo $tab === $active ? ' nav-tab-active' : ''; ?>"
+					<?php echo $tab === $active ? ' aria-current="page"' : ''; ?>
+				><?php echo esc_html( $label ); ?></a>
+			<?php endforeach; ?>
+		</h2>
+		<?php
+	}
+
+	/**
+	 * Render the settings page: a status notice (if any), the tab nav, and
+	 * the active tab's own content.
 	 *
 	 * @return void
 	 */
@@ -226,6 +356,36 @@ class Daymark_Admin_Subscriptions {
 			wp_die( esc_html__( 'You are not allowed to access this page.', 'daymark' ), 403 );
 		}
 
+		$active_tab = $this->resolve_active_tab();
+		?>
+		<div class="wrap">
+			<h1><?php esc_html_e( 'Daymark', 'daymark' ); ?></h1>
+
+			<?php $this->render_notice(); ?>
+			<?php $this->render_tab_nav( $active_tab ); ?>
+
+			<?php if ( 'subscriptions' === $active_tab ) : ?>
+				<?php $this->render_subscriptions_tab(); ?>
+			<?php elseif ( 'connectors' === $active_tab ) : ?>
+				<?php $this->render_connectors_tab(); ?>
+			<?php elseif ( 'import-export' === $active_tab ) : ?>
+				<?php $this->render_import_export_tab(); ?>
+			<?php elseif ( 'privacy' === $active_tab ) : ?>
+				<?php $this->render_privacy_section(); ?>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+
+	/**
+	 * The Subscriptions tab's own content — unchanged from what render_page()
+	 * rendered unconditionally before this screen had tabs, minus its own
+	 * now-redundant `<h2>Subscriptions</h2>` (the active tab label already
+	 * says this).
+	 *
+	 * @return void
+	 */
+	private function render_subscriptions_tab(): void {
 		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_all();
 		$total_count   = count( $subscriptions );
 		$search        = $this->resolve_search_request();
@@ -233,30 +393,30 @@ class Daymark_Admin_Subscriptions {
 		$sort          = $this->resolve_sort_request();
 		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
 		?>
-		<div class="wrap">
-			<h1><?php esc_html_e( 'Daymark', 'daymark' ); ?></h1>
+		<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
 
-			<?php $this->render_notice(); ?>
-
-			<h2><?php esc_html_e( 'Subscriptions', 'daymark' ); ?></h2>
-			<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
-
-			<?php $this->render_subscribe_form(); ?>
-			<?php if ( $total_count > 0 ) : ?>
-				<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
-			<?php endif; ?>
-			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
-			<?php $this->render_poll_interval_form(); ?>
-
-			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
-			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
-			<?php
-			$this->render_export_link();
-			$this->render_import_form();
-			$this->render_privacy_section();
-			?>
-		</div>
+		<?php $this->render_subscribe_form(); ?>
+		<?php if ( $total_count > 0 ) : ?>
+			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
+		<?php endif; ?>
+		<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
+		<?php $this->render_poll_interval_form(); ?>
 		<?php
+	}
+
+	/**
+	 * The Import/Export tab's own content — unchanged from what render_page()
+	 * rendered unconditionally before this screen had tabs, minus its own
+	 * now-redundant `<h2>Import / export</h2>`.
+	 *
+	 * @return void
+	 */
+	private function render_import_export_tab(): void {
+		?>
+		<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
+		<?php
+		$this->render_export_link();
+		$this->render_import_form();
 	}
 
 	/**
@@ -464,8 +624,9 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_search_form( string $search, string $orderby, string $order ): void {
 		?>
-		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
+		<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
+			<input type="hidden" name="tab" value="subscriptions" />
 			<?php if ( '' !== $orderby ) : ?>
 				<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
 				<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
@@ -1047,6 +1208,198 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * Recommended companion IndieWeb plugins (issue #86) — every one of
+	 * these solves its problem at the data/protocol layer rather than
+	 * through theme template rendering, which is exactly what already lets
+	 * `Daymark_Federated_Comments` extend it (reading the `protocol`
+	 * comment meta each one already writes) instead of Daymark needing to
+	 * reimplement Webmention/ActivityPub/AT Protocol itself — see
+	 * CLAUDE.md's "Companion connectors removed" and "Webmention: rescoped
+	 * to lean on ecosystem plugins" rows for the standing precedent this
+	 * tab surfaces rather than replaces.
+	 *
+	 * `wporg_slug` is the wordpress.org plugin repository slug — used both
+	 * for the WPORG link and as the native installer's own `plugin=`
+	 * parameter (`wp-admin/update.php?action=install-plugin` resolves this
+	 * against the plugins API to build the download package). `folder_slug`
+	 * is the plugin's own installed-directory name, used only to detect
+	 * install/active state via `get_plugins()` — usually identical to
+	 * `wporg_slug`, but ATmosphere's own installed folder
+	 * (`wordpress-atmosphere`) differs from its shorter wp.org repo slug
+	 * (`atmosphere`), confirmed against `Daymark_Publish_Helpers`' own
+	 * functionally-verified detection of the same plugin.
+	 *
+	 * A method rather than a class const — like `Daymark_AI_Assist`'s own
+	 * `mock_provider_label()`, a const can't hold a `__()` call, and every
+	 * description here is genuinely user-facing (issue #252's own i18n
+	 * audit already established this exact distinction for this codebase).
+	 *
+	 * @return array<string, array{label: string, wporg_slug: string, folder_slug: string, description: string}>
+	 */
+	private static function recommended_connectors(): array {
+		return array(
+			'webmention'  => array(
+				'label'       => 'Webmention',
+				'wporg_slug'  => 'webmention',
+				'folder_slug' => 'webmention',
+				'description' => __( 'Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications.', 'daymark' ),
+			),
+			'activitypub' => array(
+				'label'       => 'ActivityPub',
+				'wporg_slug'  => 'activitypub',
+				'folder_slug' => 'activitypub',
+				/* translators: "Reply from the Fediverse" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
+				'description' => __( 'Makes your site followable from Mastodon, Threads, Pixelfed, and the rest of the fediverse — a published Mark reaches those followers automatically, and their replies come back into Daymark Notifications labeled "Reply from the Fediverse."', 'daymark' ),
+			),
+			'atmosphere'  => array(
+				'label'       => 'ATmosphere',
+				'wporg_slug'  => 'atmosphere',
+				'folder_slug' => 'wordpress-atmosphere',
+				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
+				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
+			),
+		);
+	}
+
+	/**
+	 * Find a recommended connector's own installed plugin file (the
+	 * `folder/main-file.php` key `get_plugins()` returns it under), by
+	 * matching just the folder segment against `folder_slug` — never
+	 * assuming a guessed main-file name, since that isn't always identical
+	 * to the plugin's slug.
+	 *
+	 * @param array<string, string> $connector One RECOMMENDED_CONNECTORS entry.
+	 * @return string|null The plugin file (e.g. `webmention/webmention.php`), or null if not installed.
+	 */
+	private function connector_plugin_file( array $connector ): ?string {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		foreach ( array_keys( get_plugins() ) as $plugin_file ) {
+			if ( strtok( $plugin_file, '/' ) === $connector['folder_slug'] ) {
+				return $plugin_file;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * A recommended connector's current state: 'active', 'inactive'
+	 * (installed but not active), or 'not_installed'.
+	 *
+	 * @param array<string, string> $connector One RECOMMENDED_CONNECTORS entry.
+	 * @return string
+	 */
+	private function connector_status( array $connector ): string {
+		$plugin_file = $this->connector_plugin_file( $connector );
+
+		if ( null === $plugin_file ) {
+			return 'not_installed';
+		}
+
+		return is_plugin_active( $plugin_file ) ? 'active' : 'inactive';
+	}
+
+	/**
+	 * Build the native, nonced "Install Now" URL WordPress's own Plugins ->
+	 * Add New screen uses for any wp.org plugin — reused as-is rather than
+	 * writing a custom install handler, so this tab inherits core's own
+	 * battle-tested download/unzip/verify flow (and its own results page)
+	 * for free.
+	 *
+	 * @param string $wporg_slug The plugin's wordpress.org repository slug.
+	 * @return string
+	 */
+	private function connector_install_url( string $wporg_slug ): string {
+		// add_query_arg() does not urlencode its own values (by design —
+		// see its own docs), so the plugin slug is pre-encoded here, the
+		// same way wp-admin's own Plugins -> Add New screen builds this
+		// exact URL.
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'action' => 'install-plugin',
+					'plugin' => rawurlencode( $wporg_slug ),
+				),
+				admin_url( 'update.php' )
+			),
+			'install-plugin_' . $wporg_slug
+		);
+	}
+
+	/**
+	 * Build the native, nonced "Activate" URL `wp-admin/plugins.php` itself
+	 * uses — reused as-is, same reasoning as connector_install_url().
+	 * Carries a `_wp_http_referer` back to this tab so activating a
+	 * connector returns here (with its own "Plugin activated" notice)
+	 * instead of landing on the full Plugins list screen.
+	 *
+	 * @param string $plugin_file The plugin file returned by connector_plugin_file().
+	 * @return string
+	 */
+	private function connector_activate_url( string $plugin_file ): string {
+		// Same pre-encoding reasoning as connector_install_url() — the
+		// plugin file contains a '/', which add_query_arg() would
+		// otherwise leave completely literal in the query string.
+		return wp_nonce_url(
+			add_query_arg(
+				array(
+					'action'           => 'activate',
+					'plugin'           => rawurlencode( $plugin_file ),
+					'_wp_http_referer' => rawurlencode( self::tab_url( 'connectors' ) ),
+				),
+				admin_url( 'plugins.php' )
+			),
+			'activate-plugin_' . $plugin_file
+		);
+	}
+
+	/**
+	 * Render the Connectors tab (issue #86): one card per
+	 * RECOMMENDED_CONNECTORS entry with a Daymark-specific benefit
+	 * description, a WPORG link, and an inline Install/Activate action
+	 * reflecting the plugin's real current state — never a hard dependency,
+	 * per the issue's own framing.
+	 *
+	 * @return void
+	 */
+	private function render_connectors_tab(): void {
+		?>
+		<p><?php esc_html_e( 'Daymark works best when paired with IndieWeb plugins such as these — each one extends what Daymark already does, at the protocol level, without Daymark needing to reimplement it.', 'daymark' ); ?></p>
+		<?php foreach ( self::recommended_connectors() as $connector ) : ?>
+			<?php
+			$status  = $this->connector_status( $connector );
+			$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+			?>
+			<div class="card" style="max-width:600px;margin-bottom:1em;">
+				<h3>
+					<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
+				</h3>
+				<p><?php echo esc_html( $connector['description'] ); ?></p>
+				<p>
+					<?php if ( 'active' === $status ) : ?>
+						<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
+						<?php esc_html_e( 'Active', 'daymark' ); ?>
+					<?php elseif ( 'inactive' === $status ) : ?>
+						<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
+						<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
+						<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
+							<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
+						<?php endif; ?>
+					<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
+						<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
+					<?php else : ?>
+						<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
+					<?php endif; ?>
+				</p>
+			</div>
+		<?php endforeach; ?>
+		<?php
+	}
+
+	/**
 	 * Allowed values for the "Check for new posts" dropdown (issue #291):
 	 * seconds => label. A fixed, small set rather than a free-typed number —
 	 * validated against on save so a POSTed value can't set an arbitrary
@@ -1185,7 +1538,6 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_privacy_section(): void {
 		?>
-		<h2><?php esc_html_e( 'Privacy', 'daymark' ); ?></h2>
 		<p><?php esc_html_e( 'Control what quietly-captured metadata Daymark stores or publishes for new Marks. A developer can still override any of these from code — see the readme FAQ.', 'daymark' ); ?></p>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="daymark_privacy_save" />
