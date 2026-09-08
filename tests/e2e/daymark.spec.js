@@ -1724,81 +1724,36 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 }) => {
 	const caption = `E2E cold offline ${RUN_ID}`;
 
-	// Relay page-side console output to the CI log — the offline shell has
-	// no other diagnostic surface if its own boot script (offline-boot.js)
-	// or app.js throws before rendering anything.
-	page.on('console', (msg) => console.log(`[page console ${msg.type()}]`, msg.text()));
-	page.on('pageerror', (err) => console.log('[page error]', String(err)));
-
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Both the SW's own install-time precaching and the boot-time
-	// config.json warming fetch (assets/app.js) are fire-and-forget, and
-	// neither one is awaited by the normal boot sequence — so rather than
-	// guess a fixed delay is enough for both to land, poll for the actual
-	// end state this test depends on: the page under the worker's control,
-	// plus its own redacted config.json and the offline shell itself both
-	// genuinely present in Cache Storage. Only once all three are true is
-	// cutting connectivity guaranteed not to race either fire-and-forget
-	// task.
+	// Both the SW's own install-time precaching (app.css/app.js/
+	// offline-boot.js/offline.html) and the boot-time config.json warming
+	// fetch (assets/app.js) are fire-and-forget, and neither one is awaited
+	// by the normal boot sequence — so rather than guess a fixed delay is
+	// enough for both to land, poll for the actual end state this test
+	// depends on: the page under the worker's control, plus its own
+	// redacted config.json and the offline shell itself both genuinely
+	// present in Cache Storage. Only once all three are true is cutting
+	// connectivity guaranteed not to race either fire-and-forget task.
 	await page.evaluate(() => navigator.serviceWorker.ready);
-
-	// Diagnostic state captured on every poll attempt — logged on failure
-	// so a CI run's own log says exactly which precondition (SW control, a
-	// cached config.json, a cached offline.html) never became true, instead
-	// of just "timed out."
-	let lastDiagnosticState = null;
 	await expect
 		.poll(
-			async () => {
-				lastDiagnosticState = await page.evaluate(async () => {
-					const controller = navigator.serviceWorker.controller;
-					if (!controller) {
-						return { controller: false };
+			() =>
+				page.evaluate(async () => {
+					if (!navigator.serviceWorker.controller) {
+						return false;
 					}
 					const cache = await caches.open('daymark-v2');
 					const [config, offline] = await Promise.all([
-						cache.match(new URL('config.json', controller.scriptURL)),
-						cache.match(new URL('offline.html', controller.scriptURL)),
+						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
+						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
 					]);
-					const cacheKeys = (await cache.keys()).map((request) => request.url);
-					let directFetch = null;
-					if (!config) {
-						// The redacted config.json entry still isn't there —
-						// try the exact same fetch this page's own boot
-						// sequence attempts, directly, to see whether it's a
-						// network/auth problem (a non-ok response, or a
-						// thrown error) versus the service worker simply not
-						// writing a genuinely successful response to cache.
-						try {
-							const res = await fetch(window.daymarkApp.appUrl + 'config.json', {
-								credentials: 'same-origin',
-							});
-							const bodyText = await res.text();
-							directFetch = { ok: res.ok, status: res.status, bodyPreview: bodyText.slice(0, 200) };
-						} catch (err) {
-							directFetch = { threw: String(err) };
-						}
-					}
-					return {
-						controller: true,
-						scriptURL: controller.scriptURL,
-						config: Boolean(config),
-						offline: Boolean(offline),
-						cacheKeys,
-						directFetch,
-					};
-				});
-				return Boolean(lastDiagnosticState.controller && lastDiagnosticState.config && lastDiagnosticState.offline);
-			},
+					return Boolean(config && offline);
+				}),
 			{ timeout: 15000 }
 		)
-		.toBe(true)
-		.catch((err) => {
-			console.log('cold-offline diagnostic state:', JSON.stringify(lastDiagnosticState));
-			throw err;
-		});
+		.toBe(true);
 
 	await context.setOffline(true);
 	try {
@@ -1808,24 +1763,7 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		// the same app-shell markup and boots the same app.js — Home's own
 		// launcher is reachable even though the real, dynamic /daymark
 		// response couldn't be fetched.
-		try {
-			await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
-		} catch (err) {
-			// The launcher never showed up at all — dump what actually
-			// rendered so a CI failure here says why, instead of just
-			// "element(s) not found."
-			const pageState = await page.evaluate(() => ({
-				url: window.location.href,
-				title: document.title,
-				hasAppContainer: Boolean(document.getElementById('daymark-app')),
-				appContainerHtml: (document.getElementById('daymark-app') || {}).innerHTML,
-				bodyHtmlPreview: document.body ? document.body.innerHTML.slice(0, 1500) : null,
-				daymarkAppConfig: window.daymarkApp || null,
-				offlineBootDebug: window.__offlineBootDebug || null,
-			}));
-			console.log('cold-offline post-reload page state:', JSON.stringify(pageState));
-			throw err;
-		}
+		await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
 
 		await openComposer(page, 'note');
 		await page.fill('#daymark-caption', caption);

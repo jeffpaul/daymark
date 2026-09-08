@@ -10,9 +10,15 @@
  * directory of its own script URL — serving it AT /daymark/sw.js means that
  * directory already IS /daymark/, for free.
  *
- * Caches exactly three things, all safe to persist indefinitely:
+ * Caches exactly four things, all safe to persist indefinitely:
  * - app.css / app.js (this plugin's own static assets — unchanged from the
  *   original, narrower-scoped version of this file)
+ * - offline-boot.js — the offline shell's own bootstrap script (see
+ *   templates/offline-shell.php). It has to be precached the same way
+ *   app.css/app.js are: nothing else caches or intercepts it, so a request
+ *   for it while genuinely offline would otherwise just fail outright,
+ *   leaving the offline shell's own container permanently stuck on "Loading
+ *   Daymark…" with no error surfaced anywhere.
  * - the offline-fallback shell (templates/offline-shell.php, served at
  *   /daymark/offline.html) — precached at install time
  * - GET /daymark/config.json's response, but ONLY after stripping its
@@ -48,7 +54,12 @@ self.addEventListener('install', (event) => {
 		caches
 			.open(CACHE_NAME)
 			.then((cache) =>
-				cache.addAll([ASSETS_BASE_URL + 'app.css', ASSETS_BASE_URL + 'app.js', scopePath + 'offline.html'])
+				cache.addAll([
+					ASSETS_BASE_URL + 'app.css',
+					ASSETS_BASE_URL + 'app.js',
+					ASSETS_BASE_URL + 'offline-boot.js',
+					scopePath + 'offline.html',
+				])
 			)
 			.then(() => self.skipWaiting())
 	);
@@ -100,10 +111,15 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	// app.css / app.js: cache-first, exactly as before this worker's scope
-	// widened. ignoreSearch so a ?ver= cache-busting param still hits the
+	// app.css / app.js / offline-boot.js: cache-first, exactly as before
+	// this worker's scope widened (offline-boot.js is the one addition —
+	// see this file's own docblock on why it has to be precached the same
+	// way). ignoreSearch so a ?ver= cache-busting param still hits the
 	// precached entry.
-	const isStaticAsset = url.pathname === ASSETS_BASE_PATH + 'app.css' || url.pathname === ASSETS_BASE_PATH + 'app.js';
+	const isStaticAsset =
+		url.pathname === ASSETS_BASE_PATH + 'app.css' ||
+		url.pathname === ASSETS_BASE_PATH + 'app.js' ||
+		url.pathname === ASSETS_BASE_PATH + 'offline-boot.js';
 	if (isStaticAsset) {
 		event.respondWith(
 			caches.match(event.request, { ignoreSearch: true }).then((cached) => {
