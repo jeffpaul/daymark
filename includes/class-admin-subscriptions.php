@@ -109,6 +109,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
+		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
 	/**
@@ -245,6 +246,7 @@ class Daymark_Admin_Subscriptions {
 				<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
 			<?php endif; ?>
 			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
+			<?php $this->render_poll_interval_form(); ?>
 
 			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
 			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
@@ -291,13 +293,14 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$success_messages = array(
-			'subscribed'         => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
-			'subscribed_pending' => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
-			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
-			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
-			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
-			'title_updated'      => __( 'Site name updated.', 'daymark' ),
-			'privacy_saved'      => __( 'Privacy settings saved.', 'daymark' ),
+			'subscribed'          => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
+			'subscribed_pending'  => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
+			'unsubscribed'        => __( 'Unsubscribed.', 'daymark' ),
+			'refreshed'           => __( 'Refresh requested.', 'daymark' ),
+			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'       => __( 'Site name updated.', 'daymark' ),
+			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
+			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -1041,6 +1044,90 @@ class Daymark_Admin_Subscriptions {
 			<?php submit_button( __( 'Import', 'daymark' ), 'secondary', 'daymark-import-submit', true ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Allowed values for the "Check for new posts" dropdown (issue #291):
+	 * seconds => label. A fixed, small set rather than a free-typed number —
+	 * validated against on save so a POSTed value can't set an arbitrary
+	 * interval (e.g. hammering every subscribed site once a second).
+	 * DAY_IN_SECONDS is the pre-existing filter's own hardcoded default, so
+	 * it stays the option's default too.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return array<int, string>
+	 */
+	private static function poll_interval_options(): array {
+		return array(
+			HOUR_IN_SECONDS      => __( 'Hourly', 'daymark' ),
+			6 * HOUR_IN_SECONDS  => __( 'Every 6 hours', 'daymark' ),
+			12 * HOUR_IN_SECONDS => __( 'Every 12 hours', 'daymark' ),
+			DAY_IN_SECONDS       => __( 'Daily', 'daymark' ),
+		);
+	}
+
+	/**
+	 * Render the "Check for new posts" dropdown (issue #291) at the end of
+	 * the Subscriptions section: how often the recurring poll cron
+	 * (Daymark_Subscription_Poller::CRON_HOOK) checks every active
+	 * subscription for new content. Backed by the daymark_subscription_poll_interval
+	 * option that class's own register_cron_schedule() now reads — see that
+	 * method's docblock for the same filter-still-wins layering the Privacy
+	 * section's toggles use.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	private function render_poll_interval_form(): void {
+		$current = (int) get_option( 'daymark_subscription_poll_interval', DAY_IN_SECONDS );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1em;">
+			<input type="hidden" name="action" value="daymark_subscription_poll_interval_save" />
+			<?php wp_nonce_field( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' ); ?>
+			<label for="daymark_subscription_poll_interval">
+				<?php esc_html_e( 'Check for new posts:', 'daymark' ); ?>
+			</label>
+			<select name="daymark_subscription_poll_interval" id="daymark_subscription_poll_interval">
+				<?php foreach ( self::poll_interval_options() as $seconds => $label ) : ?>
+					<option value="<?php echo esc_attr( (string) $seconds ); ?>" <?php selected( $current, $seconds ); ?>><?php echo esc_html( $label ); ?></option>
+				<?php endforeach; ?>
+			</select>
+			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-poll-interval-submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Handle the "Check for new posts" form
+	 * (admin_post_daymark_subscription_poll_interval_save, issue #291). The
+	 * posted value is validated against poll_interval_options()'s own fixed
+	 * set before being stored — never trusted as an arbitrary integer.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	public function handle_poll_interval_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' );
+
+		$posted  = isset( $_POST['daymark_subscription_poll_interval'] ) ? absint( wp_unslash( $_POST['daymark_subscription_poll_interval'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$allowed = self::poll_interval_options();
+
+		if ( ! isset( $allowed[ $posted ] ) ) {
+			$this->redirect_with_error( __( 'That check frequency is not a valid choice.', 'daymark' ) );
+
+			return;
+		}
+
+		update_option( 'daymark_subscription_poll_interval', $posted );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'poll_interval_saved' ) );
 	}
 
 	/**

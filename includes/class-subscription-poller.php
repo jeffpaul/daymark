@@ -94,15 +94,19 @@ class Daymark_Subscription_Poller {
 	/**
 	 * Register the custom cron schedule this class polls on, sourcing its
 	 * interval from the `daymark_subscription_poll_interval` filter (default
-	 * DAY_IN_SECONDS) so a site can tighten or relax the polling cadence
-	 * without needing a built-in WP-Cron recurrence name to exist for it.
+	 * the same-named option — a dropdown in Settings -> Daymark's
+	 * Subscriptions section, issue #291 — itself defaulting to DAY_IN_SECONDS)
+	 * so a site can tighten or relax the polling cadence without needing a
+	 * built-in WP-Cron recurrence name to exist for it. A developer filter
+	 * still wins over the option, matching the same layering the Privacy
+	 * section's own toggles use (issue #289).
 	 *
 	 * @param array<string, array{interval: int, display: string}> $schedules Existing schedules.
 	 * @return array<string, array{interval: int, display: string}>
 	 */
 	public static function register_cron_schedule( array $schedules ): array {
 		/** This filter is documented in schedule(). */
-		$interval = (int) apply_filters( 'daymark_subscription_poll_interval', DAY_IN_SECONDS );
+		$interval = (int) apply_filters( 'daymark_subscription_poll_interval', (int) get_option( 'daymark_subscription_poll_interval', DAY_IN_SECONDS ) );
 
 		$schedules[ self::CRON_SCHEDULE_KEY ] = array(
 			'interval' => max( MINUTE_IN_SECONDS, $interval ),

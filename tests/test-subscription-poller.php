@@ -1076,6 +1076,43 @@ XML;
 	}
 
 	/**
+	 * The "Check for new posts" option (Settings -> Daymark's Subscriptions
+	 * section, issue #291), set with no filter present, controls the custom
+	 * cron schedule's own interval exactly like the pre-existing filter
+	 * already does.
+	 */
+	public function test_cron_schedule_interval_option_sets_default() {
+		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
+
+		$schedules = Daymark_Subscription_Poller::register_cron_schedule( array() );
+
+		delete_option( 'daymark_subscription_poll_interval' );
+
+		$this->assertSame( HOUR_IN_SECONDS, $schedules['daymark_subscription_poll_interval']['interval'] );
+	}
+
+	/**
+	 * A developer filter still wins over the option (layered, not
+	 * replaced) — an explicit daymark_subscription_poll_interval option of
+	 * HOUR_IN_SECONDS is overridden by a filter forcing 6 * HOUR_IN_SECONDS.
+	 */
+	public function test_cron_schedule_interval_filter_overrides_option() {
+		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
+		add_filter(
+			'daymark_subscription_poll_interval',
+			static function () {
+				return 6 * HOUR_IN_SECONDS;
+			}
+		);
+
+		$schedules = Daymark_Subscription_Poller::register_cron_schedule( array() );
+
+		delete_option( 'daymark_subscription_poll_interval' );
+
+		$this->assertSame( 6 * HOUR_IN_SECONDS, $schedules['daymark_subscription_poll_interval']['interval'] );
+	}
+
+	/**
 	 * maybe_poll_now() (issue #174): schedules a single, immediate cron
 	 * event on the `_now` hook, distinct from and never touching the
 	 * recurring schedule.

@@ -914,4 +914,33 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 			'daymark_publish_location_publicly should reflect its stored, checked value'
 		);
 	}
+
+	/**
+	 * The "Check for new posts" dropdown (issue #291) defaults to Daily
+	 * selected, matching the pre-existing filter's own DAY_IN_SECONDS
+	 * default.
+	 */
+	public function test_poll_interval_form_defaults_to_daily(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Check for new posts:', $output );
+		$this->assertMatchesRegularExpression(
+			'/<option value="' . DAY_IN_SECONDS . '" selected(=\'selected\')?>Daily<\/option>/',
+			$output
+		);
+	}
+
+	/** The dropdown reflects a stored daymark_subscription_poll_interval option value, not just the default. */
+	public function test_poll_interval_form_reflects_stored_option_value(): void {
+		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
+
+		$output = $this->render();
+
+		delete_option( 'daymark_subscription_poll_interval' );
+
+		$this->assertMatchesRegularExpression(
+			'/<option value="' . HOUR_IN_SECONDS . '" selected(=\'selected\')?>Hourly<\/option>/',
+			$output
+		);
+	}
 }
