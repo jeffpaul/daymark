@@ -1750,76 +1750,29 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	// present in Cache Storage. Only once all three are true is cutting
 	// connectivity guaranteed not to race either fire-and-forget task.
 	await page.evaluate(() => navigator.serviceWorker.ready);
-	try {
-		await expect
-			.poll(
-				() =>
-					page.evaluate(async () => {
-						if (!navigator.serviceWorker.controller) {
-							return false;
-						}
-						const cache = await caches.open('daymark-v2');
-						const [config, offline] = await Promise.all([
-							cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
-							cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
-						]);
-						return Boolean(config && offline);
-					}),
-				// Generous on purpose: this waits out several sequential live
-				// requests (sw.js, the four precached resources, then the
-				// config.json warming fetch), each a full WP bootstrap for the
-				// PHP-templated ones — comfortably fast locally, occasionally
-				// slow on a loaded CI runner. See this test's own setTimeout()
-				// above for the matching overall budget.
-				{ timeout: 30000 }
-			)
-			.toBe(true);
-	} catch (err) {
-		// Temporary diagnostic (not a permanent fixture): this poll has
-		// intermittently timed out even after doubling its budget, which
-		// rules out plain CI-runner slowness as the sole explanation — a
-		// genuinely slow-but-working chain should eventually clear a 30s
-		// window at least some of the time. Distinguishing "the SW install
-		// itself never finished" from "it finished but something in the
-		// cache-write chain is missing" needs the registration's own state,
-		// not just the cache contents the poll already checks.
-		const diag = await page.evaluate(async () => {
-			const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
-			let cachedKeys = null;
-			let swCacheResult = null;
-			try {
-				const cache = await caches.open('daymark-v2');
-				cachedKeys = (await cache.keys()).map((r) => r.url);
-				const marker = await cache.match('/__debug/config-cache-result');
-				swCacheResult = marker ? await marker.json() : null;
-			} catch (e) {
-				cachedKeys = `error: ${e && e.message}`;
-			}
-			return {
-				hasRegistration: Boolean(reg),
-				installingState: reg && reg.installing ? reg.installing.state : null,
-				waitingState: reg && reg.waiting ? reg.waiting.state : null,
-				activeState: reg && reg.active ? reg.active.state : null,
-				hasController: Boolean(navigator.serviceWorker.controller),
-				cachedKeys,
-				// See assets/app.js's own matching temporary diagnostic —
-				// distinguishes "the warming fetch was never even
-				// dispatched" from "it was dispatched but never settled"
-				// from "it settled fine, so the gap is in the SW's own
-				// fetch-handler/cache-write side instead."
-				configWarmDebug: window.__daymarkConfigWarmDebug || null,
-				// See assets/daymark-sw.js's own matching temporary marker —
-				// absent means the SW's config.json branch never ran its
-				// redact+cache.put chain to either outcome at all (the
-				// request wasn't actually intercepted, or the branch never
-				// got invoked); present with ok:false names the exact error.
-				swCacheResult,
-			};
-		});
-		// eslint-disable-next-line no-console
-		console.log('[cold-offline diagnostic] SW/cache state at poll timeout:', JSON.stringify(diag, null, 2));
-		throw err;
-	}
+	await expect
+		.poll(
+			() =>
+				page.evaluate(async () => {
+					if (!navigator.serviceWorker.controller) {
+						return false;
+					}
+					const cache = await caches.open('daymark-v2');
+					const [config, offline] = await Promise.all([
+						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
+						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+					]);
+					return Boolean(config && offline);
+				}),
+			// Generous on purpose: this waits out several sequential live
+			// requests (sw.js, the four precached resources, then the
+			// config.json warming fetch), each a full WP bootstrap for the
+			// PHP-templated ones — comfortably fast locally, occasionally
+			// slow on a loaded CI runner. See this test's own setTimeout()
+			// above for the matching overall budget.
+			{ timeout: 30000 }
+		)
+		.toBe(true);
 
 	await context.setOffline(true);
 	try {

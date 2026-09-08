@@ -7668,48 +7668,37 @@
 				// only other caller, and it only ever runs on the
 				// offline-fallback shell itself.
 				//
-				// Deliberately gated on navigator.serviceWorker.ready — a
-				// fetch fired right after register() (rather than once the
-				// worker is actually active and controlling this page) is
-				// never intercepted by it at all on a fresh registration, so
-				// it would reach the network fine but leave nothing in
-				// Cache Storage for the service worker's own fetch handler
-				// to have redacted and stored. Fire-and-forget beyond that
-				// point, like every other best-effort boot task above — its
-				// response is unused here, only the service worker's own
-				// side effect of caching a redacted copy (see
-				// assets/daymark-sw.js) matters. Skipped on the offline
+				// Deliberately gated on navigator.serviceWorker.ready, and
+				// posted as a message to registration.active rather than
+				// issued as a plain page-side fetch() for the service
+				// worker's own fetch handler to intercept — CI investigation
+				// (issue #126) found that a runtime fetch dispatched
+				// immediately after .ready resolves on a registration that
+				// only just finished activating is not reliably routed
+				// through that worker's fetch handler yet, even though
+				// .ready has already resolved: the page's own fetch settled
+				// fine (a live 200 reached it in well under a second) while
+				// the redact+cache.put side effect the fetch handler is
+				// supposed to trigger never ran. A message posted directly
+				// to the active worker has no such dependency on
+				// fetch-interception timing — see assets/daymark-sw.js's
+				// 'daymark-warm-config-cache' handler, which does the
+				// identical fetch-and-cache work from inside the worker
+				// itself instead. Fire-and-forget beyond that, like every
+				// other best-effort boot task above. Skipped on the offline
 				// shell itself (config.offlineShell), which already made
 				// this exact fetch moments ago during its own boot.
 				if (config.appUrl && !config.offlineShell) {
-					// Temporary diagnostic (issue #126 CI investigation, not a
-					// permanent fixture): the cold-offline Playwright test has
-					// intermittently found this warming fetch's cache write
-					// missing well after the SW itself is active and
-					// controlling the page, with the static-asset precache
-					// (app.css/app.js/offline-boot.js/offline.html) already
-					// confirmed present — narrowing whether this fetch is
-					// ever actually dispatched/settled, and how long it
-					// takes, needs visibility this promise chain doesn't
-					// otherwise expose to a test.
-					window.__daymarkConfigWarmDebug = { dispatched: false, settled: false, ok: null, error: null };
-					const warmStart = Date.now();
 					navigator.serviceWorker.ready
-						.then(() => {
-							window.__daymarkConfigWarmDebug.dispatched = true;
-							window.__daymarkConfigWarmDebug.readyAt = Date.now() - warmStart;
-							return fetch(config.appUrl + 'config.json', { credentials: 'same-origin' });
+						.then((registration) => {
+							if (registration.active) {
+								registration.active.postMessage({
+									type: 'daymark-warm-config-cache',
+									url: config.appUrl + 'config.json',
+								});
+							}
 						})
-						.then((response) => {
-							window.__daymarkConfigWarmDebug.settled = true;
-							window.__daymarkConfigWarmDebug.ok = response.ok;
-							window.__daymarkConfigWarmDebug.settledAt = Date.now() - warmStart;
-						})
-						.catch((err) => {
-							window.__daymarkConfigWarmDebug.settled = true;
-							window.__daymarkConfigWarmDebug.error = err && err.message;
-							window.__daymarkConfigWarmDebug.settledAt = Date.now() - warmStart;
-						});
+						.catch(() => {});
 				}
 			})
 			.catch(() => {});

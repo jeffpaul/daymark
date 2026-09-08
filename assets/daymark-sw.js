@@ -22,9 +22,11 @@
  * - the offline-fallback shell (templates/offline-shell.php, served at
  *   /daymark/offline.html) — precached at install time
  * - GET /daymark/config.json's response, but ONLY after stripping its
- *   `nonce` field first — see the fetch handler below. The live response
- *   itself (nonce intact) is still returned to the page immediately; only
- *   the durably-stored Cache Storage copy is redacted.
+ *   `nonce` field first — see the fetch handler below, and the
+ *   'daymark-warm-config-cache' message handler it shares its redaction
+ *   logic with (redactAndCacheConfig()). The live response itself (nonce
+ *   intact) is still returned to the page immediately; only the
+ *   durably-stored Cache Storage copy is redacted.
  *
  * NEVER cached, at all, under any circumstance:
  * - Any real /wp-json/ REST response
@@ -86,18 +88,64 @@ self.addEventListener('activate', (event) => {
 // deliberate sign-out. Clearing the whole cache (not just these two
 // entries) is simplest and cheap — app.css/app.js just get re-fetched and
 // re-cached on the next successful load.
+//
+// 'daymark-warm-config-cache' (issue #126 CI investigation): the normal
+// online boot path (assets/app.js) posts this right after
+// navigator.serviceWorker.ready resolves, instead of issuing its own
+// page-side fetch() for the fetch handler below to intercept. A runtime
+// fetch dispatched immediately after .ready resolves on a registration
+// that only just finished activating is not reliably routed through
+// that same worker's fetch handler yet — confirmed via CI: the page's
+// own fetch settled fine (a live 200 response reached it in well under
+// a second) while the redact+cache.put side effect the fetch handler's
+// config.json branch is supposed to perform never ran at all. A message
+// posted directly to registration.active has no such dependency on
+// fetch-interception timing, so this does the identical fetch-and-cache
+// work from inside the worker itself instead — the same mechanism the
+// install handler's cache.addAll() already uses reliably for the other
+// three precached resources, none of which go through the fetch event
+// either.
 self.addEventListener('message', (event) => {
-	if (!event.data || 'daymark-clear-offline-cache' !== event.data.type) {
+	if (event.data && 'daymark-clear-offline-cache' === event.data.type) {
+		event.waitUntil(
+			caches.delete(CACHE_NAME).then(() => {
+				if (event.ports && event.ports[0]) {
+					event.ports[0].postMessage({ done: true });
+				}
+			})
+		);
 		return;
 	}
-	event.waitUntil(
-		caches.delete(CACHE_NAME).then(() => {
-			if (event.ports && event.ports[0]) {
-				event.ports[0].postMessage({ done: true });
-			}
-		})
-	);
+	if (event.data && 'daymark-warm-config-cache' === event.data.type && event.data.url) {
+		event.waitUntil(
+			fetch(event.data.url, { credentials: 'same-origin' })
+				.then((response) => (response.ok ? redactAndCacheConfig(event.data.url, response) : undefined))
+				.catch(() => {
+					/* Best-effort warming only — a later real config.json
+					 * request still redacts+caches normally via the fetch
+					 * handler below. */
+				})
+		);
+	}
 });
+
+// Shared by the fetch handler's config.json branch below and the
+// 'daymark-warm-config-cache' message handler above — the only
+// difference between the two callers is where `response` came from
+// (an intercepted page fetch vs. one made directly inside the worker).
+async function redactAndCacheConfig(cacheKey, response) {
+	try {
+		const data = await response.clone().json();
+		delete data.nonce;
+		const redacted = new Response(JSON.stringify(data), {
+			headers: { 'Content-Type': 'application/json' },
+		});
+		const cache = await caches.open(CACHE_NAME);
+		await cache.put(cacheKey, redacted);
+	} catch (err) {
+		/* Malformed/non-JSON response: nothing to cache. */
+	}
+}
 
 self.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') {
@@ -144,58 +192,25 @@ self.addEventListener('fetch', (event) => {
 
 	// config.json: network-first, since a live fetch always carries a fresh
 	// nonce a cached copy never should. The redacted (nonce-stripped) copy
-	// is what actually answers a later offline request.
+	// is what actually answers a later offline request. This branch is what
+	// answers a *live* fetch for it (assets/offline-boot.js's own, or any
+	// other page-initiated one) — the normal online boot path's warming
+	// fetch no longer relies on this being intercepted at all; see the
+	// 'daymark-warm-config-cache' message handler above for why.
 	//
-	// The redaction + cache.put() is wrapped in event.waitUntil() — without
-	// it, this is a real bug: respondWith()'s own promise resolves (and the
+	// The redact+cache.put() is wrapped in event.waitUntil() — without it,
+	// this is a real bug: respondWith()'s own promise resolves (and the
 	// response reaches the page) as soon as the outer .then() returns
-	// `response`, before the inner .json()/cache.put() chain has settled,
-	// and the browser is free to consider the fetch event fully handled
-	// and tear the worker down at that point, aborting the still-in-flight
-	// cache write. waitUntil() tells it there's more work to wait for.
+	// `response`, before redactAndCacheConfig()'s chain has settled, and the
+	// browser is free to consider the fetch event fully handled and tear
+	// the worker down at that point, aborting the still-in-flight cache
+	// write. waitUntil() tells it there's more work to wait for.
 	if (url.pathname === scopePath + 'config.json') {
 		event.respondWith(
 			fetch(event.request)
 				.then((response) => {
 					if (response.ok) {
-						// Temporary diagnostic (issue #126 CI investigation, not
-						// a permanent fixture): the cold-offline Playwright test
-						// has intermittently found this branch's cache write
-						// missing even though the page's own warming fetch
-						// settles fine (ok:true) in well under a second — this
-						// records whether the redact+cache.put chain below
-						// actually runs to completion, and what stops it if
-						// not, since nothing else observes that from outside
-						// the service worker.
-						event.waitUntil(
-							(async () => {
-								try {
-									const data = await response.clone().json();
-									delete data.nonce;
-									const redacted = new Response(JSON.stringify(data), {
-										headers: { 'Content-Type': 'application/json' },
-									});
-									const cache = await caches.open(CACHE_NAME);
-									await cache.put(event.request, redacted);
-									await cache.put(
-										'/__debug/config-cache-result',
-										new Response(JSON.stringify({ ok: true, at: Date.now() }))
-									);
-								} catch (err) {
-									try {
-										const cache = await caches.open(CACHE_NAME);
-										await cache.put(
-											'/__debug/config-cache-result',
-											new Response(
-												JSON.stringify({ ok: false, error: String(err && err.message), at: Date.now() })
-											)
-										);
-									} catch (e2) {
-										/* Nothing more we can do to record this. */
-									}
-								}
-							})()
-						);
+						event.waitUntil(redactAndCacheConfig(event.request, response));
 					}
 					return response;
 				})
