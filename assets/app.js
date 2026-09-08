@@ -2862,12 +2862,16 @@
 		});
 		// The routing popover (issue #255) — a sibling of its own toggle,
 		// not nested inside a shared wrapper (see renderMarkItem()), so its
-		// toggle is found via the shared item-wrap ancestor instead of
-		// menu.parentElement the way the ⋯ menu's toggle is found above.
+		// toggle is found by matching data-routing-toggle against this
+		// panel's own data-routing-panel id (same convention
+		// toggleRoutingPanel() uses) rather than a shared item-wrap
+		// ancestor — the two don't always share one exact container shape
+		// (a Timeline card's own item-wrap vs. the full-screen post view's
+		// simpler meta block).
 		root.querySelectorAll('[data-routing-panel]').forEach((panel) => {
 			panel.hidden = true;
-			const wrap = panel.closest('.daymark-recent__item-wrap');
-			const toggle = wrap ? wrap.querySelector('[data-routing-toggle]') : null;
+			const id = panel.getAttribute('data-routing-panel');
+			const toggle = id ? root.querySelector('[data-routing-toggle="' + id + '"]') : null;
 			if (toggle) {
 				toggle.setAttribute('aria-expanded', 'false');
 			}
@@ -3286,11 +3290,15 @@
 	// panel itself (data-loaded) so reopening never refetches. Only one
 	// item popover (this or the ⋯ menu) is ever open at a time, so this
 	// closes whatever else was open first, the same way the ⋯ menu's own
-	// toggle handler already does.
+	// toggle handler already does. Finds its panel by matching
+	// data-routing-panel against this toggle's own id (both are always
+	// rendered with the same item id) rather than a shared item-wrap
+	// ancestor — the toggle and its panel don't always share one exact
+	// container shape (a Timeline card's own item-wrap vs. the full-screen
+	// post view's simpler meta block).
 	async function toggleRoutingPanel(screen, trigger) {
 		const id = trigger.getAttribute('data-routing-toggle');
-		const wrap = trigger.closest('.daymark-recent__item-wrap');
-		const panel = wrap ? wrap.querySelector('[data-routing-panel]') : null;
+		const panel = id ? root.querySelector('[data-routing-panel="' + id + '"]') : null;
 		if (!id || !panel) {
 			return;
 		}
@@ -6168,6 +6176,28 @@
 		return `<span class="daymark-recent__timestamprow">${site}${time}</span>`;
 	}
 
+	// A subscription post's own interaction row — the subscription-post
+	// equivalent of renderItemStats() below: Like/Repost toggles, a
+	// read-only "Replied" indicator, Bookmark, "open original", and Share.
+	// No counted like/comment/repost stats (see renderSubscriptionPostCard()'s
+	// own docblock for why) and no Routing toggle (Mark-only — a subscription
+	// post has no syndication targets of its own). Shared by the Timeline
+	// card and the full-screen post view (PostScreen) so the two can never
+	// show a different set of icons for the same post.
+	function renderSubscriptionItemStats(item) {
+		return `<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
+			item
+		)}${renderEngagementIndicator(
+			COMMENT_GLYPH,
+			!!item.replied_mark_id,
+			'replied',
+			__('Replied', 'daymark')
+		)}${renderRepostToggle(item)}${renderBookmarkToggle(
+			item,
+			'subscription_post'
+		)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>`;
+	}
+
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
 	// one Mark's card markup — used by every Mark item any feed-list screen
 	// renders (Home's Recent/Drafts, Search's results), wrapped by
@@ -6251,17 +6281,7 @@
 							<span class="daymark-recent__title">${esc(title)}</span>
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
-							<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
-								item
-							)}${renderEngagementIndicator(
-								COMMENT_GLYPH,
-								!!item.replied_mark_id,
-								'replied',
-								__('Replied', 'daymark')
-							)}${renderRepostToggle(item)}${renderBookmarkToggle(
-								item,
-								'subscription_post'
-							)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>
+							${renderSubscriptionItemStats(item)}
 							${renderCardTimestampRow(item, siteLabel)}
 						</span>
 					</button>
@@ -6426,6 +6446,27 @@
 			const view = pendingPostView;
 			const item = view && view.item ? view.item : {};
 			const title = item.title || __('Post', 'daymark');
+			// The site name, date, and interaction icons (Like through Share)
+			// a Timeline card already carries — kept visible here too, not
+			// just the raw content, so opening the full-screen view doesn't
+			// cost a reader whose post this is, when it was published, or
+			// the ability to like/reply/repost/bookmark/share it. Rendered
+			// below the post body — a sibling of [data-postview-body], never
+			// inside it, since load() below replaces that element's own
+			// innerHTML wholesale on every load/refresh — and, within that
+			// block, in the same order a card itself renders them
+			// (renderMarkCore()/renderSubscriptionPostCard()): the
+			// interaction row first, the site name/date row last. A Mark
+			// gets the same full stat row its own card shows
+			// (renderItemStats()); a subscription post gets its own
+			// narrower row (renderSubscriptionItemStats()) — no counted
+			// like/comment/repost stats or Routing toggle, matching its
+			// card's own reasoning for the same omissions.
+			const isMark = !!(view && 'mark' === view.kind);
+			const siteLabel = isMark ? config.siteTitle || __('Site', 'daymark') : subscriptionSiteLabel(item);
+			const stats = isMark ? renderItemStats(item) : renderSubscriptionItemStats(item);
+			const id = esc(String(item.id || ''));
+			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(
@@ -6439,14 +6480,32 @@
 					${skeletonRows(3)}
 					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
 				</div>
+				<div class="daymark-postview-meta">
+					${stats}
+					${renderCardTimestampRow(item, siteLabel)}
+					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
+				</div>
 			</section>`;
 		},
 
+		// Two separate delegated listeners, matching each region's own
+		// concern: the meta row's Like/Repost/Bookmark/"open original"/
+		// Share/Routing toggles (rendered in render() below the post body —
+		// never touched by load() below) get the exact same click/keyboard
+		// handling (onFeedListClick()/onFeedListKeydown()) every Timeline
+		// card already shares; the post body keeps its own narrower
+		// Reply/"Refresh content" handling (onClick() below), unchanged.
 		bindEvents() {
+			const meta = root.querySelector('.daymark-postview-meta');
+			if (meta) {
+				meta.addEventListener('click', (event) => onFeedListClick(this, event));
+				meta.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
 			const body = root.querySelector('[data-postview-body]');
 			if (body) {
 				body.addEventListener('click', (event) => this.onClick(event));
 			}
+			bindDismissible(this, [itemMenusDismissEntry()]);
 		},
 
 		onClick(event) {
@@ -6469,10 +6528,17 @@
 		// showScreen()'s own guard already redirects a direct/refreshed
 		// #post with no pending hand-off back to Home before this ever
 		// runs — same trust its #publish/#success guards get from their
-		// own render()/init().
+		// own render()/init(). _byMarkId/_bySubId (the same pair every
+		// feed-list screen keeps — see rememberItem()) hold just this one
+		// item, so the meta row's toggles (toggleLike()/toggleRepost()/
+		// shareItem(), all of which look an item up by id) work here
+		// exactly as they do on a Timeline card.
 		async init() {
 			this.view = pendingPostView;
 			pendingPostView = null;
+			this._byMarkId = new Map();
+			this._bySubId = new Map();
+			rememberItem(this, this.view.item);
 			await this.load(false);
 		},
 
