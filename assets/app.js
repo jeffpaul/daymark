@@ -7657,21 +7657,36 @@
 				navigator.serviceWorker.register(config.appUrl + 'sw.js', { scope: config.appUrl }).catch(() => {
 					/* Never let SW registration break the app. */
 				})
-			);
-	}
-
-	// Warms the service worker's own redacted config.json cache (issue
-	// #126) — this normal, inline-configured boot path never otherwise has
-	// a reason to fetch that endpoint (it already has window.daymarkApp),
-	// but without this, a device's very first-ever cold-offline load would
-	// find nothing cached there at all: assets/offline-boot.js is the only
-	// other caller, and it only ever runs on the offline-fallback shell
-	// itself. Fire-and-forget, like every other best-effort boot task
-	// above — its response is unused here, only the service worker's own
-	// side effect of caching a redacted copy (see assets/daymark-sw.js)
-	// matters. Skipped on the offline shell itself (config.offlineShell),
-	// which already made this exact fetch moments ago during its own boot.
-	if (config.appUrl && !config.offlineShell) {
-		fetch(config.appUrl + 'config.json', { credentials: 'same-origin' }).catch(() => {});
+			)
+			.then(() => {
+				// Warms the service worker's own redacted config.json cache
+				// (issue #126) — this normal, inline-configured boot path
+				// never otherwise has a reason to fetch that endpoint (it
+				// already has window.daymarkApp), but without this, a
+				// device's very first-ever cold-offline load would find
+				// nothing cached there at all: assets/offline-boot.js is the
+				// only other caller, and it only ever runs on the
+				// offline-fallback shell itself.
+				//
+				// Deliberately gated on navigator.serviceWorker.ready — a
+				// fetch fired right after register() (rather than once the
+				// worker is actually active and controlling this page) is
+				// never intercepted by it at all on a fresh registration, so
+				// it would reach the network fine but leave nothing in
+				// Cache Storage for the service worker's own fetch handler
+				// to have redacted and stored. Fire-and-forget beyond that
+				// point, like every other best-effort boot task above — its
+				// response is unused here, only the service worker's own
+				// side effect of caching a redacted copy (see
+				// assets/daymark-sw.js) matters. Skipped on the offline
+				// shell itself (config.offlineShell), which already made
+				// this exact fetch moments ago during its own boot.
+				if (config.appUrl && !config.offlineShell) {
+					navigator.serviceWorker.ready
+						.then(() => fetch(config.appUrl + 'config.json', { credentials: 'same-origin' }))
+						.catch(() => {});
+				}
+			})
+			.catch(() => {});
 	}
 })();
