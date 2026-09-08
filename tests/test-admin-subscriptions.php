@@ -339,7 +339,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * on this screen.
 	 */
 	public function test_enqueue_assets_localizes_rest_config_on_settings_screen(): void {
-		$this->admin_subscriptions->enqueue_assets( 'toplevel_page_' . Daymark_Admin_Subscriptions::PAGE_SLUG );
+		$this->admin_subscriptions->enqueue_assets( 'settings_page_' . Daymark_Admin_Subscriptions::PAGE_SLUG );
 
 		$this->assertTrue( wp_script_is( 'daymark-admin-subscriptions', 'enqueued' ) );
 
@@ -993,14 +993,14 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Subscriptions<\/a>/', $output );
 	}
 
-	/** page_url() now points at the short, top-level admin.php URL (issue #86). */
-	public function test_page_url_points_at_top_level_admin_page(): void {
-		$this->assertSame( admin_url( 'admin.php?page=daymark' ), Daymark_Admin_Subscriptions::page_url() );
+	/** page_url() now points at the short options-general.php?page=daymark URL (issue #86). */
+	public function test_page_url_points_at_short_settings_url(): void {
+		$this->assertSame( admin_url( 'options-general.php?page=daymark' ), Daymark_Admin_Subscriptions::page_url() );
 	}
 
 	/** tab_url() appends the requested tab as a query arg onto page_url(). */
 	public function test_tab_url_appends_tab_query_arg(): void {
-		$this->assertSame( admin_url( 'admin.php?page=daymark&tab=connectors' ), Daymark_Admin_Subscriptions::tab_url( 'connectors' ) );
+		$this->assertSame( admin_url( 'options-general.php?page=daymark&tab=connectors' ), Daymark_Admin_Subscriptions::tab_url( 'connectors' ) );
 	}
 
 	/**

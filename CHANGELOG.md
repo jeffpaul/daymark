@@ -29,7 +29,7 @@ can't act on them.
 
 ### Changed
 
-- **Settings -> Daymark moved and was reorganized into tabs.** It's now its own top-level admin menu item at a shorter URL (`/wp-admin/admin.php?page=daymark`) instead of a Settings submenu page (`options-general.php?page=daymark-subscriptions`), split into Subscriptions, Connectors, Import/Export, and Privacy tabs instead of one long page. A visit to the old URL redirects automatically, so an existing bookmark still works. ([#86](https://github.com/jeffpaul/daymark/issues/86))
+- **Settings -> Daymark's URL got shorter and the page was reorganized into tabs.** It's now at `/wp-admin/options-general.php?page=daymark` (was `options-general.php?page=daymark-subscriptions`), split into Subscriptions, Connectors, Import/Export, and Privacy tabs instead of one long page. A visit to the old URL redirects automatically, so an existing bookmark still works. ([#86](https://github.com/jeffpaul/daymark/issues/86))
 
 - A subscription post's Timeline card no longer shows its author's name directly under the title — for most single-author sites that read the same as, or very close to, the site name already shown on the card's bottom row, so it was dropped as redundant. ([#285](https://github.com/jeffpaul/daymark/issues/285))
 - Search's Source filter dropdown now lists subscribed sites alphabetically by name, with "All" and "My Marks" pinned first — previously they appeared in subscribe order. ([#283](https://github.com/jeffpaul/daymark/issues/283))

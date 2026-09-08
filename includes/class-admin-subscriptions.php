@@ -51,13 +51,14 @@ class Daymark_Admin_Subscriptions {
 	public const CAPABILITY = 'edit_posts';
 
 	/**
-	 * Settings page slug — a top-level admin menu item (issue #86's own
-	 * restructuring), not a Settings submenu page. Shortened from the
-	 * original `daymark-subscriptions` (which only ever covered one of
-	 * what's now four tabs — see resolve_active_tab()) to plain `daymark`,
-	 * giving the page a short, stable `admin.php?page=daymark` URL ahead of
-	 * a 1.0.0 release rather than after, when it would need a redirect
-	 * forever.
+	 * Settings page slug. Shortened from the original `daymark-subscriptions`
+	 * (which only ever covered one of what's now four tabs — see
+	 * resolve_active_tab()) to plain `daymark`, giving the page a short,
+	 * stable `options-general.php?page=daymark` URL ahead of a 1.0.0 release
+	 * rather than after, when it would need a redirect forever. Stays a
+	 * Settings submenu item (`add_options_page()`), not a top-level admin
+	 * menu item — this screen is infrequently touched once a site is set up,
+	 * so it doesn't earn a permanent slot in the main admin menu.
 	 *
 	 * @var string
 	 */
@@ -133,40 +134,35 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Register the Daymark top-level admin menu page (issue #86's own
-	 * restructuring; previously a Settings submenu item via
-	 * `add_options_page()`). Promoted so the four tabs this page now holds
-	 * (Subscriptions, Import/Export, Privacy, Connectors — see
-	 * resolve_active_tab()) read as one coherent settings area rather than
-	 * a single overloaded Settings submenu screen, and so its URL becomes
-	 * the short, memorable `admin.php?page=daymark` rather than staying
-	 * nested a level deeper under Settings. No explicit `$position`
-	 * argument — WordPress appends it after every other top-level menu
-	 * item, which keeps it out of the way of core's own fixed ordering
-	 * without this plugin needing to guess a numeric slot that might
-	 * collide with another plugin's own top-level menu.
+	 * Register Settings -> Daymark (issue #86's own restructuring gave it
+	 * four tabs — Subscriptions, Connectors, Import/Export, Privacy, see
+	 * resolve_active_tab() — instead of one long page, and shortened its
+	 * slug/URL — see PAGE_SLUG's own docblock — but it stays a Settings
+	 * submenu item: this screen sees day-to-day use only rarely, once a
+	 * site's subscriptions/connectors/privacy choices are set up, so it
+	 * doesn't warrant a permanent top-level admin menu slot the way a
+	 * screen someone opens routinely would).
 	 *
 	 * @return void
 	 */
 	public function add_settings_page(): void {
-		add_menu_page(
+		add_options_page(
 			__( 'Daymark', 'daymark' ),
 			__( 'Daymark', 'daymark' ),
 			self::CAPABILITY,
 			self::PAGE_SLUG,
-			array( $this, 'render_page' ),
-			'dashicons-admin-site-alt3'
+			array( $this, 'render_page' )
 		);
 	}
 
 	/**
 	 * Redirect the pre-0.14.0 Settings submenu URL
-	 * (`options-general.php?page=daymark-subscriptions`) to this page's new
-	 * top-level location, preserving every other query arg (a notice, a
-	 * search term, a sort column) so an old bookmark or a home-screen
-	 * shortcut still lands somewhere useful instead of wp-admin's own
-	 * "Sorry, you are not allowed..." page a since-renamed submenu slug
-	 * would otherwise produce.
+	 * (`options-general.php?page=daymark-subscriptions`) to this page's new,
+	 * shorter slug (`options-general.php?page=daymark`), preserving every
+	 * other query arg (a notice, a search term, a sort column) so an old
+	 * bookmark or a home-screen shortcut still lands somewhere useful
+	 * instead of wp-admin's own "Sorry, you are not allowed..." page a
+	 * since-renamed submenu slug would otherwise produce.
 	 *
 	 * @return void
 	 */
@@ -201,7 +197,7 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
-		if ( 'toplevel_page_' . self::PAGE_SLUG !== $hook_suffix ) {
+		if ( 'settings_page_' . self::PAGE_SLUG !== $hook_suffix ) {
 			return;
 		}
 
@@ -272,7 +268,7 @@ class Daymark_Admin_Subscriptions {
 	 * @return string
 	 */
 	public static function page_url(): string {
-		return admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+		return admin_url( 'options-general.php?page=' . self::PAGE_SLUG );
 	}
 
 	/**
@@ -624,7 +620,7 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_search_form( string $search, string $orderby, string $order ): void {
 		?>
-		<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
+		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
 			<input type="hidden" name="tab" value="subscriptions" />
 			<?php if ( '' !== $orderby ) : ?>
@@ -1368,34 +1364,36 @@ class Daymark_Admin_Subscriptions {
 	private function render_connectors_tab(): void {
 		?>
 		<p><?php esc_html_e( 'Daymark works best when paired with IndieWeb plugins such as these — each one extends what Daymark already does, at the protocol level, without Daymark needing to reimplement it.', 'daymark' ); ?></p>
-		<?php foreach ( self::recommended_connectors() as $connector ) : ?>
-			<?php
-			$status  = $this->connector_status( $connector );
-			$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
-			?>
-			<div class="card" style="max-width:600px;margin-bottom:1em;">
-				<h3>
-					<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
-				</h3>
-				<p><?php echo esc_html( $connector['description'] ); ?></p>
-				<p>
-					<?php if ( 'active' === $status ) : ?>
-						<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
-						<?php esc_html_e( 'Active', 'daymark' ); ?>
-					<?php elseif ( 'inactive' === $status ) : ?>
-						<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
-						<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
-						<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
-							<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
+		<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:1em;max-width:900px;">
+			<?php foreach ( self::recommended_connectors() as $connector ) : ?>
+				<?php
+				$status  = $this->connector_status( $connector );
+				$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+				?>
+				<div class="card" style="max-width:none;margin:0;">
+					<h3>
+						<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
+					</h3>
+					<p><?php echo esc_html( $connector['description'] ); ?></p>
+					<p>
+						<?php if ( 'active' === $status ) : ?>
+							<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
+							<?php esc_html_e( 'Active', 'daymark' ); ?>
+						<?php elseif ( 'inactive' === $status ) : ?>
+							<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
+							<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
+							<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
+								<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
+							<?php endif; ?>
+						<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
+							<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
+						<?php else : ?>
+							<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
 						<?php endif; ?>
-					<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
-						<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
-					<?php else : ?>
-						<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
-					<?php endif; ?>
-				</p>
-			</div>
-		<?php endforeach; ?>
+					</p>
+				</div>
+			<?php endforeach; ?>
+		</div>
 		<?php
 	}
 
