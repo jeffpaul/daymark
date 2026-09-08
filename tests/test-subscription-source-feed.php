@@ -399,6 +399,7 @@ XML;
 				'post_format',
 				'featured_image_url',
 				'raw_media',
+				'link_url',
 			),
 			array_keys( $normalized )
 		);
