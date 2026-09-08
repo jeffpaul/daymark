@@ -6450,12 +6450,15 @@
 			// a Timeline card already carries — kept visible here too, not
 			// just the raw content, so opening the full-screen view doesn't
 			// cost a reader whose post this is, when it was published, or
-			// the ability to like/reply/repost/bookmark/share it. A Mark
-			// gets the same full stat row its own card shows
-			// (renderItemStats()); a subscription post gets its own
-			// narrower row (renderSubscriptionItemStats()) — no counted
-			// like/comment/repost stats or Routing toggle, matching its
-			// card's own reasoning for the same omissions.
+			// the ability to like/reply/repost/bookmark/share it. Rendered
+			// below the post body — a sibling of [data-postview-body], never
+			// inside it, since load() below replaces that element's own
+			// innerHTML wholesale on every load/refresh. A Mark gets the
+			// same full stat row its own card shows (renderItemStats()); a
+			// subscription post gets its own narrower row
+			// (renderSubscriptionItemStats()) — no counted like/comment/
+			// repost stats or Routing toggle, matching its card's own
+			// reasoning for the same omissions.
 			const isMark = !!(view && 'mark' === view.kind);
 			const siteLabel = isMark ? config.siteTitle || __('Site', 'daymark') : subscriptionSiteLabel(item);
 			const stats = isMark ? renderItemStats(item) : renderSubscriptionItemStats(item);
@@ -6470,22 +6473,22 @@
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(title)}</h1>
 			</header>
 			<section class="daymark-screen">
+				<div class="daymark-postview" data-postview-body>
+					${skeletonRows(3)}
+					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
+				</div>
 				<div class="daymark-postview-meta">
 					${renderCardTimestampRow(item, siteLabel)}
 					${stats}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
-				</div>
-				<div class="daymark-postview" data-postview-body>
-					${skeletonRows(3)}
-					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
 				</div>
 			</section>`;
 		},
 
 		// Two separate delegated listeners, matching each region's own
 		// concern: the meta row's Like/Repost/Bookmark/"open original"/
-		// Share/Routing toggles (rendered in render(), above — never
-		// touched by load() below) get the exact same click/keyboard
+		// Share/Routing toggles (rendered in render() below the post body —
+		// never touched by load() below) get the exact same click/keyboard
 		// handling (onFeedListClick()/onFeedListKeydown()) every Timeline
 		// card already shares; the post body keeps its own narrower
 		// Reply/"Refresh content" handling (onClick() below), unchanged.

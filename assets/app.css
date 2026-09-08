@@ -2700,14 +2700,13 @@ h2[tabindex='-1']:focus {
 
 /* The site name/date row and interaction-icon row a Timeline card's own
    .daymark-recent__timestamprow/.daymark-item-stats already carry — kept
-   visible above the post-view's own content, not just the raw body, so
+   visible below the post-view's own content, not just the raw body, so
    opening a post full-screen doesn't cost a reader whose post this is,
    when it was published, or the ability to like/reply/repost/bookmark/
    share it. A plain flex column of its own (a smaller gap than
-   .daymark-screen's own between this block and the post body below it)
-   since both rows are already block-level flex containers in their own
-   right and would otherwise sit flush with no breathing room between
-   them. */
+   .daymark-screen's own between the post body above and this block) since
+   both rows are already block-level flex containers in their own right
+   and would otherwise sit flush with no breathing room between them. */
 .daymark-postview-meta {
 	display: flex;
 	flex-direction: column;
