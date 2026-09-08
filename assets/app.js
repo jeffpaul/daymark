@@ -7682,9 +7682,34 @@
 				// shell itself (config.offlineShell), which already made
 				// this exact fetch moments ago during its own boot.
 				if (config.appUrl && !config.offlineShell) {
+					// Temporary diagnostic (issue #126 CI investigation, not a
+					// permanent fixture): the cold-offline Playwright test has
+					// intermittently found this warming fetch's cache write
+					// missing well after the SW itself is active and
+					// controlling the page, with the static-asset precache
+					// (app.css/app.js/offline-boot.js/offline.html) already
+					// confirmed present — narrowing whether this fetch is
+					// ever actually dispatched/settled, and how long it
+					// takes, needs visibility this promise chain doesn't
+					// otherwise expose to a test.
+					window.__daymarkConfigWarmDebug = { dispatched: false, settled: false, ok: null, error: null };
+					const warmStart = Date.now();
 					navigator.serviceWorker.ready
-						.then(() => fetch(config.appUrl + 'config.json', { credentials: 'same-origin' }))
-						.catch(() => {});
+						.then(() => {
+							window.__daymarkConfigWarmDebug.dispatched = true;
+							window.__daymarkConfigWarmDebug.readyAt = Date.now() - warmStart;
+							return fetch(config.appUrl + 'config.json', { credentials: 'same-origin' });
+						})
+						.then((response) => {
+							window.__daymarkConfigWarmDebug.settled = true;
+							window.__daymarkConfigWarmDebug.ok = response.ok;
+							window.__daymarkConfigWarmDebug.settledAt = Date.now() - warmStart;
+						})
+						.catch((err) => {
+							window.__daymarkConfigWarmDebug.settled = true;
+							window.__daymarkConfigWarmDebug.error = err && err.message;
+							window.__daymarkConfigWarmDebug.settledAt = Date.now() - warmStart;
+						});
 				}
 			})
 			.catch(() => {});

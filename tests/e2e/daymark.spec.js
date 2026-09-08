@@ -1799,6 +1799,12 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 				activeState: reg && reg.active ? reg.active.state : null,
 				hasController: Boolean(navigator.serviceWorker.controller),
 				cachedKeys,
+				// See assets/app.js's own matching temporary diagnostic —
+				// distinguishes "the warming fetch was never even
+				// dispatched" from "it was dispatched but never settled"
+				// from "it settled fine, so the gap is in the SW's own
+				// fetch-handler/cache-write side instead."
+				configWarmDebug: window.__daymarkConfigWarmDebug || null,
 			};
 		});
 		// eslint-disable-next-line no-console
