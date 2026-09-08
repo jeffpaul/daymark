@@ -1728,11 +1728,32 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	await page.goto('/daymark');
 
 	// Both the SW's own install-time precaching and the boot-time
-	// config.json warming fetch (assets/app.js) are fire-and-forget — wait
-	// for an active worker, then give those a moment to actually land in
-	// Cache Storage before cutting connectivity.
+	// config.json warming fetch (assets/app.js) are fire-and-forget, and
+	// neither one is awaited by the normal boot sequence — so rather than
+	// guess a fixed delay is enough for both to land, poll for the actual
+	// end state this test depends on: the page under the worker's control,
+	// plus its own redacted config.json and the offline shell itself both
+	// genuinely present in Cache Storage. Only once all three are true is
+	// cutting connectivity guaranteed not to race either fire-and-forget
+	// task.
 	await page.evaluate(() => navigator.serviceWorker.ready);
-	await page.waitForTimeout(1500);
+	await expect
+		.poll(
+			() =>
+				page.evaluate(async () => {
+					if (!navigator.serviceWorker.controller) {
+						return false;
+					}
+					const cache = await caches.open('daymark-v2');
+					const [config, offline] = await Promise.all([
+						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
+						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+					]);
+					return Boolean(config && offline);
+				}),
+			{ timeout: 15000 }
+		)
+		.toBe(true);
 
 	await context.setOffline(true);
 	try {
