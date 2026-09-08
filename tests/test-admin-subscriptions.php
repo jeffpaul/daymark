@@ -657,4 +657,214 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertStringNotContainsString( 'Recent fetch issue:', $output );
 	}
+
+	// -----------------------------------------------------------------
+	// Search (issue #281).
+	// -----------------------------------------------------------------
+
+	/** The search box isn't rendered at all when there are no subscriptions to search. */
+	public function test_search_form_not_rendered_when_no_subscriptions(): void {
+		$output = $this->render();
+
+		$this->assertStringNotContainsString( 'daymark-subscription-search-input', $output );
+	}
+
+	/** The search box renders once there is at least one subscription, even with no search active. */
+	public function test_search_form_rendered_with_subscriptions(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark-subscription-search-input', $output );
+		$this->assertStringContainsString( 'name="s"', $output );
+	}
+
+	/** A search term matching a site's title shows only that row. */
+	public function test_search_filters_by_site_title(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://bravo.example',
+				'feed_url'   => 'https://bravo.example/feed',
+				'site_title' => 'Bravo Site',
+			)
+		);
+
+		$_GET['s'] = 'Alpha';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'Alpha Site', $output );
+		$this->assertStringNotContainsString( 'Bravo Site', $output );
+	}
+
+	/** A search term matching only a site's URL (not its title) still finds that row. */
+	public function test_search_filters_by_site_url(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://jakespurlock.example',
+				'feed_url'   => 'https://jakespurlock.example/feed',
+				'site_title' => 'Jake',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://someone-else.example',
+				'feed_url'   => 'https://someone-else.example/feed',
+				'site_title' => 'Someone Else',
+			)
+		);
+
+		$_GET['s'] = 'jakespurlock';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'Jake', $output );
+		$this->assertStringNotContainsString( 'Someone Else', $output );
+	}
+
+	/**
+	 * A search term matching only the underlying feed URL finds the right
+	 * row among two subscriptions to the same site with different feeds
+	 * (issue #183's own scenario) — searching the visible Site column text
+	 * alone couldn't distinguish these.
+	 */
+	public function test_search_filters_by_feed_url(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://example.test/notes/',
+				'feed_url'   => 'https://example.test/notes/feed/',
+				'site_title' => 'Example Site',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://example.test/',
+				'feed_url'   => 'https://example.test/feed/',
+				'site_title' => 'Example Site',
+			)
+		);
+
+		$_GET['s'] = 'notes/feed';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertSame( 1, substr_count( $output, 'data-daymark-subscription-row' ) );
+		$this->assertStringContainsString( 'notes/feed', $output );
+	}
+
+	/** Matching is case-insensitive. */
+	public function test_search_is_case_insensitive(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://example.test',
+				'feed_url'   => 'https://example.test/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+
+		$_GET['s'] = 'ALPHA';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'Alpha Site', $output );
+	}
+
+	/** An empty search term (the box submitted with nothing typed) shows every subscription, same as no search at all. */
+	public function test_empty_search_shows_all(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+
+		$_GET['s'] = '';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'Alpha Site', $output );
+	}
+
+	/** A search matching nothing shows a distinct message, not the generic "No subscriptions yet." empty state. */
+	public function test_no_match_shows_search_specific_empty_state(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+
+		$_GET['s'] = 'nothing-matches-this';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'No subscriptions match', $output );
+		$this->assertStringNotContainsString( 'No subscriptions yet.', $output );
+		$this->assertStringNotContainsString( 'Alpha Site', $output );
+	}
+
+	/** The search input's value reflects the active search term, so re-rendering after a submit doesn't clear the box. */
+	public function test_search_input_preserves_submitted_value(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$_GET['s'] = 'a "quoted" term';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertStringContainsString( 'value="a &quot;quoted&quot; term"', $output );
+	}
+
+	/** A sortable column header's link carries the active search term forward, so re-sorting doesn't drop the filter. */
+	public function test_sort_link_preserves_active_search_term(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example',
+				'feed_url'   => 'https://alpha.example/feed',
+				'site_title' => 'Alpha Site',
+			)
+		);
+
+		$_GET['s'] = 'Alpha';
+		$output    = $this->render();
+		unset( $_GET['s'] );
+
+		$this->assertMatchesRegularExpression( '/orderby=site(&amp;|&#038;|&)order=asc(&amp;|&#038;|&)s=Alpha/', $output );
+	}
+
+	/** The search form carries the active sort forward as hidden fields, so submitting a new search doesn't reset it. */
+	public function test_search_form_preserves_active_sort(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$_GET['orderby'] = 'status';
+		$_GET['order']   = 'desc';
+		$output          = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertStringContainsString( 'name="orderby" value="status"', $output );
+		$this->assertStringContainsString( 'name="order" value="desc"', $output );
+	}
 }

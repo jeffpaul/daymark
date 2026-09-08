@@ -72,6 +72,16 @@ class Daymark_Admin_Subscriptions {
 	private const MESSAGE_QUERY_VAR = 'daymark_message';
 
 	/**
+	 * Query var carrying the subscriptions table's own search term (issue
+	 * #281) — `s`, matching the same name WP core's own list-table search
+	 * boxes already use, rather than a `daymark_`-prefixed one, since this
+	 * has no chance of colliding with anything else this GET request reads.
+	 *
+	 * @var string
+	 */
+	private const SEARCH_QUERY_VAR = 's';
+
+	/**
 	 * Subscriptions table columns a visitor can sort by (issue #178), via
 	 * `?orderby=` — anything else falls back to the table's default order
 	 * (get_all()'s own `created_at DESC`). Actions is not meaningful to sort
@@ -215,6 +225,9 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_all();
+		$total_count   = count( $subscriptions );
+		$search        = $this->resolve_search_request();
+		$subscriptions = $this->filter_subscriptions( $subscriptions, $search );
 		$sort          = $this->resolve_sort_request();
 		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
 		?>
@@ -227,7 +240,10 @@ class Daymark_Admin_Subscriptions {
 			<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
 
 			<?php $this->render_subscribe_form(); ?>
-			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'] ); ?>
+			<?php if ( $total_count > 0 ) : ?>
+				<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
+			<?php endif; ?>
+			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
 
 			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
 			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
@@ -422,21 +438,83 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * Render the subscriptions table's own search box — a plain GET form,
+	 * matching this screen's established "read-only query-string round trip,
+	 * no JS, no nonce" posture already set by the sortable column headers
+	 * (issue #178) rather than a new REST-backed live-filter (the only
+	 * JS-enhanced form on this screen remains the Refresh action, issue
+	 * #175/#176, which exists specifically because *that* action needs a
+	 * live external fetch's result — a search has nothing to fetch, the
+	 * result is already in `$search` by the time this renders). Carries the
+	 * current sort as hidden fields so submitting a new search doesn't reset
+	 * an active column sort back to the table's default order.
+	 *
+	 * @param string $search  The current search term, if any (for the
+	 *                        input's own value).
+	 * @param string $orderby The active sort column, or '' — see
+	 *                        SORTABLE_COLUMNS.
+	 * @param string $order   'asc' or 'desc'.
+	 * @return void
+	 */
+	private function render_search_form( string $search, string $orderby, string $order ): void {
+		?>
+		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
+			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
+			<?php if ( '' !== $orderby ) : ?>
+				<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
+				<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
+			<?php endif; ?>
+			<p class="search-box">
+				<label class="screen-reader-text" for="daymark-subscription-search-input"><?php esc_html_e( 'Search Subscriptions', 'daymark' ); ?></label>
+				<input
+					type="search"
+					id="daymark-subscription-search-input"
+					name="<?php echo esc_attr( self::SEARCH_QUERY_VAR ); ?>"
+					value="<?php echo esc_attr( $search ); ?>"
+					placeholder="<?php esc_attr_e( 'Search by site name or URL…', 'daymark' ); ?>"
+				/>
+				<?php submit_button( __( 'Search Subscriptions', 'daymark' ), '', '', false ); ?>
+			</p>
+		</form>
+		<?php
+	}
+
+	/**
 	 * Render the table of existing subscriptions.
 	 *
 	 * @param array<int, array<string, mixed>> $subscriptions Rows from
 	 *                                                          Daymark_Subscriptions::get_all(),
-	 *                                                          already sorted by sort_subscriptions().
+	 *                                                          already filtered by filter_subscriptions()
+	 *                                                          and sorted by sort_subscriptions().
 	 * @param string                           $orderby       The active sort column (one of
 	 *                                                         SORTABLE_COLUMNS, or '' for the
 	 *                                                         table's default order).
 	 * @param string                           $order         'asc' or 'desc' — meaningless when
 	 *                                                         $orderby is ''.
+	 * @param string                           $search        The active search term, or '' — only
+	 *                                                         used here to tell "no subscriptions at
+	 *                                                         all" apart from "none match this
+	 *                                                         search" in the empty state.
+	 * @param int                              $total_count   Total subscription count before
+	 *                                                         filtering, for the same distinction.
 	 * @return void
 	 */
-	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order ): void {
+	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order, string $search, int $total_count ): void {
 		if ( empty( $subscriptions ) ) {
-			echo '<p>' . esc_html__( 'No subscriptions yet.', 'daymark' ) . '</p>';
+			if ( '' !== $search && $total_count > 0 ) {
+				printf(
+					'<p>%s</p>',
+					esc_html(
+						sprintf(
+							/* translators: %s: the search term that matched nothing. */
+							__( 'No subscriptions match "%s".', 'daymark' ),
+							$search
+						)
+					)
+				);
+			} else {
+				echo '<p>' . esc_html__( 'No subscriptions yet.', 'daymark' ) . '</p>';
+			}
 
 			return;
 		}
@@ -444,9 +522,9 @@ class Daymark_Admin_Subscriptions {
 		<table class="wp-list-table widefat fixed striped">
 			<thead>
 				<tr>
-					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order ); ?>
-					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order ); ?>
-					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order ); ?>
+					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order, $search ); ?>
+					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order, $search ); ?>
+					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order, $search ); ?>
 					<th scope="col"><?php esc_html_e( 'Actions', 'daymark' ); ?></th>
 				</tr>
 			</thead>
@@ -474,19 +552,24 @@ class Daymark_Admin_Subscriptions {
 	 * @param string $column        This column's sort key (one of SORTABLE_COLUMNS).
 	 * @param string $orderby       The currently active sort column, or ''.
 	 * @param string $order         The currently active sort direction ('asc'/'desc').
+	 * @param string $search        The active search term, or '' — carried through so
+	 *                              re-sorting a search's own results doesn't drop the filter.
 	 * @return void
 	 */
-	private function render_sortable_column_header( string $label, string $column, string $orderby, string $order ): void {
+	private function render_sortable_column_header( string $label, string $column, string $orderby, string $order, string $search = '' ): void {
 		$is_active  = ( $column === $orderby );
 		$next_order = ( $is_active && 'asc' === $order ) ? 'desc' : 'asc';
-		$url        = add_query_arg(
-			array(
-				'orderby' => $column,
-				'order'   => $next_order,
-			),
-			self::page_url()
+		$args       = array(
+			'orderby' => $column,
+			'order'   => $next_order,
 		);
-		$aria_sort  = ! $is_active ? 'none' : ( 'desc' === $order ? 'descending' : 'ascending' );
+
+		if ( '' !== $search ) {
+			$args[ self::SEARCH_QUERY_VAR ] = $search;
+		}
+
+		$url       = add_query_arg( $args, self::page_url() );
+		$aria_sort = ! $is_active ? 'none' : ( 'desc' === $order ? 'descending' : 'ascending' );
 		?>
 		<th scope="col" aria-sort="<?php echo esc_attr( $aria_sort ); ?>">
 			<a href="<?php echo esc_url( $url ); ?>">
@@ -497,6 +580,62 @@ class Daymark_Admin_Subscriptions {
 			</a>
 		</th>
 		<?php
+	}
+
+	/**
+	 * Read and sanitize this screen's own `?s=` search term (issue #281).
+	 * Same "read-only query-string round trip, not a state-changing action"
+	 * reasoning as resolve_sort_request() below — no nonce applies here
+	 * either.
+	 *
+	 * @return string The trimmed, sanitized search term, or '' when absent.
+	 */
+	private function resolve_search_request(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter of this screen's own table; not a state-changing action.
+		$search = isset( $_GET[ self::SEARCH_QUERY_VAR ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::SEARCH_QUERY_VAR ] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter of this screen's own table; not a state-changing action.
+
+		return trim( $search );
+	}
+
+	/**
+	 * Filter subscription rows to those matching `$search` (issue #281): a
+	 * case-insensitive substring match against the site's title, URL, and
+	 * the underlying feed's own URL/title — not just the visible Site
+	 * column text — so a search also finds a specific feed among several
+	 * subscriptions to the same site (see "Subscribing to a second,
+	 * differently-scoped feed on an already-subscribed site" in CLAUDE.md),
+	 * which searching only `subscription_label()`'s own display text
+	 * couldn't distinguish.
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Rows to filter.
+	 * @param string                           $search        Already-trimmed search term (from
+	 *                                                          resolve_search_request()); '' matches
+	 *                                                          everything.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function filter_subscriptions( array $subscriptions, string $search ): array {
+		if ( '' === $search ) {
+			return $subscriptions;
+		}
+
+		return array_values(
+			array_filter(
+				$subscriptions,
+				static function ( array $subscription ) use ( $search ) {
+					$haystack = implode(
+						' ',
+						array(
+							(string) ( $subscription['site_title'] ?? '' ),
+							(string) ( $subscription['site_url'] ?? '' ),
+							(string) ( $subscription['feed_title'] ?? '' ),
+							(string) ( $subscription['feed_url'] ?? '' ),
+						)
+					);
+
+					return false !== stripos( $haystack, $search );
+				}
+			)
+		);
 	}
 
 	/**
