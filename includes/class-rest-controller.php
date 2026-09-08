@@ -1734,11 +1734,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /daymark/v1/marks/{id}/content — a Timeline card's own inline-expand
+	 * GET /daymark/v1/marks/{id}/content — the full-screen post view's own
 	 * fetch: just the post's rendered content, not the page around it.
 	 *
 	 * Unlike get_daymark(), this is not gated on `_daymark_is_mark` — it
-	 * backs the same inline expand for a true Mark, an ordinary post
+	 * backs the same post view for a true Mark, an ordinary post
 	 * published straight through the block editor, or anything else
 	 * GET /timeline itself already surfaces (see that method's own
 	 * docblock on why the Marks side isn't gated on _daymark_is_mark

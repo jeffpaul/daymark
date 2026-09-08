@@ -66,9 +66,11 @@ body.daymark-app {
 	 * inset. A shell padding would lift them up off the screen. */
 }
 
-/* Notifications is a screen without a pinned footer, so it needs its own
- * bottom clearance above the home indicator. */
-.daymark-app--notifications .daymark-screen {
+/* Notifications and the full-screen post view (#post) are both screens
+ * without a pinned footer, so they need their own bottom clearance above
+ * the home indicator. */
+.daymark-app--notifications .daymark-screen,
+.daymark-app--post .daymark-screen {
 	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
 }
 
@@ -2692,18 +2694,28 @@ h2[tabindex='-1']:focus {
 	border-top-color: var(--daymark-accent-deep);
 }
 
-/* Rendered body of a Timeline card's inline-expand panel (see
-   .daymark-recent__expand below) — already-sanitized HTML from the server
-   either way (a Mark/ordinary post's own the_content, or a subscription
-   post's click-through-fetched body_content, per Daymark_Subscription_Poller)
-   — rendered as-is, styled here purely for readability/containment. Its own
-   surface-tinted background (the expanded card frame around it is white,
-   see .daymark-recent__item-wrap:has(...) below) visually marks this off as
-   borrowed content from elsewhere, distinct from Daymark's own chrome
-   (e.g. the "Reply" action on a subscription post, rendered as a sibling
-   after this element, on the card's own white background) — otherwise
-   nothing tells a reader where the source page's content ends and
-   Daymark's own UI begins. */
+/* The full-screen post-view screen's own content area (PostScreen, issue
+   #270) — its own loading skeleton, then the post body (.daymark-expand-
+   content below) and, for a subscription post, the Reply/"Refresh content"
+   row (.daymark-note-card__links) stacked with breathing room between
+   them. */
+.daymark-postview {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-md);
+}
+
+/* A post's full body, rendered on the full-screen post-view screen
+   (PostScreen, issue #270) — already-sanitized HTML from the server either
+   way (a Mark/ordinary post's own the_content, or a subscription post's
+   click-through-fetched body_content, per Daymark_Subscription_Poller) —
+   rendered as-is, styled here purely for readability/containment. Its own
+   surface-tinted background, against the screen's plain white
+   (--daymark-bg, see .daymark-postview below), visually marks this off as
+   borrowed content from elsewhere, distinct from Daymark's own chrome (e.g.
+   the "Reply" action on a subscription post, rendered as a sibling after
+   this element) — otherwise nothing tells a reader where the source page's
+   content ends and Daymark's own UI begins. */
 .daymark-expand-content {
 	font-size: 15px;
 	line-height: 1.6;
@@ -2770,30 +2782,24 @@ h2[tabindex='-1']:focus {
 	margin: var(--daymark-spacing-sm) 0 !important;
 }
 
-/* A Timeline card's inline-expand panel — a Mark/ordinary post's own
-   content, or a subscription post's click-through-fetched content — drops
-   onto its own full-width row below the card (site icon, type icon, card
-   body, ⋯ menu) rather than sitting inline as another flex column; hidden
-   by default (toggleExpand() in app.js flips it), so a collapsed card
-   costs nothing in layout. */
+/* The routing popover panel (issue #255) drops onto its own full-width row
+   below the card (site icon, type icon, card body, ⋯ menu) rather than
+   sitting inline as another flex column; hidden by default
+   (toggleRoutingPanel() in app.js flips it), so a collapsed card costs
+   nothing in layout. */
 .daymark-recent__item-wrap {
 	flex-wrap: wrap;
 }
 
-/* While expanded, the whole item (icons, card, and the panel together)
-   gets a visible frame — border, background, rounded corners, its own
-   padding — so opening a card reads as that card's own frame growing
-   taller, not as separate content inserted below it that visually
-   overlaps the rail/other Timeline items. A collapsed card has no such
-   border, matching every other item (which relies on spacing + the rail
-   line rather than a per-card box), so this only ever appears once
-   expanded — :has() scopes it to exactly that state without any extra
-   JS-toggled class. The frame itself stays Daymark's own white
-   (--daymark-bg, the same background every other card already has) rather
-   than the surface gray — the gray tint belongs to .daymark-expand-content
-   alone, so the frame's own chrome (a subscription post's "Reply" action
-   included) reads as clearly Daymark's, not part of the quoted content. */
-.daymark-recent__item-wrap:has(.daymark-recent__expand:not([hidden])),
+/* While the routing popover is open, the whole item (icons, card, and the
+   panel together) gets a visible frame — border, background, rounded
+   corners, its own padding — so opening it reads as the card's own frame
+   growing taller, not as separate content inserted below it that visually
+   overlaps the rail/other Timeline items. A card with nothing open has no
+   such border, matching every other item (which relies on spacing + the
+   rail line rather than a per-card box), so this only ever appears while
+   the panel is open — :has() scopes it to exactly that state without any
+   extra JS-toggled class. */
 .daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])) {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius);
@@ -2801,18 +2807,10 @@ h2[tabindex='-1']:focus {
 	padding: var(--daymark-spacing-sm);
 }
 
-.daymark-recent__expand {
-	flex-basis: 100%;
-	width: 100%;
-	margin-top: var(--daymark-spacing-sm);
-	padding-top: var(--daymark-spacing-sm);
-	border-top: 1px solid var(--daymark-border);
-}
-
-/* The "where did this go" popover panel (issue #255) — same framing as
-   .daymark-recent__expand above, since both are siblings of the card
-   button that grow the item-wrap's own frame open rather than overlapping
-   adjacent Timeline items. */
+/* The "where did this go" popover panel — a sibling of the card button
+   (interactive content, e.g. a link out, can't validly live inside another
+   <button>) that grows the item-wrap's own frame open rather than
+   overlapping adjacent Timeline items. */
 .daymark-recent__routing {
 	flex-basis: 100%;
 	width: 100%;

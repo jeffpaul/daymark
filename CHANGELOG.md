@@ -28,7 +28,11 @@ can't act on them.
 - The composer's picker now accepts a dragged-and-dropped file on desktop, attaching it the same way picking it via the file input would. ([#260](https://github.com/jeffpaul/daymark/issues/260))
 - A Draft's ⋯ menu now has a "Publish" action, alongside Edit and Delete, that skips straight to the Publish screen for a draft that's already ready — no need to reopen the full composer first. ([#265](https://github.com/jeffpaul/daymark/issues/265))
 - A Mark's own card now shows your site's name on the same row as its timestamp, left-aligned — matching how a subscription post's card already shows its source site there. ([#267](https://github.com/jeffpaul/daymark/issues/267))
-- An expanded subscription post's panel now has a "Refresh content" action that forces a fresh live re-fetch, instead of the cached content being stuck at whatever it looked like the first time it was fetched. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+- A subscription post's own full-screen view now has a "Refresh content" action that forces a fresh live re-fetch, instead of the cached content being stuck at whatever it looked like the first time it was fetched. ([#267](https://github.com/jeffpaul/daymark/issues/267))
+
+### Changed
+
+- Tapping a Timeline card (a Mark, an ordinary post, or a subscription post) now opens its full content on a dedicated full-screen post view instead of expanding it in place below the card — the same full-screen pattern Notifications already uses, with a back arrow next to the Daymark icon in the upper-left. Notifications' own back link now shares that same treatment (previously its own separate markup). ([#270](https://github.com/jeffpaul/daymark/issues/270))
 
 ### Fixed
 
