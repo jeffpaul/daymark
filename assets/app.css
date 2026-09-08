@@ -242,9 +242,18 @@ h2[tabindex='-1']:focus {
    (same "negative margin cancels a box's own reserved space" pattern as
    .daymark-pullrefresh and .daymark-timeline-flourish), pulling the icon
    graphic's leading edge back to Home's, without touching the
-   `justify-content: flex-end` that keeps the icon-to-title gap matched. */
+   `justify-content: flex-end` that keeps the icon-to-title gap matched.
+   One more pixel of that same overhang hid in the border: under this
+   file's global `box-sizing: border-box`, `.daymark-iconbtn`'s own
+   `border: 1px solid` still reserves its 1px on every side even once
+   `border-color` alone is set to transparent — content-box width shrinks
+   by 2px, so the flush-right icon sat 1px left of where a truly borderless
+   box like .daymark-homelink would put it. `border: none` (rather than
+   only overriding the color) removes that reservation instead of just
+   the paint, with no change to the box's own 44px outer footprint — that
+   comes from `min-width`, measured on the border-box either way. */
 .daymark-iconbtn--plain {
-	border-color: transparent;
+	border: none;
 	background: none;
 	justify-content: flex-end;
 	margin-left: calc(26px - var(--daymark-tap-min));
