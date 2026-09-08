@@ -6494,12 +6494,48 @@
 						: await loadMarkExpandHtml(item);
 				if (body.isConnected) {
 					body.innerHTML = (html || expandErrorHtml()) + this.actionsHtml();
+					this.maybeLoadOembedPreview(kind, item, body);
 				}
 			} catch (err) {
 				if (body.isConnected) {
 					body.innerHTML = expandErrorHtml();
 				}
 			}
+		},
+
+		// Best-effort oEmbed preview of a link-kind subscription post's own
+		// detected outbound link (issue #279) — fetched separately from,
+		// and never blocking, the post's own body content above: plenty of
+		// links have nothing embeddable, and this should never turn a
+		// normal, fast-loading post view into one waiting on a third-party
+		// provider. Silently does nothing on any failure (no result, a
+		// network error, or the view having already navigated away by the
+		// time the fetch resolves) — there is no error state worth
+		// surfacing for an optional enhancement like this one.
+		maybeLoadOembedPreview(kind, item, body) {
+			if ('sub' !== kind || !item.link_url || 'link' !== resolveCardKind(item)) {
+				return;
+			}
+			apiGet('subscription-posts/' + item.id + '/oembed')
+				.then((result) => {
+					if (!body.isConnected || !result || !result.html) {
+						return;
+					}
+					const wrapper = document.createElement('div');
+					wrapper.className = 'daymark-oembed-preview';
+					// Built entirely server-side from an allowlist of safe
+					// attributes on a single <iframe>/<img> — never a
+					// provider's own raw HTML — see Daymark_Subscription_Oembed;
+					// trusted the same way body_content already is above.
+					wrapper.innerHTML = result.html;
+					const content = body.querySelector('.daymark-expand-content');
+					if (content) {
+						content.after(wrapper);
+					} else {
+						body.prepend(wrapper);
+					}
+				})
+				.catch(() => {});
 		},
 
 		// A subscription post's own actions — a Mark/ordinary post's own

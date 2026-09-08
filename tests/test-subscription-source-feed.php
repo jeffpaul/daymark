@@ -487,6 +487,63 @@ XML;
 	}
 
 	/**
+	 * Scenario: a short, no-media item whose content links out to another
+	 * site — the "link"-kind card the app shell renders — gets that
+	 * outbound link captured as link_url (issue #279), for a later oEmbed
+	 * preview.
+	 */
+	public function test_normalize_captures_outbound_link_url() {
+		$normalized = $this->source->normalize(
+			array(
+				'permalink' => 'https://example.com/notes/1',
+				'content'   => '<p>Worth a read: <a href="https://elsewhere.example/post">this</a>.</p>',
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
+		$this->assertSame( 'https://elsewhere.example/post', $normalized['link_url'] );
+	}
+
+	/**
+	 * Scenario: the only anchor in the content points back at the item's
+	 * own site (e.g. a "read more" link) — not a real outbound link, so it
+	 * is never captured.
+	 */
+	public function test_normalize_ignores_self_referential_link() {
+		$normalized = $this->source->normalize(
+			array(
+				'permalink' => 'https://example.com/notes/1',
+				'content'   => '<p>Some thoughts. <a href="https://example.com/notes/1#more">Read more</a></p>',
+			)
+		);
+
+		$this->assertSame( '', $normalized['link_url'] );
+	}
+
+	/**
+	 * Scenario: an item with a confirmed image never has its content
+	 * sniffed for a link at all — link_url stays empty, matching how the
+	 * content sniff is skipped entirely once media is already confirmed.
+	 */
+	public function test_normalize_never_captures_link_url_for_media_item() {
+		$normalized = $this->source->normalize(
+			array(
+				'permalink'  => 'https://example.com/photos/1',
+				'enclosures' => array(
+					array(
+						'url'    => 'https://example.com/photo.jpg',
+						'medium' => 'image',
+					),
+				),
+				'content'    => '<a href="https://elsewhere.example/post">A link</a>',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['link_url'] );
+	}
+
+	/**
 	 * Scenario: no enclosures, but a real <video> tag embedded directly in
 	 * the content body — a native player is a strong, unambiguous signal
 	 * even with no mf2 markup, so it always counts.

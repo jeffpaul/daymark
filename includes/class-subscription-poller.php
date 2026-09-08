@@ -45,7 +45,11 @@ class Daymark_Subscription_Poller {
 	 * data is resolved and cached at ingest time for these, per the PRD's
 	 * content ingest rules. Every other format (standard, status, quote,
 	 * link, and anything else a future source might report) gets no embed
-	 * data and stores only title/excerpt/author/date/permalink/format/image.
+	 * data and stores only title/excerpt/author/date/permalink/format/image
+	 * (plus `link_url`, when a non-rich-media item's own content sniff found
+	 * one — see maybe_ingest_item() and Daymark_Subscription_Content_Sniffer;
+	 * still no live oEmbed HTTP call at ingest time, only at read time via
+	 * Daymark_Subscription_Oembed).
 	 *
 	 * @var string[]
 	 */
@@ -360,6 +364,7 @@ class Daymark_Subscription_Poller {
 		$image    = esc_url_raw( (string) ( $normalized['featured_image_url'] ?? '' ) );
 		$format   = sanitize_key( (string) ( $normalized['post_format'] ?? 'standard' ) );
 		$date     = Daymark_Subscription_Post_Type::sanitize_datetime( (string) ( $normalized['published_at'] ?? '' ) );
+		$link_url = esc_url_raw( (string) ( $normalized['link_url'] ?? '' ) );
 		$is_media = in_array( $format, self::RICH_MEDIA_FORMATS, true );
 
 		// Rich-media formats (image/video/audio/gallery): resolve and cache
@@ -396,6 +401,7 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'post_format', $format );
 		update_post_meta( $post_id, 'featured_image_url', $image );
 		update_post_meta( $post_id, 'embed_data', $embed_data );
+		update_post_meta( $post_id, 'link_url', $link_url );
 		// Every format starts excerpt_only: rich-media formats get their
 		// embed data pre-resolved above, but none of them (nor standard/
 		// note/quote/link) fetch a full body at ingest time.

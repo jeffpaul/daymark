@@ -547,6 +547,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/oembed',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_oembed' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/bookmarks/(?P<id>\d+)',
 			array(
 				array(
@@ -2440,6 +2457,47 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * GET /daymark/v1/subscription-posts/{id}/oembed — best-effort oEmbed
+	 * preview of a link-format subscription post's own detected outbound
+	 * link (`link_url`), for the full-screen post view (issue #279).
+	 *
+	 * Deliberately never fails/404s for "no link" or "no embeddable
+	 * result" — both resolve to `{ html: '' }`, matching the "optional,
+	 * best-effort enhancement" framing throughout: the caller has nothing
+	 * special to branch on beyond "was html non-empty".
+	 *
+	 * Shares the same rate-limit bucket as the click-through content fetch
+	 * (ACTION_SUBSCRIPTION_POST_FETCH) — this is the same class of
+	 * on-demand outbound request against a subscription post, not a
+	 * distinct risk needing its own budget.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_oembed( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$id       = absint( $request->get_param( 'id' ) );
+		$link_url = (string) get_post_meta( $id, 'link_url', true );
+
+		$preview = '' !== $link_url ? Daymark_Subscription_Oembed::resolve( $link_url ) : array();
+
+		return rest_ensure_response(
+			array(
+				'type' => sanitize_key( (string) ( $preview['type'] ?? '' ) ),
+				// Already built entirely from allowlisted attributes by
+				// Daymark_Subscription_Oembed — never the provider's own raw
+				// HTML — trusted the same way body_content is above.
+				'html' => (string) ( $preview['html'] ?? '' ),
+			)
+		);
+	}
+
+	/**
 	 * Prepare a subscription row response array: cast/escape every field per
 	 * the security checklist rather than passing the raw DB row straight
 	 * through.
@@ -2524,6 +2582,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
 			'post_format'        => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
 			'featured_image_url' => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
+			// The item's own detected outbound link, when it had no
+			// confirmed media of its own — see
+			// Daymark_Subscription_Content_Sniffer::sniff(). '' most of the
+			// time; present, the app shell's full-screen post view offers
+			// an oEmbed preview of it via GET /subscription-posts/{id}/oembed.
+			'link_url'           => esc_url_raw( (string) get_post_meta( $post_id, 'link_url', true ) ),
 			'content_state'      => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
 			// The subscription's cached favicon, used as a pruned
 			// rich-media post's Timeline placeholder in place of its

@@ -2644,22 +2644,13 @@ h2[tabindex='-1']:focus {
 	white-space: normal;
 }
 
-/* A link card is deliberately the lightest-weight kind — no media slot,
-   tighter padding, an accent-tinted background instead of the plain card
-   surface — the "recognizable rich-preview card" the brief asks for,
-   scaled to what Daymark actually knows about a link post today (no
-   captured page title/image distinct from the post's own title/excerpt —
-   see this change's summary). */
-.daymark-recent__item--link {
-	background: var(--daymark-accent-wash);
-	border-color: transparent;
-	min-height: 0;
-	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
-}
-
-.daymark-recent__item--link .daymark-recent__excerpt {
-	color: var(--daymark-text-muted);
-}
+/* A link card deliberately carries no per-kind override at all (issue
+   #279) — it renders exactly like note/article's own plain card surface
+   (.daymark-recent__item's base rule), the same low-key treatment those
+   two kinds already get. It previously had its own accent-tinted
+   (--daymark-accent-wash, the brand's orange) background — a stronger
+   visual weight than a link post's actual content warrants, making it
+   stand out from the rest of the Timeline far more than it should. */
 
 /* Audio's own artwork reads a size up from the plain thumb every other
    compact-row kind uses — closer to how a podcast's cover art is actually
@@ -2751,6 +2742,30 @@ h2[tabindex='-1']:focus {
 .daymark-expand-content iframe {
 	max-width: 100%;
 	height: auto;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* A link-format subscription post's own best-effort oEmbed preview
+   (Daymark_Subscription_Oembed, issue #279) — a sibling of
+   .daymark-expand-content, not nested inside it (PostScreen.maybeLoadOembedPreview()
+   in assets/app.js inserts it after that content resolves), so it needs
+   its own copy of the same "never overflow the post view's width"
+   treatment that element's own img/video/iframe rule already gives its
+   content. */
+.daymark-oembed-preview {
+	margin-top: var(--daymark-spacing-md);
+}
+
+/* height:auto is what actually lets the browser derive the right height
+   from Daymark_Subscription_Oembed's own inline aspect-ratio (an iframe)
+   or the image's natural ratio (an img) once width is scaled to 100%. */
+.daymark-oembed-preview iframe,
+.daymark-oembed-preview img {
+	display: block;
+	max-width: 100%;
+	width: 100%;
+	height: auto;
+	border: 0;
 	border-radius: var(--daymark-radius-sm);
 }
 

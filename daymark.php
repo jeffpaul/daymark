@@ -60,6 +60,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/sources/class-subscription-source-fr
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-source-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-post-type.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';

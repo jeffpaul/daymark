@@ -267,9 +267,12 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		// shared Daymark_Subscription_Content_Sniffer — and only ever
 		// promote away from an unconfirmed 'standard', never override a
 		// real assigned format.
+		$link_url = '';
+
 		if ( 'standard' === $format ) {
 			$content_html   = (string) ( $raw_item['content'] ?? '' );
-			$sniffed        = Daymark_Subscription_Content_Sniffer::sniff( $content_html );
+			$exclude_host   = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
+			$sniffed        = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
 			$sniffed_format = Daymark_Subscription_Content_Sniffer::classify( $sniffed, $content_html );
 
 			if ( '' !== $sniffed_format ) {
@@ -279,6 +282,8 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 			if ( '' === $featured_image_url && '' !== $sniffed['image_src'] ) {
 				$featured_image_url = esc_url_raw( $sniffed['image_src'] );
 			}
+
+			$link_url = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 		}
 
 		return array(
@@ -290,6 +295,10 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 			'post_format'        => $format,
 			'featured_image_url' => $featured_image_url,
 			'raw_media'          => '' !== $featured_image_url ? array( $featured_image_url ) : array(),
+			// See Daymark_Subscription_Content_Sniffer::sniff()'s own
+			// docblock — only ever set for a 'standard'-format post with no
+			// confirmed media, matching the feed source's own treatment.
+			'link_url'           => $link_url,
 		);
 	}
 

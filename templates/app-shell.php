@@ -58,6 +58,13 @@ $daymark_csp_parts = array(
 	// restrictive fix that still limits every other directive to 'self'.
 	'img-src ' . "'self' https: data: blob:",
 	'media-src ' . "'self' https: blob:",
+	// The full-screen post view can render an oEmbed preview
+	// (Daymark_Subscription_Oembed) of a link-format subscription post's
+	// own detected link — necessarily a cross-origin <iframe> (the
+	// provider's own embed page), same "arbitrary host, https only"
+	// reasoning as img-src/media-src above for the same underlying
+	// reason: Subscriptions legitimately surfaces other sites' content.
+	'frame-src ' . "'self' https:",
 	"connect-src 'self'",
 	"font-src 'self' data:",
 	"object-src 'none'",
