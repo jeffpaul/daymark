@@ -22,9 +22,27 @@
 (function () {
 	'use strict';
 
+	// Both attributes are server-rendered by templates/offline-shell.php from
+	// DAYMARK_PLUGIN_URL (never user input), but resolving and re-checking
+	// them as same-origin URLs here — rather than trusting the attribute
+	// strings as-is — closes the generic DOM-text-into-a-script-sink shape a
+	// static scan would otherwise flag, and costs nothing for the one real,
+	// always-same-origin case this file is ever used for.
+	function sameOriginUrl(value) {
+		if (!value) {
+			return null;
+		}
+		try {
+			var resolved = new URL(value, window.location.href);
+			return resolved.origin === window.location.origin ? resolved.href : null;
+		} catch (err) {
+			return null;
+		}
+	}
+
 	var thisScript = document.currentScript;
-	var configUrl = thisScript && thisScript.getAttribute('data-config-url');
-	var appJsUrl = thisScript && thisScript.getAttribute('data-app-js-url');
+	var configUrl = sameOriginUrl(thisScript && thisScript.getAttribute('data-config-url'));
+	var appJsUrl = sameOriginUrl(thisScript && thisScript.getAttribute('data-app-js-url'));
 
 	if (!configUrl || !appJsUrl) {
 		return;
