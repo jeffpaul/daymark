@@ -925,7 +925,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'Check for new posts:', $output );
 		$this->assertMatchesRegularExpression(
-			'/<option value="' . DAY_IN_SECONDS . '" selected(=\'selected\')?>Daily<\/option>/',
+			'/<option value="' . DAY_IN_SECONDS . '"[^>]*selected[^>]*>Daily<\/option>/',
 			$output
 		);
 	}
@@ -939,7 +939,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_subscription_poll_interval' );
 
 		$this->assertMatchesRegularExpression(
-			'/<option value="' . HOUR_IN_SECONDS . '" selected(=\'selected\')?>Hourly<\/option>/',
+			'/<option value="' . HOUR_IN_SECONDS . '"[^>]*selected[^>]*>Hourly<\/option>/',
 			$output
 		);
 	}
