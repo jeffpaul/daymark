@@ -1786,9 +1786,12 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		const diag = await page.evaluate(async () => {
 			const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
 			let cachedKeys = null;
+			let swCacheResult = null;
 			try {
 				const cache = await caches.open('daymark-v2');
 				cachedKeys = (await cache.keys()).map((r) => r.url);
+				const marker = await cache.match('/__debug/config-cache-result');
+				swCacheResult = marker ? await marker.json() : null;
 			} catch (e) {
 				cachedKeys = `error: ${e && e.message}`;
 			}
@@ -1805,6 +1808,12 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 				// from "it settled fine, so the gap is in the SW's own
 				// fetch-handler/cache-write side instead."
 				configWarmDebug: window.__daymarkConfigWarmDebug || null,
+				// See assets/daymark-sw.js's own matching temporary marker —
+				// absent means the SW's config.json branch never ran its
+				// redact+cache.put chain to either outcome at all (the
+				// request wasn't actually intercepted, or the branch never
+				// got invoked); present with ok:false names the exact error.
+				swCacheResult,
 			};
 		});
 		// eslint-disable-next-line no-console

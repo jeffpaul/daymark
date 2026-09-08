@@ -158,20 +158,43 @@ self.addEventListener('fetch', (event) => {
 			fetch(event.request)
 				.then((response) => {
 					if (response.ok) {
+						// Temporary diagnostic (issue #126 CI investigation, not
+						// a permanent fixture): the cold-offline Playwright test
+						// has intermittently found this branch's cache write
+						// missing even though the page's own warming fetch
+						// settles fine (ok:true) in well under a second — this
+						// records whether the redact+cache.put chain below
+						// actually runs to completion, and what stops it if
+						// not, since nothing else observes that from outside
+						// the service worker.
 						event.waitUntil(
-							response
-								.clone()
-								.json()
-								.then((data) => {
+							(async () => {
+								try {
+									const data = await response.clone().json();
 									delete data.nonce;
 									const redacted = new Response(JSON.stringify(data), {
 										headers: { 'Content-Type': 'application/json' },
 									});
-									return caches.open(CACHE_NAME).then((cache) => cache.put(event.request, redacted));
-								})
-								.catch(() => {
-									/* Malformed/non-JSON response: nothing to cache. */
-								})
+									const cache = await caches.open(CACHE_NAME);
+									await cache.put(event.request, redacted);
+									await cache.put(
+										'/__debug/config-cache-result',
+										new Response(JSON.stringify({ ok: true, at: Date.now() }))
+									);
+								} catch (err) {
+									try {
+										const cache = await caches.open(CACHE_NAME);
+										await cache.put(
+											'/__debug/config-cache-result',
+											new Response(
+												JSON.stringify({ ok: false, error: String(err && err.message), at: Date.now() })
+											)
+										);
+									} catch (e2) {
+										/* Nothing more we can do to record this. */
+									}
+								}
+							})()
 						);
 					}
 					return response;
