@@ -1722,6 +1722,19 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	page,
 	context,
 }) => {
+	// This test's own critical path before it can even go offline is long:
+	// SW registration (a live fetch of sw.js), install-time precaching of
+	// four resources (app.css/app.js/offline-boot.js/offline.html, each a
+	// full WP bootstrap for the two PHP-templated ones), activation, and
+	// only then the config.json warming fetch (another full WP bootstrap)
+	// plus its own async cache write — several sequential network round
+	// trips that comfortably finish in a couple of seconds locally but can
+	// occasionally run long on a loaded CI runner. The default 30s test
+	// timeout leaves too little slack for that chain plus everything after
+	// it (going offline, reloading, using the composer), so this test gets
+	// its own longer budget.
+	test.setTimeout(60000);
+
 	const caption = `E2E cold offline ${RUN_ID}`;
 
 	await loginAs(page);
@@ -1751,7 +1764,13 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 					]);
 					return Boolean(config && offline);
 				}),
-			{ timeout: 15000 }
+			// Generous on purpose: this waits out several sequential live
+			// requests (sw.js, the four precached resources, then the
+			// config.json warming fetch), each a full WP bootstrap for the
+			// PHP-templated ones — comfortably fast locally, occasionally
+			// slow on a loaded CI runner. See this test's own setTimeout()
+			// above for the matching overall budget.
+			{ timeout: 30000 }
 		)
 		.toBe(true);
 
