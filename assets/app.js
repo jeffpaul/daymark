@@ -2655,6 +2655,134 @@
 		}
 	}
 
+	// --- Scroll-triggered rehydration of pruned subscription-post content
+	// (issue #93), Home's own Timeline only ---
+	//
+	// A subscription post's own content is only ever fetched on demand
+	// (content_state !== 'full' — never fetched, or pruned by
+	// Daymark_Subscription_Poller::prune_subscription() after aging out) via
+	// GET /subscription-posts/{id}, previously only reached by an explicit
+	// click-through (openPostView()). This proactively fires that exact same
+	// fetch, unmodified, just before a still-pruned card scrolls into view,
+	// so opening it moments later renders instantly from the now-'full'
+	// server-side cache instead of waiting on a live external fetch.
+	//
+	// Deliberately no `refresh` param and no new server-side code at all:
+	// GET /subscription-posts/{id} already only fetches live when
+	// content_state !== 'full' (see get_subscription_post_full_content()'s
+	// own docblock), so a scroll-triggered call is byte-for-byte the same
+	// request a click-through already makes — it inherits that endpoint's
+	// real, already-enforced throttle
+	// (Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH, a per-user
+	// 20-per-5-minute budget shared with explicit click-throughs) rather
+	// than a new one. Note this is *not* the same thing as the
+	// per-subscription 15-minute cooldown that guards a whole-feed manual
+	// refresh (Daymark_Subscription_Poller::manual_refresh(), a different
+	// action reached via POST /subscriptions/{id}/refresh) — no such
+	// per-subscription cooldown exists on this fetch today, so the shared
+	// per-user limiter above is the one real throttle there is to reuse.
+	//
+	// A single in-flight request at a time (queued, never parallel) keeps a
+	// fast scroll past many pruned cards from bursting through that shared
+	// per-user budget in one go and starving a real click-through right
+	// after; hitting the limiter's own 429 pauses the queue for its
+	// reported retry_after rather than adding a second, separate cooldown.
+	// A failed attempt (rate-limited or a genuine fetch failure) never
+	// retries in a loop and never surfaces an error — the card is simply
+	// left exactly as its existing pruned/placeholder rendering already
+	// looks (renderSubscriptionPostCard() doesn't vary by content_state at
+	// all), same graceful-failure contract a failed click-through already has.
+
+	const REHYDRATE_LOOKAHEAD = '600px';
+
+	// (Re)arms the shared observer with every not-yet-'full', not-yet-
+	// attempted `[data-subpost]` card currently in `container` — safe to
+	// call repeatedly (loadRecent()'s first page, every loadMorePage() page
+	// after it): observing an already-observed element is a no-op, and the
+	// content_state/attempted checks below skip everything else.
+	function observeRehydrateCandidates(screen, container) {
+		if (!('IntersectionObserver' in window) || !container) {
+			return;
+		}
+		if (!screen._rehydrateObserver) {
+			screen._rehydrateObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._rehydrateObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-subpost');
+						if (id && !screen._rehydrateAttempted.has(id) && !screen._rehydrateQueue.includes(id)) {
+							screen._rehydrateQueue.push(id);
+							drainRehydrateQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: REHYDRATE_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-subpost]').forEach((el) => {
+			const id = el.getAttribute('data-subpost');
+			const item = id ? screen._bySubId.get(id) : null;
+			if (!item || 'full' === item.content_state || screen._rehydrateAttempted.has(id)) {
+				return;
+			}
+			screen._rehydrateObserver.observe(el);
+		});
+	}
+
+	// Disconnects the observer and clears its bookkeeping — called from
+	// loadRecent() alongside teardownObserver() since a fresh load means a
+	// fresh set of candidate cards (same reset loadRecent() already does for
+	// _bySubId/_byMarkId).
+	function teardownRehydrateObserver(screen) {
+		if (screen._rehydrateObserver) {
+			screen._rehydrateObserver.disconnect();
+			screen._rehydrateObserver = null;
+		}
+		screen._rehydrateAttempted = new Set();
+		screen._rehydrateQueue = [];
+		screen._rehydrateInFlight = false;
+		screen._rehydrateBackoffUntil = 0;
+	}
+
+	// Drains one item at a time from the rehydrate queue — never more than
+	// one fetch in flight, and paused entirely until _rehydrateBackoffUntil
+	// once the shared per-user limiter reports a 429.
+	async function drainRehydrateQueue(screen) {
+		if (screen._rehydrateInFlight || Date.now() < screen._rehydrateBackoffUntil) {
+			return;
+		}
+		const id = screen._rehydrateQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._rehydrateInFlight = true;
+		try {
+			await apiGet('subscription-posts/' + id);
+			screen._rehydrateAttempted.add(id);
+			const item = screen._bySubId.get(id);
+			if (item) {
+				item.content_state = 'full';
+			}
+		} catch (err) {
+			if (err && 429 === err.status) {
+				// Rate-limited, not a real failure: leave it out of
+				// _rehydrateAttempted so a later observeRehydrateCandidates()
+				// call (the next page, or a fresh loadRecent()) can still
+				// pick it back up once the backoff clears.
+				const waitMs = (Number(err.retryAfter) || 60) * 1000;
+				screen._rehydrateBackoffUntil = Date.now() + waitMs;
+			} else {
+				screen._rehydrateAttempted.add(id);
+			}
+		} finally {
+			screen._rehydrateInFlight = false;
+			drainRehydrateQueue(screen);
+		}
+	}
+
 	// --- Per-item ⋯ menu (edit / delete), shared by every feed-list screen ---
 
 	function closeItemMenus() {
@@ -3712,6 +3840,7 @@
 				heading.textContent = __('Timeline', 'daymark');
 			}
 			this.teardownObserver();
+			teardownRehydrateObserver(this);
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -3748,6 +3877,7 @@
 					return;
 				}
 				list.innerHTML = renderFeedItemsWithGroups(this, arr);
+				observeRehydrateCandidates(this, list);
 
 				if (arr.length < RECENT_PER_PAGE) {
 					// A short first page means there is nothing more to load.
@@ -3815,6 +3945,7 @@
 					// prior loadMorePage() call) left off is what keeps this
 					// page's own headers from repeating one still in view.
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
+					observeRehydrateCandidates(this, list);
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
@@ -3860,6 +3991,13 @@
 				this.observer = null;
 			}
 		},
+
+		// Note: loadRecent()/loadMorePage() above also arm scroll-triggered
+		// rehydration of pruned subscription-post content (issue #93) via
+		// teardownRehydrateObserver()/observeRehydrateCandidates() —
+		// standalone functions defined after rememberItem() below, not
+		// methods here, since Search never needs them (Timeline-only, per
+		// the issue's own scope).
 
 		// --- Pull-to-refresh: independent of the scheduled poll, and
 		// rate-limited server-side per subscription (15 minutes). Refreshes

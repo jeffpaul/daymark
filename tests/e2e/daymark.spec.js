@@ -390,6 +390,80 @@ test('clicking a Timeline card opens its content on a full-screen post view, not
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });
 
+// Scroll-triggered rehydration of pruned subscription-post content (issue
+// #93): a card whose content hasn't been fetched yet (content_state !==
+// 'full') gets rehydrated in the background — the same GET
+// /subscription-posts/{id} a click-through already uses — just from
+// scrolling near it, not tapping it. Mocks GET /timeline with a single,
+// synthetic, never-'full' item rather than depending on ensureSubscription()'s
+// real feed content: an earlier test in this file (the full-screen post-view
+// test above) already clicks through a real subscription card and
+// permanently flips its content_state to 'full' on the live test site, so
+// there's no reliable way to find a still-pruned real card by this point —
+// mocking isolates this test to the new client-side observer/queue logic
+// itself, not whatever state a shared external feed happens to be in.
+test('scrolling a pruned subscription-post card near the viewport rehydrates it in the background', async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999001,
+		subscription_id: 1,
+		title: `E2E rehydrate ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/post/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'excerpt_only',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	const fetchedUrls = [];
+	await page.route('**/daymark/v1/subscription-posts/**', async (route) => {
+		fetchedUrls.push(route.request().url());
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ ...fakeItem, content_state: 'full', body_content: '<p>Rehydrated.</p>' }),
+		});
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999001"]');
+	await expect(card).toBeVisible();
+	// The mocked feed has exactly one item, so it's already within (or very
+	// near) the viewport on load — IntersectionObserver fires from the
+	// current layout the moment it's observed, the same as it would after a
+	// real scroll; this just doesn't need an explicit scroll to prove it.
+	await card.scrollIntoViewIfNeeded();
+
+	await expect.poll(() => fetchedUrls.length, { timeout: 5000 }).toBeGreaterThan(0);
+	expect(fetchedUrls[0]).toContain('/subscription-posts/999001');
+	// A scroll-triggered fetch is never a forced refresh — it relies on the
+	// endpoint's own existing content_state !== 'full' gate to decide
+	// whether to fetch at all, the same as a plain click-through.
+	expect(fetchedUrls[0]).not.toContain('refresh=1');
+});
+
 // Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
 // button on Home (Home is assumed to be the Timeline). Independent of the
 // cron schedule and separately rate-limited per subscription (15 minutes);
