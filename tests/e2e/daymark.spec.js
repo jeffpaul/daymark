@@ -1774,6 +1774,21 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		)
 		.toBe(true);
 
+	// Temporary diagnostic (not a permanent fixture): the readiness poll
+	// above now passes reliably (confirms the config.json warming fix), but
+	// the launcher check just below has started failing instead — genuinely
+	// new territory this investigation hasn't seen before, so relay the
+	// offline-shell page's own console/errors to the CI log rather than
+	// guessing why it doesn't render.
+	page.on('console', (msg) => {
+		// eslint-disable-next-line no-console
+		console.log(`[cold-offline page console] ${msg.type()}: ${msg.text()}`);
+	});
+	page.on('pageerror', (err) => {
+		// eslint-disable-next-line no-console
+		console.log(`[cold-offline pageerror] ${err && err.message}`);
+	});
+
 	await context.setOffline(true);
 	try {
 		await page.reload();
@@ -1782,7 +1797,19 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		// the same app-shell markup and boots the same app.js — Home's own
 		// launcher is reachable even though the real, dynamic /daymark
 		// response couldn't be fetched.
-		await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
+		try {
+			await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
+		} catch (err) {
+			const dump = await page.evaluate(() => ({
+				url: window.location.href,
+				title: document.title,
+				bodyHtml: document.body ? document.body.innerHTML.slice(0, 2000) : null,
+				daymarkApp: window.daymarkApp || null,
+			}));
+			// eslint-disable-next-line no-console
+			console.log('[cold-offline diagnostic] page state when launcher never appeared:', JSON.stringify(dump, null, 2));
+			throw err;
+		}
 
 		await openComposer(page, 'note');
 		await page.fill('#daymark-caption', caption);
