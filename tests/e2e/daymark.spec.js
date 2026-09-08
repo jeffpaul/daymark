@@ -1737,23 +1737,43 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 	// cutting connectivity guaranteed not to race either fire-and-forget
 	// task.
 	await page.evaluate(() => navigator.serviceWorker.ready);
+
+	// Diagnostic state captured on every poll attempt — logged on failure
+	// so a CI run's own log says exactly which precondition (SW control, a
+	// cached config.json, a cached offline.html) never became true, instead
+	// of just "timed out."
+	let lastDiagnosticState = null;
 	await expect
 		.poll(
-			() =>
-				page.evaluate(async () => {
-					if (!navigator.serviceWorker.controller) {
-						return false;
+			async () => {
+				lastDiagnosticState = await page.evaluate(async () => {
+					const controller = navigator.serviceWorker.controller;
+					if (!controller) {
+						return { controller: false };
 					}
 					const cache = await caches.open('daymark-v2');
 					const [config, offline] = await Promise.all([
-						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
-						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+						cache.match(new URL('config.json', controller.scriptURL)),
+						cache.match(new URL('offline.html', controller.scriptURL)),
 					]);
-					return Boolean(config && offline);
-				}),
+					const cacheKeys = (await cache.keys()).map((request) => request.url);
+					return {
+						controller: true,
+						scriptURL: controller.scriptURL,
+						config: Boolean(config),
+						offline: Boolean(offline),
+						cacheKeys,
+					};
+				});
+				return Boolean(lastDiagnosticState.controller && lastDiagnosticState.config && lastDiagnosticState.offline);
+			},
 			{ timeout: 15000 }
 		)
-		.toBe(true);
+		.toBe(true)
+		.catch((err) => {
+			console.log('cold-offline diagnostic state:', JSON.stringify(lastDiagnosticState));
+			throw err;
+		});
 
 	await context.setOffline(true);
 	try {
