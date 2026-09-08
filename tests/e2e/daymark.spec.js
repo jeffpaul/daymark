@@ -390,6 +390,67 @@ test('clicking a Timeline card opens its content on a full-screen post view, not
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });
 
+// The site name/date row and interaction-icon row (Like through Share) a
+// Timeline card already carries stay visible on the full-screen post view
+// too — opening a post shouldn't cost a reader that context, or the
+// ability to act on it. Covers both a Mark (the full stat row, including
+// Bookmark, which this test also exercises end to end) and a subscription
+// post (the narrower stat row — no counted stats, no Routing toggle).
+test('full-screen post view keeps the site name, date, and interaction icons', async ({ page }) => {
+	const caption = `E2E postview meta ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const markWrap = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	await markWrap.locator('.daymark-recent__title').click();
+	await expect(page).toHaveURL(/#post$/);
+
+	const meta = page.locator('.daymark-postview-meta');
+	await expect(meta.locator('.daymark-recent__sitename')).toBeVisible();
+	await expect(meta.locator('.daymark-recent__timestamprow time')).toBeVisible();
+	const bookmarkToggle = meta.locator('[data-bookmark-toggle]');
+	await expect(bookmarkToggle).toBeVisible();
+	await expect(meta.locator('[data-external-link]')).toBeVisible();
+	await expect(meta.locator('[data-share-toggle]')).toBeVisible();
+
+	// Bookmarking works from here, the same as from the card itself.
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
+	await bookmarkToggle.click();
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
+	await bookmarkToggle.click();
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
+
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+
+	const subCard = await findSubscriptionCard(page);
+	await subCard.locator('.daymark-recent__title').click();
+	await expect(page).toHaveURL(/#post$/);
+
+	const subMeta = page.locator('.daymark-postview-meta');
+	await expect(subMeta.locator('.daymark-recent__sitename')).toBeVisible();
+	await expect(subMeta.locator('.daymark-recent__timestamprow time')).toBeVisible();
+	await expect(subMeta.locator('[data-like-toggle]')).toBeVisible();
+	await expect(subMeta.locator('[data-repost-toggle]')).toBeVisible();
+	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
+	await expect(subMeta.locator('[data-external-link]')).toBeVisible();
+	await expect(subMeta.locator('[data-share-toggle]')).toBeVisible();
+});
+
 // Scroll-triggered rehydration of pruned subscription-post content (issue
 // #93): a card whose content hasn't been fetched yet (content_state !==
 // 'full') gets rehydrated in the background — the same GET
