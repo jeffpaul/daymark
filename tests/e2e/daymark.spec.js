@@ -1724,6 +1724,12 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 }) => {
 	const caption = `E2E cold offline ${RUN_ID}`;
 
+	// Relay page-side console output to the CI log — the offline shell has
+	// no other diagnostic surface if its own boot script (offline-boot.js)
+	// or app.js throws before rendering anything.
+	page.on('console', (msg) => console.log(`[page console ${msg.type()}]`, msg.text()));
+	page.on('pageerror', (err) => console.log('[page error]', String(err)));
+
 	await loginAs(page);
 	await page.goto('/daymark');
 
@@ -1802,7 +1808,23 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		// the same app-shell markup and boots the same app.js — Home's own
 		// launcher is reachable even though the real, dynamic /daymark
 		// response couldn't be fetched.
-		await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
+		try {
+			await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
+		} catch (err) {
+			// The launcher never showed up at all — dump what actually
+			// rendered so a CI failure here says why, instead of just
+			// "element(s) not found."
+			const pageState = await page.evaluate(() => ({
+				url: window.location.href,
+				title: document.title,
+				hasAppContainer: Boolean(document.getElementById('daymark-app')),
+				appContainerHtml: (document.getElementById('daymark-app') || {}).innerHTML,
+				bodyHtmlPreview: document.body ? document.body.innerHTML.slice(0, 1500) : null,
+				daymarkAppConfig: window.daymarkApp || null,
+			}));
+			console.log('cold-offline post-reload page state:', JSON.stringify(pageState));
+			throw err;
+		}
 
 		await openComposer(page, 'note');
 		await page.fill('#daymark-caption', caption);
