@@ -2179,6 +2179,9 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 }) => {
 	await loginAs(page);
 
+	await page.goto('/daymark#home');
+	const homeIconBox = await page.locator('.daymark-homelink__icon').boundingBox();
+
 	for (const hash of ['#explore', '#search', '#me']) {
 		await page.goto('/daymark' + hash);
 
@@ -2188,6 +2191,13 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 		const homeIconImg = homeIcon.locator('img');
 		await expect(homeIconImg).toBeVisible();
 		expect(await homeIconImg.getAttribute('width')).toBe('26');
+
+		// A regression here (issue #276) is invisible to a class/attribute
+		// check alone — the icon *graphic* itself has to start at the same x
+		// as Home's own icon, not just carry the right modifier class, since
+		// the tap target's own reserved width can silently shift it right.
+		const iconBox = await homeIconImg.boundingBox();
+		expect(iconBox.x).toBeCloseTo(homeIconBox.x, 0);
 
 		await expect(
 			page.locator('header.daymark-topbar a.daymark-iconbtn[href="#notifications"]')
