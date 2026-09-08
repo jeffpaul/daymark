@@ -48,7 +48,7 @@ rule below. Current order, most-preferred first:
 | `friends` | Friends' own already-assigned WordPress post_format taxonomy value (Friends does its own content-based format-discovery upstream, before Daymark ever sees the cached post) | `image`/`video`/`audio`/`gallery` pass straight through; `status`/`chat` map to `note`; `aside`/`link`/`quote`/unset all collapse to `standard` | **Yes** — `Daymark_Subscription_Content_Sniffer` scans the cached post's own content HTML only when the resolved format is `standard` (never for `note` — see "Follow-up: status/chat mapped to Note" below); a real Friends-assigned format is never second-guessed |
 | `wordpress` | The subscribed site's real `format` field from `GET wp/v2/posts` | Same pass-through/`note`-mapping/collapse as `friends` | **Yes** — same shared sniffer, over `content.rendered`, only when `format` resolves to `standard` |
 | `feed` | Media RSS `medium` (or MIME `type` prefix) on an RSS `<enclosure>` — `video`/`audio`/`image` counted directly, more than one image → `gallery` | Enclosure counts feed the same 5-way decision | **Yes** (original implementation; the sniffer now lives in a shared class other sources use too) — only when *no* enclosure carried any signal at all |
-| `microformats` | mf2 `u-photo`/`u-video`/`u-audio` property elements on the h-entry itself, resolved to real URLs by a nesting-aware parser that excludes a nested `h-card`/`h-cite`'s own properties | Any video → `video`; any audio → `audio`; >1 photo → `gallery`; 1 photo → `image`; none → `standard` | **No, and none needed** — an h-entry's own mf2 markup already *is* the explicit signal every other source's fallback is trying to approximate; there is no "no enclosure" ambiguity to recover from |
+| `microformats` | mf2 `u-photo`/`u-video`/`u-audio` property elements on the h-entry itself (media), plus the IndieWeb post-type-discovery algorithm's own class tokens (`rsvp`/`reply`/`repost`/`like`/`bookmark`/`note`) | Any video → `video`; any audio → `audio`; >1 photo → `gallery`; 1 photo → `image`; none of those *and* post-type is `reply`/`rsvp` → `note` (issue #292); none of those and any other post-type → `standard` | **No, and none needed for media** — an h-entry's own mf2 markup already *is* the explicit signal every other source's fallback is trying to approximate; there is no "no enclosure" ambiguity to recover from. The `reply`/`rsvp` → `note` step is itself a fallback, applied only once media resolves to nothing. |
 
 All four sources share the exact same weighting once a signal is found:
 video beats audio beats more-than-one-photo (gallery) beats one photo
@@ -107,38 +107,50 @@ the REST layer (passes `post_format` through as stored), and the app shell
 already be one) all already treated `post_format` as an open string, not a
 hardcoded enum.
 
-## Signals detected but not reflected in a Daymark type
+## Follow-up: mf2 reply/rsvp mapped to Note (issue #292)
 
-One category of real signal is read by a source today and then discarded,
-rather than lost to a gap in detection — a genuinely different situation
-from the fixes above, and a product decision rather than a bug:
+The other vocabulary-expansion opportunity this audit flagged — mf2
+post-type discovery going entirely unused for `post_format` — has been
+partially acted on. `microformats` already ran every h-entry through the
+IndieWeb post-type-discovery algorithm (`detect_post_type()`), classifying
+it as `rsvp`/`reply`/`repost`/`like`/`bookmark`/`note`, but that
+classification was used only to pick a fallback title. `normalize()` now
+also promotes a `reply`/`rsvp` entry to Daymark's own `note` post_format —
+but *only* as a fallback, once the entry's own real media (u-photo/u-video/
+u-audio) has already resolved to `standard`; a reply or RSVP with a real
+photo/video/audio attached still gets that richer format, matching the
+"media wins, mf2 post-type only breaks a `standard` tie" precedent
+`DAYMARK_NOTE_POST_TYPES`'s own docblock documents. This is the same
+"confirmed format, but only as a fallback" pattern `status`/`chat` → `note`
+already established — a reply or RSVP reads as a short, personal,
+timestamped text update the same way a Daymark Note does.
 
-- **mf2 post-type discovery (`microformats` source).** Every h-entry already
-  runs through the IndieWeb post-type-discovery algorithm
-  (`detect_post_type()`), classifying it as `rsvp`/`reply`/`repost`/`like`/
-  `bookmark`/`note` — but that classification is used *only* to pick a
-  sensible fallback title (e.g. "Like") when the entry itself carries no
-  `p-name`. It never affects `post_format`, by explicit design (see the
-  issue #84 decision row: "Daymark's Timeline does not render the reply/
-  like/repost semantic distinctly"). This is the most concrete opportunity
-  in this whole audit to expand Daymark's own vocabulary: the detection
-  already exists, fully computed, on every subscribed h-entry — the only
-  missing piece is a place in Daymark's data model and Timeline card
-  rendering for it to go. Notably, Daymark already has half of a mirror-image
-  concept on the *outbound* side — a Mark's own `_daymark_in_reply_to`/
-  `u-in-reply-to` (issue #83) — but nothing today reads an *inbound*
-  subscribed reply back into any equivalent field.
+`repost`/`like`/`bookmark` are deliberately **not** included. Unlike a
+reply/RSVP, they're reactions to *someone else's* content rather than the
+author's own words — closer in spirit to `aside`/`link`/`quote` (still
+`standard`, see below) than to `status`/`chat`/`reply`/`rsvp`. Daymark also
+has a directly relevant precedent cutting the other way for `like`/`repost`
+specifically: a Mark carrying its own `_daymark_like_of`/`_daymark_repost_of`
+is unconditionally excluded from the Timeline (CLAUDE.md's "Timeline polish
+batch (issue #267)"), since that Mark exists only to carry an outbound
+federation link, not to be read — the same reasoning may argue for
+filtering a *subscribed* site's like/repost h-entries out of Timeline
+entirely, rather than surfacing them as ordinary `standard` content the way
+they do today. `bookmark` is a smaller, separate question — it could
+plausibly reuse the existing `link_url` mechanism (issue #279) instead of a
+new post_format bucket. Neither is resolved here; see issue #292 for the
+open follow-up.
 
-This isn't a bug to fix — it's exactly the kind of "no natural equivalent"
-case CLAUDE.md's decisions already name — but it's flagged here because it's
-the most concrete remaining candidate if Daymark's own type vocabulary ever
-grows to cover reply/reaction content from subscriptions the way it now does
-for short-form status-style updates (see "Follow-up" above).
+Notably, Daymark already has half of a mirror-image concept on the
+*outbound* side — a Mark's own `_daymark_in_reply_to`/`u-in-reply-to`
+(issue #83) — but nothing today reads an *inbound* subscribed reply back
+into any equivalent field; this pass only affects the Timeline card's
+visual treatment (`post_format`), not the data model.
 
 The other half of what this row originally flagged — `aside`/`link`/`quote`
-still having no Daymark equivalent — is now a settled design choice rather
-than an open question: see "Follow-up: status/chat mapped to Note" above for
-why those three specifically were left collapsed to `standard`.
+still having no Daymark equivalent — remains a settled design choice: see
+"Follow-up: status/chat mapped to Note" above for why those three
+specifically stay collapsed to `standard`.
 
 ## Remaining gaps in detection itself
 

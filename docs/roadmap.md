@@ -311,15 +311,17 @@ decision rows for the full technical record.
 
 **Still open from this era:**
 
-- [ ] Explore beyond "Browse by type"/"Following" — memories, highlights,
-  collections, favorites, recently-popular, and suggested accounts/content
-  all need their own supporting data before they can be real sections.
-- [ ] Search filters beyond type and source — author, date, tag, and
-  location all need their own REST support first.
-- [ ] Me beyond its current links — published-content browsing beyond "all
-  your Marks", drafts management (edit/delete) inline on Me instead of
-  pointing back to Home, and any of "connected services"/notifications
-  summarized in place rather than linked out.
+- [ ] Explore beyond "Browse by type"/"Following" ([#294](https://github.com/jeffpaul/daymark/issues/294))
+  — memories, highlights, collections, favorites, recently-popular, and
+  suggested accounts/content all need their own supporting data before they
+  can be real sections.
+- [ ] Search filters beyond type and source ([#293](https://github.com/jeffpaul/daymark/issues/293))
+  — author, date, tag, and location all need their own REST support first.
+- [ ] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
+  — published-content browsing beyond "all your Marks", drafts management
+  (edit/delete) inline on Me instead of pointing back to Home, and any of
+  "connected services"/notifications summarized in place rather than linked
+  out.
 
 ---
 
@@ -473,6 +475,15 @@ that loop without new destinations or a new social network.
   alongside the hooks reference site. **Deliberately deferred**: a registry of
   known third-party connectors — no real one exists yet to list, so a registry
   would have nothing in it; revisit once a connector plugin actually ships.
+- **mf2 reply/rsvp mapped to Daymark's Note type** ([#292](https://github.com/jeffpaul/daymark/issues/292)).
+  The clearest concrete opportunity the "Subscription type-mapping audit" flagged — the
+  `microformats` source's own IndieWeb post-type discovery was fully computed on every
+  h-entry but only ever used for a fallback title. `reply`/`rsvp` now promote to Daymark's
+  `note` post_format (as a fallback, once real media resolves to nothing), the same
+  precedent `status`/`chat` already established. `repost`/`like`/`bookmark` are
+  deliberately deferred — a real open question (hide reactions from the Timeline
+  entirely, mirroring how Daymark's own Like/Repost Marks are already hidden, vs. a
+  `link_url` reuse for bookmarks) tracked on the same issue rather than resolved here.
 - **Publish-loop polish** — all three named candidates have shipped.
   Drag-and-drop onto the composer's picker (desktop) and gallery reordering
   shipped first ([#260](https://github.com/jeffpaul/daymark/issues/260),

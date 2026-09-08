@@ -31,6 +31,7 @@ can't act on them.
 - A subscription post's Timeline card no longer shows its author's name directly under the title — for most single-author sites that read the same as, or very close to, the site name already shown on the card's bottom row, so it was dropped as redundant. ([#285](https://github.com/jeffpaul/daymark/issues/285))
 - Search's Source filter dropdown now lists subscribed sites alphabetically by name, with "All" and "My Marks" pinned first — previously they appeared in subscribe order. ([#283](https://github.com/jeffpaul/daymark/issues/283))
 - A "link"-format Timeline card no longer stands out with its own orange-tinted background — it now reads like a plain Note/Article card, matching the rest of the Timeline. Its full-screen post view also shows a best-effort oEmbed preview of the post's own detected outbound link (e.g. an embedded Mastodon post, a video player) when one is available. ([#279](https://github.com/jeffpaul/daymark/issues/279))
+- A microformats2-subscribed site's reply or RSVP posts now render as Notes on the Timeline instead of plain, undifferentiated articles — matching how status/chat-format posts already do. Reposts, likes, and bookmarks are unchanged for now. ([#292](https://github.com/jeffpaul/daymark/issues/292))
 
 ### Fixed
 

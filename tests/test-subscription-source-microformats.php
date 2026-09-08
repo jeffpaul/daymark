@@ -166,6 +166,68 @@ HTML;
 		$this->assertSame( 'standard', $normalized['post_format'] );
 	}
 
+	/**
+	 * A reply h-entry with no media of its own promotes to Daymark's `note`
+	 * post_format (issue #292) — the same "confirmed format, but only as a
+	 * fallback" precedent already established for WordPress's `status`/
+	 * `chat` formats.
+	 */
+	public function test_normalize_maps_reply_without_media_to_note() {
+		$html = '<div class="h-feed"><article class="h-entry">'
+			. '<p class="p-name">Totally agree</p>'
+			. '<a class="u-in-reply-to" href="https://other.example/post/1"></a>'
+			. '<a class="u-url" href="/2024/a-reply/">permalink</a>'
+			. '</article></div>';
+
+		$this->mock_response( 'https://replier.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://replier.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( 'reply', $raw_items[0]['post_type'] );
+		$this->assertSame( 'note', $normalized['post_format'] );
+	}
+
+	/** An RSVP h-entry with no media of its own also promotes to `note`. */
+	public function test_normalize_maps_rsvp_without_media_to_note() {
+		$html = '<div class="h-feed"><article class="h-entry">'
+			. '<p class="p-name">I\'m going!</p>'
+			. '<data class="p-rsvp" value="yes"></data>'
+			. '<a class="u-url" href="/2024/an-rsvp/">permalink</a>'
+			. '</article></div>';
+
+		$this->mock_response( 'https://attendee.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://attendee.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( 'rsvp', $raw_items[0]['post_type'] );
+		$this->assertSame( 'note', $normalized['post_format'] );
+	}
+
+	/**
+	 * A reply that also carries a real photo keeps its `image` post_format
+	 * — media always wins over the mf2 post-type fallback, since `note` has
+	 * no embed-data resolution and would otherwise make the photo
+	 * disappear entirely.
+	 */
+	public function test_normalize_reply_with_photo_keeps_image_format() {
+		$html = '<div class="h-feed"><article class="h-entry">'
+			. '<p class="p-name">Check out my reply</p>'
+			. '<a class="u-in-reply-to" href="https://other.example/post/1"></a>'
+			. '<a class="u-url" href="/2024/a-reply-with-photo/">permalink</a>'
+			. '<div class="e-content"><img class="u-photo" src="/reply-photo.jpg" /></div>'
+			. '</article></div>';
+
+		$this->mock_response( 'https://photoreplier.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://photoreplier.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( 'reply', $raw_items[0]['post_type'] );
+		$this->assertSame( 'image', $normalized['post_format'] );
+	}
+
 	/** fetch() returns an empty (not error) array for a page that fetches fine but currently has no h-entry markup — a healthy, quiet state, not a failure. */
 	public function test_fetch_returns_empty_array_when_no_entries() {
 		$this->mock_response( 'https://quiet.example/', '<html><body><p>Nothing published yet.</p></body></html>' );

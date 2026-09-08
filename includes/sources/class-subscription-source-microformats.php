@@ -82,6 +82,27 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	);
 
 	/**
+	 * Mf2 post types (issue #292) promoted to Daymark's own `note`
+	 * post_format bucket — only ever applied as a fallback when no real
+	 * media was found (see normalize()), the same "note is a confirmed
+	 * format, but only once nothing more specific claimed it" precedent
+	 * `Daymark_Subscription_Source_WordPress`/`_Friends`'s own
+	 * `DAYMARK_NOTE_FORMATS` already established for `status`/`chat`. A
+	 * reply or an RSVP is a short, personal, timestamped text update with
+	 * no media of its own — the same shape as a Daymark Note.
+	 *
+	 * `repost`/`like`/`bookmark` are deliberately left out: unlike a
+	 * reply/RSVP, they're reactions to *someone else's* content rather than
+	 * the author's own words — see issue #292 for the open question of
+	 * whether they should instead be filtered from the Timeline entirely,
+	 * mirroring how a Mark carrying its own `_daymark_like_of`/
+	 * `_daymark_repost_of` is already excluded there.
+	 *
+	 * @var string[]
+	 */
+	private const DAYMARK_NOTE_POST_TYPES = array( 'reply', 'rsvp' );
+
+	/**
 	 * Source ID.
 	 *
 	 * @return string
@@ -187,12 +208,15 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 * produces, so ingest code never needs to know which source produced an
 	 * item.
 	 *
-	 * `post_format` is derived purely from explicit u-photo/u-video/u-audio
-	 * counts, matching how the feed source weighs media — an h-entry
-	 * carrying both, say, u-in-reply-to and u-photo still gets an `image`
-	 * post_format, since Daymark's post_format vocabulary is about a
-	 * Timeline card's visual treatment, not the reply/like/repost semantic
-	 * itself (which Daymark's Timeline does not render distinctly).
+	 * `post_format` is derived primarily from explicit u-photo/u-video/
+	 * u-audio counts, matching how the feed source weighs media — an
+	 * h-entry carrying both, say, u-in-reply-to and u-photo still gets an
+	 * `image` post_format, since Daymark's post_format vocabulary is about
+	 * a Timeline card's visual treatment first. Only once media resolves to
+	 * nothing (`standard`) does the entry's own mf2 post type get a say
+	 * (issue #292): a `reply`/`rsvp` promotes to `note`, the same
+	 * "confirmed format, but only as a fallback" precedent
+	 * DAYMARK_NOTE_POST_TYPES's own docblock explains — see that constant.
 	 *
 	 * @param array<string, mixed> $raw_item One item from fetch()'s raw result.
 	 * @return array<string, mixed> Source-agnostic normalized post data.
@@ -230,6 +254,10 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			$post_format = 'image';
 		} else {
 			$post_format = 'standard';
+
+			if ( in_array( (string) ( $raw_item['post_type'] ?? '' ), self::DAYMARK_NOTE_POST_TYPES, true ) ) {
+				$post_format = 'note';
+			}
 		}
 
 		return array(
