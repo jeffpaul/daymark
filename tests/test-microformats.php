@@ -334,4 +334,55 @@ class Test_Microformats extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'class="p-geo h-geo"', $markup );
 	}
+
+	/**
+	 * Privacy section (issue #289): the daymark_publish_location_publicly
+	 * option (Settings -> Daymark's Privacy checkbox), set with no filter
+	 * present, opts a site in to public location markup exactly like the
+	 * pre-existing filter already does.
+	 */
+	public function test_entry_metadata_includes_location_markup_when_option_enabled() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat' => 51.5074,
+					'lng' => -0.1278,
+				)
+			)
+		);
+
+		update_option( 'daymark_publish_location_publicly', '1' );
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+		delete_option( 'daymark_publish_location_publicly' );
+
+		$this->assertStringContainsString( 'class="p-geo h-geo"', $markup );
+	}
+
+	/**
+	 * A developer filter still wins over the Privacy section's own option
+	 * (layered, not replaced) — an explicit daymark_publish_location_publicly
+	 * option of true is overridden by a filter forcing it false.
+	 */
+	public function test_entry_metadata_filter_overrides_location_publicly_option() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat' => 51.5074,
+					'lng' => -0.1278,
+				)
+			)
+		);
+
+		update_option( 'daymark_publish_location_publicly', '1' );
+		add_filter( 'daymark_publish_location_publicly', '__return_false' );
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+		remove_filter( 'daymark_publish_location_publicly', '__return_false' );
+		delete_option( 'daymark_publish_location_publicly' );
+
+		$this->assertStringNotContainsString( 'p-geo', $markup );
+	}
 }

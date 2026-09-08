@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- Settings -> Daymark now has a Privacy section with a checkbox each for location, weather, and camera-metadata capture, plus whether a Mark's location is published publicly — previously these were only reachable by adding a filter in code. A filter still overrides its matching checkbox, so nothing already using one changes behavior. ([#289](https://github.com/jeffpaul/daymark/issues/289))
 - Settings -> Daymark's subscriptions table now has a search box that filters the list by site name, site URL, or feed URL — useful once you have more than a handful of subscriptions. ([#281](https://github.com/jeffpaul/daymark/issues/281))
 
 ### Changed

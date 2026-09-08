@@ -1135,6 +1135,120 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Privacy section (issue #289): the daymark_capture_location option
+	 * (Settings -> Daymark's Privacy checkbox), set with no filter present,
+	 * disables storage exactly like the pre-existing filter already does.
+	 */
+	public function test_capture_location_option_disables_storage() {
+		update_option( 'daymark_capture_location', '' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Location capture disabled via option',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		delete_option( 'daymark_capture_location' );
+
+		$this->assertIsInt( $post_id );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/** daymark_capture_weather option, set with no filter present, skips the weather fetch. */
+	public function test_capture_weather_option_disables_fetch() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+		update_option( 'daymark_capture_weather', '' );
+
+		$publisher = new Daymark_Publisher();
+		$publisher->publish(
+			array(
+				'caption'      => 'Weather capture disabled via option',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		delete_option( 'daymark_capture_weather' );
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+	}
+
+	/** daymark_capture_camera_metadata option, set with no filter present, stores no camera fields. */
+	public function test_capture_camera_metadata_option_disables_storage() {
+		$filter = static function ( $metadata ) {
+			$metadata['image_meta'] = array(
+				'camera' => 'Canon EOS R5',
+				'iso'    => '400',
+			);
+			return $metadata;
+		};
+		add_filter( 'wp_generate_attachment_metadata', $filter );
+		update_option( 'daymark_capture_camera_metadata', '' );
+
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-nocameraopt2-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'caption' => 'Camera metadata capture disabled via option' ),
+			array(
+				'files' => array(
+					'name'     => 'nocameraopt2.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		delete_option( 'daymark_capture_camera_metadata' );
+		remove_filter( 'wp_generate_attachment_metadata', $filter );
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_camera', true ) );
+	}
+
+	/**
+	 * A developer filter still wins over the Privacy section's own option
+	 * (layered, not replaced) — an explicit daymark_capture_location option
+	 * of true is overridden by a filter forcing it false.
+	 */
+	public function test_capture_location_filter_overrides_option() {
+		update_option( 'daymark_capture_location', '1' );
+		add_filter( 'daymark_capture_location', '__return_false' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Filter wins over option',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'daymark_capture_location', '__return_false' );
+		delete_option( 'daymark_capture_location' );
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/**
 	 * Manual gallery reordering (issue #250): a valid client-supplied
 	 * media_order — an exact permutation of the Mark's own stored media —
 	 * is honored, both in _daymark_media_ids and in the resulting gallery

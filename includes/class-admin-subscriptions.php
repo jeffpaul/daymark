@@ -108,6 +108,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
+		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 	}
 
 	/**
@@ -250,6 +251,7 @@ class Daymark_Admin_Subscriptions {
 			<?php
 			$this->render_export_link();
 			$this->render_import_form();
+			$this->render_privacy_section();
 			?>
 		</div>
 		<?php
@@ -295,6 +297,7 @@ class Daymark_Admin_Subscriptions {
 			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
 			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
 			'title_updated'      => __( 'Site name updated.', 'daymark' ),
+			'privacy_saved'      => __( 'Privacy settings saved.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -1038,6 +1041,116 @@ class Daymark_Admin_Subscriptions {
 			<?php submit_button( __( 'Import', 'daymark' ), 'secondary', 'daymark-import-submit', true ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Definitions for the Privacy section's checkboxes (issue #289): option
+	 * name => label, description, and default. The default matches each
+	 * option's matching filter's own pre-existing hardcoded default (see
+	 * Daymark_Publisher::extract_camera_info()/resolve_location()/
+	 * fetch_weather() and Daymark_Microformats::hentry_markup()), so an
+	 * upgrading site's behavior is unchanged until a site owner actively
+	 * unchecks one — the option is a new way to set what the filter already
+	 * defaulted to, not a new default.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return array<string, array{label: string, description: string, default: bool}>
+	 */
+	private static function privacy_option_definitions(): array {
+		return array(
+			'daymark_capture_location'          => array(
+				'label'       => __( 'Location', 'daymark' ),
+				'description' => __( 'Quietly capture a Mark\'s location (from the browser) for use inside the app — Timeline, notifications. Turning this off also disables weather capture below.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_capture_weather'           => array(
+				'label'       => __( 'Weather', 'daymark' ),
+				'description' => __( 'Look up the current weather for a Mark\'s captured location. Has no effect if location capture above is off.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_capture_camera_metadata'   => array(
+				'label'       => __( 'Camera metadata', 'daymark' ),
+				'description' => __( 'Store camera, lens, and exposure details (EXIF) already present in a photo\'s own file.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_publish_location_publicly' => array(
+				'label'       => __( 'Publish location publicly', 'daymark' ),
+				'description' => __( 'Show a Mark\'s captured location in its public, search-indexable page markup. Off by default — location otherwise stays visible only to you, inside the app.', 'daymark' ),
+				'default'     => false,
+			),
+		);
+	}
+
+	/**
+	 * Render the "Privacy" section (issue #289): a checkbox per
+	 * quietly-captured-metadata opt-out that already existed as a
+	 * developer-only filter (Daymark_Publisher, Daymark_Microformats) but,
+	 * until now, had no UI a non-technical site owner could reach. Each
+	 * checkbox is backed by a same-named wp_option that filter's own
+	 * apply_filters() default argument now reads — a developer filter still
+	 * wins over this option (layered, not replaced), so nothing already
+	 * relying on the filter changes behavior.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	private function render_privacy_section(): void {
+		?>
+		<h2><?php esc_html_e( 'Privacy', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Control what quietly-captured metadata Daymark stores or publishes for new Marks. A developer can still override any of these from code — see the readme FAQ.', 'daymark' ); ?></p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_privacy_save" />
+			<?php wp_nonce_field( 'daymark_privacy_save', 'daymark_privacy_save_nonce' ); ?>
+			<table class="form-table" role="presentation">
+				<?php foreach ( self::privacy_option_definitions() as $option => $definition ) : ?>
+					<tr>
+						<th scope="row"><?php echo esc_html( $definition['label'] ); ?></th>
+						<td>
+							<label for="<?php echo esc_attr( $option ); ?>">
+								<input
+									type="checkbox"
+									name="<?php echo esc_attr( $option ); ?>"
+									id="<?php echo esc_attr( $option ); ?>"
+									value="1"
+									<?php checked( (bool) get_option( $option, $definition['default'] ) ); ?>
+								/>
+								<?php echo esc_html( $definition['description'] ); ?>
+							</label>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</table>
+			<?php submit_button( __( 'Save privacy settings', 'daymark' ) ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Handle the Privacy section's form (admin_post_daymark_privacy_save,
+	 * issue #289). One update_option() per checkbox, present or absent in
+	 * $_POST per HTML's own unchecked-checkbox convention — no schema, no
+	 * shared table row, since each is a plain scalar wp_option the matching
+	 * filter's default argument reads directly (see
+	 * privacy_option_definitions()'s own docblock).
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	public function handle_privacy_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_privacy_save', 'daymark_privacy_save_nonce' );
+
+		foreach ( array_keys( self::privacy_option_definitions() ) as $option ) {
+			update_option( $option, isset( $_POST[ $option ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		}
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'privacy_saved' ) );
 	}
 
 	/**
