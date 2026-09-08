@@ -6108,26 +6108,26 @@
 
 	// The meta line every card kind shares: an optional leading chip
 	// ('Draft' on an unpublished Mark — a subscription post carries no chip
-	// at all, since its site icon already makes clear it isn't yours), the
-	// author when there is one (a subscription post only — a Mark's author
-	// is implicitly config.currentUser, shown via its own site icon
-	// instead), and — only when the server resolved one
-	// (prepare_mark_summary(), class-rest-controller.php) — a reading-time
-	// estimate. Deliberately doesn't repeat the kind as a text label the way
-	// this line used to for a Mark (TYPE_LABELS[item.type]) — the rail's own
-	// type icon (see renderTypeIcon()) already says that now, so the text
-	// stays free for what the icon can't show. Camera and weather metadata
-	// stay server-stored-only for now — deliberately not rendered here, to
-	// keep this compact card from getting cluttered. The timestamp (and the
-	// site name) aren't part of this line — see renderCardTimestampRow(),
-	// rendered as their own bottom row instead.
+	// at all, since its site icon already makes clear it isn't yours), and —
+	// only when the server resolved one (prepare_mark_summary(),
+	// class-rest-controller.php) — a reading-time estimate. Deliberately
+	// doesn't repeat the kind as a text label the way this line used to for
+	// a Mark (TYPE_LABELS[item.type]) — the rail's own type icon (see
+	// renderTypeIcon()) already says that now, so the text stays free for
+	// what the icon can't show. Camera and weather metadata stay
+	// server-stored-only for now — deliberately not rendered here, to keep
+	// this compact card from getting cluttered. The timestamp and the site
+	// name aren't part of this line either — see renderCardTimestampRow(),
+	// rendered as their own bottom row instead. A subscription post's own
+	// author (item.author) used to render here too, but for most
+	// single-author sites that reads the same as, or very close to, the
+	// site name the bottom row and the site icon's own tooltip already
+	// show — so it was dropped as redundant (issue #285) rather than
+	// repeating a site's identity twice on one card.
 	function renderCardMeta(item, chipHtml) {
 		const parts = [];
 		if (chipHtml) {
 			parts.push(chipHtml);
-		}
-		if (item.author) {
-			parts.push(esc(item.author));
 		}
 		if (item.reading_time_minutes) {
 			parts.push(

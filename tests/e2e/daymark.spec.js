@@ -464,6 +464,50 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 	expect(fetchedUrls[0]).not.toContain('refresh=1');
 });
 
+// Timeline card meta line (issue #285): a subscription post's own author
+// used to render directly under the title — for most single-author sites
+// that duplicated the site name already shown on the card's own bottom row.
+test('subscription-post card meta line omits the post author', async ({ page }) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999002,
+		subscription_id: 1,
+		title: `E2E author-omitted ${RUN_ID}`,
+		excerpt: '',
+		author: 'Jane Doe',
+		permalink: 'https://example.invalid/post/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999002"]');
+	await expect(card).toBeVisible();
+	await expect(card.locator('.daymark-recent__meta')).not.toContainText('Jane Doe');
+	// The site name still appears — just on the bottom row, not duplicated here.
+	await expect(card.locator('.daymark-recent__timestamprow')).toContainText('Example');
+});
+
 // Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
 // button on Home (Home is assumed to be the Timeline). Independent of the
 // cron schedule and separately rate-limited per subscription (15 minutes);
