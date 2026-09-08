@@ -88,21 +88,41 @@ class Daymark_Subscription_Content_Sniffer {
 	 * signal from an IndieWeb theme, distinct from (and more trustworthy
 	 * than) a bare tag with no such markup.
 	 *
+	 * Also captures `link_url`: the first outbound `<a href>` found, when
+	 * `$exclude_host` is given — a short "link" or "note"-format item (see
+	 * resolveCardKind()'s own word-count heuristic in assets/app.js) is very
+	 * often *about* a single external link (a bookmark, a share, a POSSE'd
+	 * copy of a post elsewhere), and this is what lets the app shell offer
+	 * an oEmbed preview of that specific link rather than none at all — see
+	 * Daymark_Subscription_Oembed. An anchor on the item's own site (matched
+	 * against `$exclude_host`, case-insensitively) is skipped — that's a
+	 * "read more"/self-referential link, not the thing the post is about.
+	 * Only the first qualifying link counts; a post linking out to several
+	 * things has no reliable way to know which one is "the" link, and the
+	 * first is the best available guess.
+	 *
 	 * Uses WP_HTML_Tag_Processor (core since WP 6.2, so always available on
 	 * Daymark's WP 7.0+ baseline) rather than a full DOM parser or an
 	 * external library — this only ever needs to walk tags and read two
 	 * attributes, not build a tree.
 	 *
-	 * @param string $html Content HTML to scan.
-	 * @return array{has_video: bool, has_audio: bool, photo_count: int, plain_image_count: int, image_src: string}
+	 * @param string $html          Content HTML to scan.
+	 * @param string $exclude_host  Optional. The item's own host — an anchor
+	 *                               pointing here is never treated as the
+	 *                               item's outbound link. '' skips link
+	 *                               detection entirely (leaves `link_url` at
+	 *                               '') rather than risk picking an
+	 *                               unrelated self-link.
+	 * @return array{has_video: bool, has_audio: bool, photo_count: int, plain_image_count: int, image_src: string, link_url: string}
 	 */
-	public static function sniff( string $html ): array {
+	public static function sniff( string $html, string $exclude_host = '' ): array {
 		$result = array(
 			'has_video'         => false,
 			'has_audio'         => false,
 			'photo_count'       => 0,
 			'plain_image_count' => 0,
 			'image_src'         => '',
+			'link_url'          => '',
 		);
 
 		if ( '' === trim( $html ) || ! class_exists( 'WP_HTML_Tag_Processor' ) ) {
@@ -141,6 +161,21 @@ class Daymark_Subscription_Content_Sniffer {
 					if ( '' === $result['image_src'] ) {
 						$result['image_src'] = self::resolve_image_src( $processor );
 					}
+
+					continue;
+				}
+
+				if ( '' !== $exclude_host && '' === $result['link_url'] && 'A' === $tag ) {
+					$href = (string) ( $processor->get_attribute( 'href' ) ?? '' );
+					$host = '' !== $href ? (string) ( wp_parse_url( $href, PHP_URL_HOST ) ?? '' ) : '';
+
+					if (
+						'' !== $host
+						&& 0 !== strcasecmp( $host, $exclude_host )
+						&& in_array( strtolower( (string) ( wp_parse_url( $href, PHP_URL_SCHEME ) ?? '' ) ), array( 'http', 'https' ), true )
+					) {
+						$result['link_url'] = $href;
+					}
 				}
 			}
 		} catch ( Throwable $e ) {
@@ -150,6 +185,7 @@ class Daymark_Subscription_Content_Sniffer {
 				'photo_count'       => 0,
 				'plain_image_count' => 0,
 				'image_src'         => '',
+				'link_url'          => '',
 			);
 		}
 

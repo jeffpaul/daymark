@@ -174,6 +174,7 @@ class Test_Subscription_Post_Type extends WP_UnitTestCase {
 			'permalink'          => 'string',
 			'author'             => 'string',
 			'published_at'       => 'string',
+			'link_url'           => 'string',
 		);
 
 		foreach ( $expected_types as $key => $type ) {

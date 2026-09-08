@@ -391,6 +391,10 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	 * - `featured_image_url` (best available image URL, or '')
 	 * - `raw_media` (enclosure URLs, for later embed/oEmbed resolution —
 	 *   never resolved here)
+	 * - `link_url` (the item's own outbound link, when it had no confirmed
+	 *   media of its own — see Daymark_Subscription_Content_Sniffer::sniff();
+	 *   never resolved to a live oEmbed preview here, only at read time —
+	 *   see Daymark_Subscription_Oembed)
 	 *
 	 * Every string field is sanitized; this is untrusted external input.
 	 *
@@ -444,6 +448,8 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			}
 		}
 
+		$link_url = '';
+
 		// An enclosure is an explicit "this is the media of this item"
 		// signal, but plenty of ordinary posts (an inline <img> in the body,
 		// no <enclosure> at all) carry media the enclosure loop above never
@@ -460,7 +466,9 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 				$content_html = (string) ( $raw_item['description'] ?? '' );
 			}
 
-			$sniffed = Daymark_Subscription_Content_Sniffer::sniff( $content_html );
+			$exclude_host = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
+			$sniffed      = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
+			$link_url     = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 
 			if ( $sniffed['has_video'] ) {
 				$has_video = true;
@@ -511,6 +519,12 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			'post_format'        => $post_format,
 			'featured_image_url' => $featured_image_url,
 			'raw_media'          => $raw_media,
+			// The first outbound link found in the item's own content, when
+			// this item had no confirmed media of its own to sniff instead
+			// — see Daymark_Subscription_Content_Sniffer::sniff()'s own
+			// docblock. '' for a rich-media item (never sniffed for a link)
+			// or a standard/article-length item with no qualifying anchor.
+			'link_url'           => $link_url,
 		);
 	}
 

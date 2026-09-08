@@ -276,6 +276,25 @@ class Daymark_Subscription_Post_Type {
 			)
 		);
 
+		// The item's own first outbound link, when it had no confirmed media
+		// of its own to sniff instead — see
+		// Daymark_Subscription_Content_Sniffer::sniff()'s own docblock. Used
+		// to offer an oEmbed preview of the linked post at read time (see
+		// Daymark_Subscription_Oembed); never resolved to a live embed here.
+		register_post_meta(
+			self::POST_TYPE,
+			'link_url',
+			array(
+				'type'              => 'string',
+				'description'       => __( "The post's own outbound link, when detected.", 'daymark' ),
+				'single'            => true,
+				'default'           => '',
+				'show_in_rest'      => true,
+				'sanitize_callback' => 'esc_url_raw',
+				'auth_callback'     => $auth_callback,
+			)
+		);
+
 		// The *source* site's permalink for this specific post — never a
 		// URL on this site, since this post type has no permalink here.
 		register_post_meta(
