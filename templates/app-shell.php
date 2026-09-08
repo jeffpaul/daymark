@@ -77,176 +77,19 @@ if ( '' !== $daymark_csp && ! headers_sent() ) {
 	header( 'Content-Security-Policy: ' . $daymark_csp );
 }
 
-$daymark_user = wp_get_current_user();
-
-/*
- * Connector list and per-type destination defaults, from the
- * Daymark_Syndication_Registry (the source of truth) — so real connector
- * plugins registered via `daymark_register_connectors` appear here with
- * their live connection status.
- */
-$daymark_registry   = Daymark_Syndication_Registry::instance();
-$daymark_all_types  = array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed' );
-$daymark_connectors = array();
-
-// Only genuinely connected networks (a real connector plugin with
-// credentials configured) are offered — a destination that cannot
-// actually publish or return replies is not shown. The site itself is
-// always the canonical destination either way.
-foreach ( $daymark_registry->get_connectors() as $daymark_connector ) {
-	if ( ! $daymark_connector->is_connected() ) {
-		continue;
-	}
-
-	$daymark_connectors[] = array(
-		'id'           => $daymark_connector->get_id(),
-		'label'        => $daymark_connector->get_label(),
-		'connected'    => $daymark_connector->is_connected(),
-		'status'       => $daymark_connector->is_connected() ? 'connected' : 'mocked',
-		'status_label' => $daymark_connector->get_status_label(),
-		'supports'     => array_values( array_filter( $daymark_all_types, array( $daymark_connector, 'supports_daymark_type' ) ) ),
-	);
-}
-
-$daymark_visible_ids   = array_column( $daymark_connectors, 'id' );
-$daymark_publisher     = Daymark_Plugin::instance()->publisher;
-$daymark_type_defaults = array();
-
-foreach ( $daymark_all_types as $daymark_type ) {
-	// The user's remembered selection for the type (falling back to the
-	// model defaults), limited to destinations that are actually offered.
-	$daymark_type_defaults[ $daymark_type ] = array_values(
-		array_intersect( $daymark_publisher->get_effective_defaults( $daymark_type ), $daymark_visible_ids )
-	);
-}
-
-// Site categories (the filing counterpart to destinations) and the
-// remembered per-type default categories. Flat list, name-ordered; the
-// app shows the picker only when there is a real choice beyond the
-// site's single default category.
-$daymark_categories = array();
-foreach ( get_categories(
-	array(
-		'hide_empty' => false,
-		'orderby'    => 'name',
-	)
-) as $daymark_cat ) {
-	$daymark_categories[] = array(
-		'id'     => (int) $daymark_cat->term_id,
-		'name'   => $daymark_cat->name,
-		'parent' => (int) $daymark_cat->parent,
-	);
-}
-
-$daymark_category_defaults = array();
-foreach ( $daymark_all_types as $daymark_type ) {
-	$daymark_category_defaults[ $daymark_type ] = $daymark_publisher->get_effective_categories( $daymark_type );
-}
-
-// Per-type policy for the composer's optional Title field. Normalized to a
-// strict 'optional' | 'hidden' map for every known type so the app can look
-// up any type without a missing-key gap (a filter may return a partial map).
-$daymark_title_policy_all = Daymark_Publisher::title_field_policy();
-$daymark_title_policy     = array();
-foreach ( $daymark_all_types as $daymark_type ) {
-	$daymark_title_policy[ $daymark_type ] = ( isset( $daymark_title_policy_all[ $daymark_type ] ) && 'optional' === $daymark_title_policy_all[ $daymark_type ] )
-		? 'optional'
-		: 'hidden';
-}
-
-$daymark_ai = Daymark_Plugin::instance()->ai_assist;
-
-// Controllable helpers get in-app toggles; awareness helpers are the
-// remaining detected publishing plugins Daymark only notes (can't drive).
-$daymark_controllable_helpers = Daymark_Publish_Helpers::controllable();
-$daymark_controllable_ids     = array_column( $daymark_controllable_helpers, 'id' );
-$daymark_awareness_helpers    = array_values(
-	array_filter(
-		Daymark_Publish_Helpers::detect(),
-		static function ( $helper ) use ( $daymark_controllable_ids ) {
-			return ! in_array( $helper['id'], $daymark_controllable_ids, true );
-		}
-	)
-);
-
-// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action; validated against a fixed whitelist below.
+// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action; validated against a fixed whitelist inside build_app_config().
 $daymark_requested_type = isset( $_GET['daymark_type'] ) ? sanitize_key( wp_unslash( $_GET['daymark_type'] ) ) : '';
+// Set only right after Daymark_Share_Target redirects here from a
+// successful OS share-sheet POST — the app boots straight into that
+// draft's composer instead of Home. GET /marks/{id} (which openDraft()
+// uses) already enforces edit_post on this id, so a tampered value just
+// fails that fetch harmlessly rather than needing a second check here.
+$daymark_requested_draft_id = isset( $_GET['daymark_draft'] ) ? absint( wp_unslash( $_GET['daymark_draft'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
 
-$daymark_config = array(
-	'restUrl'               => esc_url_raw( rest_url( 'daymark/v1/' ) ),
-	'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
-	'nonce'                 => wp_create_nonce( 'wp_rest' ),
-	'siteUrl'               => esc_url_raw( home_url( '/' ) ),
-	'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
-	// A raw PHP date() format string (Settings -> General -> Date Format) —
-	// assets/app.js's formatDateWithPhpFormat() maps it token-by-token onto
-	// a Timeline card's own absolute-date display, so a card reads dates
-	// the same way the rest of wp-admin already does rather than the
-	// browser's own locale default.
-	'dateFormat'            => sanitize_text_field( get_option( 'date_format' ) ),
-	// Site Icon first, Daymark's own bundled icon otherwise — same
-	// resolution Daymark_Routes::icon_url() already uses for the browser
-	// favicon and PWA manifest icons. Timeline's own-Mark leading icon
-	// reuses it too, so "your Marks" and "a subscribed site's posts" both
-	// identify their source the same way (a site's icon), not one by site
-	// and the other by the logged-in user's personal Gravatar.
-	'siteIconUrl'           => esc_url_raw( Daymark_Routes::icon_url( 96 ) ),
-	// Always Daymark's own bundled icon, never the site's Site Icon — used
-	// for the app shell's own header/nav chrome (Home's wordmark, and the
-	// Explore/Search/Me/Notifications icon link), which is Daymark's own
-	// brand identity, not the site's. Deliberately a separate value from
-	// siteIconUrl above rather than reusing it, since a site owner who sets
-	// a Site Icon shouldn't see it silently take over Daymark's own header.
-	'daymarkIconUrl'        => esc_url_raw( Daymark_Routes::daymark_icon_url( 96 ) ),
-	'screen'                => $daymark_screen,
-	'connectors'            => $daymark_connectors,
-	'defaults'              => $daymark_type_defaults,
-	'categories'            => $daymark_categories,
-	'categoryDefaults'      => $daymark_category_defaults,
-	'titlePolicy'           => $daymark_title_policy,
-	'defaultCategory'       => (int) get_option( 'default_category' ),
-	'ai'                    => array(
-		'available'     => $daymark_ai->is_available(),
-		'providerLabel' => $daymark_ai->get_provider_label(),
-	),
-	'notifications'         => array(
-		'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
-	),
-	// Controllable third-party helpers get a per-Mark toggle; the rest
-	// of the detected publishing plugins stay awareness-only (Daymark does
-	// not drive those).
-	'controllableHelpers'   => $daymark_controllable_helpers,
-	'publishHelpers'        => $daymark_awareness_helpers,
-	'currentUser'           => array(
-		'id'             => (int) $daymark_user->ID,
-		'displayName'    => $daymark_user->display_name,
-		'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $daymark_user->ID, array( 'size' => 96 ) ) ),
-		// The Me screen links out to WordPress's own profile/logout rather
-		// than duplicating account settings — see CLAUDE.md's non-goals.
-		'profileEditUrl' => esc_url_raw( get_edit_profile_url( $daymark_user->ID ) ),
-		'logoutUrl'      => esc_url_raw( wp_logout_url( Daymark_Routes::app_url( 'me' ) ) ),
-	),
-	// Subscription management lives in wp-admin (Settings -> Daymark), not
-	// the app shell — see CLAUDE.md's "Subscribe-by-URL + subscription
-	// management" decision. Explore's Following section and Me both link
-	// out to it rather than duplicating it in-app.
-	'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
-	// Set only right after Daymark_Share_Target redirects here from a
-	// successful OS share-sheet POST — the app boots straight into that
-	// draft's composer instead of Home. GET /marks/{id} (which openDraft()
-	// uses) already enforces edit_post on this id, so a tampered value just
-	// fails that fetch harmlessly rather than needing a second check here.
-	'pendingDraftId'        => isset( $_GET['daymark_draft'] ) ? absint( wp_unslash( $_GET['daymark_draft'] ) ) : 0, // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
-	// Set only when arriving from an external launcher (e.g. wp-admin's
-	// "+New -> Daymark" item, Daymark_Admin_Bar) that wants the composer
-	// to open pre-set to a specific type — the same one-shot mechanism
-	// state.pendingType already uses when the in-app Home launcher sets
-	// it, just seeded from a query var instead of a tap. Restricted to
-	// the four types the composer's picker actually understands
-	// (assets/app.js's LAUNCHER_TYPES); anything else is dropped rather
-	// than reaching a picker lookup that doesn't have a matching key.
-	'pendingType'           => in_array( $daymark_requested_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $daymark_requested_type : '',
-);
+// One source of truth for this array, shared with GET /daymark/config.json
+// (the cold-offline-load path, issue #126) — see build_app_config()'s own
+// docblock in class-routes.php.
+$daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_requested_type, $daymark_requested_draft_id );
 
 /*
  * The app's assets go through the script/style API (registration,

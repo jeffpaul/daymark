@@ -1462,6 +1462,31 @@
 		}
 	}
 
+	// Shared-device safeguard (issue #126): asks the active service worker
+	// to clear its cached offline-fallback shell/config before a deliberate
+	// Log out proceeds to WordPress's own logout URL, so a stale cached
+	// config (branding, connector/category lists) never lingers into
+	// whoever uses this browser next. Best-effort with a short timeout —
+	// no controller yet, no response in time, or the feature simply
+	// unsupported all resolve the same way: proceed with the real logout
+	// regardless, never block it on this.
+	function clearOfflineShellCache() {
+		return new Promise((resolve) => {
+			const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
+			if (!controller) {
+				resolve();
+				return;
+			}
+			const channel = new MessageChannel();
+			const timer = setTimeout(resolve, 800);
+			channel.port1.onmessage = () => {
+				clearTimeout(timer);
+				resolve();
+			};
+			controller.postMessage({ type: 'daymark-clear-offline-cache' }, [channel.port2]);
+		});
+	}
+
 	// Loads a Mark that's still only queued locally (never reached the
 	// server) back into the composer — the offline counterpart to
 	// openDraft(), rehydrating picked media from the stored Blobs instead
@@ -4619,7 +4644,7 @@
 					}
 					${
 						user.logoutUrl
-							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}">${esc(
+							? `<a class="daymark-melink" href="${esc(user.logoutUrl)}" data-me-logout>${esc(
 									__('Log out', 'daymark')
 							  )}</a>`
 							: ''
@@ -4642,6 +4667,17 @@
 				myMarks.addEventListener('click', () => {
 					searchPreset = { source: 'mine' };
 					navigate('#search');
+				});
+			}
+
+			const logout = root.querySelector('[data-me-logout]');
+			if (logout) {
+				logout.addEventListener('click', (event) => {
+					event.preventDefault();
+					const href = logout.href;
+					clearOfflineShellCache().then(() => {
+						window.location.href = href;
+					});
 				});
 			}
 
@@ -7543,7 +7579,20 @@
 	// once at boot, in case items are still pending from a previous
 	// offline session and connectivity is already back by the time this
 	// load happens.
+	//
+	// A session that booted from the offline-fallback shell (issue #126;
+	// assets/offline-boot.js sets config.offlineShell) reloads instead of
+	// flushing in place — that config is deliberately nonce-less and
+	// connector/category-empty (see build_app_config()'s own docblock), so
+	// the only way back to a fully real session is the same fresh
+	// /daymark navigation any other cold load gets. Nothing already queued
+	// is lost: IndexedDB survives the reload and flushes again on the very
+	// next boot, same as this listener already does below.
 	window.addEventListener('online', () => {
+		if (config.offlineShell) {
+			window.location.reload();
+			return;
+		}
 		flushOfflineQueue().catch(() => {});
 	});
 	// A record still marked 'uploading' at boot means the page that started
@@ -7573,22 +7622,56 @@
 	// is already best-effort end to end (see its own docblock).
 	syncBookmarkCache().catch(() => {});
 
-	// --- Service worker (PWA, Phase 8) ---
+	// --- Service worker (PWA; cold-offline-load support, issue #126) ---
 	//
-	// The worker lives in the plugin assets directory, so its maximum
-	// scope is /wp-content/plugins/daymark/assets/ — it cannot (and is not
-	// meant to) control the /daymark page itself. We register with that
-	// explicit narrow scope on purpose: install-time precaching still
-	// stores app.css and app.js in Cache Storage, and the narrow scope
-	// guarantees the worker can never intercept REST calls, nonces, or
-	// the app-shell HTML. No Service-Worker-Allowed header hacks.
-	// Feature-detected and failure-tolerant: if registration fails
-	// (HTTP-only local sites, older browsers), the app works unchanged.
-	if ('serviceWorker' in navigator && config.assetsUrl) {
+	// Registered at /daymark/sw.js (a plain templated echo of
+	// assets/daymark-sw.js — see Daymark_Routes::maybe_load_app_shell()),
+	// not the static file under the plugin's own assets/ directory, and
+	// with an explicit scope covering the app's own base (config.appUrl,
+	// e.g. /daymark/) — this is what lets the worker actually control
+	// /daymark* navigations, unlike the narrower, effectively-inert
+	// assets-directory-only scope this registration used before. See
+	// assets/daymark-sw.js's own docblock for exactly what that worker
+	// does and doesn't cache under this wider scope.
+	//
+	// A stale registration at the old, narrower scope (assetsUrl) is
+	// explicitly unregistered first — it never controlled any real page
+	// anyway (see daymark-sw.js's own history), so this is just cleanup,
+	// not a behavior change for anyone already running it.
+	//
+	// Feature-detected and failure-tolerant throughout: if registration
+	// fails (HTTP-only local sites, older browsers), the app works
+	// unchanged, exactly as before this feature existed.
+	if ('serviceWorker' in navigator && config.appUrl) {
 		navigator.serviceWorker
-			.register(config.assetsUrl + 'daymark-sw.js', { scope: config.assetsUrl })
-			.catch(() => {
-				/* Never let SW registration break the app. */
-			});
+			.getRegistrations()
+			.then((registrations) => {
+				registrations.forEach((registration) => {
+					if (config.assetsUrl && registration.scope === config.assetsUrl) {
+						registration.unregister().catch(() => {});
+					}
+				});
+			})
+			.catch(() => {})
+			.then(() =>
+				navigator.serviceWorker.register(config.appUrl + 'sw.js', { scope: config.appUrl }).catch(() => {
+					/* Never let SW registration break the app. */
+				})
+			);
+	}
+
+	// Warms the service worker's own redacted config.json cache (issue
+	// #126) — this normal, inline-configured boot path never otherwise has
+	// a reason to fetch that endpoint (it already has window.daymarkApp),
+	// but without this, a device's very first-ever cold-offline load would
+	// find nothing cached there at all: assets/offline-boot.js is the only
+	// other caller, and it only ever runs on the offline-fallback shell
+	// itself. Fire-and-forget, like every other best-effort boot task
+	// above — its response is unused here, only the service worker's own
+	// side effect of caching a redacted copy (see assets/daymark-sw.js)
+	// matters. Skipped on the offline shell itself (config.offlineShell),
+	// which already made this exact fetch moments ago during its own boot.
+	if (config.appUrl && !config.offlineShell) {
+		fetch(config.appUrl + 'config.json', { credentials: 'same-origin' }).catch(() => {});
 	}
 })();

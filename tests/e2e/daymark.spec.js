@@ -1667,11 +1667,12 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 // Offline-first creation (issue #121): composing and saving while offline
 // queues the Mark locally (IndexedDB) instead of failing, and it syncs to a
 // real draft automatically once connectivity returns — no manual retry.
-// Only covers a session already open when connectivity drops; a cold load
-// of /daymark itself with zero connectivity is a documented non-goal (see
-// CLAUDE.md), so this test only ever toggles offline after the app has
-// already loaded, and navigates within the SPA (hash routes, no network)
-// rather than reloading while offline.
+// Covers a session already open when connectivity drops; this test toggles
+// offline only after the app has already loaded, and navigates within the
+// SPA (hash routes, no network) rather than reloading while offline — the
+// separate cold-load case (a fresh navigation with zero connectivity) is
+// covered by its own test below (issue #126), which no longer needs to be
+// a documented non-goal now that that test passes.
 test('offline: composing while offline queues locally and syncs when back online', async ({
 	page,
 }) => {
@@ -1707,6 +1708,56 @@ test('offline: composing while offline queues locally and syncs when back online
 	);
 	await page.reload();
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
+});
+
+// Cold-offline-load support (issue #126): a fresh navigation to /daymark
+// with zero connectivity must still render and let the composer queue a
+// Mark locally — not just a session that was already open when
+// connectivity dropped (the test above). Loads once online first so the
+// service worker installs, activates, and precaches (assets/daymark-sw.js)
+// — including its own network-first fetch of GET /daymark/config.json,
+// which is what the offline-fallback shell falls back to on this very
+// reload (its own live fetch fails, since we're offline by then).
+test('cold-offline load: a fresh /daymark navigation with zero connectivity still renders and the composer works', async ({
+	page,
+	context,
+}) => {
+	const caption = `E2E cold offline ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// Both the SW's own install-time precaching and the boot-time
+	// config.json warming fetch (assets/app.js) are fire-and-forget — wait
+	// for an active worker, then give those a moment to actually land in
+	// Cache Storage before cutting connectivity.
+	await page.evaluate(() => navigator.serviceWorker.ready);
+	await page.waitForTimeout(1500);
+
+	await context.setOffline(true);
+	try {
+		await page.reload();
+
+		// The offline-fallback shell (templates/offline-shell.php) renders
+		// the same app-shell markup and boots the same app.js — Home's own
+		// launcher is reachable even though the real, dynamic /daymark
+		// response couldn't be fetched.
+		await expect(page.locator('[data-action="new-mark"]')).toBeVisible({ timeout: 10000 });
+
+		await openComposer(page, 'note');
+		await page.fill('#daymark-caption', caption);
+		await page.locator('[data-action="next"]').click();
+		await page.locator('[data-action="save-draft"]').click();
+		await expect(page.getByText('Saved as draft')).toBeVisible();
+
+		// Queued locally (IndexedDB) exactly like the already-open-session
+		// offline case — no config.json nonce was ever available to
+		// actually reach the server while offline either way.
+		await page.locator('a.daymark-success__link[href="#home"]').click();
+		await expect(page.locator('[data-resume-pending]').filter({ hasText: caption })).toBeVisible();
+	} finally {
+		await context.setOffline(false);
+	}
 });
 
 // Unread indicator: set by a new reply, cleared by viewing notifications —
