@@ -249,9 +249,12 @@ final class Daymark_Plugin {
 	}
 
 	/**
-	 * Add "Open Daymark" and "Subscriptions" action links on the Plugins
-	 * list table, so the app and the subscribe-by-URL settings screen are
-	 * both one click away right after activation.
+	 * Add "Open Daymark" and "Settings" action links on the Plugins list
+	 * table, so the app and the (now tabbed — Subscriptions, Connectors,
+	 * Import/Export, Privacy; issue #86) settings screen are both one click
+	 * away right after activation. Renamed from "Subscriptions" now that
+	 * the target page covers more than subscription management alone —
+	 * the settings screen's own default tab still lands on Subscriptions.
 	 *
 	 * @param array<string, string> $links Existing action links (Deactivate, …).
 	 * @return array<string, string>
@@ -263,16 +266,16 @@ final class Daymark_Plugin {
 			esc_html__( 'Open Daymark', 'daymark' )
 		);
 
-		$subscriptions = sprintf(
+		$settings = sprintf(
 			'<a href="%s">%s</a>',
 			esc_url( Daymark_Admin_Subscriptions::page_url() ),
-			esc_html__( 'Subscriptions', 'daymark' )
+			esc_html__( 'Settings', 'daymark' )
 		);
 
 		return array_merge(
 			array(
-				'open-daymark'          => $open,
-				'daymark-subscriptions' => $subscriptions,
+				'open-daymark'     => $open,
+				'daymark-settings' => $settings,
 			),
 			$links
 		);
