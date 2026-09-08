@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 0.12.0
+Stable tag: 0.13.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -135,7 +135,45 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.13.0 - 2026-09-08 =
+**Added**
+
+* Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in.
+* A published Mark's Timeline card now has a routing icon showing exactly where it was sent — your own site plus every syndication target attempted, each with its own status (published/mocked, failed, or unsupported) and a link out where one exists.
+* Notifications now groups a Mark's replies into one conversation card instead of scattering them as separate flat cards, and adds a source filter (once you have more than one) so you can narrow the list to just one reply origin. The per-Mark routing popover also now shows when a real syndicated target's replies were last checked.
+* The composer's picker now accepts a dragged-and-dropped file on desktop, attaching it the same way picking it via the file input would.
+* A Draft's ⋯ menu now has a "Publish" action, alongside Edit and Delete, that skips straight to the Publish screen for a draft that's already ready — no need to reopen the full composer first.
+* A Mark's own card now shows your site's name on the same row as its timestamp, left-aligned — matching how a subscription post's card already shows its source site there.
+* A subscription post's own full-screen view now has a "Refresh content" action that forces a fresh live re-fetch, instead of the cached content being stuck at whatever it looked like the first time it was fetched.
+* A subscribed feed post whose content hasn't been fetched yet now rehydrates automatically as its Timeline card scrolls near the viewport, instead of waiting for you to tap it — the same background fetch a click-through already used, just triggered earlier so opening it moments later is instant.
+* `/daymark` now loads and the composer works even on a cold, zero-connectivity load — open it once online, then a later relaunch with no signal at all (a subway, a flight, a dead zone) still gets you a working composer that queues locally, instead of a browser error page.
+
+**Changed**
+
+* Tapping a Timeline card (a Mark, an ordinary post, or a subscription post) now opens its full content on a dedicated full-screen post view instead of expanding it in place below the card — the same full-screen pattern Notifications already uses, with a back arrow next to the Daymark icon in the upper-left. Notifications' own back link now shares that same treatment (previously its own separate markup).
+
+**Fixed**
+
+* A syndication target that couldn't represent a Mark's type (e.g. selecting YouTube for a note) was silently dropped instead of being recorded as failed — `_daymark_syndication_status` could never actually show `failed` in practice. Every attempted target is now recorded with its own outcome, whether it succeeded or not.
+* A syndication target whose connector plugin had been deactivated or uninstalled after it was selected was also silently dropped instead of recorded — the routing popover now shows it as "Not available" instead of it just vanishing.
+* A resumed draft with existing media but no caption could get silently bounced back to the composer instead of reaching the Publish screen — the readiness check only ever looked at newly picked files, never a draft's own already-attached media.
+* The Like/Repost toggle's own auto-published Mark (used to carry an outbound `u-like-of`/`u-repost-of` link) no longer shows up as its own card on the Timeline — it was never meant to be read as content.
+* A long Timeline card title no longer gets cut off with an ellipsis — it now wraps onto as many lines as it needs, matching how the excerpt already displays in full.
+* The Like-through-Share stat-row icons are now evenly spaced again — a read-only stat (a plain count, or the "Replied" indicator) previously had no minimum width of its own, throwing off the row's rhythm next to the interactive icons that did.
+* The Timeline's vertical rail line no longer visibly breaks at a relative-date group header ("Today", "Last Week", ...), and now connects cleanly to the sunrise/sunset flourishes that bookend it.
+* Explore/Search/Me's header icon and title no longer sit farther apart than Home's own icon and "Daymark" wordmark do.
+* Broadened the "Skip to content"/post-navigation stripping in a subscription post's expanded content to catch a few more common theme/framework conventions (additional skip-link targets, a wider set of wrapper elements for the previous/next post links).
+* A Jetpack Tiled Gallery's images could overlap each other and surrounding text in a subscription post's expanded content, since the layout CSS that positions them never loads here — they now fall back to a plain stacked layout instead.
+
+**Developer**
+
+* Every user-facing PHP string now uses a WordPress translation function under the `daymark` text domain, and the app shell's script registers `wp-i18n` + `wp_set_script_translations()` — laying the groundwork for wordpress.org's own GlotPress translation system once the plugin ships there. No bundled translation files, no behavior change for an English-language site.
+* Every user-facing string in the app shell's own JavaScript (`assets/app.js`) now uses `wp.i18n.__()`/`_n()`/`sprintf()` under the `daymark` text domain, completing the JS half of i18n readiness started in #252 — no wording or behavior change for an English-language site.
+* The hooks reference site (<https://jeffpaul.github.io/daymark/>) now shows Daymark's own icon as its browser tab favicon instead of the Docusaurus generator's default.
+* The hooks reference site now includes a "Writing a Connector" guide — a complete, minimal `Daymark_Syndication_Connector` example (the interface, the `publish()` payload/result shapes, and the relevant hooks) for anyone building a real syndication destination.
+
 = 0.12.0 - 2026-09-07 =
+
 **Added**
 
 * A subscribed post's Timeline card now has a "Replied" indicator plus real Like and Repost toggles — Like/Repost publish a small Mark of your own, letting an already-installed federation plugin (ActivityPub/Webmention/ATmosphere) send the actual outbound like/reblog, the same way the existing Reply action already works. Full engagement counts from the origin site aren't obtainable in general, so this shows your own engagement instead.
@@ -499,6 +537,9 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.13.0 =
+`/daymark` now works even on a cold, zero-connectivity load — open it once online, and a later relaunch with no signal at all still gets you a working composer. Tapping a Timeline card now opens a dedicated full-screen post view instead of expanding in place, gallery images can be manually reordered in the composer, and a published Mark's new routing icon shows exactly where it was sent (and whether each destination succeeded).
 
 = 0.12.0 =
 Subscribed posts get real engagement: Like and Repost toggles alongside the existing Reply, publishing a small Mark of your own so an installed federation plugin sends the actual outbound activity. The Settings -> Daymark subscriptions table is tidier too — site icon, "Edit name," and Refresh are all now inline icons next to what they act on instead of separate columns/buttons.
