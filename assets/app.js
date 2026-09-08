@@ -11,7 +11,36 @@
 (function () {
 	'use strict';
 
-	const { __, _n, _x, sprintf } = wp.i18n;
+	// wp.i18n backs every translated string (issue #253) — always present
+	// on the normal online app shell, which registers it as a hard script
+	// dependency (templates/app-shell.php). The offline-fallback shell
+	// (templates/offline-shell.php) deliberately loads nothing but this
+	// file and its own bootstrap script — see that template's own
+	// docblock — so wp.i18n is never available there. Without this
+	// fallback, destructuring it throws immediately and aborts this
+	// entire script before anything renders: the offline shell's own
+	// "Loading Daymark…" placeholder never resolves (found via a Playwright
+	// cold-offline test's page-error relay, issue #126). Plain,
+	// untranslated implementations here match this codebase's "never
+	// throws" posture elsewhere — English-only output is an acceptable
+	// trade for a resilience fallback that exists for when nothing else is
+	// working either. sprintf's own subset (this file only ever uses %s,
+	// %d, and positional %1$s/%2$s) is small enough to reimplement
+	// directly rather than pull in a library for a path that only runs
+	// offline.
+	const i18n = (window.wp && window.wp.i18n) || {
+		__: (text) => text,
+		_n: (single, plural, count) => (count === 1 ? single : plural),
+		_x: (text) => text,
+		sprintf: (format, ...args) => {
+			let next = 0;
+			return format.replace(/%(\d+\$)?[sd]/g, (match, position) => {
+				const index = position ? parseInt(position, 10) - 1 : next++;
+				return args[index];
+			});
+		},
+	};
+	const { __, _n, _x, sprintf } = i18n;
 
 	// --- Config ---
 	const config = window.daymarkApp || {};
