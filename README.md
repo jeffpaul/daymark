@@ -325,8 +325,11 @@ Daymark yet — they're captured now so that display work has real data to
 build on rather than starting from a Timeline with nothing to show. If
 you'd rather this wasn't captured at all while it's still invisible,
 location, weather, and camera metadata can each be turned off
-independently with a filter in your theme or a small site-specific
-plugin:
+independently from the **Privacy** section of Settings -> Daymark — no
+code required.
+
+A developer can also set the same defaults from code, which still wins
+over the Settings -> Daymark checkboxes:
 
 ```php
 add_filter( 'daymark_capture_location', '__return_false' );
@@ -335,11 +338,13 @@ add_filter( 'daymark_capture_camera_metadata', '__return_false' );
 ```
 
 Turning off location capture also stops the weather lookup, since weather
-is only ever attempted alongside a resolved location; the weather filter
-alone leaves location capture on but skips just the weather lookup. A
-Mark's captured location is stored for your own site's use and is never
-published on its public permalink page unless you explicitly opt in with
-`add_filter( 'daymark_publish_location_publicly', '__return_true' );`.
+is only ever attempted alongside a resolved location; the weather
+toggle/filter alone leaves location capture on but skips just the weather
+lookup. A Mark's captured location is stored for your own site's use and
+is never published on its public permalink page unless you explicitly opt
+in — either the "Publish location publicly" checkbox in the same Privacy
+section, or `add_filter( 'daymark_publish_location_publicly', '__return_true' );`
+from code.
 
 ## Contributing
 

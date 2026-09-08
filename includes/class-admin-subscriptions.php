@@ -108,6 +108,8 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
+		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
+		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
 	/**
@@ -244,12 +246,14 @@ class Daymark_Admin_Subscriptions {
 				<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
 			<?php endif; ?>
 			<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
+			<?php $this->render_poll_interval_form(); ?>
 
 			<h2><?php esc_html_e( 'Import / export', 'daymark' ); ?></h2>
 			<p><?php esc_html_e( 'Back up your subscription list, or bulk-import one from another feed reader, using the standard OPML format.', 'daymark' ); ?></p>
 			<?php
 			$this->render_export_link();
 			$this->render_import_form();
+			$this->render_privacy_section();
 			?>
 		</div>
 		<?php
@@ -289,12 +293,14 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$success_messages = array(
-			'subscribed'         => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
-			'subscribed_pending' => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
-			'unsubscribed'       => __( 'Unsubscribed.', 'daymark' ),
-			'refreshed'          => __( 'Refresh requested.', 'daymark' ),
-			'icon_refreshed'     => __( 'Site icon refreshed.', 'daymark' ),
-			'title_updated'      => __( 'Site name updated.', 'daymark' ),
+			'subscribed'          => __( 'Subscribed. New posts from this site will start appearing in the Timeline.', 'daymark' ),
+			'subscribed_pending'  => __( 'Subscribed, but the first fetch didn\'t complete — its posts will appear once the next automatic check succeeds.', 'daymark' ),
+			'unsubscribed'        => __( 'Unsubscribed.', 'daymark' ),
+			'refreshed'           => __( 'Refresh requested.', 'daymark' ),
+			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'       => __( 'Site name updated.', 'daymark' ),
+			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
+			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -1038,6 +1044,200 @@ class Daymark_Admin_Subscriptions {
 			<?php submit_button( __( 'Import', 'daymark' ), 'secondary', 'daymark-import-submit', true ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Allowed values for the "Check for new posts" dropdown (issue #291):
+	 * seconds => label. A fixed, small set rather than a free-typed number —
+	 * validated against on save so a POSTed value can't set an arbitrary
+	 * interval (e.g. hammering every subscribed site once a second).
+	 * DAY_IN_SECONDS is the pre-existing filter's own hardcoded default, so
+	 * it stays the option's default too.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return array<int, string>
+	 */
+	private static function poll_interval_options(): array {
+		return array(
+			HOUR_IN_SECONDS      => __( 'Hourly', 'daymark' ),
+			6 * HOUR_IN_SECONDS  => __( 'Every 6 hours', 'daymark' ),
+			12 * HOUR_IN_SECONDS => __( 'Every 12 hours', 'daymark' ),
+			DAY_IN_SECONDS       => __( 'Daily', 'daymark' ),
+		);
+	}
+
+	/**
+	 * Render the "Check for new posts" dropdown (issue #291) at the end of
+	 * the Subscriptions section: how often the recurring poll cron
+	 * (Daymark_Subscription_Poller::CRON_HOOK) checks every active
+	 * subscription for new content. Backed by the daymark_subscription_poll_interval
+	 * option that class's own register_cron_schedule() now reads — see that
+	 * method's docblock for the same filter-still-wins layering the Privacy
+	 * section's toggles use.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	private function render_poll_interval_form(): void {
+		$current = (int) get_option( 'daymark_subscription_poll_interval', DAY_IN_SECONDS );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1em;">
+			<input type="hidden" name="action" value="daymark_subscription_poll_interval_save" />
+			<?php wp_nonce_field( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' ); ?>
+			<label for="daymark_subscription_poll_interval">
+				<?php esc_html_e( 'Check for new posts:', 'daymark' ); ?>
+			</label>
+			<select name="daymark_subscription_poll_interval" id="daymark_subscription_poll_interval">
+				<?php foreach ( self::poll_interval_options() as $seconds => $label ) : ?>
+					<option value="<?php echo esc_attr( (string) $seconds ); ?>" <?php selected( $current, $seconds ); ?>><?php echo esc_html( $label ); ?></option>
+				<?php endforeach; ?>
+			</select>
+			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-poll-interval-submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Handle the "Check for new posts" form
+	 * (admin_post_daymark_subscription_poll_interval_save, issue #291). The
+	 * posted value is validated against poll_interval_options()'s own fixed
+	 * set before being stored — never trusted as an arbitrary integer.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	public function handle_poll_interval_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_subscription_poll_interval_save', 'daymark_subscription_poll_interval_save_nonce' );
+
+		$posted  = isset( $_POST['daymark_subscription_poll_interval'] ) ? absint( wp_unslash( $_POST['daymark_subscription_poll_interval'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$allowed = self::poll_interval_options();
+
+		if ( ! isset( $allowed[ $posted ] ) ) {
+			$this->redirect_with_error( __( 'That check frequency is not a valid choice.', 'daymark' ) );
+
+			return;
+		}
+
+		update_option( 'daymark_subscription_poll_interval', $posted );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'poll_interval_saved' ) );
+	}
+
+	/**
+	 * Definitions for the Privacy section's checkboxes (issue #289): option
+	 * name => label, description, and default. The default matches each
+	 * option's matching filter's own pre-existing hardcoded default (see
+	 * Daymark_Publisher::extract_camera_info()/resolve_location()/
+	 * fetch_weather() and Daymark_Microformats::hentry_markup()), so an
+	 * upgrading site's behavior is unchanged until a site owner actively
+	 * unchecks one — the option is a new way to set what the filter already
+	 * defaulted to, not a new default.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return array<string, array{label: string, description: string, default: bool}>
+	 */
+	private static function privacy_option_definitions(): array {
+		return array(
+			'daymark_capture_location'          => array(
+				'label'       => __( 'Location', 'daymark' ),
+				'description' => __( 'Quietly capture a Mark\'s location (from the browser) for use inside the app — Timeline, notifications. Turning this off also disables weather capture below.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_capture_weather'           => array(
+				'label'       => __( 'Weather', 'daymark' ),
+				'description' => __( 'Look up the current weather for a Mark\'s captured location. Has no effect if location capture above is off.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_capture_camera_metadata'   => array(
+				'label'       => __( 'Camera metadata', 'daymark' ),
+				'description' => __( 'Store camera, lens, and exposure details (EXIF) already present in a photo\'s own file.', 'daymark' ),
+				'default'     => true,
+			),
+			'daymark_publish_location_publicly' => array(
+				'label'       => __( 'Publish location publicly', 'daymark' ),
+				'description' => __( 'Show a Mark\'s captured location in its public, search-indexable page markup. Off by default — location otherwise stays visible only to you, inside the app.', 'daymark' ),
+				'default'     => false,
+			),
+		);
+	}
+
+	/**
+	 * Render the "Privacy" section (issue #289): a checkbox per
+	 * quietly-captured-metadata opt-out that already existed as a
+	 * developer-only filter (Daymark_Publisher, Daymark_Microformats) but,
+	 * until now, had no UI a non-technical site owner could reach. Each
+	 * checkbox is backed by a same-named wp_option that filter's own
+	 * apply_filters() default argument now reads — a developer filter still
+	 * wins over this option (layered, not replaced), so nothing already
+	 * relying on the filter changes behavior.
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	private function render_privacy_section(): void {
+		?>
+		<h2><?php esc_html_e( 'Privacy', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Control what quietly-captured metadata Daymark stores or publishes for new Marks. A developer can still override any of these from code — see the readme FAQ.', 'daymark' ); ?></p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_privacy_save" />
+			<?php wp_nonce_field( 'daymark_privacy_save', 'daymark_privacy_save_nonce' ); ?>
+			<table class="form-table" role="presentation">
+				<?php foreach ( self::privacy_option_definitions() as $option => $definition ) : ?>
+					<tr>
+						<th scope="row"><?php echo esc_html( $definition['label'] ); ?></th>
+						<td>
+							<label for="<?php echo esc_attr( $option ); ?>">
+								<input
+									type="checkbox"
+									name="<?php echo esc_attr( $option ); ?>"
+									id="<?php echo esc_attr( $option ); ?>"
+									value="1"
+									<?php checked( (bool) get_option( $option, $definition['default'] ) ); ?>
+								/>
+								<?php echo esc_html( $definition['description'] ); ?>
+							</label>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</table>
+			<?php submit_button( __( 'Save privacy settings', 'daymark' ) ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Handle the Privacy section's form (admin_post_daymark_privacy_save,
+	 * issue #289). One update_option() per checkbox, present or absent in
+	 * $_POST per HTML's own unchecked-checkbox convention — no schema, no
+	 * shared table row, since each is a plain scalar wp_option the matching
+	 * filter's default argument reads directly (see
+	 * privacy_option_definitions()'s own docblock).
+	 *
+	 * @since 0.13.0
+	 *
+	 * @return void
+	 */
+	public function handle_privacy_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_privacy_save', 'daymark_privacy_save_nonce' );
+
+		foreach ( array_keys( self::privacy_option_definitions() ) as $option ) {
+			update_option( $option, isset( $_POST[ $option ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		}
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'privacy_saved' ) );
 	}
 
 	/**

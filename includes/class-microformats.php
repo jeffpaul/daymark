@@ -179,20 +179,23 @@ class Daymark_Microformats {
 		 * metadata capture" feature, Daymark_Publisher) is rendered as public
 		 * p-geo/h-geo markup on its own permalink page.
 		 *
-		 * Defaults to false: capturing a location so it's available inside
-		 * the authenticated app (Timeline card, REST summary) is not the
+		 * Defaults to the `daymark_publish_location_publicly` option (a
+		 * checkbox in Settings -> Daymark's Privacy section, defaulting
+		 * to false): capturing a location so it's available inside the
+		 * authenticated app (Timeline card, REST summary) is not the
 		 * same decision as publishing an author's exact device-GPS
 		 * coordinates into public, search-indexable page HTML — the same
 		 * reasoning this class already applies to leaving u-email off the
 		 * h-card (see this file's own docblock). A site owner who wants
-		 * public location markup can opt in explicitly with this filter.
+		 * public location markup can opt in via that checkbox, or a
+		 * developer can return true from this filter.
 		 *
 		 * @since 0.11.0
 		 *
-		 * @param bool $publish_publicly Defaults to false.
+		 * @param bool $publish_publicly Defaults to the `daymark_publish_location_publicly` option.
 		 * @param int  $post_id          Mark post ID.
 		 */
-		if ( apply_filters( 'daymark_publish_location_publicly', false, $post_id ) ) {
+		if ( apply_filters( 'daymark_publish_location_publicly', (bool) get_option( 'daymark_publish_location_publicly', false ), $post_id ) ) {
 			$html .= $this->location_markup( $post_id );
 		}
 

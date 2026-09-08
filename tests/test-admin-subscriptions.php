@@ -867,4 +867,80 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'name="orderby" value="status"', $output );
 		$this->assertStringContainsString( 'name="order" value="desc"', $output );
 	}
+
+	/**
+	 * Privacy section (issue #289): all four checkboxes render checked by
+	 * default (matching each option's own pre-existing filter default),
+	 * except "Publish location publicly," which defaults unchecked.
+	 */
+	public function test_privacy_section_renders_default_checked_states(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( '<h2>Privacy</h2>', $output );
+
+		foreach ( array( 'daymark_capture_location', 'daymark_capture_weather', 'daymark_capture_camera_metadata' ) as $option ) {
+			$this->assertMatchesRegularExpression(
+				'/name="' . preg_quote( $option, '/' ) . '"[^>]*checked/',
+				$output,
+				$option . ' should be checked by default'
+			);
+		}
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/name="daymark_publish_location_publicly"[^>]*checked/',
+			$output,
+			'daymark_publish_location_publicly should be unchecked by default'
+		);
+	}
+
+	/** The Privacy section's checkboxes reflect each option's own stored value, not just its default. */
+	public function test_privacy_section_reflects_stored_option_values(): void {
+		update_option( 'daymark_capture_location', '' );
+		update_option( 'daymark_publish_location_publicly', '1' );
+
+		$output = $this->render();
+
+		delete_option( 'daymark_capture_location' );
+		delete_option( 'daymark_publish_location_publicly' );
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/name="daymark_capture_location"[^>]*checked/',
+			$output,
+			'daymark_capture_location should reflect its stored, unchecked value'
+		);
+		$this->assertMatchesRegularExpression(
+			'/name="daymark_publish_location_publicly"[^>]*checked/',
+			$output,
+			'daymark_publish_location_publicly should reflect its stored, checked value'
+		);
+	}
+
+	/**
+	 * The "Check for new posts" dropdown (issue #291) defaults to Daily
+	 * selected, matching the pre-existing filter's own DAY_IN_SECONDS
+	 * default.
+	 */
+	public function test_poll_interval_form_defaults_to_daily(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Check for new posts:', $output );
+		$this->assertMatchesRegularExpression(
+			'/<option value="' . DAY_IN_SECONDS . '"[^>]*selected[^>]*>Daily<\/option>/',
+			$output
+		);
+	}
+
+	/** The dropdown reflects a stored daymark_subscription_poll_interval option value, not just the default. */
+	public function test_poll_interval_form_reflects_stored_option_value(): void {
+		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
+
+		$output = $this->render();
+
+		delete_option( 'daymark_subscription_poll_interval' );
+
+		$this->assertMatchesRegularExpression(
+			'/<option value="' . HOUR_IN_SECONDS . '"[^>]*selected[^>]*>Hourly<\/option>/',
+			$output
+		);
+	}
 }
