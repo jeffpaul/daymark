@@ -1139,7 +1139,16 @@ test('search: the Search tab shows a query + type filter that narrow the results
 	);
 
 	await page.goto('/daymark');
-	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).click();
+	// A raw DOM click, not Playwright's own pointer-based one — same reason
+	// as the identical bottom-nav Search click further down in this file
+	// (see its own comment): Playwright's click first scrollIntoViewIfNeeded()s
+	// the target, and on this suite's accumulated, never-cleaned-up Timeline
+	// content that scroll itself triggers bindChromeAutoHide()'s scroll-down
+	// listener, which starts sliding the footer out of view (is-footer-hidden)
+	// mid-click — so Playwright's hit-test at that point lands on whatever
+	// Timeline card is now revealed underneath instead. el.click() skips that
+	// hit-testing entirely.
+	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).evaluate((el) => el.click());
 	await expect(page).toHaveURL(/#search$/);
 	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Search');
 	await expect(page.locator('h1', { hasText: 'Search' })).toBeVisible();
