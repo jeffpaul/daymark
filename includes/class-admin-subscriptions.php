@@ -103,15 +103,31 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * Subscriptions table columns a visitor can sort by (issue #178), via
-	 * `?orderby=` — anything else falls back to the table's default order
-	 * (get_all()'s own `created_at DESC`). Actions is not meaningful to sort
-	 * by, so it's left out (the site icon has its own column no longer —
-	 * it renders inline with the Site column's title instead — so there's
-	 * nothing to exclude for it here either).
+	 * `?orderby=` — anything else (including no `?orderby=` at all) falls
+	 * back to DEFAULT_ORDERBY below rather than get_all()'s own raw
+	 * `created_at DESC` order. Actions is not meaningful to sort by, so it's
+	 * left out (the site icon has its own column no longer — it renders
+	 * inline with the Site column's title instead — so there's nothing to
+	 * exclude for it here either).
 	 *
 	 * @var string[]
 	 */
 	private const SORTABLE_COLUMNS = array( 'site', 'status', 'last_checked' );
+
+	/**
+	 * This screen's own default sort (issue #295) — A-to-Z by the Site
+	 * column's own display label (subscription_label(): site title, falling
+	 * back to the site URL only when there's no title), applied whenever
+	 * `?orderby=` is absent or invalid, rather than surfacing get_all()'s
+	 * raw subscribe-order (`created_at DESC`) unsorted. A reader scanning a
+	 * list of followed sites reaches for it alphabetically far more often
+	 * than by when they happened to subscribe; get_all()'s own query and
+	 * every other caller (OPML export) are unaffected — this is purely this
+	 * screen's own display default.
+	 *
+	 * @var string
+	 */
+	private const DEFAULT_ORDERBY = 'site';
 
 	/**
 	 * Register the settings page and admin-post handlers.
@@ -613,8 +629,8 @@ class Daymark_Admin_Subscriptions {
 	 *
 	 * @param string $search  The current search term, if any (for the
 	 *                        input's own value).
-	 * @param string $orderby The active sort column, or '' — see
-	 *                        SORTABLE_COLUMNS.
+	 * @param string $orderby The active sort column — always one of
+	 *                        SORTABLE_COLUMNS (see DEFAULT_ORDERBY).
 	 * @param string $order   'asc' or 'desc'.
 	 * @return void
 	 */
@@ -623,10 +639,8 @@ class Daymark_Admin_Subscriptions {
 		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
 			<input type="hidden" name="tab" value="subscriptions" />
-			<?php if ( '' !== $orderby ) : ?>
-				<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
-				<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
-			<?php endif; ?>
+			<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
+			<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
 			<p class="search-box">
 				<label class="screen-reader-text" for="daymark-subscription-search-input"><?php esc_html_e( 'Search Subscriptions', 'daymark' ); ?></label>
 				<input
@@ -649,11 +663,10 @@ class Daymark_Admin_Subscriptions {
 	 *                                                          Daymark_Subscriptions::get_all(),
 	 *                                                          already filtered by filter_subscriptions()
 	 *                                                          and sorted by sort_subscriptions().
-	 * @param string                           $orderby       The active sort column (one of
-	 *                                                         SORTABLE_COLUMNS, or '' for the
-	 *                                                         table's default order).
-	 * @param string                           $order         'asc' or 'desc' — meaningless when
-	 *                                                         $orderby is ''.
+	 * @param string                           $orderby       The active sort column — always one
+	 *                                                         of SORTABLE_COLUMNS (see
+	 *                                                         DEFAULT_ORDERBY).
+	 * @param string                           $order         'asc' or 'desc'.
 	 * @param string                           $search        The active search term, or '' — only
 	 *                                                         used here to tell "no subscriptions at
 	 *                                                         all" apart from "none match this
@@ -807,10 +820,10 @@ class Daymark_Admin_Subscriptions {
 	 * state-changing action — so, like render_notice()'s query-string read
 	 * above, no nonce applies here.
 	 *
-	 * @return array{orderby: string, order: string} `orderby` is one of
-	 *         SORTABLE_COLUMNS, or '' to keep the table's default order;
-	 *         `order` is always 'asc' or 'desc' (meaningless when `orderby`
-	 *         is '').
+	 * @return array{orderby: string, order: string} `orderby` is always one
+	 *         of SORTABLE_COLUMNS — DEFAULT_ORDERBY when `?orderby=` is
+	 *         absent or invalid, never ''; `order` is always 'asc' or
+	 *         'desc'.
 	 */
 	private function resolve_sort_request(): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
@@ -819,7 +832,7 @@ class Daymark_Admin_Subscriptions {
 		$order = isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '';
 
 		if ( ! in_array( $orderby, self::SORTABLE_COLUMNS, true ) ) {
-			$orderby = '';
+			$orderby = self::DEFAULT_ORDERBY;
 		}
 
 		return array(
@@ -829,22 +842,17 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Sort a list of subscription rows for display (issue #178). Leaves the
-	 * list untouched (get_all()'s own `created_at DESC`) when `$orderby` is
-	 * '' — the whitelist resolve_sort_request() already applies means that's
-	 * only ever the "no sort requested, or an invalid one" case, never a
-	 * real column with nothing to compare.
+	 * Sort a list of subscription rows for display (issue #178).
+	 * resolve_sort_request() always hands back one of SORTABLE_COLUMNS
+	 * (defaulting to DEFAULT_ORDERBY), so every call here actually sorts —
+	 * there's no "leave get_all()'s raw order alone" case to special-case.
 	 *
 	 * @param array<int, array<string, mixed>> $subscriptions Rows to sort.
-	 * @param string                           $orderby       One of SORTABLE_COLUMNS, or ''.
+	 * @param string                           $orderby       One of SORTABLE_COLUMNS.
 	 * @param string                           $order         'asc' or 'desc'.
 	 * @return array<int, array<string, mixed>>
 	 */
 	private function sort_subscriptions( array $subscriptions, string $orderby, string $order ): array {
-		if ( '' === $orderby ) {
-			return $subscriptions;
-		}
-
 		usort(
 			$subscriptions,
 			static function ( array $a, array $b ) use ( $orderby ) {
