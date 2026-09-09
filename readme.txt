@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 0.13.0
+Stable tag: 0.14.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -135,7 +135,32 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.14.0 - 2026-09-09 =
+**Added**
+
+* Settings -> Daymark now has a Privacy section with a checkbox each for location, weather, and camera-metadata capture, plus whether a Mark's location is published publicly — previously these were only reachable by adding a filter in code. A filter still overrides its matching checkbox, so nothing already using one changes behavior.
+* Settings -> Daymark's Subscriptions section now has a "Check for new posts" dropdown (Hourly / Every 6 hours / Every 12 hours / Daily, the previous default) controlling how often Daymark checks your subscriptions for new content — previously only changeable via a filter in code. A filter still overrides it.
+* Settings -> Daymark's subscriptions table now has a search box that filters the list by site name, site URL, or feed URL — useful once you have more than a handful of subscriptions.
+* Settings -> Daymark has a new Connectors tab recommending IndieWeb plugins that pair well with Daymark — Webmention, ActivityPub, and ATmosphere — each with a plain-language description of what it adds, a link to its WordPress.org page, and an inline Install/Activate button reflecting whether it's already installed or active. None of these is required.
+* The Connectors tab also lists [Bridgy Fed](https://fed.brid.gy/), a free hosted bridge (not a plugin) that gives your site a fediverse and Bluesky presence through the Webmention support above, with no ActivityPub or AT Protocol plugin needed — an alternative to the ActivityPub plugin above, not an addition to it, since it bridges you in under an auto-generated handle rather than your own domain's native identity.
+
+**Changed**
+
+* **Breaking (for anything targeting the old URL directly): Settings -> Daymark's page slug got shorter and the page was reorganized into tabs.** It's now at `/wp-admin/options-general.php?page=daymark` (was `options-general.php?page=daymark-subscriptions`), split into Subscriptions, Connectors, Import/Export, and Privacy tabs instead of one long page. A plain visit to the old URL redirects automatically, so a browser bookmark still works — but the page's hook suffix changed too, from `settings_page_daymark-subscriptions` to `settings_page_daymark`, along with the matching `settings_page_daymark-subscriptions` admin body class WordPress adds automatically. Anything keyed to either of those directly (a custom `admin_enqueue_scripts`/`admin_head` hook, hand-written CSS/JS targeting the old body class) needs updating to the new slug — the redirect only covers a plain page load.
+* Settings -> Daymark's subscriptions table now defaults to A-to-Z order by site name (falling back to the site URL only when there's no name) instead of raw subscribe order — the Site, Status, and Last fetched column headers remain independently sortable as before.
+* A subscription post's Timeline card no longer shows its author's name directly under the title — for most single-author sites that read the same as, or very close to, the site name already shown on the card's bottom row, so it was dropped as redundant.
+* Search's Source filter dropdown now lists subscribed sites alphabetically by name, with "All" and "My Marks" pinned first — previously they appeared in subscribe order.
+* A "link"-format Timeline card no longer stands out with its own orange-tinted background — it now reads like a plain Note/Article card, matching the rest of the Timeline. Its full-screen post view also shows a best-effort oEmbed preview of the post's own detected outbound link (e.g. an embedded Mastodon post, a video player) when one is available.
+* A microformats2-subscribed site's reply or RSVP posts now render as Notes on the Timeline instead of plain, undifferentiated articles — matching how status/chat-format posts already do. Reposts, likes, and bookmarks are unchanged for now.
+
+**Fixed**
+
+* A bookmark on a Mark or subscription post no longer outlives it — unsubscribing from a site, deleting a Mark, or WordPress's own trash-retention eventually purging either one now also clears any bookmark pointing at it, instead of leaving a permanently orphaned entry behind.
+* The full-screen post view lost the site title, date, and interaction icons (Like through Share) a Timeline card already shows once opened — they're now kept visible below the post's own content.
+* Explore/Search/Me's header Daymark icon and title still sat farther right than Home's own icon and wordmark, even after a prior pass matched their icon-to-title gap — the tap target's own leading overhang (44px box, 26px icon) was shifting the icon itself, not just the gap.
+
 = 0.13.0 - 2026-09-08 =
+
 **Added**
 
 * Gallery Marks can now be manually reordered in the composer — up/down buttons next to each image (both newly picked files and media already attached to a resumed draft) let you set the order the published gallery renders in.
@@ -537,6 +562,9 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.14.0 =
+Settings -> Daymark's URL is shorter now (`?page=daymark`, with the old URL redirecting automatically) and gained a Connectors tab recommending the Webmention/ActivityPub/ATmosphere plugins and Bridgy Fed, plus a Privacy section and a "Check for new posts" frequency setting. The subscriptions table now defaults to A-to-Z sorting and has a search box, and a bookmark on a deleted Mark or post no longer lingers as an orphaned entry.
 
 = 0.13.0 =
 `/daymark` now works even on a cold, zero-connectivity load — open it once online, and a later relaunch with no signal at all still gets you a working composer. Tapping a Timeline card now opens a dedicated full-screen post view instead of expanding in place, gallery images can be manually reordered in the composer, and a published Mark's new routing icon shows exactly where it was sent (and whether each destination succeeded).
