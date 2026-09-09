@@ -309,6 +309,7 @@ final class Daymark_Plugin {
 		$this->microformats->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
+		$this->bookmarks->register();
 		$this->subscription_post_type->register();
 		$this->subscription_poller->register();
 		$this->admin_subscriptions->register();

@@ -37,6 +37,40 @@ class Daymark_Bookmarks {
 	public const META_KEY = 'daymark_bookmark';
 
 	/**
+	 * Registers hooks.
+	 *
+	 * @return void
+	 */
+	public function register(): void {
+		add_action( 'deleted_post', array( $this, 'clear_bookmarks_for_post' ) );
+	}
+
+	/**
+	 * Clears every user's bookmark of a post once it's actually gone —
+	 * hooked to core's `deleted_post` (fires once a post row is truly
+	 * removed, whether that's a Mark's own trash retention expiring, an
+	 * unsubscribe trashing a subscription post the same way, or a manual
+	 * "Delete Permanently"), not the earlier `wp_trash_post` step, so a
+	 * still-trashed-but-recoverable post keeps its bookmark intact.
+	 *
+	 * `delete_metadata()`'s own `$delete_all` flag (true) is the built-in
+	 * WordPress mechanism for exactly this: remove a given meta key/value
+	 * pair across every object of a type, ignoring the `$object_id` this
+	 * call is otherwise scoped to — a single-value userless variant of the
+	 * per-user `remove()` above.
+	 *
+	 * @param int $post_id Deleted post ID.
+	 * @return void
+	 */
+	public function clear_bookmarks_for_post( int $post_id ): void {
+		if ( $post_id <= 0 ) {
+			return;
+		}
+
+		delete_metadata( 'user', 0, self::META_KEY, $post_id, true );
+	}
+
+	/**
 	 * Whether a user has bookmarked a given post.
 	 *
 	 * @param int $user_id User ID.

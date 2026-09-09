@@ -39,6 +39,7 @@ can't act on them.
 
 ### Fixed
 
+- A bookmark on a Mark or subscription post no longer outlives it — unsubscribing from a site, deleting a Mark, or WordPress's own trash-retention eventually purging either one now also clears any bookmark pointing at it, instead of leaving a permanently orphaned entry behind. ([#301](https://github.com/jeffpaul/daymark/issues/301))
 - The full-screen post view lost the site title, date, and interaction icons (Like through Share) a Timeline card already shows once opened — they're now kept visible below the post's own content. ([#287](https://github.com/jeffpaul/daymark/issues/287))
 - Explore/Search/Me's header Daymark icon and title still sat farther right than Home's own icon and wordmark, even after a prior pass matched their icon-to-title gap — the tap target's own leading overhang (44px box, 26px icon) was shifting the icon itself, not just the gap. ([#276](https://github.com/jeffpaul/daymark/issues/276))
 
