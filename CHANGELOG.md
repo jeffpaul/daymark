@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-09
+
 ### Added
 
 - Settings -> Daymark now has a Privacy section with a checkbox each for location, weather, and camera-metadata capture, plus whether a Mark's location is published publicly — previously these were only reachable by adding a filter in code. A filter still overrides its matching checkbox, so nothing already using one changes behavior. ([#289](https://github.com/jeffpaul/daymark/issues/289))
@@ -446,7 +448,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.13.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.14.0...HEAD
+[0.14.0]: https://github.com/jeffpaul/daymark/compare/0.13.0...0.14.0
 [0.13.0]: https://github.com/jeffpaul/daymark/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/jeffpaul/daymark/compare/0.11.0...0.12.0
 [0.11.0]: https://github.com/jeffpaul/daymark/compare/0.10.0...0.11.0
