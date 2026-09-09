@@ -502,18 +502,21 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertLessThan( strpos( $output, 'Newer Check' ), strpos( $output, 'Older Check' ) );
 	}
 
-	/** With no orderby requested, the table keeps its existing default order (created_at DESC) — sorting is opt-in only. */
-	public function test_no_orderby_keeps_default_order(): void {
+	/** With no orderby requested, the table defaults to A-to-Z by Site (issue #295) rather than raw subscribe order. */
+	public function test_no_orderby_defaults_to_site_ascending(): void {
 		$this->create_three_out_of_order_subscriptions();
 
 		$output = $this->render();
 
-		// Default order is most-recently-created first; the third one
-		// created ("Bravo Site") should lead, not the alphabetically-first one.
-		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+		$alpha   = strpos( $output, 'Alpha Site' );
+		$bravo   = strpos( $output, 'Bravo Site' );
+		$charlie = strpos( $output, 'Charlie Site' );
+
+		$this->assertLessThan( $bravo, $alpha );
+		$this->assertLessThan( $charlie, $bravo );
 	}
 
-	/** An unrecognized orderby value is ignored, falling back to the default order rather than erroring. */
+	/** An unrecognized orderby value is ignored, falling back to the same A-to-Z-by-Site default rather than erroring. */
 	public function test_invalid_orderby_falls_back_to_default_order(): void {
 		$this->create_three_out_of_order_subscriptions();
 
@@ -522,7 +525,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output          = $this->render();
 		unset( $_GET['orderby'], $_GET['order'] );
 
-		$this->assertLessThan( strpos( $output, 'Alpha Site' ), strpos( $output, 'Bravo Site' ) );
+		$this->assertLessThan( strpos( $output, 'Bravo Site' ), strpos( $output, 'Alpha Site' ) );
 	}
 
 	/** Column header links carry the query args that flip the active column's direction, and mark it via aria-sort. */
@@ -854,7 +857,9 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output    = $this->render();
 		unset( $_GET['s'] );
 
-		$this->assertMatchesRegularExpression( '/orderby=site(&amp;|&#038;|&)order=asc(&amp;|&#038;|&)s=Alpha/', $output );
+		// Site is the default active sort (issue #295) even with no explicit
+		// orderby, so its own header link flips to the opposite direction.
+		$this->assertMatchesRegularExpression( '/orderby=site(&amp;|&#038;|&)order=desc(&amp;|&#038;|&)s=Alpha/', $output );
 	}
 
 	/** The search form carries the active sort forward as hidden fields, so submitting a new search doesn't reset it. */
