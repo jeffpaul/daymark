@@ -240,7 +240,7 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
 	}
 
-	/** The content-sniff fallback never overrides a real, explicitly assigned format. */
+	/** The content-sniff fallback never overrides a real, explicitly assigned format — even once it also runs to fill in a missing image (see the next test), it only ever contributes an image URL, never a reclassified post_format. */
 	public function test_normalize_never_sniffs_when_format_is_already_a_real_media_format() {
 		$normalized = $this->source->normalize(
 			array(
@@ -252,6 +252,28 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 
 		// A real 'image' format wins even though the content itself sniffs as video.
 		$this->assertSame( 'image', $normalized['post_format'] );
+	}
+
+	/**
+	 * A confirmed media format (image/video/audio/gallery) with no
+	 * `wp:featuredmedia` embed — the classic "Image" post-format theme
+	 * convention, which shows the post's own first inline image without
+	 * ever calling set_post_thumbnail() — still needs a thumbnail sniffed
+	 * from the post's own content, or the Timeline card has nothing to show
+	 * but the subscription's site icon (issue #313). The format itself
+	 * stays exactly as confirmed; only featured_image_url is filled in.
+	 */
+	public function test_normalize_sniffs_image_fallback_for_confirmed_format_with_no_embed() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'BM Snaps' ),
+				'format'  => 'image',
+				'content' => array( 'rendered' => '<img src="https://jane.example/wp-content/uploads/snap.jpg">' ),
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://jane.example/wp-content/uploads/snap.jpg', $normalized['featured_image_url'] );
 	}
 
 	/** The content-sniff fallback never overrides a real embedded featured image with a weaker sniffed one. */

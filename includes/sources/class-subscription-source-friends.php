@@ -267,23 +267,36 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		// shared Daymark_Subscription_Content_Sniffer — and only ever
 		// promote away from an unconfirmed 'standard', never override a
 		// real assigned format.
-		$link_url = '';
+		//
+		// A *confirmed media* format (image/video/audio/gallery — not
+		// 'note', which by design carries no media of its own) with no
+		// structured thumbnail still needs the same image fallback on its
+		// own, just not the format-guessing half above it:
+		// get_the_post_thumbnail_url() is empty for the same "Image format,
+		// no set thumbnail" theme convention Daymark_Subscription_Source_WordPress
+		// hits (issue #313) — without this, such a post's card had nothing
+		// to show but the subscription's own site icon.
+		$link_url             = '';
+		$wants_image_fallback = '' === $featured_image_url && in_array( $format, self::DAYMARK_MEDIA_FORMATS, true );
 
-		if ( 'standard' === $format ) {
-			$content_html   = (string) ( $raw_item['content'] ?? '' );
-			$exclude_host   = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
-			$sniffed        = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
-			$sniffed_format = Daymark_Subscription_Content_Sniffer::classify( $sniffed, $content_html );
+		if ( 'standard' === $format || $wants_image_fallback ) {
+			$content_html = (string) ( $raw_item['content'] ?? '' );
+			$exclude_host = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
+			$sniffed      = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
 
-			if ( '' !== $sniffed_format ) {
-				$format = $sniffed_format;
+			if ( 'standard' === $format ) {
+				$sniffed_format = Daymark_Subscription_Content_Sniffer::classify( $sniffed, $content_html );
+
+				if ( '' !== $sniffed_format ) {
+					$format = $sniffed_format;
+				}
+
+				$link_url = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 			}
 
 			if ( '' === $featured_image_url && '' !== $sniffed['image_src'] ) {
 				$featured_image_url = esc_url_raw( $sniffed['image_src'] );
 			}
-
-			$link_url = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 		}
 
 		return array(

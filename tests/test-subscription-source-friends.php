@@ -173,6 +173,31 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'video', $normalized['post_format'] );
 	}
 
+	/**
+	 * A confirmed media format (a real Friends-assigned post_format) with no
+	 * structured thumbnail — no `post_id` here, matching a cached post whose
+	 * get_the_post_thumbnail_url() came back empty, the classic "Image"
+	 * post-format theme convention that shows a post's own first inline
+	 * image without ever calling set_post_thumbnail() (issue #313) — still
+	 * gets a thumbnail sniffed from its own content. The format itself
+	 * stays exactly as assigned; only featured_image_url is filled in.
+	 */
+	public function test_normalize_sniffs_image_fallback_for_confirmed_format_with_no_thumbnail() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'A snap',
+				'content'      => '<img src="https://jane.example/inline.jpg">',
+				'permalink'    => 'https://jane.example/2024/a-snap/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => 'image',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
+	}
+
 	/** normalize() maps a Friends-assigned status/chat post_format to Daymark's own 'note' bucket, not 'standard', matching Daymark_Subscription_Source_WordPress's own mapping. */
 	public function test_normalize_maps_status_and_chat_formats_to_note() {
 		foreach ( array( 'status', 'chat' ) as $wp_format ) {
