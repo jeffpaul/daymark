@@ -4,7 +4,7 @@ Tags: publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 0.14.0
+Stable tag: 0.15.0
 License: GPL-2.0-or-later
 License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -135,7 +135,30 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.15.0 - 2026-09-10 =
+**Added**
+
+* Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing.
+* The first time you tap Like, Comment, Reblog, Bookmark, "Open original", or Share, a short overlay explains what that icon does — shown once per icon, right after the tap, never again after that.
+
+**Changed**
+
+* Subscription posts get a new Comment action, replacing the old "Reply" button that opened the full composer — tap it, type your comment, and it's delivered straight to the original post: via Webmention when both your site and the source support it (behind the scenes this still publishes a small Mark on your own site so your Webmention plugin can deliver it, same as before), or posted directly to the source site otherwise. Reblog now asks for an optional comment of your own before publishing, instead of always using a generic "Reposted ..." caption.
+* The full-screen post view's standalone "Refresh content" text link is now an icon at the end of the interaction row (after Share), instead of its own row below the post — a shorter, less tall screen with one consistent set of icons for everything you can do with a post.
+* The Timeline interaction row's "Open original", Share, Routing (on your own Marks), and "Refresh content" (on the full post view) actions now live behind a new ⋯ overflow menu, keeping Like, Comment, Reblog, and Bookmark as the primary row's exposed icons. A subscription post's overflow menu also gains a new Unsubscribe action — unsubscribe from a site directly from its card or full post view, with a confirmation step first, instead of needing a trip to Settings -> Daymark.
+
+**Fixed**
+
+* Timeline cards whose kind shows a small thumbnail beside the title (an article with a featured image, an audio/podcast post, a subscription post falling back to its site icon) had their interaction icons and site-name/date row indented under that thumbnail, reading as shifted right compared to a thumbnail-less card (note, link). Both rows now line up flush with the card's own left edge on every kind.
+* Subscribing to an ordinary, valid site could fail with "Please enter a valid site URL." inside WordPress Playground, including the sites this plugin's own Playground previews try to preset automatically. Root cause: a DNS-resolution function returning something other than a real IP address or a clean failure was wrongly trusted as a "resolved" (and then judged unsafe) address.
+* A subscribed WordPress or Friends post with a confirmed Image/Video/Audio/Gallery post format but no explicit featured image (common for themes that show a post's own first inline image instead) showed the subscription's site icon blown up in the card's media banner instead of that image.
+* The full-screen post view's back arrow and Daymark icon were vertically centered against the post title's full height, so a long title that wrapped to two or three lines left them floating in the middle of the block instead of level with its first line.
+* A plain, no-image subscription post could show a small thumbnail duplicating its own site icon — an author-bio box's avatar photo, embedded in the post's own content by the theme, was being picked up as the card's featured image. Avatar images are no longer treated as post content.
+* A Mark's own like/comment/repost counts on its Timeline card no longer show Daymark's orange "active" accent color just because the count is 1 or more — that color is reserved for your own action (a genuine Like/Repost/Comment/Bookmark toggle); these three are always other people's engagement with your Mark, so they now stay a plain, muted count regardless of how high it is.
+* A Timeline card's trailing whitespace below its own site-name/date row — before the next card begins — is now identical across every Mark type and post format. Media-dominant cards (image, gallery, video, mixed media) previously had roughly double the trailing space of every other kind (audio, note, article, link, standard), a real inconsistency visible scrolling down a mixed Timeline.
+
 = 0.14.0 - 2026-09-09 =
+
 **Added**
 
 * Settings -> Daymark now has a Privacy section with a checkbox each for location, weather, and camera-metadata capture, plus whether a Mark's location is published publicly — previously these were only reachable by adding a filter in code. A filter still overrides its matching checkbox, so nothing already using one changes behavior.
@@ -562,6 +585,9 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Timeline and per-type views as both shortcodes and dynamic blocks.
 
 == Upgrade Notice ==
+
+= 0.15.0 =
+Subscription posts get an instant Comment action (replacing the old "Reply" button) and the Timeline interaction row is tidier: Open original, Share, Routing, and Refresh content now live behind a new ⋯ overflow menu, which also adds a one-tap Unsubscribe for subscription posts. First-time explainer overlays introduce each icon on first tap. Also fixes: a duplicated site-icon thumbnail from author-bio avatars, a like/comment/repost count wrongly shown in Daymark's accent color, uneven card spacing across Mark types, and a Playground subscribe-by-URL failure.
 
 = 0.14.0 =
 Settings -> Daymark's URL is shorter now (`?page=daymark`, with the old URL redirecting automatically) and gained a Connectors tab recommending the Webmention/ActivityPub/ATmosphere plugins and Bridgy Fed, plus a Privacy section and a "Check for new posts" frequency setting. The subscriptions table now defaults to A-to-Z sorting and has a search box, and a bookmark on a deleted Mark or post no longer lingers as an orphaned entry.
