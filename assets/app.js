@@ -491,6 +491,8 @@
 		'<line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline>';
 	const ROUTING_GLYPH =
 		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
+	const REFRESH_GLYPH =
+		'<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -553,6 +555,22 @@
 		const label = esc(__('Open original', 'daymark'));
 		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
 			EXTERNAL_LINK_GLYPH
+		)}</span>`;
+	}
+
+	// "Refresh content" (issue #196's own action, previously a standalone
+	// text-link button below a subscription post's loaded content) as the
+	// interaction row's own final entry instead — PostScreen-only (see
+	// renderSubscriptionItemStats()'s `extra` param), since a Timeline
+	// card never has cached content of its own to force a re-fetch of.
+	// Dispatched the same way as every other row icon (onFeedListClick()/
+	// onFeedListKeydown()), calling PostScreen.load(true) directly rather
+	// than a body-scoped click handler of its own.
+	function renderRefreshContentToggle(item) {
+		const id = esc(String(item.id));
+		const label = esc(__('Refresh content', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--refresh" role="button" tabindex="0" aria-label="${label}" title="${label}" data-refresh-subpost="${id}">${statIcon(
+			REFRESH_GLYPH
 		)}</span>`;
 	}
 
@@ -2970,6 +2988,17 @@
 			return;
 		}
 
+		// The "Refresh content" toggle — PostScreen-only (see
+		// renderRefreshContentToggle()'s own docblock); forces a re-fetch
+		// of this subscription post's cached content.
+		const refreshToggle = target.closest('[data-refresh-subpost]');
+		if (refreshToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			refreshSubscriptionPost(screen);
+			return;
+		}
+
 		// A subscription-post card's tap: open its full content on the
 		// dedicated post-view screen (see openPostView()) — fetched
 		// externally via the click-through endpoint.
@@ -3140,6 +3169,23 @@
 		if (shareToggle) {
 			event.preventDefault();
 			shareItem(screen, shareToggle);
+			return;
+		}
+		const refreshToggle = event.target.closest('[data-refresh-subpost]');
+		if (refreshToggle) {
+			event.preventDefault();
+			refreshSubscriptionPost(screen);
+		}
+	}
+
+	// Reloads the current subscription post's content, forcing past any
+	// cached copy — PostScreen's own load(true), the same "Refresh
+	// content" action a standalone text-link button used to trigger (see
+	// renderRefreshContentToggle()). A no-op anywhere else, since only
+	// PostScreen ever renders this icon or has a `load()` method at all.
+	function refreshSubscriptionPost(screen) {
+		if (screen && 'function' === typeof screen.load) {
+			screen.load(true);
 		}
 	}
 
@@ -6381,14 +6427,17 @@
 	// Routing toggle (Mark-only — a subscription post has no syndication
 	// targets of its own). Shared by the Timeline card and the full-screen
 	// post view (PostScreen) so the two can never show a different set of
-	// icons for the same post.
-	function renderSubscriptionItemStats(item) {
+	// icons for the same post — `extra` is an optional trailing HTML
+	// string appended inside the same row, used only by PostScreen to add
+	// its own "Refresh content" icon (issue #196/#317 follow-up) without
+	// a Timeline card ever growing it too.
+	function renderSubscriptionItemStats(item, extra) {
 		return `<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
 			item
 		)}${renderCommentToggle(item)}${renderRepostToggle(item)}${renderBookmarkToggle(
 			item,
 			'subscription_post'
-		)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>`;
+		)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}${extra || ''}</span>`;
 	}
 
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
@@ -6594,9 +6643,9 @@
 	// *to* (the whole point is a fresh live copy) — its own failure is left
 	// to propagate rather than silently masked by stale cached content the
 	// way a normal load's connectivity-shaped failure already is. Returns
-	// just the body — the Reply/"Refresh content" actions are chrome around
-	// it now, part of PostScreen's own actionsHtml(), not baked into the
-	// loaded content string.
+	// just the body — "Refresh content" is a trailing icon in
+	// PostScreen's own interaction row now (renderRefreshContentToggle()),
+	// not baked into the loaded content string.
 	async function fetchSubscriptionExpandBody(item, forceRefresh) {
 		let content;
 		try {
@@ -6655,10 +6704,16 @@
 			// (renderItemStats()); a subscription post gets its own
 			// narrower row (renderSubscriptionItemStats()) — no counted
 			// like/comment/repost stats or Routing toggle, matching its
-			// card's own reasoning for the same omissions.
+			// card's own reasoning for the same omissions — plus a
+			// trailing "Refresh content" icon (renderRefreshContentToggle())
+			// found only here, never on a Timeline card, replacing the old
+			// standalone text-link button this screen used to render below
+			// the loaded content.
 			const isMark = !!(view && 'mark' === view.kind);
 			const siteLabel = isMark ? config.siteTitle || __('Site', 'daymark') : subscriptionSiteLabel(item);
-			const stats = isMark ? renderItemStats(item) : renderSubscriptionItemStats(item);
+			const stats = isMark
+				? renderItemStats(item)
+				: renderSubscriptionItemStats(item, renderRefreshContentToggle(item));
 			const id = esc(String(item.id || ''));
 			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
 			return `
@@ -6682,32 +6737,21 @@
 			</section>`;
 		},
 
-		// Two separate delegated listeners, matching each region's own
-		// concern: the meta row's Like/Repost/Bookmark/"open original"/
-		// Share/Routing toggles (rendered in render() below the post body —
-		// never touched by load() below) get the exact same click/keyboard
-		// handling (onFeedListClick()/onFeedListKeydown()) every Timeline
-		// card already shares; the post body keeps its own narrower
-		// Reply/"Refresh content" handling (onClick() below), unchanged.
+		// The meta row's Like/Repost/Bookmark/"open original"/Share/Routing/
+		// "Refresh content" toggles (rendered in render() below the post
+		// body — never touched by load() below) get the exact same
+		// click/keyboard handling (onFeedListClick()/onFeedListKeydown())
+		// every Timeline card already shares — including the
+		// "Refresh content" icon, which calls this.load(true) via
+		// refreshSubscriptionPost() the same way a Timeline card's own
+		// toggles reach back into their screen.
 		bindEvents() {
 			const meta = root.querySelector('.daymark-postview-meta');
 			if (meta) {
 				meta.addEventListener('click', (event) => onFeedListClick(this, event));
 				meta.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			}
-			const body = root.querySelector('[data-postview-body]');
-			if (body) {
-				body.addEventListener('click', (event) => this.onClick(event));
-			}
 			bindDismissible(this, [itemMenusDismissEntry()]);
-		},
-
-		onClick(event) {
-			const refreshTrigger = event.target.closest('[data-refresh-subpost]');
-			if (refreshTrigger) {
-				event.preventDefault();
-				this.load(true);
-			}
 		},
 
 		// showScreen()'s own guard already redirects a direct/refreshed
@@ -6747,7 +6791,7 @@
 						? await fetchSubscriptionExpandBody(item, forceRefresh)
 						: await loadMarkExpandHtml(item);
 				if (body.isConnected) {
-					body.innerHTML = (html || expandErrorHtml()) + this.actionsHtml();
+					body.innerHTML = html || expandErrorHtml();
 					this.maybeLoadOembedPreview(kind, item, body);
 				}
 			} catch (err) {
@@ -6790,28 +6834,6 @@
 					}
 				})
 				.catch(() => {});
-		},
-
-		// A subscription post's own actions — a Mark/ordinary post's own
-		// content has no separate cached-vs-live copy to force a refresh
-		// past. Commenting (issue #317) now lives in the interaction row
-		// (renderSubscriptionItemStats()/renderCommentToggle()) instead of a
-		// button here — see that row's own docblock.
-		actionsHtml() {
-			const item = this.view.item;
-			if ('sub' !== this.view.kind) {
-				return '';
-			}
-			// A cached post's own content is only ever extracted once, at
-			// fetch time — an improvement to the server's own extraction
-			// logic (a new stripping pass, say) never reaches an
-			// already-cached post again on its own. This is the one way to
-			// force that: re-fetch the source page live and re-run
-			// extraction against it right now.
-			const refresh = `<button type="button" class="daymark-btn daymark-btn--text" data-refresh-subpost="${esc(
-				String(item.id)
-			)}">${esc(__('Refresh content', 'daymark'))}</button>`;
-			return `<p class="daymark-note-card__links">${refresh}</p>`;
 		},
 	};
 

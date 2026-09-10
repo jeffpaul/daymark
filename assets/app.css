@@ -1131,6 +1131,20 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* The "Refresh content" toggle (see renderRefreshContentToggle(), app.js)
+   — PostScreen-only, appended as the row's own trailing entry there;
+   replaces the old standalone "Refresh content" text-link button. */
+.daymark-stat--refresh {
+	cursor: pointer;
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-stat--refresh:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
 /* Brief confirmation after a clipboard-copy fallback (shareItem(), app.js)
    — the same accent treatment .daymark-stat--active already uses
    elsewhere in this row, so "just copied" reads the same visual language
