@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-10
+
 ### Added
 
 - Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing. ([#307](https://github.com/jeffpaul/daymark/issues/307))
@@ -469,7 +471,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.14.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.15.0...HEAD
+[0.15.0]: https://github.com/jeffpaul/daymark/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/jeffpaul/daymark/compare/0.13.0...0.14.0
 [0.13.0]: https://github.com/jeffpaul/daymark/compare/0.12.0...0.13.0
 [0.12.0]: https://github.com/jeffpaul/daymark/compare/0.11.0...0.12.0
