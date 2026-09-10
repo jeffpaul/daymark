@@ -27,6 +27,7 @@ can't act on them.
 ### Fixed
 
 - Timeline cards whose kind shows a small thumbnail beside the title (an article with a featured image, an audio/podcast post, a subscription post falling back to its site icon) had their interaction icons and site-name/date row indented under that thumbnail, reading as shifted right compared to a thumbnail-less card (note, link). Both rows now line up flush with the card's own left edge on every kind. ([#309](https://github.com/jeffpaul/daymark/issues/309))
+- Subscribing to an ordinary, valid site could fail with "Please enter a valid site URL." inside WordPress Playground, including the sites this plugin's own Playground previews try to preset automatically. Root cause: a DNS-resolution function returning something other than a real IP address or a clean failure was wrongly trusted as a "resolved" (and then judged unsafe) address. ([#311](https://github.com/jeffpaul/daymark/issues/311))
 
 ## [0.14.0] - 2026-09-09
 
