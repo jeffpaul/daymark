@@ -24,6 +24,10 @@ can't act on them.
 
 - Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing. ([#307](https://github.com/jeffpaul/daymark/issues/307))
 
+### Fixed
+
+- Subscribing to an ordinary, valid site could fail with "Please enter a valid site URL." inside WordPress Playground, including the sites this plugin's own Playground previews try to preset automatically. Root cause: a DNS-resolution function returning something other than a real IP address or a clean failure was wrongly trusted as a "resolved" (and then judged unsafe) address. ([#311](https://github.com/jeffpaul/daymark/issues/311))
+
 ## [0.14.0] - 2026-09-09
 
 ### Added
