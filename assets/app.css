@@ -1073,8 +1073,8 @@ h2[tabindex='-1']:focus {
 }
 
 /* The "open original" toggle (see renderExternalLinkToggle(), app.js) —
-   sits between Bookmark and Share, in normal flex flow like every other
-   entry in the row. */
+   lives inside the ⋯ overflow menu (issue #326, .daymark-recent__overflowmenu
+   further down this file), not the primary row. */
 .daymark-stat--external {
 	cursor: pointer;
 	min-height: var(--daymark-tap-min);
@@ -1087,9 +1087,9 @@ h2[tabindex='-1']:focus {
 }
 
 /* The "where did this go" routing toggle (issue #255 — see
-   renderRoutingToggle(), app.js) — sits between "open original" and
-   Share, only ever rendered for a Mark that's actually been routed
-   somewhere. */
+   renderRoutingToggle(), app.js) — a Mark-only entry inside the ⋯ overflow
+   menu (issue #326), only ever rendered once a Mark has actually been
+   routed somewhere. */
 .daymark-stat--routing {
 	cursor: pointer;
 	min-height: var(--daymark-tap-min);
@@ -1101,8 +1101,8 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
-/* The Share toggle (see renderShareToggle(), app.js) — the row's final
-   entry, immediately after the "open original" toggle above. */
+/* The Share toggle (see renderShareToggle(), app.js) — also inside the ⋯
+   overflow menu (issue #326). */
 .daymark-stat--share {
 	position: relative;
 	cursor: pointer;
@@ -1132,8 +1132,9 @@ h2[tabindex='-1']:focus {
 }
 
 /* The "Refresh content" toggle (see renderRefreshContentToggle(), app.js)
-   — PostScreen-only, appended as the row's own trailing entry there;
-   replaces the old standalone "Refresh content" text-link button. */
+   — PostScreen-only, appended as the ⋯ overflow menu's own trailing entry
+   there (issue #326); replaces the old standalone "Refresh content"
+   text-link button. */
 .daymark-stat--refresh {
 	cursor: pointer;
 	min-height: var(--daymark-tap-min);
@@ -1143,6 +1144,90 @@ h2[tabindex='-1']:focus {
 	outline: 2px solid var(--daymark-accent);
 	outline-offset: 2px;
 	border-radius: var(--daymark-radius-sm);
+}
+
+/* The ⋯ overflow toggle (issue #326) — same shape as every other
+   interactive row entry above; sits last in the row, after Bookmark,
+   whether a Mark's own row or a subscription post's narrower one. */
+.daymark-stat--overflow {
+	cursor: pointer;
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-stat--overflow:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* Unsubscribe (issue #326) — the ⋯ overflow menu's one destructive entry,
+   read in the same error color the Draft ⋯ menu's own Delete item already
+   uses (.daymark-menu__item--danger) rather than a second convention for
+   the same "this removes something" meaning. Only ever rendered inside
+   .daymark-recent__overflowmenu, never the primary row. */
+.daymark-stat--unsubscribe {
+	cursor: pointer;
+	min-height: var(--daymark-tap-min);
+	color: var(--daymark-error);
+}
+
+.daymark-stat--unsubscribe:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+/* A row entry's visible text label (issue #326) — hidden everywhere by
+   default (the primary row identifies each icon by aria-label/title alone,
+   same as before this feature), shown only once that entry has moved
+   behind the ⋯ overflow toggle: one tap further away is exactly the point
+   at which a bare icon stops being enough to identify an action at a
+   glance. */
+.daymark-stat__label {
+	display: none;
+}
+
+/* The ⋯ overflow menu's own panel (issue #326) — a sibling of the card
+   button, growing the item's own frame open the same way the routing
+   popover already does (see the :has() rule and the z-index-lift rule
+   further below, both extended to cover this class too) rather than a
+   floating dropdown: reusing that established pattern needed no new
+   positioning math, and works identically inside PostScreen's simpler
+   .daymark-postview-meta container, which never had (or needed) any
+   position-relative ancestor a floating panel would have depended on. */
+.daymark-recent__routing,
+.daymark-recent__overflowmenu {
+	flex-basis: 100%;
+	width: 100%;
+	margin-top: var(--daymark-spacing-sm);
+	padding-top: var(--daymark-spacing-sm);
+	border-top: 1px solid var(--daymark-border);
+}
+
+/* Every entry inside the overflow menu reads as a full-width, icon+label
+   row (the primary row's own compact icon-only .daymark-stat, revealing
+   its label — see .daymark-stat__label above) rather than the primary
+   row's own tight inline cluster. */
+.daymark-recent__overflowmenu .daymark-stat {
+	display: flex;
+	width: 100%;
+	justify-content: flex-start;
+	gap: var(--daymark-spacing-sm);
+	padding: 0 var(--daymark-spacing-sm);
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--daymark-text-primary);
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-recent__overflowmenu .daymark-stat:hover,
+.daymark-recent__overflowmenu .daymark-stat:focus-visible {
+	background: var(--daymark-accent-wash);
+	outline: none;
+}
+
+.daymark-recent__overflowmenu .daymark-stat--unsubscribe {
+	color: var(--daymark-error);
 }
 
 /* Brief confirmation after a clipboard-copy fallback (shareItem(), app.js)
@@ -1180,12 +1265,11 @@ h2[tabindex='-1']:focus {
 }
 
 /* .daymark-item-stats--minimal (renderSubscriptionPostCard()'s own stats
-   row) needs no CSS of its own: Like/Replied/Repost render first, left-
-   aligned in normal flex flow, and Bookmark's own `margin-left: auto` above
-   still pushes it plus "open original"/Share right — the same two-group
-   layout a Mark card's own row already has. (Previously this modifier set
-   `justify-content: flex-end`, back when Bookmark/Share were this row's
-   only entries; no longer needed now that a left-hand group exists too.) */
+   row) needs no CSS of its own: Like/Comment/Repost/Bookmark (issue #326's
+   own primary-row entries) and the trailing ⋯ overflow toggle all render
+   left-aligned in normal flex flow, spaced by .daymark-item-stats' own
+   shared `gap` — the same left-aligned layout a Mark card's own row
+   already has. */
 
 .daymark-searchbookmarks-banner {
 	display: flex;
@@ -2986,24 +3070,17 @@ h2[tabindex='-1']:focus {
    such border, matching every other item (which relies on spacing + the
    rail line rather than a per-card box), so this only ever appears while
    the panel is open — :has() scopes it to exactly that state without any
-   extra JS-toggled class. */
-.daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])) {
+   extra JS-toggled class. Extended to the ⋯ overflow menu's own panel
+   (issue #326, .daymark-recent__overflowmenu) for the identical reason —
+   see that rule, further up this file, for its own box-model styling
+   (merged with this selector's own .daymark-recent__routing since both
+   need the exact same treatment). */
+.daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])),
+.daymark-recent__item-wrap:has(.daymark-recent__overflowmenu:not([hidden])) {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius);
 	background: var(--daymark-bg);
 	padding: var(--daymark-spacing-sm);
-}
-
-/* The "where did this go" popover panel — a sibling of the card button
-   (interactive content, e.g. a link out, can't validly live inside another
-   <button>) that grows the item-wrap's own frame open rather than
-   overlapping adjacent Timeline items. */
-.daymark-recent__routing {
-	flex-basis: 100%;
-	width: 100%;
-	margin-top: var(--daymark-spacing-sm);
-	padding-top: var(--daymark-spacing-sm);
-	border-top: 1px solid var(--daymark-border);
 }
 
 /* --- Reduced motion --- */
@@ -3026,8 +3103,11 @@ h2[tabindex='-1']:focus {
 }
 
 /* Lift the item whose ⋯ menu is open above later cards so the open menu is
-   not covered by following list items (sibling stacking-context fix). */
-.daymark-recent__item-wrap:has(.daymark-menu:not([hidden])) {
+   not covered by following list items (sibling stacking-context fix). The
+   ⋯ overflow menu (issue #326) needs the identical lift for the identical
+   reason. */
+.daymark-recent__item-wrap:has(.daymark-menu:not([hidden])),
+.daymark-recent__item-wrap:has(.daymark-recent__overflowmenu:not([hidden])) {
 	z-index: 30;
 }
 
