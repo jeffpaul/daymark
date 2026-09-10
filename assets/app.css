@@ -1808,6 +1808,36 @@ h2[tabindex='-1']:focus {
 	width: auto;
 }
 
+/* First-time interaction-hint overlay (InteractionHintSheet, app.js) — a
+   centered variant of the shared .daymark-sheet__panel shell: an icon
+   circle, title, and short body text above a single full-width "Got it"
+   button, instead of the left-aligned form layout every other sheet
+   using this shell renders. */
+.daymark-sheet__panel--hint {
+	align-items: center;
+	text-align: center;
+}
+
+.daymark-hint-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 72px;
+	height: 72px;
+	border-radius: 50%;
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent);
+}
+
+.daymark-hint-body {
+	color: var(--daymark-text-muted);
+	line-height: 1.5;
+}
+
+.daymark-sheet__panel--hint .daymark-sheet__actions {
+	width: 100%;
+}
+
 .daymark-notice {
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
 	border-radius: var(--daymark-radius-sm);

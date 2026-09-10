@@ -23,6 +23,7 @@ can't act on them.
 ### Added
 
 - Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing. ([#307](https://github.com/jeffpaul/daymark/issues/307))
+- The first time you tap Like, Comment, Reblog, Bookmark, "Open original", or Share, a short overlay explains what that icon does — shown once per icon, right after the tap, never again after that. ([#321](https://github.com/jeffpaul/daymark/issues/321))
 
 ### Changed
 

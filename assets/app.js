@@ -3229,6 +3229,7 @@
 					}
 				}
 			}
+			maybeShowInteractionHint('bookmark', trigger);
 		} catch (err) {
 			setBookmarkToggleState(trigger, wasBookmarked);
 		}
@@ -3306,6 +3307,7 @@
 				await apiDelete('marks/' + existingMarkId);
 				setEngagementToggleState(trigger, 'like', false, 0);
 			}
+			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
 			setEngagementToggleState(trigger, 'like', wasLiked, existingMarkId);
 		}
@@ -3334,6 +3336,7 @@
 			setEngagementToggleState(trigger, 'repost', false, 0);
 			try {
 				await apiDelete('marks/' + existingMarkId);
+				maybeShowInteractionHint('repost', trigger);
 			} catch (err) {
 				setEngagementToggleState(trigger, 'repost', true, existingMarkId);
 			}
@@ -3363,6 +3366,7 @@
 		try {
 			const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'repost_of'));
 			setEngagementToggleState(trigger, 'repost', true, mark.id);
+			maybeShowInteractionHint('repost', trigger);
 		} catch (err) {
 			setEngagementToggleState(trigger, 'repost', false, 0);
 		}
@@ -3406,6 +3410,7 @@
 				}
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
+			maybeShowInteractionHint('comment', trigger);
 		} catch (err) {
 			showFlashBubble(trigger, err.message || __("Couldn't send your comment.", 'daymark'));
 		}
@@ -3420,6 +3425,7 @@
 		const url = trigger.getAttribute('data-external-link');
 		if (url) {
 			window.open(url, '_blank', 'noopener');
+			maybeShowInteractionHint('external', trigger);
 		}
 	}
 
@@ -3587,6 +3593,7 @@
 		if (navigator.share) {
 			try {
 				await navigator.share({ title: (item && item.title) || '', url });
+				maybeShowInteractionHint('share', trigger);
 				return;
 			} catch (err) {
 				if (err && 'AbortError' === err.name) {
@@ -3598,6 +3605,7 @@
 			}
 		}
 		await copyLinkToClipboard(url, trigger);
+		maybeShowInteractionHint('share', trigger);
 	}
 
 	// Transient inline confirmation right on the tapped icon itself — no
@@ -6151,6 +6159,166 @@
 			this.opener = null;
 			this.onSubmit = null;
 			this.onSkip = null;
+		},
+	};
+
+	// First-time explainer overlays for the shared interaction row's six
+	// icons (Like/Comment/Reblog/Bookmark/"Open original"/Share) — plain,
+	// elementary-school-level copy, one short overlay the first time each
+	// icon is actually used, never again after that. Shown *after* the
+	// underlying action already happened (matching this app's Optimistic
+	// publishing philosophy: nothing here ever gates or delays a tap), so
+	// every call site below fires this only on a successful outcome, never
+	// from a catch block. `localStorage` (per device, not per user) is the
+	// deliberate first cut — see CLAUDE.md's own decision row for why, and
+	// the tracked future-release issue for syncing this server-side instead.
+	const INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
+
+	const INTERACTION_HINTS = {
+		like: {
+			glyph: HEART_GLYPH,
+			title: __('Like', 'daymark'),
+			body: __(
+				'Tap the heart to say you enjoyed this post. The person who wrote it can see that you liked it.',
+				'daymark'
+			),
+		},
+		comment: {
+			glyph: COMMENT_GLYPH,
+			title: __('Comment', 'daymark'),
+			body: __(
+				'Tap here to write a reply. Your comment goes straight to the person who posted it.',
+				'daymark'
+			),
+		},
+		repost: {
+			glyph: REPOST_GLYPH,
+			title: __('Reblog', 'daymark'),
+			body: __(
+				'Tap here to share this post on your own site. You can add your own thoughts first, or skip that.',
+				'daymark'
+			),
+		},
+		bookmark: {
+			glyph: BOOKMARK_GLYPH,
+			title: __('Bookmark', 'daymark'),
+			body: __(
+				'Tap the ribbon to save this post for later. Bookmarked posts are there even without internet.',
+				'daymark'
+			),
+		},
+		external: {
+			glyph: EXTERNAL_LINK_GLYPH,
+			title: __('Open original', 'daymark'),
+			body: __('Tap here to open this post on the website where it was first published.', 'daymark'),
+		},
+		share: {
+			glyph: SHARE_GLYPH,
+			title: __('Share', 'daymark'),
+			body: __('Tap here to send this post to someone else, or copy its link.', 'daymark'),
+		},
+	};
+
+	// A localStorage read/write can throw (private-browsing modes, storage
+	// disabled) — never let that stop the real action these always run
+	// after. Treated as "already seen" on a read failure specifically, so a
+	// broken localStorage degrades to "no hints ever shown" rather than
+	// showing one on every single tap.
+	function hasSeenInteractionHint(key) {
+		try {
+			return !!window.localStorage.getItem(INTERACTION_HINT_STORAGE_PREFIX + key);
+		} catch (err) {
+			return true;
+		}
+	}
+
+	function markInteractionHintSeen(key) {
+		try {
+			window.localStorage.setItem(INTERACTION_HINT_STORAGE_PREFIX + key, '1');
+		} catch (err) {
+			// Nothing to do — worst case the hint reappears next tap.
+		}
+	}
+
+	// Called after a successful Like/Comment/Reblog/Bookmark/"Open
+	// original"/Share action. A no-op every time after the first for a
+	// given `key`.
+	function maybeShowInteractionHint(key, opener) {
+		if (hasSeenInteractionHint(key)) {
+			return;
+		}
+		markInteractionHintSeen(key);
+		InteractionHintSheet.show(key, opener);
+	}
+
+	// The overlay itself — the same `.daymark-sheet` backdrop+bottom-panel
+	// shell AIAssistSheet/TextPromptSheet already establish (one shared
+	// mechanism for "a small overlay"), styled via a `--hint` panel modifier
+	// as a centered icon/title/body with a single "Got it" button, matching
+	// the reference (the Jetpack app's own first-bookmark explainer) in
+	// substance if not exact layout. Always a fresh, disposable element
+	// (unlike TextPromptSheet's reused one) since it never needs to hold
+	// input state between shows.
+	const InteractionHintSheet = {
+		el: null,
+		opener: null,
+
+		show(key, opener) {
+			const hint = INTERACTION_HINTS[key];
+			if (!hint) {
+				return;
+			}
+			this.opener = opener || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Dismiss', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel daymark-sheet__panel--hint" role="dialog" aria-modal="true" aria-labelledby="daymark-hint-title">
+				<div class="daymark-hint-icon" aria-hidden="true"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${
+					hint.glyph
+				}</svg></div>
+				<h2 class="daymark-sheet__title daymark-hint-title" id="daymark-hint-title" tabindex="-1">${esc(
+					hint.title
+				)}</h2>
+				<p class="daymark-hint-body">${esc(hint.body)}</p>
+				<div class="daymark-sheet__actions">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-hint-dismiss>${esc(
+						__('Got it', 'daymark')
+					)}</button>
+				</div>
+			</div>`;
+
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+			this.el.querySelector('[data-hint-dismiss]').addEventListener('click', () => this.hide());
+			this.onKeydown = (event) => {
+				if (event.key === 'Escape') {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			this.el.querySelector('.daymark-hint-title').focus();
+		},
+
+		hide() {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
 		},
 	};
 
