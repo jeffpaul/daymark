@@ -27,6 +27,7 @@ can't act on them.
 ### Changed
 
 - Subscription posts get a new Comment action, replacing the old "Reply" button that opened the full composer — tap it, type your comment, and it's delivered straight to the original post: via Webmention when both your site and the source support it (behind the scenes this still publishes a small Mark on your own site so your Webmention plugin can deliver it, same as before), or posted directly to the source site otherwise. Reblog now asks for an optional comment of your own before publishing, instead of always using a generic "Reposted ..." caption. ([#317](https://github.com/jeffpaul/daymark/issues/317))
+- The full-screen post view's standalone "Refresh content" text link is now an icon at the end of the interaction row (after Share), instead of its own row below the post — a shorter, less tall screen with one consistent set of icons for everything you can do with a post. ([#319](https://github.com/jeffpaul/daymark/issues/319))
 
 ### Fixed
 
