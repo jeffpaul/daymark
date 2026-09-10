@@ -493,6 +493,9 @@
 		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
 	const REFRESH_GLYPH =
 		'<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>';
+	const OVERFLOW_GLYPH =
+		'<circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle>';
+	const UNSUBSCRIBE_GLYPH = '<circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -545,40 +548,48 @@
 		)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
 	}
 
-	// A permanent "open the original" entry in the row — replaces the old
-	// "View full post"/"View original" link that used to sit in the
-	// expanded content's own footer (only visible once expanded). Same
-	// span[role="button"] reasoning as Bookmark/Share; the URL travels
-	// directly on the element itself (data-external-link) rather than
-	// through a screen._byMarkId/_bySubId lookup, since — unlike Share —
-	// there's no title/other field this needs, just the one URL. Omitted
-	// entirely when an item has no permalink (should not normally happen
-	// for anything actually published).
+	// A permanent "open the original" entry — replaces the old "View full
+	// post"/"View original" link that used to sit in the expanded content's
+	// own footer (only visible once expanded). A `role="menuitem"` span,
+	// not a real `<button>` — nested inside the card's own expand-trigger
+	// button, same reasoning renderBookmarkToggle() above documents, and
+	// role="menuitem" (not "button") since its parent is now the ⋯
+	// overflow menu's own `role="menu"` panel (issue #326). The URL
+	// travels directly on the element itself (data-external-link) rather
+	// than through a
+	// screen._byMarkId/_bySubId lookup, since — unlike Share — there's no
+	// title/other field this needs, just the one URL. Omitted entirely when
+	// an item has no permalink (should not normally happen for anything
+	// actually published). Lives inside the ⋯ overflow menu, not the
+	// primary row, since issue #326 — its own visible .daymark-stat__label
+	// (hidden everywhere except .daymark-recent__overflowmenu, see app.css)
+	// is what a "one tap further away, so name it" overflow entry needs
+	// that a primary-row icon, identified by aria-label/title alone, didn't.
 	function renderExternalLinkToggle(item) {
 		if (!item.permalink) {
 			return '';
 		}
 		const url = esc(item.permalink);
 		const label = esc(__('Open original', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--external" role="button" tabindex="0" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
+		return `<span class="daymark-stat daymark-stat--external" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
 			EXTERNAL_LINK_GLYPH
-		)}</span>`;
+		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
 	// "Refresh content" (issue #196's own action, previously a standalone
-	// text-link button below a subscription post's loaded content) as the
-	// interaction row's own final entry instead — PostScreen-only (see
-	// renderSubscriptionItemStats()'s `extra` param), since a Timeline
-	// card never has cached content of its own to force a re-fetch of.
-	// Dispatched the same way as every other row icon (onFeedListClick()/
+	// text-link button below a subscription post's loaded content) — an
+	// entry in PostScreen's own ⋯ overflow menu instead (see
+	// renderSubscriptionItemStats()'s `extra` param), since a Timeline card
+	// never has cached content of its own to force a re-fetch of. Dispatched
+	// the same way as every other menu entry (onFeedListClick()/
 	// onFeedListKeydown()), calling PostScreen.load(true) directly rather
 	// than a body-scoped click handler of its own.
 	function renderRefreshContentToggle(item) {
 		const id = esc(String(item.id));
 		const label = esc(__('Refresh content', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--refresh" role="button" tabindex="0" aria-label="${label}" title="${label}" data-refresh-subpost="${id}">${statIcon(
+		return `<span class="daymark-stat daymark-stat--refresh" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-refresh-subpost="${id}">${statIcon(
 			REFRESH_GLYPH
-		)}</span>`;
+		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
 	// "Where did this go" (issue #255) — a Mark-only affordance, shown once
@@ -588,34 +599,154 @@
 	// its own at all). Tapping it opens a small popover — a sibling panel
 	// in the item-wrap, not nested content, since a target's own link
 	// can't validly live inside the card's own expand-trigger <button> —
-	// populated lazily via toggleRoutingPanel().
+	// populated lazily via toggleRoutingPanel(). Lives inside the ⋯
+	// overflow menu (issue #326); toggleRoutingPanel() itself needed no
+	// changes to get there — it already closes every open menu/panel
+	// (closeItemMenus(), which now also closes the overflow menu) before
+	// opening its own, so tapping this from inside an open overflow menu
+	// already reads as "swap panels," not "open two."
 	function renderRoutingToggle(item) {
 		if (!item.syndication_status || 'not_attempted' === item.syndication_status) {
 			return '';
 		}
 		const id = esc(String(item.id));
 		const label = esc(__('Where this went', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--routing" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-routing-toggle="${id}">${statIcon(
+		return `<span class="daymark-stat daymark-stat--routing" role="menuitem" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-routing-toggle="${id}">${statIcon(
 			ROUTING_GLYPH
+		)}<span class="daymark-stat__label">${label}</span></span>`;
+	}
+
+	// Unsubscribe (issue #326) — the ⋯ overflow menu's one destructive
+	// entry, gated on the item actually being a subscription post (never
+	// rendered for a Mark, which has no subscription of its own). Opens the
+	// same two-step confirm sub-panel the Draft ⋯ menu's own Delete entry
+	// already established (data-menu-confirm, see unsubscribeConfirmMarkup()
+	// and openUnsubscribeConfirm()) rather than acting immediately —
+	// removing a whole followed site is bigger and less easily undone than
+	// a single Like/Bookmark tap.
+	function renderUnsubscribeToggle(item) {
+		if (!item.subscription_id) {
+			return '';
+		}
+		const id = esc(String(item.subscription_id));
+		const label = esc(__('Unsubscribe', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--unsubscribe" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-menu-unsubscribe="${id}">${statIcon(
+			UNSUBSCRIBE_GLYPH
+		)}<span class="daymark-stat__label">${label}</span></span>`;
+	}
+
+	// The ⋯ overflow trigger (issue #326) — a Mark's or subscription post's
+	// less-common actions (Open original, Where this went, Share,
+	// Unsubscribe, Refresh content) collapsed behind one icon so the
+	// primary row stays to Like/Comment/Reblog/Bookmark, the entries
+	// actually tapped often. Same span[role="button"] reasoning as every
+	// other row entry (nested inside the card's own expand-trigger button);
+	// its own panel (renderOverflowPanel()) is a sibling of the card,
+	// populated eagerly at render time — unlike Routing, nothing this menu
+	// holds needs a fetch, so there's no lazy-population step to write.
+	// Omitted entirely when `itemsHtml` is empty rather than opening onto a
+	// dead panel — the only realistic case is a Draft, which never reaches
+	// this at all (renderMarkCore() skips renderItemStats() outright for
+	// one).
+	function renderOverflowToggle(item, itemsHtml) {
+		if (!itemsHtml) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		const label = esc(__('More actions', 'daymark'));
+		return `<span class="daymark-stat daymark-stat--overflow" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-overflow-toggle="${id}">${statIcon(
+			OVERFLOW_GLYPH
 		)}</span>`;
 	}
 
-	// The row's other interactive entry, same span[role="button"] reasoning
-	// as renderBookmarkToggle() above (nested inside the card's own
-	// expand-trigger button either way). Shares a Mark's or a subscription
-	// post's real permalink — identical behavior for either, so unlike the
-	// Bookmark toggle this needs no `kind` distinction. Omitted entirely
-	// when an item has no permalink at all (should not normally happen for
-	// anything actually published), since there'd be nothing to share.
+	// A Mark's own ⋯ overflow menu contents (issue #326): everything in its
+	// interaction row besides the like/comment/repost counts and Bookmark —
+	// Open original, Where this went (once actually attempted), and Share.
+	// One shared function so renderItemStats() (deciding whether the ⋯
+	// trigger itself has anything to show) and its caller (building the
+	// panel's own sibling markup, renderMarkItem()/PostScreen.render()) can
+	// never disagree about what the menu holds.
+	function markOverflowMenuItems(item) {
+		return `${renderExternalLinkToggle(item)}${renderRoutingToggle(item)}${renderShareToggle(item)}`;
+	}
+
+	// A subscription post's own ⋯ overflow menu contents (issue #326): Open
+	// original, Share, Unsubscribe, plus PostScreen's own trailing "Refresh
+	// content" entry (`extra` — see renderSubscriptionItemStats()'s
+	// docblock). Same "one shared function" reasoning as
+	// markOverflowMenuItems() above.
+	function subscriptionOverflowMenuItems(item, extra) {
+		return `${renderExternalLinkToggle(item)}${renderShareToggle(item)}${renderUnsubscribeToggle(item)}${
+			extra || ''
+		}`;
+	}
+
+	// The ⋯ overflow menu's own panel (issue #326) — a sibling of the
+	// card's clickable button, the same reasoning renderRoutingToggle()'s
+	// own panel already established (interactive content, e.g. a real link
+	// out, can't validly live inside another <button>). Unlike Routing,
+	// every entry here is already known client-side, so the whole thing is
+	// built once at render time rather than populated lazily on first open.
+	// `confirmHtml` is Unsubscribe's own two-step confirm sub-panel
+	// (unsubscribeConfirmMarkup()) — '' for a Mark, which has nothing here
+	// that needs confirming.
+	function renderOverflowPanel(item, itemsHtml, confirmHtml) {
+		if (!itemsHtml) {
+			return '';
+		}
+		const id = esc(String(item.id));
+		return `<div class="daymark-recent__overflowmenu" data-overflow-panel="${id}" role="menu" aria-label="${esc(
+			__('More actions', 'daymark')
+		)}" hidden><div class="daymark-menu__actions" data-menu-actions>${itemsHtml}</div>${confirmHtml || ''}</div>`;
+	}
+
+	// Unsubscribe's own two-step confirm (issue #326) — reuses the exact
+	// data-menu-confirm/.daymark-menu__confirm shell the Draft ⋯ menu's own
+	// Delete entry already established (see renderMarkItem()), rather than
+	// a second confirm mechanism, so an in-progress "are you sure" always
+	// looks and behaves the same regardless of which action asked it.
+	function unsubscribeConfirmMarkup(item) {
+		if (!item.subscription_id) {
+			return '';
+		}
+		const id = esc(String(item.subscription_id));
+		return `<div class="daymark-menu__confirm" data-menu-confirm hidden>
+			<p class="daymark-menu__confirmtext">${esc(
+				__('Unsubscribe from this site? You can re-subscribe anytime.', 'daymark')
+			)}</p>
+			<div class="daymark-menu__confirmactions">
+				<button type="button" class="daymark-btn daymark-btn--danger" data-menu-unsubscribe-confirm="${id}">${esc(
+			__('Unsubscribe', 'daymark')
+		)}</button>
+				<button type="button" class="daymark-btn daymark-btn--secondary" data-menu-unsubscribe-cancel>${esc(
+			__('Cancel', 'daymark')
+		)}</button>
+			</div>
+			<p class="daymark-menu__status" data-menu-status aria-live="polite"></p>
+		</div>`;
+	}
+
+	// Nested inside the card's own expand-trigger button, same reasoning
+	// renderBookmarkToggle() above documents — but role="menuitem" here,
+	// not "button", since its parent is now the ⋯ overflow menu's own
+	// role="menu" panel (issue #326; see renderExternalLinkToggle() above).
+	// Shares a Mark's or a subscription post's real permalink — identical
+	// behavior for either, so unlike the Bookmark toggle this needs no
+	// `kind` distinction. Omitted entirely when an item has no permalink at
+	// all (should not normally happen for anything actually published),
+	// since there'd be nothing to share. Its own
+	// `position: relative` (.daymark-stat--share, app.css) is unaffected by
+	// that move, so showFlashBubble()'s "Link copied" confirmation still
+	// anchors to this element correctly wherever it renders.
 	function renderShareToggle(item) {
 		if (!item.permalink) {
 			return '';
 		}
 		const id = esc(String(item.id));
 		const label = esc(__('Share', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--share" role="button" tabindex="0" aria-label="${label}" title="${label}" data-share-toggle="${id}">${statIcon(
+		return `<span class="daymark-stat daymark-stat--share" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-share-toggle="${id}">${statIcon(
 			SHARE_GLYPH
-		)}</span>`;
+		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
 	// The Like toggle for a subscription post — the row's other *interactive*
@@ -707,9 +838,7 @@
 				_n('%d repost', '%d reposts', repostCount, 'daymark'),
 				repostCount
 			)
-		)}${renderBookmarkToggle(item, 'mark')}${renderExternalLinkToggle(item)}${renderRoutingToggle(
-			item
-		)}${renderShareToggle(item)}</span>`;
+		)}${renderBookmarkToggle(item, 'mark')}${renderOverflowToggle(item, markOverflowMenuItems(item))}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -2460,14 +2589,17 @@
 	// Mark's or subscription post's site icon has no popover of its own to
 	// close (see renderSiteIconButton() below) — a plain click fires
 	// applySourceFilter() straight away — so this only ever needs to guard
-	// the ⋯ menu's [data-menu] show/hide machinery and the routing
-	// popover's [data-routing-panel] (issue #255), both closed together by
-	// closeItemMenus(). The routing toggle and its panel live in different
+	// the ⋯ menu's [data-menu] show/hide machinery, the routing popover's
+	// [data-routing-panel] (issue #255), and the ⋯ overflow menu's
+	// [data-overflow-panel] (issue #326), all closed together by
+	// closeItemMenus(). Each toggle and its own panel live in different
 	// parts of the item-wrap (see renderMarkItem()'s own comment on why),
-	// so both are named directly here rather than a single shared wrapper.
+	// so each pair is named directly here rather than a single shared
+	// wrapper.
 	function itemMenusDismissEntry() {
 		return {
-			selector: '[data-actions], [data-routing-toggle], [data-routing-panel]',
+			selector:
+				'[data-actions], [data-routing-toggle], [data-routing-panel], [data-overflow-toggle], [data-overflow-panel]',
 			close: () => closeItemMenus(),
 		};
 	}
@@ -2680,12 +2812,19 @@
 		// renderRoutingToggle() itself, so there's no unused empty panel for
 		// a Mark with nothing to route.
 		const hasRouting = !isDraft && item.syndication_status && 'not_attempted' !== item.syndication_status;
+		// The ⋯ overflow menu's own panel (issue #326) — a sibling of the
+		// card button for the same reason the routing panel above already
+		// is. Empty (and so self-omitted by renderOverflowPanel()) for a
+		// Draft, since renderMarkCore() never even calls renderItemStats()
+		// for one.
+		const overflowItems = isDraft ? '' : markOverflowMenuItems(item);
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
 				${siteIcon}
 				${renderTypeIcon(kind)}
 				${card}
 				${actions}
+				${renderOverflowPanel(item, overflowItems, '')}
 				${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 			</div>`;
 	}
@@ -2910,6 +3049,29 @@
 				toggle.setAttribute('aria-expanded', 'false');
 			}
 		});
+		// The ⋯ overflow menu (issue #326) — same reset shape as the Draft ⋯
+		// menu above (its own actions/confirm sub-panel visibility, so an
+		// in-progress Unsubscribe confirmation never lingers once dismissed)
+		// plus the same id-match toggle lookup Routing already established
+		// just above, since the overflow trigger and its panel don't always
+		// share one exact DOM container shape either (a Timeline card's
+		// item-wrap vs. the full-screen post view's simpler meta block).
+		root.querySelectorAll('[data-overflow-panel]').forEach((panel) => {
+			panel.hidden = true;
+			const actions = panel.querySelector('[data-menu-actions]');
+			const confirm = panel.querySelector('[data-menu-confirm]');
+			if (actions) {
+				actions.hidden = false;
+			}
+			if (confirm) {
+				confirm.hidden = true;
+			}
+			const id = panel.getAttribute('data-overflow-panel');
+			const toggle = id ? root.querySelector('[data-overflow-toggle="' + id + '"]') : null;
+			if (toggle) {
+				toggle.setAttribute('aria-expanded', 'false');
+			}
+		});
 	}
 
 	function onFeedListClick(screen, event) {
@@ -3003,6 +3165,56 @@
 			event.preventDefault();
 			event.stopPropagation();
 			refreshSubscriptionPost(screen);
+			return;
+		}
+
+		// The ⋯ overflow toggle (issue #326) — same reasoning/placement as
+		// the Bookmark toggle above; opens/closes the sibling overflow menu
+		// (see toggleOverflowMenu()).
+		const overflowToggle = target.closest('[data-overflow-toggle]');
+		if (overflowToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleOverflowMenu(overflowToggle);
+			return;
+		}
+
+		// Unsubscribe's own first tap, inside the ⋯ overflow menu — reveals
+		// its confirm sub-panel (openUnsubscribeConfirm()) rather than
+		// acting immediately, matching the Draft ⋯ menu's own Delete entry.
+		const menuUnsubscribe = target.closest('[data-menu-unsubscribe]');
+		if (menuUnsubscribe) {
+			event.preventDefault();
+			event.stopPropagation();
+			openUnsubscribeConfirm(menuUnsubscribe);
+			return;
+		}
+
+		const unsubscribeCancel = target.closest('[data-menu-unsubscribe-cancel]');
+		if (unsubscribeCancel) {
+			event.preventDefault();
+			event.stopPropagation();
+			const panel = unsubscribeCancel.closest('[data-overflow-panel]');
+			const actions = panel ? panel.querySelector('[data-menu-actions]') : null;
+			const confirm = unsubscribeCancel.closest('[data-menu-confirm]');
+			if (confirm) {
+				confirm.hidden = true;
+			}
+			if (actions) {
+				actions.hidden = false;
+			}
+			const trigger = panel ? panel.querySelector('[data-menu-unsubscribe]') : null;
+			if (trigger) {
+				trigger.focus();
+			}
+			return;
+		}
+
+		const unsubscribeConfirm = target.closest('[data-menu-unsubscribe-confirm]');
+		if (unsubscribeConfirm) {
+			event.preventDefault();
+			event.stopPropagation();
+			unsubscribeSite(screen, unsubscribeConfirm);
 			return;
 		}
 
@@ -3182,6 +3394,24 @@
 		if (refreshToggle) {
 			event.preventDefault();
 			refreshSubscriptionPost(screen);
+			return;
+		}
+		// The ⋯ overflow toggle and Unsubscribe's own first tap (issue
+		// #326) are the two remaining `<span>` entries this menu adds —
+		// every other entry inside the open panel (Open
+		// original/Share/Routing/Refresh content, plus Unsubscribe's own
+		// Confirm/Cancel) is a real <button>, which already gets Enter/
+		// Space activation for free from the browser.
+		const overflowToggle = event.target.closest('[data-overflow-toggle]');
+		if (overflowToggle) {
+			event.preventDefault();
+			toggleOverflowMenu(overflowToggle);
+			return;
+		}
+		const menuUnsubscribe = event.target.closest('[data-menu-unsubscribe]');
+		if (menuUnsubscribe) {
+			event.preventDefault();
+			openUnsubscribeConfirm(menuUnsubscribe);
 		}
 	}
 
@@ -3420,6 +3650,58 @@
 			maybeShowInteractionHint('comment', trigger);
 		} catch (err) {
 			showFlashBubble(trigger, err.message || __("Couldn't send your comment.", 'daymark'));
+		}
+	}
+
+	// Opens/closes the ⋯ overflow menu (issue #326) — same id-match lookup
+	// toggleRoutingPanel() below already established, and the same
+	// reasoning: the trigger and its panel don't share one container shape
+	// between a Timeline card and the full-screen post view. Unlike
+	// Routing, there's nothing to fetch — every entry this panel can hold
+	// is already known client-side, so its full markup is built once at
+	// render time (renderOverflowPanel()) rather than populated lazily on
+	// first open.
+	function toggleOverflowMenu(trigger) {
+		const id = trigger.getAttribute('data-overflow-toggle');
+		const panel = id ? root.querySelector('[data-overflow-panel="' + id + '"]') : null;
+		if (!id || !panel) {
+			return;
+		}
+		const wasOpen = !panel.hidden;
+		closeItemMenus();
+		if (wasOpen) {
+			return;
+		}
+		panel.hidden = false;
+		trigger.setAttribute('aria-expanded', 'true');
+		const first = panel.querySelector('.daymark-stat');
+		if (first) {
+			first.focus();
+		}
+	}
+
+	// Reveals Unsubscribe's own confirm sub-panel inside the ⋯ overflow
+	// menu (issue #326) — same shape as the Draft ⋯ menu's own Delete entry
+	// (renderMarkItem()): hide the actions list, show the confirm text plus
+	// Unsubscribe/Cancel buttons, and focus lands on Cancel so a stray
+	// Enter is non-destructive. Shared by onFeedListClick()'s click
+	// dispatch and, since the trigger is a `<span>`, not a real `<button>`
+	// (nested inside the card's own expand-trigger button, same reasoning
+	// as every other row entry), onFeedListKeydown()'s Enter/Space
+	// handling too.
+	function openUnsubscribeConfirm(trigger) {
+		const panel = trigger.closest('[data-overflow-panel]');
+		const actions = panel ? panel.querySelector('[data-menu-actions]') : null;
+		const confirm = panel ? panel.querySelector('[data-menu-confirm]') : null;
+		if (actions) {
+			actions.hidden = true;
+		}
+		if (confirm) {
+			confirm.hidden = false;
+			const cancelBtn = confirm.querySelector('[data-menu-unsubscribe-cancel]');
+			if (cancelBtn) {
+				cancelBtn.focus();
+			}
 		}
 	}
 
@@ -3706,6 +3988,66 @@
 				status.textContent = sprintf(
 					/* translators: %s: error message */
 					__('Could not delete. %s', 'daymark'),
+					err.message
+				);
+			}
+		}
+	}
+
+	// Unsubscribes from the site a subscription post came from — directly
+	// from inside the app (issue #326), without a trip to wp-admin's
+	// Settings -> Daymark screen, for the "this content just isn't for me"
+	// case. Reuses the exact DELETE /daymark/v1/subscriptions/{id} endpoint
+	// the wp-admin Unsubscribe action already calls
+	// (Daymark_Subscriptions::unsubscribe() — trashes every cached post
+	// from this subscription, then the subscription row itself), so
+	// neither surface's behavior can drift from the other. Modeled on
+	// deleteItem() above (two-step confirm, disable-and-relabel while in
+	// flight, an inline error on failure). On a Timeline card, only the
+	// tapped card's own wrap is removed (reflectEmptied() then keeps the
+	// emptied list honest) — any other still-visible card from the same
+	// now-unsubscribed site is left alone until the next load, the same
+	// "acceptable, minor staleness" tradeoff deleteItem() already accepts
+	// for its own single-item scope. The full-screen post view has no card
+	// wrap of its own to remove, so a successful unsubscribe there
+	// navigates back to wherever the reader came from instead — there's
+	// nothing left on this screen worth staying on once its source is gone.
+	async function unsubscribeSite(screen, confirmBtn) {
+		const subscriptionId = confirmBtn.getAttribute('data-menu-unsubscribe-confirm');
+		const panel = confirmBtn.closest('[data-overflow-panel]');
+		if (!subscriptionId || !panel) {
+			return;
+		}
+		const wrap = confirmBtn.closest('.daymark-recent__item-wrap');
+		const cancelBtn = panel.querySelector('[data-menu-unsubscribe-cancel]');
+		const status = panel.querySelector('[data-menu-status]');
+		confirmBtn.disabled = true;
+		if (cancelBtn) {
+			cancelBtn.disabled = true;
+		}
+		confirmBtn.textContent = __('Unsubscribing…', 'daymark');
+		if (status) {
+			status.textContent = '';
+		}
+		try {
+			await apiDelete('subscriptions/' + subscriptionId);
+			if (wrap) {
+				const parentList = wrap.parentElement;
+				wrap.remove();
+				reflectEmptied(screen, parentList);
+			} else {
+				navigate((screen && screen.view && screen.view.returnTo) || '#home');
+			}
+		} catch (err) {
+			confirmBtn.disabled = false;
+			if (cancelBtn) {
+				cancelBtn.disabled = false;
+			}
+			confirmBtn.textContent = __('Unsubscribe', 'daymark');
+			if (status) {
+				status.textContent = sprintf(
+					/* translators: %s: error message */
+					__('Could not unsubscribe. %s', 'daymark'),
 					err.message
 				);
 			}
@@ -6596,23 +6938,26 @@
 
 	// A subscription post's own interaction row — the subscription-post
 	// equivalent of renderItemStats() below: Like/Comment/Repost toggles
-	// (same "like, comment, reblog" order that row already established),
-	// Bookmark, "open original", and Share. No counted like/comment/repost
-	// stats (see renderSubscriptionPostCard()'s own docblock for why) and no
-	// Routing toggle (Mark-only — a subscription post has no syndication
-	// targets of its own). Shared by the Timeline card and the full-screen
-	// post view (PostScreen) so the two can never show a different set of
-	// icons for the same post — `extra` is an optional trailing HTML
-	// string appended inside the same row, used only by PostScreen to add
-	// its own "Refresh content" icon (issue #196/#317 follow-up) without
-	// a Timeline card ever growing it too.
+	// (same "like, comment, reblog" order that row already established) and
+	// Bookmark — the primary row's own four entries (issue #326); "Open
+	// original," Share, and Unsubscribe move behind the ⋯ overflow toggle
+	// instead (subscriptionOverflowMenuItems(), gated the same way this
+	// function's own toggle is). No counted like/comment/repost stats (see
+	// renderSubscriptionPostCard()'s own docblock for why) and no Routing
+	// toggle (Mark-only — a subscription post has no syndication targets of
+	// its own). Shared by the Timeline card and the full-screen post view
+	// (PostScreen) so the two can never show a different set of icons for
+	// the same post — `extra` is optional HTML appended into the overflow
+	// menu (not the row itself), used only by PostScreen to add its own
+	// "Refresh content" entry (issue #196/#317 follow-up) without a
+	// Timeline card ever growing it too.
 	function renderSubscriptionItemStats(item, extra) {
 		return `<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
 			item
 		)}${renderCommentToggle(item)}${renderRepostToggle(item)}${renderBookmarkToggle(
 			item,
 			'subscription_post'
-		)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}${extra || ''}</span>`;
+		)}${renderOverflowToggle(item, subscriptionOverflowMenuItems(item, extra))}</span>`;
 	}
 
 	// The thumbnail/media(-or-placeholder) + title + meta + stats core of
@@ -6685,8 +7030,13 @@
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
 		// sibling of the site icon and type icon inside a wrapper div
-		// instead, matching the Mark item's own wrapper shape.
+		// instead, matching the Mark item's own wrapper shape. The ⋯
+		// overflow menu's own panel (issue #326) is another such sibling,
+		// same reasoning as the Mark item's own overflow panel
+		// (renderMarkItem()) — Unsubscribe's own confirm step needs real
+		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
+		const overflowItems = subscriptionOverflowMenuItems(item);
 		return `
 				<div class="daymark-recent__item-wrap">
 					${renderSiteIconButton({
@@ -6715,6 +7065,7 @@
 							${renderCardTimestampRow(item, siteLabel)}
 						</span>
 					</button>
+					${renderOverflowPanel(item, overflowItems, unsubscribeConfirmMarkup(item))}
 				</div>`;
 	}
 
@@ -6878,17 +7229,28 @@
 			// gets the same full stat row its own card shows
 			// (renderItemStats()); a subscription post gets its own
 			// narrower row (renderSubscriptionItemStats()) — no counted
-			// like/comment/repost stats or Routing toggle, matching its
-			// card's own reasoning for the same omissions — plus a
-			// trailing "Refresh content" icon (renderRefreshContentToggle())
-			// found only here, never on a Timeline card, replacing the old
-			// standalone text-link button this screen used to render below
-			// the loaded content.
+			// like/comment/repost stats, matching its card's own reasoning
+			// for that omission. Both rows' own ⋯ overflow menu (issue #326)
+			// carries the same entries their card's own overflow panel
+			// would (Open original/Where this went/Share for a Mark; Open
+			// original/Share/Unsubscribe for a subscription post), plus
+			// this screen's own trailing "Refresh content" entry
+			// (renderRefreshContentToggle()) — found only here, never on a
+			// Timeline card, replacing the old standalone text-link button
+			// this screen used to render below the loaded content.
 			const isMark = !!(view && 'mark' === view.kind);
 			const siteLabel = isMark ? config.siteTitle || __('Site', 'daymark') : subscriptionSiteLabel(item);
 			const stats = isMark
 				? renderItemStats(item)
 				: renderSubscriptionItemStats(item, renderRefreshContentToggle(item));
+			// Recomputed here (not threaded back out of renderItemStats()/
+			// renderSubscriptionItemStats() above) to build the overflow
+			// panel's own sibling markup — the same "gate the toggle and
+			// the panel off the identical condition, computed twice"
+			// pattern hasRouting below already uses for the routing panel.
+			const overflowItems = isMark
+				? markOverflowMenuItems(item)
+				: subscriptionOverflowMenuItems(item, renderRefreshContentToggle(item));
 			const id = esc(String(item.id || ''));
 			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
 			return `
@@ -6907,6 +7269,7 @@
 				<div class="daymark-postview-meta">
 					${stats}
 					${renderCardTimestampRow(item, siteLabel)}
+					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
 			</section>`;

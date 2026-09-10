@@ -349,12 +349,12 @@ test('clicking a Timeline card opens its content on a full-screen post view, not
 	const markCard = markWrap.locator('[data-expand-post]');
 	await expect(markCard).toBeVisible();
 	// Clicks the title specifically, not the button's own bounding-box
-	// center: the stat row (heart/comment/reblog/Bookmark/Share, each a
-	// real tap target) sits at the bottom of this same button, and a
-	// short/untitled-excerpt note card is compact enough that a blind
-	// center click can land on one of those icons instead of the card
-	// itself — exactly what a real tap on the title (not the icon row)
-	// would never do either.
+	// center: the interaction row (Bookmark and the ⋯ overflow toggle,
+	// among its real tap targets) sits at the bottom of this same button,
+	// and a short/untitled-excerpt note card is compact enough that a
+	// blind center click can land on one of those icons instead of the
+	// card itself — exactly what a real tap on the title (not the icon
+	// row) would never do either.
 	const markTitle = markCard.locator('.daymark-recent__title');
 	await markTitle.click();
 	await expect(page).toHaveURL(/#post$/);
@@ -371,18 +371,23 @@ test('clicking a Timeline card opens its content on a full-screen post view, not
 	// A subscription-post card: same mechanism, external content instead —
 	// settles on success (`.daymark-expand-content`) or a graceful failure
 	// (`.daymark-error`), never a modal or a navigation to the real
-	// permalink. The "Open original" stat-row icon (a real http(s) href)
-	// is a permanent part of the card itself, unaffected by any of this.
+	// permalink. The "Open original" entry (a real http(s) href) is a
+	// permanent part of the card's own ⋯ overflow menu (issue #326),
+	// unaffected by any of this — opened here via the card's own id, since
+	// the panel is a sibling of the card button, not nested inside it.
 	// The external fetch has its own 15s server-side timeout, so this
 	// allows generous headroom.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
-	const externalLink = subCard.locator('[data-external-link]');
+	const subId = await subCard.getAttribute('data-subpost');
+	await page.locator(`[data-overflow-toggle="${subId}"]`).click();
+	const externalLink = page.locator(`[data-overflow-panel="${subId}"] [data-external-link]`);
 	await expect(externalLink).toHaveCount(1);
 	expect(await externalLink.getAttribute('data-external-link')).toMatch(/^https?:\/\//);
-	// Same title-click reasoning as the Mark card above — this card's own
-	// stat row (Bookmark, Open original, Share) sits at the bottom of the
-	// same button.
+	// Closing the overflow menu again before the title click below, so it
+	// isn't left open across the navigation.
+	await page.locator(`[data-overflow-toggle="${subId}"]`).click();
+	// Same title-click reasoning as the Mark card above.
 	await subCard.locator('.daymark-recent__title').click();
 	await expect(page).toHaveURL(/#post$/);
 	await expect(postBody.locator('.daymark-loading')).toHaveCount(0, { timeout: 20000 });
@@ -390,12 +395,15 @@ test('clicking a Timeline card opens its content on a full-screen post view, not
 	await expect(page.locator('.daymark-sheet')).toHaveCount(0);
 });
 
-// The site name/date row and interaction-icon row (Like through Share) a
-// Timeline card already carries stay visible on the full-screen post view
-// too — opening a post shouldn't cost a reader that context, or the
-// ability to act on it. Covers both a Mark (the full stat row, including
-// Bookmark, which this test also exercises end to end) and a subscription
-// post (the narrower stat row — no counted stats, no Routing toggle).
+// The site name/date row and interaction-icon row a Timeline card already
+// carries stay visible on the full-screen post view too — opening a post
+// shouldn't cost a reader that context, or the ability to act on it.
+// Covers both a Mark (the full primary row, including Bookmark, which this
+// test also exercises end to end) and a subscription post (the narrower
+// primary row — no counted stats). Open original/Share/Routing/Unsubscribe
+// now live behind the ⋯ overflow toggle (issue #326), so this test opens
+// it for each context before asserting their presence, rather than
+// expecting them inline in the primary row.
 test('full-screen post view keeps the site name, date, and interaction icons', async ({ page }) => {
 	const caption = `E2E postview meta ${RUN_ID}`;
 
@@ -424,8 +432,19 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(meta.locator('.daymark-recent__timestamprow time')).toBeVisible();
 	const bookmarkToggle = meta.locator('[data-bookmark-toggle]');
 	await expect(bookmarkToggle).toBeVisible();
+
+	// The ⋯ overflow toggle reveals Open original/Where this went/Share for
+	// a Mark — none of it visible until tapped.
+	const overflowToggle = meta.locator('[data-overflow-toggle]');
+	await expect(overflowToggle).toBeVisible();
+	await expect(meta.locator('[data-external-link]')).toBeHidden();
+	await overflowToggle.click();
 	await expect(meta.locator('[data-external-link]')).toBeVisible();
 	await expect(meta.locator('[data-share-toggle]')).toBeVisible();
+	// Closing it again (tapping the toggle a second time) hides the panel
+	// once more, same as any other ⋯ menu in the app.
+	await overflowToggle.click();
+	await expect(meta.locator('[data-external-link]')).toBeHidden();
 
 	// Bookmarking works from here, the same as from the card itself. The
 	// first tap also triggers the new first-time explainer overlay (issue
@@ -452,10 +471,92 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(subMeta.locator('.daymark-recent__sitename')).toBeVisible();
 	await expect(subMeta.locator('.daymark-recent__timestamprow time')).toBeVisible();
 	await expect(subMeta.locator('[data-like-toggle]')).toBeVisible();
+	await expect(subMeta.locator('[data-comment-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-repost-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
+
+	// Same overflow-toggle mechanism for a subscription post — Open
+	// original/Share/Unsubscribe, plus the routing toggle's own subscription
+	// counterpart it doesn't have (Mark-only).
+	const subOverflowToggle = subMeta.locator('[data-overflow-toggle]');
+	await expect(subOverflowToggle).toBeVisible();
+	await expect(subMeta.locator('[data-external-link]')).toBeHidden();
+	await subOverflowToggle.click();
 	await expect(subMeta.locator('[data-external-link]')).toBeVisible();
 	await expect(subMeta.locator('[data-share-toggle]')).toBeVisible();
+	await expect(subMeta.locator('[data-menu-unsubscribe]')).toBeVisible();
+});
+
+// The ⋯ overflow menu (issue #326): Open original/Share/Routing/Refresh
+// content move behind it, leaving Like/Comment/Reblog/Bookmark as the
+// primary row's own exposed entries; Unsubscribe is new, and — since it
+// removes the whole subscription — asks for confirmation first. Runs
+// against a subscription-post Timeline card (Unsubscribe never renders for
+// a Mark, which has no subscription of its own). Deliberately never taps
+// the confirm button itself: this suite's own single, shared, live
+// subscription (ensureSubscription()) backs several other tests in this
+// file (findSubscriptionCard() et al.), and actually unsubscribing here
+// would remove it out from under them — the Cancel path already exercises
+// everything short of that.
+test('⋯ overflow menu holds Open original/Share/Unsubscribe; Unsubscribe asks for confirmation first', async ({
+	page,
+}) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const subCard = await findSubscriptionCard(page);
+	// The card itself (`[data-subpost]`) carries the item's own id — the
+	// same id its overflow toggle/panel are rendered with
+	// (renderOverflowToggle()/renderOverflowPanel(), app.js), so both can be
+	// looked up directly by that id rather than walking the DOM to find a
+	// shared ancestor.
+	const id = await subCard.getAttribute('data-subpost');
+	const overflowToggle = page.locator(`[data-overflow-toggle="${id}"]`);
+	const panel = page.locator(`[data-overflow-panel="${id}"]`);
+	await expect(overflowToggle).toBeVisible();
+	await expect(overflowToggle).toHaveAttribute('aria-expanded', 'false');
+
+	// Nothing behind it renders until it's tapped.
+	const externalLink = panel.locator('[data-external-link]');
+	const shareToggle = panel.locator('[data-share-toggle]');
+	const unsubscribeToggle = panel.locator('[data-menu-unsubscribe]');
+	await expect(panel).toBeHidden();
+
+	await overflowToggle.click();
+	await expect(overflowToggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(externalLink).toBeVisible();
+	await expect(shareToggle).toBeVisible();
+	await expect(unsubscribeToggle).toBeVisible();
+
+	// Tapping Unsubscribe reveals its own confirm sub-panel — the same
+	// shape the Draft ⋯ menu's own Delete entry already uses — rather than
+	// acting immediately.
+	const confirmPanel = panel.locator('[data-menu-confirm]');
+	await expect(confirmPanel).toBeHidden();
+	await unsubscribeToggle.click();
+	await expect(confirmPanel).toBeVisible();
+	await expect(unsubscribeToggle).toBeHidden();
+
+	const confirmBtn = confirmPanel.locator('[data-menu-unsubscribe-confirm]');
+	const cancelBtn = confirmPanel.locator('[data-menu-unsubscribe-cancel]');
+	await expect(confirmBtn).toBeVisible();
+	await expect(cancelBtn).toBeVisible();
+
+	// Cancel reverts to the actions list — the card (and the subscription
+	// behind it) is untouched.
+	await cancelBtn.click();
+	await expect(confirmPanel).toBeHidden();
+	await expect(unsubscribeToggle).toBeVisible();
+	await expect(subCard).toBeVisible();
+
+	// Tapping the ⋯ toggle again closes the whole panel, same as any other
+	// ⋯ menu in the app.
+	await overflowToggle.click();
+	await expect(overflowToggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(unsubscribeToggle).toBeHidden();
 });
 
 // First-time explainer overlays for the interaction row's six icons (issue
