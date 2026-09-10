@@ -2671,7 +2671,12 @@ test('the public /timeline page is gone (404, no redirect)', async ({ page }) =>
 
 // Home's Recent Marks list shows the same comment/like stat row as the
 // public Timeline card — a zero count stays a dimmed icon-only, a real
-// count shows next to a bolder icon.
+// count shows next to the icon. These three counts are always someone
+// else's engagement (via federation backflow) with the site owner's own
+// Mark, never the owner's own action, so the icon never picks up the
+// accent-colored "active" treatment a genuine personal toggle (Bookmark,
+// or Like/Repost/Comment on a subscription post) gets — only the count
+// number itself appears.
 test('home Recent Marks entries show comment/like counts', async ({ page }) => {
 	const caption = `E2E stats ${RUN_ID}`;
 	const reply = `E2E nice one ${RUN_ID}`;
@@ -2707,7 +2712,7 @@ test('home Recent Marks entries show comment/like counts', async ({ page }) => {
 	await page.goto('/daymark');
 	const rowAfter = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
 	const commentStat = rowAfter.locator('.daymark-stat--comments');
-	await expect(commentStat).toHaveClass(/daymark-stat--active/);
+	await expect(commentStat).not.toHaveClass(/daymark-stat--active/);
 	await expect(commentStat.locator('.daymark-stat__count')).toHaveText('1');
 });
 
