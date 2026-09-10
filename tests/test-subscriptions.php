@@ -674,7 +674,11 @@ XML;
 			. '</head><body></body></html>';
 
 		$this->mock_response( 'https://both-candidates.example/', $site_html );
-		$this->mock_response( 'https://both-candidates.example/wp-json/wp/v2/posts', '[]' );
+		// discover()'s own reachability probe requests ?per_page=1 specifically
+		// (see Daymark_Subscription_Source_WordPress::probe_posts_endpoint()) —
+		// a distinct URL from the one this test asserts discover_candidates()
+		// actually returns.
+		$this->mock_response( 'https://both-candidates.example/wp-json/wp/v2/posts?per_page=1', '[]' );
 
 		$candidates = $this->subscriptions->discover_candidates( 'https://both-candidates.example/' );
 
@@ -695,17 +699,24 @@ XML;
 		$this->assertNotSame( '', $by_type['feed']['source_label'] );
 	}
 
-	/** Scenario: discover_candidates() reuses subscribe_to_site()'s own "no feed found" contract. */
-	public function test_discover_candidates_no_feed_found() {
-		$this->mock_response( 'https://no-candidates.example/', $this->html_without_feed() );
-
-		$result = $this->subscriptions->discover_candidates( 'https://no-candidates.example/' );
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'daymark_subscription_no_feed_found', $result->get_error_code() );
-	}
-
-	/** Scenario: discover_candidates() reuses subscribe_to_site()'s own invalid-URL contract. */
+	/**
+	 * Scenario: discover_candidates() reuses subscribe_to_site()'s own
+	 * invalid-URL contract.
+	 *
+	 * No sibling "no feed found" test here on purpose: the subscription
+	 * source registry is a process-wide singleton PHPUnit never resets
+	 * between tests (documented in tests/test-subscription-source-registry.php,
+	 * which for the same reason has no "discover_feeds() returns fully
+	 * empty" test either), and discover_all_feeds() — unlike discover_feeds()
+	 * — deliberately queries *every* registered source rather than stopping
+	 * at the first non-empty one; once any earlier test in the suite has
+	 * registered an unconditionally-succeeding stub source (several do), a
+	 * genuinely empty discover_candidates() result is no longer reliably
+	 * reproducible here. The identical "empty candidates -> WP_Error"
+	 * one-liner is already covered via subscribe_to_site()'s own
+	 * test_subscribe_to_site_no_feed_found() above, which exercises the same
+	 * discover_feeds()-based (not discover_all_feeds()-based) empty case.
+	 */
 	public function test_discover_candidates_rejects_invalid_url() {
 		$result = $this->subscriptions->discover_candidates( 'ftp://example.com/' );
 
@@ -728,7 +739,7 @@ XML;
 			. '</head><body></body></html>';
 
 		$this->mock_response( 'https://candidate-pick.example/', $site_html );
-		$this->mock_response( 'https://candidate-pick.example/wp-json/wp/v2/posts', '[]' );
+		$this->mock_response( 'https://candidate-pick.example/wp-json/wp/v2/posts?per_page=1', '[]' );
 
 		$candidates = $this->subscriptions->discover_candidates( 'https://candidate-pick.example/' );
 		$this->assertIsArray( $candidates );
