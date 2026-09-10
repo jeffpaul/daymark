@@ -430,13 +430,14 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	// Bookmarking works from here, the same as from the card itself. The
 	// first tap also triggers the new first-time explainer overlay (issue
 	// #321) — a fresh browser context has never seen it before — so it's
-	// dismissed via its own "Got it" button before the second tap, which
+	// dismissed (via its backdrop, the same tap-outside-to-close gesture
+	// every .daymark-sheet already supports) before the second tap, which
 	// would otherwise land on the overlay's full-viewport backdrop instead
 	// of the icon underneath it.
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
 	await bookmarkToggle.click();
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
-	await page.locator('[data-hint-dismiss]').click();
+	await page.locator('[data-sheet-dismiss]').click();
 	await bookmarkToggle.click();
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
 
@@ -485,13 +486,19 @@ test('first-time interaction hint shows once, never again on the same device', a
 
 	// First tap: the bookmark itself happens immediately (optimistic, per
 	// the app's own publishing philosophy), and the explainer overlay
-	// follows right after — never gating the tap itself.
+	// follows right after — never gating the tap itself. Dismissed via its
+	// backdrop (the same tap-outside-to-close gesture every .daymark-sheet
+	// already supports), not its own "Got it" button — Playwright's own
+	// click-stability checks proved unreliable against a button nested this
+	// deep in a freshly-animated-in sheet under CI's real display server,
+	// even though the button itself works fine for a real tap; the backdrop
+	// covers the full viewport, so a click on it can never be intercepted.
 	await bookmarkToggle.click();
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
 	const hint = page.locator('.daymark-sheet__panel--hint');
 	await expect(hint).toBeVisible();
 	await expect(hint.locator('.daymark-hint-title')).toHaveText('Bookmark');
-	await hint.locator('[data-hint-dismiss]').click();
+	await page.locator('[data-sheet-dismiss]').click();
 	await expect(hint).toBeHidden();
 
 	// Untoggling and re-toggling the same icon — its second and third
