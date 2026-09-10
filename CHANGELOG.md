@@ -24,6 +24,10 @@ can't act on them.
 
 - Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing. ([#307](https://github.com/jeffpaul/daymark/issues/307))
 
+### Fixed
+
+- Timeline cards whose kind shows a small thumbnail beside the title (an article with a featured image, an audio/podcast post, a subscription post falling back to its site icon) had their interaction icons and site-name/date row indented under that thumbnail, reading as shifted right compared to a thumbnail-less card (note, link). Both rows now line up flush with the card's own left edge on every kind. ([#309](https://github.com/jeffpaul/daymark/issues/309))
+
 ## [0.14.0] - 2026-09-09
 
 ### Added

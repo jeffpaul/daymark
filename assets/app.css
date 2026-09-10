@@ -677,10 +677,18 @@ h2[tabindex='-1']:focus {
 	gap: var(--daymark-spacing-sm);
 }
 
+/* flex-wrap plus a two-value gap (row-gap first, column-gap second) is what
+   lets .daymark-recent__footer (issue: stat-row icons shifted right on a
+   card with a leading thumbnail) wrap onto its own full-width line below
+   the thumb+body row: items sharing a line (the thumbnail and the body)
+   keep the wider column-gap between them, while the footer's own line gets
+   only the smaller row-gap above it — a plain single-value gap would have
+   forced the same wide spacing above the footer too. */
 .daymark-recent__item {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--daymark-spacing-md);
+	gap: var(--daymark-spacing-xs) var(--daymark-spacing-md);
 	min-height: 64px;
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
 	border: 1px solid var(--daymark-border);
@@ -712,7 +720,20 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--gallery .daymark-recent__body,
 .daymark-recent__item--video .daymark-recent__body,
 .daymark-recent__item--mixed .daymark-recent__body {
-	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) var(--daymark-spacing-md);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) 0;
+}
+
+/* .daymark-recent__footer (stats + timestamp — see its own rule below)
+   used to be body's own last children, so body's bottom padding was this
+   card's own trailing space; now that footer is body's own sibling
+   instead, it carries that trailing space itself (and its own small
+   top padding, matching the row-layout kinds' row-gap) — see
+   .daymark-recent__item--image .daymark-recent__footer and friends below. */
+.daymark-recent__item--image .daymark-recent__footer,
+.daymark-recent__item--gallery .daymark-recent__footer,
+.daymark-recent__item--video .daymark-recent__footer,
+.daymark-recent__item--mixed .daymark-recent__footer {
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md) var(--daymark-spacing-md);
 }
 
 .daymark-recent__thumbwrap--media {
@@ -838,10 +859,50 @@ h2[tabindex='-1']:focus {
 	color: #fff;
 }
 
+/* flex: 1 1 0% (not the default flex: 0 1 auto), because .daymark-recent__item
+   is now flex-wrap: wrap (see that rule's own comment): a flex-wrap
+   container decides whether an item fits on the current line using its
+   *hypothetical* main size, which for the default auto basis on a block box
+   with wrappable text is its max-content width — the full, un-wrapped
+   title+excerpt, easily wider than the whole card. That pushed body onto a
+   line of its own, under the thumbnail instead of beside it. flex-basis: 0%
+   makes that hypothetical size 0 instead, so body always stays on the
+   thumbnail's own line and only .daymark-recent__footer (explicitly
+   flex-basis: 100%) forces a new one; flex-grow: 1 then lets body still
+   claim the row's full remaining width once laid out, the same width a
+   long title/excerpt's own content already pushed it to before this rule
+   existed. */
 .daymark-recent__body {
+	flex: 1 1 0%;
 	min-width: 0;
 	display: flex;
 	flex-direction: column;
+	gap: 2px;
+}
+
+/* The stats (.daymark-item-stats) and timestamp
+   (.daymark-recent__timestamprow) rows, as a sibling of .daymark-recent__body
+   rather than nested inside it. A row-layout card (article with a
+   thumbnail, audio, a subscription post's site-icon fallback) sits its
+   thumbnail beside .daymark-recent__item's whole flex row — nesting these
+   two rows inside body would leave them indented under the thumbnail's own
+   width too, reading as shifted right compared to a thumbnail-less card
+   (note/link/article-without-an-image), whose stats sit flush with the
+   card's own left padding. flex-basis: 100% forces this onto its own line
+   in .daymark-recent__item's wrapped flex row (see that rule's own
+   comment), so it always starts flush at the card's own padding regardless
+   of whatever thumbnail width (if any) precedes it on the line above —
+   never a fixed pixel offset to keep in sync with any one thumbnail size.
+   A media-dominant kind (image/gallery/video/mixed) needs no such
+   trick — its own thumbnail is a full-width banner stacked above, not a
+   flex sibling — but does need its own matching padding, since that
+   modifier drops .daymark-recent__item's own padding to let the banner run
+   edge-to-edge (see .daymark-recent__item--image .daymark-recent__footer
+   and friends, below). */
+.daymark-recent__footer {
+	display: flex;
+	flex-direction: column;
+	flex-basis: 100%;
 	gap: 2px;
 }
 
@@ -896,11 +957,14 @@ h2[tabindex='-1']:focus {
 
 /* Same stat-row look as the public views' .daymark-item-stats (views.css),
    built on this file's custom properties instead of that file's hardcoded
-   hex — one visual vocabulary, each stylesheet's own color convention. */
+   hex — one visual vocabulary, each stylesheet's own color convention. No
+   margin-top of its own: on a Timeline card this now sits inside
+   .daymark-recent__footer, whose own gap/padding already supplies the
+   space above it (see that rule); on the full-screen post view it's a
+   direct child of .daymark-postview-meta, which does the same. */
 .daymark-item-stats {
 	display: flex;
 	gap: var(--daymark-spacing-sm);
-	margin-top: 2px;
 }
 
 /* min-width/justify-content live here, on the shared base class every stat
@@ -2449,7 +2513,11 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--image .daymark-recent__body,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--gallery .daymark-recent__body,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--video .daymark-recent__body,
-.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--mixed .daymark-recent__body {
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--mixed .daymark-recent__body,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--image .daymark-recent__footer,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--gallery .daymark-recent__footer,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--video .daymark-recent__footer,
+.daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--mixed .daymark-recent__footer {
 	padding-right: 56px;
 }
 

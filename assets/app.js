@@ -6221,12 +6221,23 @@
 		// just be noise.
 		const excerpt = toPlainText(item.excerpt || '');
 		const showExcerpt = excerpt && excerpt !== title;
+		// The stats/timestamp rows render as a sibling of .daymark-recent__body,
+		// not nested inside it — a kind with a small leading thumbnail (article
+		// with an image, audio, a site-icon fallback) sits that thumbnail
+		// beside .daymark-recent__item's whole flex row otherwise, which would
+		// indent everything in body — including these two rows — under the
+		// thumbnail's own width, reading as shifted right compared to a
+		// thumbnail-less card's stats (flush with the card's own padding). See
+		// .daymark-recent__footer in app.css for how this wraps onto its own
+		// full-width line regardless of kind.
 		return `
 					${renderCardMedia(item, kind)}
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
 						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+					</span>
+					<span class="daymark-recent__footer">
 						${isDraft ? '' : renderItemStats(item)}
 						${renderCardTimestampRow(item, isDraft ? '' : config.siteTitle || __('Site', 'daymark'))}
 					</span>`;
@@ -6281,6 +6292,8 @@
 							<span class="daymark-recent__title">${esc(title)}</span>
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						</span>
+						<span class="daymark-recent__footer">
 							${renderSubscriptionItemStats(item)}
 							${renderCardTimestampRow(item, siteLabel)}
 						</span>
