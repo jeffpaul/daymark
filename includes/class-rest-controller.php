@@ -564,6 +564,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/comment',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'comment_on_subscription_post' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id'   => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+					'text' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/bookmarks/(?P<id>\d+)',
 			array(
 				array(
@@ -2493,6 +2514,48 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// Daymark_Subscription_Oembed — never the provider's own raw
 				// HTML — trusted the same way body_content is above.
 				'html' => (string) ( $preview['html'] ?? '' ),
+			)
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/subscription-posts/{id}/comment — deliver a comment
+	 * directly to a subscription post's origin (issue #317), replacing the
+	 * old composer-based "Reply" action. Daymark_Comment_Delivery decides
+	 * server-side (where the one outbound permalink fetch already has to
+	 * happen) whether to route through Webmention (a minimal Mark on your
+	 * own site) or fall back to a native comment POST to the origin's own
+	 * REST API — see that class's own docblock for the full mechanism.
+	 *
+	 * Own rate-limit bucket (ACTION_SUBSCRIPTION_COMMENT): a different risk
+	 * class from ACTION_PUBLISH's own Mark-create, since even the
+	 * Webmention branch first makes an outbound fetch of a third-party
+	 * host, and the native branch POSTs to one directly.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function comment_on_subscription_post( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_COMMENT );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$id     = absint( $request->get_param( 'id' ) );
+		$text   = (string) $request->get_param( 'text' );
+		$result = Daymark_Comment_Delivery::deliver( $id, $text );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response(
+			array(
+				'method'  => sanitize_key( (string) ( $result['method'] ?? '' ) ),
+				'status'  => sanitize_key( (string) ( $result['status'] ?? '' ) ),
+				'message' => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
+				'mark_id' => absint( $result['mark_id'] ?? 0 ),
 			)
 		);
 	}

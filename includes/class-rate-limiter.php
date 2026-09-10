@@ -84,6 +84,20 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIPTION_POST_FETCH = 'subscription_post_fetch';
 
 	/**
+	 * Comment delivery to a subscription post's origin
+	 * (POST /subscription-posts/{id}/comment) — an outbound-to-a-third-party-
+	 * host action (either a Webmention-carrying Mark publish, or a direct
+	 * POST to the origin's own wp/v2/comments endpoint), a different risk
+	 * class from ACTION_PUBLISH's own Mark-create even in the Webmention
+	 * branch. Same tier as ACTION_SUBSCRIBE/ACTION_SUBSCRIPTION_REFRESH,
+	 * both being outbound-fetch-shaped actions a user triggers deliberately,
+	 * not a frequent background one.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIPTION_COMMENT = 'subscription_comment';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -115,6 +129,10 @@ class Daymark_Rate_Limiter {
 		),
 		self::ACTION_SUBSCRIPTION_POST_FETCH => array(
 			'limit'  => 20,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIPTION_COMMENT    => array(
+			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 	);
