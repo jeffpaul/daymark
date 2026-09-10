@@ -79,6 +79,25 @@ class Daymark_Subscription_Content_Sniffer {
 	}
 
 	/**
+	 * Whether a space-separated class list contains a given class token —
+	 * a plain, exact token match (not a substring match), matching how a
+	 * browser's own `classList`/`hasClass` semantics work and avoiding a
+	 * false positive on an unrelated class that merely contains the token
+	 * as a substring (e.g. a theme's own `avatar-wrapper` or `my-avatar`).
+	 *
+	 * @param string $class_attr Raw `class` attribute value.
+	 * @param string $token      Class token to look for.
+	 * @return bool
+	 */
+	private static function has_class_token( string $class_attr, string $token ): bool {
+		if ( '' === trim( $class_attr ) ) {
+			return false;
+		}
+
+		return in_array( $token, preg_split( '/\s+/', trim( $class_attr ) ), true );
+	}
+
+	/**
 	 * Scan a fragment of content HTML for inline media a structured signal
 	 * (an RSS enclosure, a real `format` field, an already-assigned
 	 * post_format) didn't already account for — an ordinary
@@ -87,6 +106,21 @@ class Daymark_Subscription_Content_Sniffer {
 	 * present — an explicit, author-intended "this is the post's media"
 	 * signal from an IndieWeb theme, distinct from (and more trustworthy
 	 * than) a bare tag with no such markup.
+	 *
+	 * A bare `<img>` carrying WordPress core's own `avatar` class — the
+	 * literal class token every `get_avatar()`/`get_avatar_url()` call
+	 * outputs (`class="avatar avatar-96 photo"`), regardless of theme — is
+	 * excluded from both counting and `image_src` entirely, never treated
+	 * as content media (issue #324). Many themes and author-bio plugins
+	 * hook `the_content` to append a "written by" box with the author's
+	 * own `get_avatar()` output; that photo is page furniture repeated on
+	 * every single post, not something belonging to *this* post's own
+	 * content — the same distinction already drawn for Jetpack's
+	 * Sharedaddy/Related-Posts blocks and post-navigation links in
+	 * Daymark_Subscription_Poller::extract_body_html(). An explicit
+	 * `u-photo` class still always wins (an author's own avatar carrying
+	 * that class is a deliberate override this method still respects), so
+	 * only the *bare* `<img>` fallback path is affected.
 	 *
 	 * Also captures `link_url`: the first outbound `<a href>` found, when
 	 * `$exclude_host` is given — a short "link" or "note"-format item (see
@@ -150,6 +184,10 @@ class Daymark_Subscription_Content_Sniffer {
 				}
 
 				$is_mf2_photo = false !== stripos( $class, 'u-photo' );
+
+				if ( 'IMG' === $tag && ! $is_mf2_photo && self::has_class_token( $class, 'avatar' ) ) {
+					continue;
+				}
 
 				if ( $is_mf2_photo || 'IMG' === $tag ) {
 					if ( $is_mf2_photo ) {
