@@ -134,7 +134,13 @@ class Daymark_Subscription_Url_Guard {
 		$addresses = apply_filters( 'daymark_subscription_url_guard_resolved_addresses', null, $host );
 
 		if ( is_array( $addresses ) ) {
-			return $addresses;
+			// Filtered through the same keep_valid_addresses() every other
+			// source below is, so a callback supplying something other than
+			// genuine IP addresses — deliberately, in a test exercising this
+			// exact defensive behavior, or by mistake — gets the same safe
+			// "couldn't resolve" treatment as a real DNS function returning
+			// garbage would.
+			return self::keep_valid_addresses( $addresses );
 		}
 
 		if ( false !== filter_var( $host, FILTER_VALIDATE_IP ) ) {
@@ -143,10 +149,19 @@ class Daymark_Subscription_Url_Guard {
 
 		$addresses = array();
 
-		$ipv4_addresses = gethostbynamel( $host );
-
-		if ( is_array( $ipv4_addresses ) ) {
-			$addresses = array_merge( $addresses, $ipv4_addresses );
+		// function_exists() guards both DNS calls the same way — not just
+		// dns_get_record() as before. A core DNS-resolution function isn't
+		// guaranteed to exist in every PHP runtime this plugin's own SSRF
+		// guard might execute in: WordPress Playground's browser-sandboxed
+		// PHP-WASM build documents dns_get_record() itself as undefined
+		// there (https://github.com/WordPress/wordpress-playground/issues/1042),
+		// and gethostbynamel() — the same category of function, backed by
+		// the same unavailable raw-socket DNS machinery — is a plausible
+		// second casualty of that same constraint. An unconditional call to
+		// either would throw an uncaught "Call to undefined function"
+		// error and fatal the whole request, not just this one check.
+		if ( function_exists( 'gethostbynamel' ) ) {
+			$addresses = array_merge( $addresses, self::keep_valid_addresses( gethostbynamel( $host ) ) );
 		}
 
 		if ( function_exists( 'dns_get_record' ) ) {
@@ -154,15 +169,52 @@ class Daymark_Subscription_Url_Guard {
 			$records = @dns_get_record( $host, DNS_AAAA );
 
 			if ( is_array( $records ) ) {
+				$ipv6_candidates = array();
+
 				foreach ( $records as $record ) {
 					if ( ! empty( $record['ipv6'] ) ) {
-						$addresses[] = (string) $record['ipv6'];
+						$ipv6_candidates[] = (string) $record['ipv6'];
 					}
 				}
+
+				$addresses = array_merge( $addresses, self::keep_valid_addresses( $ipv6_candidates ) );
 			}
 		}
 
 		return $addresses;
+	}
+
+	/**
+	 * Keep only the entries that are genuinely well-formed IP addresses,
+	 * discarding anything else a DNS-resolution function (or the
+	 * `daymark_subscription_url_guard_resolved_addresses` filter above)
+	 * might hand back instead of cleanly failing — most notably a
+	 * constrained runtime's DNS shim echoing the unresolved hostname back
+	 * rather than returning `false`/an empty result. Trusting a non-IP
+	 * value as a "resolved address" would run it through
+	 * is_unsafe_address() below, which correctly rejects it as not a valid
+	 * IP at all — wrongly treating an ordinary, resolvable public site as
+	 * unsafe rather than as the plain resolution failure it actually was.
+	 *
+	 * @param mixed $candidates Whatever a DNS-resolution function (or the
+	 *                          filter above) returned; anything but an
+	 *                          array of strings is treated as no
+	 *                          candidates at all.
+	 * @return string[] Only the entries that parse as a valid IP address.
+	 */
+	private static function keep_valid_addresses( $candidates ): array {
+		if ( ! is_array( $candidates ) ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				$candidates,
+				static function ( $candidate ) {
+					return is_string( $candidate ) && false !== filter_var( $candidate, FILTER_VALIDATE_IP );
+				}
+			)
+		);
 	}
 
 	/**

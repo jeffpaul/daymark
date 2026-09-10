@@ -153,4 +153,26 @@ class Test_Subscription_Url_Guard extends WP_UnitTestCase {
 
 		$this->assertTrue( Daymark_Subscription_Url_Guard::check( 'https://this-does-not-resolve.example.invalid/feed/' ) );
 	}
+
+	/**
+	 * A DNS-resolution function that can't perform a real lookup in some
+	 * runtimes may hand back something other than a genuine IP address
+	 * instead of cleanly failing — e.g. echoing the unresolved hostname back
+	 * (a plausible shape for WordPress Playground's browser-sandboxed
+	 * PHP-WASM build, where dns_get_record() is itself documented as
+	 * undefined: https://github.com/WordPress/wordpress-playground/issues/1042).
+	 * That must never be trusted as a resolved address — it should be
+	 * treated exactly like the "could not resolve at all" case above, not
+	 * rejected as an unsafe address.
+	 */
+	public function test_malformed_resolved_address_is_not_treated_as_unsafe() {
+		add_filter(
+			'daymark_subscription_url_guard_resolved_addresses',
+			static function () {
+				return array( 'this-is-not-an-ip-address' );
+			}
+		);
+
+		$this->assertTrue( Daymark_Subscription_Url_Guard::check( 'https://example.com/feed/' ) );
+	}
 }
