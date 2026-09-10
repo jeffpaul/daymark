@@ -286,19 +286,22 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		// featured-media embed always wins, this only ever promotes away
 		// from an unconfirmed 'standard'.
 		//
-		// A *confirmed* media format (image/video/audio/gallery) with no
-		// featured-media embed still needs the same image fallback, just not
-		// the format-guessing half above it: plenty of themes built around
-		// the classic "Image" post format never call set_post_thumbnail() at
-		// all, showing the post's own first inline image instead — without
-		// this, such a post's card had nothing to show but the subscription's
-		// site icon, blown up to fill the image-kind card's full-bleed
-		// banner (issue #313). Reclassifying `$format` and detecting an
-		// outbound `link_url` stay scoped to the genuinely unconfirmed
-		// 'standard' case, exactly as before.
-		$link_url = '';
+		// A *confirmed media* format (image/video/audio/gallery — not
+		// 'note', which by design carries no media of its own, matching a
+		// Mark's own note type) with no featured-media embed still needs the
+		// same image fallback, just not the format-guessing half above it:
+		// plenty of themes built around the classic "Image" post format
+		// never call set_post_thumbnail() at all, showing the post's own
+		// first inline image instead — without this, such a post's card had
+		// nothing to show but the subscription's site icon, blown up to
+		// fill the image-kind card's full-bleed banner (issue #313).
+		// Reclassifying `$format` and detecting an outbound `link_url` stay
+		// scoped to the genuinely unconfirmed 'standard' case, exactly as
+		// before.
+		$link_url             = '';
+		$wants_image_fallback = '' === $featured_image_url && in_array( $format, self::DAYMARK_MEDIA_FORMATS, true );
 
-		if ( 'standard' === $format || '' === $featured_image_url ) {
+		if ( 'standard' === $format || $wants_image_fallback ) {
 			$content_html = (string) ( $raw_item['content']['rendered'] ?? '' );
 			$exclude_host = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
 			$sniffed      = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
