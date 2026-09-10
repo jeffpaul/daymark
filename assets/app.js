@@ -502,13 +502,20 @@
 	// stays quiet until there's something to report. `title` mirrors
 	// `aria-label` as a native hover tooltip, matching the precedent
 	// renderSiteIconButton() already set: a screen reader needs the
-	// label; a sighted, non-touch hover wants to see it too.
+	// label; a sighted, non-touch hover wants to see it too. Never carries
+	// `.daymark-stat--active` regardless of count: on a Mark's own card
+	// these three counts (like/comment/repost) are *other people's*
+	// engagement, delivered via federation backflow — not something this
+	// user did — so the accent color renderLikeToggle()/renderRepostToggle()/
+	// renderCommentToggle() apply for a genuine personal toggle (keyed off
+	// liked_mark_id/reposted_mark_id/replied_mark_id, never a count) would
+	// be misleading here.
 	function renderStat(glyph, count, modifier, label) {
-		const isActive = count > 0;
-		return `<span class="daymark-stat daymark-stat--${modifier}${
-			isActive ? ' daymark-stat--active' : ''
-		}" aria-label="${esc(label)}" title="${esc(label)}">${statIcon(glyph)}${
-			isActive ? `<span class="daymark-stat__count" aria-hidden="true">${count}</span>` : ''
+		const hasCount = count > 0;
+		return `<span class="daymark-stat daymark-stat--${modifier}" aria-label="${esc(
+			label
+		)}" title="${esc(label)}">${statIcon(glyph)}${
+			hasCount ? `<span class="daymark-stat__count" aria-hidden="true">${count}</span>` : ''
 		}</span>`;
 	}
 
