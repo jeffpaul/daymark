@@ -38,6 +38,7 @@ can't act on them.
 - A subscribed WordPress or Friends post with a confirmed Image/Video/Audio/Gallery post format but no explicit featured image (common for themes that show a post's own first inline image instead) showed the subscription's site icon blown up in the card's media banner instead of that image. ([#313](https://github.com/jeffpaul/daymark/issues/313))
 - The full-screen post view's back arrow and Daymark icon were vertically centered against the post title's full height, so a long title that wrapped to two or three lines left them floating in the middle of the block instead of level with its first line. ([#315](https://github.com/jeffpaul/daymark/issues/315))
 - A plain, no-image subscription post could show a small thumbnail duplicating its own site icon — an author-bio box's avatar photo, embedded in the post's own content by the theme, was being picked up as the card's featured image. Avatar images are no longer treated as post content. ([#324](https://github.com/jeffpaul/daymark/issues/324))
+- A Mark's own like/comment/repost counts on its Timeline card no longer show Daymark's orange "active" accent color just because the count is 1 or more — that color is reserved for your own action (a genuine Like/Repost/Comment/Bookmark toggle); these three are always other people's engagement with your Mark, so they now stay a plain, muted count regardless of how high it is. ([#328](https://github.com/jeffpaul/daymark/issues/328))
 
 ## [0.14.0] - 2026-09-09
 
