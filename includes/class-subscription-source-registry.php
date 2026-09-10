@@ -212,4 +212,72 @@ class Daymark_Subscription_Source_Registry {
 
 		return array();
 	}
+
+	/**
+	 * Ask every registered source to discover feed(s)/locator(s) for a site
+	 * URL, and return every candidate any source finds — the "show
+	 * everything" counterpart to discover_feeds() above, which stops at the
+	 * first source that finds anything (issue #307).
+	 *
+	 * The first-match-wins behavior of discover_feeds() stays the right
+	 * default for subscribing itself (fast, automatic, no UI needed for the common
+	 * case where a site's sources all agree); this method exists for the
+	 * separate "let me see what else was found and pick a different one"
+	 * action a subscription's own row can offer after the fact, once an
+	 * automatically-picked source turns out to be the wrong one for that
+	 * site (e.g. a WordPress REST API that returns every language mixed
+	 * together on a multilingual site, where the site's own RSS/Atom feed
+	 * would have been correctly scoped).
+	 *
+	 * Each candidate is tagged with its producing source's `source_type` and
+	 * human-readable `source_label` (the source's own get_label()), the way
+	 * discover_feeds() already tags `source_type` alone — a caller here also
+	 * needs something to actually show a person, not just store. Deduplicated
+	 * by resolved `url`, keeping the first (highest-registration-precedence)
+	 * source's own candidate for the same URL should two sources ever
+	 * resolve to the same one — not a case any built-in source combination
+	 * produces today, but cheap to guard against regardless.
+	 *
+	 * @param string $site_url Site URL entered by the user (not a feed URL).
+	 * @return array<int, array<string, mixed>> Every discovered candidate
+	 *                                          across every source, each
+	 *                                          carrying `source_type` and
+	 *                                          `source_label`; empty when no
+	 *                                          source discovers anything.
+	 */
+	public function discover_all_feeds( string $site_url ): array {
+		$seen_urls  = array();
+		$candidates = array();
+
+		foreach ( $this->sources as $id => $source ) {
+			$discovered = $source->discover( $site_url );
+
+			if ( empty( $discovered ) ) {
+				continue;
+			}
+
+			$label = $source->get_label();
+
+			foreach ( $discovered as $candidate ) {
+				if ( ! is_array( $candidate ) || ! isset( $candidate['url'] ) ) {
+					continue;
+				}
+
+				$url = (string) $candidate['url'];
+
+				if ( isset( $seen_urls[ $url ] ) ) {
+					continue;
+				}
+
+				$seen_urls[ $url ] = true;
+
+				$candidate['source_type']  = $id;
+				$candidate['source_label'] = $label;
+
+				$candidates[] = $candidate;
+			}
+		}
+
+		return $candidates;
+	}
 }

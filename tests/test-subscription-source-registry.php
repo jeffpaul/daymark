@@ -311,4 +311,127 @@ class Test_Subscription_Source_Registry extends WP_UnitTestCase {
 
 		$this->assertSame( array(), $registry->discover_feeds( 'https://exclude-test.example/', $exclude_ids ) );
 	}
+
+	// -----------------------------------------------------------------
+	// discover_all_feeds() (issue #307).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: unlike discover_feeds()'s first-match-wins, discover_all_feeds()
+	 * gathers a candidate from *every* source that finds one — the "let a
+	 * person see and choose a different source" feature's own underlying
+	 * data. Each candidate is tagged with both `source_type` (matching
+	 * discover_feeds()'s own tagging) and a human `source_label` the picker
+	 * UI actually displays.
+	 *
+	 * Two freshly registered stub sources, each unconditionally discovering
+	 * its own distinct URL for the given site — other tests in this
+	 * process-wide-singleton file may have left their own always-succeeding
+	 * stubs registered too (see the discover_feeds() tests above), so this
+	 * only asserts the two candidates under test are present, not that
+	 * they're the *only* ones.
+	 */
+	public function test_discover_all_feeds_gathers_candidates_from_every_source() {
+		$registry = Daymark_Subscription_Source_Registry::instance();
+
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-all-a' ) );
+		$registry->register_source( $this->make_discoverable_stub_source( 'stub-all-b' ) );
+
+		$result = $registry->discover_all_feeds( 'https://all-feeds-test.example/' );
+		$by_url = array();
+
+		foreach ( $result as $candidate ) {
+			$by_url[ $candidate['url'] ] = $candidate;
+		}
+
+		$this->assertArrayHasKey( 'https://all-feeds-test.example/stub-all-a/feed/', $by_url );
+		$this->assertSame( 'stub-all-a', $by_url['https://all-feeds-test.example/stub-all-a/feed/']['source_type'] );
+		$this->assertSame( 'stub-all-a', $by_url['https://all-feeds-test.example/stub-all-a/feed/']['source_label'] );
+
+		$this->assertArrayHasKey( 'https://all-feeds-test.example/stub-all-b/feed/', $by_url );
+		$this->assertSame( 'stub-all-b', $by_url['https://all-feeds-test.example/stub-all-b/feed/']['source_type'] );
+	}
+
+	/**
+	 * Scenario: two sources resolving to the exact same URL for the same
+	 * site produce only one candidate — the registration-order-precedence
+	 * source (the first one registered) wins the dedup, matching
+	 * discover_feeds()'s own precedence rather than an arbitrary pick.
+	 */
+	public function test_discover_all_feeds_dedupes_by_url_keeping_first_registered_source() {
+		$registry = Daymark_Subscription_Source_Registry::instance();
+
+		$first  = new class() implements Daymark_Subscription_Source {
+			public function get_id(): string {
+				return 'stub-dedup-first';
+			}
+
+			public function get_label(): string {
+				return 'Dedup First';
+			}
+
+			public function discover( string $site_url ): array {
+				unset( $site_url );
+
+				return array(
+					array(
+						'url'   => 'https://dedup-test.example/shared-feed/',
+						'title' => '',
+						'type'  => 'application/rss+xml',
+					),
+				);
+			}
+
+			public function fetch( string $feed_url ): array {
+				return array();
+			}
+
+			public function normalize( array $raw_item ): array {
+				return $raw_item;
+			}
+		};
+		$second = new class() implements Daymark_Subscription_Source {
+			public function get_id(): string {
+				return 'stub-dedup-second';
+			}
+
+			public function get_label(): string {
+				return 'Dedup Second';
+			}
+
+			public function discover( string $site_url ): array {
+				unset( $site_url );
+
+				return array(
+					array(
+						'url'   => 'https://dedup-test.example/shared-feed/',
+						'title' => '',
+						'type'  => 'application/rss+xml',
+					),
+				);
+			}
+
+			public function fetch( string $feed_url ): array {
+				return array();
+			}
+
+			public function normalize( array $raw_item ): array {
+				return $raw_item;
+			}
+		};
+
+		$registry->register_source( $first );
+		$registry->register_source( $second );
+
+		$result  = $registry->discover_all_feeds( 'https://dedup-test.example/' );
+		$matches = array_values(
+			array_filter(
+				$result,
+				static fn( array $candidate ): bool => 'https://dedup-test.example/shared-feed/' === $candidate['url']
+			)
+		);
+
+		$this->assertCount( 1, $matches );
+		$this->assertSame( 'stub-dedup-first', $matches[0]['source_type'] );
+	}
 }
