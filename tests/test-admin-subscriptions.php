@@ -240,6 +240,125 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Refresh icon', $output );
 	}
 
+	// -----------------------------------------------------------------
+	// "Check for other feeds" / source picker (issue #307).
+	// -----------------------------------------------------------------
+
+	/** Scenario: with nothing stashed yet, a subscription's row shows the plain "Check for other feeds" trigger, not a picker. */
+	public function test_source_switch_trigger_shown_by_default(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://sources-example.com',
+				'feed_url' => 'https://sources-example.com/feed',
+				'status'   => 'active',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_subscription_discover_sources', $output );
+		$this->assertStringContainsString( 'Check for other feeds', $output );
+		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
+	}
+
+	/**
+	 * Scenario: once a discovery result is stashed for this subscription (what
+	 * handle_discover_sources() would have written), the row shows the
+	 * candidate picker instead of the plain trigger — each option labeled with
+	 * its source, the currently active feed_url marked, and a Switch action.
+	 */
+	public function test_source_picker_shown_once_candidates_are_stashed(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://picker-example.com',
+				'feed_url'    => 'https://picker-example.com/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'status'      => 'active',
+			)
+		);
+
+		set_transient(
+			'daymark_subscription_sources_' . $id . '_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://picker-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://picker-example.com/wp-json/wp/v2/posts',
+						'title'        => '',
+						'source_type'  => 'wordpress',
+						'source_label' => 'WordPress REST API',
+					),
+					array(
+						'url'          => 'https://picker-example.com/feed/',
+						'title'        => 'Picker Example » Feed',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_subscription_switch_source', $output );
+		$this->assertStringContainsString( 'daymark_candidate_index', $output );
+		$this->assertStringContainsString( 'WordPress REST API', $output );
+		$this->assertStringContainsString( 'RSS/Atom Feed', $output );
+		$this->assertStringContainsString( 'https://picker-example.com/feed/', $output );
+		$this->assertStringContainsString( '(current)', $output );
+		$this->assertStringContainsString( 'daymark_subscription_discover_sources_dismiss', $output );
+		// The plain trigger is replaced by the picker, not shown alongside it.
+		$this->assertStringNotContainsString( 'Check for other feeds', $output );
+	}
+
+	/**
+	 * Scenario: a stashed transient for a *different* site_url than the
+	 * subscription's own current one (a stale result — e.g. site_url changed,
+	 * or this is somehow another subscription's leftover key) is not trusted;
+	 * the row falls back to the plain trigger instead of showing a mismatched
+	 * picker.
+	 */
+	public function test_source_picker_ignores_a_stashed_result_for_a_different_site_url(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://mismatch-example.com',
+				'feed_url' => 'https://mismatch-example.com/feed',
+				'status'   => 'active',
+			)
+		);
+
+		set_transient(
+			'daymark_subscription_sources_' . $id . '_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://some-other-site.example',
+				'candidates' => array(
+					array(
+						'url'          => 'https://some-other-site.example/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Check for other feeds', $output );
+		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
+	}
+
+	/** Scenario (issue #307): a successful switch shows a plain success notice. */
+	public function test_source_switched_notice_rendered(): void {
+		$_GET['daymark_notice'] = 'source_switched';
+		$output                 = $this->render();
+		unset( $_GET['daymark_notice'] );
+
+		$this->assertStringContainsString( 'Subscription switched to the selected feed.', $output );
+	}
+
 	/** Scenario (issue #80): the settings page renders an OPML Export link. */
 	public function test_export_link_rendered(): void {
 		$_GET['tab'] = 'import-export';

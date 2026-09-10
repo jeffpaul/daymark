@@ -143,6 +143,9 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
 		add_action( 'admin_post_daymark_subscription_edit_title', array( $this, 'handle_edit_title' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
+		add_action( 'admin_post_daymark_subscription_discover_sources', array( $this, 'handle_discover_sources' ) );
+		add_action( 'admin_post_daymark_subscription_discover_sources_dismiss', array( $this, 'handle_discover_sources_dismiss' ) );
+		add_action( 'admin_post_daymark_subscription_switch_source', array( $this, 'handle_switch_source' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
@@ -473,6 +476,7 @@ class Daymark_Admin_Subscriptions {
 			'title_updated'       => __( 'Site name updated.', 'daymark' ),
 			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
 			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
+			'source_switched'     => __( 'Subscription switched to the selected feed.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -917,6 +921,7 @@ class Daymark_Admin_Subscriptions {
 	private function render_subscription_row( array $subscription ): void {
 		$id            = absint( $subscription['id'] ?? 0 );
 		$site_url      = (string) ( $subscription['site_url'] ?? '' );
+		$feed_url      = (string) ( $subscription['feed_url'] ?? '' );
 		$site_title    = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
 		$icon_url      = (string) ( $subscription['site_icon_url'] ?? '' );
 		$status        = sanitize_key( (string) ( $subscription['status'] ?? '' ) );
@@ -975,6 +980,11 @@ class Daymark_Admin_Subscriptions {
 
 				$this->render_unsubscribe_form( $id, $row_label );
 				?>
+			</td>
+		</tr>
+		<tr data-daymark-subscription-sources-row="<?php echo esc_attr( (string) $id ); ?>">
+			<td colspan="4" style="padding-top:0;">
+				<?php $this->render_source_switch_control( $id, $site_url, $feed_url ); ?>
 			</td>
 		</tr>
 		<?php
@@ -1155,6 +1165,121 @@ class Daymark_Admin_Subscriptions {
 			?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Render one subscription's "Check for other feeds" / source-picker
+	 * control (issue #307) — the two-step fix for a subscription whose
+	 * automatically-picked source turns out to be the wrong one for that
+	 * site (most concretely: a WordPress REST API mixing multiple languages
+	 * together, where the site's own RSS/Atom feed would have been correctly
+	 * scoped).
+	 *
+	 * Step one is a plain trigger — clicking it runs a fresh discovery pass
+	 * (Daymark_Subscriptions::discover_candidates()) and stashes the result
+	 * in a short-lived, per-subscription, per-user transient (the same
+	 * POST-redirect-GET-survives-via-transient convention the OPML import
+	 * results already use), then redirects back. Step two only renders once
+	 * that transient exists for this exact subscription: a picker listing
+	 * every discovered candidate, from which switching writes straight into
+	 * this same row (Daymark_Subscriptions::switch_source()) rather than
+	 * creating a second subscription. Deliberately not run automatically on
+	 * every page load — discovery is a live outbound fetch, and doing it for
+	 * every row of a subscriptions table on every visit would be its own
+	 * real cost for something most rows will never need.
+	 *
+	 * @param int    $id       Subscription ID.
+	 * @param string $site_url The subscription's own site_url — discovery
+	 *                         runs against this, not feed_url.
+	 * @param string $feed_url The subscription's current feed_url, so the
+	 *                         picker (once shown) can mark which candidate is
+	 *                         already active.
+	 * @return void
+	 */
+	private function render_source_switch_control( int $id, string $site_url, string $feed_url ): void {
+		$stashed = get_transient( self::subscription_sources_transient_key( $id ) );
+
+		if ( is_array( $stashed ) && isset( $stashed['site_url'], $stashed['candidates'] ) && (string) $stashed['site_url'] === $site_url && is_array( $stashed['candidates'] ) ) {
+			$this->render_source_picker( $id, $stashed['candidates'], $feed_url );
+
+			return;
+		}
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+			<input type="hidden" name="action" value="daymark_subscription_discover_sources" />
+			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+			<?php wp_nonce_field( 'daymark_subscription_discover_sources_' . $id, 'daymark_subscription_discover_sources_nonce' ); ?>
+			<?php submit_button( __( 'Check for other feeds', 'daymark' ), 'secondary small', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render the candidate picker itself, once a discovery pass has stashed
+	 * results for this subscription (see render_source_switch_control()).
+	 *
+	 * Each candidate is a plain radio option — the currently active feed_url
+	 * is pre-selected and marked, so submitting with no change is a harmless
+	 * no-op rather than an accidental re-subscribe. A "Discard" action clears
+	 * the stashed transient without switching anything, for a person who
+	 * only wanted to look.
+	 *
+	 * @param int                              $id               Subscription ID.
+	 * @param array<int, array<string, mixed>> $candidates       Stashed discover_candidates() result.
+	 * @param string                           $current_feed_url The subscription's current feed_url.
+	 * @return void
+	 */
+	private function render_source_picker( int $id, array $candidates, string $current_feed_url ): void {
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_subscription_switch_source" />
+			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+			<?php wp_nonce_field( 'daymark_subscription_switch_source_' . $id, 'daymark_subscription_switch_source_nonce' ); ?>
+			<fieldset>
+				<legend><strong><?php esc_html_e( 'Feeds found for this site:', 'daymark' ); ?></strong></legend>
+				<?php foreach ( $candidates as $index => $candidate ) : ?>
+					<?php
+					$candidate_url   = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
+					$source_label    = isset( $candidate['source_label'] ) ? (string) $candidate['source_label'] : '';
+					$candidate_title = isset( $candidate['title'] ) ? (string) $candidate['title'] : '';
+					$is_current      = '' !== $candidate_url && $candidate_url === $current_feed_url;
+					?>
+					<label style="display:block;margin:4px 0;">
+						<input type="radio" name="daymark_candidate_index" value="<?php echo esc_attr( (string) $index ); ?>" <?php checked( $is_current ); ?> />
+						<strong><?php echo esc_html( $source_label ); ?></strong>
+						<?php if ( '' !== $candidate_title ) : ?>
+							— <?php echo esc_html( $candidate_title ); ?>
+						<?php endif; ?>
+						<?php if ( $is_current ) : ?>
+							<em>(<?php esc_html_e( 'current', 'daymark' ); ?>)</em>
+						<?php endif; ?>
+						<br />
+						<code style="margin-left:24px;"><?php echo esc_html( $candidate_url ); ?></code>
+					</label>
+				<?php endforeach; ?>
+			</fieldset>
+			<?php submit_button( __( 'Switch', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
+		</form>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
+			<input type="hidden" name="action" value="daymark_subscription_discover_sources_dismiss" />
+			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+			<?php wp_nonce_field( 'daymark_subscription_discover_sources_dismiss_' . $id, 'daymark_subscription_discover_sources_dismiss_nonce' ); ?>
+			<?php submit_button( __( 'Discard', 'daymark' ), 'secondary small', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The transient key holding a subscription's stashed discover_candidates()
+	 * result — per-subscription and per-user, matching the OPML import
+	 * results' own convention, so two admins working at once never clobber
+	 * each other's in-progress source switch.
+	 *
+	 * @param int $id Subscription ID.
+	 * @return string
+	 */
+	private static function subscription_sources_transient_key( int $id ): string {
+		return 'daymark_subscription_sources_' . $id . '_' . get_current_user_id();
 	}
 
 	/**
@@ -1823,6 +1948,153 @@ class Daymark_Admin_Subscriptions {
 		Daymark_Plugin::instance()->subscriptions->unsubscribe( $id );
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'unsubscribed' ) );
+	}
+
+	/**
+	 * Handle the "Check for other feeds" form (issue #307,
+	 * admin_post_daymark_subscription_discover_sources): runs a fresh
+	 * discovery pass for this subscription's own site_url across every
+	 * registered subscription source, stashes the full result in a
+	 * short-lived transient, then redirects back so
+	 * render_source_switch_control() renders the picker for this row instead
+	 * of the plain trigger. Same outbound-request risk class as subscribing
+	 * itself — issues live requests to a site the user (already) named — so
+	 * it's rate limited the same way.
+	 *
+	 * @return void
+	 */
+	public function handle_discover_sources(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_discover_sources_' . $id, 'daymark_subscription_discover_sources_nonce' );
+
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
+
+		if ( null === $subscription ) {
+			$this->redirect_with_error( __( 'That subscription no longer exists.', 'daymark' ) );
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message() );
+
+			return;
+		}
+
+		$site_url   = (string) ( $subscription['site_url'] ?? '' );
+		$candidates = Daymark_Plugin::instance()->subscriptions->discover_candidates( $site_url );
+
+		if ( is_wp_error( $candidates ) ) {
+			$this->redirect_with_error( $candidates->get_error_message() );
+
+			return;
+		}
+
+		set_transient(
+			self::subscription_sources_transient_key( $id ),
+			array(
+				'site_url'   => $site_url,
+				'candidates' => $candidates,
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$this->redirect( array() );
+	}
+
+	/**
+	 * Handle the "Discard" form on the source picker
+	 * (admin_post_daymark_subscription_discover_sources_dismiss): clears the
+	 * stashed candidates without switching anything, so the row's plain
+	 * "Check for other feeds" trigger comes back instead of the picker
+	 * lingering for its own transient's remaining lifetime.
+	 *
+	 * @return void
+	 */
+	public function handle_discover_sources_dismiss(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_discover_sources_dismiss_' . $id, 'daymark_subscription_discover_sources_dismiss_nonce' );
+
+		delete_transient( self::subscription_sources_transient_key( $id ) );
+
+		$this->redirect( array() );
+	}
+
+	/**
+	 * Handle the source-picker form's "Switch" submit
+	 * (admin_post_daymark_subscription_switch_source, issue #307): reads the
+	 * selected index back out of this subscription's own stashed
+	 * discover_candidates() result (never a raw posted URL — see
+	 * Daymark_Subscriptions::switch_source()'s own docblock for why), then
+	 * updates the subscription in place.
+	 *
+	 * Rate limited the same as discovering itself: switching also performs a
+	 * real outbound request (the best-effort immediate re-poll below).
+	 *
+	 * @return void
+	 */
+	public function handle_switch_source(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_switch_source_' . $id, 'daymark_subscription_switch_source_nonce' );
+
+		$transient_key = self::subscription_sources_transient_key( $id );
+		$stashed       = get_transient( $transient_key );
+
+		delete_transient( $transient_key );
+
+		if ( ! is_array( $stashed ) || ! isset( $stashed['candidates'] ) || ! is_array( $stashed['candidates'] ) ) {
+			$this->redirect_with_error( __( 'That list of feeds has expired — check again.', 'daymark' ) );
+
+			return;
+		}
+
+		$index = isset( $_POST['daymark_candidate_index'] ) ? absint( wp_unslash( $_POST['daymark_candidate_index'] ) ) : -1;
+
+		if ( ! isset( $stashed['candidates'][ $index ] ) || ! is_array( $stashed['candidates'][ $index ] ) ) {
+			$this->redirect_with_error( __( 'Please choose one of the listed feeds.', 'daymark' ) );
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message() );
+
+			return;
+		}
+
+		$result = Daymark_Plugin::instance()->subscriptions->switch_source( $id, $stashed['candidates'][ $index ] );
+
+		if ( is_wp_error( $result ) ) {
+			$this->redirect_with_error( $result->get_error_message() );
+
+			return;
+		}
+
+		// Best-effort immediate re-poll, matching subscribe's own "don't make
+		// them wait for the next scheduled check" behavior — a failure here
+		// doesn't change the outcome, the next scheduled poll keeps trying.
+		Daymark_Plugin::instance()->subscription_poller->manual_refresh( $id );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'source_switched' ) );
 	}
 
 	/**

@@ -244,6 +244,152 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * Validate and normalize a user-supplied site URL: scheme/host shape,
+	 * then the SSRF guard (issue #81) — the exact preamble subscribe_to_site()
+	 * always ran inline, now shared with discover_candidates() (issue #307)
+	 * so both start from the identical validation instead of two copies that
+	 * could drift.
+	 *
+	 * @param string $site_url Raw site URL entered by the user.
+	 * @return string|WP_Error Normalized URL when valid; WP_Error
+	 *                         (`daymark_subscription_invalid_url`, 400)
+	 *                         otherwise — the exact code/message/status this
+	 *                         validation has always produced.
+	 */
+	private function validate_site_url( string $site_url ) {
+		$site_url = $this->normalize_site_url( $site_url );
+		$scheme   = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
+		$host     = (string) wp_parse_url( $site_url, PHP_URL_HOST );
+
+		if ( '' === $host || false !== strpos( $host, ' ' ) || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_url',
+				__( 'Please enter a valid site URL.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		// SSRF hardening (issue #81): a rejected URL fails the exact same way
+		// an invalid one already does above — no new failure shape for a
+		// caller to special-case.
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $site_url ) ) ) {
+			return new WP_Error(
+				'daymark_subscription_invalid_url',
+				__( 'Please enter a valid site URL.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		return $site_url;
+	}
+
+	/**
+	 * Discover every feed/locator candidate a site's registered subscription
+	 * sources can find for it (issue #307) — the "show everything" sibling of
+	 * subscribe_to_site()'s own automatic, first-match-wins discovery.
+	 *
+	 * Exists for a wp-admin action letting a person see (and switch to) a
+	 * different source than the one subscribe_to_site() picked automatically
+	 * — most usefully when that automatic pick turns out to be the wrong one
+	 * for a given site (e.g. a WordPress REST API returning every language
+	 * mixed together on a multilingual site, where the site's own RSS/Atom
+	 * feed would have been correctly scoped). subscribe_to_site() itself is
+	 * unchanged and stays the fast, automatic path for actually subscribing.
+	 *
+	 * @param string $site_url Site URL to discover candidates for (not a
+	 *                         feed URL directly).
+	 * @return array<int, array<string, mixed>>|WP_Error Every discovered
+	 *                                                   candidate (see
+	 *                                                   Daymark_Subscription_Source_Registry::discover_all_feeds()),
+	 *                                                   or a WP_Error reusing
+	 *                                                   the same
+	 *                                                   `daymark_subscription_invalid_url`/
+	 *                                                   `daymark_subscription_no_feed_found`
+	 *                                                   codes subscribe_to_site()
+	 *                                                   already produces.
+	 */
+	public function discover_candidates( string $site_url ) {
+		$site_url = $this->validate_site_url( $site_url );
+
+		if ( is_wp_error( $site_url ) ) {
+			return $site_url;
+		}
+
+		$candidates = Daymark_Plugin::instance()->subscription_source_registry->discover_all_feeds( $site_url );
+
+		if ( empty( $candidates ) ) {
+			return new WP_Error(
+				'daymark_subscription_no_feed_found',
+				__( 'No feed could be found at this URL.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		return $candidates;
+	}
+
+	/**
+	 * Create a subscription row from a resolved feed candidate, then
+	 * best-effort enrich it with the site's favicon and plain title.
+	 *
+	 * The shared tail of subscribe_to_site() (the automatic path) and
+	 * subscribe_to_candidate() (issue #307's explicit-pick path) — both
+	 * already know exactly which feed to subscribe to by the time they call
+	 * this, so from here on there is nothing left that differs between them.
+	 *
+	 * @param string $site_url    Site URL the candidate was discovered from.
+	 * @param string $feed_url    The resolved feed/locator URL.
+	 * @param string $source_type The producing source's ID.
+	 * @param string $feed_title  The feed's own title (used as the initial
+	 *                            site_title too — see create()'s own
+	 *                            docblock for why the two are kept distinct).
+	 * @return int|WP_Error New subscription row ID, or whatever create()
+	 *                      itself returns for a duplicate/insert failure.
+	 */
+	private function finish_subscribe( string $site_url, string $feed_url, string $source_type, string $feed_title ) {
+		$created = $this->create(
+			array(
+				'site_url'    => $site_url,
+				'feed_url'    => $feed_url,
+				'source_type' => $source_type,
+				'site_title'  => $feed_title,
+				'feed_title'  => $feed_title,
+			)
+		);
+
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+
+		$subscription_id = (int) $created;
+
+		// Best-effort enhancements: never a reason to fail the subscribe
+		// request itself.
+		$feed_source = Daymark_Plugin::instance()->subscription_source_registry->get_source( 'feed' );
+
+		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
+			$favicon_url = $feed_source->get_favicon_url( $site_url );
+
+			if ( '' !== $favicon_url ) {
+				$this->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
+			}
+
+			// Refines site_title from the feed_title placeholder above to
+			// the site's own plain <title> — e.g. "Jeff Paul" rather than
+			// "Jeff Paul » Feed". Reuses get_favicon_url()'s already-fetched
+			// site HTML (both call fetch_html() against the same $site_url,
+			// which caches per instance) — no extra request.
+			$site_title = $feed_source->get_site_title( $site_url );
+
+			if ( '' !== $site_title ) {
+				$this->update( $subscription_id, array( 'site_title' => $site_title ) );
+			}
+		}
+
+		return $subscription_id;
+	}
+
+	/**
 	 * Subscribe to a site by URL: validate the URL, discover its feed via
 	 * the subscription source registry, create the row, then best-effort
 	 * resolve its favicon.
@@ -266,27 +412,10 @@ class Daymark_Subscriptions {
 	 * @return int|WP_Error New subscription row ID, or WP_Error on failure.
 	 */
 	public function subscribe_to_site( string $site_url ) {
-		$site_url = $this->normalize_site_url( $site_url );
-		$scheme   = strtolower( (string) wp_parse_url( $site_url, PHP_URL_SCHEME ) );
-		$host     = (string) wp_parse_url( $site_url, PHP_URL_HOST );
+		$site_url = $this->validate_site_url( $site_url );
 
-		if ( '' === $host || false !== strpos( $host, ' ' ) || ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
-			return new WP_Error(
-				'daymark_subscription_invalid_url',
-				__( 'Please enter a valid site URL.', 'daymark' ),
-				array( 'status' => 400 )
-			);
-		}
-
-		// SSRF hardening (issue #81): a rejected URL fails the exact same way
-		// an invalid one already does above — no new failure shape for a
-		// caller to special-case.
-		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $site_url ) ) ) {
-			return new WP_Error(
-				'daymark_subscription_invalid_url',
-				__( 'Please enter a valid site URL.', 'daymark' ),
-				array( 'status' => 400 )
-			);
+		if ( is_wp_error( $site_url ) ) {
+			return $site_url;
 		}
 
 		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
@@ -365,46 +494,147 @@ class Daymark_Subscriptions {
 		// still a reasonable label if the plain-title lookup below fails.
 		$feed_title = isset( $feed['title'] ) ? sanitize_text_field( (string) $feed['title'] ) : '';
 
-		$created = $this->create(
+		return $this->finish_subscribe( $site_url, $feed_url, $source_type, $feed_title );
+	}
+
+	/**
+	 * Subscribe to a specific, already-discovered candidate rather than
+	 * letting subscribe_to_site() pick the winning source automatically
+	 * (issue #307) — the wp-admin "Check for other feeds" flow's own
+	 * subscribe step, used the same way OPML import's per-entry results are
+	 * already carried through a POST-redirect-GET via a short-lived
+	 * transient: `$candidate` is trusted here precisely because the caller
+	 * only ever reads it back out of a transient discover_candidates()
+	 * itself wrote moments earlier, never from a raw posted URL a request
+	 * could tamper with.
+	 *
+	 * No issue #183 duplicate-retry-with-exclusion here, unlike
+	 * subscribe_to_site(): that retry exists to paper over automatic
+	 * disambiguation picking a feed the user didn't actually mean. A person
+	 * choosing this exact candidate from a list they were just shown and
+	 * having it turn out to already be subscribed is a genuine duplicate,
+	 * not a case to silently substitute something else for.
+	 *
+	 * @param string               $site_url  Site URL the candidate was
+	 *                                        discovered from.
+	 * @param array<string, mixed> $candidate One entry from
+	 *                                        discover_candidates()'s own
+	 *                                        result.
+	 * @return int|WP_Error New subscription row ID, or WP_Error (an invalid
+	 *                      site URL, a missing candidate URL, or whatever
+	 *                      create() itself returns for a duplicate).
+	 */
+	public function subscribe_to_candidate( string $site_url, array $candidate ) {
+		$site_url = $this->validate_site_url( $site_url );
+
+		if ( is_wp_error( $site_url ) ) {
+			return $site_url;
+		}
+
+		$feed_url = isset( $candidate['url'] ) ? esc_url_raw( (string) $candidate['url'] ) : '';
+
+		if ( '' === $feed_url ) {
+			return new WP_Error(
+				'daymark_subscription_no_feed_found',
+				__( 'No feed could be found at this URL.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$source_type = isset( $candidate['source_type'] ) ? sanitize_key( (string) $candidate['source_type'] ) : 'feed';
+		$feed_title  = isset( $candidate['title'] ) ? sanitize_text_field( (string) $candidate['title'] ) : '';
+
+		return $this->finish_subscribe( $site_url, $feed_url, $source_type, $feed_title );
+	}
+
+	/**
+	 * Switch an existing subscription to a different, already-discovered
+	 * candidate (issue #307) — updates feed_url/source_type/feed_title in
+	 * place rather than creating a second row, so it's a real fix for
+	 * "Daymark picked the wrong source for this site" rather than a
+	 * duplicate-and-manually-unsubscribe workaround.
+	 *
+	 * Deliberately leaves site_title alone: a person may have hand-edited it
+	 * (issue #180) to something more recognizable than either source's own
+	 * title, and switching *where* content comes from is a different
+	 * decision from renaming the subscription. Resets the failure/error
+	 * state (`consecutive_failure_count`, `last_error`, `status`) to a clean
+	 * slate — whatever was or wasn't failing about the old feed_url has no
+	 * bearing on the new one. Does not touch any already-ingested
+	 * `daymark_subscription_post` rows from the old source: only future
+	 * polls change, existing cached content ages out via the normal
+	 * retention window like anything else (a deliberate scope boundary, not
+	 * an oversight — see issue #307).
+	 *
+	 * `$candidate` is trusted the same way subscribe_to_candidate() trusts
+	 * it — read back from a transient discover_candidates() itself wrote
+	 * moments earlier, never from a raw posted URL.
+	 *
+	 * @param int                  $id        Subscription ID to switch.
+	 * @param array<string, mixed> $candidate One entry from
+	 *                                        discover_candidates()'s own
+	 *                                        result for this subscription's
+	 *                                        own site_url.
+	 * @return true|WP_Error True on success; WP_Error when the subscription
+	 *                       doesn't exist, the candidate has no URL, or the
+	 *                       candidate's feed_url already belongs to a
+	 *                       *different* subscription.
+	 */
+	public function switch_source( int $id, array $candidate ) {
+		$subscription = $this->get( $id );
+
+		if ( null === $subscription ) {
+			return new WP_Error(
+				'daymark_subscription_not_found',
+				__( 'That subscription no longer exists.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$feed_url = isset( $candidate['url'] ) ? esc_url_raw( (string) $candidate['url'] ) : '';
+
+		if ( '' === $feed_url ) {
+			return new WP_Error(
+				'daymark_subscription_no_feed_found',
+				__( 'No feed could be found at this URL.', 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$existing = $this->get_by_feed_url( $feed_url );
+
+		if ( null !== $existing && absint( $existing['id'] ?? 0 ) !== $id ) {
+			return new WP_Error(
+				'daymark_subscription_duplicate',
+				__( 'A subscription for this feed already exists.', 'daymark' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$source_type = isset( $candidate['source_type'] ) ? sanitize_key( (string) $candidate['source_type'] ) : 'feed';
+		$feed_title  = isset( $candidate['title'] ) ? sanitize_text_field( (string) $candidate['title'] ) : '';
+
+		$updated = $this->update(
+			$id,
 			array(
-				'site_url'    => $site_url,
-				'feed_url'    => $feed_url,
-				'source_type' => $source_type,
-				'site_title'  => $feed_title,
-				'feed_title'  => $feed_title,
+				'feed_url'                  => $feed_url,
+				'source_type'               => $source_type,
+				'feed_title'                => $feed_title,
+				'consecutive_failure_count' => 0,
+				'last_error'                => '',
+				'status'                    => 'active',
 			)
 		);
 
-		if ( is_wp_error( $created ) ) {
-			return $created;
+		if ( ! $updated ) {
+			return new WP_Error(
+				'daymark_subscription_update_failed',
+				__( 'Could not switch this subscription\'s source.', 'daymark' ),
+				array( 'status' => 500 )
+			);
 		}
 
-		$subscription_id = (int) $created;
-
-		// Best-effort enhancements: never a reason to fail the subscribe
-		// request itself.
-		$feed_source = $registry->get_source( 'feed' );
-
-		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
-			$favicon_url = $feed_source->get_favicon_url( $site_url );
-
-			if ( '' !== $favicon_url ) {
-				$this->update( $subscription_id, array( 'site_icon_url' => $favicon_url ) );
-			}
-
-			// Refines site_title from the feed_title placeholder above to
-			// the site's own plain <title> — e.g. "Jeff Paul" rather than
-			// "Jeff Paul » Feed". Reuses get_favicon_url()'s already-fetched
-			// site HTML (both call fetch_html() against the same $site_url,
-			// which caches per instance) — no extra request.
-			$site_title = $feed_source->get_site_title( $site_url );
-
-			if ( '' !== $site_title ) {
-				$this->update( $subscription_id, array( 'site_title' => $site_title ) );
-			}
-		}
-
-		return $subscription_id;
+		return true;
 	}
 
 	/**
@@ -711,6 +941,21 @@ class Daymark_Subscriptions {
 		if ( array_key_exists( 'last_manual_refresh_at', $fields ) ) {
 			$data['last_manual_refresh_at'] = $this->sanitize_datetime( $fields['last_manual_refresh_at'] );
 			$format[]                       = '%s';
+		}
+
+		if ( array_key_exists( 'feed_url', $fields ) ) {
+			// issue #307: switch_source() is the only caller — it already
+			// validates uniqueness (the table's own UNIQUE `feed_url` key,
+			// checked in advance against every *other* subscription) before
+			// ever calling update(), so this is just sanitization, not a
+			// second duplicate check.
+			$data['feed_url'] = esc_url_raw( (string) $fields['feed_url'] );
+			$format[]         = '%s';
+		}
+
+		if ( array_key_exists( 'source_type', $fields ) ) {
+			$data['source_type'] = $this->sanitize_source_type( (string) $fields['source_type'] );
+			$format[]            = '%s';
 		}
 
 		if ( array_key_exists( 'site_title', $fields ) ) {

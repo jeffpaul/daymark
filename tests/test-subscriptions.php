@@ -657,6 +657,232 @@ XML;
 		$this->assertNotSame( $blog_row['feed_url'], $notes_row['feed_url'] );
 	}
 
+	// -----------------------------------------------------------------
+	// Seeing and switching a subscription's discovered source (issue #307).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: a site advertising both a WordPress REST API and its own
+	 * RSS/Atom feed — subscribe_to_site() would pick only the REST API
+	 * (issue #137's precedence) — has discover_candidates() surface *both*,
+	 * each tagged with source_type and a human source_label.
+	 */
+	public function test_discover_candidates_returns_every_source_tagged() {
+		$site_html = '<html><head><title>Both</title>'
+			. '<link rel="alternate" type="application/rss+xml" title="Both &raquo; Feed" href="https://both-candidates.example/feed/">'
+			. '<link rel="https://api.w.org/" href="https://both-candidates.example/wp-json/">'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://both-candidates.example/', $site_html );
+		$this->mock_response( 'https://both-candidates.example/wp-json/wp/v2/posts', '[]' );
+
+		$candidates = $this->subscriptions->discover_candidates( 'https://both-candidates.example/' );
+
+		$this->assertIsArray( $candidates );
+
+		$by_type = array();
+
+		foreach ( $candidates as $candidate ) {
+			$by_type[ $candidate['source_type'] ] = $candidate;
+		}
+
+		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- the lowercase machine ID (source_type value), not prose.
+		$this->assertArrayHasKey( 'wordpress', $by_type );
+		$this->assertArrayHasKey( 'feed', $by_type );
+		// phpcs:ignore WordPress.WP.CapitalPDangit.MisspelledInText -- the lowercase machine ID (source_type value), not prose.
+		$this->assertSame( 'https://both-candidates.example/wp-json/wp/v2/posts', $by_type['wordpress']['url'] );
+		$this->assertSame( 'https://both-candidates.example/feed/', $by_type['feed']['url'] );
+		$this->assertNotSame( '', $by_type['feed']['source_label'] );
+	}
+
+	/** Scenario: discover_candidates() reuses subscribe_to_site()'s own "no feed found" contract. */
+	public function test_discover_candidates_no_feed_found() {
+		$this->mock_response( 'https://no-candidates.example/', $this->html_without_feed() );
+
+		$result = $this->subscriptions->discover_candidates( 'https://no-candidates.example/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_no_feed_found', $result->get_error_code() );
+	}
+
+	/** Scenario: discover_candidates() reuses subscribe_to_site()'s own invalid-URL contract. */
+	public function test_discover_candidates_rejects_invalid_url() {
+		$result = $this->subscriptions->discover_candidates( 'ftp://example.com/' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_invalid_url', $result->get_error_code() );
+	}
+
+	/**
+	 * Scenario: subscribe_to_candidate() subscribes to exactly the given
+	 * candidate — including one that is *not* what subscribe_to_site() would
+	 * have picked automatically (the feed source here, not the
+	 * automatically-winning WordPress REST API) — and still runs the same
+	 * favicon/site_title enrichment subscribe_to_site() does.
+	 */
+	public function test_subscribe_to_candidate_creates_row_for_the_chosen_candidate() {
+		$site_html = '<html><head><title>Both</title>'
+			. '<link rel="alternate" type="application/rss+xml" href="https://candidate-pick.example/feed/">'
+			. '<link rel="https://api.w.org/" href="https://candidate-pick.example/wp-json/">'
+			. '<link rel="icon" href="/icon.png" />'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://candidate-pick.example/', $site_html );
+		$this->mock_response( 'https://candidate-pick.example/wp-json/wp/v2/posts', '[]' );
+
+		$candidates = $this->subscriptions->discover_candidates( 'https://candidate-pick.example/' );
+		$this->assertIsArray( $candidates );
+
+		$feed_candidate = null;
+
+		foreach ( $candidates as $candidate ) {
+			if ( 'feed' === $candidate['source_type'] ) {
+				$feed_candidate = $candidate;
+			}
+		}
+
+		$this->assertNotNull( $feed_candidate, 'The feed source discovered a candidate' );
+
+		$result = $this->subscriptions->subscribe_to_candidate( 'https://candidate-pick.example/', $feed_candidate );
+
+		$this->assertIsInt( $result );
+
+		$row = $this->subscriptions->get( $result );
+		$this->assertSame( 'https://candidate-pick.example/feed/', $row['feed_url'] );
+		$this->assertSame( 'feed', $row['source_type'] );
+		$this->assertSame( 'https://candidate-pick.example/icon.png', $row['site_icon_url'] );
+	}
+
+	/** Scenario: subscribe_to_candidate() propagates create()'s duplicate error, same as subscribe_to_site(). */
+	public function test_subscribe_to_candidate_duplicate_feed() {
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+
+		$first = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+		$this->assertIsInt( $first );
+
+		$second = $this->subscriptions->subscribe_to_candidate(
+			'https://example.com/',
+			array(
+				'url'         => 'https://example.com/feed/',
+				'source_type' => 'feed',
+				'title'       => '',
+			)
+		);
+
+		$this->assertWPError( $second );
+		$this->assertSame( 'daymark_subscription_duplicate', $second->get_error_code() );
+	}
+
+	/**
+	 * Scenario: switch_source() updates an existing subscription's own
+	 * feed_url/source_type/feed_title in place (not a new row), resets its
+	 * failure/error state, and leaves a hand-set site_title untouched.
+	 */
+	public function test_switch_source_updates_feed_url_and_resets_failure_state() {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://switch-test.example/',
+				'feed_url'    => 'https://switch-test.example/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'site_title'  => 'My Custom Name',
+				'feed_title'  => 'Switch Test',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$this->subscriptions->increment_failure_count( $id );
+		$this->subscriptions->update(
+			$id,
+			array(
+				'status'     => 'error',
+				'last_error' => 'HTTP 500',
+			)
+		);
+
+		$result = $this->subscriptions->switch_source(
+			$id,
+			array(
+				'url'         => 'https://switch-test.example/feed/',
+				'source_type' => 'feed',
+				'title'       => 'Switch Test » Feed',
+			)
+		);
+
+		$this->assertTrue( $result );
+
+		$row = $this->subscriptions->get( $id );
+		$this->assertSame( 'https://switch-test.example/feed/', $row['feed_url'] );
+		$this->assertSame( 'feed', $row['source_type'] );
+		$this->assertSame( 'Switch Test » Feed', $row['feed_title'] );
+		$this->assertSame( 0, (int) $row['consecutive_failure_count'] );
+		$this->assertSame( '', $row['last_error'] );
+		$this->assertSame( 'active', $row['status'] );
+		// Never touched — a hand-set site_title survives switching sources.
+		$this->assertSame( 'My Custom Name', $row['site_title'] );
+	}
+
+	/** Scenario: switching to a feed_url that already belongs to a *different* subscription fails cleanly instead of colliding with the table's UNIQUE key. */
+	public function test_switch_source_rejects_a_feed_url_already_used_elsewhere() {
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+		$existing = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
+		$this->assertIsInt( $existing );
+
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://switch-conflict.example/',
+				'feed_url'    => 'https://switch-conflict.example/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$result = $this->subscriptions->switch_source(
+			$id,
+			array(
+				'url'         => 'https://example.com/feed/',
+				'source_type' => 'feed',
+			)
+		);
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_duplicate', $result->get_error_code() );
+		// Unchanged — the rejected switch never touched the row.
+		$this->assertSame( 'https://switch-conflict.example/wp-json/wp/v2/posts', $this->subscriptions->get( $id )['feed_url'] );
+	}
+
+	/** Scenario: switching a subscription to the exact feed_url it already has (re-selecting the current candidate) is a harmless no-op, not a false duplicate. */
+	public function test_switch_source_to_its_own_current_feed_url_is_a_no_op() {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://switch-noop.example/',
+				'feed_url'    => 'https://switch-noop.example/feed/',
+				'source_type' => 'feed',
+			)
+		);
+		$this->assertIsInt( $id );
+
+		$result = $this->subscriptions->switch_source(
+			$id,
+			array(
+				'url'         => 'https://switch-noop.example/feed/',
+				'source_type' => 'feed',
+			)
+		);
+
+		$this->assertTrue( $result );
+	}
+
+	/** Scenario: switch_source() against a subscription ID that doesn't exist fails cleanly. */
+	public function test_switch_source_missing_subscription_returns_not_found() {
+		$result = $this->subscriptions->switch_source(
+			999999,
+			array( 'url' => 'https://example.com/feed/' )
+		);
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_subscription_not_found', $result->get_error_code() );
+	}
+
 	/**
 	 * Scenario: unsubscribe() trashes every cached daymark_subscription_post
 	 * ingested from this subscription and deletes the subscription row —
