@@ -427,10 +427,16 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(meta.locator('[data-external-link]')).toBeVisible();
 	await expect(meta.locator('[data-share-toggle]')).toBeVisible();
 
-	// Bookmarking works from here, the same as from the card itself.
+	// Bookmarking works from here, the same as from the card itself. The
+	// first tap also triggers the new first-time explainer overlay (issue
+	// #321) — a fresh browser context has never seen it before — so it's
+	// dismissed via its own "Got it" button before the second tap, which
+	// would otherwise land on the overlay's full-viewport backdrop instead
+	// of the icon underneath it.
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
 	await bookmarkToggle.click();
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
+	await page.locator('[data-hint-dismiss]').click();
 	await bookmarkToggle.click();
 	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
 
@@ -449,6 +455,62 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-external-link]')).toBeVisible();
 	await expect(subMeta.locator('[data-share-toggle]')).toBeVisible();
+});
+
+// First-time explainer overlays for the interaction row's six icons (issue
+// #321): a plain-language overlay the first time a given icon is tapped,
+// remembered via localStorage so it never reappears — including after a
+// fresh page load in the same browser context, which is what actually
+// distinguishes "seen once, ever" from "seen once, this page render."
+test('first-time interaction hint shows once, never again on the same device', async ({ page }) => {
+	const caption = `E2E hint overlay ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+		});
+	}, caption);
+	await page.goto('/daymark');
+
+	const markWrap = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	const bookmarkToggle = markWrap.locator('[data-bookmark-toggle]');
+	await expect(bookmarkToggle).toBeVisible();
+
+	// First tap: the bookmark itself happens immediately (optimistic, per
+	// the app's own publishing philosophy), and the explainer overlay
+	// follows right after — never gating the tap itself.
+	await bookmarkToggle.click();
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await expect(hint.locator('.daymark-hint-title')).toHaveText('Bookmark');
+	await hint.locator('[data-hint-dismiss]').click();
+	await expect(hint).toBeHidden();
+
+	// Untoggling and re-toggling the same icon — its second and third
+	// taps ever — never brings the overlay back.
+	await bookmarkToggle.click();
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'false');
+	await bookmarkToggle.click();
+	await expect(bookmarkToggle).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.locator('.daymark-sheet__panel--hint')).toHaveCount(0);
+
+	// Nor does a full page reload — still the same device/browser, just a
+	// later visit, which is exactly the case this is meant to cover.
+	await page.goto('/daymark');
+	const markWrapAgain = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
+	const bookmarkToggleAgain = markWrapAgain.locator('[data-bookmark-toggle]');
+	await expect(bookmarkToggleAgain).toHaveAttribute('aria-pressed', 'true');
+	await bookmarkToggleAgain.click();
+	await expect(bookmarkToggleAgain).toHaveAttribute('aria-pressed', 'false');
+	await expect(page.locator('.daymark-sheet__panel--hint')).toHaveCount(0);
 });
 
 // Scroll-triggered rehydration of pruned subscription-post content (issue
