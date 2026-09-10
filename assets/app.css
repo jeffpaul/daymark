@@ -742,12 +742,19 @@ h2[tabindex='-1']:focus {
    card's own trailing space; now that footer is body's own sibling
    instead, it carries that trailing space itself (and its own small
    top padding, matching the row-layout kinds' row-gap) — see
-   .daymark-recent__item--image .daymark-recent__footer and friends below. */
+   .daymark-recent__item--image .daymark-recent__footer and friends below.
+   Bottom padding matches --daymark-spacing-sm, the same value
+   .daymark-recent__item's own base rule uses as its bottom padding for
+   every row-layout kind (audio/note/article/link/standard) — it was
+   --daymark-spacing-md (double) here until issue #330, which made a
+   media-dominant card's trailing whitespace below its own site-name/date
+   row visibly larger than every other kind's, a genuine inconsistency a
+   reader would notice card-to-card on the same Timeline. */
 .daymark-recent__item--image .daymark-recent__footer,
 .daymark-recent__item--gallery .daymark-recent__footer,
 .daymark-recent__item--video .daymark-recent__footer,
 .daymark-recent__item--mixed .daymark-recent__footer {
-	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md) var(--daymark-spacing-md);
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md) var(--daymark-spacing-sm);
 }
 
 .daymark-recent__thumbwrap--media {
