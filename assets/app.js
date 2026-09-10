@@ -6481,7 +6481,7 @@
 			const id = esc(String(item.id || ''));
 			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
 			return `
-			<header class="daymark-topbar">
+			<header class="daymark-topbar daymark-topbar--top">
 				${backLinkWithIcon(
 					view && view.returnTo ? view.returnTo : '#home',
 					__('Back to Timeline', 'daymark')

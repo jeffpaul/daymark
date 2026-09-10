@@ -157,6 +157,20 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* PostScreen's own header (issue #315): its title is the post's own,
+   arbitrary length, and — unlike every other screen's short, always-single-
+   line title (Search/Explore/Me/Notifications) — can wrap to several lines.
+   .daymark-topbar's base `align-items: center` centers the back link on the
+   *whole* title block in that case, so the arrow/icon visually floats in
+   the middle of a long wrapped title instead of sitting with it; pinning
+   this screen's own topbar to the top edge keeps the back link level with
+   the title's first line regardless of how many more follow. Scoped to
+   this one screen rather than changing the shared rule, since every other
+   .daymark-topbar's single-line title already reads correctly centered. */
+.daymark-topbar--top {
+	align-items: flex-start;
+}
+
 /* Daymark's own icon + wordmark act as one home-link. `gap` matches
    .daymark-topbar's own flex gap (var(--daymark-spacing-sm), see below) —
    deliberately the same token, not a separately hand-picked value, so the
