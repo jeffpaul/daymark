@@ -577,6 +577,24 @@ XML;
 	}
 
 	/**
+	 * Scenario: an <img> carrying both an explicit mf2 `u-photo` class and
+	 * WordPress core's own `avatar` class — the explicit author-intended
+	 * signal still wins over the avatar exclusion (issue #324), the same
+	 * "explicit markup always counts" precedent u-photo already has over a
+	 * bare <img>'s own word-count gate.
+	 */
+	public function test_normalize_mf2_photo_overrides_avatar_exclusion() {
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<img class="u-photo avatar avatar-96 photo" src="https://example.com/photo.jpg" /><p>Short note.</p>',
+			)
+		);
+
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://example.com/photo.jpg', $normalized['featured_image_url'] );
+	}
+
+	/**
 	 * Scenario: a bare <img> (no mf2 markup) with only a short caption reads
 	 * as a photo post — the same "short text" shape a real photo-blog post
 	 * has.
@@ -628,6 +646,30 @@ XML;
 
 		$this->assertSame( 'standard', $normalized['post_format'] );
 		$this->assertSame( 'https://example.com/lazy-header.jpg', $normalized['featured_image_url'] );
+	}
+
+	/**
+	 * Scenario: a long article with no real content image, but an
+	 * author-bio box appended via `the_content` (a common theme/plugin
+	 * pattern) carrying the author's own `get_avatar()` output — the bare
+	 * `<img class="avatar ...">` must never be picked up as the card's
+	 * `featured_image_url`, even though it's the only `<img>` in the
+	 * content. Without this exclusion the avatar (often the same photo
+	 * already shown as the subscription's own site icon) duplicated onto
+	 * the card itself instead of the card correctly showing no image at
+	 * all (issue #324).
+	 */
+	public function test_normalize_ignores_author_bio_avatar_image() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'content' => '<p>' . $long_text . '</p>'
+					. '<div class="author-bio"><img class="avatar avatar-96 photo" src="https://example.com/avatar.jpg" /></div>',
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
 	}
 
 	/** An enclosure-confirmed signal always wins over content sniffing. */

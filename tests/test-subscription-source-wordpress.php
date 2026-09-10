@@ -308,6 +308,34 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'standard', $normalized['post_format'] );
 	}
 
+	/**
+	 * Scenario: a long, plain 'standard'-format article with no featured
+	 * media and no real content image — only an author-bio box (a common
+	 * `the_content`-appended pattern) carrying the author's own
+	 * `get_avatar()` output. The bare `<img class="avatar ...">` must
+	 * never be picked up as the card's `featured_image_url` — it's page
+	 * furniture repeated on every post, often the exact same photo already
+	 * shown as the subscription's own site icon, which duplicated onto the
+	 * card itself instead of the card correctly showing no image at all
+	 * (issue #324).
+	 */
+	public function test_normalize_ignores_author_bio_avatar_image() {
+		$long_text  = str_repeat( 'word ', 100 );
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Article' ),
+				'format'  => 'standard',
+				'content' => array(
+					'rendered' => '<p>' . $long_text . '</p>'
+						. '<div class="author-bio"><img class="avatar avatar-96 photo" src="https://jane.example/avatar.jpg" /></div>',
+				),
+			)
+		);
+
+		$this->assertSame( 'standard', $normalized['post_format'] );
+		$this->assertSame( '', $normalized['featured_image_url'] );
+	}
+
 	/** fetch() returns an empty (not error) array for a site that responds fine but currently has no posts — a healthy, quiet state, not a failure. */
 	public function test_fetch_returns_empty_array_when_no_posts() {
 		$this->mock_response( 'https://quiet.example/wp-json/wp/v2/posts', '[]' );
