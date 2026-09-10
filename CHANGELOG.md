@@ -38,6 +38,7 @@ can't act on them.
 - A subscribed WordPress or Friends post with a confirmed Image/Video/Audio/Gallery post format but no explicit featured image (common for themes that show a post's own first inline image instead) showed the subscription's site icon blown up in the card's media banner instead of that image. ([#313](https://github.com/jeffpaul/daymark/issues/313))
 - The full-screen post view's back arrow and Daymark icon were vertically centered against the post title's full height, so a long title that wrapped to two or three lines left them floating in the middle of the block instead of level with its first line. ([#315](https://github.com/jeffpaul/daymark/issues/315))
 - A plain, no-image subscription post could show a small thumbnail duplicating its own site icon — an author-bio box's avatar photo, embedded in the post's own content by the theme, was being picked up as the card's featured image. Avatar images are no longer treated as post content. ([#324](https://github.com/jeffpaul/daymark/issues/324))
+- A Timeline card's trailing whitespace below its own site-name/date row — before the next card begins — is now identical across every Mark type and post format. Media-dominant cards (image, gallery, video, mixed media) previously had roughly double the trailing space of every other kind (audio, note, article, link, standard), a real inconsistency visible scrolling down a mixed Timeline. ([#330](https://github.com/jeffpaul/daymark/issues/330))
 
 ## [0.14.0] - 2026-09-09
 
