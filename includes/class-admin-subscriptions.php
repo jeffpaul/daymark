@@ -1417,17 +1417,7 @@ class Daymark_Admin_Subscriptions {
 	 * @return string|null The plugin file (e.g. `webmention/webmention.php`), or null if not installed.
 	 */
 	private function connector_plugin_file( array $connector ): ?string {
-		if ( ! function_exists( 'get_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-
-		foreach ( array_keys( get_plugins() ) as $plugin_file ) {
-			if ( strtok( $plugin_file, '/' ) === $connector['folder_slug'] ) {
-				return $plugin_file;
-			}
-		}
-
-		return null;
+		return Daymark_Plugin_Detector::find_plugin_file( $connector['folder_slug'] );
 	}
 
 	/**

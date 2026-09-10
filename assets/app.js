@@ -77,9 +77,10 @@
 		// resetComposer(). Only a fallback — picking files or resuming a
 		// draft still wins, exactly as effectiveType() already resolves.
 		pendingType: null,
-		// { url, title } | null — set by startReplyToSubscriptionPost() when
-		// composing a reply from a subscribed post's full-screen view, or
-		// restored from an existing draft's own in_reply_to (openDraft()).
+		// { url, title } | null — restored from an existing draft's own
+		// in_reply_to (openDraft()); a fresh composing session never sets
+		// this directly anymore (issue #317 moved subscription-post
+		// commenting to the instant Comment toggle, see toggleComment()).
 		// Unlike pendingType this isn't a one-shot UI hint: url travels with
 		// every buildMarkPayload() call for the rest of the session (autosave,
 		// publish) exactly like capturedAt/location do, so the relationship
@@ -592,20 +593,6 @@
 		)}</span>`;
 	}
 
-	// A read-only indicator — not a toggle, no click handler — showing
-	// whether the current user has already published a Mark engaging with
-	// this exact subscription post (a reply, via the existing "Reply"
-	// action). Same reasoning renderStat() already gives for the row's
-	// numeric stats (always visible, never a real `<button>`, since it lives
-	// nested inside the card's own expand-trigger button), but binary rather
-	// than counted: Daymark only ever knows its own record of "did I engage
-	// with this," never the origin site's real comment count.
-	function renderEngagementIndicator(glyph, active, modifier, label) {
-		return `<span class="daymark-stat daymark-stat--${modifier}${
-			active ? ' daymark-stat--active' : ''
-		}" aria-label="${esc(label)}" title="${esc(label)}">${statIcon(glyph)}</span>`;
-	}
-
 	// The Like toggle for a subscription post — the row's other *interactive*
 	// entry besides Bookmark/Repost, same span[role="button"] reasoning as
 	// renderBookmarkToggle() (nested inside the card's own expand-trigger
@@ -625,6 +612,28 @@
 		)}" title="${esc(label)}" data-like-toggle="${id}" data-like-mark-id="${markId}">${statIcon(
 			HEART_GLYPH
 		)}</span>`;
+	}
+
+	// The Comment toggle (issue #317) — a subscription post's own equivalent
+	// of the old composer-based "Reply" action, now instant like Like/Repost
+	// rather than a trip through the full composer. Not a togglable on/off
+	// state the way Like/Repost are (a comment can't be "undone" once sent,
+	// especially one delivered via the native-comment fallback): tapping it
+	// always opens TextPromptSheet to type a new comment, whatever its
+	// current active state. That active state (filled vs outline) still
+	// means something useful though — it's driven by `replied_mark_id`, the
+	// same field the old read-only "Replied" indicator used, since a
+	// Webmention-routed comment (toggleComment()'s own preferred path)
+	// creates exactly the same kind of Mark the old Reply action did.
+	function renderCommentToggle(item) {
+		const commented = !!item.replied_mark_id;
+		const id = esc(String(item.id));
+		const label = __('Comment', 'daymark');
+		return `<span class="daymark-stat daymark-stat--comment${
+			commented ? ' daymark-stat--active' : ''
+		}" role="button" tabindex="0" aria-label="${esc(label)}" title="${esc(
+			label
+		)}" data-comment-toggle="${id}">${statIcon(COMMENT_GLYPH)}</span>`;
 	}
 
 	// The Repost toggle — same shape/reasoning as renderLikeToggle() above.
@@ -2920,6 +2929,14 @@
 			return;
 		}
 
+		const commentToggle = target.closest('[data-comment-toggle]');
+		if (commentToggle) {
+			event.preventDefault();
+			event.stopPropagation();
+			toggleComment(screen, commentToggle);
+			return;
+		}
+
 		// The "open original" toggle — same reasoning/placement as the
 		// Bookmark toggle above; the permanent replacement for the old
 		// "View full post"/"View original" footer link, so this now works
@@ -3101,6 +3118,12 @@
 			toggleRepost(screen, repostToggle);
 			return;
 		}
+		const commentToggle = event.target.closest('[data-comment-toggle]');
+		if (commentToggle) {
+			event.preventDefault();
+			toggleComment(screen, commentToggle);
+			return;
+		}
 		const externalLinkToggle = event.target.closest('[data-external-link]');
 		if (externalLinkToggle) {
 			event.preventDefault();
@@ -3191,8 +3214,8 @@
 	// (like_of/repost_of) to render u-like-of/u-repost-of and let whichever
 	// federation plugin the site owner runs discover and act on it — the
 	// same "compose a real Mark, let an already-installed plugin do the
-	// actual outbound protocol work" pattern the existing Reply action
-	// already established (see startReplyToSubscriptionPost()). Deliberately
+	// actual outbound protocol work" pattern the Comment toggle's own
+	// Webmention branch already uses (see toggleComment()). Deliberately
 	// omits targets[]/categories[] entirely (not even an explicit empty
 	// array) so this call gets exactly the same type-based default
 	// destination/category resolution any other Note Mark would — sending
@@ -3242,8 +3265,17 @@
 		}
 	}
 
-	// Toggles a Repost for the subscription post this trigger belongs to —
-	// same shape/reasoning as toggleLike() above.
+	// Toggles a Repost for the subscription post this trigger belongs to.
+	// Undoing (trashing an existing repost Mark) stays exactly as instant/
+	// optimistic as toggleLike() above — there's nothing to type when
+	// removing one. Creating one (issue #317) now opens TextPromptSheet
+	// first for an optional caption capturing your own thoughts alongside
+	// the reblogged post, rather than publishing instantly with a fixed
+	// auto-caption: Skip keeps that same auto-caption; typing something
+	// uses it as the Mark's real caption instead. The optimistic UI flip
+	// only happens once the sheet is actually submitted/skipped — never
+	// eagerly, since the user might yet dismiss the sheet without choosing
+	// either.
 	async function toggleRepost(screen, trigger) {
 		const id = trigger.getAttribute('data-repost-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
@@ -3252,22 +3284,84 @@
 		}
 		const wasReposted = 'true' === trigger.getAttribute('aria-pressed');
 		const existingMarkId = trigger.getAttribute('data-repost-mark-id') || '0';
-		setEngagementToggleState(trigger, 'repost', !wasReposted, existingMarkId);
-		try {
-			if (!wasReposted) {
-				const caption = sprintf(
-					/* translators: %s: title of the reposted post */
-					__('Reposted "%s"', 'daymark'),
-					item.title || item.permalink
-				);
-				const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'repost_of'));
-				setEngagementToggleState(trigger, 'repost', true, mark.id);
-			} else {
+		if (wasReposted) {
+			setEngagementToggleState(trigger, 'repost', false, 0);
+			try {
 				await apiDelete('marks/' + existingMarkId);
-				setEngagementToggleState(trigger, 'repost', false, 0);
+			} catch (err) {
+				setEngagementToggleState(trigger, 'repost', true, existingMarkId);
 			}
+			return;
+		}
+		const defaultCaption = sprintf(
+			/* translators: %s: title of the reposted post */
+			__('Reposted "%s"', 'daymark'),
+			item.title || item.permalink
+		);
+		TextPromptSheet.show({
+			title: __('Reblog', 'daymark'),
+			placeholder: __('Add your own thoughts (optional)…', 'daymark'),
+			submitLabel: __('Reblog', 'daymark'),
+			skipLabel: __('Skip', 'daymark'),
+			opener: trigger,
+			onSubmit: (text) => publishRepost(trigger, item, text || defaultCaption),
+			onSkip: () => publishRepost(trigger, item, defaultCaption),
+		});
+	}
+
+	// The actual Repost publish, shared by TextPromptSheet's Submit and
+	// Skip paths above — the only difference between them is which caption
+	// string this receives.
+	async function publishRepost(trigger, item, caption) {
+		setEngagementToggleState(trigger, 'repost', true, 0);
+		try {
+			const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'repost_of'));
+			setEngagementToggleState(trigger, 'repost', true, mark.id);
 		} catch (err) {
-			setEngagementToggleState(trigger, 'repost', wasReposted, existingMarkId);
+			setEngagementToggleState(trigger, 'repost', false, 0);
+		}
+	}
+
+	// The Comment toggle (issue #317) — replaces the old composer-based
+	// "Reply" action. Always opens TextPromptSheet to type a comment (no
+	// Skip: unlike Reblog, there's no sensible default comment text), then
+	// delivers it via the new REST action, which decides server-side
+	// whether to route it through Webmention or a native comment POST — see
+	// Daymark_Comment_Delivery's own docblock for the full mechanism. No
+	// optimistic UI flip here at all (unlike Like/Repost): a comment isn't
+	// a togglable per-user state, so there's nothing to flip before the
+	// request settles — only a brief confirmation once it does.
+	function toggleComment(screen, trigger) {
+		const id = trigger.getAttribute('data-comment-toggle');
+		const item = screen && screen._bySubId && screen._bySubId.get(id);
+		if (!id || !item) {
+			return;
+		}
+		TextPromptSheet.show({
+			title: __('Comment', 'daymark'),
+			placeholder: __('Write a comment…', 'daymark'),
+			submitLabel: __('Send', 'daymark'),
+			opener: trigger,
+			onSubmit: (text) => sendComment(screen, trigger, id, text),
+		});
+	}
+
+	async function sendComment(screen, trigger, id, text) {
+		if (!text) {
+			return;
+		}
+		try {
+			const result = await apiPost('subscription-posts/' + id + '/comment', { text });
+			if ('webmention' === result.method && result.mark_id) {
+				trigger.classList.add('daymark-stat--active');
+				const item = screen && screen._bySubId && screen._bySubId.get(id);
+				if (item) {
+					item.replied_mark_id = result.mark_id;
+				}
+			}
+			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
+		} catch (err) {
+			showFlashBubble(trigger, err.message || __("Couldn't send your comment.", 'daymark'));
 		}
 	}
 
@@ -3464,19 +3558,18 @@
 	// separate toast/status region exists for a Timeline card's stat row
 	// (unlike full-screen actions elsewhere, which each have their own
 	// dedicated aria-live status paragraph). The aria-label/title swap
-	// covers assistive tech; the on-screen bubble (see
-	// showShareFlashBubble() below) covers a sighted desktop user, since
-	// a color-only change with no visible text reads as "nothing
-	// happened" on a browser with no navigator.share() (e.g. Firefox,
-	// which the clipboard-copy fallback below always runs on) unless
-	// they happen to hover the tiny icon afterward to catch the title
-	// tooltip.
+	// covers assistive tech; the on-screen bubble (see showFlashBubble()
+	// below) covers a sighted desktop user, since a color-only change with
+	// no visible text reads as "nothing happened" on a browser with no
+	// navigator.share() (e.g. Firefox, which the clipboard-copy fallback
+	// below always runs on) unless they happen to hover the tiny icon
+	// afterward to catch the title tooltip.
 	function flashShareStatus(trigger, message) {
 		const original = trigger.getAttribute('aria-label') || __('Share', 'daymark');
 		trigger.setAttribute('aria-label', message);
 		trigger.setAttribute('title', message);
 		trigger.classList.add('daymark-stat--share-copied');
-		showShareFlashBubble(trigger, message);
+		showFlashBubble(trigger, message);
 		window.setTimeout(() => {
 			if (trigger.isConnected) {
 				trigger.setAttribute('aria-label', original);
@@ -3486,21 +3579,23 @@
 		}, 2000);
 	}
 
-	// A small floating label above the Share icon, visible without hovering
+	// A small floating label above a stat-row icon, visible without hovering
 	// or a screen reader — appended as the trigger's own child (rather than
 	// a sibling in the shared flex row) so its `position: absolute` only
 	// ever needs the trigger's own `position: relative`, regardless of
 	// whatever row/card layout happens to contain it. Purely decorative
-	// (aria-hidden — flashShareStatus()'s aria-label swap already carries
-	// the accessible announcement) and self-removing on the same timer,
-	// so a rapid double-tap never leaves two stacked bubbles behind.
-	function showShareFlashBubble(trigger, message) {
-		const existing = trigger.querySelector('.daymark-share-flash');
+	// (aria-hidden — the caller's own aria-label swap, where it has one,
+	// already carries the accessible announcement) and self-removing on a
+	// timer, so a rapid double-tap never leaves two stacked bubbles behind.
+	// Shared by the Share toggle's clipboard-copy confirmation (originally
+	// its only caller) and the Comment toggle's send confirmation.
+	function showFlashBubble(trigger, message) {
+		const existing = trigger.querySelector('.daymark-flash-bubble');
 		if (existing) {
 			existing.remove();
 		}
 		const bubble = document.createElement('span');
-		bubble.className = 'daymark-share-flash';
+		bubble.className = 'daymark-flash-bubble';
 		bubble.setAttribute('aria-hidden', 'true');
 		bubble.textContent = message;
 		trigger.appendChild(bubble);
@@ -5911,6 +6006,108 @@
 		},
 	};
 
+	// A small, generic "type some text" overlay — the same
+	// .daymark-sheet/backdrop/Escape-key/focus-management shell
+	// AIAssistSheet already established, the one existing "small overlay"
+	// convention in this codebase, reused rather than a second one invented
+	// for this narrower need (issue #317: the Comment toggle's required
+	// comment text, and Reblog's own optional caption prompt). Callers pass
+	// onSubmit (required) and, only when a "type nothing, just do the
+	// default thing" path makes sense (Reblog — Skip keeps its existing
+	// auto-caption; Comment has no such default, so it gets no Skip button
+	// at all), onSkip too.
+	const TextPromptSheet = {
+		el: null,
+		opener: null,
+		onSubmit: null,
+		onSkip: null,
+
+		show({ title, placeholder, submitLabel, skipLabel, opener, onSubmit, onSkip }) {
+			this.opener = opener || null;
+			this.onSubmit = onSubmit || null;
+			this.onSkip = onSkip || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				sprintf(
+					/* translators: %s: the sheet's own title, e.g. "Comment" */
+					__('Dismiss %s', 'daymark'),
+					title
+				)
+			)}"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-textprompt-title">
+				<h2 class="daymark-sheet__title" id="daymark-textprompt-title" tabindex="-1">${esc(title)}</h2>
+				<div class="daymark-sheet__body">
+					<textarea class="daymark-textarea" data-textprompt-input placeholder="${esc(
+						placeholder
+					)}" rows="4"></textarea>
+					<div class="daymark-sheet__actions">
+						<button type="button" class="daymark-btn daymark-btn--primary" data-textprompt-submit>${esc(
+							submitLabel
+						)}</button>
+						${
+							skipLabel
+								? `<button type="button" class="daymark-btn daymark-btn--text" data-textprompt-skip>${esc(
+										skipLabel
+								  )}</button>`
+								: ''
+						}
+					</div>
+				</div>
+			</div>`;
+
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+			this.el.querySelector('[data-textprompt-submit]').addEventListener('click', () => {
+				const text = this.el.querySelector('[data-textprompt-input]').value.trim();
+				const handler = this.onSubmit;
+				this.hide();
+				if (handler) {
+					handler(text);
+				}
+			});
+			const skip = this.el.querySelector('[data-textprompt-skip]');
+			if (skip) {
+				skip.addEventListener('click', () => {
+					const handler = this.onSkip;
+					this.hide();
+					if (handler) {
+						handler();
+					}
+				});
+			}
+			this.onKeydown = (event) => {
+				if (event.key === 'Escape') {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			this.el.querySelector('[data-textprompt-input]').focus();
+		},
+
+		hide() {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
+			this.onSubmit = null;
+			this.onSkip = null;
+		},
+	};
+
 	// --- Timeline card kinds: shared type-icon rail + per-kind bodies ---
 	//
 	// Home's Recent Marks list is the merged Timeline feed (GET
@@ -6177,22 +6374,18 @@
 	}
 
 	// A subscription post's own interaction row — the subscription-post
-	// equivalent of renderItemStats() below: Like/Repost toggles, a
-	// read-only "Replied" indicator, Bookmark, "open original", and Share.
-	// No counted like/comment/repost stats (see renderSubscriptionPostCard()'s
-	// own docblock for why) and no Routing toggle (Mark-only — a subscription
-	// post has no syndication targets of its own). Shared by the Timeline
-	// card and the full-screen post view (PostScreen) so the two can never
-	// show a different set of icons for the same post.
+	// equivalent of renderItemStats() below: Like/Comment/Repost toggles
+	// (same "like, comment, reblog" order that row already established),
+	// Bookmark, "open original", and Share. No counted like/comment/repost
+	// stats (see renderSubscriptionPostCard()'s own docblock for why) and no
+	// Routing toggle (Mark-only — a subscription post has no syndication
+	// targets of its own). Shared by the Timeline card and the full-screen
+	// post view (PostScreen) so the two can never show a different set of
+	// icons for the same post.
 	function renderSubscriptionItemStats(item) {
 		return `<span class="daymark-item-stats daymark-item-stats--minimal">${renderLikeToggle(
 			item
-		)}${renderEngagementIndicator(
-			COMMENT_GLYPH,
-			!!item.replied_mark_id,
-			'replied',
-			__('Replied', 'daymark')
-		)}${renderRepostToggle(item)}${renderBookmarkToggle(
+		)}${renderCommentToggle(item)}${renderRepostToggle(item)}${renderBookmarkToggle(
 			item,
 			'subscription_post'
 		)}${renderExternalLinkToggle(item)}${renderShareToggle(item)}</span>`;
@@ -6252,9 +6445,9 @@
 	// engagement totals. What it *can* track is its own record of the user's
 	// own engagement (issue #41 follow-up) — Like and Repost toggle a small
 	// Mark of the site owner's own (see toggleLike()/toggleRepost()), and the
-	// Reply indicator is read-only, reflecting whether a reply Mark already
-	// exists (the "Reply" action itself lives on the post view screen, see
-	// startReplyToSubscriptionPost()).
+	// Comment toggle (issue #317) sends a real comment to the origin post,
+	// its own active state reflecting whether a Webmention-routed reply Mark
+	// already exists — see toggleComment()/renderCommentToggle().
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || __('Untitled post', 'daymark');
@@ -6419,18 +6612,6 @@
 		return expandBodyHtml(content);
 	}
 
-	// Jump into a fresh composer seeded to reply to a subscribed post —
-	// abandons (autosaving first) any in-progress composition, same as the
-	// Home launcher's own bubbles and openDraft(). `title` is a one-time
-	// display hint for the "Replying to" chip (CreateScreen.render()), not
-	// itself sent to the server; only the URL is (state.replyTo.url, via
-	// buildMarkPayload()'s inReplyTo field).
-	function startReplyToSubscriptionPost(url, title) {
-		abandonComposer();
-		state.replyTo = { url, title };
-		navigate('#create');
-	}
-
 	// One-shot hand-off from whichever feed-list screen (Home or Search) a
 	// post's card was tapped on to PostScreen — the same pattern
 	// state.pendingType/searchPreset already use for a screen-to-screen
@@ -6522,15 +6703,6 @@
 		},
 
 		onClick(event) {
-			const replyTrigger = event.target.closest('[data-reply-to]');
-			if (replyTrigger) {
-				event.preventDefault();
-				startReplyToSubscriptionPost(
-					replyTrigger.getAttribute('data-reply-to') || '',
-					replyTrigger.getAttribute('data-reply-title') || ''
-				);
-				return;
-			}
 			const refreshTrigger = event.target.closest('[data-refresh-subpost]');
 			if (refreshTrigger) {
 				event.preventDefault();
@@ -6621,25 +6793,15 @@
 		},
 
 		// A subscription post's own actions — a Mark/ordinary post's own
-		// content has neither: replying to yourself makes no sense, and
-		// there's no separate cached-vs-live copy to force a refresh past.
+		// content has no separate cached-vs-live copy to force a refresh
+		// past. Commenting (issue #317) now lives in the interaction row
+		// (renderSubscriptionItemStats()/renderCommentToggle()) instead of a
+		// button here — see that row's own docblock.
 		actionsHtml() {
 			const item = this.view.item;
 			if ('sub' !== this.view.kind) {
 				return '';
 			}
-			// A reply here rides Daymark's own POSSE markup rather than a
-			// real Webmention protocol implementation: the published Mark's
-			// u-in-reply-to link (Daymark_Microformats) is what any
-			// Webmention plugin the site owner already runs auto-notifies
-			// on publish. See CLAUDE.md's "Webmention: rescoped to lean on
-			// ecosystem plugins" decision for why nothing here sends/
-			// verifies a Webmention itself.
-			const reply = item.permalink
-				? `<button type="button" class="daymark-btn daymark-btn--text" data-reply-to="${esc(
-						item.permalink
-				  )}" data-reply-title="${esc(item.title || '')}">${esc(__('Reply', 'daymark'))}</button>`
-				: '';
 			// A cached post's own content is only ever extracted once, at
 			// fetch time — an improvement to the server's own extraction
 			// logic (a new stripping pass, say) never reaches an
@@ -6649,7 +6811,7 @@
 			const refresh = `<button type="button" class="daymark-btn daymark-btn--text" data-refresh-subpost="${esc(
 				String(item.id)
 			)}">${esc(__('Refresh content', 'daymark'))}</button>`;
-			return `<p class="daymark-note-card__links">${reply}${refresh}</p>`;
+			return `<p class="daymark-note-card__links">${refresh}</p>`;
 		},
 	};
 
