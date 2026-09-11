@@ -271,4 +271,29 @@ class Daymark_Subscription_Content_Sniffer {
 
 		return '';
 	}
+
+	/**
+	 * Whether a manually-provided excerpt/description is really just a
+	 * leftover placeholder value rather than genuine summary text — e.g. a
+	 * post whose own excerpt field was typed as a reminder ("Excerpt",
+	 * "TBD", "Summary") and never replaced before publishing. Every built-in
+	 * source (`feed`, `wordpress`, `friends`) already falls back to a
+	 * content-derived excerpt when the manual one is completely *empty*;
+	 * this closes the gap for one that's *present* but contains nothing a
+	 * reader would find useful, so it gets the same content fallback rather
+	 * than being trusted as real summary text.
+	 *
+	 * Deliberately narrow: only a handful of known placeholder words, alone
+	 * and with no other text (punctuation aside) — a genuinely short manual
+	 * excerpt ("Big news today.") is still real, intentional content and
+	 * must never be second-guessed just for being brief.
+	 *
+	 * @param string $plain_text The excerpt/description, HTML already stripped.
+	 * @return bool True when this reads as a placeholder rather than real content.
+	 */
+	public static function is_placeholder_excerpt( string $plain_text ): bool {
+		$normalized = strtolower( trim( $plain_text, " \t\n\r\0\x0B.!?" ) );
+
+		return in_array( $normalized, array( 'excerpt', 'summary', 'tbd', 'todo', 'placeholder' ), true );
+	}
 }

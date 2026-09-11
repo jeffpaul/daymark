@@ -230,7 +230,15 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 
 		$excerpt_source = (string) ( $raw_item['excerpt'] ?? '' );
 
-		if ( '' === trim( wp_strip_all_tags( $excerpt_source ) ) ) {
+		// Same placeholder guard Daymark_Subscription_Source_WordPress
+		// applies to its own manual excerpt field — Friends' cached
+		// post_excerpt is the same underlying WordPress data, so the same
+		// leftover-reminder-text mistake ("Excerpt", never replaced before
+		// publishing) is just as possible here.
+		if (
+			'' === trim( wp_strip_all_tags( $excerpt_source ) )
+			|| Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt( wp_strip_all_tags( $excerpt_source ) )
+		) {
 			$excerpt_source = (string) ( $raw_item['content'] ?? '' );
 		}
 
