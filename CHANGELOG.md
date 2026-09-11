@@ -34,6 +34,7 @@ can't act on them.
 ### Fixed
 
 - The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph. ([#340](https://github.com/jeffpaul/daymark/issues/340))
+- The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check. ([#342](https://github.com/jeffpaul/daymark/issues/342))
 
 ## [0.15.0] - 2026-09-10
 

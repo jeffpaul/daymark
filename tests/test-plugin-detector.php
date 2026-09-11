@@ -13,6 +13,12 @@
 
 /**
  * Tests Daymark_Plugin_Detector.
+ *
+ * The Daymark_Test_Fake_Connector_Class/daymark_test_fake_connector_function
+ * fixtures used by matches()'s classes/functions-signal tests below are
+ * declared in tests/class-plugin-detector-stub.php (required from
+ * tests/bootstrap.php) — see that file's own docblock for why they can't
+ * live in this one.
  */
 class Test_Plugin_Detector extends WP_UnitTestCase {
 
@@ -110,5 +116,79 @@ class Test_Plugin_Detector extends WP_UnitTestCase {
 		);
 
 		$this->remove_fake_plugin( 'daymark-test-oddname' );
+	}
+
+	/** matches() finds an active plugin via its slugs signal, same as is_active(). */
+	public function test_matches_true_for_slug_signal(): void {
+		$this->install_fake_plugin( 'daymark-test-slug-signal', 'plugin.php' );
+
+		$filter = static function ( $value ) {
+			$value   = (array) $value;
+			$value[] = 'daymark-test-slug-signal/plugin.php';
+
+			return $value;
+		};
+		add_filter( 'option_active_plugins', $filter );
+
+		$this->assertTrue(
+			Daymark_Plugin_Detector::matches( array( 'slugs' => array( 'daymark-test-slug-signal' ) ) )
+		);
+
+		remove_filter( 'option_active_plugins', $filter );
+		$this->remove_fake_plugin( 'daymark-test-slug-signal' );
+	}
+
+	/**
+	 * matches() finds an active plugin via a defining class present at
+	 * runtime — the fallback issue #342 needed, for a plugin whose
+	 * installed folder doesn't match any known slug at all.
+	 */
+	public function test_matches_true_for_class_signal(): void {
+		$this->assertTrue(
+			Daymark_Plugin_Detector::matches( array( 'classes' => array( 'Daymark_Test_Fake_Connector_Class' ) ) )
+		);
+	}
+
+	/**
+	 * matches() finds an active plugin via a defining function present at
+	 * runtime — asserted against a real, always-present PHP core function
+	 * rather than a fixture (see class-plugin-detector-stub.php's own
+	 * docblock for why no fixture function lives there alongside its
+	 * fixture class).
+	 */
+	public function test_matches_true_for_function_signal(): void {
+		$this->assertTrue(
+			Daymark_Plugin_Detector::matches( array( 'functions' => array( 'array_map' ) ) )
+		);
+	}
+
+	/** matches() finds an active plugin via a defining constant present at runtime. */
+	public function test_matches_true_for_constant_signal(): void {
+		if ( ! defined( 'DAYMARK_TEST_FAKE_CONNECTOR_CONSTANT' ) ) {
+			define( 'DAYMARK_TEST_FAKE_CONNECTOR_CONSTANT', true );
+		}
+
+		$this->assertTrue(
+			Daymark_Plugin_Detector::matches( array( 'constants' => array( 'DAYMARK_TEST_FAKE_CONNECTOR_CONSTANT' ) ) )
+		);
+	}
+
+	/** matches() reports false when none of the given signals resolve to anything present. */
+	public function test_matches_false_when_nothing_matches(): void {
+		$this->assertFalse(
+			Daymark_Plugin_Detector::matches(
+				array(
+					'slugs'     => array( 'daymark-test-nonexistent-slug' ),
+					'classes'   => array( 'Daymark_Test_Nonexistent_Class' ),
+					'functions' => array( 'daymark_test_nonexistent_function' ),
+					'constants' => array( 'DAYMARK_TEST_NONEXISTENT_CONSTANT' ),
+				)
+			)
+		);
+	}
+
+	/** matches() with no signals at all (every key absent) reports false. */
+	public function test_matches_false_for_empty_signals(): void {
+		$this->assertFalse( Daymark_Plugin_Detector::matches( array() ) );
 	}
 }
