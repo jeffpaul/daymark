@@ -81,7 +81,9 @@ class Daymark_Like_Visibility {
 	 * @return array<string, mixed>
 	 */
 	public function exclude_from_rest_collection( array $args ): array {
-		return $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
+		$args['meta_query'] = $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
+
+		return $args;
 	}
 
 	/**
@@ -134,7 +136,9 @@ class Daymark_Like_Visibility {
 			return $args;
 		}
 
-		return $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
+		$args['meta_query'] = $this->add_exclusion( isset( $args['meta_query'] ) && is_array( $args['meta_query'] ) ? $args['meta_query'] : array() );
+
+		return $args;
 	}
 
 	/**
