@@ -241,10 +241,12 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	}
 
 	// -----------------------------------------------------------------
-	// "Check for other feeds" / source picker (issue #307).
+	// "Choose from available feeds" / candidate picker (issue #307,
+	// renamed from "Check for other feeds" and reworked from radios to
+	// checkboxes in issue #334).
 	// -----------------------------------------------------------------
 
-	/** Scenario: with nothing stashed yet, a subscription's row shows the plain "Check for other feeds" trigger, not a picker. */
+	/** Scenario: with nothing stashed yet, a subscription's row shows the plain "Choose from available feeds" trigger, not a picker. */
 	public function test_source_switch_trigger_shown_by_default(): void {
 		$this->subscriptions->create(
 			array(
@@ -257,7 +259,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output = $this->render();
 
 		$this->assertStringContainsString( 'daymark_subscription_discover_sources', $output );
-		$this->assertStringContainsString( 'Check for other feeds', $output );
+		$this->assertStringContainsString( 'Choose from available feeds', $output );
 		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
 	}
 
@@ -265,7 +267,9 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * Scenario: once a discovery result is stashed for this subscription (what
 	 * handle_discover_sources() would have written), the row shows the
 	 * candidate picker instead of the plain trigger — each option labeled with
-	 * its source, the currently active feed_url marked, and a Switch action.
+	 * its source, as a checkbox rather than a radio (issue #334), the
+	 * currently active feed_url checked and marked "(current)", and an "Add
+	 * selected feeds" action.
 	 */
 	public function test_source_picker_shown_once_candidates_are_stashed(): void {
 		$id = $this->subscriptions->create(
@@ -301,15 +305,70 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		$this->assertStringContainsString( 'daymark_subscription_switch_source', $output );
-		$this->assertStringContainsString( 'daymark_candidate_index', $output );
+		$this->assertStringContainsString( 'daymark_subscription_add_feeds', $output );
+		$this->assertStringContainsString( 'daymark_candidate_index[]', $output );
+		$this->assertStringContainsString( 'type="checkbox"', $output );
+		$this->assertStringNotContainsString( 'type="radio"', $output );
 		$this->assertStringContainsString( 'WordPress REST API', $output );
 		$this->assertStringContainsString( 'RSS/Atom Feed', $output );
 		$this->assertStringContainsString( 'https://picker-example.com/feed/', $output );
 		$this->assertStringContainsString( '(current)', $output );
+		$this->assertStringContainsString( 'Add selected feeds', $output );
 		$this->assertStringContainsString( 'daymark_subscription_discover_sources_dismiss', $output );
 		// The plain trigger is replaced by the picker, not shown alongside it.
-		$this->assertStringNotContainsString( 'Check for other feeds', $output );
+		$this->assertStringNotContainsString( 'Choose from available feeds', $output );
+	}
+
+	/**
+	 * Scenario (issue #334): the row's own current feed_url renders as a
+	 * disabled checkbox — it cannot be unchecked through this picker at all,
+	 * so it can never be used to unsubscribe.
+	 */
+	public function test_source_picker_current_feed_checkbox_is_disabled(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://disabled-current-example.com',
+				'feed_url'    => 'https://disabled-current-example.com/feed/',
+				'source_type' => 'feed',
+				'status'      => 'active',
+			)
+		);
+
+		set_transient(
+			'daymark_subscription_sources_' . $id . '_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://disabled-current-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://disabled-current-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+					array(
+						'url'          => 'https://disabled-current-example.com/wp-json/wp/v2/posts',
+						'title'        => '',
+						'source_type'  => 'wordpress',
+						'source_label' => 'WordPress REST API',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		// The current candidate's own checkbox is disabled; the new,
+		// not-yet-subscribed one is not.
+		$current_pos  = strpos( $output, 'https://disabled-current-example.com/feed/' );
+		$new_pos      = strpos( $output, 'https://disabled-current-example.com/wp-json/wp/v2/posts' );
+		$disabled_pos = strpos( $output, 'disabled' );
+
+		$this->assertIsInt( $current_pos );
+		$this->assertIsInt( $new_pos );
+		$this->assertIsInt( $disabled_pos );
+		$this->assertGreaterThan( $current_pos, $disabled_pos );
+		$this->assertLessThan( $new_pos, $disabled_pos );
 	}
 
 	/**
@@ -346,17 +405,142 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		$this->assertStringContainsString( 'Check for other feeds', $output );
+		$this->assertStringContainsString( 'Choose from available feeds', $output );
 		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
 	}
 
-	/** Scenario (issue #307): a successful switch shows a plain success notice. */
-	public function test_source_switched_notice_rendered(): void {
-		$_GET['daymark_notice'] = 'source_switched';
+	/** Scenario (issue #334): a successful "Add selected feeds" submit shows a plain success notice, singular wording for exactly one feed. */
+	public function test_feeds_added_notice_rendered_singular(): void {
+		$_GET['daymark_notice'] = 'feeds_added';
 		$output                 = $this->render();
 		unset( $_GET['daymark_notice'] );
 
-		$this->assertStringContainsString( 'Subscription switched to the selected feed.', $output );
+		$this->assertStringContainsString( 'Added a feed. New posts from it will start appearing in the Timeline.', $output );
+	}
+
+	/** Scenario (issue #334): the same notice pluralizes once daymark_count is greater than one. */
+	public function test_feeds_added_notice_rendered_plural(): void {
+		$_GET['daymark_notice'] = 'feeds_added';
+		$_GET['daymark_count']  = '3';
+		$output                 = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'] );
+
+		$this->assertStringContainsString( 'Added 3 feeds. New posts from them will start appearing in the Timeline.', $output );
+	}
+
+	/** Scenario (issue #334): the new-subscribe flow's own "subscribed" notice stays exactly the pre-#334 singular wording when daymark_count is absent (the default, count = 1). */
+	public function test_subscribed_notice_rendered_singular_by_default(): void {
+		$_GET['daymark_notice'] = 'subscribed';
+		$output                 = $this->render();
+		unset( $_GET['daymark_notice'] );
+
+		$this->assertStringContainsString( 'Subscribed. New posts from this site will start appearing in the Timeline.', $output );
+	}
+
+	/** Scenario (issue #334): subscribing to more than one feed at once pluralizes the same notice. */
+	public function test_subscribed_notice_rendered_plural(): void {
+		$_GET['daymark_notice'] = 'subscribed';
+		$_GET['daymark_count']  = '2';
+		$output                 = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'] );
+
+		$this->assertStringContainsString( 'Subscribed to 2 feeds. New posts will start appearing in the Timeline.', $output );
+	}
+
+	// -----------------------------------------------------------------
+	// New-subscribe "pick which feed(s) to follow" picker (issue #334).
+	// -----------------------------------------------------------------
+
+	/** Scenario: with no discovery stashed yet, the Subscribe screen shows the plain URL field, not a picker. */
+	public function test_subscribe_form_shows_plain_url_field_by_default(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_site_url', $output );
+		$this->assertStringContainsString( 'daymark_subscribe', $output );
+		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
+	}
+
+	/**
+	 * Scenario: once handle_subscribe() has stashed a discovery result for
+	 * this user (a brand-new site, no subscription row exists yet), the
+	 * Subscribe screen shows the checkbox picker instead of the URL field —
+	 * the richest candidate (WordPress REST API, per
+	 * Daymark_Subscriptions::most_optimal_candidate_index()) checked by
+	 * default, a weaker one left unchecked.
+	 */
+	public function test_new_subscribe_picker_shown_once_stashed_with_best_candidate_checked(): void {
+		set_transient(
+			'daymark_new_subscription_candidates_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://new-subscribe-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://new-subscribe-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+					array(
+						'url'          => 'https://new-subscribe-example.com/wp-json/wp/v2/posts',
+						'title'        => '',
+						'source_type'  => 'wordpress',
+						'source_label' => 'WordPress REST API',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'daymark_subscribe_confirm', $output );
+		$this->assertStringContainsString( 'daymark_subscribe_cancel', $output );
+		$this->assertStringContainsString( 'daymark_candidate_index[]', $output );
+		$this->assertStringContainsString( 'new-subscribe-example.com', $output );
+		$this->assertStringNotContainsString( 'name="daymark_site_url"', $output );
+
+		// The WordPress REST API candidate (index 1, the richest) is checked;
+		// the feed candidate (index 0) is not.
+		$feed_pos      = strpos( $output, 'value="0"' );
+		$wordpress_pos = strpos( $output, 'value="1"' );
+		$first_checked = strpos( $output, 'checked' );
+
+		$this->assertIsInt( $feed_pos );
+		$this->assertIsInt( $wordpress_pos );
+		$this->assertIsInt( $first_checked );
+		$this->assertGreaterThan( $wordpress_pos, $first_checked );
+	}
+
+	/** Scenario: a candidate that's already subscribed (a previous partial attempt, or simply already followed) renders checked and disabled with "(already subscribed)", never "(current)" — there is no existing row yet in this context. */
+	public function test_new_subscribe_picker_marks_already_subscribed_candidate(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://already-subscribed-example.com',
+				'feed_url'    => 'https://already-subscribed-example.com/feed/',
+				'source_type' => 'feed',
+			)
+		);
+
+		set_transient(
+			'daymark_new_subscription_candidates_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://already-subscribed-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://already-subscribed-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'already subscribed', $output );
+		$this->assertStringNotContainsString( '(current)', $output );
 	}
 
 	/** Scenario (issue #80): the settings page renders an OPML Export link. */

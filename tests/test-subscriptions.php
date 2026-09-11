@@ -785,113 +785,116 @@ XML;
 	}
 
 	/**
-	 * Scenario: switch_source() updates an existing subscription's own
-	 * feed_url/source_type/feed_title in place (not a new row), resets its
-	 * failure/error state, and leaves a hand-set site_title untouched.
+	 * Scenario (issue #334): when page-based discovery across every
+	 * registered source finds nothing at all, discover_candidates() falls
+	 * back to trying the given URL as a literal feed directly — the exact
+	 * same fallback subscribe_to_site() already relies on — rather than
+	 * dead-ending someone who pastes a feed's own URL (not the page it's
+	 * linked from) into the Subscribe field or an existing row's "Choose
+	 * from available feeds" action.
 	 */
-	public function test_switch_source_updates_feed_url_and_resets_failure_state() {
-		$id = $this->subscriptions->create(
+	public function test_discover_candidates_falls_back_to_a_direct_feed_url() {
+		$feed = <<<'XML'
+<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+<title>Direct Feed</title>
+<link>https://direct-feed-candidates.example/</link>
+</channel>
+</rss>
+XML;
+		// No <link rel="alternate">/REST/h-feed markup at all — every
+		// built-in source's page-based discover() finds nothing here.
+		$this->mock_response( 'https://direct-feed-candidates.example/notes/feed/', $feed, 'application/rss+xml; charset=UTF-8' );
+
+		$candidates = $this->subscriptions->discover_candidates( 'https://direct-feed-candidates.example/notes/feed/' );
+
+		$this->assertIsArray( $candidates );
+		$this->assertCount( 1, $candidates );
+		$this->assertSame( 'https://direct-feed-candidates.example/notes/feed/', $candidates[0]['url'] );
+		$this->assertSame( 'feed', $candidates[0]['source_type'] );
+		$this->assertNotSame( '', $candidates[0]['source_label'] );
+	}
+
+	/**
+	 * Scenario (issue #334): discover_candidates()'s $resolved_site_url
+	 * out-param is set to the normalized site URL actually used for
+	 * discovery (scheme assumed, per normalize_site_url()) once validation
+	 * succeeds — the new-subscribe picker flow needs this exact value to
+	 * stash for a later subscribe_to_candidate() call, since it has no
+	 * existing subscription row of its own to read a normalized site_url
+	 * back from.
+	 */
+	public function test_discover_candidates_resolves_site_url_out_param() {
+		$this->mock_response( 'https://resolved-url.example/', $this->html_with_feed_and_icon() );
+
+		$resolved = null;
+		$this->subscriptions->discover_candidates( 'resolved-url.example', $resolved );
+
+		$this->assertSame( 'https://resolved-url.example/', $resolved );
+	}
+
+	/**
+	 * Scenario (issue #334): most_optimal_candidate_index() ranks a
+	 * discovered candidate list by source_type richness — the WordPress
+	 * REST source beats a feed source beats a microformats source — for
+	 * defaulting the new-subscribe picker's own checked box, regardless of
+	 * the list's own order.
+	 */
+	public function test_most_optimal_candidate_index_prefers_wordpress_over_feed_and_microformats() {
+		$candidates = array(
 			array(
-				'site_url'    => 'https://switch-test.example/',
-				'feed_url'    => 'https://switch-test.example/wp-json/wp/v2/posts',
+				'url'         => 'https://rank-example.com/notes.h-feed/',
+				'source_type' => 'microformats',
+			),
+			array(
+				'url'         => 'https://rank-example.com/feed/',
+				'source_type' => 'feed',
+			),
+			array(
+				'url'         => 'https://rank-example.com/wp-json/wp/v2/posts',
 				'source_type' => 'wordpress',
-				'site_title'  => 'My Custom Name',
-				'feed_title'  => 'Switch Test',
-			)
-		);
-		$this->assertIsInt( $id );
-
-		$this->subscriptions->increment_failure_count( $id );
-		$this->subscriptions->update(
-			$id,
-			array(
-				'status'     => 'error',
-				'last_error' => 'HTTP 500',
-			)
+			),
 		);
 
-		$result = $this->subscriptions->switch_source(
-			$id,
-			array(
-				'url'         => 'https://switch-test.example/feed/',
-				'source_type' => 'feed',
-				'title'       => 'Switch Test » Feed',
-			)
-		);
-
-		$this->assertTrue( $result );
-
-		$row = $this->subscriptions->get( $id );
-		$this->assertSame( 'https://switch-test.example/feed/', $row['feed_url'] );
-		$this->assertSame( 'feed', $row['source_type'] );
-		$this->assertSame( 'Switch Test » Feed', $row['feed_title'] );
-		$this->assertSame( 0, (int) $row['consecutive_failure_count'] );
-		$this->assertSame( '', $row['last_error'] );
-		$this->assertSame( 'active', $row['status'] );
-		// Never touched — a hand-set site_title survives switching sources.
-		$this->assertSame( 'My Custom Name', $row['site_title'] );
+		$this->assertSame( 2, Daymark_Subscriptions::most_optimal_candidate_index( $candidates ) );
 	}
 
-	/** Scenario: switching to a feed_url that already belongs to a *different* subscription fails cleanly instead of colliding with the table's UNIQUE key. */
-	public function test_switch_source_rejects_a_feed_url_already_used_elsewhere() {
-		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
-		$existing = $this->subscriptions->subscribe_to_site( 'https://example.com/' );
-		$this->assertIsInt( $existing );
-
-		$id = $this->subscriptions->create(
+	/** Scenario: most_optimal_candidate_index() ranks 'friends' above 'feed' but below the WordPress REST source. */
+	public function test_most_optimal_candidate_index_ranks_friends_between_wordpress_and_feed() {
+		$candidates = array(
 			array(
-				'site_url'    => 'https://switch-conflict.example/',
-				'feed_url'    => 'https://switch-conflict.example/wp-json/wp/v2/posts',
-				'source_type' => 'wordpress',
-			)
-		);
-		$this->assertIsInt( $id );
-
-		$result = $this->subscriptions->switch_source(
-			$id,
-			array(
-				'url'         => 'https://example.com/feed/',
+				'url'         => 'https://rank-example.com/feed/',
 				'source_type' => 'feed',
-			)
+			),
+			array(
+				'url'         => 'https://rank-example.com/friend-cache',
+				'source_type' => 'friends',
+			),
 		);
 
-		$this->assertWPError( $result );
-		$this->assertSame( 'daymark_subscription_duplicate', $result->get_error_code() );
-		// Unchanged — the rejected switch never touched the row.
-		$this->assertSame( 'https://switch-conflict.example/wp-json/wp/v2/posts', $this->subscriptions->get( $id )['feed_url'] );
+		$this->assertSame( 1, Daymark_Subscriptions::most_optimal_candidate_index( $candidates ) );
 	}
 
-	/** Scenario: switching a subscription to the exact feed_url it already has (re-selecting the current candidate) is a harmless no-op, not a false duplicate. */
-	public function test_switch_source_to_its_own_current_feed_url_is_a_no_op() {
-		$id = $this->subscriptions->create(
+	/** Scenario: an unrecognized source_type (a future third-party source) ranks last rather than erroring. */
+	public function test_most_optimal_candidate_index_ranks_unknown_source_last() {
+		$candidates = array(
 			array(
-				'site_url'    => 'https://switch-noop.example/',
-				'feed_url'    => 'https://switch-noop.example/feed/',
-				'source_type' => 'feed',
-			)
-		);
-		$this->assertIsInt( $id );
-
-		$result = $this->subscriptions->switch_source(
-			$id,
+				'url'         => 'https://rank-example.com/custom',
+				'source_type' => 'some_future_source',
+			),
 			array(
-				'url'         => 'https://switch-noop.example/feed/',
-				'source_type' => 'feed',
-			)
+				'url'         => 'https://rank-example.com/notes.h-feed/',
+				'source_type' => 'microformats',
+			),
 		);
 
-		$this->assertTrue( $result );
+		$this->assertSame( 1, Daymark_Subscriptions::most_optimal_candidate_index( $candidates ) );
 	}
 
-	/** Scenario: switch_source() against a subscription ID that doesn't exist fails cleanly. */
-	public function test_switch_source_missing_subscription_returns_not_found() {
-		$result = $this->subscriptions->switch_source(
-			999999,
-			array( 'url' => 'https://example.com/feed/' )
-		);
-
-		$this->assertWPError( $result );
-		$this->assertSame( 'daymark_subscription_not_found', $result->get_error_code() );
+	/** Scenario: an empty candidate list has no "most optimal" index. */
+	public function test_most_optimal_candidate_index_returns_negative_one_for_empty_list() {
+		$this->assertSame( -1, Daymark_Subscriptions::most_optimal_candidate_index( array() ) );
 	}
 
 	/**
