@@ -30,6 +30,10 @@ can't act on them.
 - Settings -> Daymark's "Check for other feeds" action is now "Choose from available feeds", and lets you check as many of the discovered feeds as you like — each one you check becomes its own new subscription, so you can follow more than one feed from the same site instead of only switching between them. ([#334](https://github.com/jeffpaul/daymark/issues/334))
 - The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language. ([#336](https://github.com/jeffpaul/daymark/issues/336))
 
+### Fixed
+
+- The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph. ([#340](https://github.com/jeffpaul/daymark/issues/340))
+
 ## [0.15.0] - 2026-09-10
 
 ### Added
