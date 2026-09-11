@@ -24,6 +24,7 @@ can't act on them.
 
 - Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming. ([#334](https://github.com/jeffpaul/daymark/issues/334))
 - Subscribing to (or "Choose from available feeds" on) a multilingual site — Polylang, WPML, MultilingualPress, and similar — now shows a separate feed candidate for each language it advertises, labeled by language, so you can follow the one you actually read instead of an unfiltered, every-language feed. ([#336](https://github.com/jeffpaul/daymark/issues/336))
+- A "link"-kind subscription post's own detected link now shows a clickable preview — title, excerpt, and featured/Open Graph image — when the linked page has Open Graph or Twitter Card tags, closing the gap the existing oEmbed-only preview left for an ordinary article link. ([#349](https://github.com/jeffpaul/daymark/issues/349))
 
 ### Changed
 

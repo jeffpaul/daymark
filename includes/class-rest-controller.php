@@ -2478,14 +2478,22 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * GET /daymark/v1/subscription-posts/{id}/oembed — best-effort oEmbed
+	 * GET /daymark/v1/subscription-posts/{id}/oembed — best-effort link
 	 * preview of a link-format subscription post's own detected outbound
-	 * link (`link_url`), for the full-screen post view (issue #279).
+	 * link (`link_url`), for the full-screen post view.
 	 *
-	 * Deliberately never fails/404s for "no link" or "no embeddable
-	 * result" — both resolve to `{ html: '' }`, matching the "optional,
-	 * best-effort enhancement" framing throughout: the caller has nothing
-	 * special to branch on beyond "was html non-empty".
+	 * Tries Daymark_Subscription_Opengraph first (issue #349) — Open Graph/
+	 * Twitter Card meta tags are the far more universal signal for an
+	 * ordinary web page (a blog post, a news article) — falling back to the
+	 * existing Daymark_Subscription_Oembed (issue #279) only when Open
+	 * Graph finds nothing usable, since a genuine media provider (YouTube,
+	 * Mastodon, etc.) still needs that resolver's real embeddable iframe/
+	 * photo markup, which Open Graph tags alone can't reconstruct.
+	 *
+	 * Deliberately never fails/404s for "no link" or "no usable preview" —
+	 * both resolve to every field empty, matching the "optional, best-
+	 * effort enhancement" framing throughout: the caller has nothing
+	 * special to branch on beyond "was type non-empty".
 	 *
 	 * Shares the same rate-limit bucket as the click-through content fetch
 	 * (ACTION_SUBSCRIPTION_POST_FETCH) — this is the same class of
@@ -2505,15 +2513,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$id       = absint( $request->get_param( 'id' ) );
 		$link_url = (string) get_post_meta( $id, 'link_url', true );
 
-		$preview = '' !== $link_url ? Daymark_Subscription_Oembed::resolve( $link_url ) : array();
+		$preview = array();
+
+		if ( '' !== $link_url ) {
+			$preview = Daymark_Subscription_Opengraph::resolve( $link_url );
+
+			if ( empty( $preview ) ) {
+				$preview = Daymark_Subscription_Oembed::resolve( $link_url );
+			}
+		}
 
 		return rest_ensure_response(
 			array(
-				'type' => sanitize_key( (string) ( $preview['type'] ?? '' ) ),
-				// Already built entirely from allowlisted attributes by
-				// Daymark_Subscription_Oembed — never the provider's own raw
-				// HTML — trusted the same way body_content is above.
-				'html' => (string) ( $preview['html'] ?? '' ),
+				'type'        => sanitize_key( (string) ( $preview['type'] ?? '' ) ),
+				// Already built entirely from allowlisted attributes/
+				// sanitized text by Daymark_Subscription_Oembed/
+				// Daymark_Subscription_Opengraph — never the provider's own
+				// raw HTML — trusted the same way body_content is above.
+				'html'        => (string) ( $preview['html'] ?? '' ),
+				'title'       => (string) ( $preview['title'] ?? '' ),
+				'description' => (string) ( $preview['description'] ?? '' ),
+				'image'       => (string) ( $preview['image'] ?? '' ),
 			)
 		);
 	}

@@ -62,6 +62,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-source-registry.p
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-post-type.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opengraph.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
