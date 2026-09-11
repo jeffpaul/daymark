@@ -7368,31 +7368,71 @@
 			}
 		},
 
-		// Best-effort oEmbed preview of a link-kind subscription post's own
-		// detected outbound link (issue #279) — fetched separately from,
-		// and never blocking, the post's own body content above: plenty of
-		// links have nothing embeddable, and this should never turn a
-		// normal, fast-loading post view into one waiting on a third-party
-		// provider. Silently does nothing on any failure (no result, a
-		// network error, or the view having already navigated away by the
-		// time the fetch resolves) — there is no error state worth
-		// surfacing for an optional enhancement like this one.
+		// Best-effort link preview of a link-kind subscription post's own
+		// detected outbound link — Open Graph title/excerpt/image (issue
+		// #349) preferred, an oEmbed iframe/photo (issue #279) as the
+		// server-side fallback for a genuine media provider — fetched
+		// separately from, and never blocking, the post's own body content
+		// above: plenty of links have nothing to preview, and this should
+		// never turn a normal, fast-loading post view into one waiting on a
+		// third-party provider. Silently does nothing on any failure (no
+		// result, a network error, or the view having already navigated
+		// away by the time the fetch resolves) — there is no error state
+		// worth surfacing for an optional enhancement like this one.
 		maybeLoadOembedPreview(kind, item, body) {
 			if ('sub' !== kind || !item.link_url || 'link' !== resolveCardKind(item)) {
 				return;
 			}
 			apiGet('subscription-posts/' + item.id + '/oembed')
 				.then((result) => {
-					if (!body.isConnected || !result || !result.html) {
+					if (!body.isConnected || !result || !result.type) {
 						return;
 					}
-					const wrapper = document.createElement('div');
+					// A link-type preview is itself the clickable card — the
+					// same "open the referenced link" affordance a reader-app
+					// link card always offers — so it's a real <a>, unlike an
+					// oEmbed iframe/photo (already its own interactive/
+					// decorative element) which stays a plain wrapper div.
+					const isLinkPreview = 'link' === result.type;
+					const wrapper = document.createElement(isLinkPreview ? 'a' : 'div');
 					wrapper.className = 'daymark-oembed-preview';
-					// Built entirely server-side from an allowlist of safe
-					// attributes on a single <iframe>/<img> — never a
-					// provider's own raw HTML — see Daymark_Subscription_Oembed;
-					// trusted the same way body_content already is above.
-					wrapper.innerHTML = result.html;
+					if (isLinkPreview) {
+						wrapper.classList.add('daymark-oembed-preview--link');
+						wrapper.href = item.link_url;
+						wrapper.target = '_blank';
+						wrapper.rel = 'noopener noreferrer';
+						// Text/image fields are already sanitized server-side
+						// (Daymark_Subscription_Opengraph) — esc()'d here the
+						// same as any other server-provided string this file
+						// interpolates, not because the source is any less
+						// trusted than body_content already rendered above.
+						wrapper.innerHTML = `
+							${
+								result.image
+									? `<img class="daymark-oembed-preview__image" src="${esc(
+											result.image
+									  )}" alt="" loading="lazy">`
+									: ''
+							}
+							<div class="daymark-oembed-preview__text">
+								<p class="daymark-oembed-preview__title">${esc(result.title)}</p>
+								${
+									result.description
+										? `<p class="daymark-oembed-preview__description">${esc(
+												result.description
+										  )}</p>`
+										: ''
+								}
+							</div>`;
+					} else if (result.html) {
+						// Built entirely server-side from an allowlist of safe
+						// attributes on a single <iframe>/<img> — never a
+						// provider's own raw HTML — see Daymark_Subscription_Oembed;
+						// trusted the same way body_content already is above.
+						wrapper.innerHTML = result.html;
+					} else {
+						return;
+					}
 					const content = body.querySelector('.daymark-expand-content');
 					if (content) {
 						content.after(wrapper);

@@ -3044,6 +3044,59 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* Open Graph link-preview card (Daymark_Subscription_Opengraph, issue #349)
+   — a `link`-type result from GET /subscription-posts/{id}/oembed, styled
+   as its own clickable card (a real <a> to the referenced link — see
+   maybeLoadOembedPreview(), app.js) rather than the bare iframe/img the
+   rules above already style: an oEmbed iframe is already its own
+   interactive embed and a bare oEmbed photo is purely decorative, but a
+   link preview's whole point is "tap this to open the referenced link,"
+   the same reader-app link-card pattern this mirrors. */
+.daymark-oembed-preview--link {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	color: inherit;
+	text-decoration: none;
+}
+
+.daymark-oembed-preview--link:hover,
+.daymark-oembed-preview--link:focus-visible {
+	border-color: var(--daymark-accent-light);
+}
+
+/* Same selector specificity as the generic .daymark-oembed-preview img
+   rule above, so source order (this rule comes later in the file) is what
+   lets a fixed height + object-fit:cover win over that rule's own
+   height:auto — a link's own og:image, whatever its native aspect ratio,
+   crops to a consistent banner instead of stretching the card open to
+   whatever height the image happens to be. */
+.daymark-oembed-preview--link img {
+	height: 180px;
+	object-fit: cover;
+	border-radius: 0;
+}
+
+.daymark-oembed-preview__text {
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+}
+
+.daymark-oembed-preview__title {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-oembed-preview__description {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 13px;
+	line-height: 1.4;
+	color: var(--daymark-text-secondary);
+}
+
 /* This content's source theme's own CSS never loads here (a subscription
  * post's fetched HTML, or even a local Mark/ordinary post's, since the app
  * shell never loads a theme's stylesheet) — so anything the original markup
