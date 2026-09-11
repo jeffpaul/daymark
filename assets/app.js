@@ -7000,8 +7000,8 @@
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
 					<span class="daymark-recent__footer">
-						${isDraft ? '' : renderItemStats(item)}
 						${renderCardTimestampRow(item, isDraft ? '' : config.siteTitle || __('Site', 'daymark'))}
+						${isDraft ? '' : renderItemStats(item)}
 					</span>`;
 	}
 
@@ -7061,8 +7061,8 @@
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
 						<span class="daymark-recent__footer">
-							${renderSubscriptionItemStats(item)}
 							${renderCardTimestampRow(item, siteLabel)}
+							${renderSubscriptionItemStats(item)}
 						</span>
 					</button>
 					${renderOverflowPanel(item, overflowItems, unsubscribeConfirmMarkup(item))}
@@ -7267,8 +7267,8 @@
 					<span class="daymark-visually-hidden">${esc(__('Loading post', 'daymark'))}</span>
 				</div>
 				<div class="daymark-postview-meta">
-					${stats}
 					${renderCardTimestampRow(item, siteLabel)}
+					${stats}
 					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
