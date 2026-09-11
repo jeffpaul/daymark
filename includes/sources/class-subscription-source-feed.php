@@ -528,7 +528,16 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 
 		$description = (string) ( $raw_item['description'] ?? '' );
 
-		if ( '' === trim( wp_strip_all_tags( $description ) ) ) {
+		// Same placeholder guard the WordPress/Friends sources apply to
+		// their own manual excerpt field — a feed's <description> is
+		// exactly as likely to carry a leftover reminder value ("Excerpt",
+		// never replaced before publishing) as a raw post_excerpt is; see
+		// Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt()'s
+		// own docblock.
+		if (
+			'' === trim( wp_strip_all_tags( $description ) )
+			|| Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt( wp_strip_all_tags( $description ) )
+		) {
 			$description = (string) ( $raw_item['content'] ?? '' );
 		}
 

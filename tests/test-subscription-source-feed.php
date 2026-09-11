@@ -422,6 +422,30 @@ XML;
 		$this->assertSame( 'https://example.com/image2.png', $normalized['raw_media'][1] );
 	}
 
+	/** normalize() treats a <description> that's just a leftover placeholder word (never replaced before publishing) the same as an empty one, falling back to the item's own content instead. */
+	public function test_normalize_falls_back_to_content_for_placeholder_description() {
+		$normalized = $this->source->normalize(
+			array(
+				'description' => '<p>Excerpt</p>',
+				'content'     => '<p>The real body text readers actually want.</p>',
+			)
+		);
+
+		$this->assertSame( 'The real body text readers actually want.', $normalized['excerpt'] );
+	}
+
+	/** normalize() still trusts a genuinely short-but-real <description> — brevity alone is never a placeholder signal. */
+	public function test_normalize_trusts_a_genuinely_short_description() {
+		$normalized = $this->source->normalize(
+			array(
+				'description' => '<p>Big news today.</p>',
+				'content'     => '<p>An entirely different, much longer body.</p>',
+			)
+		);
+
+		$this->assertSame( 'Big news today.', $normalized['excerpt'] );
+	}
+
 	/** Scenario: a single image enclosure → post_format 'image'. */
 	public function test_normalize_detects_single_image_format() {
 		$normalized = $this->source->normalize(
