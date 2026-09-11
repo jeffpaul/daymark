@@ -501,7 +501,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output                  = $this->render();
 		unset( $_GET['daymark_notice'], $_GET['daymark_count'], $_GET['daymark_removed'] );
 
-		$this->assertStringContainsString( 'Updated this site\'s feeds: added 1, removed 1 — the removed feeds\' previously loaded posts have been removed too.', $output );
+		$this->assertStringContainsString( 'Updated this site&#039;s feeds: added 1, removed 1 — the removed feeds&#039; previously loaded posts have been removed too.', $output );
 	}
 
 	/** Scenario (issue #363): the mixed notice's own pending variant, when the newly-added feed's first poll didn't complete. */
@@ -512,7 +512,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output                  = $this->render();
 		unset( $_GET['daymark_notice'], $_GET['daymark_count'], $_GET['daymark_removed'] );
 
-		$this->assertStringContainsString( 'their first fetch didn\'t complete', $output );
+		$this->assertStringContainsString( 'their first fetch didn&#039;t complete', $output );
 	}
 
 	/** Scenario (issue #363): submitting the picker with no actual change (nothing newly checked or unchecked) is a harmless, clearly-labeled no-op. */
@@ -521,7 +521,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output                 = $this->render();
 		unset( $_GET['daymark_notice'] );
 
-		$this->assertStringContainsString( 'No changes made to this site\'s feeds.', $output );
+		$this->assertStringContainsString( 'No changes made to this site&#039;s feeds.', $output );
 	}
 
 	// -----------------------------------------------------------------
