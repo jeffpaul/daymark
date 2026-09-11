@@ -311,18 +311,34 @@ class Daymark_Publisher {
 		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 		$type           = $this->detect_primary_type( $media_ids, $requested_type );
 
-		$defaults = $this->sanitize_connector_ids( $data['default_destinations'] ?? array() );
+		// A Like Mark (the composer's "Like" toggle on a subscribed post) is a
+		// pure engagement signal, not user-chosen publishable content — it
+		// must never reach a real syndication destination, regardless of the
+		// type's model defaults or the user's own remembered per-type
+		// preference. Resolved here (rather than only after the meta is
+		// written below) so destinations are never even considered for it.
+		// See the "Like Marks never syndicate or appear in site discovery"
+		// decision.
+		$is_like_of = null !== $this->resolve_like_of( $data );
 
-		if ( empty( $defaults ) ) {
-			$defaults = $this->get_registry_defaults( $type );
+		if ( $is_like_of ) {
+			$defaults           = array();
+			$targets            = array();
+			$selection_provided = false;
+		} else {
+			$defaults = $this->sanitize_connector_ids( $data['default_destinations'] ?? array() );
+
+			if ( empty( $defaults ) ) {
+				$defaults = $this->get_registry_defaults( $type );
+			}
+
+			$raw_targets = $data['syndication_targets'] ?? null;
+			$targets     = $this->sanitize_connector_ids( $raw_targets ?? array() );
+
+			// Distinguish "no selection sent" (fall back to defaults) from an
+			// explicit empty selection (user deselected every destination).
+			$selection_provided = is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) );
 		}
-
-		$raw_targets = $data['syndication_targets'] ?? null;
-		$targets     = $this->sanitize_connector_ids( $raw_targets ?? array() );
-
-		// Distinguish "no selection sent" (fall back to defaults) from an
-		// explicit empty selection (user deselected every destination).
-		$selection_provided = is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) );
 
 		// Categories: the site-filing counterpart to destinations. Same
 		// "provided vs fall back to the remembered per-type default" rule.
@@ -337,7 +353,7 @@ class Daymark_Publisher {
 			$categories = $this->get_effective_categories( $type );
 		}
 
-		if ( ! $selection_provided ) {
+		if ( ! $selection_provided && ! $is_like_of ) {
 			// Auto-applied defaults only go to destinations that can
 			// actually publish (connected connectors). The raw model
 			// defaults are still recorded in _daymark_default_destinations;
@@ -658,7 +674,13 @@ class Daymark_Publisher {
 
 		$raw_targets = $data['syndication_targets'] ?? null;
 
-		if ( is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) ) ) {
+		// A Like Mark never syndicates, even on an edit — see publish()'s own
+		// matching guard for the full rationale. Checked against the post's
+		// own stored meta (not $data) since an ordinary edit request never
+		// resends like_of at all.
+		$is_like_of = '' !== (string) get_post_meta( $post_id, '_daymark_like_of', true );
+
+		if ( ! $is_like_of && ( is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) ) ) ) {
 			$targets = $this->sanitize_connector_ids( $raw_targets );
 			update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
 			$this->remember_destination_prefs( $type, $targets );
