@@ -31,6 +31,10 @@ can't act on them.
 - The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language. ([#336](https://github.com/jeffpaul/daymark/issues/336))
 - On a Timeline card and the full-screen post view, the Like/Comment/Reblog/Bookmark/... interaction row now sits below the site name and date instead of above it. ([#338](https://github.com/jeffpaul/daymark/issues/338))
 
+### Fixed
+
+- The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph. ([#340](https://github.com/jeffpaul/daymark/issues/340))
+
 ## [0.15.0] - 2026-09-10
 
 ### Added
