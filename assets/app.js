@@ -3493,20 +3493,24 @@
 		trigger.setAttribute('data-' + kind + '-mark-id', String(markId || 0));
 	}
 
-	// The minimal Mark a Like/Repost tap publishes: a plain 'note' with no
-	// media, carrying only the one POSSE target-URL field the server needs
-	// (like_of/repost_of) to render u-like-of/u-repost-of and let whichever
-	// federation plugin the site owner runs discover and act on it — the
-	// same "compose a real Mark, let an already-installed plugin do the
-	// actual outbound protocol work" pattern the Comment toggle's own
-	// Webmention branch already uses (see toggleComment()). Deliberately
-	// omits targets[]/categories[] entirely (not even an explicit empty
-	// array) so this call gets exactly the same type-based default
-	// destination/category resolution any other Note Mark would — sending
-	// an explicit empty selection would get *remembered* as the user's new
-	// Note-type default (see Daymark_Publisher::remember_destination_prefs()),
-	// silently overwriting their real preference for a background action
-	// they didn't consciously make a destination choice for.
+	// The minimal Mark a Like tap publishes: a plain 'note' with no media,
+	// carrying only the one POSSE target-URL field the server needs
+	// (like_of) to render u-like-of and let whichever federation plugin the
+	// site owner runs discover and act on it — the same "compose a real
+	// Mark, let an already-installed plugin do the actual outbound protocol
+	// work" pattern the Comment toggle's own Webmention branch already uses
+	// (see toggleComment()). Deliberately omits targets[]/categories[]
+	// entirely (not even an explicit empty array) so this call gets exactly
+	// the same type-based default destination/category resolution any other
+	// Note Mark would — sending an explicit empty selection would get
+	// *remembered* as the user's new Note-type default (see
+	// Daymark_Publisher::remember_destination_prefs()), silently
+	// overwriting their real preference for a background action they
+	// didn't consciously make a destination choice for. Repost has its own
+	// builder, buildRepostFormData() below, since a Reblog's content needs
+	// a real link + optional comment structure a plain caption can't
+	// express — this one still backs Like alone, a pure content-less
+	// signal with a generic auto-caption.
 	function buildEngagementFormData(caption, item, targetField) {
 		const formData = new FormData();
 		formData.append('caption', caption);
@@ -3553,14 +3557,13 @@
 	// Toggles a Repost for the subscription post this trigger belongs to.
 	// Undoing (trashing an existing repost Mark) stays exactly as instant/
 	// optimistic as toggleLike() above — there's nothing to type when
-	// removing one. Creating one (issue #317) now opens TextPromptSheet
-	// first for an optional caption capturing your own thoughts alongside
-	// the reblogged post, rather than publishing instantly with a fixed
-	// auto-caption: Skip keeps that same auto-caption; typing something
-	// uses it as the Mark's real caption instead. The optimistic UI flip
-	// only happens once the sheet is actually submitted/skipped — never
-	// eagerly, since the user might yet dismiss the sheet without choosing
-	// either.
+	// removing one. Creating one (issue #317) opens TextPromptSheet first
+	// for an optional comment alongside the reblogged post — Skip publishes
+	// just the reblogged post's own link, typing something adds that text
+	// as a second paragraph below it (see buildRepostFormData()). The
+	// optimistic UI flip only happens once the sheet is actually submitted/
+	// skipped — never eagerly, since the user might yet dismiss the sheet
+	// without choosing either.
 	async function toggleRepost(screen, trigger) {
 		const id = trigger.getAttribute('data-repost-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
@@ -3579,29 +3582,61 @@
 			}
 			return;
 		}
-		const defaultCaption = sprintf(
-			/* translators: %s: title of the reposted post */
-			__('Reposted "%s"', 'daymark'),
-			item.title || item.permalink
-		);
 		TextPromptSheet.show({
 			title: __('Reblog', 'daymark'),
 			placeholder: __('Add your own thoughts (optional)…', 'daymark'),
 			submitLabel: __('Reblog', 'daymark'),
 			skipLabel: __('Skip', 'daymark'),
 			opener: trigger,
-			onSubmit: (text) => publishRepost(trigger, item, text || defaultCaption),
-			onSkip: () => publishRepost(trigger, item, defaultCaption),
+			onSubmit: (text) => publishRepost(trigger, item, text || ''),
+			onSkip: () => publishRepost(trigger, item, ''),
 		});
 	}
 
+	// Builds the FormData for a Reblog Mark: an explicit "Reblog: {title}"
+	// post title (rather than one auto-derived from body text — see
+	// generate_title() server-side, which would otherwise just echo the
+	// link paragraph's own markup back), and content that's a real link to
+	// the reblogged post — its own title as the link text, never a bare
+	// URL, since a bare URL left as the whole caption is what
+	// entry_metadata_markup()'s own u-repost-of rendering already does for
+	// its own, separate, machine-readable purpose — followed, on its own
+	// paragraph, by the reader's optional comment. Distinct from
+	// buildEngagementFormData() (which still backs Like, a plain
+	// content-less signal) since a Reblog's content needs real structure a
+	// single caption string can't express.
+	function buildRepostFormData(item, comment) {
+		const formData = new FormData();
+		const linkText = item.title || item.permalink;
+		let content = '<a href="' + esc(item.permalink) + '">' + esc(linkText) + '</a>';
+
+		if (comment) {
+			content += '\n\n' + comment;
+		}
+
+		formData.append(
+			'title',
+			sprintf(
+				/* translators: %s: title of the reposted post */
+				__('Reblog: %s', 'daymark'),
+				linkText
+			)
+		);
+		formData.append('caption', content);
+		formData.append('primary_type', 'note');
+		formData.append('status', 'publish');
+		formData.append('ai_assist_used', '0');
+		formData.append('repost_of', item.permalink);
+		return formData;
+	}
+
 	// The actual Repost publish, shared by TextPromptSheet's Submit and
-	// Skip paths above — the only difference between them is which caption
-	// string this receives.
-	async function publishRepost(trigger, item, caption) {
+	// Skip paths above — the only difference between them is which comment
+	// string this receives (empty on Skip).
+	async function publishRepost(trigger, item, comment) {
 		setEngagementToggleState(trigger, 'repost', true, 0);
 		try {
-			const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'repost_of'));
+			const mark = await apiUpload('marks', buildRepostFormData(item, comment));
 			setEngagementToggleState(trigger, 'repost', true, mark.id);
 			maybeShowInteractionHint('repost', trigger);
 		} catch (err) {
@@ -6556,11 +6591,11 @@
 	// AIAssistSheet already established, the one existing "small overlay"
 	// convention in this codebase, reused rather than a second one invented
 	// for this narrower need (issue #317: the Comment toggle's required
-	// comment text, and Reblog's own optional caption prompt). Callers pass
+	// comment text, and Reblog's own optional comment prompt). Callers pass
 	// onSubmit (required) and, only when a "type nothing, just do the
-	// default thing" path makes sense (Reblog — Skip keeps its existing
-	// auto-caption; Comment has no such default, so it gets no Skip button
-	// at all), onSkip too.
+	// default thing" path makes sense (Reblog — Skip publishes just the
+	// reblogged post's own link, with no added comment; Comment has no such
+	// default, so it gets no Skip button at all), onSkip too.
 	const TextPromptSheet = {
 		el: null,
 		opener: null,
