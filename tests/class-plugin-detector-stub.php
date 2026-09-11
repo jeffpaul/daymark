@@ -1,20 +1,30 @@
 <?php
 /**
- * Test-only fixture classes/functions standing in for a third-party
- * plugin's own defining class/function — used by
- * tests/test-plugin-detector.php's generic Daymark_Plugin_Detector::matches()
- * coverage, and by tests/test-admin-subscriptions.php's ATmosphere
- * class-signal-fallback coverage (issue #342), where it's aliased to the
- * real plugin's own `Atmosphere\Publisher` class name — the literal value
- * Daymark_Admin_Subscriptions::recommended_connectors() checks for.
+ * Test-only fixture class standing in for a third-party plugin's own
+ * defining class — used by tests/test-plugin-detector.php's generic
+ * Daymark_Plugin_Detector::matches() classes-signal coverage.
+ *
+ * Deliberately generic, never the real ATmosphere plugin's own
+ * `Atmosphere\Publisher` name: this file is required once from
+ * tests/bootstrap.php and stays defined for the entire PHPUnit process
+ * (a class can't be undefined once declared), so aliasing it to that real,
+ * production-checked class name — as an earlier version of this fixture
+ * did — made `Daymark_Publish_Helpers`'s own ATmosphere detection report
+ * "active" globally for every other test file in the same run, including
+ * Test_Publish_Helpers::test_detects_nothing_by_default, which broke in CI
+ * for exactly this reason. tests/test-admin-subscriptions.php's own
+ * ATmosphere class-signal-fallback coverage (issue #342) instead calls
+ * Daymark_Admin_Subscriptions::connector_status() directly via Reflection
+ * with a synthetic connector array pointing at this same generic fixture
+ * class, so it exercises the identical fallback logic without ever making
+ * the real `Atmosphere\Publisher` string resolve to anything.
  *
  * A separate file (required from tests/bootstrap.php) rather than declared
- * inline in either test file, for the exact reason class-friends-stub.php's
+ * inline in the test file itself, for the exact reason class-friends-stub.php's
  * own docblock already documents: this repo's WordPress Coding Standards
- * ruleset disallows a second top-level class/function declaration alongside
- * a test file's own test class. A class/function/constant also can't be
- * undefined once declared, so each one here is guarded against
- * redeclaration rather than scoped to a single test.
+ * ruleset disallows a second top-level class declaration alongside a test
+ * file's own test class. Guarded against redeclaration since a class can't
+ * be undefined once declared.
  *
  * @package Daymark
  */
@@ -30,8 +40,4 @@ if ( ! class_exists( 'Daymark_Test_Fake_Connector_Class' ) ) {
 	 * core function instead of a fixture.
 	 */
 	class Daymark_Test_Fake_Connector_Class {}
-}
-
-if ( ! class_exists( 'Atmosphere\\Publisher' ) ) {
-	class_alias( 'Daymark_Test_Fake_Connector_Class', 'Atmosphere\\Publisher' );
 }

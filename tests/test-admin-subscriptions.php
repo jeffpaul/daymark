@@ -28,10 +28,14 @@
  * tests/test-subscriptions.php and tests/test-subscription-opml.php
  * instead; this file covers what each new form actually renders.
  *
- * The Connectors tab's own ATmosphere class-signal-fallback test below
- * (issue #342) relies on `Atmosphere\Publisher` being aliased into place —
- * see tests/class-plugin-detector-stub.php (required from
- * tests/bootstrap.php) for why that fixture can't be declared in this file.
+ * The Connectors tab's own class-signal-fallback test below (issue #342)
+ * exercises connector_status() via Reflection with a synthetic connector
+ * array pointing at the generic fixture class tests/class-plugin-detector-stub.php
+ * declares (required from tests/bootstrap.php) — never the real ATmosphere
+ * plugin's own `Atmosphere\Publisher` name, which an earlier version of
+ * this coverage aliased into place globally and broke
+ * Test_Publish_Helpers::test_detects_nothing_by_default in CI as a result;
+ * see that stub file's own docblock for the full account.
  */
 class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
@@ -1577,20 +1581,36 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A republished/renamed ATmosphere build (issue #342 — reported "By
-	 * Automattic", installed under a folder that no longer matches the
-	 * historical `wordpress-atmosphere` slug) still reports "Active" on the
-	 * Connectors tab, because connector_status() falls back to
+	 * A republished/renamed connector build (issue #342 — reported for
+	 * ATmosphere specifically: "By Automattic", installed under a folder
+	 * that no longer matches its historical `wordpress-atmosphere` slug)
+	 * still reports 'active', because connector_status() falls back to
 	 * Daymark_Plugin_Detector::matches() against the connector's own
-	 * classes/constants signals once the folder-slug lookup finds nothing —
-	 * no fake plugin folder installed at all for this test.
+	 * classes/constants signals once the folder-slug lookup finds nothing.
+	 *
+	 * Exercised via Reflection with a synthetic connector array — pointing
+	 * at the generic fixture class tests/class-plugin-detector-stub.php
+	 * declares, never the real ATmosphere plugin's own `Atmosphere\Publisher`
+	 * name — rather than through the real Connectors tab render: aliasing
+	 * that real, production-checked class name into place for this test
+	 * previously left it defined for the rest of the same PHPUnit process,
+	 * which made Daymark_Publish_Helpers's own ATmosphere detection report
+	 * "active" for every other test file that ran after it (broke
+	 * Test_Publish_Helpers::test_detects_nothing_by_default in CI). No fake
+	 * plugin folder is installed for this test — connector_status() must
+	 * reach the fallback branch on its own.
 	 */
-	public function test_connectors_tab_detects_atmosphere_via_class_signal_when_folder_slug_does_not_match(): void {
-		$_GET['tab'] = 'connectors';
-		$output      = $this->render();
-		unset( $_GET['tab'] );
+	public function test_connector_status_falls_back_to_class_signal_when_folder_slug_does_not_match(): void {
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'connector_status' );
 
-		$this->assertStringContainsString( 'Active', $output );
-		$this->assertStringNotContainsString( 'Install Now', $output );
+		$status = $method->invoke(
+			$this->admin_subscriptions,
+			array(
+				'folder_slug' => 'daymark-test-nonexistent-connector-folder',
+				'classes'     => array( 'Daymark_Test_Fake_Connector_Class' ),
+			)
+		);
+
+		$this->assertSame( 'active', $status );
 	}
 }
