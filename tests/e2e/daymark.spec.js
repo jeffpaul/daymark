@@ -797,12 +797,25 @@ test('tapping Comment sends the reader straight to the origin post when Webmenti
 		await route.abort();
 	});
 
+	// example.invalid is a genuinely unresolvable domain (RFC 2606) — real
+	// enough to prove window.open() was actually called with the correct
+	// URL, but Chromium fails its DNS lookup near-instantly, which replaces
+	// the popup's own .url() with chrome-error://chromewebdata/ before this
+	// test can read it. Routed at the context level (covers the popup too,
+	// unlike page.route()) so the "navigation" succeeds instead, the same
+	// way every other external fetch in this suite is mocked rather than
+	// actually attempted.
+	await page.context().route('https://example.invalid/**', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Mock origin</title>' });
+	});
+
 	await page.goto('/daymark');
 
 	const card = page.locator('[data-subpost="999004"]');
 	await expect(card).toBeVisible();
 
 	const [popup] = await Promise.all([page.waitForEvent('popup'), card.locator('[data-comment-toggle]').click()]);
+	await popup.waitForLoadState('domcontentloaded');
 	expect(popup.url()).toBe('https://example.invalid/post-999004/#respond');
 	await popup.close();
 
