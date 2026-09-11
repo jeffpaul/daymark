@@ -739,6 +739,169 @@ test('subscription-post card meta line omits the post author', async ({ page }) 
 	await expect(card.locator('.daymark-recent__timestamprow')).toContainText('Example');
 });
 
+// Comment pre-check (issue #351 follow-up): tapping Comment now checks
+// first, via GET .../comment-target, whether Daymark can actually deliver a
+// comment here at all — when it can't (Webmention isn't viable), it skips
+// the composer entirely and sends the reader straight to the origin post's
+// own comment form instead. This is the fix for the double-entry problem a
+// naive "try, then fail" flow would have: a reader should never be asked to
+// type a comment Daymark already knows it can't deliver, only to have to
+// retype the same thing on the origin site after the fact.
+test('tapping Comment sends the reader straight to the origin post when Webmention is not viable, never opening the composer', async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999004,
+		subscription_id: 1,
+		title: `E2E comment-redirect ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/post-999004/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999004/comment-target', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ method: 'redirect', url: 'https://example.invalid/post-999004/#respond' }),
+		});
+	});
+
+	// Never mocked: a redirect pre-check result must never reach the actual
+	// send endpoint at all — the composer that would call it never opens.
+	let commentPostAttempted = false;
+	await page.route('**/daymark/v1/subscription-posts/999004/comment', async (route) => {
+		commentPostAttempted = true;
+		await route.abort();
+	});
+
+	// example.invalid is a genuinely unresolvable domain (RFC 2606) — real
+	// enough to prove window.open() was actually called with the correct
+	// URL, but Chromium fails its DNS lookup near-instantly, which replaces
+	// the popup's own .url() with chrome-error://chromewebdata/ before this
+	// test can read it. Routed at the context level (covers the popup too,
+	// unlike page.route()) so the "navigation" succeeds instead, the same
+	// way every other external fetch in this suite is mocked rather than
+	// actually attempted.
+	await page.context().route('https://example.invalid/**', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Mock origin</title>' });
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999004"]');
+	await expect(card).toBeVisible();
+
+	const [popup] = await Promise.all([page.waitForEvent('popup'), card.locator('[data-comment-toggle]').click()]);
+	await popup.waitForLoadState('domcontentloaded');
+	expect(popup.url()).toBe('https://example.invalid/post-999004/#respond');
+	await popup.close();
+
+	await expect(page.locator('[data-textprompt-input]')).toHaveCount(0);
+	expect(commentPostAttempted).toBe(false);
+});
+
+// Comment delivery failure (issue #317/#351): even when the pre-check
+// reports Webmention as viable (so the composer opens as normal), the
+// actual send can still fail — the destination site's own REST API refuses
+// anonymous comments, or nothing deliverable was discoverable there after
+// all. Daymark can't finish the job on the reader's behalf in that case
+// either, so it offers a real link straight to the origin post's own
+// comment form instead of a dead-end error message.
+test("comment delivery failure (after the pre-check said Webmention was viable) offers a link to the origin post's own comment form", async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999003,
+		subscription_id: 1,
+		title: `E2E comment-undeliverable ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/post-999003/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999003/comment-target', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ method: 'webmention' }),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999003/comment', async (route) => {
+		await route.fulfill({
+			status: 401,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				code: 'daymark_comment_requires_login',
+				message: "This site's own API doesn't accept comments from anonymous visitors.",
+			}),
+		});
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999003"]');
+	await expect(card).toBeVisible();
+	await card.locator('[data-comment-toggle]').click();
+
+	await page.locator('[data-textprompt-input]').fill('Great post!');
+	await page.locator('[data-textprompt-submit]').click();
+
+	const sheet = page.locator('.daymark-sheet__panel', { hasText: "Couldn't deliver your comment" });
+	await expect(sheet).toBeVisible();
+	const openLink = sheet.locator('a', { hasText: 'Open post to comment' });
+	await expect(openLink).toHaveAttribute('href', 'https://example.invalid/post-999003/#respond');
+	await expect(openLink).toHaveAttribute('target', '_blank');
+
+	await sheet.getByRole('button', { name: 'Close' }).click();
+	await expect(page.locator('.daymark-sheet__panel')).toHaveCount(0);
+});
+
 // Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
 // button on Home (Home is assumed to be the Timeline). Independent of the
 // cron schedule and separately rate-limited per subscription (15 minutes);

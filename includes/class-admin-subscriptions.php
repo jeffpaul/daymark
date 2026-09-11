@@ -1746,7 +1746,7 @@ class Daymark_Admin_Subscriptions {
 				'label'       => 'Webmention',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
-				'description' => __( 'Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications.', 'daymark' ),
+				'description' => __( "Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
 			),
 			'activitypub' => array(
 				'label'       => 'ActivityPub',
