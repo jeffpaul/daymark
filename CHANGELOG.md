@@ -20,6 +20,14 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming. ([#334](https://github.com/jeffpaul/daymark/issues/334))
+
+### Changed
+
+- Settings -> Daymark's "Check for other feeds" action is now "Choose from available feeds", and lets you check as many of the discovered feeds as you like — each one you check becomes its own new subscription, so you can follow more than one feed from the same site instead of only switching between them. ([#334](https://github.com/jeffpaul/daymark/issues/334))
+
 ## [0.15.0] - 2026-09-10
 
 ### Added

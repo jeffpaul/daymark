@@ -288,16 +288,35 @@ class Daymark_Subscriptions {
 	 * sources can find for it (issue #307) — the "show everything" sibling of
 	 * subscribe_to_site()'s own automatic, first-match-wins discovery.
 	 *
-	 * Exists for a wp-admin action letting a person see (and switch to) a
-	 * different source than the one subscribe_to_site() picked automatically
-	 * — most usefully when that automatic pick turns out to be the wrong one
-	 * for a given site (e.g. a WordPress REST API returning every language
-	 * mixed together on a multilingual site, where the site's own RSS/Atom
-	 * feed would have been correctly scoped). subscribe_to_site() itself is
-	 * unchanged and stays the fast, automatic path for actually subscribing.
+	 * Backs two wp-admin flows (issue #334): a person picking which feed(s)
+	 * to follow up front, right after clicking Subscribe on a new site
+	 * (before this method existed, that button always subscribed to
+	 * subscribe_to_site()'s single automatic pick with no chance to see or
+	 * choose anything else); and an existing subscription's own "Choose from
+	 * available feeds" action for adding another feed from the same site, or
+	 * — most usefully when the automatic pick turns out to be the wrong one
+	 * (e.g. a WordPress REST API returning every language mixed together on
+	 * a multilingual site, where the site's own RSS/Atom feed would have
+	 * been correctly scoped) — subscribing to the right one alongside it.
+	 * subscribe_to_site() itself is unchanged and stays the fast, automatic
+	 * path REST subscribing uses.
 	 *
-	 * @param string $site_url Site URL to discover candidates for (not a
-	 *                         feed URL directly).
+	 * @param string      $site_url          Site URL to discover candidates
+	 *                                       for (not a feed URL directly).
+	 * @param string|null $resolved_site_url Out-param: set to the
+	 *                                       normalized/validated site URL
+	 *                                       actually used for discovery once
+	 *                                       validation succeeds — a caller
+	 *                                       stashing this result for a later
+	 *                                       subscribe_to_candidate() call
+	 *                                       (issue #334's new-subscribe flow,
+	 *                                       which has no existing
+	 *                                       subscription row of its own to
+	 *                                       read a normalized site_url back
+	 *                                       from) needs the exact value this
+	 *                                       method actually discovered
+	 *                                       against, not whatever raw text
+	 *                                       the user originally typed.
 	 * @return array<int, array<string, mixed>>|WP_Error Every discovered
 	 *                                                   candidate (see
 	 *                                                   Daymark_Subscription_Source_Registry::discover_all_feeds()),
@@ -308,14 +327,48 @@ class Daymark_Subscriptions {
 	 *                                                   codes subscribe_to_site()
 	 *                                                   already produces.
 	 */
-	public function discover_candidates( string $site_url ) {
+	public function discover_candidates( string $site_url, ?string &$resolved_site_url = null ) {
 		$site_url = $this->validate_site_url( $site_url );
 
 		if ( is_wp_error( $site_url ) ) {
 			return $site_url;
 		}
 
-		$candidates = Daymark_Plugin::instance()->subscription_source_registry->discover_all_feeds( $site_url );
+		$resolved_site_url = $site_url;
+
+		$registry   = Daymark_Plugin::instance()->subscription_source_registry;
+		$candidates = $registry->discover_all_feeds( $site_url );
+
+		if ( empty( $candidates ) ) {
+			// issue #334: page-based discovery across every registered
+			// source found nothing at all — try $site_url as a literal feed
+			// URL directly, the exact same fallback subscribe_to_site()
+			// already relies on (see
+			// Daymark_Subscription_Source_Feed::discover_direct_feed()'s own
+			// docblock). Without this, pasting a feed's own URL (e.g. a
+			// Notes archive's /notes/feed/, rather than the page it's linked
+			// from) into either the Subscribe field or an existing row's
+			// "Choose from available feeds" action would be a dead end here
+			// even though subscribe_to_site() itself can already handle it.
+			$feed_source = $registry->get_source( 'feed' );
+			$direct      = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
+				? $feed_source->discover_direct_feed( $site_url )
+				: array();
+
+			if ( ! empty( $direct ) ) {
+				$candidates = array_map(
+					static function ( $candidate ) use ( $feed_source ) {
+						if ( is_array( $candidate ) ) {
+							$candidate['source_type']  = 'feed';
+							$candidate['source_label'] = $feed_source->get_label();
+						}
+
+						return $candidate;
+					},
+					$direct
+				);
+			}
+		}
 
 		if ( empty( $candidates ) ) {
 			return new WP_Error(
@@ -326,6 +379,82 @@ class Daymark_Subscriptions {
 		}
 
 		return $candidates;
+	}
+
+	/**
+	 * Rank a discovered candidate's `source_type` by how completely it's
+	 * likely to capture a post's full content and metadata for Timeline
+	 * rendering (issue #334) — used only to preselect the single most
+	 * complete option by default in the new-subscribe picker
+	 * (most_optimal_candidate_index() below); it never influences discovery
+	 * itself or which source "wins" automatically, which stays entirely
+	 * Daymark_Subscription_Source_Registry::discover_feeds()'s own
+	 * registration-order precedence.
+	 *
+	 * Lower is better:
+	 *
+	 *  - `wordpress` (0): the real WordPress REST API — full
+	 *    `content.rendered`, the site's own real `format` field (never a
+	 *    guess), and embedded author/featured-media in one request.
+	 *  - `friends` (1): the Friends plugin's own already-fetched,
+	 *    already-normalized full-post cache — typically as complete as
+	 *    whatever the origin itself exposes, without a second independent
+	 *    fetch of it.
+	 *  - `feed` (2): RSS/Atom — full content only when the feed itself
+	 *    embeds it (e.g. `content:encoded`); otherwise an excerpt, with
+	 *    `post_format` guessed by Daymark_Subscription_Content_Sniffer
+	 *    rather than read from a structured field.
+	 *  - `microformats` (3): a bounded, purpose-built parsed subset of a
+	 *    page's own h-entry markup — the least structurally complete of the
+	 *    four built-in sources.
+	 *
+	 * Anything else (a future third-party source registered via
+	 * `daymark_register_subscription_sources`) ranks last rather than
+	 * erroring — it's simply never preferred over a known-richer built-in
+	 * source, the same "degrade gracefully for an unrecognized value"
+	 * posture this class already takes for `source_type` generally (see
+	 * sanitize_source_type()).
+	 *
+	 * @param string $source_type A candidate's own `source_type`.
+	 * @return int
+	 */
+	private static function candidate_richness_rank( string $source_type ): int {
+		$ranks = array(
+			'wordpress'    => 0,
+			'friends'      => 1,
+			'feed'         => 2,
+			'microformats' => 3,
+		);
+
+		return $ranks[ $source_type ] ?? 4;
+	}
+
+	/**
+	 * The index of the single "most optimal" candidate in a
+	 * discover_candidates() result — the one the new-subscribe picker
+	 * should check by default (issue #334), so subscribing to a brand-new
+	 * site never requires a person to actively pick anything if the
+	 * automatic best guess is fine. Chosen purely by candidate_richness_rank();
+	 * the first-registered candidate wins a tie.
+	 *
+	 * @param array<int, array<string, mixed>> $candidates A discover_candidates()
+	 *                                                      result.
+	 * @return int The best candidate's own array index, or -1 for an empty list.
+	 */
+	public static function most_optimal_candidate_index( array $candidates ): int {
+		$best_index = -1;
+		$best_rank  = PHP_INT_MAX;
+
+		foreach ( $candidates as $index => $candidate ) {
+			$rank = self::candidate_richness_rank( (string) ( $candidate['source_type'] ?? '' ) );
+
+			if ( $rank < $best_rank ) {
+				$best_rank  = $rank;
+				$best_index = $index;
+			}
+		}
+
+		return $best_index;
 	}
 
 	/**
@@ -545,96 +674,6 @@ class Daymark_Subscriptions {
 		$feed_title  = isset( $candidate['title'] ) ? sanitize_text_field( (string) $candidate['title'] ) : '';
 
 		return $this->finish_subscribe( $site_url, $feed_url, $source_type, $feed_title );
-	}
-
-	/**
-	 * Switch an existing subscription to a different, already-discovered
-	 * candidate (issue #307) — updates feed_url/source_type/feed_title in
-	 * place rather than creating a second row, so it's a real fix for
-	 * "Daymark picked the wrong source for this site" rather than a
-	 * duplicate-and-manually-unsubscribe workaround.
-	 *
-	 * Deliberately leaves site_title alone: a person may have hand-edited it
-	 * (issue #180) to something more recognizable than either source's own
-	 * title, and switching *where* content comes from is a different
-	 * decision from renaming the subscription. Resets the failure/error
-	 * state (`consecutive_failure_count`, `last_error`, `status`) to a clean
-	 * slate — whatever was or wasn't failing about the old feed_url has no
-	 * bearing on the new one. Does not touch any already-ingested
-	 * `daymark_subscription_post` rows from the old source: only future
-	 * polls change, existing cached content ages out via the normal
-	 * retention window like anything else (a deliberate scope boundary, not
-	 * an oversight — see issue #307).
-	 *
-	 * `$candidate` is trusted the same way subscribe_to_candidate() trusts
-	 * it — read back from a transient discover_candidates() itself wrote
-	 * moments earlier, never from a raw posted URL.
-	 *
-	 * @param int                  $id        Subscription ID to switch.
-	 * @param array<string, mixed> $candidate One entry from
-	 *                                        discover_candidates()'s own
-	 *                                        result for this subscription's
-	 *                                        own site_url.
-	 * @return true|WP_Error True on success; WP_Error when the subscription
-	 *                       doesn't exist, the candidate has no URL, or the
-	 *                       candidate's feed_url already belongs to a
-	 *                       *different* subscription.
-	 */
-	public function switch_source( int $id, array $candidate ) {
-		$subscription = $this->get( $id );
-
-		if ( null === $subscription ) {
-			return new WP_Error(
-				'daymark_subscription_not_found',
-				__( 'That subscription no longer exists.', 'daymark' ),
-				array( 'status' => 404 )
-			);
-		}
-
-		$feed_url = isset( $candidate['url'] ) ? esc_url_raw( (string) $candidate['url'] ) : '';
-
-		if ( '' === $feed_url ) {
-			return new WP_Error(
-				'daymark_subscription_no_feed_found',
-				__( 'No feed could be found at this URL.', 'daymark' ),
-				array( 'status' => 422 )
-			);
-		}
-
-		$existing = $this->get_by_feed_url( $feed_url );
-
-		if ( null !== $existing && absint( $existing['id'] ?? 0 ) !== $id ) {
-			return new WP_Error(
-				'daymark_subscription_duplicate',
-				__( 'A subscription for this feed already exists.', 'daymark' ),
-				array( 'status' => 409 )
-			);
-		}
-
-		$source_type = isset( $candidate['source_type'] ) ? sanitize_key( (string) $candidate['source_type'] ) : 'feed';
-		$feed_title  = isset( $candidate['title'] ) ? sanitize_text_field( (string) $candidate['title'] ) : '';
-
-		$updated = $this->update(
-			$id,
-			array(
-				'feed_url'                  => $feed_url,
-				'source_type'               => $source_type,
-				'feed_title'                => $feed_title,
-				'consecutive_failure_count' => 0,
-				'last_error'                => '',
-				'status'                    => 'active',
-			)
-		);
-
-		if ( ! $updated ) {
-			return new WP_Error(
-				'daymark_subscription_update_failed',
-				__( 'Could not switch this subscription\'s source.', 'daymark' ),
-				array( 'status' => 500 )
-			);
-		}
-
-		return true;
 	}
 
 	/**
@@ -904,7 +943,11 @@ class Daymark_Subscriptions {
 	 * Recognized `$fields` keys: `status`, `consecutive_failure_count`,
 	 * `last_checked_at`, `last_manual_refresh_at`, `site_title`,
 	 * `feed_title`, `site_icon_url`, `last_error`, `websub_hub_url`,
-	 * `websub_status`, `websub_lease_expires_at`, `websub_secret`.
+	 * `websub_status`, `websub_lease_expires_at`, `websub_secret`. Not
+	 * `feed_url`/`source_type` — those were only ever written by the now-
+	 * removed switch_source() (issue #334 replaced its in-place single-feed
+	 * replace with an additive, checkbox-based subscribe-to-more-feeds model
+	 * instead), so support for updating them was removed alongside it.
 	 *
 	 * @param int   $id     Subscription ID.
 	 * @param array $fields Fields to update.
@@ -941,21 +984,6 @@ class Daymark_Subscriptions {
 		if ( array_key_exists( 'last_manual_refresh_at', $fields ) ) {
 			$data['last_manual_refresh_at'] = $this->sanitize_datetime( $fields['last_manual_refresh_at'] );
 			$format[]                       = '%s';
-		}
-
-		if ( array_key_exists( 'feed_url', $fields ) ) {
-			// issue #307: switch_source() is the only caller — it already
-			// validates uniqueness (the table's own UNIQUE `feed_url` key,
-			// checked in advance against every *other* subscription) before
-			// ever calling update(), so this is just sanitization, not a
-			// second duplicate check.
-			$data['feed_url'] = esc_url_raw( (string) $fields['feed_url'] );
-			$format[]         = '%s';
-		}
-
-		if ( array_key_exists( 'source_type', $fields ) ) {
-			$data['source_type'] = $this->sanitize_source_type( (string) $fields['source_type'] );
-			$format[]            = '%s';
 		}
 
 		if ( array_key_exists( 'site_title', $fields ) ) {
