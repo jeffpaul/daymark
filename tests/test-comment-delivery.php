@@ -138,24 +138,18 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Webmention branch: origin advertises a webmention endpoint AND the
-	 * local Webmention plugin is active (simulated via the same
+	 * Simulates the local Webmention plugin being active, the same
 	 * option_active_plugins filter Test_Admin_Subscriptions/
-	 * Test_Plugin_Detector already use) -> a minimal Note Mark is published
-	 * with the comment text as its caption and the permalink as
-	 * _daymark_in_reply_to, no direct outbound POST to the origin at all.
+	 * Test_Plugin_Detector already use, shared by every test in this file
+	 * that needs Daymark_Plugin_Detector::is_active('webmention') to
+	 * return true. Callers must call deactivate_fake_webmention_plugin()
+	 * afterward (a try/finally around the call under test, matching every
+	 * call site below) — this doesn't self-register a tear_down() hook,
+	 * since a test that never activates it shouldn't pay for one either.
+	 *
+	 * @return callable The filter callback, needed by deactivate_fake_webmention_plugin() to remove it.
 	 */
-	public function test_deliver_prefers_webmention_when_available_on_both_ends(): void {
-		$permalink = 'https://origin.example/webmention-post/';
-		$post_id   = $this->create_subscription_post( $permalink );
-
-		$this->mock_response(
-			$permalink,
-			'<html><head><link rel="webmention" href="https://origin.example/webmention"></head><body></body></html>',
-			200,
-			array( 'content-type' => 'text/html; charset=UTF-8' )
-		);
-
+	private function activate_fake_webmention_plugin(): callable {
 		$filter = static function ( $value ) {
 			$value   = (array) $value;
 			$value[] = 'webmention/webmention.php';
@@ -170,12 +164,45 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 			wp_clean_plugins_cache( false );
 		}
 
-		$result = Daymark_Comment_Delivery::deliver( $post_id, 'Great point!' );
+		return $filter;
+	}
 
+	/**
+	 * @param callable $filter The callback activate_fake_webmention_plugin() returned.
+	 * @return void
+	 */
+	private function deactivate_fake_webmention_plugin( callable $filter ): void {
 		remove_filter( 'option_active_plugins', $filter );
+		$dir = WP_PLUGIN_DIR . '/webmention';
 		wp_delete_file( $dir . '/webmention.php' );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
 		rmdir( $dir );
+	}
+
+	/**
+	 * Webmention branch: origin advertises a webmention endpoint AND the
+	 * local Webmention plugin is active -> a minimal Note Mark is published
+	 * with the comment text as its caption and the permalink as
+	 * _daymark_in_reply_to, no direct outbound POST to the origin at all.
+	 */
+	public function test_deliver_prefers_webmention_when_available_on_both_ends(): void {
+		$permalink = 'https://origin.example/webmention-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="webmention" href="https://origin.example/webmention"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$filter = $this->activate_fake_webmention_plugin();
+
+		try {
+			$result = Daymark_Comment_Delivery::deliver( $post_id, 'Great point!' );
+		} finally {
+			$this->deactivate_fake_webmention_plugin( $filter );
+		}
 
 		$this->assertIsArray( $result );
 		$this->assertSame( 'webmention', $result['method'] );
@@ -343,5 +370,127 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'daymark_comment_undeliverable', $result->get_error_code() );
+	}
+
+	/**
+	 * resolve_comment_target() (issue #351 follow-up): the pre-check
+	 * toggleComment() now calls *before* ever opening the composer, so a
+	 * reader typing a comment Daymark already knows can't be delivered —
+	 * then having to retype it on the origin site — can't happen. When
+	 * Webmention is viable, it answers 'webmention' and nothing else —
+	 * deliberately never sends a real comment, unlike deliver().
+	 */
+	public function test_resolve_comment_target_reports_webmention_when_available(): void {
+		$permalink = 'https://origin.example/target-webmention-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="webmention" href="https://origin.example/webmention"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$filter = $this->activate_fake_webmention_plugin();
+
+		try {
+			$target = Daymark_Comment_Delivery::resolve_comment_target( $post_id );
+		} finally {
+			$this->deactivate_fake_webmention_plugin( $filter );
+		}
+
+		$this->assertIsArray( $target );
+		$this->assertSame( 'webmention', $target['method'] );
+	}
+
+	/**
+	 * No Webmention endpoint discoverable (regardless of what a native
+	 * wp/v2/comments attempt might have done) -> 'redirect' straight to the
+	 * origin's own comment form. Deliberately never attempts (or predicts)
+	 * a native POST here at all, only Webmention's safe, read-only <head>
+	 * check — see resolve_comment_target()'s own docblock for why.
+	 */
+	public function test_resolve_comment_target_redirects_when_webmention_unavailable(): void {
+		$permalink = 'https://origin.example/target-redirect-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="https://api.w.org/" href="https://origin.example/wp-json/"><link rel="alternate" type="application/json" href="https://origin.example/wp-json/wp/v2/posts/99"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$target = Daymark_Comment_Delivery::resolve_comment_target( $post_id );
+
+		$this->assertIsArray( $target );
+		$this->assertSame( 'redirect', $target['method'] );
+		$this->assertSame( $permalink . '#respond', $target['url'] );
+	}
+
+	/** An unsafe/invalid permalink can't even be redirected to safely. */
+	public function test_resolve_comment_target_redirects_with_empty_url_for_unsafe_permalink(): void {
+		$post_id = $this->create_subscription_post( 'https://internal.example/post/' );
+
+		$filter = static function () {
+			return array( '10.0.0.5' );
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $filter );
+
+		$target = Daymark_Comment_Delivery::resolve_comment_target( $post_id );
+
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $filter );
+
+		$this->assertIsArray( $target );
+		$this->assertSame( 'redirect', $target['method'] );
+		$this->assertSame( '', $target['url'] );
+	}
+
+	/**
+	 * The origin fetch is cached by permalink (issue #351 follow-up) so a
+	 * pre-check followed by an actual send costs one live fetch, not two —
+	 * a second resolve_comment_target() call for the same post reuses the
+	 * first call's result even though the mocked response changed in
+	 * between, the same "second call is served from cache" pattern
+	 * tests/test-subscription-oembed.php and
+	 * tests/test-subscription-opengraph.php already establish for their
+	 * own sibling resolvers. The local Webmention plugin's own active
+	 * state is deliberately held constant (active) across both calls, so
+	 * the only variable that can change the reported method is whether
+	 * the *cached* origin fetch still reflects the first response.
+	 */
+	public function test_resolve_comment_target_caches_origin_fetch(): void {
+		$permalink = 'https://origin.example/target-cached-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="webmention" href="https://origin.example/webmention"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$filter = $this->activate_fake_webmention_plugin();
+
+		try {
+			$first = Daymark_Comment_Delivery::resolve_comment_target( $post_id );
+
+			// Change the mapped response to one with no Webmention link at
+			// all — if the fetch weren't cached, the second call would see
+			// this and report 'redirect' instead of 'webmention'.
+			$this->mock_response(
+				$permalink,
+				'<html><head><title>No webmention here</title></head><body></body></html>',
+				200,
+				array( 'content-type' => 'text/html; charset=UTF-8' )
+			);
+
+			$second = Daymark_Comment_Delivery::resolve_comment_target( $post_id );
+		} finally {
+			$this->deactivate_fake_webmention_plugin( $filter );
+		}
+
+		$this->assertSame( 'webmention', $first['method'] );
+		$this->assertSame( $first, $second );
 	}
 }

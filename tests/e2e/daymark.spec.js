@@ -739,13 +739,87 @@ test('subscription-post card meta line omits the post author', async ({ page }) 
 	await expect(card.locator('.daymark-recent__timestamprow')).toContainText('Example');
 });
 
-// Comment delivery failure (issue #351 follow-up): when the destination
-// site declines to accept the comment at all — its own REST API refuses
-// anonymous comments, or nothing deliverable was discoverable there —
-// Daymark can't finish the job on the reader's behalf, so it offers a real
-// link straight to the origin post's own comment form instead of a dead-end
-// error message.
-test("comment delivery failure offers a link to the origin post's own comment form", async ({ page }) => {
+// Comment pre-check (issue #351 follow-up): tapping Comment now checks
+// first, via GET .../comment-target, whether Daymark can actually deliver a
+// comment here at all — when it can't (Webmention isn't viable), it skips
+// the composer entirely and sends the reader straight to the origin post's
+// own comment form instead. This is the fix for the double-entry problem a
+// naive "try, then fail" flow would have: a reader should never be asked to
+// type a comment Daymark already knows it can't deliver, only to have to
+// retype the same thing on the origin site after the fact.
+test('tapping Comment sends the reader straight to the origin post when Webmention is not viable, never opening the composer', async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999004,
+		subscription_id: 1,
+		title: `E2E comment-redirect ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/post-999004/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999004/comment-target', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ method: 'redirect', url: 'https://example.invalid/post-999004/#respond' }),
+		});
+	});
+
+	// Never mocked: a redirect pre-check result must never reach the actual
+	// send endpoint at all — the composer that would call it never opens.
+	let commentPostAttempted = false;
+	await page.route('**/daymark/v1/subscription-posts/999004/comment', async (route) => {
+		commentPostAttempted = true;
+		await route.abort();
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999004"]');
+	await expect(card).toBeVisible();
+
+	const [popup] = await Promise.all([page.waitForEvent('popup'), card.locator('[data-comment-toggle]').click()]);
+	expect(popup.url()).toBe('https://example.invalid/post-999004/#respond');
+	await popup.close();
+
+	await expect(page.locator('[data-textprompt-input]')).toHaveCount(0);
+	expect(commentPostAttempted).toBe(false);
+});
+
+// Comment delivery failure (issue #317/#351): even when the pre-check
+// reports Webmention as viable (so the composer opens as normal), the
+// actual send can still fail — the destination site's own REST API refuses
+// anonymous comments, or nothing deliverable was discoverable there after
+// all. Daymark can't finish the job on the reader's behalf in that case
+// either, so it offers a real link straight to the origin post's own
+// comment form instead of a dead-end error message.
+test("comment delivery failure (after the pre-check said Webmention was viable) offers a link to the origin post's own comment form", async ({
+	page,
+}) => {
 	await loginAs(page);
 
 	const fakeItem = {
@@ -774,6 +848,14 @@ test("comment delivery failure offers a link to the origin post's own comment fo
 			status: 200,
 			contentType: 'application/json',
 			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999003/comment-target', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ method: 'webmention' }),
 		});
 	});
 

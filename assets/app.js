@@ -3609,27 +3609,94 @@
 		}
 	}
 
-	// The Comment toggle (issue #317) — replaces the old composer-based
-	// "Reply" action. Always opens TextPromptSheet to type a comment (no
-	// Skip: unlike Reblog, there's no sensible default comment text), then
-	// delivers it via the new REST action, which decides server-side
-	// whether to route it through Webmention or a native comment POST — see
-	// Daymark_Comment_Delivery's own docblock for the full mechanism. No
-	// optimistic UI flip here at all (unlike Like/Repost): a comment isn't
-	// a togglable per-user state, so there's nothing to flip before the
-	// request settles — only a brief confirmation once it does.
-	function toggleComment(screen, trigger) {
+	// The Comment toggle (issue #317; pre-check added as a #351 follow-up).
+	// Replaces the old composer-based "Reply" action. Checks first, via
+	// resolveCommentTarget(), whether Daymark can actually deliver a
+	// comment here at all (Webmention, the one path this can silently
+	// guarantee) *before* ever opening the composer — deliberately never
+	// opens it only to discover after the fact that delivery would have
+	// failed: typing a comment, having it fail to deliver, then having to
+	// retype the exact same comment on the origin site is precisely the
+	// frustrating, comment-abandoning experience this pre-check exists to
+	// avoid. When Webmention isn't viable, this skips the composer
+	// entirely and sends the reader straight to the origin's own comment
+	// form instead — no text ever entered in Daymark, so there's nothing
+	// to lose either way. No optimistic UI flip here at all (unlike
+	// Like/Repost): a comment isn't a togglable per-user state, so
+	// there's nothing to flip before the request settles — only a brief
+	// confirmation once it does.
+	async function toggleComment(screen, trigger) {
 		const id = trigger.getAttribute('data-comment-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		if (!id || !item) {
 			return;
 		}
+		trigger.setAttribute('aria-busy', 'true');
+		const target = await resolveCommentTarget(item, id);
+		trigger.removeAttribute('aria-busy');
+
+		if (!target || 'webmention' !== target.method) {
+			openCommentTargetDirectly(target, item, trigger);
+			return;
+		}
+
 		TextPromptSheet.show({
 			title: __('Comment', 'daymark'),
 			placeholder: __('Write a comment…', 'daymark'),
 			submitLabel: __('Send', 'daymark'),
 			opener: trigger,
 			onSubmit: (text) => sendComment(screen, trigger, id, text),
+		});
+	}
+
+	// Cached on the item itself (screen._bySubId already keeps it around
+	// for the lifetime of the current Timeline/Search/PostScreen render),
+	// so tapping the same post's Comment icon twice in one session costs
+	// one live check, not two — the server itself also caches the
+	// underlying origin fetch (Daymark_Comment_Delivery::discover_origin_signals()),
+	// so even a fresh reload of the same post is fast.
+	async function resolveCommentTarget(item, id) {
+		if (item.commentTarget) {
+			return item.commentTarget;
+		}
+		try {
+			const target = await apiGet('subscription-posts/' + id + '/comment-target');
+			item.commentTarget = target;
+			return target;
+		} catch (err) {
+			return null;
+		}
+	}
+
+	// Webmention isn't viable here — send the reader straight to the
+	// origin's own comment form instead of ever asking them to type into a
+	// composer Daymark already knows it can't deliver. Tries window.open()
+	// first: most browsers retain "user activation" for a short window
+	// after the tap that started this, so a fast pre-check (the common
+	// case, and cached after the first check on a given post) still opens
+	// the new tab immediately, with nothing further for the reader to do.
+	// window.open() returns null/undefined when a browser does block it
+	// (a slow origin fetch outlasting that window, or a stricter browser)
+	// — exactly the one case this falls back to CommentUndeliverableSheet's
+	// own real, user-clicked <a target="_blank">, which has no such
+	// restriction regardless of timing since the navigation itself is a
+	// genuine, trusted click.
+	function openCommentTargetDirectly(target, item, trigger) {
+		const url = (target && target.url) || (item.permalink ? commentAnchorUrl(item.permalink) : '');
+		if (!url) {
+			return;
+		}
+		if (window.open(url, '_blank', 'noopener')) {
+			return;
+		}
+		CommentUndeliverableSheet.show({
+			title: __('Comment directly on the original site', 'daymark'),
+			message: __(
+				"This site doesn't support delivering comments through Daymark. Open the post to leave your comment there instead.",
+				'daymark'
+			),
+			url,
+			opener: trigger,
 		});
 	}
 
@@ -3657,8 +3724,9 @@
 		} catch (err) {
 			if (item && item.permalink && COMMENT_UNDELIVERABLE_CODES.includes(err.code)) {
 				CommentUndeliverableSheet.show({
+					title: __("Couldn't deliver your comment", 'daymark'),
 					message: err.message || __("Couldn't send your comment.", 'daymark'),
-					permalink: item.permalink,
+					url: commentAnchorUrl(item.permalink),
 					opener: trigger,
 				});
 			} else {
@@ -6572,11 +6640,27 @@
 	// after the click that started it) — a real anchor's own native
 	// navigation has no such restriction, whichever way this sheet's own
 	// action is actually clicked.
+	// WordPress core's comment_form() template tag wraps the actual comment
+	// form in <div id="respond"> — the near-universal anchor id across
+	// themes (including Jetpack Comments, which replaces the form's own
+	// markup but keeps this wrapper) — so this is a reasonable best-effort
+	// jump-to-comment-section target with no extra fetch needed. A
+	// permalink that already carries its own fragment (unusual, but
+	// possible) is left alone rather than overwritten. Shared by
+	// CommentUndeliverableSheet's own post-send-failure path and
+	// toggleComment()'s pre-check redirect (the server already returns a
+	// ready-made URL for that path — see resolveCommentTarget() — but a
+	// stale cached one from before a permalink somehow changed falls back
+	// to this the same way).
+	function commentAnchorUrl(permalink) {
+		return permalink + (-1 === permalink.indexOf('#') ? '#respond' : '');
+	}
+
 	const CommentUndeliverableSheet = {
 		el: null,
 		opener: null,
 
-		show({ message, permalink, opener }) {
+		show({ title, message, url, opener }) {
 			this.opener = opener || null;
 			if (!this.el) {
 				this.el = document.createElement('div');
@@ -6584,28 +6668,17 @@
 				document.body.appendChild(this.el);
 			}
 			this.el.hidden = false;
-			// WordPress core's comment_form() template tag wraps the actual
-			// comment form in <div id="respond"> — the near-universal anchor
-			// id across themes (including Jetpack Comments, which replaces
-			// the form's own markup but keeps this wrapper) — so this is a
-			// reasonable best-effort jump-to-comment-section target with no
-			// extra fetch needed. A permalink that already carries its own
-			// fragment (unusual, but possible) is left alone rather than
-			// overwritten.
-			const openUrl = permalink + (-1 === permalink.indexOf('#') ? '#respond' : '');
 			this.el.innerHTML = `
 			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
 				__('Dismiss', 'daymark')
 			)}"></button>
 			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-commentfail-title">
-				<h2 class="daymark-sheet__title" id="daymark-commentfail-title" tabindex="-1">${esc(
-					__("Couldn't deliver your comment", 'daymark')
-				)}</h2>
+				<h2 class="daymark-sheet__title" id="daymark-commentfail-title" tabindex="-1">${esc(title)}</h2>
 				<div class="daymark-sheet__body">
 					<p>${esc(message)}</p>
 					<div class="daymark-sheet__actions">
 						<a class="daymark-btn daymark-btn--primary" href="${esc(
-							openUrl
+							url
 						)}" target="_blank" rel="noopener noreferrer" data-sheet-dismiss>${esc(
 				__('Open post to comment', 'daymark')
 			)}</a>

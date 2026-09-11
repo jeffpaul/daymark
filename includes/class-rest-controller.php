@@ -585,6 +585,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/comment-target',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_comment_target' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/bookmarks/(?P<id>\d+)',
 			array(
 				array(
@@ -2576,6 +2593,49 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'status'  => sanitize_key( (string) ( $result['status'] ?? '' ) ),
 				'message' => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
 				'mark_id' => absint( $result['mark_id'] ?? 0 ),
+			)
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/comment-target — a read-only
+	 * pre-check, called *before* the composer ever opens, so tapping Comment
+	 * can skip straight to the origin's own comment form when Daymark can't
+	 * deliver on the reader's behalf, rather than opening the composer, only
+	 * to discover that after a comment has already been typed (issue #351
+	 * follow-up: typing a comment, having delivery fail, then having to
+	 * retype the same comment on the origin site is exactly the frustrating,
+	 * comment-abandoning experience this pre-check exists to avoid).
+	 * Daymark_Comment_Delivery::resolve_comment_target() reuses the same
+	 * cached Webmention-endpoint discovery `deliver()` itself consults, so
+	 * an actual send right after this pre-check costs no second fetch.
+	 *
+	 * Shares ACTION_SUBSCRIPTION_POST_FETCH's rate-limit bucket rather than
+	 * a new one — the same outbound-fetch risk class as the oEmbed preview
+	 * endpoint above, not ACTION_SUBSCRIPTION_COMMENT's (this never attempts
+	 * to actually deliver anything).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_comment_target( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$id     = absint( $request->get_param( 'id' ) );
+		$target = Daymark_Comment_Delivery::resolve_comment_target( $id );
+
+		if ( is_wp_error( $target ) ) {
+			return $target;
+		}
+
+		return rest_ensure_response(
+			array(
+				'method' => sanitize_key( (string) ( $target['method'] ?? '' ) ),
+				'url'    => esc_url_raw( (string) ( $target['url'] ?? '' ) ),
 			)
 		);
 	}

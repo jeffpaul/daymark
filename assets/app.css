@@ -1132,6 +1132,16 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* Briefly shown while toggleComment()'s pre-check (issue #351 follow-up)
+   is deciding whether tapping Comment should open the composer or send the
+   reader straight to the origin site — a visible cue for what's otherwise
+   a silent network round trip, and pointer-events: none guards against a
+   second tap starting a duplicate check before the first one resolves. */
+.daymark-stat--comment[aria-busy='true'] {
+	opacity: 0.5;
+	pointer-events: none;
+}
+
 /* The "Refresh content" toggle (see renderRefreshContentToggle(), app.js)
    — PostScreen-only, appended as the ⋯ overflow menu's own trailing entry
    there (issue #326); replaces the old standalone "Refresh content"

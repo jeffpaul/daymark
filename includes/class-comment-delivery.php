@@ -74,6 +74,82 @@ class Daymark_Comment_Delivery {
 
 		$text = mb_substr( $text, 0, self::MAX_COMMENT_LENGTH );
 
+		$permalink = self::validate_subscription_permalink( $subscription_post_id );
+
+		if ( is_wp_error( $permalink ) ) {
+			return $permalink;
+		}
+
+		$signals = self::discover_origin_signals( $permalink );
+
+		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
+			return self::send_via_webmention( $permalink, $text );
+		}
+
+		if ( '' === $signals['rest_root'] || 0 === $signals['post_id'] ) {
+			return new WP_Error(
+				'daymark_comment_undeliverable',
+				__( "This post's site doesn't accept comments through its own API, and doesn't support Webmention either.", 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		return self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text );
+	}
+
+	/**
+	 * Determine, before any comment text exists, whether this post's
+	 * origin can receive a comment Daymark delivers on the reader's
+	 * behalf at all — the pre-check `GET .../comment-target` calls so the
+	 * Comment icon can skip Daymark's own composer entirely and go
+	 * straight to the origin's comment form when it can't (issue #351
+	 * follow-up). Only ever answers `webmention` (the one outcome this
+	 * class can silently guarantee) or `redirect` — deliberately never
+	 * predicts native REST delivery here: unlike Webmention discovery (a
+	 * safe, read-only `<head>`/`Link`-header check, already cached by
+	 * discover_origin_signals()), there's no safe way to know whether an
+	 * anonymous POST would succeed without either sending one for real
+	 * (risking a stray/duplicate comment) or accepting the exact
+	 * type-then-fail risk this pre-check exists to eliminate. In practice
+	 * this costs little real coverage: WordPress core's REST API declines
+	 * anonymous comment creation by default regardless of a site's own
+	 * `comment_registration` setting (see send_native_comment()'s own
+	 * docblock), so a site accepting one anonymously at all is already the
+	 * rare exception, not the case this pre-check needs to optimize for.
+	 *
+	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
+	 * @return array{method: string, url?: string}|WP_Error
+	 */
+	public static function resolve_comment_target( int $subscription_post_id ) {
+		$permalink = self::validate_subscription_permalink( $subscription_post_id );
+
+		if ( is_wp_error( $permalink ) ) {
+			return array(
+				'method' => 'redirect',
+				'url'    => '',
+			);
+		}
+
+		$signals = self::discover_origin_signals( $permalink );
+
+		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
+			return array( 'method' => 'webmention' );
+		}
+
+		return array(
+			'method' => 'redirect',
+			'url'    => self::comment_anchor_url( $permalink ),
+		);
+	}
+
+	/**
+	 * Shared post-lookup + permalink validation both deliver() and
+	 * resolve_comment_target() need before anything else.
+	 *
+	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
+	 * @return string|WP_Error The validated, SSRF-guard-checked permalink.
+	 */
+	private static function validate_subscription_permalink( int $subscription_post_id ) {
 		$post = get_post( $subscription_post_id );
 
 		if ( ! $post instanceof WP_Post || Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type ) {
@@ -95,21 +171,23 @@ class Daymark_Comment_Delivery {
 			);
 		}
 
-		$signals = self::discover_origin_signals( $permalink );
+		return $permalink;
+	}
 
-		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
-			return self::send_via_webmention( $permalink, $text );
-		}
-
-		if ( '' === $signals['rest_root'] || 0 === $signals['post_id'] ) {
-			return new WP_Error(
-				'daymark_comment_undeliverable',
-				__( "This post's site doesn't accept comments through its own API, and doesn't support Webmention either.", 'daymark' ),
-				array( 'status' => 422 )
-			);
-		}
-
-		return self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text );
+	/**
+	 * WordPress core's comment_form() template tag wraps the actual comment
+	 * form in `<div id="respond">` — a near-universal anchor id across
+	 * themes, including Jetpack Comments (which replaces the form's own
+	 * markup but keeps this wrapper) — so this is a reasonable best-effort
+	 * jump-to-comment-section target with no extra fetch needed. A
+	 * permalink that already carries its own fragment (unusual, but
+	 * possible) is left alone rather than overwritten.
+	 *
+	 * @param string $permalink Origin post permalink.
+	 * @return string
+	 */
+	private static function comment_anchor_url( string $permalink ): string {
+		return $permalink . ( false === strpos( $permalink, '#' ) ? '#respond' : '' );
 	}
 
 	/**
@@ -256,10 +334,47 @@ class Daymark_Comment_Delivery {
 	 * way to resolve a post's REST identity from its permalink page with no
 	 * slug-guessing needed).
 	 *
+	 * Cached by permalink via a transient (issue #351 follow-up) — both
+	 * deliver() and the resolve_comment_target() pre-check need this exact
+	 * same discovery, so tapping Comment (which now calls the pre-check
+	 * first) followed by actually sending costs one live fetch, not two. A
+	 * shorter TTL than the sibling oEmbed/Open Graph preview caches
+	 * (issues #279/#349, a day) is used deliberately: those gate a
+	 * decorative preview, this gates whether a real interaction (a
+	 * delivered comment) is even attempted, so staleness matters more here.
+	 * A failed/empty result is cached too, same as those siblings, so a
+	 * repeatedly-tapped Comment icon on an unreachable/slow site never
+	 * re-attempts the same fetch on every tap.
+	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
 	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int}
 	 */
 	private static function discover_origin_signals( string $permalink ): array {
+		$cache_key = 'daymark_comment_sig_' . md5( $permalink );
+		$cached    = get_transient( $cache_key );
+
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$result = self::fetch_origin_signals( $permalink );
+
+		set_transient(
+			$cache_key,
+			$result,
+			(int) apply_filters( 'daymark_subscription_comment_signals_cache_ttl', HOUR_IN_SECONDS )
+		);
+
+		return $result;
+	}
+
+	/**
+	 * The actual, uncached fetch discover_origin_signals() wraps.
+	 *
+	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int}
+	 */
+	private static function fetch_origin_signals( string $permalink ): array {
 		$empty = array(
 			'webmention_endpoint' => '',
 			'rest_root'           => '',
