@@ -50,6 +50,15 @@ final class Daymark_Plugin {
 	public Daymark_Syndication_Links $syndication_links;
 
 	/**
+	 * Hides a Like Mark's own auto-published post from the site's own
+	 * front end, feed, REST API, and sitemap — only its own permalink
+	 * stays reachable, for Webmention verification.
+	 *
+	 * @var Daymark_Like_Visibility
+	 */
+	public Daymark_Like_Visibility $like_visibility;
+
+	/**
 	 * POSSE-quality outbound microformats2 markup (h-entry, h-card, rel=me).
 	 *
 	 * @var Daymark_Microformats
@@ -224,6 +233,7 @@ final class Daymark_Plugin {
 		$this->notifications                = new Daymark_Notifications();
 		$this->bookmarks                    = new Daymark_Bookmarks();
 		$this->syndication_links            = new Daymark_Syndication_Links();
+		$this->like_visibility              = new Daymark_Like_Visibility();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
 		$this->rate_limiter                 = new Daymark_Rate_Limiter();
@@ -306,6 +316,7 @@ final class Daymark_Plugin {
 
 		$this->routes->register();
 		$this->syndication_links->register();
+		$this->like_visibility->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();

@@ -777,6 +777,112 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $post_id, '_daymark_like_of', true ) );
 	}
 
+	/**
+	 * A Like Mark never syndicates: no targets, no model defaults recorded —
+	 * even though the Note type's own model default (bluesky) is otherwise
+	 * always recorded for an ordinary note.
+	 */
+	public function test_like_of_never_syndicates() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
+		$this->assertSame( array(), $targets );
+
+		$defaults = json_decode( (string) get_post_meta( $post_id, '_daymark_default_destinations', true ), true );
+		$this->assertSame( array(), $defaults, 'A Like Mark must not even record the type model default.' );
+	}
+
+	/**
+	 * A Like Mark never syndicates even when the composer sends an explicit
+	 * destination selection alongside it (defense in depth — the client
+	 * never actually does this, but the server must not trust it either).
+	 */
+	public function test_like_of_never_syndicates_even_with_explicit_targets() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'             => 'Liked "A post somewhere"',
+				'primary_type'        => 'note',
+				'like_of'             => 'https://example.com/original-post/',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
+		$this->assertSame( array(), $targets );
+	}
+
+	/**
+	 * Publishing a Like Mark must never overwrite the user's own remembered
+	 * per-type destination preference for Note — the exact "explicit empty
+	 * is remembered too" hazard the Like/Repost engagement toggles' own
+	 * omit-targets-entirely client behavior already exists to avoid; this
+	 * confirms the server-side guard holds even if a caller sends targets.
+	 */
+	public function test_like_of_does_not_clobber_remembered_note_destination_prefs() {
+		$publisher = new Daymark_Publisher();
+
+		$publisher->publish(
+			array(
+				'caption'             => 'Remember me',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'mastodon' ),
+			)
+		);
+
+		$this->assertSame( array( 'mastodon' ), $publisher->get_effective_defaults( 'note' ) );
+
+		$publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame(
+			array( 'mastodon' ),
+			$publisher->get_effective_defaults( 'note' ),
+			'A Like Mark must never overwrite the real remembered Note preference.'
+		);
+	}
+
+	/**
+	 * An edit to an already-published Like Mark must not be able to make it
+	 * syndicate after the fact, even if the request explicitly sends
+	 * syndication_targets — checked against the post's own stored
+	 * _daymark_like_of meta, since an edit never resends like_of itself.
+	 */
+	public function test_update_cannot_make_a_like_mark_syndicate() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'             => 'Liked "A post somewhere"',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
+		$this->assertSame( array(), (array) $targets );
+	}
+
 	/** A long caption/transcript gets a reading-time estimate stored. */
 	public function test_long_caption_gets_reading_time_meta() {
 		$publisher = new Daymark_Publisher();
