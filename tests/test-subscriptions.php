@@ -806,6 +806,44 @@ XML;
 	}
 
 	/**
+	 * Scenario (issue #336): a site advertising per-language feeds via
+	 * hreflang autodiscovery has discover_candidates() tag the language
+	 * matching its own already-discovered feed candidate in place (never a
+	 * duplicate row for the same URL), and append a genuinely new candidate
+	 * for the other language's own, distinct feed.
+	 */
+	public function test_discover_candidates_tags_language_variants() {
+		$main_html = '<html><head><title>Multilingual</title>'
+			. '<link rel="alternate" type="application/rss+xml" href="https://multilingual.example/feed/">'
+			. '<link rel="alternate" hreflang="en" href="https://multilingual.example/">'
+			. '<link rel="alternate" hreflang="pt-br" href="https://multilingual.example/br/">'
+			. '</head><body></body></html>';
+
+		$alt_html = '<html><head><title>Multilingual (PT)</title>'
+			. '<link rel="alternate" type="application/rss+xml" href="https://multilingual.example/br/feed/">'
+			. '</head><body></body></html>';
+
+		$this->mock_response( 'https://multilingual.example/', $main_html );
+		$this->mock_response( 'https://multilingual.example/br/', $alt_html );
+
+		$candidates = $this->subscriptions->discover_candidates( 'https://multilingual.example/' );
+
+		$this->assertIsArray( $candidates );
+		$this->assertCount( 2, $candidates );
+
+		$by_url = array();
+
+		foreach ( $candidates as $candidate ) {
+			$by_url[ $candidate['url'] ] = $candidate;
+		}
+
+		$this->assertArrayHasKey( 'https://multilingual.example/feed/', $by_url );
+		$this->assertSame( 'en', $by_url['https://multilingual.example/feed/']['language'] );
+		$this->assertArrayHasKey( 'https://multilingual.example/br/feed/', $by_url );
+		$this->assertSame( 'pt-br', $by_url['https://multilingual.example/br/feed/']['language'] );
+	}
+
+	/**
 	 * Scenario (issue #334): most_optimal_candidate_index() ranks a
 	 * discovered candidate list by source_type richness — the WordPress
 	 * REST source beats a feed source beats a microformats source — for
@@ -866,6 +904,127 @@ XML;
 	/** Scenario: an empty candidate list has no "most optimal" index. */
 	public function test_most_optimal_candidate_index_returns_negative_one_for_empty_list() {
 		$this->assertSame( -1, Daymark_Subscriptions::most_optimal_candidate_index( array() ) );
+	}
+
+	// -----------------------------------------------------------------
+	// most_optimal_candidate_index()'s site-language preference (issue #336).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: a candidate whose `language` exactly matches this site's own
+	 * Settings -> General -> Site Language wins outright — even over a
+	 * richer source_type — since it's a stronger signal than plain richness
+	 * for which single feed to default-check.
+	 */
+	public function test_most_optimal_candidate_index_prefers_exact_site_locale_match() {
+		$filter = static fn() => 'pt_BR';
+		add_filter( 'locale', $filter );
+
+		$candidates = array(
+			array(
+				'url'         => 'https://rank-example.com/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'language'    => 'en',
+			),
+			array(
+				'url'         => 'https://rank-example.com/br/feed/',
+				'source_type' => 'feed',
+				'language'    => 'pt-br',
+			),
+		);
+
+		$index = Daymark_Subscriptions::most_optimal_candidate_index( $candidates );
+
+		remove_filter( 'locale', $filter );
+
+		$this->assertSame( 1, $index );
+	}
+
+	/**
+	 * Scenario: no candidate matches the site's own language exactly, but
+	 * one shares its primary language subtag with a different region — that
+	 * still beats an unrelated language, English included.
+	 */
+	public function test_most_optimal_candidate_index_prefers_same_subtag_different_region() {
+		$filter = static fn() => 'pt_BR';
+		add_filter( 'locale', $filter );
+
+		$candidates = array(
+			array(
+				'url'         => 'https://rank-example.com/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'language'    => 'en',
+			),
+			array(
+				'url'         => 'https://rank-example.com/pt/feed/',
+				'source_type' => 'feed',
+				'language'    => 'pt',
+			),
+		);
+
+		$index = Daymark_Subscriptions::most_optimal_candidate_index( $candidates );
+
+		remove_filter( 'locale', $filter );
+
+		$this->assertSame( 1, $index );
+	}
+
+	/**
+	 * Scenario: neither the site's own language nor its primary subtag is
+	 * present among the candidates — falls back to an English-tagged
+	 * candidate, even when it's not the richest source_type present.
+	 */
+	public function test_most_optimal_candidate_index_falls_back_to_english() {
+		$filter = static fn() => 'pt_BR';
+		add_filter( 'locale', $filter );
+
+		$candidates = array(
+			array(
+				'url'         => 'https://rank-example.com/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'language'    => 'fr',
+			),
+			array(
+				'url'         => 'https://rank-example.com/feed/',
+				'source_type' => 'feed',
+				'language'    => 'en',
+			),
+		);
+
+		$index = Daymark_Subscriptions::most_optimal_candidate_index( $candidates );
+
+		remove_filter( 'locale', $filter );
+
+		$this->assertSame( 1, $index );
+	}
+
+	/**
+	 * Scenario: nothing matches the site's own language, its primary
+	 * subtag, or English at all — falls all the way back to today's plain
+	 * richness ranking, same as when no candidate carries a `language` tag.
+	 */
+	public function test_most_optimal_candidate_index_falls_back_to_richness_when_nothing_matches() {
+		$filter = static fn() => 'pt_BR';
+		add_filter( 'locale', $filter );
+
+		$candidates = array(
+			array(
+				'url'         => 'https://rank-example.com/notes.h-feed/',
+				'source_type' => 'microformats',
+				'language'    => 'de',
+			),
+			array(
+				'url'         => 'https://rank-example.com/feed/',
+				'source_type' => 'feed',
+				'language'    => 'fr',
+			),
+		);
+
+		$index = Daymark_Subscriptions::most_optimal_candidate_index( $candidates );
+
+		remove_filter( 'locale', $filter );
+
+		$this->assertSame( 1, $index );
 	}
 
 	/**
