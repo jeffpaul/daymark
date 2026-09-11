@@ -358,17 +358,17 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		// The current candidate's own checkbox is disabled; the new,
-		// not-yet-subscribed one is not.
-		$current_pos  = strpos( $output, 'https://disabled-current-example.com/feed/' );
-		$new_pos      = strpos( $output, 'https://disabled-current-example.com/wp-json/wp/v2/posts' );
-		$disabled_pos = strpos( $output, 'disabled' );
+		// The current candidate's own checkbox (index 0) is disabled; the
+		// new, not-yet-subscribed one (index 1) is not — matched precisely
+		// by its own <input> tag rather than searching the whole page for
+		// the bare word "disabled", which can appear anywhere else too.
+		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="0"[^>]*\/>/s', $output, $current_input );
+		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="1"[^>]*\/>/s', $output, $new_input );
 
-		$this->assertIsInt( $current_pos );
-		$this->assertIsInt( $new_pos );
-		$this->assertIsInt( $disabled_pos );
-		$this->assertGreaterThan( $current_pos, $disabled_pos );
-		$this->assertLessThan( $new_pos, $disabled_pos );
+		$this->assertNotEmpty( $current_input, 'Expected to find the current candidate\'s checkbox markup.' );
+		$this->assertNotEmpty( $new_input, 'Expected to find the new candidate\'s checkbox markup.' );
+		$this->assertStringContainsString( 'disabled', $current_input[0] );
+		$this->assertStringNotContainsString( 'disabled', $new_input[0] );
 	}
 
 	/**
@@ -500,15 +500,16 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'name="daymark_site_url"', $output );
 
 		// The WordPress REST API candidate (index 1, the richest) is checked;
-		// the feed candidate (index 0) is not.
-		$feed_pos      = strpos( $output, 'value="0"' );
-		$wordpress_pos = strpos( $output, 'value="1"' );
-		$first_checked = strpos( $output, 'checked' );
+		// the feed candidate (index 0) is not — matched precisely by each
+		// candidate's own <input> tag rather than searching the whole page
+		// for the bare word "checked", which can appear elsewhere too.
+		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="0"[^>]*\/>/s', $output, $feed_input );
+		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="1"[^>]*\/>/s', $output, $wordpress_input );
 
-		$this->assertIsInt( $feed_pos );
-		$this->assertIsInt( $wordpress_pos );
-		$this->assertIsInt( $first_checked );
-		$this->assertGreaterThan( $wordpress_pos, $first_checked );
+		$this->assertNotEmpty( $feed_input, 'Expected to find the feed candidate\'s checkbox markup.' );
+		$this->assertNotEmpty( $wordpress_input, 'Expected to find the WordPress REST API candidate\'s checkbox markup.' );
+		$this->assertStringNotContainsString( 'checked', $feed_input[0] );
+		$this->assertStringContainsString( 'checked', $wordpress_input[0] );
 	}
 
 	/** Scenario: a candidate that's already subscribed (a previous partial attempt, or simply already followed) renders checked and disabled with "(already subscribed)", never "(current)" — there is no existing row yet in this context. */

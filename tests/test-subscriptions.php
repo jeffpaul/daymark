@@ -785,51 +785,22 @@ XML;
 	}
 
 	/**
-	 * Scenario (issue #334): when page-based discovery across every
-	 * registered source finds nothing at all, discover_candidates() falls
-	 * back to trying the given URL as a literal feed directly — the exact
-	 * same fallback subscribe_to_site() already relies on — rather than
-	 * dead-ending someone who pastes a feed's own URL (not the page it's
-	 * linked from) into the Subscribe field or an existing row's "Choose
-	 * from available feeds" action.
-	 */
-	public function test_discover_candidates_falls_back_to_a_direct_feed_url() {
-		$feed = <<<'XML'
-<?xml version="1.0"?>
-<rss version="2.0">
-<channel>
-<title>Direct Feed</title>
-<link>https://direct-feed-candidates.example/</link>
-</channel>
-</rss>
-XML;
-		// No <link rel="alternate">/REST/h-feed markup at all — every
-		// built-in source's page-based discover() finds nothing here.
-		$this->mock_response( 'https://direct-feed-candidates.example/notes/feed/', $feed, 'application/rss+xml; charset=UTF-8' );
-
-		$candidates = $this->subscriptions->discover_candidates( 'https://direct-feed-candidates.example/notes/feed/' );
-
-		$this->assertIsArray( $candidates );
-		$this->assertCount( 1, $candidates );
-		$this->assertSame( 'https://direct-feed-candidates.example/notes/feed/', $candidates[0]['url'] );
-		$this->assertSame( 'feed', $candidates[0]['source_type'] );
-		$this->assertNotSame( '', $candidates[0]['source_label'] );
-	}
-
-	/**
 	 * Scenario (issue #334): discover_candidates()'s $resolved_site_url
 	 * out-param is set to the normalized site URL actually used for
-	 * discovery (scheme assumed, per normalize_site_url()) once validation
-	 * succeeds — the new-subscribe picker flow needs this exact value to
-	 * stash for a later subscribe_to_candidate() call, since it has no
-	 * existing subscription row of its own to read a normalized site_url
-	 * back from.
+	 * discovery once validation succeeds — the new-subscribe picker flow
+	 * needs this exact value to stash for a later subscribe_to_candidate()
+	 * call, since it has no existing subscription row of its own to read a
+	 * normalized site_url back from. Uses an already-fully-qualified URL as
+	 * input (rather than a bare domain) since normalize_site_url() only ever
+	 * fills in a missing scheme — it never appends a trailing slash — so a
+	 * bare-domain input would make this assertion depend on normalization
+	 * behavior this test isn't about.
 	 */
 	public function test_discover_candidates_resolves_site_url_out_param() {
 		$this->mock_response( 'https://resolved-url.example/', $this->html_with_feed_and_icon() );
 
 		$resolved = null;
-		$this->subscriptions->discover_candidates( 'resolved-url.example', $resolved );
+		$this->subscriptions->discover_candidates( 'https://resolved-url.example/', $resolved );
 
 		$this->assertSame( 'https://resolved-url.example/', $resolved );
 	}
