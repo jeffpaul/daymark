@@ -739,6 +739,74 @@ test('subscription-post card meta line omits the post author', async ({ page }) 
 	await expect(card.locator('.daymark-recent__timestamprow')).toContainText('Example');
 });
 
+// Comment delivery failure (issue #351 follow-up): when the destination
+// site declines to accept the comment at all — its own REST API refuses
+// anonymous comments, or nothing deliverable was discoverable there —
+// Daymark can't finish the job on the reader's behalf, so it offers a real
+// link straight to the origin post's own comment form instead of a dead-end
+// error message.
+test("comment delivery failure offers a link to the origin post's own comment form", async ({ page }) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999003,
+		subscription_id: 1,
+		title: `E2E comment-undeliverable ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/post-999003/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([fakeItem]),
+		});
+	});
+
+	await page.route('**/daymark/v1/subscription-posts/999003/comment', async (route) => {
+		await route.fulfill({
+			status: 401,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				code: 'daymark_comment_requires_login',
+				message: "This site's own API doesn't accept comments from anonymous visitors.",
+			}),
+		});
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999003"]');
+	await expect(card).toBeVisible();
+	await card.locator('[data-comment-toggle]').click();
+
+	await page.locator('[data-textprompt-input]').fill('Great post!');
+	await page.locator('[data-textprompt-submit]').click();
+
+	const sheet = page.locator('.daymark-sheet__panel', { hasText: "Couldn't deliver your comment" });
+	await expect(sheet).toBeVisible();
+	const openLink = sheet.locator('a', { hasText: 'Open post to comment' });
+	await expect(openLink).toHaveAttribute('href', 'https://example.invalid/post-999003/#respond');
+	await expect(openLink).toHaveAttribute('target', '_blank');
+
+	await sheet.getByRole('button', { name: 'Close' }).click();
+	await expect(page.locator('.daymark-sheet__panel')).toHaveCount(0);
+});
+
 // Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
 // button on Home (Home is assumed to be the Timeline). Independent of the
 // cron schedule and separately rate-limited per subscription (15 minutes);

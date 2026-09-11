@@ -3633,23 +3633,37 @@
 		});
 	}
 
+	// Error codes Daymark_Comment_Delivery::deliver() returns when it
+	// genuinely couldn't deliver the comment on the author's behalf (as
+	// opposed to e.g. daymark_comment_rejected, where the origin's own
+	// message — "Comments are closed.", a spam rejection — already is the
+	// human-relevant reason and offering a link wouldn't help, since
+	// there's no comment form left to open there anyway).
+	const COMMENT_UNDELIVERABLE_CODES = ['daymark_comment_requires_login', 'daymark_comment_undeliverable'];
+
 	async function sendComment(screen, trigger, id, text) {
 		if (!text) {
 			return;
 		}
+		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		try {
 			const result = await apiPost('subscription-posts/' + id + '/comment', { text });
-			if ('webmention' === result.method && result.mark_id) {
+			if ('webmention' === result.method && result.mark_id && item) {
 				trigger.classList.add('daymark-stat--active');
-				const item = screen && screen._bySubId && screen._bySubId.get(id);
-				if (item) {
-					item.replied_mark_id = result.mark_id;
-				}
+				item.replied_mark_id = result.mark_id;
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 			maybeShowInteractionHint('comment', trigger);
 		} catch (err) {
-			showFlashBubble(trigger, err.message || __("Couldn't send your comment.", 'daymark'));
+			if (item && item.permalink && COMMENT_UNDELIVERABLE_CODES.includes(err.code)) {
+				CommentUndeliverableSheet.show({
+					message: err.message || __("Couldn't send your comment.", 'daymark'),
+					permalink: item.permalink,
+					opener: trigger,
+				});
+			} else {
+				showFlashBubble(trigger, err.message || __("Couldn't send your comment.", 'daymark'));
+			}
 		}
 	}
 
@@ -6537,6 +6551,95 @@
 			this.opener = null;
 			this.onSubmit = null;
 			this.onSkip = null;
+		},
+	};
+
+	// A comment couldn't be delivered on the author's behalf at all — either
+	// the destination site's own REST API declines anonymous comments
+	// (daymark_comment_requires_login), or nothing deliverable was
+	// discoverable there in the first place (daymark_comment_undeliverable).
+	// Rather than leave the author stuck, this offers a real link straight to
+	// the origin post's own comment form (issue #351 follow-up) — a genuine
+	// top-level browser navigation, deliberately not an embedded iframe: most
+	// WordPress sites (this one very much included, per the report that
+	// prompted this) send X-Frame-Options/CSP frame-ancestors headers that
+	// block being framed at all, so an iframe would just show a blank frame
+	// or the browser's own refused-to-connect page instead of the real form.
+	// A plain <a target="_blank"> also sidesteps a real technical constraint
+	// a JS `window.open()` call here wouldn't: browsers only honor
+	// script-triggered new-tab opens made synchronously inside a user
+	// gesture, and this fires from an async fetch's catch handler (well
+	// after the click that started it) — a real anchor's own native
+	// navigation has no such restriction, whichever way this sheet's own
+	// action is actually clicked.
+	const CommentUndeliverableSheet = {
+		el: null,
+		opener: null,
+
+		show({ message, permalink, opener }) {
+			this.opener = opener || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			// WordPress core's comment_form() template tag wraps the actual
+			// comment form in <div id="respond"> — the near-universal anchor
+			// id across themes (including Jetpack Comments, which replaces
+			// the form's own markup but keeps this wrapper) — so this is a
+			// reasonable best-effort jump-to-comment-section target with no
+			// extra fetch needed. A permalink that already carries its own
+			// fragment (unusual, but possible) is left alone rather than
+			// overwritten.
+			const openUrl = permalink + (-1 === permalink.indexOf('#') ? '#respond' : '');
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Dismiss', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-commentfail-title">
+				<h2 class="daymark-sheet__title" id="daymark-commentfail-title" tabindex="-1">${esc(
+					__("Couldn't deliver your comment", 'daymark')
+				)}</h2>
+				<div class="daymark-sheet__body">
+					<p>${esc(message)}</p>
+					<div class="daymark-sheet__actions">
+						<a class="daymark-btn daymark-btn--primary" href="${esc(
+							openUrl
+						)}" target="_blank" rel="noopener noreferrer" data-sheet-dismiss>${esc(
+				__('Open post to comment', 'daymark')
+			)}</a>
+						<button type="button" class="daymark-btn daymark-btn--text" data-sheet-dismiss>${esc(
+							__('Close', 'daymark')
+						)}</button>
+					</div>
+				</div>
+			</div>`;
+
+			this.el.querySelectorAll('[data-sheet-dismiss]').forEach((el) => el.addEventListener('click', () => this.hide()));
+			this.onKeydown = (event) => {
+				if ('Escape' === event.key) {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			this.el.querySelector('.daymark-sheet__title').focus();
+		},
+
+		hide() {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
 		},
 	};
 
