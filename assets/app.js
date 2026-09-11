@@ -3582,14 +3582,16 @@
 			}
 			return;
 		}
-		TextPromptSheet.show({
-			title: __('Reblog', 'daymark'),
-			placeholder: __('Add your own thoughts (optional)…', 'daymark'),
-			submitLabel: __('Reblog', 'daymark'),
-			skipLabel: __('Skip', 'daymark'),
-			opener: trigger,
-			onSubmit: (text) => publishRepost(trigger, item, text || ''),
-			onSkip: () => publishRepost(trigger, item, ''),
+		maybeShowInteractionHintThen('repost', trigger, () => {
+			TextPromptSheet.show({
+				title: __('Reblog', 'daymark'),
+				placeholder: __('Add your own thoughts (optional)…', 'daymark'),
+				submitLabel: __('Reblog', 'daymark'),
+				skipLabel: __('Skip', 'daymark'),
+				opener: trigger,
+				onSubmit: (text) => publishRepost(trigger, item, text || ''),
+				onSkip: () => publishRepost(trigger, item, ''),
+			});
 		});
 	}
 
@@ -3632,13 +3634,14 @@
 
 	// The actual Repost publish, shared by TextPromptSheet's Submit and
 	// Skip paths above — the only difference between them is which comment
-	// string this receives (empty on Skip).
+	// string this receives (empty on Skip). No hint call here (unlike the
+	// undo branch above): toggleRepost() already showed/marked it seen, via
+	// maybeShowInteractionHintThen(), before this compose step ever opened.
 	async function publishRepost(trigger, item, comment) {
 		setEngagementToggleState(trigger, 'repost', true, 0);
 		try {
 			const mark = await apiUpload('marks', buildRepostFormData(item, comment));
 			setEngagementToggleState(trigger, 'repost', true, mark.id);
-			maybeShowInteractionHint('repost', trigger);
 		} catch (err) {
 			setEngagementToggleState(trigger, 'repost', false, 0);
 		}
@@ -3666,21 +3669,23 @@
 		if (!id || !item) {
 			return;
 		}
-		trigger.setAttribute('aria-busy', 'true');
-		const target = await resolveCommentTarget(item, id);
-		trigger.removeAttribute('aria-busy');
+		maybeShowInteractionHintThen('comment', trigger, async () => {
+			trigger.setAttribute('aria-busy', 'true');
+			const target = await resolveCommentTarget(item, id);
+			trigger.removeAttribute('aria-busy');
 
-		if (!target || 'webmention' !== target.method) {
-			openCommentTargetDirectly(target, item, trigger);
-			return;
-		}
+			if (!target || 'webmention' !== target.method) {
+				openCommentTargetDirectly(target, item, trigger);
+				return;
+			}
 
-		TextPromptSheet.show({
-			title: __('Comment', 'daymark'),
-			placeholder: __('Write a comment…', 'daymark'),
-			submitLabel: __('Send', 'daymark'),
-			opener: trigger,
-			onSubmit: (text) => sendComment(screen, trigger, id, text),
+			TextPromptSheet.show({
+				title: __('Comment', 'daymark'),
+				placeholder: __('Write a comment…', 'daymark'),
+				submitLabel: __('Send', 'daymark'),
+				opener: trigger,
+				onSubmit: (text) => sendComment(screen, trigger, id, text),
+			});
 		});
 	}
 
@@ -3743,6 +3748,9 @@
 	// there's no comment form left to open there anyway).
 	const COMMENT_UNDELIVERABLE_CODES = ['daymark_comment_requires_login', 'daymark_comment_undeliverable'];
 
+	// No hint call here (issue #357): toggleComment() already showed/marked
+	// it seen, via maybeShowInteractionHintThen(), before the TextPromptSheet
+	// this is called from ever opened.
 	async function sendComment(screen, trigger, id, text) {
 		if (!text) {
 			return;
@@ -3755,7 +3763,6 @@
 				item.replied_mark_id = result.mark_id;
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
-			maybeShowInteractionHint('comment', trigger);
 		} catch (err) {
 			if (item && item.permalink && COMMENT_UNDELIVERABLE_CODES.includes(err.code)) {
 				CommentUndeliverableSheet.show({
@@ -6787,13 +6794,22 @@
 	// First-time explainer overlays for the shared interaction row's six
 	// icons (Like/Comment/Reblog/Bookmark/"Open original"/Share) — plain,
 	// elementary-school-level copy, one short overlay the first time each
-	// icon is actually used, never again after that. Shown *after* the
-	// underlying action already happened (matching this app's Optimistic
-	// publishing philosophy: nothing here ever gates or delays a tap), so
-	// every call site below fires this only on a successful outcome, never
-	// from a catch block. `localStorage` (per device, not per user) is the
-	// deliberate first cut — see CLAUDE.md's own decision row for why, and
-	// the tracked future-release issue for syncing this server-side instead.
+	// icon is actually used, never again after that. `localStorage` (per
+	// device, not per user) is the deliberate first cut — see CLAUDE.md's
+	// own decision row for why, and the tracked future-release issue for
+	// syncing this server-side instead.
+	//
+	// Two shapes, per issue #357. Like/Bookmark/"Open original"/Share act
+	// instantly with no further UI step, so their hint is shown *after* the
+	// action already happened (matching this app's Optimistic publishing
+	// philosophy: nothing here ever gates or delays a tap) via
+	// maybeShowInteractionHint(), called only on a successful outcome,
+	// never from a catch block. Comment/Reblog instead open a
+	// TextPromptSheet to compose something first — for those, a hint shown
+	// only after the reader has already typed and sent a comment/reblog is
+	// too late to introduce anything, so they use
+	// maybeShowInteractionHintThen() to show the hint (skipped once already
+	// seen) *before* that compose step, proceeding into it once dismissed.
 	const INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
 
 	const INTERACTION_HINTS = {
@@ -6862,15 +6878,30 @@
 		}
 	}
 
-	// Called after a successful Like/Comment/Reblog/Bookmark/"Open
-	// original"/Share action. A no-op every time after the first for a
-	// given `key`.
+	// Called after a successful Like/Bookmark/"Open original"/Share action.
+	// A no-op every time after the first for a given `key`.
 	function maybeShowInteractionHint(key, opener) {
 		if (hasSeenInteractionHint(key)) {
 			return;
 		}
 		markInteractionHintSeen(key);
 		InteractionHintSheet.show(key, opener);
+	}
+
+	// Comment/Reblog's own variant (issue #357): both open a further compose
+	// step (TextPromptSheet) rather than acting instantly, so their hint has
+	// to run *before* that step to actually introduce it — `callback` is
+	// exactly the "now open TextPromptSheet" continuation, invoked
+	// immediately when the hint's already been seen, or once the reader
+	// dismisses it (by any means — "Got it", the backdrop, or Escape; there's
+	// nothing here to cancel, only something to acknowledge) the first time.
+	function maybeShowInteractionHintThen(key, opener, callback) {
+		if (hasSeenInteractionHint(key)) {
+			callback();
+			return;
+		}
+		markInteractionHintSeen(key);
+		InteractionHintSheet.show(key, opener, callback);
 	}
 
 	// The overlay itself — the same `.daymark-sheet` backdrop+bottom-panel
@@ -6880,17 +6911,25 @@
 	// the reference (the Jetpack app's own first-bookmark explainer) in
 	// substance if not exact layout. Always a fresh, disposable element
 	// (unlike TextPromptSheet's reused one) since it never needs to hold
-	// input state between shows.
+	// input state between shows. `onDismiss` (issue #357) is the optional
+	// "proceed to the real interaction now" continuation
+	// maybeShowInteractionHintThen() passes for Comment/Reblog; every other
+	// caller omits it, since their hint has nothing waiting behind it.
 	const InteractionHintSheet = {
 		el: null,
 		opener: null,
+		onDismiss: null,
 
-		show(key, opener) {
+		show(key, opener, onDismiss) {
 			const hint = INTERACTION_HINTS[key];
 			if (!hint) {
+				if (onDismiss) {
+					onDismiss();
+				}
 				return;
 			}
 			this.opener = opener || null;
+			this.onDismiss = onDismiss || null;
 			if (!this.el) {
 				this.el = document.createElement('div');
 				this.el.className = 'daymark-sheet';
@@ -6942,6 +6981,11 @@
 				this.opener.focus();
 			}
 			this.opener = null;
+			const onDismiss = this.onDismiss;
+			this.onDismiss = null;
+			if (onDismiss) {
+				onDismiss();
+			}
 		},
 	};
 

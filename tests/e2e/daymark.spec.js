@@ -814,7 +814,16 @@ test('tapping Comment sends the reader straight to the origin post when Webmenti
 	const card = page.locator('[data-subpost="999004"]');
 	await expect(card).toBeVisible();
 
-	const [popup] = await Promise.all([page.waitForEvent('popup'), card.locator('[data-comment-toggle]').click()]);
+	await card.locator('[data-comment-toggle]').click();
+
+	// First-ever tap on the Comment icon shows its one-time explainer before
+	// anything else (issue #357) — dismissed via the backdrop, matching the
+	// Bookmark hint test above's own reasoning for why (Playwright's click
+	// stability checks are unreliable against "Got it" itself here).
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await expect(hint.locator('.daymark-hint-title')).toHaveText('Comment');
+	const [popup] = await Promise.all([page.waitForEvent('popup'), page.locator('[data-sheet-dismiss]').click()]);
 	await popup.waitForLoadState('domcontentloaded');
 	expect(popup.url()).toBe('https://example.invalid/post-999004/#respond');
 	await popup.close();
@@ -888,6 +897,12 @@ test("comment delivery failure (after the pre-check said Webmention was viable) 
 	const card = page.locator('[data-subpost="999003"]');
 	await expect(card).toBeVisible();
 	await card.locator('[data-comment-toggle]').click();
+
+	// Same first-ever-tap explainer as the redirect test above.
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await page.locator('[data-sheet-dismiss]').click();
+	await expect(hint).toBeHidden();
 
 	await page.locator('[data-textprompt-input]').fill('Great post!');
 	await page.locator('[data-textprompt-submit]').click();
