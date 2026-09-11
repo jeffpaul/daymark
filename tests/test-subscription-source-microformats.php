@@ -166,6 +166,38 @@ HTML;
 		$this->assertSame( 'standard', $normalized['post_format'] );
 	}
 
+	/** normalize() treats a p-summary that's just a leftover placeholder word (never replaced before publishing) the same as an empty one, falling back to e-content instead. */
+	public function test_normalize_falls_back_to_content_for_placeholder_summary() {
+		$normalized = $this->source->normalize(
+			array(
+				'name'         => 'A note',
+				'summary'      => 'Excerpt',
+				'content_html' => 'The real body text readers actually want.',
+				'photos'       => array(),
+				'videos'       => array(),
+				'audios'       => array(),
+			)
+		);
+
+		$this->assertSame( 'The real body text readers actually want.', $normalized['excerpt'] );
+	}
+
+	/** normalize() still trusts a genuinely short-but-real p-summary — brevity alone is never a placeholder signal. */
+	public function test_normalize_trusts_a_genuinely_short_summary() {
+		$normalized = $this->source->normalize(
+			array(
+				'name'         => 'A note',
+				'summary'      => 'Big news today.',
+				'content_html' => 'An entirely different, much longer body.',
+				'photos'       => array(),
+				'videos'       => array(),
+				'audios'       => array(),
+			)
+		);
+
+		$this->assertSame( 'Big news today.', $normalized['excerpt'] );
+	}
+
 	/**
 	 * A reply h-entry with no media of its own promotes to Daymark's `note`
 	 * post_format (issue #292) — the same "confirmed format, but only as a

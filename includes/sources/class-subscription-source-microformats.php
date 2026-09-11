@@ -234,7 +234,16 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 
 		$summary = (string) ( $raw_item['summary'] ?? '' );
 
-		if ( '' === trim( wp_strip_all_tags( $summary ) ) ) {
+		// Same placeholder guard the feed/WordPress/Friends sources apply to
+		// their own manual excerpt field — an explicit `p-summary` is just
+		// as capable of carrying a leftover reminder value ("Excerpt",
+		// never replaced before publishing) as a raw post_excerpt is; see
+		// Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt()'s
+		// own docblock.
+		if (
+			'' === trim( wp_strip_all_tags( $summary ) )
+			|| Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt( wp_strip_all_tags( $summary ) )
+		) {
 			$summary = (string) ( $raw_item['content_html'] ?? '' );
 		}
 

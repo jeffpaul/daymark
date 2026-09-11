@@ -114,6 +114,40 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
 	}
 
+	/** normalize() treats a cached post_excerpt that's just a leftover placeholder word (never replaced before publishing) the same as an empty one, falling back to the cached post's own content instead. */
+	public function test_normalize_falls_back_to_content_for_placeholder_excerpt() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'A note',
+				'content'      => 'The real body text readers actually want.',
+				'excerpt'      => 'Excerpt',
+				'permalink'    => 'https://jane.example/2024/a-note/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => '',
+			)
+		);
+
+		$this->assertSame( 'The real body text readers actually want.', $normalized['excerpt'] );
+	}
+
+	/** normalize() still trusts a genuinely short-but-real cached excerpt — brevity alone is never a placeholder signal. */
+	public function test_normalize_trusts_a_genuinely_short_manual_excerpt() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'        => 'A note',
+				'content'      => 'An entirely different, much longer body.',
+				'excerpt'      => 'Big news today.',
+				'permalink'    => 'https://jane.example/2024/a-note/',
+				'published_at' => '2024-03-05 10:00:00',
+				'author_name'  => 'Jane Doe',
+				'post_format'  => '',
+			)
+		);
+
+		$this->assertSame( 'Big news today.', $normalized['excerpt'] );
+	}
+
 	/** normalize()'s content-sniff fallback also recognizes video, matching Daymark_Subscription_Source_Feed's own richer sniffing, not just a lone image. */
 	public function test_normalize_sniffs_inline_video_without_structured_signals() {
 		$normalized = $this->source->normalize(

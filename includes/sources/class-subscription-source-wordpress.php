@@ -245,7 +245,16 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 
 		$excerpt_html = (string) ( $raw_item['excerpt']['rendered'] ?? '' );
 
-		if ( '' === trim( wp_strip_all_tags( $excerpt_html ) ) ) {
+		// A manual excerpt that's actually empty, or reads as a leftover
+		// placeholder value (e.g. "Excerpt" itself, never replaced before
+		// publishing — see Daymark_Subscription_Content_Sniffer::
+		// is_placeholder_excerpt()'s own docblock), tells a reader nothing;
+		// fall back to the post's real content the same way an empty one
+		// already does.
+		if (
+			'' === trim( wp_strip_all_tags( $excerpt_html ) )
+			|| Daymark_Subscription_Content_Sniffer::is_placeholder_excerpt( wp_strip_all_tags( $excerpt_html ) )
+		) {
 			$excerpt_html = (string) ( $raw_item['content']['rendered'] ?? '' );
 		}
 

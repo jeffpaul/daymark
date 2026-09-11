@@ -164,6 +164,32 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( array( 'https://jane.example/wp-content/uploads/photo.jpg' ), $normalized['raw_media'] );
 	}
 
+	/** normalize() treats a manual excerpt that's just a leftover placeholder word (never replaced before publishing) the same as an empty one, falling back to real content instead. */
+	public function test_normalize_falls_back_to_content_for_placeholder_excerpt() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Item' ),
+				'excerpt' => array( 'rendered' => '<p>Excerpt</p>' ),
+				'content' => array( 'rendered' => '<p>The real body text readers actually want.</p>' ),
+			)
+		);
+
+		$this->assertSame( 'The real body text readers actually want.', $normalized['excerpt'] );
+	}
+
+	/** normalize() still trusts a genuinely short-but-real manual excerpt — brevity alone is never a placeholder signal. */
+	public function test_normalize_trusts_a_genuinely_short_manual_excerpt() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Item' ),
+				'excerpt' => array( 'rendered' => '<p>Big news today.</p>' ),
+				'content' => array( 'rendered' => '<p>An entirely different, much longer body.</p>' ),
+			)
+		);
+
+		$this->assertSame( 'Big news today.', $normalized['excerpt'] );
+	}
+
 	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote) down to 'standard'. */
 	public function test_normalize_maps_unmapped_formats_to_standard() {
 		foreach ( array( 'aside', 'link', 'quote', 'standard', 'unknown-future-format' ) as $wp_format ) {
