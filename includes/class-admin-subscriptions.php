@@ -103,6 +103,16 @@ class Daymark_Admin_Subscriptions {
 	private const COUNT_QUERY_VAR = 'daymark_count';
 
 	/**
+	 * Query var carrying how many feeds a 'feeds_removed'/'feeds_updated'/
+	 * 'feeds_updated_pending' notice (issue #363) unsubscribed from —
+	 * COUNT_QUERY_VAR above already carries how many were *added* in the
+	 * same request, so a mixed add-and-remove submission needs both.
+	 *
+	 * @var string
+	 */
+	private const REMOVED_QUERY_VAR = 'daymark_removed';
+
+	/**
 	 * Query var carrying the subscriptions table's own search term (issue
 	 * #281) — `s`, matching the same name WP core's own list-table search
 	 * boxes already use, rather than a `daymark_`-prefixed one, since this
@@ -158,7 +168,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscription_discover_sources', array( $this, 'handle_discover_sources' ) );
 		add_action( 'admin_post_daymark_subscription_discover_sources_dismiss', array( $this, 'handle_discover_sources_dismiss' ) );
-		add_action( 'admin_post_daymark_subscription_add_feeds', array( $this, 'handle_subscription_add_feeds' ) );
+		add_action( 'admin_post_daymark_subscription_update_feeds', array( $this, 'handle_subscription_update_feeds' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
@@ -492,6 +502,18 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		if ( 'feeds_removed' === $notice ) {
+			$this->render_feeds_removed_notice();
+
+			return;
+		}
+
+		if ( 'feeds_updated' === $notice || 'feeds_updated_pending' === $notice ) {
+			$this->render_feeds_updated_notice( $notice );
+
+			return;
+		}
+
 		$success_messages = array(
 			'unsubscribed'        => __( 'Unsubscribed.', 'daymark' ),
 			'refreshed'           => __( 'Refresh requested.', 'daymark' ),
@@ -499,6 +521,7 @@ class Daymark_Admin_Subscriptions {
 			'title_updated'       => __( 'Site name updated.', 'daymark' ),
 			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
 			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
+			'feeds_unchanged'     => __( 'No changes made to this site\'s feeds.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -524,6 +547,21 @@ class Daymark_Admin_Subscriptions {
 	private function resolve_notice_count(): int {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
 		return isset( $_GET[ self::COUNT_QUERY_VAR ] ) ? max( 1, absint( wp_unslash( $_GET[ self::COUNT_QUERY_VAR ] ) ) ) : 1; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
+	}
+
+	/**
+	 * Read this screen's own `daymark_removed` redirect-status query var
+	 * (issue #363) — how many existing subscriptions a
+	 * 'feeds_removed'/'feeds_updated'/'feeds_updated_pending' notice actually
+	 * unsubscribed. Same read-only, no-nonce reasoning as resolve_notice_count()
+	 * above; always at least 1, since every notice that reads this is only
+	 * ever set after reconcile_selected_candidates() actually removed something.
+	 *
+	 * @return int
+	 */
+	private function resolve_notice_removed_count(): int {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
+		return isset( $_GET[ self::REMOVED_QUERY_VAR ] ) ? max( 1, absint( wp_unslash( $_GET[ self::REMOVED_QUERY_VAR ] ) ) ) : 1; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
 	}
 
 	/**
@@ -596,6 +634,70 @@ class Daymark_Admin_Subscriptions {
 		} else {
 			$message = __( 'Added a feed. New posts from it will start appearing in the Timeline.', 'daymark' );
 		}
+
+		printf(
+			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+			esc_html( $message )
+		);
+	}
+
+	/**
+	 * Render a pure-removal "Update feeds" success notice (issue #363,
+	 * 'feeds_removed') — unchecking one or more already-subscribed
+	 * candidates with nothing new checked. Uses `_n()` properly (both forms
+	 * carry the same `%d`) since, unlike render_subscribed_notice()'s own
+	 * legacy singular copy, there's no pre-existing unpluralized string this
+	 * has to preserve.
+	 *
+	 * @return void
+	 */
+	private function render_feeds_removed_notice(): void {
+		$count = $this->resolve_notice_removed_count();
+
+		$message = sprintf(
+			/* translators: %d: number of feeds removed. */
+			_n(
+				'Removed %d feed — its previously loaded posts have been removed too.',
+				'Removed %d feeds — their previously loaded posts have been removed too.',
+				$count,
+				'daymark'
+			),
+			$count
+		);
+
+		printf(
+			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+			esc_html( $message )
+		);
+	}
+
+	/**
+	 * Render a mixed add-and-remove "Update feeds" success notice (issue
+	 * #363, 'feeds_updated'/'feeds_updated_pending') — at least one
+	 * candidate was newly checked and at least one was newly unchecked in
+	 * the same submission, i.e. an actual feed switch. Two independent
+	 * counts in one sentence isn't a good `_n()` fit, so this always uses
+	 * the plural-shaped wording regardless of either count — "added 1 feeds"
+	 * reads slightly odd but stays unambiguous, and a mixed add-and-remove
+	 * of exactly one each is the least common shape of this notice anyway.
+	 *
+	 * @param string $notice 'feeds_updated' or 'feeds_updated_pending'.
+	 * @return void
+	 */
+	private function render_feeds_updated_notice( string $notice ): void {
+		$added   = $this->resolve_notice_count();
+		$removed = $this->resolve_notice_removed_count();
+		$pending = 'feeds_updated_pending' === $notice;
+
+		$message = sprintf(
+			$pending
+				/* translators: 1: number of feeds added, whose first fetch didn't complete. 2: number of feeds removed. */
+				? __( 'Updated this site\'s feeds: added %1$d (their first fetch didn\'t complete — new posts will appear once the next automatic check succeeds), removed %2$d — the removed feeds\' previously loaded posts have been removed too.', 'daymark' )
+				/* translators: 1: number of feeds added. 2: number of feeds removed. */
+				: __( 'Updated this site\'s feeds: added %1$d, removed %2$d — the removed feeds\' previously loaded posts have been removed too.', 'daymark' ),
+			$added,
+			$removed
+		);
 
 		printf(
 			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
@@ -801,21 +903,20 @@ class Daymark_Admin_Subscriptions {
 	 * from available feeds" picker below (issue #334), so the two flows can
 	 * never render a candidate differently.
 	 *
-	 * Every checkbox shares the input name `daymark_candidate_index[]`. A
-	 * candidate already subscribed to — this row's own current feed_url
-	 * (`$current_feed_url`), or a different existing subscription to the
-	 * same URL — renders checked and `disabled`, which is deliberately not
-	 * just decoration: a disabled input cannot be unchecked through the UI
-	 * at all, so there is no way to "unsubscribe by unchecking" through this
-	 * picker — the dedicated Unsubscribe action (with its own confirm
-	 * dialog) stays the only way to actually remove a subscription. A
-	 * disabled checkbox is also never included in a form submission at all
-	 * (standard HTML behavior), so both handlers that read
-	 * `daymark_candidate_index[]` back can trust every posted index is for a
-	 * candidate this call actually left
-	 * selectable, with no second "is this already subscribed" check needed
-	 * server-side beyond subscribe_to_candidate()'s own create()-level
-	 * duplicate guard (a defensive backstop, not the primary guard).
+	 * Every checkbox shares the input name `daymark_candidate_index[]` and,
+	 * as of issue #363, is freely toggleable — including a candidate already
+	 * subscribed to (this row's own current feed_url, `$current_feed_url`,
+	 * or a different existing subscription to the same URL), which renders
+	 * checked but no longer `disabled`. In the existing-row "Update feeds"
+	 * context (render_source_picker()), unchecking one of these and
+	 * submitting is what lets reconcile_selected_candidates() unsubscribe
+	 * it. In the brand-new-site context ($current_feed_url === ''), a
+	 * checked-but-already-subscribed-elsewhere candidate is harmless either
+	 * way — subscribe_to_selected_candidates() already silently skips a
+	 * pick that turns out to be a duplicate by the time it runs, the same
+	 * tolerance it already extends to a same-request race. The
+	 * "(current)"/"(already subscribed)" labels below are informational
+	 * only now, not a statement that the box can't be changed.
 	 *
 	 * @param array<int, array<string, mixed>> $candidates          Stashed
 	 *                                                                discover_candidates()
@@ -889,7 +990,6 @@ class Daymark_Admin_Subscriptions {
 					name="daymark_candidate_index[]"
 					value="<?php echo esc_attr( (string) $index ); ?>"
 					<?php checked( $checked ); ?>
-					<?php disabled( $already ); ?>
 				/>
 				<strong>
 					<?php echo esc_html( $source_label ); ?>
@@ -1533,14 +1633,16 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * Render one subscription's "Choose from available feeds" / candidate-
-	 * picker control (issue #307; renamed and reworked from a single-choice
-	 * "Check for other feeds" switch to an additive multi-select picker in
-	 * issue #334) — lets a person add another feed from the same site
-	 * alongside this subscription (most usefully when Daymark's automatic
-	 * pick turns out to be the wrong one for that site — e.g. a WordPress
-	 * REST API mixing multiple languages together, where the site's own
-	 * RSS/Atom feed would have been correctly scoped — so the correctly-
-	 * scoped one can be added without unsubscribing first).
+	 * picker control. Originally issue #307's single-choice "Check for other
+	 * feeds" switch; reworked to an additive multi-select picker in issue
+	 * #334; reworked again in issue #363 so unchecking an already-subscribed
+	 * candidate unsubscribes it. Lets a person add another feed from the
+	 * same site alongside this subscription, or replace this one with a
+	 * differently-scoped one in the same submission (most usefully when
+	 * Daymark's automatic pick turns out to be the wrong one for that site —
+	 * e.g. a WordPress REST API mixing multiple languages together, where
+	 * the site's own language-scoped RSS/Atom feed would have been correctly
+	 * scoped).
 	 *
 	 * Step one is a plain trigger — clicking it runs a fresh discovery pass
 	 * (Daymark_Subscriptions::discover_candidates()) and stashes the result
@@ -1548,16 +1650,12 @@ class Daymark_Admin_Subscriptions {
 	 * POST-redirect-GET-survives-via-transient convention the OPML import
 	 * results already use), then redirects back. Step two only renders once
 	 * that transient exists for this exact subscription: a checkbox picker
-	 * listing every discovered candidate, from which checking one or more
-	 * not-yet-subscribed candidates creates a new subscription for each
-	 * (Daymark_Subscriptions::subscribe_to_candidate()) — this row's own
-	 * feed stays exactly as it is either way; see
-	 * render_candidate_checkboxes()'s own docblock for why unchecking it
-	 * does nothing (the dedicated Unsubscribe action remains the only way to
-	 * actually remove a subscription). Deliberately not run automatically on
-	 * every page load — discovery is a live outbound fetch, and doing it for
-	 * every row of a subscriptions table on every visit would be its own
-	 * real cost for something most rows will never need.
+	 * listing every discovered candidate, reconciled on submit against
+	 * what's actually subscribed right now — see reconcile_selected_candidates().
+	 * Deliberately not run automatically on every page load — discovery is a
+	 * live outbound fetch, and doing it for every row of a subscriptions
+	 * table on every visit would be its own real cost for something most
+	 * rows will never need.
 	 *
 	 * @param int    $id       Subscription ID.
 	 * @param string $site_url The subscription's own site_url — discovery
@@ -1589,15 +1687,16 @@ class Daymark_Admin_Subscriptions {
 	 * Render the candidate picker itself, once a discovery pass has stashed
 	 * results for this subscription (see render_source_switch_control()).
 	 *
-	 * Checkboxes, not radios (issue #334): this row's own current feed_url
-	 * renders checked and disabled ("current") — leaving it alone rather
-	 * than an editable, uncheckable selection, since unchecking it would do
-	 * nothing anyway (see render_candidate_checkboxes()'s own docblock) —
-	 * and any other already-subscribed candidate (a different row following
-	 * the same URL) renders the same way ("already subscribed"). Submitting
-	 * with nothing new checked is a harmless no-op. A "Discard" action clears
-	 * the stashed transient without adding anything, for a person who only
-	 * wanted to look.
+	 * Every candidate — including this row's own current feed_url and any
+	 * other already-subscribed candidate — is a plain, freely-toggleable
+	 * checkbox (issue #363; previously `checked disabled`, issue #334):
+	 * unchecking an already-subscribed candidate and submitting unsubscribes
+	 * it (purging its cached content), while checking a not-yet-subscribed
+	 * one subscribes to it — see reconcile_selected_candidates(). The
+	 * "(current)"/"(already subscribed)" labels are informational only now.
+	 * Submitting with nothing changed is a harmless no-op. A "Discard" action
+	 * clears the stashed transient without changing anything, for a person
+	 * who only wanted to look.
 	 *
 	 * @param int                              $id               Subscription ID.
 	 * @param array<int, array<string, mixed>> $candidates       Stashed discover_candidates() result.
@@ -1607,14 +1706,14 @@ class Daymark_Admin_Subscriptions {
 	private function render_source_picker( int $id, array $candidates, string $current_feed_url ): void {
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_subscription_add_feeds" />
+			<input type="hidden" name="action" value="daymark_subscription_update_feeds" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
-			<?php wp_nonce_field( 'daymark_subscription_add_feeds_' . $id, 'daymark_subscription_add_feeds_nonce' ); ?>
+			<?php wp_nonce_field( 'daymark_subscription_update_feeds_' . $id, 'daymark_subscription_update_feeds_nonce' ); ?>
 			<fieldset>
 				<legend><strong><?php esc_html_e( 'Feeds found for this site:', 'daymark' ); ?></strong></legend>
 				<?php $this->render_candidate_checkboxes( $candidates, $current_feed_url, false ); ?>
 			</fieldset>
-			<?php submit_button( __( 'Add selected feeds', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
+			<?php submit_button( __( 'Update feeds', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
 		</form>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
 			<input type="hidden" name="action" value="daymark_subscription_discover_sources_dismiss" />
@@ -2279,11 +2378,13 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * Subscribe to every selected, not-already-subscribed candidate in a
-	 * discover_candidates() result — the shared tail of
-	 * handle_subscribe_confirm() (a brand-new site) and
-	 * handle_subscription_add_feeds() (an existing subscription's own "Add
-	 * selected feeds" action), both of which otherwise only differ in where
-	 * their stashed candidates/site_url come from (issue #334).
+	 * discover_candidates() result — originally the shared tail of both the
+	 * brand-new-site flow and an existing subscription's own feed picker
+	 * (issue #334); as of issue #363 the existing-row picker can also
+	 * *remove* a feed by unchecking it, which this method has no concept of
+	 * (a fresh site has no existing subscription to remove one from) — see
+	 * reconcile_selected_candidates() for that flow instead. Used only by
+	 * handle_subscribe_confirm() now.
 	 *
 	 * A candidate a caller selected that turns out to already be subscribed
 	 * by the time this runs (a race between two requests, most plausibly) is
@@ -2566,33 +2667,32 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * Handle the source-picker form's "Add selected feeds" submit
-	 * (admin_post_daymark_subscription_add_feeds — renamed and reworked from
-	 * a single-choice "Switch"/switch_source() in-place replace to an
-	 * additive multi-select subscribe in issue #334): reads the checked
+	 * Handle the source-picker form's "Update feeds" submit
+	 * (admin_post_daymark_subscription_update_feeds — issue #363; renamed
+	 * and reworked again from the additive-only "Add selected feeds" issue
+	 * #334 introduced, itself a rework of the original single-choice
+	 * "Switch"/switch_source() issue #307 shipped): reads the checked
 	 * `daymark_candidate_index[]` values back out of this subscription's own
 	 * stashed discover_candidates() result (never a raw posted URL, the same
 	 * "trust only what discover_candidates() itself just produced" posture
-	 * subscribe_to_candidate()'s own docblock establishes), and creates one
-	 * new subscription per selected, not-already-subscribed candidate. This
-	 * row's own current feed_url is never touched — see
-	 * render_candidate_checkboxes()'s own docblock for why it can't be
-	 * unchecked through this picker at all.
+	 * subscribe_to_candidate()'s own docblock establishes) and reconciles
+	 * them against what's actually subscribed right now — see
+	 * reconcile_selected_candidates().
 	 *
-	 * Rate limited the same as discovering itself: subscribing to the
-	 * selected candidates also performs real outbound requests (per-candidate
-	 * favicon lookups, the best-effort immediate poll below).
+	 * Rate limited the same as discovering itself: reconciling can perform
+	 * real outbound requests (per-candidate favicon lookups, the best-effort
+	 * immediate poll for a newly-added feed).
 	 *
 	 * @return void
 	 */
-	public function handle_subscription_add_feeds(): void {
+	public function handle_subscription_update_feeds(): void {
 		if ( ! current_user_can( self::CAPABILITY ) ) {
 			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
 		}
 
 		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
 
-		check_admin_referer( 'daymark_subscription_add_feeds_' . $id, 'daymark_subscription_add_feeds_nonce' );
+		check_admin_referer( 'daymark_subscription_update_feeds_' . $id, 'daymark_subscription_update_feeds_nonce' );
 
 		$transient_key = self::subscription_sources_transient_key( $id );
 		$stashed       = get_transient( $transient_key );
@@ -2618,12 +2718,6 @@ class Daymark_Admin_Subscriptions {
 			? array_map( 'absint', wp_unslash( $_POST['daymark_candidate_index'] ) )
 			: array();
 
-		if ( empty( $indices ) ) {
-			$this->redirect_with_error( __( 'Please choose at least one feed to add.', 'daymark' ) );
-
-			return;
-		}
-
 		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
 
 		if ( is_wp_error( $rate ) ) {
@@ -2633,20 +2727,153 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$site_url = (string) ( $subscription['site_url'] ?? '' );
-		$outcome  = $this->subscribe_to_selected_candidates( $site_url, $stashed['candidates'], $indices );
-
-		if ( 0 === $outcome['added'] ) {
-			$this->redirect_with_error( __( 'Those feeds could not be added — they may already be subscribed.', 'daymark' ) );
-
-			return;
-		}
+		$outcome  = $this->reconcile_selected_candidates( $site_url, $stashed['candidates'], $indices );
 
 		$this->redirect(
 			array(
-				self::NOTICE_QUERY_VAR => $outcome['pending'] > 0 ? 'feeds_added_pending' : 'feeds_added',
-				self::COUNT_QUERY_VAR  => (string) $outcome['added'],
+				self::NOTICE_QUERY_VAR  => $this->resolve_update_feeds_notice( $outcome ),
+				self::COUNT_QUERY_VAR   => (string) $outcome['added'],
+				self::REMOVED_QUERY_VAR => (string) $outcome['removed'],
 			)
 		);
+	}
+
+	/**
+	 * Reconcile a subscription's own "Choose from available feeds" picker
+	 * submission (issue #363) against what's actually subscribed right now:
+	 * a checked candidate not yet subscribed to gets subscribed (with the
+	 * same best-effort immediate poll subscribe_to_selected_candidates()
+	 * already gives a new pick); an unchecked candidate that *is* currently
+	 * subscribed gets unsubscribed — which, via
+	 * Daymark_Subscriptions::unsubscribe(), immediately trashes every
+	 * `daymark_subscription_post` it already ingested, exactly the "old
+	 * content goes away" half of a feed switch. Everything else (checked and
+	 * already subscribed, or unchecked and never subscribed) is a no-op.
+	 *
+	 * Re-resolves "is this candidate currently subscribed" via
+	 * Daymark_Subscriptions::get_by_feed_url() at submit time rather than
+	 * trusting the picker's own stashed "(current)"/"(already subscribed)"
+	 * labels, which could be several minutes stale by the time this runs.
+	 * Every candidate here was itself produced by a live discover_candidates()
+	 * call against this exact site_url, so a feed_url match here can only
+	 * ever be a subscription that actually follows this site — there is no
+	 * way for this to reach into an unrelated site's own subscription.
+	 *
+	 * @param string                           $site_url   Site URL the candidates were discovered from.
+	 * @param array<int, array<string, mixed>> $candidates The full stashed
+	 *                                                       discover_candidates()
+	 *                                                       result — every
+	 *                                                       one is checked
+	 *                                                       against
+	 *                                                       `$indices`, not
+	 *                                                       just the ones a
+	 *                                                       person selected,
+	 *                                                       since an
+	 *                                                       already-subscribed
+	 *                                                       candidate absent
+	 *                                                       from `$indices`
+	 *                                                       is exactly what
+	 *                                                       signals a removal.
+	 * @param int[]                            $indices    The candidate
+	 *                                                      indices a person
+	 *                                                      left checked.
+	 * @return array{added: int, pending: int, removed: int} `added`/`pending`
+	 *                                                        match
+	 *                                                        subscribe_to_selected_candidates();
+	 *                                                        `removed` is how
+	 *                                                        many existing
+	 *                                                        subscriptions
+	 *                                                        were unsubscribed.
+	 */
+	private function reconcile_selected_candidates( string $site_url, array $candidates, array $indices ): array {
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$poller        = Daymark_Plugin::instance()->subscription_poller;
+		$added         = 0;
+		$pending       = 0;
+		$removed       = 0;
+
+		foreach ( $candidates as $index => $candidate ) {
+			if ( ! is_array( $candidate ) ) {
+				continue;
+			}
+
+			$feed_url = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
+
+			if ( '' === $feed_url ) {
+				continue;
+			}
+
+			$existing = $subscriptions->get_by_feed_url( $feed_url );
+			$checked  = in_array( $index, $indices, true );
+
+			if ( $checked ) {
+				if ( null !== $existing ) {
+					continue; // Already subscribed and still checked — no-op.
+				}
+
+				$result = $subscriptions->subscribe_to_candidate( $site_url, $candidate );
+
+				if ( is_wp_error( $result ) ) {
+					continue;
+				}
+
+				++$added;
+
+				// Best-effort immediate poll, matching subscribe_to_selected_candidates()'s
+				// own "don't make them wait for the next scheduled check"
+				// behavior — a failure here doesn't change the outcome, the
+				// next scheduled poll keeps trying.
+				if ( is_wp_error( $poller->manual_refresh( (int) $result ) ) ) {
+					++$pending;
+				}
+
+				continue;
+			}
+
+			if ( null === $existing ) {
+				continue; // Never subscribed and still unchecked — no-op.
+			}
+
+			$subscriptions->unsubscribe( (int) $existing['id'] );
+			++$removed;
+		}
+
+		return array(
+			'added'   => $added,
+			'pending' => $pending,
+			'removed' => $removed,
+		);
+	}
+
+	/**
+	 * Map a reconcile_selected_candidates() outcome to the right
+	 * render_notice() key (issue #363) — a pure add keeps the exact
+	 * pre-existing 'feeds_added'/'feeds_added_pending' copy/behavior
+	 * unchanged; a pure remove, a mixed add-and-remove, and a genuine no-op
+	 * each get their own distinct copy instead of overloading one message
+	 * for all four shapes.
+	 *
+	 * @param array{added: int, pending: int, removed: int} $outcome reconcile_selected_candidates()'s result.
+	 * @return string A render_notice()-recognized notice key.
+	 */
+	private function resolve_update_feeds_notice( array $outcome ): string {
+		$added   = $outcome['added'];
+		$pending = $outcome['pending'];
+		$removed = $outcome['removed'];
+
+		if ( 0 === $added && 0 === $removed ) {
+			return 'feeds_unchanged';
+		}
+
+		if ( 0 === $removed ) {
+			return $pending > 0 ? 'feeds_added_pending' : 'feeds_added';
+		}
+
+		if ( 0 === $added ) {
+			return 'feeds_removed';
+		}
+
+		return $pending > 0 ? 'feeds_updated_pending' : 'feeds_updated';
 	}
 
 	/**

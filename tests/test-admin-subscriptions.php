@@ -62,6 +62,37 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		// set_up() resets Daymark_Subscription_Html_Cache (issue #137).
 		wp_dequeue_script( 'daymark-admin-subscriptions' );
 		wp_deregister_script( 'daymark-admin-subscriptions' );
+
+		// reconcile_selected_candidates() (issue #363) genuinely calls
+		// subscribe_to_candidate()/manual_refresh(), which both make real
+		// outbound requests — block them the same way
+		// tests/test-subscriptions.php does, rather than hitting the network
+		// or an unmocked-request fatal. Their enrichment/poll steps are
+		// documented best-effort (failure never blocks the subscribe/reconcile
+		// outcome), so a blocked request here just means those tests exercise
+		// the "poll failed" (pending) path, which is itself worth covering.
+		add_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10, 3 );
+	}
+
+	public function tear_down(): void {
+		remove_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10 );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * Blocks every HTTP request made in this file with a WP_Error, matching
+	 * tests/test-subscriptions.php's own approach — this file never needs a
+	 * real or canned response, only for the request to fail predictably and
+	 * fast rather than reach the network.
+	 *
+	 * @param mixed  $preempt     Existing short-circuit value.
+	 * @param array  $parsed_args Request args (unused).
+	 * @param string $url         Requested URL (unused).
+	 * @return WP_Error
+	 */
+	public function block_http_request( $preempt, $parsed_args, $url ) {
+		return new WP_Error( 'daymark_test_http_blocked', 'Unmocked HTTP request blocked in test: ' . $url );
 	}
 
 	/**
@@ -252,7 +283,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	// -----------------------------------------------------------------
 	// "Choose from available feeds" / candidate picker (issue #307,
 	// renamed from "Check for other feeds" and reworked from radios to
-	// checkboxes in issue #334).
+	// checkboxes in issue #334; reworked again in issue #363 so an
+	// already-subscribed candidate can be unchecked to unsubscribe it).
 	// -----------------------------------------------------------------
 
 	/** Scenario: with nothing stashed yet, a subscription's row shows the plain "Choose from available feeds" trigger, not a picker. */
@@ -277,8 +309,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * handle_discover_sources() would have written), the row shows the
 	 * candidate picker instead of the plain trigger — each option labeled with
 	 * its source, as a checkbox rather than a radio (issue #334), the
-	 * currently active feed_url checked and marked "(current)", and an "Add
-	 * selected feeds" action.
+	 * currently active feed_url checked and marked "(current)", and an
+	 * "Update feeds" action (issue #363; "Add selected feeds" before that).
 	 */
 	public function test_source_picker_shown_once_candidates_are_stashed(): void {
 		$id = $this->subscriptions->create(
@@ -314,7 +346,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		$this->assertStringContainsString( 'daymark_subscription_add_feeds', $output );
+		$this->assertStringContainsString( 'daymark_subscription_update_feeds', $output );
 		$this->assertStringContainsString( 'daymark_candidate_index[]', $output );
 		$this->assertStringContainsString( 'type="checkbox"', $output );
 		$this->assertStringNotContainsString( 'type="radio"', $output );
@@ -322,22 +354,25 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'RSS/Atom Feed', $output );
 		$this->assertStringContainsString( 'https://picker-example.com/feed/', $output );
 		$this->assertStringContainsString( '(current)', $output );
-		$this->assertStringContainsString( 'Add selected feeds', $output );
+		$this->assertStringContainsString( 'Update feeds', $output );
 		$this->assertStringContainsString( 'daymark_subscription_discover_sources_dismiss', $output );
 		// The plain trigger is replaced by the picker, not shown alongside it.
 		$this->assertStringNotContainsString( 'Choose from available feeds', $output );
 	}
 
 	/**
-	 * Scenario (issue #334): the row's own current feed_url renders as a
-	 * disabled checkbox — it cannot be unchecked through this picker at all,
-	 * so it can never be used to unsubscribe.
+	 * Scenario (issue #363; previously `disabled`, issue #334): the row's own
+	 * current feed_url renders checked but no longer disabled — it can be
+	 * unchecked through this picker, which is what lets a submit unsubscribe
+	 * it via reconcile_selected_candidates(). The new, not-yet-subscribed
+	 * candidate renders unchecked and, like every candidate now, not disabled
+	 * either.
 	 */
-	public function test_source_picker_current_feed_checkbox_is_disabled(): void {
+	public function test_source_picker_current_feed_checkbox_is_checked_but_not_disabled(): void {
 		$id = $this->subscriptions->create(
 			array(
-				'site_url'    => 'https://disabled-current-example.com',
-				'feed_url'    => 'https://disabled-current-example.com/feed/',
+				'site_url'    => 'https://checkbox-example.com',
+				'feed_url'    => 'https://checkbox-example.com/feed/',
 				'source_type' => 'feed',
 				'status'      => 'active',
 			)
@@ -346,16 +381,16 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		set_transient(
 			'daymark_subscription_sources_' . $id . '_' . get_current_user_id(),
 			array(
-				'site_url'   => 'https://disabled-current-example.com',
+				'site_url'   => 'https://checkbox-example.com',
 				'candidates' => array(
 					array(
-						'url'          => 'https://disabled-current-example.com/feed/',
+						'url'          => 'https://checkbox-example.com/feed/',
 						'title'        => '',
 						'source_type'  => 'feed',
 						'source_label' => 'RSS/Atom Feed',
 					),
 					array(
-						'url'          => 'https://disabled-current-example.com/wp-json/wp/v2/posts',
+						'url'          => 'https://checkbox-example.com/wp-json/wp/v2/posts',
 						'title'        => '',
 						'source_type'  => 'wordpress',
 						'source_label' => 'WordPress REST API',
@@ -367,16 +402,17 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$output = $this->render();
 
-		// The current candidate's own checkbox (index 0) is disabled; the
-		// new, not-yet-subscribed one (index 1) is not — matched precisely
-		// by its own <input> tag rather than searching the whole page for
-		// the bare word "disabled", which can appear anywhere else too.
+		// Matched precisely by each candidate's own <input> tag rather than
+		// searching the whole page for the bare word "checked"/"disabled",
+		// either of which can appear elsewhere on the page too.
 		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="0"[^>]*\/>/s', $output, $current_input );
 		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="1"[^>]*\/>/s', $output, $new_input );
 
 		$this->assertNotEmpty( $current_input, 'Expected to find the current candidate\'s checkbox markup.' );
 		$this->assertNotEmpty( $new_input, 'Expected to find the new candidate\'s checkbox markup.' );
-		$this->assertStringContainsString( 'disabled', $current_input[0] );
+		$this->assertStringContainsString( 'checked', $current_input[0] );
+		$this->assertStringNotContainsString( 'disabled', $current_input[0] );
+		$this->assertStringNotContainsString( 'checked', $new_input[0] );
 		$this->assertStringNotContainsString( 'disabled', $new_input[0] );
 	}
 
@@ -435,6 +471,259 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		unset( $_GET['daymark_notice'], $_GET['daymark_count'] );
 
 		$this->assertStringContainsString( 'Added 3 feeds. New posts from them will start appearing in the Timeline.', $output );
+	}
+
+	/** Scenario (issue #363): a pure-removal "Update feeds" submit — nothing new checked, one already-subscribed candidate unchecked. */
+	public function test_feeds_removed_notice_rendered_singular(): void {
+		$_GET['daymark_notice']  = 'feeds_removed';
+		$_GET['daymark_removed'] = '1';
+		$output                  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_removed'] );
+
+		$this->assertStringContainsString( 'Removed 1 feed — its previously loaded posts have been removed too.', $output );
+	}
+
+	/** Scenario (issue #363): the removal notice pluralizes once daymark_removed is greater than one. */
+	public function test_feeds_removed_notice_rendered_plural(): void {
+		$_GET['daymark_notice']  = 'feeds_removed';
+		$_GET['daymark_removed'] = '2';
+		$output                  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_removed'] );
+
+		$this->assertStringContainsString( 'Removed 2 feeds — their previously loaded posts have been removed too.', $output );
+	}
+
+	/** Scenario (issue #363): a mixed add-and-remove "Update feeds" submit — a genuine feed switch. */
+	public function test_feeds_updated_notice_rendered(): void {
+		$_GET['daymark_notice']  = 'feeds_updated';
+		$_GET['daymark_count']   = '1';
+		$_GET['daymark_removed'] = '1';
+		$output                  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'], $_GET['daymark_removed'] );
+
+		$this->assertStringContainsString( 'Updated this site&#039;s feeds: added 1, removed 1 — the removed feeds&#039; previously loaded posts have been removed too.', $output );
+	}
+
+	/** Scenario (issue #363): the mixed notice's own pending variant, when the newly-added feed's first poll didn't complete. */
+	public function test_feeds_updated_pending_notice_rendered(): void {
+		$_GET['daymark_notice']  = 'feeds_updated_pending';
+		$_GET['daymark_count']   = '1';
+		$_GET['daymark_removed'] = '1';
+		$output                  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'], $_GET['daymark_removed'] );
+
+		$this->assertStringContainsString( 'their first fetch didn&#039;t complete', $output );
+	}
+
+	/** Scenario (issue #363): submitting the picker with no actual change (nothing newly checked or unchecked) is a harmless, clearly-labeled no-op. */
+	public function test_feeds_unchanged_notice_rendered(): void {
+		$_GET['daymark_notice'] = 'feeds_unchanged';
+		$output                 = $this->render();
+		unset( $_GET['daymark_notice'] );
+
+		$this->assertStringContainsString( 'No changes made to this site&#039;s feeds.', $output );
+	}
+
+	// -----------------------------------------------------------------
+	// reconcile_selected_candidates() / resolve_update_feeds_notice()
+	// (issue #363) — exercised via Reflection, matching this file's own
+	// established pattern (test_connector_status_falls_back_to_class_signal_when_folder_slug_does_not_match()
+	// below) for substantive private logic worth unit testing directly
+	// rather than only through render() output.
+	// -----------------------------------------------------------------
+
+	/** Scenario: a checked candidate not yet subscribed to gets subscribed. */
+	public function test_reconcile_subscribes_a_newly_checked_candidate(): void {
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'reconcile_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://reconcile-add.example/',
+			array(
+				array(
+					'url'          => 'https://reconcile-add.example/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+				),
+			),
+			array( 0 )
+		);
+
+		$this->assertSame( 1, $outcome['added'] );
+		$this->assertSame( 0, $outcome['removed'] );
+		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-add.example/feed/' ) );
+	}
+
+	/** Scenario: an unchecked candidate that is currently subscribed gets unsubscribed — and its cached content is trashed. */
+	public function test_reconcile_unsubscribes_a_newly_unchecked_candidate(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://reconcile-remove.example/',
+				'feed_url'    => 'https://reconcile-remove.example/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'status'      => 'active',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'reconcile_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://reconcile-remove.example/',
+			array(
+				array(
+					'url'          => 'https://reconcile-remove.example/wp-json/wp/v2/posts',
+					'source_type'  => 'wordpress',
+					'source_label' => 'WordPress REST API',
+				),
+			),
+			array() // Nothing checked.
+		);
+
+		$this->assertSame( 0, $outcome['added'] );
+		$this->assertSame( 1, $outcome['removed'] );
+		$this->assertNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-remove.example/wp-json/wp/v2/posts' ) );
+	}
+
+	/** Scenario: a genuine feed switch — the current feed unchecked, a different one checked, in the same submission. */
+	public function test_reconcile_switches_from_one_feed_to_another_in_one_submission(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://reconcile-switch.example/',
+				'feed_url'    => 'https://reconcile-switch.example/wp-json/wp/v2/posts',
+				'source_type' => 'wordpress',
+				'status'      => 'active',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'reconcile_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://reconcile-switch.example/',
+			array(
+				array(
+					'url'          => 'https://reconcile-switch.example/wp-json/wp/v2/posts',
+					'source_type'  => 'wordpress',
+					'source_label' => 'WordPress REST API',
+				),
+				array(
+					'url'          => 'https://reconcile-switch.example/en/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+					'language'     => 'en',
+				),
+			),
+			array( 1 ) // Only the English-scoped feed stays checked.
+		);
+
+		$this->assertSame( 1, $outcome['added'] );
+		$this->assertSame( 1, $outcome['removed'] );
+		$this->assertNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-switch.example/wp-json/wp/v2/posts' ) );
+		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-switch.example/en/feed/' ) );
+	}
+
+	/** Scenario: a checked-and-already-subscribed, or unchecked-and-never-subscribed, candidate is a no-op either way. */
+	public function test_reconcile_is_a_no_op_when_nothing_actually_changed(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://reconcile-noop.example/',
+				'feed_url'    => 'https://reconcile-noop.example/feed/',
+				'source_type' => 'feed',
+				'status'      => 'active',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'reconcile_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://reconcile-noop.example/',
+			array(
+				array(
+					'url'          => 'https://reconcile-noop.example/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+				),
+				array(
+					'url'          => 'https://reconcile-noop.example/wp-json/wp/v2/posts',
+					'source_type'  => 'wordpress',
+					'source_label' => 'WordPress REST API',
+				),
+			),
+			array( 0 ) // The already-subscribed feed stays checked; the other stays unchecked.
+		);
+
+		$this->assertSame( 0, $outcome['added'] );
+		$this->assertSame( 0, $outcome['removed'] );
+		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-noop.example/feed/' ) );
+	}
+
+	/**
+	 * @dataProvider provide_update_feeds_notice_outcomes
+	 * @param array{added: int, pending: int, removed: int} $outcome Reconcile outcome.
+	 * @param string                                          $expected Expected notice key.
+	 */
+	public function test_resolve_update_feeds_notice( array $outcome, string $expected ): void {
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'resolve_update_feeds_notice' );
+
+		$this->assertSame( $expected, $method->invoke( $this->admin_subscriptions, $outcome ) );
+	}
+
+	/**
+	 * @return array<string, array{0: array{added: int, pending: int, removed: int}, 1: string}>
+	 */
+	public function provide_update_feeds_notice_outcomes(): array {
+		return array(
+			'nothing changed'        => array(
+				array(
+					'added'   => 0,
+					'pending' => 0,
+					'removed' => 0,
+				),
+				'feeds_unchanged',
+			),
+			'pure add'               => array(
+				array(
+					'added'   => 1,
+					'pending' => 0,
+					'removed' => 0,
+				),
+				'feeds_added',
+			),
+			'pure add, poll pending' => array(
+				array(
+					'added'   => 1,
+					'pending' => 1,
+					'removed' => 0,
+				),
+				'feeds_added_pending',
+			),
+			'pure remove'            => array(
+				array(
+					'added'   => 0,
+					'pending' => 0,
+					'removed' => 1,
+				),
+				'feeds_removed',
+			),
+			'mixed add and remove'   => array(
+				array(
+					'added'   => 1,
+					'pending' => 0,
+					'removed' => 1,
+				),
+				'feeds_updated',
+			),
+			'mixed, poll pending'    => array(
+				array(
+					'added'   => 1,
+					'pending' => 1,
+					'removed' => 1,
+				),
+				'feeds_updated_pending',
+			),
+		);
 	}
 
 	/** Scenario (issue #334): the new-subscribe flow's own "subscribed" notice stays exactly the pre-#334 singular wording when daymark_count is absent (the default, count = 1). */
