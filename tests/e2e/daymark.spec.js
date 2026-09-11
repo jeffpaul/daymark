@@ -2296,7 +2296,7 @@ test('header home-link points home, and Home shows the Timeline feed', async ({ 
 	await expect(home).toHaveText('Daymark');
 	const homeImg = home.locator('img');
 	await expect(homeImg).toBeVisible();
-	expect(await homeImg.getAttribute('width')).toBe('26');
+	expect(await homeImg.getAttribute('width')).toBe('22');
 	expect(await home.getAttribute('href')).toContain('#home');
 
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
@@ -2474,7 +2474,7 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 		await expect(homeIcon).toHaveClass(/daymark-iconbtn--plain/);
 		const homeIconImg = homeIcon.locator('img');
 		await expect(homeIconImg).toBeVisible();
-		expect(await homeIconImg.getAttribute('width')).toBe('26');
+		expect(await homeIconImg.getAttribute('width')).toBe('22');
 
 		// A regression here (issue #276) is invisible to a class/attribute
 		// check alone — the icon *graphic* itself has to start at the same x

@@ -128,8 +128,8 @@ h2[tabindex='-1']:focus {
 	align-items: center;
 	gap: var(--daymark-spacing-sm);
 	min-height: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
-	padding: 12px var(--daymark-spacing-md);
-	padding-top: calc(12px + env(safe-area-inset-top, 0px));
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	padding-top: calc(var(--daymark-spacing-sm) + env(safe-area-inset-top, 0px));
 	background: var(--daymark-bg);
 	transition: transform 0.2s ease;
 }
@@ -222,55 +222,49 @@ h2[tabindex='-1']:focus {
 	border-radius: var(--daymark-radius-sm);
 }
 
+/* Plain, unboxed icon button — no border or background, same treatment
+   the bottom nav's own tab icons already get (.daymark-bottomnav__link),
+   so the Notifications icon (the only bare .daymark-iconbtn left — the
+   Daymark icon link already carries .daymark-iconbtn--plain on top of
+   this) doesn't stand out as a separate, boxed control the footer icons
+   have no equivalent of. */
 .daymark-iconbtn {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	min-height: var(--daymark-tap-min);
 	min-width: var(--daymark-tap-min);
-	border: 1px solid var(--daymark-border);
+	border: none;
 	border-radius: var(--daymark-radius);
-	background: var(--daymark-bg);
+	background: none;
 	color: var(--daymark-text-primary);
 	text-decoration: none;
 }
 
 /* The Explore/Search/Me headers' Daymark icon link reuses .daymark-iconbtn
-   for its tap-target sizing, but drops the bordered-square button chrome —
-   same plain, unboxed feel as Home's own wordmark icon (.daymark-homelink),
-   just without the "Daymark" text label alongside it. The Notifications
-   icon button on every screen keeps the bordered square (and centered icon)
-   unchanged; this modifier is scoped to the Daymark icon link alone.
-   `justify-content: flex-end` sits the icon graphic flush against the box's
-   own trailing edge instead of centered within it, so the tap target's
-   required extra width (26px icon in a 44px box) sits entirely on the
-   icon's *leading* side — that's what makes the topbar's own flex `gap`
-   the *only* contributor to the icon-to-title distance, provably equal to
-   .daymark-homelink's own icon-to-text `gap` once both use the same
-   var(--daymark-spacing-sm) token.
-   That leading 18px isn't actually free, though (issue #276): as the
-   topbar's first flex child, this box's own leading edge lines up with
-   Home's icon, but the icon graphic itself sits 18px further in — pushing
-   the icon, the gap, and the title all 18px to the right of where Home's
-   equivalents land. `margin-left` cancels exactly that leading overhang
-   (same "negative margin cancels a box's own reserved space" pattern as
-   .daymark-pullrefresh and .daymark-timeline-flourish), pulling the icon
-   graphic's leading edge back to Home's, without touching the
-   `justify-content: flex-end` that keeps the icon-to-title gap matched.
-   One more pixel of that same overhang hid in the border: under this
-   file's global `box-sizing: border-box`, `.daymark-iconbtn`'s own
-   `border: 1px solid` still reserves its 1px on every side even once
-   `border-color` alone is set to transparent — content-box width shrinks
-   by 2px, so the flush-right icon sat 1px left of where a truly borderless
-   box like .daymark-homelink would put it. `border: none` (rather than
-   only overriding the color) removes that reservation instead of just
-   the paint, with no change to the box's own 44px outer footprint — that
-   comes from `min-width`, measured on the border-box either way. */
+   for its tap-target sizing — same plain, unboxed feel as Home's own
+   wordmark icon (.daymark-homelink) and the Notifications icon (both
+   unboxed since .daymark-iconbtn's own base rule dropped its border/
+   background), just without the "Daymark" text label alongside it; this
+   modifier's own border/background overrides are now redundant with the
+   base rule but kept so this class still reads correctly on its own.
+   `justify-content: flex-end` sits the icon graphic flush against the
+   box's own trailing edge instead of centered within it, so the tap
+   target's required extra width (22px icon in a 44px box) sits entirely
+   on the icon's *leading* side — that's what makes the topbar's own flex
+   `gap` the *only* contributor to the icon-to-title distance, provably
+   equal to .daymark-homelink's own icon-to-text `gap` once both use the
+   same var(--daymark-spacing-sm) token. `margin-left` cancels that
+   leading overhang (same "negative margin cancels a box's own reserved
+   space" pattern as .daymark-pullrefresh and .daymark-timeline-flourish),
+   pulling the icon graphic's leading edge back to Home's, without
+   touching the `justify-content: flex-end` that keeps the icon-to-title
+   gap matched (issue #276). */
 .daymark-iconbtn--plain {
 	border: none;
 	background: none;
 	justify-content: flex-end;
-	margin-left: calc(26px - var(--daymark-tap-min));
+	margin-left: calc(22px - var(--daymark-tap-min));
 }
 
 /* --- Screen layout --- */
@@ -1194,21 +1188,38 @@ h2[tabindex='-1']:focus {
 	display: none;
 }
 
-/* The ⋯ overflow menu's own panel (issue #326) — a sibling of the card
-   button, growing the item's own frame open the same way the routing
-   popover already does (see the :has() rule and the z-index-lift rule
-   further below, both extended to cover this class too) rather than a
-   floating dropdown: reusing that established pattern needed no new
-   positioning math, and works identically inside PostScreen's simpler
-   .daymark-postview-meta container, which never had (or needed) any
-   position-relative ancestor a floating panel would have depended on. */
-.daymark-recent__routing,
-.daymark-recent__overflowmenu {
+/* The routing popover's own panel still grows the item's own frame open
+   (see the :has() rule and the z-index-lift rule further below). */
+.daymark-recent__routing {
 	flex-basis: 100%;
 	width: 100%;
 	margin-top: var(--daymark-spacing-sm);
 	padding-top: var(--daymark-spacing-sm);
 	border-top: 1px solid var(--daymark-border);
+}
+
+/* The ⋯ overflow menu's own panel (issue #326) — a floating overlay
+   anchored just off the ⋯ trigger, the same simple-dropdown treatment the
+   Draft ⋯ menu's own .daymark-menu already established, rather than
+   growing the item's own frame open the way the routing popover above
+   does: a menu of secondary actions reads as a transient popup, not as
+   the card itself expanding. positionOverflowPanel() (app.js) computes
+   `top`/`right` against the panel's nearest position:relative ancestor
+   (.daymark-recent__item-wrap on a Timeline card, .daymark-postview-meta
+   on the full-screen post view — both carry position: relative for
+   exactly this) each time the menu opens, since — unlike the Draft menu's
+   own ⋯ button, which is itself pinned absolutely to a fixed corner — the
+   overflow trigger sits inline in the interaction row, wherever that row's
+   own content happens to place it. */
+.daymark-recent__overflowmenu {
+	position: absolute;
+	z-index: 20;
+	min-width: 200px;
+	padding: var(--daymark-spacing-xs);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+	box-shadow: 0 8px 24px rgba(46, 0, 84, 0.16);
 }
 
 /* Every entry inside the overflow menu reads as a full-width, icon+label
@@ -1218,6 +1229,7 @@ h2[tabindex='-1']:focus {
 .daymark-recent__overflowmenu .daymark-stat {
 	display: flex;
 	width: 100%;
+	min-height: var(--daymark-tap-min);
 	justify-content: flex-start;
 	gap: var(--daymark-spacing-sm);
 	padding: 0 var(--daymark-spacing-sm);
@@ -2666,6 +2678,14 @@ h2[tabindex='-1']:focus {
    bookend. Matches the negative-margin gap-cancelling pattern already
    established for the pull-to-refresh indicator (issue #213). */
 .daymark-timeline-flourish--start {
+	/* Trims the flourish's own empty top padding (its 28px-tall SVG box
+	   only really starts "filling in" a few pixels down, where the rays
+	   begin) so the rail's own start reads closer to the header above it,
+	   not just closer to the list below — same "reduce header-to-first-item
+	   whitespace" goal issue #213 already pursued, applied to the one
+	   contributor that fix didn't reach (this flourish sits above the
+	   pull-to-refresh indicator issue #213 already trimmed, not after it). */
+	margin-top: calc(-1 * var(--daymark-spacing-xs));
 	margin-bottom: calc(-1 * var(--daymark-spacing-sm));
 }
 
@@ -2941,8 +2961,13 @@ h2[tabindex='-1']:focus {
    share it. A plain flex column of its own (a smaller gap than
    .daymark-screen's own between the post body above and this block) since
    both rows are already block-level flex containers in their own right
-   and would otherwise sit flush with no breathing room between them. */
+   and would otherwise sit flush with no breathing room between them.
+   position: relative gives the ⋯ overflow menu's own floating panel
+   (.daymark-recent__overflowmenu) a containing block to anchor against —
+   PostScreen has no other position:relative ancestor the way a Timeline
+   card's own .daymark-recent__item-wrap already does. */
 .daymark-postview-meta {
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-xs);
@@ -3077,13 +3102,11 @@ h2[tabindex='-1']:focus {
    such border, matching every other item (which relies on spacing + the
    rail line rather than a per-card box), so this only ever appears while
    the panel is open — :has() scopes it to exactly that state without any
-   extra JS-toggled class. Extended to the ⋯ overflow menu's own panel
-   (issue #326, .daymark-recent__overflowmenu) for the identical reason —
-   see that rule, further up this file, for its own box-model styling
-   (merged with this selector's own .daymark-recent__routing since both
-   need the exact same treatment). */
-.daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])),
-.daymark-recent__item-wrap:has(.daymark-recent__overflowmenu:not([hidden])) {
+   extra JS-toggled class. The ⋯ overflow menu's own panel no longer needs
+   this: it floats as its own bordered overlay instead (see
+   .daymark-recent__overflowmenu, further up this file), so opening it
+   doesn't grow the card's frame at all. */
+.daymark-recent__item-wrap:has(.daymark-recent__routing:not([hidden])) {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius);
 	background: var(--daymark-bg);
