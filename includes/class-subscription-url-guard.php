@@ -147,6 +147,10 @@ class Daymark_Subscription_Url_Guard {
 			return array( $host );
 		}
 
+		if ( self::should_skip_dns_resolution() ) {
+			return array();
+		}
+
 		$addresses = array();
 
 		// function_exists() guards both DNS calls the same way — not just
@@ -154,12 +158,17 @@ class Daymark_Subscription_Url_Guard {
 		// guaranteed to exist in every PHP runtime this plugin's own SSRF
 		// guard might execute in: WordPress Playground's browser-sandboxed
 		// PHP-WASM build documents dns_get_record() itself as undefined
-		// there (https://github.com/WordPress/wordpress-playground/issues/1042),
-		// and gethostbynamel() — the same category of function, backed by
-		// the same unavailable raw-socket DNS machinery — is a plausible
-		// second casualty of that same constraint. An unconditional call to
-		// either would throw an uncaught "Call to undefined function"
-		// error and fatal the whole request, not just this one check.
+		// there (https://github.com/WordPress/wordpress-playground/issues/1042).
+		// gethostbynamel() is a plausible second casualty of that same
+		// constraint too, though in practice (issue #365) it turned out to
+		// exist there but not perform a genuine lookup — see
+		// should_skip_dns_resolution(), which is what actually catches that
+		// case (real DNS resolution is skipped entirely under Playground's
+		// SAPI before either call below is ever reached). This function_exists()
+		// guard stays regardless, for a runtime where one of these two truly
+		// is undefined: an unconditional call would throw an uncaught "Call
+		// to undefined function" error and fatal the whole request, not just
+		// this one check.
 		if ( function_exists( 'gethostbynamel' ) ) {
 			$addresses = array_merge( $addresses, self::keep_valid_addresses( gethostbynamel( $host ) ) );
 		}
@@ -182,6 +191,56 @@ class Daymark_Subscription_Url_Guard {
 		}
 
 		return $addresses;
+	}
+
+	/**
+	 * Whether to skip real DNS resolution entirely, trusting the exact same
+	 * "nothing to check, safe to proceed" path an ordinary unresolvable host
+	 * already takes (issue #365).
+	 *
+	 * Defaults to true under WordPress Playground's own php-wasm SAPI
+	 * (`PHP_SAPI === 'wasm'`). Reported directly: subscribing to *any* site
+	 * inside a Playground preview failed with "Please enter a valid site
+	 * URL." — confirmed to happen for every URL tried, not just specific
+	 * ones. `gethostbynamel()`/`dns_get_record()` being *undefined* there
+	 * was already guarded against (issue #311); this is the other half —
+	 * per wordpress-playground's own tracker
+	 * (https://github.com/WordPress/wordpress-playground/issues/400,
+	 * "Networking: Implement gethostbyname"), the function exists but isn't
+	 * genuinely implemented, and was found to hand back something that
+	 * parses as a private/internal-looking IP address for every host rather
+	 * than failing cleanly — is_unsafe_address() then correctly-but-wrongly
+	 * flags that address, rejecting even an ordinary, resolvable public
+	 * site. There is no real internal network for this client-side,
+	 * single-user sandbox to protect against SSRF-wise in the first place,
+	 * and the actual outbound `wp_safe_remote_get()` call still goes
+	 * through Playground's own genuinely proxied networking layer
+	 * regardless of what this pre-flight decides — so skipping it there
+	 * costs nothing real.
+	 *
+	 * Not independently confirmed against a live Playground instance — this
+	 * environment's own egress policy has no route to
+	 * playground.wordpress.net to execute against directly; diagnosed from
+	 * the reported symptom plus wordpress-playground's own public issue
+	 * tracker, the same "researched against public source, flagged for
+	 * verification" posture already used for several other Playground/
+	 * environment-constrained diagnoses in this codebase.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @return bool
+	 */
+	private static function should_skip_dns_resolution(): bool {
+		/**
+		 * Filters whether Daymark_Subscription_Url_Guard should skip its own
+		 * DNS-resolution pre-flight entirely.
+		 *
+		 * @since 0.16.0
+		 *
+		 * @param bool $skip Whether to skip DNS resolution. Defaults to
+		 *                    `'wasm' === PHP_SAPI`.
+		 */
+		return (bool) apply_filters( 'daymark_subscription_url_guard_skip_dns_resolution', 'wasm' === PHP_SAPI );
 	}
 
 	/**

@@ -28,8 +28,10 @@ class Test_Subscription_Url_Guard extends WP_UnitTestCase {
 		// test in this file or any other — a leaked filter here would make
 		// resolve_addresses() return a stale, canned result for every host
 		// resolved for the rest of the process, silently changing every
-		// other test's real DNS-resolution behavior.
+		// other test's real DNS-resolution behavior. Same reasoning for the
+		// issue #365 skip filter below.
 		remove_all_filters( 'daymark_subscription_url_guard_resolved_addresses' );
+		remove_all_filters( 'daymark_subscription_url_guard_skip_dns_resolution' );
 
 		parent::tear_down();
 	}
@@ -172,6 +174,48 @@ class Test_Subscription_Url_Guard extends WP_UnitTestCase {
 				return array( 'this-is-not-an-ip-address' );
 			}
 		);
+
+		$this->assertTrue( Daymark_Subscription_Url_Guard::check( 'https://example.com/feed/' ) );
+	}
+
+	// -----------------------------------------------------------------
+	// should_skip_dns_resolution() (issue #365) — exercised via Reflection,
+	// matching this codebase's established pattern for private logic that
+	// can't be driven deterministically through the public check() entry
+	// point alone (PHP_SAPI can't be reassigned mid-test, and the real DNS
+	// lookup a non-forced, non-literal-IP host would otherwise reach isn't
+	// something a test should depend on).
+	// -----------------------------------------------------------------
+
+	/**
+	 * The default (no filter applied) reflects the real running SAPI —
+	 * which, in a PHPUnit process, is never 'wasm'.
+	 */
+	public function test_should_skip_dns_resolution_defaults_to_false_outside_wasm_sapi() {
+		$method = new ReflectionMethod( Daymark_Subscription_Url_Guard::class, 'should_skip_dns_resolution' );
+
+		$this->assertFalse( $method->invoke( null ) );
+	}
+
+	/** The skip filter can force the value regardless of the real SAPI. */
+	public function test_should_skip_dns_resolution_filter_forces_true() {
+		add_filter( 'daymark_subscription_url_guard_skip_dns_resolution', '__return_true' );
+
+		$method = new ReflectionMethod( Daymark_Subscription_Url_Guard::class, 'should_skip_dns_resolution' );
+
+		$this->assertTrue( $method->invoke( null ) );
+	}
+
+	/**
+	 * End-to-end: forcing the skip filter true makes check() accept a
+	 * hostname URL with no `daymark_subscription_url_guard_resolved_addresses`
+	 * override at all — real DNS resolution is never reached, so whatever a
+	 * broken/stubbed resolver in a constrained runtime might have returned
+	 * (the exact shape of the reported WordPress Playground failure) can't
+	 * reject it.
+	 */
+	public function test_check_accepts_hostname_url_when_dns_resolution_is_skipped() {
+		add_filter( 'daymark_subscription_url_guard_skip_dns_resolution', '__return_true' );
 
 		$this->assertTrue( Daymark_Subscription_Url_Guard::check( 'https://example.com/feed/' ) );
 	}
