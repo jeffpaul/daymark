@@ -204,6 +204,25 @@ class Daymark_Comment_Delivery {
 		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
 
 		if ( $code < 200 || $code >= 300 ) {
+			$error_code = is_array( $body ) && ! empty( $body['code'] ) ? sanitize_key( (string) $body['code'] ) : '';
+
+			// WordPress core's own REST comments controller rejects *any*
+			// unauthenticated POST with this exact code before it ever reads
+			// the request body — regardless of comment_registration, and
+			// regardless of what the origin's own classic comment form
+			// allows — unless the site opts in via the `rest_allow_anonymous_comments`
+			// filter (default false). No additional field Daymark could send
+			// (name/email/site are already included above) gets past this,
+			// so it needs its own clearer message rather than the origin's
+			// raw, easy-to-misread-as-a-Daymark-login-problem text.
+			if ( 'rest_comment_login_required' === $error_code ) {
+				return new WP_Error(
+					'daymark_comment_requires_login',
+					__( "This site's own API doesn't accept comments from anonymous visitors — a default WordPress restriction on the destination site, not a problem with your Daymark account. You'll need to comment on the original post directly, or ask the site owner to enable Webmention.", 'daymark' ),
+					array( 'status' => 401 )
+				);
+			}
+
 			$message = is_array( $body ) && ! empty( $body['message'] ) ? sanitize_text_field( (string) $body['message'] ) : '';
 
 			return new WP_Error(

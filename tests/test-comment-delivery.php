@@ -288,6 +288,45 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 		$this->assertSame( 'Comments are closed.', $result->get_error_message() );
 	}
 
+	/**
+	 * WordPress core's own REST comments controller rejects any
+	 * unauthenticated POST with `rest_comment_login_required` before it
+	 * even reads the submitted fields (name/email/site are already sent —
+	 * see test_deliver_falls_back_to_native_comment_without_webmention_plugin)
+	 * — this needs its own clearer, non-misleading error rather than the
+	 * origin's raw text, which reads as a Daymark-login problem out of
+	 * context (issue #351).
+	 */
+	public function test_deliver_surfaces_clear_message_when_origin_requires_login(): void {
+		$permalink = 'https://origin.example/login-required-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="https://api.w.org/" href="https://origin.example/wp-json/"><link rel="alternate" type="application/json" href="https://origin.example/wp-json/wp/v2/posts/58"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$this->mock_response(
+			'https://origin.example/wp-json/wp/v2/comments',
+			wp_json_encode(
+				array(
+					'code'    => 'rest_comment_login_required',
+					'message' => 'Sorry, you must be logged in to comment.',
+				)
+			),
+			401
+		);
+
+		$result = Daymark_Comment_Delivery::deliver( $post_id, 'Anyone home?' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_comment_requires_login', $result->get_error_code() );
+		$this->assertStringNotContainsString( 'Sorry, you must be logged in to comment.', $result->get_error_message() );
+		$this->assertStringContainsString( "site's own API", $result->get_error_message() );
+	}
+
 	/** Neither a Webmention endpoint nor a discoverable REST post -> undeliverable. */
 	public function test_deliver_returns_error_when_nothing_is_discoverable(): void {
 		$permalink = 'https://origin.example/plain-post/';
