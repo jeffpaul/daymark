@@ -23,10 +23,12 @@ can't act on them.
 ### Added
 
 - Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming. ([#334](https://github.com/jeffpaul/daymark/issues/334))
+- Subscribing to (or "Choose from available feeds" on) a multilingual site — Polylang, WPML, MultilingualPress, and similar — now shows a separate feed candidate for each language it advertises, labeled by language, so you can follow the one you actually read instead of an unfiltered, every-language feed. ([#336](https://github.com/jeffpaul/daymark/issues/336))
 
 ### Changed
 
 - Settings -> Daymark's "Check for other feeds" action is now "Choose from available feeds", and lets you check as many of the discovered feeds as you like — each one you check becomes its own new subscription, so you can follow more than one feed from the same site instead of only switching between them. ([#334](https://github.com/jeffpaul/daymark/issues/334))
+- The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language. ([#336](https://github.com/jeffpaul/daymark/issues/336))
 
 ## [0.15.0] - 2026-09-10
 
