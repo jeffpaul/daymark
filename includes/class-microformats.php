@@ -32,6 +32,13 @@
  * field to source one from instead. u-email is optional in the h-card spec,
  * so leaving it off does not break validation.
  *
+ * The u-url/dt-published/rich-media/reply/repost/like/author-h-card block
+ * `entry_metadata_markup()` appends after a Mark's content is visually
+ * hidden (`display:none`) — see that method's own docblock. It exists
+ * purely for mf2 parsers/federation plugins to read, never for a human
+ * reader, and hiding it has no effect on that discoverability: mf2 tooling
+ * parses raw HTML, not computed CSS visibility.
+ *
  * @package Daymark
  */
 
@@ -159,6 +166,24 @@ class Daymark_Microformats {
 	 * Build the u-url/dt-published/rich-media/author metadata block for a
 	 * Mark's entry markup.
 	 *
+	 * Visually hidden (`style="display:none"` directly on the wrapping div,
+	 * so it applies regardless of whatever CSS the active theme happens to
+	 * load — no enqueued stylesheet or `wp_head` hook to depend on): this is
+	 * duplicate machine-readable data a human reader has no reason to see —
+	 * the permalink/date/author are already normal, visible post metadata
+	 * the theme's own template already renders, and a repost/like/reply's
+	 * own target was, before this fix, rendered as a bare, out-of-context
+	 * URL (reported directly, see CLAUDE.md's own decision row for this
+	 * fix). `display:none` (not merely a visually-hidden-but-in-the-a11y-
+	 * tree pattern) is deliberate here specifically because every value in
+	 * this block already duplicates something the theme's own visible
+	 * template already shows or announces — a screen-reader-only rendering
+	 * would have a reader hear the same date/author twice, which is worse,
+	 * not better, than not hiding it at all. `display:none` has no bearing
+	 * on IndieWeb discoverability: mf2 parsers (Bridgy, Webmention senders,
+	 * feed/reader tooling) read the raw HTML markup, not its computed CSS
+	 * visibility, so this markup remains exactly as discoverable as before.
+	 *
 	 * @param int $post_id Mark post ID.
 	 * @return string Escaped HTML.
 	 */
@@ -166,7 +191,7 @@ class Daymark_Microformats {
 		$permalink = get_permalink( $post_id );
 		$published = get_the_date( 'c', $post_id );
 
-		$html  = '<div class="daymark-h-entry-meta">';
+		$html  = '<div class="daymark-h-entry-meta" style="display:none">';
 		$html .= '<a class="u-url" href="' . esc_url( (string) $permalink ) . '">' . esc_html( (string) $permalink ) . '</a>';
 		$html .= '<time class="dt-published" datetime="' . esc_attr( $published ) . '">' . esc_html( (string) get_the_date( '', $post_id ) ) . '</time>';
 		$html .= $this->rich_media_markup( $post_id );
