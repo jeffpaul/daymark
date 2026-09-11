@@ -6227,6 +6227,36 @@
 		},
 	};
 
+	// Keeps every currently-open .daymark-sheet (AIAssistSheet/TextPromptSheet/
+	// CommentUndeliverableSheet/InteractionHintSheet — all `position: fixed;
+	// inset: 0`) sized and positioned to the *actual* visible area rather
+	// than the plain CSS viewport, which iOS Safari's on-screen keyboard
+	// shrinks visually without moving a fixed element to match — the
+	// keyboard simply covers part of the page instead of a "fixed" sheet
+	// resizing to sit above it. That left a gap between the sheet's own
+	// visible bottom and the top of the keyboard where the real page
+	// underneath showed through, and could leave a focused field's own caret
+	// rendering outside the sheet's now-mismatched clipped bounds — reported
+	// directly against the Reblog sheet's own caption field. Called from
+	// each sheet's own show() (so a freshly opened sheet is correct
+	// immediately, even before any resize/scroll event fires) and from the
+	// visualViewport listeners registered at boot (so an already-open sheet
+	// tracks the keyboard opening/closing live).
+	function syncSheetsToVisualViewport() {
+		if (!window.visualViewport) {
+			return;
+		}
+		const height = window.visualViewport.height + 'px';
+		const top = window.visualViewport.offsetTop + 'px';
+		document.querySelectorAll('.daymark-sheet').forEach((sheet) => {
+			if (sheet.hidden) {
+				return;
+			}
+			sheet.style.height = height;
+			sheet.style.top = top;
+		});
+	}
+
 	// --- Overlay: AI Assist sheet ---
 
 	const AIAssistSheet = {
@@ -6243,6 +6273,7 @@
 				document.body.appendChild(this.el);
 			}
 			this.el.hidden = false;
+			syncSheetsToVisualViewport();
 			this.el.innerHTML = `
 			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
 				__('Dismiss AI Assist', 'daymark')
@@ -6546,6 +6577,7 @@
 				document.body.appendChild(this.el);
 			}
 			this.el.hidden = false;
+			syncSheetsToVisualViewport();
 			this.el.innerHTML = `
 			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
 				sprintf(
@@ -6668,6 +6700,7 @@
 				document.body.appendChild(this.el);
 			}
 			this.el.hidden = false;
+			syncSheetsToVisualViewport();
 			this.el.innerHTML = `
 			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
 				__('Dismiss', 'daymark')
@@ -6829,6 +6862,7 @@
 				document.body.appendChild(this.el);
 			}
 			this.el.hidden = false;
+			syncSheetsToVisualViewport();
 			this.el.innerHTML = `
 			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
 				__('Dismiss', 'daymark')
@@ -8630,6 +8664,25 @@
 	// (CreateScreen.bindEvents()) still run first and do the real work.
 	window.addEventListener('dragover', (event) => event.preventDefault());
 	window.addEventListener('drop', (event) => event.preventDefault());
+
+	// A .daymark-sheet (TextPromptSheet/AIAssistSheet/InteractionHintSheet/
+	// CommentUndeliverableSheet — all `position: fixed; inset: 0`) is sized
+	// off the CSS viewport, which iOS Safari's on-screen keyboard shrinks
+	// visually without moving a fixed element to match — the keyboard covers
+	// part of the page instead of the "fixed" sheet resizing to sit above
+	// it. That left a gap between the sheet's own visible bottom and the top
+	// of the keyboard where the real page underneath showed through, and
+	// could leave a focused field's own caret rendering outside the sheet's
+	// now-mismatched clipped bounds (reported directly against the Reblog
+	// caption field). The Visual Viewport API reports the *actually*
+	// visible area directly, keyboard included, so syncing every open
+	// sheet's own height/top to it keeps the sheet exactly matched to what
+	// the reader can actually see regardless of iOS version-specific `dvh`
+	// behavior around the keyboard.
+	if (window.visualViewport) {
+		window.visualViewport.addEventListener('resize', syncSheetsToVisualViewport);
+		window.visualViewport.addEventListener('scroll', syncSheetsToVisualViewport);
+	}
 
 	// A broken `data-img-fallback`-carrying <img> (see imgWithFallback()
 	// above) degrades to a glyph span in its place instead of the browser's
