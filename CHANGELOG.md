@@ -35,6 +35,8 @@ can't act on them.
 
 - The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph. ([#340](https://github.com/jeffpaul/daymark/issues/340))
 - The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check. ([#342](https://github.com/jeffpaul/daymark/issues/342))
+- The ⋯ overflow menu (Open original/Share/Routing/Refresh content/Unsubscribe) now opens as a small floating overlay anchored off the ⋯ icon, the same simple-dropdown treatment the old Draft ⋯ menu used, instead of growing the card's own frame open and pushing the rest of the post down the screen. ([#347](https://github.com/jeffpaul/daymark/issues/347))
+- Tightened the gap between the header and the top of the Timeline, removed the Notifications icon's bordered-box outline (the footer nav icons never had one), and resized the header's Daymark icon and the Notifications icon to match the footer nav icons' own size. ([#347](https://github.com/jeffpaul/daymark/issues/347))
 
 ## [0.15.0] - 2026-09-10
 

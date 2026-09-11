@@ -3653,6 +3653,32 @@
 		}
 	}
 
+	// Positions the ⋯ overflow menu's floating panel (issue #326) just below
+	// and flush-right of its own trigger icon — the same simple-dropdown
+	// placement the Draft ⋯ menu's .daymark-menu gets from plain CSS
+	// (top/right relative to its own absolutely-positioned button). The
+	// overflow trigger isn't pinned to a fixed spot the way that button is —
+	// it sits inline in the interaction row, wherever that row's own
+	// content happens to place it — and the panel has to remain a DOM
+	// sibling of the card's own clickable button rather than a descendant
+	// (interactive content, e.g. a real link out, can't validly live inside
+	// another <button>), so CSS alone can't anchor it to the trigger the
+	// way .daymark-menu anchors to .daymark-recent__menubtn. Measuring both
+	// rects against the panel's nearest position:relative ancestor
+	// (.daymark-recent__item-wrap on a Timeline card, .daymark-postview-meta
+	// on the full-screen post view) and writing plain top/right inline
+	// styles gets the same visual result with no new markup.
+	function positionOverflowPanel(trigger, panel) {
+		const anchor = panel.closest('.daymark-recent__item-wrap, .daymark-postview-meta');
+		if (!anchor) {
+			return;
+		}
+		const anchorRect = anchor.getBoundingClientRect();
+		const triggerRect = trigger.getBoundingClientRect();
+		panel.style.top = triggerRect.bottom - anchorRect.top + 6 + 'px';
+		panel.style.right = Math.max(0, anchorRect.right - triggerRect.right) + 'px';
+	}
+
 	// Opens/closes the ⋯ overflow menu (issue #326) — same id-match lookup
 	// toggleRoutingPanel() below already established, and the same
 	// reasoning: the trigger and its panel don't share one container shape
@@ -3660,7 +3686,9 @@
 	// Routing, there's nothing to fetch — every entry this panel can hold
 	// is already known client-side, so its full markup is built once at
 	// render time (renderOverflowPanel()) rather than populated lazily on
-	// first open.
+	// first open. Position is (re)computed on every open, not just once at
+	// render time, since the trigger's own on-screen position can shift
+	// between renders (infinite scroll, a resize, orientation change).
 	function toggleOverflowMenu(trigger) {
 		const id = trigger.getAttribute('data-overflow-toggle');
 		const panel = id ? root.querySelector('[data-overflow-panel="' + id + '"]') : null;
@@ -3672,6 +3700,7 @@
 		if (wasOpen) {
 			return;
 		}
+		positionOverflowPanel(trigger, panel);
 		panel.hidden = false;
 		trigger.setAttribute('aria-expanded', 'true');
 		const first = panel.querySelector('.daymark-stat');
@@ -4205,7 +4234,7 @@
 			__('Daymark — go to Timeline', 'daymark')
 		)}"><img class="daymark-iconbtn__icon" src="${esc(
 			config.daymarkIconUrl || ''
-		)}" alt="" width="26" height="26" /></a>`;
+		)}" alt="" width="22" height="22" /></a>`;
 	}
 
 	// A "go back" link — the arrow keeps its usual meaning, but Daymark's own
@@ -4219,7 +4248,7 @@
 			label
 		)}"><span aria-hidden="true">&larr;</span><img src="${esc(
 			config.daymarkIconUrl || ''
-		)}" alt="" width="26" height="26" /></a>`;
+		)}" alt="" width="22" height="22" /></a>`;
 	}
 
 	function notificationsIconButton() {
@@ -4227,7 +4256,7 @@
 		return `<a class="daymark-iconbtn" href="#notifications" aria-label="${esc(
 			hasUnread ? __('Notifications — unread replies', 'daymark') : __('Notifications', 'daymark')
 		)}">
-			<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+			<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
 			${hasUnread ? '<span class="daymark-iconbtn__dot" aria-hidden="true"></span>' : ''}
 		</a>`;
 	}
@@ -4294,7 +4323,7 @@
 			// Timeline tab still uses.
 			const wordmark = `<a class="daymark-homelink" href="#home"><img class="daymark-homelink__icon" src="${esc(
 				config.daymarkIconUrl || ''
-			)}" alt="" width="26" height="26" /><span>Daymark</span></a>`;
+			)}" alt="" width="22" height="22" /><span>Daymark</span></a>`;
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
