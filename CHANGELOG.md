@@ -31,6 +31,10 @@ can't act on them.
 - The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language. ([#336](https://github.com/jeffpaul/daymark/issues/336))
 - On a Timeline card and the full-screen post view, the Like/Comment/Reblog/Bookmark/... interaction row now sits below the site name and date instead of above it. ([#338](https://github.com/jeffpaul/daymark/issues/338))
 
+### Fixed
+
+- The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check. ([#342](https://github.com/jeffpaul/daymark/issues/342))
+
 ## [0.15.0] - 2026-09-10
 
 ### Added

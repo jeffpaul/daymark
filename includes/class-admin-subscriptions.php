@@ -1729,7 +1729,16 @@ class Daymark_Admin_Subscriptions {
 	 * pattern"). render_connectors_tab() branches on this to skip
 	 * connector_status()/Install/Activate entirely for a 'service' entry.
 	 *
-	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, folder_slug?: string, url?: string, description: string}>
+	 * `classes`/`constants`, where present, are an additional fallback
+	 * signal for connector_status() (issue #342): a defining class/constant
+	 * present at runtime can only be true for a plugin that's genuinely
+	 * active (inactive plugin code is never loaded by PHP), so it catches
+	 * a build whose installed folder doesn't match `folder_slug` at all —
+	 * confirmed necessary for ATmosphere specifically, whose values here
+	 * mirror `Daymark_Publish_Helpers::PLUGINS['atmosphere']`'s own,
+	 * already-working multi-signal detection of the same plugin.
+	 *
+	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, folder_slug?: string, classes?: string[], constants?: string[], url?: string, description: string}>
 	 */
 	private static function recommended_connectors(): array {
 		return array(
@@ -1750,6 +1759,8 @@ class Daymark_Admin_Subscriptions {
 				'label'       => 'ATmosphere',
 				'wporg_slug'  => 'atmosphere',
 				'folder_slug' => 'wordpress-atmosphere',
+				'classes'     => array( 'Atmosphere\\Publisher' ),
+				'constants'   => array( 'ATMOSPHERE_VERSION' ),
 				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
 				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
 			),
@@ -1780,17 +1791,35 @@ class Daymark_Admin_Subscriptions {
 	 * A recommended connector's current state: 'active', 'inactive'
 	 * (installed but not active), or 'not_installed'.
 	 *
-	 * @param array<string, string> $connector One RECOMMENDED_CONNECTORS entry.
+	 * A folder-slug match wins first, exactly as before. When it finds
+	 * nothing at all (issue #342 — a republished/renamed build installed
+	 * under a folder that doesn't match `folder_slug`), falls back to
+	 * `Daymark_Plugin_Detector::matches()` against the connector's own
+	 * `classes`/`constants` signals: a match there can only ever mean
+	 * 'active' (that code can't be loaded by an inactive plugin), never
+	 * 'inactive' — there's no installed-but-not-active state this
+	 * fallback can detect, since it has no folder to point Activate at.
+	 *
+	 * @param array<string, string|string[]> $connector One RECOMMENDED_CONNECTORS entry.
 	 * @return string
 	 */
 	private function connector_status( array $connector ): string {
 		$plugin_file = $this->connector_plugin_file( $connector );
 
-		if ( null === $plugin_file ) {
-			return 'not_installed';
+		if ( null !== $plugin_file ) {
+			return is_plugin_active( $plugin_file ) ? 'active' : 'inactive';
 		}
 
-		return is_plugin_active( $plugin_file ) ? 'active' : 'inactive';
+		$signals = array(
+			'classes'   => $connector['classes'] ?? array(),
+			'constants' => $connector['constants'] ?? array(),
+		);
+
+		if ( Daymark_Plugin_Detector::matches( $signals ) ) {
+			return 'active';
+		}
+
+		return 'not_installed';
 	}
 
 	/**

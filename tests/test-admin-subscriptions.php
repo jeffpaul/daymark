@@ -27,6 +27,11 @@
  * handler here only thinly wraps) are covered directly in
  * tests/test-subscriptions.php and tests/test-subscription-opml.php
  * instead; this file covers what each new form actually renders.
+ *
+ * The Connectors tab's own ATmosphere class-signal-fallback test below
+ * (issue #342) relies on `Atmosphere\Publisher` being aliased into place —
+ * see tests/class-plugin-detector-stub.php (required from
+ * tests/bootstrap.php) for why that fixture can't be declared in this file.
  */
 class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
@@ -1569,5 +1574,23 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertMatchesRegularExpression( '/>Activate</', $output );
 		$this->assertMatchesRegularExpression( '/plugins\.php\?action=activate(?:&amp;|&#038;|&)plugin=activitypub%2Factivitypub\.php/', $output );
+	}
+
+	/**
+	 * A republished/renamed ATmosphere build (issue #342 — reported "By
+	 * Automattic", installed under a folder that no longer matches the
+	 * historical `wordpress-atmosphere` slug) still reports "Active" on the
+	 * Connectors tab, because connector_status() falls back to
+	 * Daymark_Plugin_Detector::matches() against the connector's own
+	 * classes/constants signals once the folder-slug lookup finds nothing —
+	 * no fake plugin folder installed at all for this test.
+	 */
+	public function test_connectors_tab_detects_atmosphere_via_class_signal_when_folder_slug_does_not_match(): void {
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'Active', $output );
+		$this->assertStringNotContainsString( 'Install Now', $output );
 	}
 }

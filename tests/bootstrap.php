@@ -62,3 +62,8 @@ Daymark_Subscriptions::install();
 // the real akirk/friends plugin (issue #88) lives in its own required file
 // rather than inline here or in the test file itself.
 require_once __DIR__ . '/class-friends-stub.php';
+
+// See class-plugin-detector-stub.php's own docblock — the same reasoning,
+// for Daymark_Plugin_Detector::matches()'s own generic test fixtures and
+// the ATmosphere class-signal fixture (issue #342).
+require_once __DIR__ . '/class-plugin-detector-stub.php';
