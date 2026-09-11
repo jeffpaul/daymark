@@ -1872,7 +1872,13 @@ h2[tabindex='-1']:focus {
 
 .daymark-sheet__panel {
 	position: relative;
-	max-height: 85vh;
+	/* A percentage of .daymark-sheet's own (flex parent) height, not a `vh`
+	   unit — `vh` stays anchored to the CSS viewport, so on iOS Safari it
+	   never reflects a keyboard-shrunk visible area; a percentage instead
+	   tracks whatever height the parent actually resolves to, including the
+	   explicit height app.js's syncSheetsToVisualViewport() sets on that
+	   parent while a keyboard is open (see its own docblock). */
+	max-height: 85%;
 	overflow-y: auto;
 	background: var(--daymark-bg);
 	border-radius: var(--daymark-radius) var(--daymark-radius) 0 0;
