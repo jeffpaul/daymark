@@ -142,6 +142,21 @@ class Test_Microformats extends WP_UnitTestCase {
 		$this->assertGreaterThan( 0, $parsed );
 	}
 
+	/**
+	 * entry_metadata_markup()'s wrapping div is visually hidden — it's
+	 * duplicate machine-readable data for mf2 parsers/federation plugins,
+	 * not content meant for a human reader (a permalink/date the theme's
+	 * own template already shows, or a reply/repost/like target that used
+	 * to render as a bare, out-of-context URL — see CLAUDE.md's decision
+	 * row for this fix). `display:none` has no effect on mf2 discovery,
+	 * which parses raw HTML regardless of computed CSS visibility.
+	 */
+	public function test_entry_metadata_wrapper_is_visually_hidden() {
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+
+		$this->assertStringContainsString( 'class="daymark-h-entry-meta" style="display:none"', $markup );
+	}
+
 	/** rich_media_markup() emits u-photo/u-video/u-audio for attached media of each kind. */
 	public function test_rich_media_markup_covers_photo_video_audio() {
 		$image_id = self::factory()->attachment->create_object(
