@@ -811,6 +811,16 @@ XML;
 	 * matching its own already-discovered feed candidate in place (never a
 	 * duplicate row for the same URL), and append a genuinely new candidate
 	 * for the other language's own, distinct feed.
+	 *
+	 * No total-count assertion here on purpose — same reasoning as
+	 * test_discover_candidates_returns_every_source_tagged() above:
+	 * Daymark_Subscription_Source_Registry is a process-wide singleton
+	 * PHPUnit never resets between tests, and other test files in this same
+	 * run register their own always-succeeding stub sources against it, so
+	 * discover_all_feeds() (which queries every registered source, unlike
+	 * discover_feeds()'s first-match-wins) can return extra, unrelated
+	 * candidates by the time this test runs. Asserting only the two URLs
+	 * this test actually cares about is unaffected by that leakage.
 	 */
 	public function test_discover_candidates_tags_language_variants() {
 		$main_html = '<html><head><title>Multilingual</title>'
@@ -829,7 +839,6 @@ XML;
 		$candidates = $this->subscriptions->discover_candidates( 'https://multilingual.example/' );
 
 		$this->assertIsArray( $candidates );
-		$this->assertCount( 2, $candidates );
 
 		$by_url = array();
 
