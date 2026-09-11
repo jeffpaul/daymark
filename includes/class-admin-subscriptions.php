@@ -878,6 +878,7 @@ class Daymark_Admin_Subscriptions {
 			$candidate_url   = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
 			$source_label    = isset( $candidate['source_label'] ) ? (string) $candidate['source_label'] : '';
 			$candidate_title = isset( $candidate['title'] ) ? (string) $candidate['title'] : '';
+			$language_name   = $this->language_display_name( isset( $candidate['language'] ) ? (string) $candidate['language'] : '' );
 			$is_current      = '' !== $candidate_url && $candidate_url === $current_feed_url;
 			$already         = '' !== $candidate_url && null !== $subscriptions->get_by_feed_url( $candidate_url );
 			$checked         = $is_current || $already || ( $index === $best_index );
@@ -890,7 +891,12 @@ class Daymark_Admin_Subscriptions {
 					<?php checked( $checked ); ?>
 					<?php disabled( $already ); ?>
 				/>
-				<strong><?php echo esc_html( $source_label ); ?></strong>
+				<strong>
+					<?php echo esc_html( $source_label ); ?>
+					<?php if ( '' !== $language_name ) : ?>
+						(<?php echo esc_html( $language_name ); ?>)
+					<?php endif; ?>
+				</strong>
 				<?php if ( '' !== $candidate_title ) : ?>
 					— <?php echo esc_html( $candidate_title ); ?>
 				<?php endif; ?>
@@ -904,6 +910,64 @@ class Daymark_Admin_Subscriptions {
 			</label>
 			<?php
 		}
+	}
+
+	/**
+	 * A candidate's own hreflang-derived `language` code (issue #336),
+	 * mapped to a human-readable name for the checkbox picker — e.g. `pt-br`
+	 * -> "Portuguese". Matched by primary language subtag only (region is
+	 * ignored for display purposes, e.g. `pt`/`pt-br`/`pt-pt` all read
+	 * "Portuguese") against a small, fixed lookup of common languages; a
+	 * code not in that lookup falls back to displaying the raw code itself
+	 * (uppercased) rather than guessing — no new locale-data dependency for
+	 * an exhaustive list.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param string $language Raw `language` value from a candidate, or ''.
+	 * @return string Human-readable name, or '' when $language is empty.
+	 */
+	private function language_display_name( string $language ): string {
+		$language = strtolower( trim( $language ) );
+
+		if ( '' === $language ) {
+			return '';
+		}
+
+		$names = array(
+			'en' => __( 'English', 'daymark' ),
+			'es' => __( 'Spanish', 'daymark' ),
+			'pt' => __( 'Portuguese', 'daymark' ),
+			'fr' => __( 'French', 'daymark' ),
+			'de' => __( 'German', 'daymark' ),
+			'it' => __( 'Italian', 'daymark' ),
+			'nl' => __( 'Dutch', 'daymark' ),
+			'ru' => __( 'Russian', 'daymark' ),
+			'ja' => __( 'Japanese', 'daymark' ),
+			'zh' => __( 'Chinese', 'daymark' ),
+			'ko' => __( 'Korean', 'daymark' ),
+			'ar' => __( 'Arabic', 'daymark' ),
+			'hi' => __( 'Hindi', 'daymark' ),
+			'tr' => __( 'Turkish', 'daymark' ),
+			'pl' => __( 'Polish', 'daymark' ),
+			'sv' => __( 'Swedish', 'daymark' ),
+			'da' => __( 'Danish', 'daymark' ),
+			'fi' => __( 'Finnish', 'daymark' ),
+			'no' => __( 'Norwegian', 'daymark' ),
+			'cs' => __( 'Czech', 'daymark' ),
+			'el' => __( 'Greek', 'daymark' ),
+			'he' => __( 'Hebrew', 'daymark' ),
+			'id' => __( 'Indonesian', 'daymark' ),
+			'th' => __( 'Thai', 'daymark' ),
+			'vi' => __( 'Vietnamese', 'daymark' ),
+			'uk' => __( 'Ukrainian', 'daymark' ),
+			'ro' => __( 'Romanian', 'daymark' ),
+			'hu' => __( 'Hungarian', 'daymark' ),
+		);
+
+		$subtag = explode( '-', $language )[0];
+
+		return $names[ $subtag ] ?? strtoupper( $language );
 	}
 
 	/**

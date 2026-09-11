@@ -512,6 +512,57 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'checked', $wordpress_input[0] );
 	}
 
+	/**
+	 * Scenario (issue #336): a candidate carrying a `language` tag (hreflang-
+	 * based per-language feed detection) shows its human-readable language
+	 * name in the picker label; a candidate with no `language` tag at all
+	 * (the overwhelming majority of single-language sites) shows nothing
+	 * extra.
+	 */
+	public function test_new_subscribe_picker_shows_language_name_when_tagged(): void {
+		set_transient(
+			'daymark_new_subscription_candidates_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://multilingual-picker-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://multilingual-picker-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+						'language'     => 'en',
+					),
+					array(
+						'url'          => 'https://multilingual-picker-example.com/br/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+						'language'     => 'pt-br',
+					),
+					array(
+						'url'          => 'https://multilingual-picker-example.com/wp-json/wp/v2/posts',
+						'title'        => '',
+						'source_type'  => 'wordpress',
+						'source_label' => 'WordPress REST API',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'RSS/Atom Feed', $output );
+		$this->assertStringContainsString( '(English)', $output );
+		$this->assertStringContainsString( '(Portuguese)', $output );
+
+		// The untagged WordPress REST API candidate's own label carries no
+		// parenthesized language at all.
+		$wordpress_pos = strpos( $output, 'WordPress REST API' );
+		$this->assertIsInt( $wordpress_pos );
+		$this->assertStringNotContainsString( '(', substr( $output, $wordpress_pos, 40 ) );
+	}
+
 	/** Scenario: a candidate that's already subscribed (a previous partial attempt, or simply already followed) renders checked and disabled with "(already subscribed)", never "(current)" — there is no existing row yet in this context. */
 	public function test_new_subscribe_picker_marks_already_subscribed_candidate(): void {
 		$this->subscriptions->create(

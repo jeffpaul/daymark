@@ -113,6 +113,125 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 	}
 
 	/**
+	 * Discover one feed candidate per language a site advertises via
+	 * `<link rel="alternate" hreflang="...">` autodiscovery (issue #336) —
+	 * the same standards-based, plugin-agnostic signal Polylang/WPML/
+	 * MultilingualPress/etc. all emit for a page's own language variants,
+	 * regardless of which one a subscribed-to site happens to run (Daymark
+	 * has no way to introspect that from the outside).
+	 *
+	 * Only returns anything once the page genuinely advertises 2+ distinct
+	 * languages — the overwhelming majority of sites emit none or exactly
+	 * one (their own canonical URL), and there's nothing to differentiate
+	 * or any extra request to spend in that case. When it does apply, this
+	 * costs exactly one extra live request per *additional* language beyond
+	 * $site_url's own (routed through the same Daymark_Subscription_Html_Cache
+	 * every other discovery-time fetch already uses).
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param string $site_url Site URL entered by the user (not a feed URL).
+	 * @return array<int, array{url: string, title: string, type: string, source_type: string, source_label: string, language: string}> One
+	 *         entry per advertised language (including $site_url's own),
+	 *         each carrying the same shape discover()'s own candidates do,
+	 *         plus a `language` key (the raw hreflang code); empty when the
+	 *         page advertises fewer than 2 languages, or none of them
+	 *         resolve to a feed.
+	 */
+	public function discover_language_variants( string $site_url ): array {
+		$site_url = $this->sanitize_source_url( $site_url );
+
+		if ( '' === $site_url ) {
+			return array();
+		}
+
+		$html = $this->fetch_html( $site_url );
+
+		if ( '' === $html ) {
+			return array();
+		}
+
+		$alternates = $this->discover_language_alternates( $html, $site_url );
+
+		if ( count( $alternates ) < 2 ) {
+			return array();
+		}
+
+		$candidates = array();
+
+		foreach ( $alternates as $language => $alt_url ) {
+			$alt_html = $this->fetch_html( $alt_url );
+
+			if ( '' === $alt_html ) {
+				continue;
+			}
+
+			$found = $this->find_feed_links( $alt_html, $alt_url );
+
+			if ( array() === $found ) {
+				continue;
+			}
+
+			$best = $this->rank_feed_candidates( $found )[0];
+
+			$candidates[] = array(
+				'url'          => $best['url'],
+				'title'        => $best['title'],
+				'type'         => $best['type'],
+				'source_type'  => $this->get_id(),
+				'source_label' => $this->get_label(),
+				'language'     => $language,
+			);
+		}
+
+		return $candidates;
+	}
+
+	/**
+	 * Parse every `<link rel="alternate" hreflang="...">` tag in a site's
+	 * `<head>` — used by discover_language_variants() above.
+	 * `hreflang="x-default"` (a fallback marker for search engines, not a
+	 * real language) is skipped, as is a repeated hreflang code past its
+	 * first occurrence.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param string $html     Fetched site HTML.
+	 * @param string $site_url Site URL the HTML was fetched from (relative
+	 *                         `href` values are resolved against it).
+	 * @return array<string, string> hreflang code (lowercased) => absolute
+	 *                                URL, in document order.
+	 */
+	private function discover_language_alternates( string $html, string $site_url ): array {
+		$alternates = array();
+
+		foreach ( $this->extract_tags( $this->extract_head_section( $html ), 'link' ) as $tag ) {
+			$attrs = $this->parse_tag_attributes( $tag );
+			$rel   = strtolower( (string) ( $attrs['rel'] ?? '' ) );
+
+			if ( ! in_array( 'alternate', preg_split( '/\s+/', $rel ), true ) ) {
+				continue;
+			}
+
+			$hreflang = strtolower( trim( (string) ( $attrs['hreflang'] ?? '' ) ) );
+
+			if ( '' === $hreflang || 'x-default' === $hreflang || isset( $alternates[ $hreflang ] ) ) {
+				continue;
+			}
+
+			$href = $this->resolve_href( (string) ( $attrs['href'] ?? '' ), $site_url );
+
+			if ( '' === $href ) {
+				continue;
+			}
+
+			$alternates[ $hreflang ] = $href;
+		}
+
+		return $alternates;
+	}
+
+	/**
 	 * Fetch and parse a feed via SimplePie.
 	 *
 	 * Returns a list of raw item arrays, each built from SimplePie's own

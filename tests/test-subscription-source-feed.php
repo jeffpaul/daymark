@@ -999,4 +999,150 @@ XML;
 		$this->assertSame( 'feed', $source->get_id() );
 		$this->assertArrayHasKey( 'feed', $registry->get_sources() );
 	}
+
+	// -----------------------------------------------------------------
+	// Per-language feed discovery via hreflang autodiscovery (issue #336).
+	// -----------------------------------------------------------------
+
+	/**
+	 * Scenario: a page advertising fewer than 2 distinct hreflang alternates
+	 * (here, none at all — just its own feed) isn't genuinely multilingual;
+	 * discover_language_variants() returns nothing rather than spending an
+	 * extra request on it.
+	 */
+	public function test_discover_language_variants_returns_empty_with_no_alternates() {
+		$html = $this->html_with_links(
+			array(
+				array(
+					'rel'  => 'alternate',
+					'type' => 'application/rss+xml',
+					'href' => '/feed/',
+				),
+			)
+		);
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame( array(), $this->source->discover_language_variants( 'https://example.com/' ) );
+	}
+
+	/**
+	 * Scenario: `hreflang="x-default"` is a fallback marker for search
+	 * engines, not a real language — it's skipped, so a page carrying only
+	 * one genuine language plus an x-default marker still isn't treated as
+	 * multilingual.
+	 */
+	public function test_discover_language_variants_skips_x_default_marker() {
+		$html = $this->html_with_links(
+			array(
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'en',
+					'href'     => 'https://example.com/',
+				),
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'x-default',
+					'href'     => 'https://example.com/',
+				),
+			)
+		);
+
+		$this->mock_response( 'https://example.com/', $html );
+
+		$this->assertSame( array(), $this->source->discover_language_variants( 'https://example.com/' ) );
+	}
+
+	/**
+	 * Scenario: a genuinely multilingual page (2+ distinct hreflang
+	 * alternates, one of them a relative href resolved against $site_url)
+	 * gets one feed candidate per language, each tagged with that language
+	 * — including the language matching $site_url's own already-discovered
+	 * feed, so the new-subscribe picker never has to guess which language
+	 * the "plain" candidate is in.
+	 */
+	public function test_discover_language_variants_tags_each_language_feed() {
+		$main_html = $this->html_with_links(
+			array(
+				array(
+					'rel'  => 'alternate',
+					'type' => 'application/rss+xml',
+					'href' => 'https://example.com/feed/',
+				),
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'en',
+					'href'     => 'https://example.com/',
+				),
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'pt-BR',
+					'href'     => '/br/',
+				),
+			)
+		);
+
+		$alt_html = $this->html_with_links(
+			array(
+				array(
+					'rel'  => 'alternate',
+					'type' => 'application/rss+xml',
+					'href' => 'https://example.com/br/feed/',
+				),
+			)
+		);
+
+		$this->mock_response( 'https://example.com/', $main_html );
+		$this->mock_response( 'https://example.com/br/', $alt_html );
+
+		$variants = $this->source->discover_language_variants( 'https://example.com/' );
+
+		$this->assertCount( 2, $variants );
+
+		$by_language = array();
+
+		foreach ( $variants as $variant ) {
+			$by_language[ $variant['language'] ] = $variant;
+		}
+
+		$this->assertSame( 'https://example.com/feed/', $by_language['en']['url'] );
+		$this->assertSame( 'https://example.com/br/feed/', $by_language['pt-br']['url'] );
+		$this->assertSame( 'feed', $by_language['en']['source_type'] );
+		$this->assertNotSame( '', $by_language['en']['source_label'] );
+	}
+
+	/**
+	 * Scenario: a language whose own page has no discoverable feed at all
+	 * is quietly skipped — only languages that actually resolve to a feed
+	 * are returned.
+	 */
+	public function test_discover_language_variants_skips_a_language_with_no_feed() {
+		$main_html = $this->html_with_links(
+			array(
+				array(
+					'rel'  => 'alternate',
+					'type' => 'application/rss+xml',
+					'href' => 'https://example.com/feed/',
+				),
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'en',
+					'href'     => 'https://example.com/',
+				),
+				array(
+					'rel'      => 'alternate',
+					'hreflang' => 'pt-br',
+					'href'     => 'https://example.com/br/',
+				),
+			)
+		);
+
+		$this->mock_response( 'https://example.com/', $main_html );
+		$this->mock_response( 'https://example.com/br/', '<html><head><title>No Feed</title></head><body></body></html>' );
+
+		$variants = $this->source->discover_language_variants( 'https://example.com/' );
+
+		$this->assertCount( 1, $variants );
+		$this->assertSame( 'en', $variants[0]['language'] );
+	}
 }

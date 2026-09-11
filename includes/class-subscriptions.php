@@ -378,6 +378,65 @@ class Daymark_Subscriptions {
 			);
 		}
 
+		// issue #336: a multilingual site (Polylang/WPML/MultilingualPress/etc.)
+		// advertises its own per-language feeds via <link rel="alternate"
+		// hreflang="..."> autodiscovery — a plugin-agnostic signal, unlike
+		// trying to detect which specific plugin a subscribed-to site runs.
+		// Merged in here (rather than as its own registered source) so a
+		// language variant that happens to coincide with a candidate already
+		// discovered above (e.g. this exact page's own feed) is tagged in
+		// place instead of appearing twice.
+		$feed_source = $registry->get_source( 'feed' );
+
+		if ( $feed_source instanceof Daymark_Subscription_Source_Feed ) {
+			$candidates = self::merge_language_variants(
+				$candidates,
+				$feed_source->discover_language_variants( $site_url )
+			);
+		}
+
+		return $candidates;
+	}
+
+	/**
+	 * Merge discover_language_variants()'s own per-language feed candidates
+	 * into an already-discovered candidate list (issue #336): a variant
+	 * whose URL matches a candidate already in the list is merged into that
+	 * same entry (just adding its `language` tag) rather than appended as a
+	 * duplicate row; a genuinely new URL (a different language's own,
+	 * distinct feed) is appended as its own candidate.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param array<int, array<string, mixed>> $candidates        Already-discovered candidates.
+	 * @param array<int, array<string, mixed>> $language_variants discover_language_variants()'s own result.
+	 * @return array<int, array<string, mixed>>
+	 */
+	private static function merge_language_variants( array $candidates, array $language_variants ): array {
+		foreach ( $language_variants as $variant ) {
+			$variant_url = isset( $variant['url'] ) ? (string) $variant['url'] : '';
+
+			if ( '' === $variant_url ) {
+				continue;
+			}
+
+			$matched = false;
+
+			foreach ( $candidates as $index => $candidate ) {
+				$candidate_url = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
+
+				if ( $candidate_url === $variant_url ) {
+					$candidates[ $index ]['language'] = $variant['language'];
+					$matched                          = true;
+					break;
+				}
+			}
+
+			if ( ! $matched ) {
+				$candidates[] = $variant;
+			}
+		}
+
 		return $candidates;
 	}
 
@@ -434,14 +493,161 @@ class Daymark_Subscriptions {
 	 * discover_candidates() result — the one the new-subscribe picker
 	 * should check by default (issue #334), so subscribing to a brand-new
 	 * site never requires a person to actively pick anything if the
-	 * automatic best guess is fine. Chosen purely by candidate_richness_rank();
-	 * the first-registered candidate wins a tie.
+	 * automatic best guess is fine.
+	 *
+	 * When 2+ candidates carry a `language` tag (issue #336's hreflang-based
+	 * per-language feed detection), preference runs in tiers before falling
+	 * back to plain richness:
+	 *
+	 * 1. A candidate whose language exactly matches this site's own
+	 *    Settings -> General -> Site Language (`get_locale()`) — the site
+	 *    owner has already told WordPress what language they read in, a
+	 *    stronger signal than assuming any one language universally.
+	 * 2. A candidate sharing the same primary language subtag as the site's
+	 *    own language, ignoring region (e.g. site `pt_BR` vs. a candidate
+	 *    tagged plain `pt` or `pt-PT`).
+	 * 3. A candidate tagged English (`en`/`en-US`/`en-GB`/etc.) — Daymark
+	 *    itself is authored in English, and a lot of non-Anglophone content
+	 *    is bilingual with English as a common denominator, so this is a
+	 *    reasonable universal fallback when the site's own language isn't
+	 *    one of the discovered options.
+	 * 4. Today's plain richness ranking (candidate_richness_rank()) across
+	 *    every candidate, language-tagged or not — unchanged behavior for
+	 *    the overwhelming majority of (single-language) sites, where no
+	 *    candidate carries a `language` tag at all.
+	 *
+	 * Within whichever tier wins, candidate_richness_rank() still breaks
+	 * ties; the first-registered candidate wins a tie within a tie.
 	 *
 	 * @param array<int, array<string, mixed>> $candidates A discover_candidates()
 	 *                                                      result.
 	 * @return int The best candidate's own array index, or -1 for an empty list.
 	 */
 	public static function most_optimal_candidate_index( array $candidates ): int {
+		$site_locale = self::normalized_site_locale();
+		$site_subtag = self::language_subtag( $site_locale );
+
+		if ( '' !== $site_locale ) {
+			$index = self::richest_matching_index(
+				$candidates,
+				static fn( string $language ): bool => $language === $site_locale
+			);
+
+			if ( -1 !== $index ) {
+				return $index;
+			}
+
+			$index = self::richest_matching_index(
+				$candidates,
+				static fn( string $language ): bool => self::language_subtag( $language ) === $site_subtag
+			);
+
+			if ( -1 !== $index ) {
+				return $index;
+			}
+		}
+
+		$index = self::richest_matching_index(
+			$candidates,
+			static fn( string $language ): bool => 'en' === self::language_subtag( $language )
+		);
+
+		if ( -1 !== $index ) {
+			return $index;
+		}
+
+		return self::richest_candidate_index( $candidates );
+	}
+
+	/**
+	 * This site's own Settings -> General -> Site Language, normalized to
+	 * the lowercased, hyphenated shape a candidate's own hreflang-derived
+	 * `language` tag uses (e.g. `pt_BR` -> `pt-br`) so the two can be
+	 * compared directly.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @return string Lowercased, hyphenated locale, or '' if get_locale()
+	 *                is empty (should not normally happen).
+	 */
+	private static function normalized_site_locale(): string {
+		return strtolower( str_replace( '_', '-', (string) get_locale() ) );
+	}
+
+	/**
+	 * The primary language subtag of a lowercased, hyphenated locale/
+	 * language code, e.g. `pt-br` -> `pt`.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param string $language Lowercased, hyphenated locale/language code.
+	 * @return string
+	 */
+	private static function language_subtag( string $language ): string {
+		if ( '' === $language ) {
+			return '';
+		}
+
+		return explode( '-', $language )[0];
+	}
+
+	/**
+	 * Among only the candidates whose own `language` tag satisfies $matches,
+	 * the one with the best (lowest) candidate_richness_rank() — used by
+	 * most_optimal_candidate_index() to pick the richest candidate within
+	 * whichever language-preference tier has any match at all. A candidate
+	 * with no `language` tag never matches any tier (there's nothing to
+	 * compare), so it's only ever reachable via richest_candidate_index()'s
+	 * own untiered fallback.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param array<int, array<string, mixed>> $candidates A discover_candidates()
+	 *                                                      result.
+	 * @param callable(string): bool           $matches    Given a candidate's
+	 *                                                      own lowercased
+	 *                                                      `language` value,
+	 *                                                      whether it
+	 *                                                      qualifies for this
+	 *                                                      tier.
+	 * @return int The best matching candidate's own array index, or -1 when
+	 *             nothing matches.
+	 */
+	private static function richest_matching_index( array $candidates, callable $matches ): int {
+		$best_index = -1;
+		$best_rank  = PHP_INT_MAX;
+
+		foreach ( $candidates as $index => $candidate ) {
+			$language = strtolower( (string) ( $candidate['language'] ?? '' ) );
+
+			if ( '' === $language || ! $matches( $language ) ) {
+				continue;
+			}
+
+			$rank = self::candidate_richness_rank( (string) ( $candidate['source_type'] ?? '' ) );
+
+			if ( $rank < $best_rank ) {
+				$best_rank  = $rank;
+				$best_index = $index;
+			}
+		}
+
+		return $best_index;
+	}
+
+	/**
+	 * The single richest candidate by candidate_richness_rank() alone,
+	 * regardless of any `language` tag — most_optimal_candidate_index()'s
+	 * original, pre-issue-#336 behavior, kept as the final fallback tier
+	 * once no language-based preference matched anything.
+	 *
+	 * @since 0.16.0
+	 *
+	 * @param array<int, array<string, mixed>> $candidates A discover_candidates()
+	 *                                                      result.
+	 * @return int The best candidate's own array index, or -1 for an empty list.
+	 */
+	private static function richest_candidate_index( array $candidates ): int {
 		$best_index = -1;
 		$best_rank  = PHP_INT_MAX;
 
