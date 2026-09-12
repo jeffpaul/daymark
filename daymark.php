@@ -1,16 +1,16 @@
 <?php
 /**
- * Plugin Name: Daymark
- * Plugin URI: https://github.com/jeffpaul/daymark
- * Description: Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
- * Version: 0.15.0
+ * Plugin Name:       Daymark
+ * Plugin URI:        https://github.com/jeffpaul/daymark
+ * Description:       Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
+ * Version:           0.15.0
  * Requires at least: 7.0
- * Requires PHP: 8.2
- * Author: Jeff Paul
- * Author URI: https://github.com/jeffpaul
- * License: GPL-2.0-or-later
- * License URI: https://spdx.org/licenses/GPL-2.0-or-later.html
- * Text Domain: daymark
+ * Requires PHP:      8.2
+ * Author:            Jeffrey Paul
+ * Author URI:        https://github.com/jeffpaul
+ * License:           GPL-2.0-or-later
+ * License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
+ * Text Domain:       daymark
  *
  * @package Daymark
  */
