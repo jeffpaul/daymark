@@ -526,4 +526,102 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertEquals( 'Portability test', $post->post_title );
 		$this->assertEquals( '1', get_post_meta( $post_id, '_daymark_is_mark', true ) );
 	}
+
+	// -----------------------------------------------------------------
+	// Plugin-overlap notifications (issue #346). SYNDICATION_LINKS_VERSION
+	// is the one safe-to-define production detection signal for this —
+	// nothing else in this codebase or its test suite checks for it, so
+	// defining it here (guarded, so a re-run or another test file having
+	// already done so is a harmless no-op) can never leak into an
+	// unrelated assertion the way the real Post_Kinds_Plugin/UF2_Plugin/
+	// IndieBlocks\Plugin class names could.
+	// -----------------------------------------------------------------
+
+	private function ensure_syndication_links_signal_present(): void {
+		if ( ! defined( 'SYNDICATION_LINKS_VERSION' ) ) {
+			define( 'SYNDICATION_LINKS_VERSION', '99.0' );
+		}
+	}
+
+	/** An active, undismissed overlap surfaces as a plugin_overlap notification item. */
+	public function test_active_overlap_appears_as_plugin_overlap_notification() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->ensure_syndication_links_signal_present();
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $matching );
+		$this->assertSame( 'Syndication Links', $matching[0]['label'] );
+		$this->assertNotEmpty( $matching[0]['message'] );
+	}
+
+	/** Dismissing a plugin overlap removes it from get_notifications() for that user. */
+	public function test_dismissed_overlap_no_longer_appears() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->ensure_syndication_links_signal_present();
+
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $user_id, 'syndication-links' );
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_filter(
+			$items,
+			static function ( array $item ) {
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+			}
+		);
+
+		$this->assertSame( array(), $matching );
+	}
+
+	/** Dismissal is per-user: a different user still sees the same active overlap. */
+	public function test_overlap_dismissal_is_scoped_per_user() {
+		$dismisser = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$other     = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$this->ensure_syndication_links_signal_present();
+
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'syndication-links' );
+
+		wp_set_current_user( $other );
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_filter(
+			$items,
+			static function ( array $item ) {
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+			}
+		);
+
+		$this->assertCount( 1, $matching );
+	}
+
+	/**
+	 * An active, undismissed plugin-overlap item must NOT drive
+	 * has_unread() — see that method's own docblock for why: its list-sort
+	 * timestamp is always "now", so treating it as fresh on every check
+	 * would mean the unread dot could never clear.
+	 */
+	public function test_active_overlap_does_not_drive_has_unread() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->ensure_syndication_links_signal_present();
+
+		$notifications = new Daymark_Notifications();
+
+		$this->assertFalse( $notifications->has_unread(), 'An active plugin overlap alone must not mark notifications unread' );
+	}
 }

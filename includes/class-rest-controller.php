@@ -637,6 +637,26 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'dismiss_plugin_overlap' ),
+				// A pure local write (per-user meta, no outbound request),
+				// same posture as unsubscribing — no rate-limit bucket
+				// needed, unlike an action that costs an external fetch.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'plugin' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_key',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/(?P<comment_id>\d+)/reply',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1914,6 +1934,37 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'id'         => $post_id,
 				'bookmarked' => false,
+			)
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/notifications/plugin-overlaps/{plugin}/dismiss —
+	 * dismiss a plugin-overlap Notifications item (issue #346) for the
+	 * current user. One-way: there's no matching "un-dismiss" route, since
+	 * nothing in this feature ever needs to bring a dismissed notice back.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function dismiss_plugin_overlap( WP_REST_Request $request ) {
+		$plugin_key = sanitize_key( (string) $request->get_param( 'plugin' ) );
+		$overlap    = Daymark_Plugin::instance()->plugin_overlap;
+
+		if ( ! $overlap->is_known( $plugin_key ) ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Unknown plugin.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$overlap->dismiss( get_current_user_id(), $plugin_key );
+
+		return rest_ensure_response(
+			array(
+				'plugin'    => $plugin_key,
+				'dismissed' => true,
 			)
 		);
 	}

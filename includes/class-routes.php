@@ -532,6 +532,7 @@ class Daymark_Routes {
 				'logoutUrl'      => esc_url_raw( wp_logout_url( self::app_url( 'me' ) ) ),
 			),
 			'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
+			'pluginsUrl'            => esc_url_raw( admin_url( 'plugins.php' ) ),
 			'pendingDraftId'        => $pending_draft_id,
 			'pendingType'           => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);

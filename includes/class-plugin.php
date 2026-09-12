@@ -101,6 +101,13 @@ final class Daymark_Plugin {
 	public Daymark_Bookmarks $bookmarks;
 
 	/**
+	 * Overlapping-IndieWeb-plugin detection + per-user dismissal.
+	 *
+	 * @var Daymark_Plugin_Overlap
+	 */
+	public Daymark_Plugin_Overlap $plugin_overlap;
+
+	/**
 	 * Per-user rate limiter for REST actions.
 	 *
 	 * @var Daymark_Rate_Limiter
@@ -232,6 +239,7 @@ final class Daymark_Plugin {
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
 		$this->bookmarks                    = new Daymark_Bookmarks();
+		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
 		$this->microformats                 = new Daymark_Microformats();
