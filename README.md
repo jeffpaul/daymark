@@ -2,376 +2,162 @@
 
 ![Daymark](.wordpress-org/banner-1544x500.png)
 
+[![GPLv2 License](https://img.shields.io/github/license/jeffpaul/daymark.svg)](https://github.com/jeffpaul/daymark/blob/main/LICENSE)
+[![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)
+
+> Publish to your own site as fast as you'd post to a social app — photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
+
+## Your phone is full of moments worth sharing
+
+Daymark makes your own WordPress site the fastest, most natural place to
+share them — no app store, no algorithm deciding who sees it, no platform
+that can change the rules on you tomorrow.
+
+Open Daymark on your phone, tap to capture a photo, a video, or a quick
+voice note (or pick one you already took), add a caption, and publish.
+That's it. What you publish lives on your own site, under your own name,
+for as long as you want it there.
+
+## Why people love publishing with Daymark
+
+- **It feels like your favorite social app — because your site deserves
+  to.** Add Daymark to your phone's home screen and it opens like a real
+  app: fast, focused, and built for one-handed use.
+- **Your camera is one tap away.** Choose Photo, Video, or Audio and
+  Daymark opens your camera or microphone right away. Already have the
+  shot? Grabbing it from your library is just as easy.
+- **Share to Daymark from anywhere on your phone**, using your phone's own
+  Share button — from Photos, Safari, or almost any other app.
+- **You never lose your work**, online or off — Daymark quietly saves as
+  you go and publishes the moment you're back online.
+- **Tap Publish and move on with your day.** No spinner to wait out, even
+  for a big video or a whole gallery of photos.
+- **It's genuinely yours, for good.** Every post is a real WordPress post
+  — not a locked-in format — so it keeps working with your theme, your
+  feeds, your backups, even if you ever stop using Daymark.
+- **Reach further, without extra work.** Daymark works alongside the
+  sharing plugins you already use, and brings replies from other networks
+  back to you automatically.
+- **A helping hand, never a replacement for yours.** Optional AI
+  suggestions for captions, titles, tags, and alt text — always yours to
+  accept, edit, or ignore.
+
+**[Try Daymark right now in your browser](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)**
+— a full, temporary WordPress site with Daymark pre-installed, no signup
+and nothing to install.
+
+## Getting started
+
+1. Install and activate Daymark like any WordPress plugin.
+2. Visit `/daymark` on your phone while logged in — for example,
+   `https://yoursite.com/daymark`.
+3. Add it to your home screen so it opens like an app:
+   - **iPhone (Safari):** tap Share, then **Add to Home Screen**.
+   - **Android (Chrome):** tap the **⋮** menu, then **Add to Home Screen**
+     (or **Install App**, when Chrome offers it).
+
+That's the whole setup — there's no separate account to create, no
+subscription, and nothing else to configure before your first post.
+
+## Learn more
+
+The full FAQ — how syndication and replies work, which AI providers are
+supported, what Daymark quietly captures and how to turn it off, offline
+behavior, and more — lives in **[readme.txt](readme.txt)**, the same
+content that appears on the plugin's wordpress.org listing.
+
+---
+
+## For developers and extenders
+
+The rest of this README is for anyone building with, contributing to, or
+evaluating the code behind Daymark, rather than using it to publish.
+
+### What it is, technically
+
+Every Mark is a standard WordPress `post` — no custom post type — with
+`_daymark_*` post meta carrying the rest. Around that, Daymark adds:
+
+- a mobile **app shell** at `/daymark` (vanilla ES2020, no build step),
+  installable to the home screen as a PWA;
+- a **REST API** (`/wp-json/daymark/v1/`) for creating and listing Marks;
+- optional **AI Assist** through the WordPress 7.0 AI Client — no
+  provider configured means no AI UI at all, and publishing never depends
+  on it;
+- **conversation backflow** that brings replies back as native WordPress
+  comments;
+- a **subscriptions/Timeline-following** system for reading other sites'
+  content (RSS/Atom, the WordPress REST API, microformats2, and the
+  Friends plugin) alongside your own Marks.
+
+Outbound syndication happens through the WordPress plugins you already
+trust (publicize-style and federation plugins) rather than Daymark
+reimplementing network APIs — see the FAQ in [readme.txt](readme.txt) for
+how that works from a user's side.
+
+### Requirements
+
+- WordPress 7.0+ (the bundled AI Client powers optional AI Assist)
+- PHP 8.2+
+
+### Extending Daymark
+
+- **Register a syndication connector** via `daymark_register_connectors` +
+  `daymark_import_network_responses` — the
+  [hooks reference site](https://jeffpaul.github.io/daymark/) documents
+  every public hook, and includes a "Writing a Connector" guide with a
+  complete worked example.
+- **Register a subscription source** (an inbound content connector) via
+  the `Daymark_Subscription_Source` interface and its registry — see
+  `includes/sources/` for the built-in feed/WordPress-REST/microformats2/
+  Friends-plugin sources as reference implementations.
+- **Filters and hooks** for AI capture defaults, publish helper adapters,
+  destination defaults, comment import, and more are all documented on
+  the hooks reference site linked above.
+
+### Architecture, decisions, and project history
+
+- **[CLAUDE.md](CLAUDE.md)** is the authoritative technical record — the
+  content model, REST endpoints, security checklist, and a full log of
+  every architectural decision and why it was made. It's the single best
+  starting point for understanding *why* the code looks the way it does.
+- **[docs/planning/README.md](docs/planning/README.md)** — condensed
+  product vision, positioning, and the original MVP spec.
+- **[docs/design-principles.md](docs/design-principles.md)** — the
+  design rubric (Path / Day One / WordPress / modern PWA) for what
+  Daymark should *feel* like.
+- **[docs/roadmap.md](docs/roadmap.md)** — what's shipped and what's
+  next.
+- **[docs/ui-polish-history.md](docs/ui-polish-history.md)** and
+  **[docs/subscription-type-mapping.md](docs/subscription-type-mapping.md)**
+  — detailed decision logs for UI polish and subscription content-type
+  detection, split out of CLAUDE.md to keep it focused.
+
+### Contributing
+
+Contributions are welcome — see **[CONTRIBUTING.md](CONTRIBUTING.md)** for
+development setup, the test suites (PHPUnit, WP-CLI smoke, Playwright
+E2E), coding standards, and the pull-request workflow. Found a security
+issue instead? See **[SECURITY.md](SECURITY.md)** for private reporting.
+
+### AI-assisted development
+
+This plugin was generated with [Claude Code](https://claude.com/claude-code)
+working from the Project Daymark specification documents, with human
+guidance, review, and testing throughout — every build phase was gated on
+verification against a live WordPress site, and the test suites exist to
+keep that review honest. Treat it as AI-generated, human-directed
+software.
+
+### CI status
+
 [![CI](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml)
 [![Tests](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml)
 [![Plugin Check](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml)
 [![Hooks Docs](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml)
 [![Dependency Review](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml)
 
-[![GPLv2 License](https://img.shields.io/github/license/jeffpaul/daymark.svg)](https://github.com/jeffpaul/daymark/blob/main/LICENSE)
-[![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)
+### License
 
-> Personal Site Publisher Mode for WordPress.
-
-**Mission:** Make publishing to your own WordPress site feel as joyful,
-immediate, and effortless as posting to the best mobile social apps, while
-ensuring everything you create remains yours.
-
-## Overview
-
-Daymark is a phone-first publishing experience for WordPress — a "Personal Site
-Publisher Mode" that makes posting to your own site as fast as a social app. A
-logged-in user visits `/daymark`, picks media from the camera roll or types a
-note, optionally runs AI Assist, and publishes a standard WordPress post. The
-site stays the canonical source of truth; social networks are optional, additive
-destinations.
-
-Every Mark is a normal `post` — no custom post type — so your content stays
-portable and works with standard themes, feeds, comments, and exports. Around
-that, Daymark adds:
-
-- a mobile **app shell** at `/daymark`, installable to the home screen as a PWA;
-- a **REST API** for creating and listing Marks;
-- optional **AI Assist** for captions, tags, and per-image alt text via the
-  WordPress 7.0 AI Client (no provider, no AI UI — and publishing never
-  depends on it);
-- **conversation backflow** that brings social replies back as native
-  WordPress comments and surfaces them in an in-app notifications screen.
-
-Publishing outward happens through the WordPress plugins you already trust —
-publicize-style and federation plugins — rather than Daymark reimplementing
-network APIs. See the [FAQ](#faq) for how that works.
-
-**Extending Daymark?** The full action and filter reference is published at
-**<https://jeffpaul.github.io/daymark/>**.
-
-## Requirements
-
-- WordPress 7.0+ (the bundled AI Client powers optional AI Assist; publishing never requires a configured AI provider)
-- PHP 8.1+
-
-## Using Daymark Like a Phone App
-
-Activate the plugin, then visit `/daymark` on a phone-sized viewport while logged
-in:
-
-```bash
-wp plugin activate daymark
-```
-
-Daymark is designed to sit on your phone's home screen like a native app. The URL
-pattern is always:
-
-```
-https://[yoursite]/daymark
-```
-
-For example: `https://example.com/daymark` (log in first, or you will be
-redirected to the WordPress login screen and then back to Daymark).
-
-### iOS (Safari)
-
-1. Open `https://[yoursite]/daymark` in Safari.
-2. Tap the **Share** button.
-3. Tap **Add to Home Screen**.
-4. Confirm the name "Daymark" and tap **Add**.
-
-### Android (Chrome)
-
-1. Open `https://[yoursite]/daymark` in Chrome.
-2. Tap the **⋮** menu.
-3. Tap **Add to Home Screen** (or **Install App** when Chrome offers it).
-
-### What to expect
-
-- The home-screen icon launches Daymark as a browser shortcut. Full
-  standalone display (`display: standalone` in the manifest, no browser
-  chrome) requires **HTTPS**.
-- **Local demo note:** the local dev site (`http://wp70.local`) is
-  HTTP-only, so iOS will open the shortcut in regular Safari and Chrome
-  will not offer "Install App". That is expected for local demos — on
-  any HTTPS site the same URL installs as a standalone app.
-- A conservative service worker (`assets/daymark-sw.js`, cache
-  `daymark-v1`, scope limited to the plugin `assets/` directory) caches
-  only the app's static `app.css` and `app.js`. It never caches REST
-  responses, nonces, HTML, media, or anything under `/wp-admin/`. There
-  is no offline publishing mode.
-
-## FAQ
-
-### How do I publish to social networks?
-
-A Mark is a standard WordPress post, so the leanest path is to let a
-publishing plugin you already trust share it. Daymark is built to
-cooperate with those rather than reimplement them:
-
-- **Publicize-style plugins** (Jetpack Social, Share on Mastodon,
-  ATmosphere, XPoster, Autoshare for Twitter, …) already share your
-  Daymark when it publishes. Daymark detects them and shows an awareness
-  note on the publish screen. For plugins that expose a per-post control,
-  Daymark turns that into an in-app **on/off toggle** per Mark —
-  currently **Share on Mastodon**, **Autoshare for Twitter**, and
-  **ATmosphere** (for Bluesky, when it's connected and auto-publishing).
-- **Federation plugins** ([ActivityPub](https://wordpress.org/plugins/activitypub/),
-  [ATmosphere](https://wordpress.org/plugins/atmosphere/),
-  [Webmention](https://wordpress.org/plugins/webmention/)) make your site
-  itself the account; replies they receive land as native WordPress
-  comments and appear in Daymark notifications automatically (see below).
-
-Daymark also keeps an open connector interface
-(`daymark_register_connectors`) so a plugin can register a first-class
-destination — appearing on the publish screen and syndicating through
-Daymark's own pipeline, with replies imported via
-`daymark_import_network_responses` — without any change to Daymark core. No
-such connector ships in this repo; the hook is the integration point.
-
-If nothing is set up, "Your Site" is simply the only destination —
-publishing to your own site always works, and everything social is
-additive.
-
-### Why don't I see any social networks on the publish screen?
-
-Daymark only offers destinations that can actually publish (and pull
-replies back): a network appears once a connector plugin registers it as
-a destination. With nothing connected, "Your Site" is the only
-destination — publishing to your own site always works; social networks
-are strictly additive. The same rule applies to AI: the **AI Assist**
-button only appears when a WordPress AI provider is actually configured.
-(Publicize-style plugins are separate — they show up as the awareness
-note or a per-Mark toggle, described above, not as destinations.)
-
-When connectors are present, Daymark remembers your routing habits per
-Mark type: once you publish, say, an image Mark to a specific set of
-networks, the next image Mark preselects the same set (per user).
-
-### How are Marks filed into categories?
-
-The publish screen has a **File under** picker for your site's existing
-categories. Like destinations, the choice is remembered per Mark type —
-file image Marks under "Photos" once and the next image Mark
-preselects it (per user) — and you can change it for any single Mark.
-The picker only appears when your site has categories beyond its default
-one; otherwise Marks file into the default category as usual.
-Selections are validated against your existing categories (Daymark never
-creates new ones) and stored natively, so they behave like any other
-post's categories.
-
-### What social network connectors could work?
-
-Daymark's adapter layer (`daymark_register_connectors` +
-`daymark_import_network_responses`) is open to any network. Feasibility
-by platform:
-
-| Network | Publish | Reply backflow | Notes |
-|---|---|---|---|
-| **Bluesky** | via ATmosphere | via ATmosphere / Bridgy | Covered today by the ATmosphere plugin; AT Protocol is open, no app review |
-| **Mastodon** | via Share on Mastodon | via ActivityPub | Covered today by existing plugins; open API, no app review |
-| Threads | plausible | plausible | Official API exists; requires a Meta app + review |
-| X | plausible | limited | API v2 posting works; free tier is heavily rate-limited, replies effectively need a paid tier |
-| Instagram | hard | hard | Graph API requires a Business/Creator account, app review, and media hosted at public URLs |
-| YouTube | plausible | plausible | Data API v3 upload + commentThreads; OAuth app + quota management |
-| TikTok | hard | hard | Content Posting API requires developer-program approval and audited scopes |
-| Pixelfed / micro.blog / Nostr | plausible | varies | Open/self-hostable protocols, similar shape to Mastodon |
-
-The pattern is consistent: open protocols (AT, ActivityPub) are
-weekend-sized connectors; platforms with app-review gates are projects.
-
-### Do ActivityPub, ATmosphere, or Webmention work with Daymark?
-
-Yes — they're the *push-based* way replies come back. Those plugins
-deliver social replies as native WordPress comments, which is exactly
-Daymark's backflow storage, so replies they import appear in Daymark
-notifications automatically — labeled with honest source context (Daymark
-recognizes each plugin's comment markers):
-
-| Plugin | Covers | Notification label |
-|---|---|---|
-| [ActivityPub](https://wordpress.org/plugins/activitypub/) | Fediverse (Mastodon, Threads, Pixelfed, …) | Reply from the Fediverse |
-| [ATmosphere](https://wordpress.org/plugins/atmosphere/) | Bluesky / AT Protocol | Reply from Bluesky |
-| [Webmention](https://wordpress.org/plugins/webmention/) | IndieWeb + [Bridgy](https://brid.gy) backfeed | Reply via Webmention |
-
-There are two identity models, and both are valid: a publicize-style
-plugin posts a copy to **your personal account** on the network, while
-ActivityPub/ATmosphere make **your site itself the account** (people
-follow your domain; replies arrive by push, live, no syncing). Reactions
-(likes/reposts) that those plugins store as comments are kept out of
-Daymark notifications — replies only.
-
-Daymark also renders IndieWeb `u-syndication` markup on Mark posts
-("Also on: …" links to the syndicated copies), which is what Bridgy needs
-to backfeed replies from those copies as webmentions — so publicize-style
-syndication and webmention backfeed compose.
-
-Every Mark's own permalink page carries full outbound `h-entry`/`h-card`
-microformats2 markup too, and Users → Your Profile has a `rel=me` field
-that renders as a `rel="me"` link next to your h-card — so IndieWeb tools
-(readers, IndieAuth, Bridgy) can read a Mark correctly without any of this
-plugin's own APIs.
-
-Replying to a subscribed post works the same way. Tap "Reply" on an
-expanded Timeline card and Daymark opens the composer seeded to that post
-— write your reply, publish it as a normal Mark, done. The published
-Mark's permalink carries a `u-in-reply-to` link to the source, and if you
-have the Webmention plugin installed and active, it notifies the source
-automatically the moment your reply goes live — Daymark itself never
-sends, receives, or verifies a Webmention; it just makes sure the markup
-a Webmention plugin looks for is there. **For the best Daymark + IndieWeb
-experience, install [Webmention](https://wordpress.org/plugins/webmention/)**
-(and ActivityPub/ATmosphere, per the table above) so replies and mentions
-from across the web show up in your Notifications automatically. Settings
--> Daymark's Connectors tab lists all three with an Install/Activate button
-right there, so you don't need to leave wp-admin to set any of them up.
-
-Don't want to install the ActivityPub plugin at all? [Bridgy
-Fed](https://fed.brid.gy/) (a different project from the classic Bridgy
-above, despite the name) is a free, hosted bridge rather than a plugin: it
-gives your site a fediverse and Bluesky presence through the same
-Webmention support, translating your posts into ActivityPub/AT Protocol
-activities and replies/likes/reposts back into webmentions your site
-already knows how to receive. The tradeoff versus the ActivityPub plugin is
-identity — Bridgy Fed bridges you in under an auto-generated handle on its
-own domain (`@yourdomain@web.brid.gy`), while the ActivityPub plugin gives
-your site its own native handle on your own domain — so most sites want
-one or the other, not both. It's listed on the Connectors tab too, right
-alongside the plugin options.
-
-### Does Daymark work with the Friends plugin?
-
-Yes. If you already follow someone through the
-[Friends plugin](https://wordpress.org/plugins/friends/), subscribing to
-their site in Daymark reads their posts straight from Friends' own cache
-instead of independently re-fetching their site a second time — Friends
-already does the real fetching, parsing, and post-format classification for
-a friend, so Daymark just reuses it. This only ever applies to a friend
-you've already added in Friends' own UI; Daymark doesn't add friends on
-Friends' behalf, and a site Friends doesn't yet follow subscribes exactly
-as it always has (via its RSS/Atom feed, WordPress REST API, or
-microformats2 markup).
-
-### I already run a social auto-poster (Jetpack Social, XPoster, …). Does it work with Daymark?
-
-Yes, automatically — because a Mark is a standard WordPress post.
-Any "publicize"-style plugin that shares posts when they publish already
-shares your Marks the same way; Daymark neither drives nor blocks it.
-
-So Daymark doesn't need to reimplement that. Instead, when it detects one
-of these active, the publish screen adds a small note — "Your site's
-publishing tools will also share this Mark, per their own settings:
-…" — so you know your Mark is going out that way too. Daymark reads
-only whether the plugin is active; it never calls or configures it, and
-each plugin still shares according to its own settings and per-post
-controls.
-
-Detected out of the box: **Jetpack Social**, **ATmosphere**,
-**Autoblue**, **Share on Mastodon**, **XPoster**, **Autoshare for
-Twitter**, **Blog2Social**, **Social Networks Auto-Poster (SNAP)**, and
-**Revive Old Posts**. Other publishing plugins can add themselves to the
-note via the `daymark_publish_helper_plugins` filter.
-
-### Can I turn a plugin's sharing on or off per Mark?
-
-For plugins that expose a public per-post control hook, yes — Daymark
-turns the awareness note into an actual **per-Mark toggle** on the
-publish screen. Currently that's **Share on Mastodon** (via its
-`share_on_mastodon_enabled` filter) and **Autoshare for Twitter** (via
-`autoshare_for_twitter_enabled_default`). The toggle defaults to **off**
-(opt-in), and Daymark drives each plugin only through its own public
-hook — it never writes the plugin's private data. A Mark that opts in
-publishes through the plugin's normal flow when it goes live.
-
-Adapters are registered through the `daymark_publish_helper_adapters`
-filter, so a plugin (or a companion add-on) can make itself
-controllable by mapping a toggle to its own per-post hook. Plugins that
-don't yet expose such a hook stay awareness-only until they do — the
-right fix there is an upstream hook, not Daymark writing private meta.
-
-One thing to watch: if you run *both* a Mark connector for a network
-**and** one of these plugins for the same network, a Mark can post
-twice. The note is there partly to make that visible — turn one of them
-off for that network if you don't want the duplicate.
-
-### Which AI providers power which Daymark features?
-
-Daymark never talks to an AI vendor directly — it goes through the
-WordPress 7.0 **AI Client**, so any configured provider plugin powers
-all of AI Assist. Configure exactly one (or several — the first
-configured provider is used):
-
-| Provider plugin | Powers |
-|---|---|
-| AI Provider for Anthropic (Claude) | Caption and tag suggestions (AI Assist sheet); per-image alt text generated from the image itself |
-| AI Provider for Google (Gemini) | Same — the features are provider-agnostic |
-| AI Provider for OpenAI (GPT) | Same |
-
-Feature-by-feature: **caption suggestion** rewrites your draft text (or
-proposes one from the media context) and **tag suggestions** propose post
-tags — both from the AI Assist sheet, with accepted tags applied as real
-post tags at publish. **Alt text** works differently: every image in the
-composer gets its own alt field, pre-filled from the actual image via a
-vision call to the AI Client and editable before you publish (when no
-provider is configured the field is simply empty to fill in by hand). All
-of it is optional: no provider, no AI UI, and publishing never depends on
-it.
-
-### What does Daymark quietly capture, and can I turn it off?
-
-Composing a Mark quietly captures a few pieces of metadata in the
-background, without any field to fill in: the date/time it was created,
-your device's location (only if your browser grants permission — never a
-form field to fill in), current weather for that location, camera details
-from a photo's own EXIF data (camera model, aperture, ISO, and similar),
-an estimated reading time for a longer caption, and AI-suggested tags.
-None of it is required, none of it can block or delay publishing, and
-anything that isn't available (permission denied, no EXIF data, no AI
-provider configured, etc.) is simply left out rather than causing an
-error.
-
-Weather is the one piece that talks to an external service on its own:
-composing near a captured location makes one request to
-[Open-Meteo](https://open-meteo.com/) (`api.open-meteo.com`), a free,
-keyless service — chosen for the same reason Daymark never stores an AI
-provider API key. Everything else (location, camera metadata, reading
-time, tags) stays entirely between your browser and your own site.
-
-This is captured ahead of planned future work: showing where a Mark was
-made ("checkins"), its weather at the time, and richer photo details,
-directly in the Timeline. Location and weather aren't shown anywhere in
-Daymark yet — they're captured now so that display work has real data to
-build on rather than starting from a Timeline with nothing to show. If
-you'd rather this wasn't captured at all while it's still invisible,
-location, weather, and camera metadata can each be turned off
-independently from the **Privacy** section of Settings -> Daymark — no
-code required.
-
-A developer can also set the same defaults from code, which still wins
-over the Settings -> Daymark checkboxes:
-
-```php
-add_filter( 'daymark_capture_location', '__return_false' );
-add_filter( 'daymark_capture_weather', '__return_false' );
-add_filter( 'daymark_capture_camera_metadata', '__return_false' );
-```
-
-Turning off location capture also stops the weather lookup, since weather
-is only ever attempted alongside a resolved location; the weather
-toggle/filter alone leaves location capture on but skips just the weather
-lookup. A Mark's captured location is stored for your own site's use and
-is never published on its public permalink page unless you explicitly opt
-in — either the "Publish location publicly" checkbox in the same Privacy
-section, or `add_filter( 'daymark_publish_location_publicly', '__return_true' );`
-from code.
-
-## Contributing
-
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for
-development setup, the test suites, coding standards, and the pull-request
-workflow.
-
-## AI-assisted development
-
-This plugin was generated with [Claude Code](https://claude.com/claude-code)
-working from the Project Daymark specification documents, with human guidance,
-review, and testing throughout — every build phase was gated on verification
-against a live WordPress site, and the test suites (PHPUnit, WP-CLI smoke,
-browser E2E) exist to keep that review honest. Treat it as an AI-generated,
-human-directed software.
+Daymark is licensed under **GPL-2.0-or-later**
+([GPL-2.0-or-later](https://spdx.org/licenses/GPL-2.0-or-later.html)).

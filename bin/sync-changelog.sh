@@ -17,6 +17,12 @@
 # they belong on GitHub, where a reader can follow them; on the plugin page and
 # the update screen they are noise nobody can act on.
 #
+# Only the MAX_VERSIONS most recent released version sections are emitted — a
+# growing plugin history doesn't need to reprint every release on the plugin
+# page and update screen forever, and a bare "read more" link to CHANGELOG.md
+# on GitHub covers anyone who wants the rest. Bump MAX_VERSIONS, not this
+# comment, if that count ever needs to change.
+#
 # Usage:
 #   bin/sync-changelog.sh           # rewrite readme.txt in place
 #   bin/sync-changelog.sh --check   # exit 1 with a diff if readme.txt is stale (CI)
@@ -27,6 +33,8 @@ cd "$(dirname "$0")/.."
 
 CHANGELOG=CHANGELOG.md
 README=readme.txt
+MAX_VERSIONS=5
+FULL_CHANGELOG_URL="https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md"
 check_only=false
 
 case "${1:-}" in
@@ -40,8 +48,10 @@ for f in "$CHANGELOG" "$README"; do
 done
 
 # Convert the released sections of CHANGELOG.md into readme.txt changelog markup.
+# Stops after MAX_VERSIONS version sections; the caller appends a link to the
+# full history on GitHub for anything older than that.
 changelog_body() {
-	awk '
+	awk -v max="$MAX_VERSIONS" '
 		# Link-reference block ends the content we care about.
 		/^\[[^]]+\]:[[:space:]]/ { exit }
 
@@ -51,6 +61,8 @@ changelog_body() {
 			sub(/^## \[/, "", line)
 			sub(/\]/, "", line)
 			if (line ~ /^[Uu]nreleased/) { started = 0; next }
+			versions++
+			if (versions > max) { exit }
 			started = 1
 			if (seen++) print ""
 			print "= " line " ="
@@ -84,6 +96,7 @@ changelog_body() {
 	' "$CHANGELOG" |
 		# Strip a trailing "([#12](url))" or "([#12](url), [#13](url))".
 		sed -E 's/ \(\[#[0-9]+\]\([^)]*\)(, \[#[0-9]+\]\([^)]*\))*\)$//'
+	printf '\n[View the full changelog history](%s).\n' "$FULL_CHANGELOG_URL"
 }
 
 # Splice the generated body between the Changelog and Upgrade Notice headings.
