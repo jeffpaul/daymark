@@ -2,6 +2,12 @@
 
 ![Daymark](.wordpress-org/banner-1544x500.png)
 
+[![CI](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml)
+[![Tests](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml)
+[![Plugin Check](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml)
+[![Hooks Docs](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml)
+[![Dependency Review](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml)
+
 [![GPLv2 License](https://img.shields.io/github/license/jeffpaul/daymark.svg)](https://github.com/jeffpaul/daymark/blob/main/LICENSE)
 [![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)
 
@@ -148,14 +154,6 @@ guidance, review, and testing throughout — every build phase was gated on
 verification against a live WordPress site, and the test suites exist to
 keep that review honest. Treat it as AI-generated, human-directed
 software.
-
-### CI status
-
-[![CI](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/ci.yml)
-[![Tests](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/tests.yml)
-[![Plugin Check](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/plugin-check.yml)
-[![Hooks Docs](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/hooks-docs.yml)
-[![Dependency Review](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/jeffpaul/daymark/actions/workflows/dependency-review.yml)
 
 ### License
 
