@@ -1,10 +1,14 @@
 /**
  * Settings -> Daymark screen behavior:
  *
- * 1. Gives the Subscribe button a loading state on submit. Purely cosmetic —
- *    that form still POSTs and reloads the page the normal wp-admin way, so
- *    this has nothing to reset if the request fails; the fresh page load
- *    does that.
+ * 1. The Subscribe form (issue #368) submits via `fetch()` instead of a full
+ *    page navigation: the button shows its loading label ("Loading feed
+ *    details…") while a background request runs the same discovery
+ *    admin_post_daymark_subscribe already does, then the resulting picker
+ *    fragment is injected directly below it — see bindNewSubscribeForm().
+ *    Falls back to a plain, unenhanced form submission (the original
+ *    page-reloading behavior, still fully intact server-side) if this
+ *    binding never runs at all (JS disabled).
  * 2. Per-row Refresh forms — rendered as a small circular-arrows icon next
  *    to "Last fetched" rather than a labeled Actions-column button (see
  *    Daymark_Admin_Subscriptions::render_refresh_form()) — submit via the
@@ -27,35 +31,148 @@
  *    form already carries everything a real submission needs (action,
  *    subscription ID, nonce), so this is the exact same write, just not
  *    navigated to.
+ * 4. The new-subscribe picker's own "Edit site name" disclosure (issue #368)
+ *    — a distinct element from #3 above, since there is no subscription row
+ *    yet to save against here: opening it focuses/selects the input, and
+ *    Enter/Tab/click-away update the visible name locally and close the
+ *    disclosure, with no network request of its own — the typed value is
+ *    only actually saved once "Save Subscription" is submitted (a plain,
+ *    unenhanced form post, same as ever). See bindNewSubscribeNameEditor().
  */
 (function () {
 	'use strict';
 
 	document.addEventListener( 'DOMContentLoaded', function () {
-		bindSubscribeLoadingState();
+		bindNewSubscribeForm();
+		bindNewSubscribeNameEditor( document.getElementById( 'daymark-new-subscribe-root' ) );
 		bindRefreshForms();
 		bindEditTitleDisclosures();
 	} );
 
 	/**
-	 * Gives the Subscribe button a loading state on submit (behavior 1).
+	 * Wires the Subscribe form (behavior 1) to run discovery via `fetch()`
+	 * instead of letting the browser navigate away, so the resulting picker
+	 * can be injected inline below the button rather than reached by a full
+	 * page reload. A plain browser POST (no JS) never carries the
+	 * `X-Daymark-Ajax` header this relies on, so handle_subscribe() keeps
+	 * responding with its original redirect for that case — this is purely
+	 * additive.
 	 *
 	 * @return void
 	 */
-	function bindSubscribeLoadingState() {
+	function bindNewSubscribeForm() {
 		var button = document.getElementById( 'daymark-subscribe-submit' );
 		var form = button ? button.closest( 'form' ) : null;
+		var root = document.getElementById( 'daymark-new-subscribe-root' );
 
-		if ( ! form ) {
+		if ( ! form || ! root ) {
 			return;
 		}
 
-		form.addEventListener( 'submit', function () {
+		var originalLabel = button.value;
+		var errorEl = form.querySelector( '.daymark-new-subscribe-error' );
+
+		form.addEventListener( 'submit', function ( event ) {
+			event.preventDefault();
+
 			button.disabled = true;
+
+			if ( errorEl ) {
+				errorEl.hidden = true;
+				errorEl.textContent = '';
+			}
 
 			if ( button.dataset.daymarkLoadingLabel ) {
 				button.value = button.dataset.daymarkLoadingLabel;
 			}
+
+			fetch( form.getAttribute( 'action' ), {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'X-Daymark-Ajax': '1' },
+				body: new FormData( form )
+			} )
+				.then( function ( response ) {
+					return response.json();
+				} )
+				.then( function ( result ) {
+					if ( result && result.success && result.data && result.data.html ) {
+						root.innerHTML = result.data.html;
+						bindNewSubscribeNameEditor( root );
+
+						return;
+					}
+
+					throw new Error( result && result.data && result.data.message ? result.data.message : '' );
+				} )
+				.catch( function ( error ) {
+					button.disabled = false;
+					button.value = originalLabel;
+
+					if ( errorEl ) {
+						errorEl.textContent = ( error && error.message )
+							? error.message
+							: ( window.daymarkAdminSubscriptions && window.daymarkAdminSubscriptions.i18n
+								? window.daymarkAdminSubscriptions.i18n.genericError
+								: 'Something went wrong. Please try again.' );
+						errorEl.hidden = false;
+					}
+				} );
+		} );
+	}
+
+	/**
+	 * Wires the new-subscribe picker's own "Edit site name" disclosure
+	 * (behavior 4) — safe to call more than once (e.g. once at page load,
+	 * again after bindNewSubscribeForm() injects a fresh copy of this same
+	 * markup): each call only binds whatever `.daymark-new-subscribe-edit-name`
+	 * elements exist inside $root right now.
+	 *
+	 * @param {Element|null} root Container to search within — typically
+	 *                            #daymark-new-subscribe-root, or null when
+	 *                            that element doesn't exist yet.
+	 * @return void
+	 */
+	function bindNewSubscribeNameEditor( root ) {
+		if ( ! root ) {
+			return;
+		}
+
+		var details = root.querySelector( '.daymark-new-subscribe-edit-name' );
+		var input = details ? details.querySelector( '.daymark-new-subscribe-title-input' ) : null;
+		var titleText = root.querySelector( '[data-daymark-title-text]' );
+
+		if ( ! details || ! input ) {
+			return;
+		}
+
+		details.addEventListener( 'toggle', function () {
+			if ( details.open ) {
+				input.focus();
+				input.select();
+			}
+		} );
+
+		input.addEventListener( 'keydown', function ( event ) {
+			if ( 'Enter' === event.key ) {
+				// Same reasoning as the per-row editor's own identical
+				// handler: pre-empt the default (a real form submission,
+				// since this is the lone text field a plain Enter press
+				// would otherwise submit) so this ends in the input's own
+				// blur instead, same as Tab or clicking away.
+				event.preventDefault();
+				input.blur();
+			}
+		} );
+
+		input.addEventListener( 'blur', function () {
+			var fallbackLabel = details.getAttribute( 'data-daymark-fallback-label' ) || '';
+
+			if ( titleText ) {
+				titleText.textContent = '' !== input.value ? input.value : fallbackLabel;
+			}
+
+			details.open = false;
 		} );
 	}
 
