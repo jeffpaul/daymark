@@ -56,7 +56,8 @@ new product surface. Released on GitHub and wordpress.org.
 
 First-party connector ecosystem docs (a worked `daymark_register_connectors`
 example, published alongside the hooks reference) shipped as part of
-"Connector ecosystem basics" — see "Next — building on the loop" below.
+"Connector ecosystem basics" — see "Shipped — Connector ecosystem basics"
+below.
 
 ---
 
@@ -312,10 +313,12 @@ decision rows for the full technical record.
 
 **Still open from this era:**
 
-- [ ] Explore beyond "Browse by type"/"Following" ([#294](https://github.com/jeffpaul/daymark/issues/294))
-  — memories, highlights, collections, favorites, recently-popular, and
-  suggested accounts/content all need their own supporting data before they
-  can be real sections.
+- [ ] Explore beyond "Browse by type"/"Following"/"Bookmarks" ([#294](https://github.com/jeffpaul/daymark/issues/294))
+  — Explore gained a third section, "Bookmarks" (a link into Search
+  preset to a reader's own saved items), as a side effect of the Bookmarks
+  feature shipping (see "Shipped — Engagement" below), but memories,
+  highlights, collections, recently-popular, and suggested accounts/content
+  all still need their own supporting data before they can be real sections.
 - [ ] Search filters beyond type and source ([#293](https://github.com/jeffpaul/daymark/issues/293))
   — author, date, tag, and location all need their own REST support first.
 - [ ] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
@@ -456,53 +459,309 @@ record.
 
 ---
 
+## Shipped — Publish-loop polish
+
+All three named candidates from this bucket have shipped.
+
+- [x] **Composer drag-and-drop** ([#260](https://github.com/jeffpaul/daymark/issues/260))
+  onto the picker (desktop), sharing one intake path (`addPickedFiles()`)
+  with the existing file-input `change` handler.
+- [x] **Manual gallery reordering** ([#250](https://github.com/jeffpaul/daymark/issues/250)),
+  via up/down buttons rather than drag-and-drop (keyboard-operable, meets
+  the tap-target minimum). This is also the prerequisite an AI-assisted
+  ordering suggestion needs — a manual override surface for an author to
+  see and correct an AI's proposal, the same way every other AI Assist
+  suggestion already works. See "AI Assist expansion" below for that
+  still-deferred follow-up ([#134](https://github.com/jeffpaul/daymark/issues/134)).
+- [x] **Draft → publish continuation** ([#265](https://github.com/jeffpaul/daymark/issues/265)).
+  A Draft's ⋯ menu gained a one-tap "Publish" action (alongside Edit/Delete)
+  that skips the composer entirely for a draft that's already ready — 3
+  taps down to 2. Building it surfaced and fixed a real, pre-existing bug
+  in the `#publish` navigation guard: it only ever checked newly picked
+  files and the caption, never a resumed draft's own already-attached
+  media, so a plain photo draft with no caption could silently bounce back
+  to the composer even before this shortcut existed.
+
+---
+
+## Shipped — Connector ecosystem basics
+
+[#263](https://github.com/jeffpaul/daymark/issues/263). The extension seam
+already existed (`daymark_register_connectors`); this closed the two concrete
+gaps growing it deliberately turned up.
+
+- [x] **Fixed a real bug**: a Mark published to a destination whose connector
+  plugin was later deactivated/uninstalled had that target silently dropped
+  from `publish_to_targets()` — the same "attempt discarded, not recorded"
+  gap issue #255 (below) also fixed, at a different guard clause in the same
+  method. Now recorded as `status: 'unavailable'` in `_daymark_external_posts`,
+  surfaced in the Timeline's routing popover as "Not available."
+- [x] **Documented a reference connector**: a complete, minimal
+  `Daymark_Syndication_Connector` implementation (the interface, the publish
+  payload/result shape, and the three relevant hooks) published alongside the
+  hooks reference site.
+- [ ] **Deliberately deferred**: a registry of known third-party connectors —
+  no real one exists yet to list, so a registry would have nothing in it;
+  revisit once a connector plugin actually ships.
+
+---
+
+## Shipped — AI Assist expansion
+
+Audited AI Assist against every capability named as core to the concept
+(suggest title, improve alt text, summarize podcast, generate transcript,
+organize galleries, suggest tags). Title and tags already shipped; this
+closed the remaining real gaps. See CLAUDE.md's "AI as an assistant" decision.
+
+- [x] **Generate transcript** (audio/video), manual and author-triggered
+  only — the composer never auto-uploads picked media for this the way it
+  does for image alt-text suggestions.
+- [x] **Improve alt text** once one already exists (distinct composer button
+  copy from the first-suggestion case), and always applies its result since
+  a manual tap is an explicit request.
+- [x] **Summarize podcast** — satisfied by grounding, not a new capability:
+  once a Mark has a transcript, an excerpt of it is embedded as context for
+  every existing caption/title suggestion call, so a generated caption or
+  title already reads as a summary of what's said.
+- [ ] **Organize galleries** ([#134](https://github.com/jeffpaul/daymark/issues/134))
+  remains deferred. Its prerequisite — a manual reorder affordance an AI
+  proposal could sit on top of — shipped as manual gallery reordering (see
+  "Publish-loop polish" above), so this is now unblocked whenever it's
+  prioritized.
+
+---
+
+## Shipped — Quiet Mark metadata capture
+
+"Quietly capture date/time, location (optional), weather (optional), camera
+metadata, reading time, and AI-generated tags — don't make users fill those
+in." See CLAUDE.md's "Quiet Mark metadata capture" decision.
+
+- [x] **Capture timestamp, location, weather, camera EXIF, reading time, and
+  AI-suggested tags** automatically while composing — every piece best-effort
+  and silently absent on failure, never blocking or delaying a publish.
+- [x] **Independently disableable.** Location, weather, and camera-metadata
+  capture each have their own filter (default on), later exposed as plain
+  checkboxes non-technical site owners can use directly — see "Privacy
+  section" under Subscriptions admin maturation, below.
+- [x] **Not displayed anywhere yet, by design.** This is captured ahead of
+  planned future work (Timeline check-ins, weather display, richer photo
+  metadata) — a site owner can opt out before that display work ships,
+  rather than only after.
+
+---
+
+## Shipped — wp-admin entry points
+
+Two admin bar shortcuts, both gated on `edit_posts`: "Open Daymark" beside
+"Visit Site," and a "Daymark" entry under wp-admin's own "+New" menu that
+jumps straight into the composer preset to an image Mark (matching
+Camera-first capture's own "Image is the default, most common option"
+ordering). See CLAUDE.md's "wp-admin entry points" decision.
+
+---
+
+## Shipped — Engagement: Bookmarks, Like/Repost/Comment, Share, and the full-screen post view
+
+The largest body of Timeline/reading work since the bottom-nav rework —
+subscribed content became something a reader can save, react to, and reply
+to, not just view.
+
+- [x] **Full-screen post view** ([#270](https://github.com/jeffpaul/daymark/issues/270))
+  replaced the old inline-expand-in-place panel: tapping a card (a Mark, an
+  ordinary post, or a subscription post) now opens its full content on a
+  dedicated screen, matching the pattern Notifications already used. Later
+  fixes kept the card's own site-name/date/interaction row visible on this
+  screen too ([#287](https://github.com/jeffpaul/daymark/issues/287)) and
+  top-aligned its header against a wrapped title ([#315](https://github.com/jeffpaul/daymark/issues/315)).
+- [x] **Bookmarks** ([#193](https://github.com/jeffpaul/daymark/issues/193)):
+  save a Mark or subscription post for later, with a dedicated Explore
+  section, and full offline caching of a bookmarked item's content — later
+  extended to its referenced images too ([#236](https://github.com/jeffpaul/daymark/issues/236))
+  — so a bookmark is genuinely available with no connection. A bookmark is
+  cleaned up automatically if its post is later actually deleted (not just
+  trashed).
+- [x] **Share icon** ([#195](https://github.com/jeffpaul/daymark/issues/195)):
+  opens the OS/native share sheet via `navigator.share()` where available,
+  falling back to a copy-to-clipboard with a visible confirmation.
+- [x] **Like and Repost toggles** on a subscription post (issue #41
+  follow-up), instant and composer-free — each publishes (or, untoggled,
+  trashes) a minimal Note Mark carrying `_daymark_like_of`/`_daymark_repost_of`,
+  which whichever federation plugin the site owner runs turns into a real
+  like/reblog. A **Repost** gained an optional caption step
+  ([#317](https://github.com/jeffpaul/daymark/issues/317)); a Reblog's own
+  Mark now contains a real link to the origin post, not just caption text
+  ([#355](https://github.com/jeffpaul/daymark/issues/355)). A **Like Mark is
+  hidden from the site's own discovery surfaces** (archives, feed, REST
+  collection, sitemap, oEmbed) while its permalink stays reachable, since a
+  Webmention still needs to fetch it ([#361](https://github.com/jeffpaul/daymark/issues/361)).
+- [x] **Comment**, replacing the original composer-based "Reply" action
+  ([#317](https://github.com/jeffpaul/daymark/issues/317)): sends a real
+  Webmention (preferred, when the local Webmention plugin is active and the
+  origin advertises a receiver) or falls back to a native, unauthenticated
+  `wp/v2/comments` POST. A pre-check now warns *before* the composer opens
+  when a destination can't accept a comment at all, rather than after the
+  reader has already typed one ([#351](https://github.com/jeffpaul/daymark/issues/351)).
+- [x] **First-time explainer overlays** for all six interaction-row icons
+  (Like/Comment/Reblog/Bookmark/"Open original"/Share), shown once per
+  device after the action succeeds — never gating the tap itself
+  ([#321](https://github.com/jeffpaul/daymark/issues/321)); for Comment and
+  Reblog specifically, the explainer was later moved to appear *before* the
+  compose step instead of after ([#357](https://github.com/jeffpaul/daymark/issues/357)).
+- [x] **⋯ overflow menu** ([#326](https://github.com/jeffpaul/daymark/issues/326))
+  moved Open original/Share/Routing/Refresh content behind a secondary menu,
+  keeping Like/Comment/Reblog/Bookmark as the always-visible primary row, and
+  added a new **Unsubscribe** action reachable directly from a subscription
+  post's card.
+- [x] **Link previews** for a "link"-kind subscription post: a best-effort
+  oEmbed preview first ([#279](https://github.com/jeffpaul/daymark/issues/279)),
+  falling back to an Open Graph/Twitter Card/plain-`<title>` preview for the
+  far more common case of an ordinary page with no oEmbed endpoint at all
+  ([#349](https://github.com/jeffpaul/daymark/issues/349)).
+
+---
+
+## Shipped — Subscriptions: reading polish
+
+Smaller Timeline-reading fixes that shipped alongside the engagement work
+above.
+
+- [x] **Grouped under relative-period headers** (Today, This Week, Last
+  Week, This Month, Last Month, This Year, or a bare year) —
+  [#145](https://github.com/jeffpaul/daymark/issues/145).
+- [x] **Scroll-triggered rehydration** of a pruned subscription post's
+  content just before it scrolls into view, so opening it moments later
+  renders instantly — [#93](https://github.com/jeffpaul/daymark/issues/93).
+- [x] **Friendlier session-expired messaging** on a stale nonce (a common
+  case for a home-screen PWA resumed from a long background suspension):
+  a plain "reload" prompt instead of a raw WordPress error string —
+  [#214](https://github.com/jeffpaul/daymark/issues/214).
+- [x] **Absolute dates use the site's own Date Format setting**, not the
+  browser's locale default — [#238](https://github.com/jeffpaul/daymark/issues/238).
+
+---
+
+## Shipped — Notifications maturation
+
+- [x] **Threaded by conversation** (grouped by the Mark a reply belongs to),
+  a **source filter**, and **backflow sync recency** ("Replies last checked
+  X ago") surfaced in the routing popover — [#258](https://github.com/jeffpaul/daymark/issues/258).
+- [x] **Overlapping IndieWeb plugin detection**: Post Kinds, Microformats 2,
+  Syndication Links, or IndieBlocks running alongside Daymark (each
+  overlapping something Daymark already renders natively) surfaces as a
+  dismissible notification rather than being silently suppressed — Daymark
+  never controls another plugin's behavior, only reads and flags the
+  overlap — [#346](https://github.com/jeffpaul/daymark/issues/346).
+
+---
+
+## Shipped — Subscriptions: admin screen and multi-feed maturation
+
+Settings → Daymark grew from a single subscribe/manage page into a real,
+tabbed settings surface, and subscribing itself grew to handle a site with
+more than one feed worth following.
+
+- [x] **OPML import/export** ([#80](https://github.com/jeffpaul/daymark/issues/80))
+  and **on-demand site-icon refresh** ([#94](https://github.com/jeffpaul/daymark/issues/94)).
+- [x] **Restructured into tabs** — Subscriptions, Connectors, Import/Export,
+  Privacy — with a shorter URL (`options-general.php?page=daymark`, 301'd
+  from the old one) ([#86](https://github.com/jeffpaul/daymark/issues/86)).
+  The **Connectors tab** recommends Webmention/ActivityPub/ATmosphere with
+  live install/activate status via WordPress core's own install flow, and
+  documents **Bridgy Fed** as a lower-effort alternative path to the
+  fediverse/Bluesky ([#91](https://github.com/jeffpaul/daymark/issues/91)).
+- [x] **Privacy section** ([#289](https://github.com/jeffpaul/daymark/issues/289))
+  exposes the Quiet Mark metadata capture opt-outs (location/weather/camera)
+  as plain checkboxes, and **configurable check frequency**
+  ([#291](https://github.com/jeffpaul/daymark/issues/291)) replaces the fixed
+  daily poll with an Hourly/6-hour/12-hour/Daily choice.
+- [x] **Subscriptions table UX polish**: sortable columns, defaulting to A-Z
+  by site name ([#178](https://github.com/jeffpaul/daymark/issues/178),
+  [#303](https://github.com/jeffpaul/daymark/issues/303)), a plain-GET
+  **search box** ([#281](https://github.com/jeffpaul/daymark/issues/281)),
+  an **inline, editable site name**
+  ([#180](https://github.com/jeffpaul/daymark/issues/180),
+  [#242](https://github.com/jeffpaul/daymark/issues/242)), and **inline
+  Refresh**/site-icon actions
+  ([#176](https://github.com/jeffpaul/daymark/issues/176),
+  [#245](https://github.com/jeffpaul/daymark/issues/245)) instead of a full
+  page reload per action.
+- [x] **Following more than one feed from the same site**, and picking
+  which feed(s) to follow up front. What started as a single-choice
+  "switch feeds" picker on an existing subscription
+  ([#307](https://github.com/jeffpaul/daymark/issues/307)) grew into an
+  additive multi-select picker (check new feeds, existing ones stay locked
+  in — unsubscribe is still the only way to remove one)
+  ([#334](https://github.com/jeffpaul/daymark/issues/334)), gained
+  **per-language feed detection** for multilingual sites via standard
+  `hreflang` markup, defaulting to the site's own configured language
+  ([#336](https://github.com/jeffpaul/daymark/issues/336)), let one submit
+  both add and remove feeds at once
+  ([#363](https://github.com/jeffpaul/daymark/issues/363)), and — for a
+  brand-new subscribe specifically — became an inline, single-select picker
+  with an editable site name shown before the first real subscribe happens
+  ([#368](https://github.com/jeffpaul/daymark/issues/368)).
+
+---
+
+## Shipped — i18n readiness
+
+Daymark is translation-ready via wordpress.org's own GlotPress
+infrastructure once it ships there — no bundled `languages/` folder or
+custom translation build of its own. An audit closed two real PHP-side
+gaps and wired `wp_set_script_translations()` into the app shell
+([#252](https://github.com/jeffpaul/daymark/issues/252)); a follow-up
+converted every user-facing string in `assets/app.js` (roughly 300
+literals) to route through `wp.i18n`
+([#253](https://github.com/jeffpaul/daymark/issues/253)).
+
+---
+
+## Shipped — Per-Mark routing transparency
+
+[#255](https://github.com/jeffpaul/daymark/issues/255). A new Timeline icon
+opens a popover showing exactly where a Mark was sent — your own site,
+always first, followed by each selected destination's real status
+(published/mocked/failed/unsupported/unavailable) and a link out where one
+exists. Fixed a real, previously-undetectable data-model gap along the way:
+a target rejected before it ever reached its connector was silently
+discarded rather than recorded as `failed`, so that documented status value
+could never actually be produced.
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen
 that loop without new destinations or a new social network.
 
-- **Connector ecosystem basics** ([#263](https://github.com/jeffpaul/daymark/issues/263)).
-  The extension seam exists (`daymark_register_connectors`); this closes the two
-  concrete gaps growing it deliberately turned up. **Fixed a real bug**: a Mark
-  published to a destination whose connector plugin was later deactivated/
-  uninstalled had that target silently dropped from `publish_to_targets()` —
-  the exact same "attempt discarded, not recorded" gap issue #255 already fixed
-  for an unsupported-type target. Now recorded as `status: 'unavailable'` in
-  `_daymark_external_posts`, surfaced in the Timeline's routing popover as "Not
-  available" — graceful in-app messaging for a deactivated destination, closing
-  that half of this bucket. **Documented a reference connector**: a complete,
-  minimal `Daymark_Syndication_Connector` implementation (the interface, the
-  publish payload/result shape, and the three relevant hooks) published
-  alongside the hooks reference site. **Deliberately deferred**: a registry of
-  known third-party connectors — no real one exists yet to list, so a registry
-  would have nothing in it; revisit once a connector plugin actually ships.
-- **mf2 reply/rsvp mapped to Daymark's Note type** ([#292](https://github.com/jeffpaul/daymark/issues/292)).
-  The clearest concrete opportunity the "Subscription type-mapping audit" flagged — the
-  `microformats` source's own IndieWeb post-type discovery was fully computed on every
-  h-entry but only ever used for a fallback title. `reply`/`rsvp` now promote to Daymark's
-  `note` post_format (as a fallback, once real media resolves to nothing), the same
-  precedent `status`/`chat` already established. `repost`/`like`/`bookmark` are
-  deliberately deferred — a real open question (hide reactions from the Timeline
-  entirely, mirroring how Daymark's own Like/Repost Marks are already hidden, vs. a
-  `link_url` reuse for bookmarks) tracked on the same issue rather than resolved here.
-- **Publish-loop polish** — all three named candidates have shipped.
-  Drag-and-drop onto the composer's picker (desktop) and gallery reordering
-  shipped first ([#260](https://github.com/jeffpaul/daymark/issues/260),
-  [#250](https://github.com/jeffpaul/daymark/issues/250)) — gallery
-  reordering is also the prerequisite for an AI-assisted ordering suggestion
-  (CLAUDE.md's "AI as an assistant" decision; tracked as
-  [#134](https://github.com/jeffpaul/daymark/issues/134)) — the manual
-  override surface now exists for an AI to propose anything on top of.
-  **Draft → publish continuation** ([#265](https://github.com/jeffpaul/daymark/issues/265))
-  closes the bucket: a Draft's ⋯ menu now has a one-tap "Publish" action
-  (alongside Edit/Delete) that skips the composer entirely for a draft
-  that's already ready — 3 taps down to 2, judged by the bucket's own
-  rubric (does it make publishing faster, not more powerful). Building it
-  surfaced a real, pre-existing bug in the `#publish` navigation guard,
-  fixed in the same change: it only ever checked newly picked files and the
-  caption, never a resumed draft's own already-attached media, so a
-  plain photo draft with no caption could silently bounce back to the
-  composer even before this shortcut existed.
+- **mf2 `repost`/`like`/`bookmark` mapping** ([#292](https://github.com/jeffpaul/daymark/issues/292),
+  the half deliberately deferred when `reply`/`rsvp` shipped — see "Shipped
+  — Subscriptions & Timeline Following" above). The `microformats` source
+  already computes IndieWeb post-type discovery for every h-entry; the open
+  question is what these three reaction types should become on the
+  Timeline — hidden entirely, mirroring how Daymark's own Like/Repost Marks
+  are hidden from discovery ([#361](https://github.com/jeffpaul/daymark/issues/361)),
+  or a `link_url` reuse for `bookmark` specifically. Not resolved.
+- **AI-assisted gallery ordering** ([#134](https://github.com/jeffpaul/daymark/issues/134)).
+  Manual gallery reordering shipped as its prerequisite (see "Shipped —
+  Publish-loop polish" above); this is now unblocked whenever it's
+  prioritized.
+- **Whether Bridgy Fed unblocks native ActivityPub-following**
+  ([#91](https://github.com/jeffpaul/daymark/issues/91)'s own flagged next
+  step, feeding into [#3](https://github.com/jeffpaul/daymark/issues/3)).
+  If a Bridgy-Fed-bridged Mastodon/Bluesky account turns out to expose a
+  fetchable feed or microformats2 shape, the existing `feed`/`microformats`
+  subscription sources could follow it with no new source class at all —
+  never confirmed (this environment can't reach Bridgy Fed's own service to
+  check), so it's the concrete next step before any further native
+  ActivityPub-reading work.
+- **Explore, Search, and Me's remaining scope** — see "Still open from this
+  era" under "Shipped — Bottom navigation rework" above
+  ([#294](https://github.com/jeffpaul/daymark/issues/294),
+  [#293](https://github.com/jeffpaul/daymark/issues/293),
+  [#295](https://github.com/jeffpaul/daymark/issues/295)). Each needs new
+  supporting REST/data work before it can grow past its current foundation.
 
 ---
 
@@ -525,9 +784,11 @@ decision-table row) before it becomes "next".
   is explicitly **not** on this roadmap. It is recorded as a candidate direction,
   with its guardrails (no proprietary storage, no single-host lock-in, no single
   mandated AI provider, no CPT packaging) intact if it is ever revisited.
-- **In-app settings screen.** Subscription management lives in wp-admin today
-  (`rel=me` will too, once built — see "Not planned" below and CLAUDE.md's
-  decision table) — a deliberate choice for infrequently-touched
+- **In-app settings screen.** Subscription management, the Connectors and
+  Privacy tabs, and `rel=me` configuration all live in wp-admin today
+  (`rel=me` on WordPress's own native profile screen; everything else on
+  the tabbed Settings → Daymark screen — see "Not planned" below and
+  CLAUDE.md's decision table) — a deliberate choice for infrequently-touched
   configuration, not a permanent one. A future pass may migrate some of this
   into an in-app Daymark settings screen; the two stay deliberately separate
   for now.
@@ -542,11 +803,12 @@ decision-table row) before it becomes "next".
 - wp-admin chrome **inside the Daymark app shell's own UI**. The app shell
   stays focused on day-to-day operational use (reading the Timeline,
   publishing content). This is *not* a blanket ban on Daymark ever having a
-  wp-admin screen — the Subscriptions settings screen (Settings → Daymark) is
-  a deliberate, confirmed exception for infrequently-touched configuration,
-  and `rel=me` is planned to land the same way (on the native WordPress
-  profile screen, not a new Daymark screen) once it's built — see "Shipped —
-  Subscriptions & Timeline Following" above for its current status.
+  wp-admin screen — the tabbed Settings → Daymark screen (Subscriptions,
+  Connectors, Import/Export, Privacy) is a deliberate, confirmed exception
+  for infrequently-touched configuration, and `rel=me` already lands the
+  same way, on the native WordPress profile screen rather than a new
+  Daymark screen — see "Shipped — Subscriptions & Timeline Following" and
+  "Shipped — Subscriptions: admin screen and multi-feed maturation" above.
   See CLAUDE.md's decision table for the reasoning and "In-app settings
   screen" above for the possible future direction.
 - Push notifications and multi-user team workflows beyond standard WordPress roles.
