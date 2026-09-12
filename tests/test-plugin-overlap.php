@@ -45,32 +45,38 @@ class Test_Plugin_Overlap extends WP_UnitTestCase {
 	}
 
 	// -----------------------------------------------------------------
-	// get_active_overlaps() — real detection, via the one safe-to-define
-	// production signal (SYNDICATION_LINKS_VERSION isn't checked anywhere
-	// else in this codebase or its own test suite, so defining it here
-	// can't leak into an unrelated assertion the way the real
-	// Post_Kinds_Plugin/UF2_Plugin/IndieBlocks\Plugin class names could).
-	// Both the "not yet active" and "now active" assertions live in this
-	// one test method specifically so the result never depends on test
-	// execution order across files/methods.
+	// get_active_overlaps() — deliberately never defines a real plugin's
+	// own detection class/constant here: a PHP class or constant can
+	// never be undefined once declared, so doing that would leak into
+	// every other test that runs afterward in the same PHPUnit process
+	// (this is exactly the anti-pattern class-plugin-detector-stub.php's
+	// own docblock already warns against, and what an earlier version of
+	// this test actually did, breaking an unrelated REST permissions
+	// test). tests/test-notifications.php exercises "an overlap is
+	// active" behavior via a swappable fake instance instead — see
+	// tests/class-plugin-overlap-fake.php.
 	// -----------------------------------------------------------------
 
-	public function test_get_active_overlaps_reflects_a_real_detection_signal() {
-		$this->assertArrayNotHasKey(
-			'syndication-links',
-			$this->overlap->get_active_overlaps(),
-			'Not active until the plugin\'s own version constant is defined'
-		);
+	/** With none of the four plugins' real signals present, nothing is reported active. */
+	public function test_get_active_overlaps_is_empty_by_default() {
+		$this->assertSame( array(), $this->overlap->get_active_overlaps() );
+	}
 
-		if ( ! defined( 'SYNDICATION_LINKS_VERSION' ) ) {
-			define( 'SYNDICATION_LINKS_VERSION', '99.0' );
+	/**
+	 * The private OVERLAPS map itself carries a label and non-empty
+	 * overlap description for every documented plugin key — read directly
+	 * via Reflection rather than by triggering real detection, so this
+	 * needs no live signal at all.
+	 */
+	public function test_overlaps_map_has_label_and_description_for_every_known_key() {
+		$constant = new ReflectionClassConstant( Daymark_Plugin_Overlap::class, 'OVERLAPS' );
+		$overlaps = $constant->getValue();
+
+		foreach ( array( 'post-kinds', 'microformats2', 'syndication-links', 'indieblocks' ) as $key ) {
+			$this->assertArrayHasKey( $key, $overlaps );
+			$this->assertNotEmpty( $overlaps[ $key ]['label'] );
+			$this->assertNotEmpty( $overlaps[ $key ]['overlaps'] );
 		}
-
-		$active = $this->overlap->get_active_overlaps();
-
-		$this->assertArrayHasKey( 'syndication-links', $active );
-		$this->assertSame( 'Syndication Links', $active['syndication-links']['label'] );
-		$this->assertNotEmpty( $active['syndication-links']['overlaps'] );
 	}
 
 	// -----------------------------------------------------------------

@@ -528,26 +528,41 @@ class Test_Notifications extends WP_UnitTestCase {
 	}
 
 	// -----------------------------------------------------------------
-	// Plugin-overlap notifications (issue #346). SYNDICATION_LINKS_VERSION
-	// is the one safe-to-define production detection signal for this —
-	// nothing else in this codebase or its test suite checks for it, so
-	// defining it here (guarded, so a re-run or another test file having
-	// already done so is a harmless no-op) can never leak into an
-	// unrelated assertion the way the real Post_Kinds_Plugin/UF2_Plugin/
-	// IndieBlocks\Plugin class names could.
+	// Plugin-overlap notifications (issue #346). These swap
+	// Daymark_Plugin::instance()->plugin_overlap for a fake instance
+	// (tests/class-plugin-overlap-fake.php) that reports one fixed
+	// overlap active, restoring the real instance in tear_down —
+	// deliberately never defining a real plugin's own detection
+	// class/constant directly, since that can never be undefined for the
+	// rest of the PHPUnit run once declared. An earlier version of this
+	// test suite did exactly that (a real SYNDICATION_LINKS_VERSION
+	// constant) and it leaked into Test_Rest_Permissions::test_notifications_scoped_to_editable_posts,
+	// which had no way to know a plugin-overlap notification would start
+	// appearing for every user.
 	// -----------------------------------------------------------------
 
-	private function ensure_syndication_links_signal_present(): void {
-		if ( ! defined( 'SYNDICATION_LINKS_VERSION' ) ) {
-			define( 'SYNDICATION_LINKS_VERSION', '99.0' );
+	/** @var Daymark_Plugin_Overlap|null */
+	private $real_plugin_overlap;
+
+	private function activate_fake_overlap(): void {
+		$this->real_plugin_overlap                 = Daymark_Plugin::instance()->plugin_overlap;
+		Daymark_Plugin::instance()->plugin_overlap = new Daymark_Test_Fake_Plugin_Overlap();
+	}
+
+	public function tear_down(): void {
+		if ( null !== $this->real_plugin_overlap ) {
+			Daymark_Plugin::instance()->plugin_overlap = $this->real_plugin_overlap;
+			$this->real_plugin_overlap                 = null;
 		}
+
+		parent::tear_down();
 	}
 
 	/** An active, undismissed overlap surfaces as a plugin_overlap notification item. */
 	public function test_active_overlap_appears_as_plugin_overlap_notification() {
 		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
 		wp_set_current_user( $user_id );
-		$this->ensure_syndication_links_signal_present();
+		$this->activate_fake_overlap();
 
 		$notifications = new Daymark_Notifications();
 		$items         = $notifications->get_notifications();
@@ -570,7 +585,7 @@ class Test_Notifications extends WP_UnitTestCase {
 	public function test_dismissed_overlap_no_longer_appears() {
 		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
 		wp_set_current_user( $user_id );
-		$this->ensure_syndication_links_signal_present();
+		$this->activate_fake_overlap();
 
 		Daymark_Plugin::instance()->plugin_overlap->dismiss( $user_id, 'syndication-links' );
 
@@ -591,7 +606,7 @@ class Test_Notifications extends WP_UnitTestCase {
 	public function test_overlap_dismissal_is_scoped_per_user() {
 		$dismisser = self::factory()->user->create( array( 'role' => 'editor' ) );
 		$other     = self::factory()->user->create( array( 'role' => 'editor' ) );
-		$this->ensure_syndication_links_signal_present();
+		$this->activate_fake_overlap();
 
 		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'syndication-links' );
 
@@ -618,7 +633,7 @@ class Test_Notifications extends WP_UnitTestCase {
 	public function test_active_overlap_does_not_drive_has_unread() {
 		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
 		wp_set_current_user( $user_id );
-		$this->ensure_syndication_links_signal_present();
+		$this->activate_fake_overlap();
 
 		$notifications = new Daymark_Notifications();
 
