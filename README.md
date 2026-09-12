@@ -154,8 +154,3 @@ guidance, review, and testing throughout — every build phase was gated on
 verification against a live WordPress site, and the test suites exist to
 keep that review honest. Treat it as AI-generated, human-directed
 software.
-
-### License
-
-Daymark is licensed under **GPL-2.0-or-later**
-([GPL-2.0-or-later](https://spdx.org/licenses/GPL-2.0-or-later.html)).
