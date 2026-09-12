@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-12
+
 ### Added
 
 - Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming. ([#334](https://github.com/jeffpaul/daymark/issues/334))
@@ -509,7 +511,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.15.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.16.0...HEAD
+[0.16.0]: https://github.com/jeffpaul/daymark/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/jeffpaul/daymark/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/jeffpaul/daymark/compare/0.13.0...0.14.0
 [0.13.0]: https://github.com/jeffpaul/daymark/compare/0.12.0...0.13.0

@@ -4,7 +4,7 @@ Tags:              publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
-Stable tag:        0.15.0
+Stable tag:        0.16.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -117,7 +117,47 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.16.0 - 2026-09-12 =
+**Added**
+
+* Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming.
+* Subscribing to (or "Choose from available feeds" on) a multilingual site — Polylang, WPML, MultilingualPress, and similar — now shows a separate feed candidate for each language it advertises, labeled by language, so you can follow the one you actually read instead of an unfiltered, every-language feed.
+* A "link"-kind subscription post's own detected link now shows a clickable preview — title, excerpt, and featured/Open Graph image — when the linked page has Open Graph or Twitter Card tags, closing the gap the existing oEmbed-only preview left for an ordinary article link.
+* Notifications now flags when Post Kinds, the Microformats 2 plugin, Syndication Links, or IndieBlocks is active alongside Daymark — each duplicates something Daymark already renders natively on your Marks (Like/Repost/Comment markup, h-entry/h-card output, or syndication links). Daymark never suppresses the other plugin's own behavior; the notice just lets you know, with a link to Plugins, and stays until you dismiss it.
+
+**Changed**
+
+* Settings -> Daymark's "Check for other feeds" action is now "Choose from available feeds", and lets you check as many of the discovered feeds as you like — each one you check becomes its own new subscription, so you can follow more than one feed from the same site instead of only switching between them.
+* The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language.
+* On a Timeline card and the full-screen post view, the Like/Comment/Reblog/Bookmark/... interaction row now sits below the site name and date instead of above it.
+* Settings -> Daymark's "Choose from available feeds" picker no longer locks an already-subscribed candidate's checkbox — unchecking one (your current feed, or another feed you also follow from the same site) and submitting now unsubscribes it, immediately removing its previously-loaded posts, while any newly-checked candidate is subscribed to as before. This is what lets you actually switch a site's feed in one submit — e.g. swapping an unscoped WordPress REST API feed that mixed every language together for a correctly language-scoped RSS/Atom feed — instead of only ever adding feeds. The button is renamed "Update feeds".
+* Subscribing to a brand-new site now shows its discovered feeds inline, directly below the Subscribe button, instead of after a full page reload — the button's loading label reads "Loading feed details…" while discovery runs. The picker is now a single-select list (pick exactly one feed to follow) with an editable site name (a pencil icon next to the discovered title, matching the existing per-subscription name editor) and a "Save Subscription" button that saves the feed and the (optionally edited) name together.
+* README.md and readme.txt now lead with plain-language reasons to publish with Daymark instead of a technical feature list, aimed at a non-technical site owner deciding whether to install it. README.md's developer/extender detail (architecture, hooks, connectors, contributing) moved below a clear divider instead of being interleaved with the pitch.
+* readme.txt's generated Changelog section now only lists the 5 most recent releases, ending with a link to the full history on GitHub, instead of growing to list every release forever.
+
+**Developer**
+
+* Extracted CLAUDE.md's ~31 narrow UI/UX visual-polish decision rows into a new docs/ui-polish-history.md (grouped by theme) and consolidated its 4 subscription content-type/post_format-mapping rows into docs/subscription-type-mapping.md, replacing each with a one-line pointer — CLAUDE.md is auto-loaded as project memory for every session on this repo, so trimming it to load-bearing architectural decisions is a direct cost saving with no loss of the underlying reasoning.
+* CONTRIBUTING.md gained guidance aimed at a wider contributor base ahead of a wordpress.org launch: forking instructions for contributors without push access, a pointer to SECURITY.md for vulnerability reports, guidance on claiming an issue before starting significant work, and a note that a first-time contributor's CI runs need maintainer approval before they start.
+
+**Fixed**
+
+* The "Try Daymark right now in your browser" Playground preview no longer crashes with a critical-error screen while seeding its demo Marks — the demo-image generation helper now guards against a Playground environment whose GD extension can't produce a JPEG, and each demo Mark's publish is now isolated so one failing to seed can't take the rest of the preview down with it.
+* The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph.
+* The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check.
+* The ⋯ overflow menu (Open original/Share/Routing/Refresh content/Unsubscribe) now opens as a small floating overlay anchored off the ⋯ icon, the same simple-dropdown treatment the old Draft ⋯ menu used, instead of growing the card's own frame open and pushing the rest of the post down the screen.
+* Tightened the gap between the header and the top of the Timeline, removed the Notifications icon's bordered-box outline (the footer nav icons never had one), and resized the header's Daymark icon and the Notifications icon to match the footer nav icons' own size.
+* Tapping Comment on a subscribed post now checks first whether Daymark can actually deliver a comment there at all — when it can't (most sites, since Webmention is the only delivery path Daymark can guarantee), it skips its own composer entirely and sends you straight to the original post's own comment form, instead of letting you type a comment only to discover afterward that it couldn't be delivered and you'd need to retype it there yourself. When the pre-check does look deliverable but the actual send still fails, the previous raw rejection text ("Sorry, you must be logged in to comment") is now a clear explanation instead — plus the same link straight to the post's own comment form. Settings -> Daymark's Connectors tab now also explains this benefit directly in the Webmention entry's own description: having it active lets other Daymark users comment on your posts from within their own Daymark app instead of being redirected to your site.
+* The Reblog/Comment caption sheet's text cursor no longer renders in the wrong place — floating below the visible textarea, overlapping the sheet's own buttons and the page underneath — when the on-screen keyboard is open on iOS Safari. The sheet now tracks the keyboard using the Visual Viewport API instead of a plain CSS viewport unit, which iOS never shrinks to account for the keyboard.
+* Reblogging a subscribed post now publishes a Mark titled "Reblog: {origin title}" whose content is a real link to the origin post (its own title as the link text) — previously the Mark's title and content were both just the caption text ("Reposted \"...\"" or whatever you typed), with no link to what you'd actually reblogged anywhere in it. Typing a comment in the Reblog sheet now adds it as its own paragraph below that link, instead of replacing a caption that never linked anywhere.
+* Every Mark's permalink page no longer visibly shows Daymark's own machine-readable metadata (its permalink repeated as text, publish date, a reply/repost/like target as a bare out-of-context URL, and your avatar/name) below the actual content — that block is now visually hidden, since it duplicated information the theme's own template already shows a human reader. It's unaffected for the IndieWeb tooling (Webmention, ActivityPub, Bridgy, feed readers) it's actually for, since that reads the page's raw HTML regardless of what's visually hidden.
+* The first-time explainer overlay for Comment and Reblog now appears before you start typing, not after you've already sent a comment or published a reblog — dismissing it takes you straight into the compose step it was meant to introduce. Like, Bookmark, "Open original", and Share are unchanged; their overlay still appears right after the (instant) tap, since there's no compose step for it to sit ahead of.
+* A subscription post whose own excerpt field was left as a leftover placeholder value (e.g. just the word "Excerpt", never replaced before publishing) no longer shows that literal placeholder text on its Timeline card — it now falls back to real content, the same way an entirely empty excerpt already did. A genuinely short manual excerpt is unaffected.
+* Tapping Like on a subscription post no longer creates a post that can show up on your own site's home page, archives, search, RSS/Atom feed, REST API, or XML sitemap — it stays visible only at its own direct permalink, which is what lets your Webmention plugin still verify and deliver the outbound Like to the original post. It also never syndicates to a real destination, whatever your remembered Note-type preference is. Reblog is unaffected — it's still real, visible, publishable content, exactly as before.
+* Subscribing to a site inside WordPress Playground previews no longer fails with "Please enter a valid site URL." for every URL, including well-known real sites — Playground's own sandboxed PHP runtime doesn't genuinely support DNS lookups, which was making Daymark's own SSRF safety check wrongly treat every site as unsafe.
+
 = 0.15.0 - 2026-09-10 =
+
 **Added**
 
 * Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing.
@@ -231,40 +271,12 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * On a screen with very little content (e.g. a near-empty Timeline), the bottom nav and the floating "+New" launcher no longer float mid-page instead of pinned to the bottom — the screen itself now always claims the full available height it's meant to.
 * A subscription post's Timeline stat row (Like, Comment, Repost, Bookmark, "open original", Share) now spaces every icon evenly instead of splitting into two unevenly-spaced clusters.
 
-= 0.11.0 - 2026-09-05 =
-
-**Added**
-
-* The Settings -> Daymark subscriptions table now shows each site's cached icon in its own column, between Site and Status.
-* The Settings -> Daymark subscriptions table's Site, Status, and Last fetched column headers are now clickable to sort the table ascending or descending.
-* A subscription's Site name can now be edited directly in Settings -> Daymark, for when the auto-derived name (especially a Friends-plugin-sourced one) isn't obviously who or what it is.
-* A Timeline card's site icon now shows the site's name and URL as a native tooltip on hover.
-* A subscription that's failing to fetch new posts now shows a "Recent fetch issue" message in Settings -> Daymark well before it's flagged fully dead, and a dismissible wp-admin notice links back to the table when at least one subscription has a problem.
-* The Timeline's own vertical rail now gets a small "sunrise" flourish where it begins and a "sunset" flourish where it currently ends, in the app's own sunset-gradient palette.
-* A Timeline card (Mark or subscribed post) can now be bookmarked directly from its stat row for offline viewing — a new "Bookmarks" section on Explore shows just what you've saved, and its full content is cached for offline viewing automatically, including on a new device the moment you open Daymark.
-* A Timeline card's stat row now has a Share icon — it opens your device's native share menu when available, or copies the post's link to your clipboard otherwise.
-* The Timeline now groups cards under relative-period headers — Today, This Week, Last Week, This Month, Last Month, This Year, or a bare year for anything older — so a long scroll back through older content reads by chronological chunk instead of a wall of individual per-card timestamps.
-
-**Changed**
-
-* A Timeline card's date now sits on its own row, right-aligned at the bottom of the card, instead of sharing the meta line with the chip/author/reading-time text above it — a quieter, corner-anchored placement that reads more like a timestamp and less like one more label in a list.
-* Clicking "Refresh" on a subscription in Settings -> Daymark now updates that row's Status and Last fetched values in place instead of reloading the whole page.
-* A subscription post's Timeline card no longer shows a "Subscribed" chip — its site icon already makes clear it isn't one of your own Marks, so the chip was just taking up space.
-* A Timeline card's comment/like/repost stat row is now ordered like, comment, reblog (was comment, like, repost).
-* The header now shows the Daymark icon in the upper left on every screen (Home, Explore, Search, Me) instead of just the Timeline icon on Home — tapping it from Explore, Search, or Me takes you back to the Timeline. Explore, Search, and Me also now show the Notifications icon in the upper right, so it's been removed as a separate link on the Me page.
-* A subscription having trouble fetching new posts (or fully dead) now shows up right in your Notifications, with a link back to Settings -> Daymark — no more separate wp-admin notice to check.
-* The Daymark icon in the header is a bit bigger now (closer to the size of the bottom nav's own icons), and on Explore/Search/Me it no longer sits inside a bordered square button.
-* Expanding a Timeline card's content now grows the card's own bordered frame instead of inserting content below it that could look like it overlapped other Timeline elements. The "View full post"/"View original" link is now a permanent icon in the stat row (between Bookmark and Share) instead of only appearing once a card is expanded, and every icon in the row now shows a hover tooltip.
-
-**Fixed**
-
-* Importing an OPML file could leave every newly subscribed site showing zero posts on the Timeline until the next scheduled poll (up to a day away by default) — subscribing to a single site by URL already fetches its content right away, but import never did. A successful import now triggers an immediate background poll.
-* Subscribing to a second feed on an already-subscribed WordPress site (e.g. a friend publishing both a Posts archive and a separate Notes archive on one install) previously failed as a duplicate, since the site's REST API always resolves to the same site-wide feed regardless of which page you subscribed from. You can now paste a specific feed URL directly to subscribe to exactly that feed, and subscribing to a second page on the same site now falls back to that page's own RSS/Atom feed instead of failing.
-* A subscribed post's expanded content could show a stray "Skip to content" accessibility link from the source site's own theme, when that site had no `<article>` element for Daymark to narrow down to.
-
 [View the full changelog history](https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 0.16.0 =
+Subscribing to a new site now shows every feed Daymark found for it up front — the best one pre-checked for you, with a separate option per language on multilingual sites — so you can follow more than one feed from the same site in a single step; "Choose from available feeds" (renamed "Update feeds") now lets you add and drop feeds together too. Link-format subscription posts get a real preview (title, excerpt, image) via Open Graph when there's no oEmbed provider. Reblog now creates a Mark with a real link to the original post instead of just caption text, Comment checks whether it can actually deliver before you start typing, and Like no longer shows up in your own site's feeds, search, or sitemap. Also fixes a Playground preview crash and a false-positive "invalid site URL" failure when subscribing inside WordPress Playground.
 
 = 0.15.0 =
 Subscription posts get an instant Comment action (replacing the old "Reply" button) and the Timeline interaction row is tidier: Open original, Share, Routing, and Refresh content now live behind a new ⋯ overflow menu, which also adds a one-tap Unsubscribe for subscription posts. First-time explainer overlays introduce each icon on first tap. Also fixes: a duplicated site-icon thumbnail from author-bio avatars, a like/comment/repost count wrongly shown in Daymark's accent color, uneven card spacing across Mark types, and a Playground subscribe-by-URL failure.
