@@ -46,7 +46,20 @@ likely to be asked to change direction even if it works correctly.
 - **Report a bug or request a feature** via
   [GitHub issues](https://github.com/jeffpaul/daymark/issues). Include your
   WordPress and PHP versions, the steps to reproduce, and what you expected
-  to happen.
+  to happen. Search existing and closed issues first — with this many past
+  reports, a duplicate is likely. **Found a security vulnerability?** Do not
+  open a public issue — see [SECURITY.md](SECURITY.md) for private
+  reporting instead.
+- **General support question, not a bug?** Once Daymark is published on
+  wordpress.org, use the plugin's own
+  [support forum](https://wordpress.org/support/plugin/daymark/) there for
+  "how do I…" questions from site owners — GitHub issues are for bugs,
+  feature requests, and development work on the code itself.
+- **Claim an issue before starting significant work.** A short comment ("I'd
+  like to work on this") avoids two people building the same fix in
+  parallel; a maintainer will confirm or point out if someone's already on
+  it. For a small, obvious fix (a typo, a one-line bug), just open the PR —
+  no need to claim it first.
 - **Open a pull request** for fixes and improvements (see
   [Pull requests](#pull-requests) below).
 - **Build a connector.** Daymark's adapter layer
@@ -253,9 +266,15 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
 
 ## Pull requests
 
-1. **Branch off `main`** and open your PR against `main`.
+1. **Branch off `main`** and open your PR against `main`. If you don't have
+   push access to this repository, [fork it](https://github.com/jeffpaul/daymark/fork)
+   first and branch off your fork's `main` instead — everything else below
+   works the same way from a fork.
 2. **Keep CI green.** Every PR runs CI, Tests, and Plugin Check; all must
-   pass before merge. (Hooks Docs runs after merge — see above.)
+   pass before merge. (Hooks Docs runs after merge — see above.) On a PR
+   from a first-time contributor, GitHub holds workflow runs for maintainer
+   approval before they start — if CI doesn't appear to run right away,
+   that's why; a maintainer will approve it, not ignore it.
 3. **Add or update tests** alongside behavior changes (PHPUnit for
    PHP/REST, Playwright for user-facing flows).
 4. **Write clear commit messages** with an imperative subject line
@@ -353,6 +372,13 @@ the generator renders each category as a bold label instead:
 bin/sync-changelog.sh           # regenerate readme.txt from CHANGELOG.md
 bin/sync-changelog.sh --check   # what CI runs; fails with a diff if stale
 ```
+
+The generated section only ever keeps the most recent `MAX_VERSIONS` releases
+(currently 5, set at the top of `bin/sync-changelog.sh`) — a growing release
+history shouldn't reprint every past version on the plugin page and update
+screen forever. It ends with a link to `CHANGELOG.md` on GitHub for the full
+history. `CHANGELOG.md` itself is never trimmed; only what gets mirrored into
+`readme.txt` is.
 
 CI fails if the two have drifted, so wordpress.org can't end up showing a stale
 changelog.

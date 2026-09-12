@@ -29,6 +29,47 @@ Daymark's own `post_format` vocabulary (`image`\|`video`\|`audio`\|`gallery`\|
 `note`\|`standard`) has no bucket for it at all. This document is the audit
 that finds those gaps and tracks which ones have been closed.
 
+## Origin: the `feed` source's original content-sniffing pass
+
+Everything below started as a single, narrower fix on the `feed` source
+alone, before `wordpress`/`friends` reused the same mechanism and this
+document's own audit (below) found the gap in `wordpress`'s own coverage.
+Keeping `_daymark_primary_type` — not a subscribed post's own inferred type
+— as a *Mark's* own source of truth was the precondition: Daymark's 6 Mark
+types don't map cleanly onto WordPress's 10 post formats (no format
+distinguishes "gallery" from a single image; "mixed" has no format at all),
+and roughly two dozen other files already key off that meta directly, so a
+subscribed post's inferred type only ever needed to feed `post_format` — the
+value `GET /timeline`'s `type` filter already shares across both Marks and
+subscription posts.
+
+`Daymark_Subscription_Source_Feed::normalize()` already derived
+`post_format` from RSS enclosures (Media RSS `medium` via SimplePie); the
+gap this pass closed was the common case of an ordinary post with an
+`<img>`/`<video>`/`<audio>` embedded directly in the body and no
+`<enclosure>` at all (the typical shape of a plain WordPress image post).
+The new `sniff_content_media()` — later extracted into the shared
+`Daymark_Subscription_Content_Sniffer` this document's mapping table below
+describes — walks the item's own content/description HTML with
+`WP_HTML_Tag_Processor` (core since WP 6.2, no new dependency) only when
+enclosures found nothing, wrapped in a `Throwable` catch so untrusted feed
+HTML can never fatal a poll run. A microformats2 `u-photo`/`u-video`/
+`u-audio` class is trusted like an enclosure regardless of surrounding text
+length — an explicit, author-intended signal; a bare `<img>` with no such
+markup is weaker and only counts when the accompanying text is short (≤40
+words, the same threshold the item's own excerpt trims to), so a header
+image on a long article stays `standard` rather than misclassifying every
+illustrated post as a photo post.
+
+Two adjacent ideas from the same original discussion shipped separately as
+their own sources, both described below — a full microformats2 h-entry
+connector (`microformats`, issue #84) and preferring the WordPress REST
+API's real `format` field for WP-to-WP subscriptions (`wordpress`, issue
+#137). A third, larger option (following a site via ActivityPub or Microsub
+for structured, typed content instead of periodic feed polling) remains
+deliberately out of scope — see
+[issue #88](https://github.com/jeffpaul/daymark/issues/88).
+
 ## Registration order (precedence)
 
 `Daymark_Subscription_Source_Registry::discover_feeds()` tries every
@@ -131,8 +172,10 @@ author's own words — closer in spirit to `aside`/`link`/`quote` (still
 `standard`, see below) than to `status`/`chat`/`reply`/`rsvp`. Daymark also
 has a directly relevant precedent cutting the other way for `like`/`repost`
 specifically: a Mark carrying its own `_daymark_like_of`/`_daymark_repost_of`
-is unconditionally excluded from the Timeline (CLAUDE.md's "Timeline polish
-batch (issue #267)"), since that Mark exists only to carry an outbound
+is unconditionally excluded from the Timeline ([docs/ui-polish-history.md
+§ Timeline polish batches](ui-polish-history.md#timeline-polish-batches),
+"Timeline polish batch (issue #267)"), since that Mark exists only to carry
+an outbound
 federation link, not to be read — the same reasoning may argue for
 filtering a *subscribed* site's like/repost h-entries out of Timeline
 entirely, rather than surfacing them as ordinary `standard` content the way
