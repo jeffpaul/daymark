@@ -30,10 +30,15 @@ jobs:
 
       - name: Verify tag matches declared plugin version
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          header=$(sed -n 's/^ \* Version: //p' daymark.php)
-          constant=$(sed -n "s/^define( 'DAYMARK_VERSION', '\(.*\)' );$/\1/p" daymark.php)
-          stable=$(sed -n 's/^Stable tag: //p' readme.txt)
+          # Normalize away all whitespace, not just the single space these
+          # patterns originally assumed after the colon — the plugin header
+          # and readme.txt fields are column-aligned with varying amounts of
+          # padding, so a plain space-for-space match silently leaves that
+          # padding in the extracted value and never actually matches the tag.
+          tag_version=$(printf '%s' "${GITHUB_REF_NAME#v}" | tr -d '[:space:]')
+          header=$(sed -n 's/^ \* Version: //p' daymark.php | tr -d '[:space:]')
+          constant=$(sed -n "s/^define( 'DAYMARK_VERSION', '\(.*\)' );$/\1/p" daymark.php | tr -d '[:space:]')
+          stable=$(sed -n 's/^Stable tag: //p' readme.txt | tr -d '[:space:]')
           echo "tag=$tag_version header=$header constant=$constant stable=$stable"
           for v in "$header" "$constant" "$stable"; do
             if [ "$v" != "$tag_version" ]; then

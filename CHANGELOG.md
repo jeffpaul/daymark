@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Developer
+
+- Fixed the release workflow's tag/version guard, which was comparing the plugin header's `Version:` and readme.txt's `Stable tag:` fields against the pushed tag using a whitespace-sensitive match — both fields are column-aligned with padding, so the extracted value silently carried that padding and never matched, failing the 0.16.0 tag push before it built or published anything. The guard now strips all whitespace from every value before comparing.
+
 ## [0.16.0] - 2026-09-12
 
 ### Added
