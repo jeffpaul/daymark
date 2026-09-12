@@ -659,6 +659,119 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-noop.example/feed/' ) );
 	}
 
+	// -----------------------------------------------------------------
+	// New-subscribe flow: subscribe_to_selected_candidates()'s own `ids`
+	// (issue #368) and apply_new_subscribe_title_override().
+	// -----------------------------------------------------------------
+
+	/** Scenario: a newly subscribed candidate's own subscription ID is reported back in the outcome's `ids` array. */
+	public function test_subscribe_to_selected_candidates_returns_created_subscription_ids(): void {
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'subscribe_to_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://new-ids-example.com/',
+			array(
+				array(
+					'url'          => 'https://new-ids-example.com/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+				),
+			),
+			array( 0 )
+		);
+
+		$this->assertSame( 1, $outcome['added'] );
+		$this->assertCount( 1, $outcome['ids'] );
+
+		$subscription = $this->subscriptions->get( $outcome['ids'][0] );
+		$this->assertNotNull( $subscription );
+		$this->assertSame( 'https://new-ids-example.com/feed/', $subscription['feed_url'] );
+	}
+
+	/** Scenario: a candidate that fails to subscribe (a duplicate) contributes nothing to `ids`. */
+	public function test_subscribe_to_selected_candidates_ids_excludes_failed_candidates(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://already-there.example/',
+				'feed_url'    => 'https://already-there.example/feed/',
+				'source_type' => 'feed',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'subscribe_to_selected_candidates' );
+
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://already-there.example/',
+			array(
+				array(
+					'url'          => 'https://already-there.example/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+				),
+			),
+			array( 0 )
+		);
+
+		$this->assertSame( 0, $outcome['added'] );
+		$this->assertSame( array(), $outcome['ids'] );
+	}
+
+	/** Scenario: apply_new_subscribe_title_override() updates every given subscription's site_title. */
+	public function test_apply_new_subscribe_title_override_updates_site_title(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://override-example.com/',
+				'feed_url'    => 'https://override-example.com/feed/',
+				'source_type' => 'feed',
+				'site_title'  => 'Original Title',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'apply_new_subscribe_title_override' );
+		$method->invoke( $this->admin_subscriptions, array( $id ), 'Custom Title' );
+
+		$subscription = $this->subscriptions->get( $id );
+		$this->assertSame( 'Custom Title', $subscription['site_title'] );
+	}
+
+	/** Scenario: a null $title (the daymark_site_title field wasn't posted at all) leaves every subscription's site_title untouched. */
+	public function test_apply_new_subscribe_title_override_does_nothing_when_title_is_null(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://untouched-example.com/',
+				'feed_url'    => 'https://untouched-example.com/feed/',
+				'source_type' => 'feed',
+				'site_title'  => 'Original Title',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'apply_new_subscribe_title_override' );
+		$method->invoke( $this->admin_subscriptions, array( $id ), null );
+
+		$subscription = $this->subscriptions->get( $id );
+		$this->assertSame( 'Original Title', $subscription['site_title'] );
+	}
+
+	/** Scenario: an explicit blank $title clears site_title back to '' — the same "blank clears it" behavior the existing per-row editor already documents. */
+	public function test_apply_new_subscribe_title_override_allows_clearing_to_blank(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'    => 'https://clear-example.com/',
+				'feed_url'    => 'https://clear-example.com/feed/',
+				'source_type' => 'feed',
+				'site_title'  => 'Original Title',
+			)
+		);
+
+		$method = new ReflectionMethod( $this->admin_subscriptions, 'apply_new_subscribe_title_override' );
+		$method->invoke( $this->admin_subscriptions, array( $id ), '' );
+
+		$subscription = $this->subscriptions->get( $id );
+		$this->assertSame( '', $subscription['site_title'] );
+	}
+
 	/**
 	 * @dataProvider provide_update_feeds_notice_outcomes
 	 * @param array{added: int, pending: int, removed: int} $outcome Reconcile outcome.
@@ -758,11 +871,27 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'daymark_candidate_index', $output );
 	}
 
+	/** Scenario (issue #368): the Subscribe button's own loading-state label reflects that a discovery pass runs on submit, not an immediate subscribe. */
+	public function test_subscribe_button_loading_label_is_loading_feed_details(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Loading feed details', $output );
+		$this->assertStringNotContainsString( 'Subscribing', $output );
+	}
+
+	/** Scenario (issue #368): both the plain form and the stashed picker render inside one stable #daymark-new-subscribe-root container the JS enhancement can target. */
+	public function test_subscribe_form_renders_inside_stable_root_container(): void {
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'id="daymark-new-subscribe-root"', $output );
+	}
+
 	/**
 	 * Scenario: once handle_subscribe() has stashed a discovery result for
 	 * this user (a brand-new site, no subscription row exists yet), the
-	 * Subscribe screen shows the checkbox picker instead of the URL field —
-	 * the richest candidate (WordPress REST API, per
+	 * Subscribe screen shows the single-select radio picker instead of the
+	 * URL field (issue #368 reworked this from checkboxes to radios) — the
+	 * richest candidate (WordPress REST API, per
 	 * Daymark_Subscriptions::most_optimal_candidate_index()) checked by
 	 * default, a weaker one left unchecked.
 	 */
@@ -796,18 +925,69 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'daymark_candidate_index[]', $output );
 		$this->assertStringContainsString( 'new-subscribe-example.com', $output );
 		$this->assertStringNotContainsString( 'name="daymark_site_url"', $output );
+		$this->assertStringContainsString( 'Save Subscription', $output );
 
 		// The WordPress REST API candidate (index 1, the richest) is checked;
 		// the feed candidate (index 0) is not — matched precisely by each
 		// candidate's own <input> tag rather than searching the whole page
 		// for the bare word "checked", which can appear elsewhere too.
-		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="0"[^>]*\/>/s', $output, $feed_input );
-		preg_match( '/<input\s+type="checkbox"\s+name="daymark_candidate_index\[\]"\s+value="1"[^>]*\/>/s', $output, $wordpress_input );
+		preg_match( '/<input\s+type="radio"\s+name="daymark_candidate_index\[\]"\s+value="0"[^>]*\/>/s', $output, $feed_input );
+		preg_match( '/<input\s+type="radio"\s+name="daymark_candidate_index\[\]"\s+value="1"[^>]*\/>/s', $output, $wordpress_input );
 
-		$this->assertNotEmpty( $feed_input, 'Expected to find the feed candidate\'s checkbox markup.' );
-		$this->assertNotEmpty( $wordpress_input, 'Expected to find the WordPress REST API candidate\'s checkbox markup.' );
+		$this->assertNotEmpty( $feed_input, 'Expected to find the feed candidate\'s radio markup.' );
+		$this->assertNotEmpty( $wordpress_input, 'Expected to find the WordPress REST API candidate\'s radio markup.' );
 		$this->assertStringNotContainsString( 'checked', $feed_input[0] );
 		$this->assertStringContainsString( 'checked', $wordpress_input[0] );
+	}
+
+	/** Scenario (issue #368): the picker's editable name field is pre-filled with the stashed discovered site_title. */
+	public function test_new_subscribe_picker_shows_editable_site_title(): void {
+		set_transient(
+			'daymark_new_subscription_candidates_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://titled-example.com',
+				'site_title' => 'Titled Example',
+				'candidates' => array(
+					array(
+						'url'          => 'https://titled-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'Titled Example', $output );
+		$this->assertStringContainsString( 'name="daymark_site_title"', $output );
+		$this->assertStringContainsString( 'value="Titled Example"', $output );
+	}
+
+	/** Scenario (issue #368): with no discovered site_title stashed, the displayed name and the input's placeholder both fall back to the site URL. */
+	public function test_new_subscribe_picker_falls_back_to_site_url_when_no_title(): void {
+		set_transient(
+			'daymark_new_subscription_candidates_' . get_current_user_id(),
+			array(
+				'site_url'   => 'https://untitled-example.com',
+				'candidates' => array(
+					array(
+						'url'          => 'https://untitled-example.com/feed/',
+						'title'        => '',
+						'source_type'  => 'feed',
+						'source_label' => 'RSS/Atom Feed',
+					),
+				),
+			),
+			5 * MINUTE_IN_SECONDS
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( '<strong data-daymark-title-text>https://untitled-example.com</strong>', $output );
+		$this->assertStringContainsString( 'placeholder="https://untitled-example.com"', $output );
 	}
 
 	/**

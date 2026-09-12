@@ -278,6 +278,30 @@ class Daymark_Admin_Subscriptions {
 			'@keyframes daymark-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .daymark-subscription-refresh-trigger.daymark-is-refreshing .dashicons { animation: daymark-spin 1s linear infinite; }'
 		);
 
+		// The new-subscribe picker's own screenshot-inspired layout (issue
+		// #368): a site "avatar" placeholder (no real per-site image exists
+		// pre-subscribe — resolving one would cost an extra live request for
+		// what's purely decorative chrome, so this is a fixed dashicon, not a
+		// fetched favicon), the editable-name <details> disclosure (its own
+		// marker suppressed the same way the existing per-row name editor's
+		// already is, but scoped to this new, distinct class so the two
+		// never share a selector by coincidence), and the discovered feed
+		// URL rendered in a small bordered/monospace "code box" rather than
+		// plain inline `<code>`, matching the mockup this issue was built
+		// from. One rule set, attached to core's 'common' handle, matching
+		// this screen's existing no-extra-stylesheet posture.
+		wp_add_inline_style(
+			'common',
+			'.daymark-new-subscribe-edit-name::-webkit-details-marker { display: none; }'
+			. '.daymark-new-subscribe-header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }'
+			. '.daymark-new-subscribe-avatar { font-size: 28px; width: 28px; height: 28px; color: #646970; }'
+			. '.daymark-new-subscribe-edit-name { display: inline-block; }'
+			. '.daymark-new-subscribe-edit-name summary { cursor: pointer; list-style: none; display: inline-block; }'
+			. '.daymark-new-subscribe-edit-name .dashicons { font-size: 16px; width: 16px; height: 16px; vertical-align: text-bottom; }'
+			. '.daymark-new-subscribe-header a { flex-basis: 100%; }'
+			. '.daymark-candidate-url { display: inline-block; margin-top: 2px; padding: 2px 6px; background: #f0f0f1; border-radius: 3px; }'
+		);
+
 		wp_localize_script(
 			'daymark-admin-subscriptions',
 			'daymarkAdminSubscriptions',
@@ -799,58 +823,83 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * Render the subscribe-by-URL form — or, once a discovery pass has been
 	 * run for a just-submitted site (see handle_subscribe(), issue #334),
-	 * the "which feed(s) should Daymark follow" picker instead.
+	 * the "which feed should Daymark follow" picker instead.
+	 *
+	 * Both are wrapped in one stable `#daymark-new-subscribe-root` container:
+	 * `assets/admin-subscriptions.js` (issue #368) replaces this container's
+	 * entire innerHTML with the picker fragment `handle_subscribe()`'s own
+	 * ajax branch returns, rather than navigating away — so the JS-enhanced
+	 * and plain-form-post (no-JS) paths render the exact same markup either
+	 * way, just reached differently.
 	 *
 	 * @return void
 	 */
 	private function render_subscribe_form(): void {
 		$stashed = get_transient( self::new_subscription_transient_key() );
-
-		if ( is_array( $stashed ) && isset( $stashed['site_url'], $stashed['candidates'] ) && is_array( $stashed['candidates'] ) ) {
-			$this->render_new_subscribe_picker( (string) $stashed['site_url'], $stashed['candidates'] );
-
-			return;
-		}
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_subscribe" />
-			<?php wp_nonce_field( 'daymark_subscribe', 'daymark_subscribe_nonce' ); ?>
-			<table class="form-table" role="presentation">
-				<tr>
-					<th scope="row">
-						<label for="daymark_site_url"><?php esc_html_e( 'Site URL', 'daymark' ); ?></label>
-					</th>
-					<td>
-						<input
-							name="daymark_site_url"
-							type="text"
-							id="daymark_site_url"
-							class="regular-text"
-							placeholder="example.com"
-							required="required"
-						/>
-						<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address — a specific section (e.g. a Notes archive) or a feed URL itself both work, so you can subscribe to more than one feed on the same site. The scheme (https://) is optional — assumed when left off.', 'daymark' ); ?></p>
-					</td>
-				</tr>
-			</table>
+		<div id="daymark-new-subscribe-root">
 			<?php
-			submit_button(
-				__( 'Subscribe', 'daymark' ),
-				'primary',
-				'daymark-subscribe-submit',
-				true,
-				array( 'data-daymark-loading-label' => __( 'Subscribing…', 'daymark' ) )
-			);
+			if ( is_array( $stashed ) && isset( $stashed['site_url'], $stashed['candidates'] ) && is_array( $stashed['candidates'] ) ) {
+				$this->render_new_subscribe_picker(
+					(string) $stashed['site_url'],
+					isset( $stashed['site_title'] ) ? (string) $stashed['site_title'] : '',
+					$stashed['candidates']
+				);
+			} else {
+				?>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="daymark_subscribe" />
+					<?php wp_nonce_field( 'daymark_subscribe', 'daymark_subscribe_nonce' ); ?>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row">
+								<label for="daymark_site_url"><?php esc_html_e( 'Site URL', 'daymark' ); ?></label>
+							</th>
+							<td>
+								<input
+									name="daymark_site_url"
+									type="text"
+									id="daymark_site_url"
+									class="regular-text"
+									placeholder="example.com"
+									required="required"
+								/>
+								<p class="description"><?php esc_html_e( 'Daymark will look for a feed at this address — a specific section (e.g. a Notes archive) or a feed URL itself both work, so you can subscribe to more than one feed on the same site. The scheme (https://) is optional — assumed when left off.', 'daymark' ); ?></p>
+							</td>
+						</tr>
+					</table>
+					<span class="description daymark-new-subscribe-error" role="alert" hidden></span>
+					<?php
+					submit_button(
+						__( 'Subscribe', 'daymark' ),
+						'primary',
+						'daymark-subscribe-submit',
+						true,
+						array( 'data-daymark-loading-label' => __( 'Loading feed details…', 'daymark' ) )
+					);
+					?>
+				</form>
+				<?php
+			}
 			?>
-		</form>
+		</div>
 		<?php
 	}
 
 	/**
-	 * Render the "which feed(s) should Daymark follow" picker shown after
-	 * clicking Subscribe on a new site (issue #334) — no subscription exists
-	 * yet at this point; handle_subscribe_confirm() is what actually creates
-	 * one per checked candidate.
+	 * Render the "which feed should Daymark follow" picker shown after
+	 * clicking Subscribe on a new site (issue #334; reworked to this
+	 * single-select, editable-name layout in issue #368) — no subscription
+	 * exists yet at this point; handle_subscribe_confirm() is what actually
+	 * creates one for the chosen candidate, applying $site_title as an
+	 * override when it was edited (see apply_new_subscribe_title_override()).
+	 *
+	 * Unlike an existing subscription's own "Choose from available feeds"
+	 * picker (render_source_picker(), which stays checkbox-based and can add
+	 * or remove several feeds at once), this one is deliberately single-select
+	 * (radio buttons, sharing render_candidate_checkboxes()'s own markup via
+	 * its $multiple = false mode) — there is exactly one new subscription to
+	 * create here, not an existing set to reconcile.
 	 *
 	 * @param string                           $site_url   The site_url
 	 *                                                      discovery ran
@@ -860,40 +909,56 @@ class Daymark_Admin_Subscriptions {
 	 *                                                      Daymark_Subscriptions::discover_candidates()'s
 	 *                                                      own
 	 *                                                      $resolved_site_url
-	 *                                                      out-param),
-	 *                                                      shown for
-	 *                                                      context only.
+	 *                                                      out-param), shown
+	 *                                                      as a link.
+	 * @param string                           $site_title The site's own
+	 *                                                      discovered title
+	 *                                                      (handle_subscribe()'s
+	 *                                                      own
+	 *                                                      Daymark_Subscription_Source_Feed::get_site_title()
+	 *                                                      call, stashed
+	 *                                                      alongside
+	 *                                                      $candidates) —
+	 *                                                      pre-filled into
+	 *                                                      the editable name
+	 *                                                      field, falling
+	 *                                                      back to $site_url
+	 *                                                      itself when empty.
 	 * @param array<int, array<string, mixed>> $candidates Stashed
 	 *                                                       discover_candidates()
 	 *                                                       result.
 	 * @return void
 	 */
-	private function render_new_subscribe_picker( string $site_url, array $candidates ): void {
+	private function render_new_subscribe_picker( string $site_url, string $site_title, array $candidates ): void {
+		$display_name = '' !== $site_title ? $site_title : $site_url;
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-			<input type="hidden" name="action" value="daymark_subscribe_confirm" />
-			<?php wp_nonce_field( 'daymark_subscribe_confirm', 'daymark_subscribe_confirm_nonce' ); ?>
-			<fieldset>
-				<legend>
-					<strong>
-						<?php
-						printf(
-							/* translators: %s: the site URL just discovered. */
-							esc_html__( 'Feeds found at %s — choose which one(s) to follow:', 'daymark' ),
-							esc_html( $site_url )
-						);
-						?>
-					</strong>
-				</legend>
-				<?php $this->render_candidate_checkboxes( $candidates, '', true ); ?>
-			</fieldset>
-			<?php submit_button( __( 'Subscribe', 'daymark' ), 'primary', 'daymark-subscribe-confirm-submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
-		</form>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
-			<input type="hidden" name="action" value="daymark_subscribe_cancel" />
-			<?php wp_nonce_field( 'daymark_subscribe_cancel', 'daymark_subscribe_cancel_nonce' ); ?>
-			<?php submit_button( __( 'Cancel', 'daymark' ), 'secondary small', 'submit', false ); ?>
-		</form>
+		<div class="daymark-new-subscribe-picker">
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="daymark_subscribe_confirm" />
+				<?php wp_nonce_field( 'daymark_subscribe_confirm', 'daymark_subscribe_confirm_nonce' ); ?>
+				<div class="daymark-new-subscribe-header">
+					<span class="dashicons dashicons-admin-site-alt3 daymark-new-subscribe-avatar" aria-hidden="true"></span>
+					<strong data-daymark-title-text><?php echo esc_html( $display_name ); ?></strong>
+					<details class="daymark-new-subscribe-edit-name" data-daymark-fallback-label="<?php echo esc_attr( $site_url ); ?>">
+						<summary class="daymark-edit-title-trigger" aria-label="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>" title="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>">
+							<span class="dashicons dashicons-edit" aria-hidden="true"></span>
+						</summary>
+						<input type="text" name="daymark_site_title" value="<?php echo esc_attr( $site_title ); ?>" placeholder="<?php echo esc_attr( $site_url ); ?>" class="daymark-new-subscribe-title-input" />
+					</details>
+					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
+				</div>
+				<fieldset>
+					<legend><strong><?php esc_html_e( 'Feeds found for this site:', 'daymark' ); ?></strong></legend>
+					<?php $this->render_candidate_checkboxes( $candidates, '', true, false ); ?>
+				</fieldset>
+				<?php submit_button( __( 'Save Subscription', 'daymark' ), 'primary', 'daymark-subscribe-confirm-submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
+			</form>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
+				<input type="hidden" name="action" value="daymark_subscribe_cancel" />
+				<?php wp_nonce_field( 'daymark_subscribe_cancel', 'daymark_subscribe_cancel_nonce' ); ?>
+				<?php submit_button( __( 'Cancel', 'daymark' ), 'secondary small', 'submit', false ); ?>
+			</form>
+		</div>
 		<?php
 	}
 
@@ -969,11 +1034,101 @@ class Daymark_Admin_Subscriptions {
 	 *                                                               so it
 	 *                                                               passes
 	 *                                                               false.
+	 * @param bool                             $multiple            Whether
+	 *                                                               more than
+	 *                                                               one
+	 *                                                               candidate
+	 *                                                               can be
+	 *                                                               selected
+	 *                                                               at once
+	 *                                                               (checkboxes,
+	 *                                                               the
+	 *                                                               existing-row
+	 *                                                               "Choose
+	 *                                                               from
+	 *                                                               available
+	 *                                                               feeds"
+	 *                                                               default)
+	 *                                                               or
+	 *                                                               exactly
+	 *                                                               one
+	 *                                                               (radio
+	 *                                                               buttons,
+	 *                                                               all
+	 *                                                               sharing
+	 *                                                               the same
+	 *                                                               input
+	 *                                                               name so
+	 *                                                               the
+	 *                                                               browser
+	 *                                                               itself
+	 *                                                               enforces
+	 *                                                               mutual
+	 *                                                               exclusivity
+	 *                                                               —
+	 *                                                               issue
+	 *                                                               #368's
+	 *                                                               new-subscribe
+	 *                                                               picker,
+	 *                                                               which
+	 *                                                               only
+	 *                                                               ever
+	 *                                                               creates
+	 *                                                               one
+	 *                                                               subscription).
+	 *                                                               In
+	 *                                                               single-select
+	 *                                                               mode
+	 *                                                               only the
+	 *                                                               richest
+	 *                                                               candidate
+	 *                                                               is
+	 *                                                               pre-checked
+	 *                                                               —
+	 *                                                               $is_current/$already
+	 *                                                               never
+	 *                                                               force a
+	 *                                                               second
+	 *                                                               checked
+	 *                                                               radio,
+	 *                                                               which
+	 *                                                               would be
+	 *                                                               invalid;
+	 *                                                               their
+	 *                                                               "(current)"/"(already
+	 *                                                               subscribed)"
+	 *                                                               labels
+	 *                                                               still
+	 *                                                               render,
+	 *                                                               informational
+	 *                                                               only.
+	 *                                                               `handle_subscribe_confirm()`
+	 *                                                               needs no
+	 *                                                               change
+	 *                                                               either
+	 *                                                               way:
+	 *                                                               PHP
+	 *                                                               already
+	 *                                                               parses
+	 *                                                               a
+	 *                                                               `[]`-suffixed
+	 *                                                               name
+	 *                                                               into an
+	 *                                                               array
+	 *                                                               regardless
+	 *                                                               of
+	 *                                                               whether
+	 *                                                               checkbox
+	 *                                                               or radio
+	 *                                                               inputs
+	 *                                                               produced
+	 *                                                               it.
 	 * @return void
 	 */
-	private function render_candidate_checkboxes( array $candidates, string $current_feed_url, bool $default_check_best ): void {
+	private function render_candidate_checkboxes( array $candidates, string $current_feed_url, bool $default_check_best, bool $multiple = true ): void {
 		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 		$best_index    = $default_check_best ? Daymark_Subscriptions::most_optimal_candidate_index( $candidates ) : -1;
+		$input_type    = $multiple ? 'checkbox' : 'radio';
 
 		foreach ( $candidates as $index => $candidate ) {
 			$candidate_url   = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
@@ -982,11 +1137,13 @@ class Daymark_Admin_Subscriptions {
 			$language_name   = $this->language_display_name( isset( $candidate['language'] ) ? (string) $candidate['language'] : '' );
 			$is_current      = '' !== $candidate_url && $candidate_url === $current_feed_url;
 			$already         = '' !== $candidate_url && null !== $subscriptions->get_by_feed_url( $candidate_url );
-			$checked         = $is_current || $already || ( $index === $best_index );
+			$checked         = $multiple
+				? ( $is_current || $already || ( $index === $best_index ) )
+				: ( $index === $best_index );
 			?>
 			<label style="display:block;margin:4px 0;">
 				<input
-					type="checkbox"
+					type="<?php echo esc_attr( $input_type ); ?>"
 					name="daymark_candidate_index[]"
 					value="<?php echo esc_attr( (string) $index ); ?>"
 					<?php checked( $checked ); ?>
@@ -1006,7 +1163,7 @@ class Daymark_Admin_Subscriptions {
 					<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 				<?php endif; ?>
 				<br />
-				<code style="margin-left:24px;"><?php echo esc_html( $candidate_url ); ?></code>
+				<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $candidate_url ); ?></code>
 			</label>
 			<?php
 		}
@@ -2233,15 +2390,28 @@ class Daymark_Admin_Subscriptions {
 	 * this flow's own discovery step): runs Daymark_Subscriptions::discover_candidates()
 	 * against the submitted URL and stashes the result — the normalized
 	 * site_url discover_candidates() itself resolved, via its own
-	 * $resolved_site_url out-param, not necessarily the raw text typed in —
-	 * in a short-lived, per-user transient, then redirects back so
-	 * render_subscribe_form() shows the "which feed(s) should Daymark
+	 * $resolved_site_url out-param, not necessarily the raw text typed in,
+	 * plus the site's own discovered title (pre-filling the picker's
+	 * editable name field, issue #368) — in a short-lived, per-user
+	 * transient, then either responds directly (see below) or redirects
+	 * back so render_subscribe_form() shows the "which feed should Daymark
 	 * follow" picker instead of the plain URL field. No subscription exists
 	 * yet at this point; handle_subscribe_confirm() is what actually
-	 * creates one per feed a person checks.
+	 * creates one for the chosen feed.
 	 *
 	 * `subscribe_to_site()` — REST subscribing's own single-pick, fully
 	 * automatic path — is unaffected; this screen simply no longer calls it.
+	 *
+	 * Issue #368's JS enhancement (assets/admin-subscriptions.js) submits
+	 * this same form via `fetch()` instead of letting it navigate, marked by
+	 * an `X-Daymark-Ajax` request header the plain browser POST never sends —
+	 * that path responds with a small `wp_send_json_*` envelope (the
+	 * rendered picker fragment, or an error message) instead of redirecting,
+	 * so the picker can be injected inline without a full page reload. A
+	 * plain form submission (no JS, or the header stripped) is completely
+	 * unaffected: it still redirects exactly as before, and
+	 * render_subscribe_form() renders the identical picker markup from the
+	 * same stashed transient either way.
 	 *
 	 * @return void
 	 */
@@ -2252,6 +2422,8 @@ class Daymark_Admin_Subscriptions {
 
 		check_admin_referer( 'daymark_subscribe', 'daymark_subscribe_nonce' );
 
+		$is_ajax = isset( $_SERVER['HTTP_X_DAYMARK_AJAX'] ) && '1' === sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_DAYMARK_AJAX'] ) );
+
 		// Same outbound-request risk class as the REST endpoint (a feed
 		// discovery + favicon request to a site the user names) — rate
 		// limited for parity with it, even though this admin screen's own
@@ -2259,7 +2431,7 @@ class Daymark_Admin_Subscriptions {
 		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
 
 		if ( is_wp_error( $rate ) ) {
-			$this->redirect_with_error( $rate->get_error_message() );
+			$this->respond_to_subscribe_attempt( $is_ajax, $rate->get_error_message() );
 
 			return;
 		}
@@ -2270,34 +2442,120 @@ class Daymark_Admin_Subscriptions {
 		$candidates        = Daymark_Plugin::instance()->subscriptions->discover_candidates( $site_url, $resolved_site_url );
 
 		if ( is_wp_error( $candidates ) ) {
-			$this->redirect_with_error( $candidates->get_error_message() );
+			$this->respond_to_subscribe_attempt( $is_ajax, $candidates->get_error_message() );
 
 			return;
 		}
 
+		$resolved_site_url = (string) $resolved_site_url;
+		$site_title        = $this->discover_site_title_for_preview( $resolved_site_url );
+
 		set_transient(
 			self::new_subscription_transient_key(),
 			array(
-				'site_url'   => (string) $resolved_site_url,
+				'site_url'   => $resolved_site_url,
+				'site_title' => $site_title,
 				'candidates' => $candidates,
 			),
 			5 * MINUTE_IN_SECONDS
 		);
 
+		if ( $is_ajax ) {
+			wp_send_json_success(
+				array(
+					'html' => $this->captured_render_new_subscribe_picker( $resolved_site_url, $site_title, $candidates ),
+				)
+			);
+
+			return;
+		}
+
 		$this->redirect( array() );
 	}
 
 	/**
-	 * Handle the new-subscribe picker's "Subscribe" submit
-	 * (admin_post_daymark_subscribe_confirm, issue #334): reads the checked
-	 * `daymark_candidate_index[]` values back out of this user's own stashed
-	 * discover_candidates() result (never a raw posted URL — the same
-	 * "trust only what discover_candidates() itself just produced" posture
-	 * subscribe_to_candidate()'s own docblock already establishes), and
-	 * creates one new subscription per selected candidate via
+	 * Respond to a failed discovery attempt the same way for both the
+	 * ajax and plain-form-post paths of handle_subscribe() — a JSON error
+	 * envelope for the former, the existing redirect-with-error-notice
+	 * behavior for the latter.
+	 *
+	 * @param bool   $is_ajax Whether this request carried the
+	 *                        `X-Daymark-Ajax` header (see handle_subscribe()).
+	 * @param string $message Human-readable error message.
+	 * @return void
+	 */
+	private function respond_to_subscribe_attempt( bool $is_ajax, string $message ): void {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => $message ) );
+
+			return;
+		}
+
+		$this->redirect_with_error( $message );
+	}
+
+	/**
+	 * Best-effort site title to pre-fill the new-subscribe picker's editable
+	 * name field with — the same value finish_subscribe() would otherwise
+	 * only resolve after a subscription already exists (see
+	 * Daymark_Subscription_Source_Feed::get_site_title()'s own docblock).
+	 * Reading it here, ahead of time, costs no extra live request:
+	 * get_site_title() (like every other discovery-time fetch) is routed
+	 * through Daymark_Subscription_Html_Cache, and discover_candidates()
+	 * just fetched this exact $site_url's own HTML for autodiscovery, so
+	 * this call hits that same per-request cache.
+	 *
+	 * @param string $site_url Resolved site URL, as returned by
+	 *                         discover_candidates()'s own $resolved_site_url
+	 *                         out-param.
+	 * @return string The discovered title, or '' when none could be found —
+	 *                render_new_subscribe_picker() falls back to $site_url
+	 *                itself in that case, same as an ordinary subscription's
+	 *                own subscription_label().
+	 */
+	private function discover_site_title_for_preview( string $site_url ): string {
+		$feed_source = Daymark_Plugin::instance()->subscription_source_registry->get_source( 'feed' );
+
+		if ( ! ( $feed_source instanceof Daymark_Subscription_Source_Feed ) ) {
+			return '';
+		}
+
+		return $feed_source->get_site_title( $site_url );
+	}
+
+	/**
+	 * Capture render_new_subscribe_picker()'s own echoed output as a string,
+	 * for handle_subscribe()'s ajax response — the exact same markup
+	 * render_subscribe_form() would show on a full page reload, just
+	 * returned instead of printed directly.
+	 *
+	 * @param string                           $site_url   See render_new_subscribe_picker().
+	 * @param string                           $site_title See render_new_subscribe_picker().
+	 * @param array<int, array<string, mixed>> $candidates See render_new_subscribe_picker().
+	 * @return string
+	 */
+	private function captured_render_new_subscribe_picker( string $site_url, string $site_title, array $candidates ): string {
+		ob_start();
+		$this->render_new_subscribe_picker( $site_url, $site_title, $candidates );
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Handle the new-subscribe picker's "Save Subscription" submit
+	 * (admin_post_daymark_subscribe_confirm, issue #334; picker reworked to
+	 * a single-select, editable-name layout in issue #368): reads the
+	 * checked `daymark_candidate_index[]` value(s) back out of this user's
+	 * own stashed discover_candidates() result (never a raw posted URL — the
+	 * same "trust only what discover_candidates() itself just produced"
+	 * posture subscribe_to_candidate()'s own docblock already establishes),
+	 * and creates one new subscription per selected candidate via
 	 * Daymark_Subscriptions::subscribe_to_candidate() — best-effort
 	 * immediately polling each new subscription, same as the original
-	 * single-pick subscribe flow always did.
+	 * single-pick subscribe flow always did. A posted `daymark_site_title`
+	 * (the picker's editable name field) then overrides each newly created
+	 * subscription's own discovered title — see
+	 * apply_new_subscribe_title_override().
 	 *
 	 * @return void
 	 */
@@ -2347,12 +2605,48 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		$title_override = isset( $_POST['daymark_site_title'] ) // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+			? sanitize_text_field( wp_unslash( $_POST['daymark_site_title'] ) ) // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+			: null;
+
+		$this->apply_new_subscribe_title_override( $outcome['ids'], $title_override );
+
 		$this->redirect(
 			array(
 				self::NOTICE_QUERY_VAR => $outcome['pending'] > 0 ? 'subscribed_pending' : 'subscribed',
 				self::COUNT_QUERY_VAR  => (string) $outcome['added'],
 			)
 		);
+	}
+
+	/**
+	 * Apply the new-subscribe picker's editable name field to every
+	 * subscription subscribe_to_selected_candidates() just created — the
+	 * picker's single radio-selected candidate in normal use, so this
+	 * updates exactly one row (issue #368), but written to loop over
+	 * whatever `$ids` it's given rather than assuming exactly one.
+	 *
+	 * A blank $title is applied too, not skipped — the same "submitting a
+	 * blank value clears back to the site_url fallback" behavior
+	 * render_edit_title_form()'s own docblock already documents for an
+	 * existing subscription's inline editor.
+	 *
+	 * @param int[]       $ids   Newly created subscription IDs.
+	 * @param string|null $title The posted `daymark_site_title` value, or
+	 *                           null when the field wasn't present in the
+	 *                           request at all (nothing to apply).
+	 * @return void
+	 */
+	private function apply_new_subscribe_title_override( array $ids, ?string $title ): void {
+		if ( null === $title || empty( $ids ) ) {
+			return;
+		}
+
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+
+		foreach ( $ids as $id ) {
+			$subscriptions->update( (int) $id, array( 'site_title' => $title ) );
+		}
 	}
 
 	/**
@@ -2402,19 +2696,27 @@ class Daymark_Admin_Subscriptions {
 	 * @param int[]                            $indices    The candidate
 	 *                                                      indices a person
 	 *                                                      actually checked.
-	 * @return array{added: int, pending: int} `added` is how many new
-	 *                                          subscriptions were created;
-	 *                                          `pending` is how many of those
-	 *                                          had their immediate best-effort
-	 *                                          poll fail (their posts arrive
-	 *                                          on the next scheduled check
-	 *                                          instead).
+	 * @return array{added: int, pending: int, ids: int[]} `added` is how many
+	 *                                          new subscriptions were
+	 *                                          created; `pending` is how many
+	 *                                          of those had their immediate
+	 *                                          best-effort poll fail (their
+	 *                                          posts arrive on the next
+	 *                                          scheduled check instead);
+	 *                                          `ids` is every newly created
+	 *                                          subscription's own ID (issue
+	 *                                          #368 — so a caller can apply a
+	 *                                          post-create update, such as a
+	 *                                          site_title override, without
+	 *                                          re-deriving which rows were
+	 *                                          just added).
 	 */
 	private function subscribe_to_selected_candidates( string $site_url, array $candidates, array $indices ): array {
 		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 		$poller        = Daymark_Plugin::instance()->subscription_poller;
 		$added         = 0;
 		$pending       = 0;
+		$ids           = array();
 
 		foreach ( $indices as $index ) {
 			if ( ! isset( $candidates[ $index ] ) || ! is_array( $candidates[ $index ] ) ) {
@@ -2428,6 +2730,7 @@ class Daymark_Admin_Subscriptions {
 			}
 
 			++$added;
+			$ids[] = (int) $result;
 
 			// Best-effort immediate poll, matching the original single-pick
 			// subscribe flow's own "don't make them wait for the next
@@ -2441,6 +2744,7 @@ class Daymark_Admin_Subscriptions {
 		return array(
 			'added'   => $added,
 			'pending' => $pending,
+			'ids'     => $ids,
 		);
 	}
 
