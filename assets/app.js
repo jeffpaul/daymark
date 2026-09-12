@@ -8256,7 +8256,7 @@
 		const groups = [];
 		const byPostId = new Map();
 		items.forEach((item) => {
-			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
+			if ('dead_feed' === item.type || 'feed_issue' === item.type || 'plugin_overlap' === item.type) {
 				groups.push({ kind: 'issue', item });
 				return;
 			}
@@ -8378,7 +8378,7 @@
 		// comment is (it's a feed-health alert, not a reply) — it stays
 		// visible regardless of the source filter (issue #258).
 		isIssueItem(item) {
-			return 'dead_feed' === item.type || 'feed_issue' === item.type;
+			return 'dead_feed' === item.type || 'feed_issue' === item.type || 'plugin_overlap' === item.type;
 		},
 
 		// The source filter's options, derived from what's actually in this
@@ -8469,6 +8469,9 @@
 		renderItem(item) {
 			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
 				return this.renderSubscriptionIssueItem(item);
+			}
+			if ('plugin_overlap' === item.type) {
+				return this.renderPluginOverlapItem(item);
 			}
 
 			const text = toPlainText(item.comment_content);
@@ -8592,6 +8595,30 @@
 			</article>`;
 		},
 
+		// A passive, informational item (issue #346): no severity chip the
+		// way a subscription issue has, since nothing is broken — just
+		// something the site owner may want to know about their own
+		// active-plugin setup and decide on. Stays visible until
+		// explicitly dismissed (never auto-hides, never nags via the
+		// unread dot — see has_unread()'s own PHP docblock).
+		renderPluginOverlapItem(item) {
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip daymark-chip--muted">${esc(__('Plugin overlap', 'daymark'))}</span>
+				<p class="daymark-note-card__text">${esc(item.message || '')}</p>
+				<div class="daymark-note-card__links">
+					<a class="daymark-note-card__link" href="${esc(config.pluginsUrl || '#')}">${esc(
+						__('→ Manage plugins', 'daymark')
+					)}</a>
+					<button
+						type="button"
+						class="daymark-note-card__showmore"
+						data-plugin-overlap-dismiss="${esc(item.plugin || '')}"
+					>${esc(__('Dismiss', 'daymark'))}</button>
+				</div>
+			</article>`;
+		},
+
 		bindShowMore(list) {
 			list.querySelectorAll('[data-showmore]').forEach((button) => {
 				button.addEventListener('click', () => {
@@ -8616,6 +8643,12 @@
 		onReplyClick(event) {
 			const list = event.currentTarget;
 			const target = event.target;
+
+			const dismiss = target.closest('[data-plugin-overlap-dismiss]');
+			if (dismiss) {
+				this.dismissPluginOverlap(dismiss);
+				return;
+			}
 
 			const toggle = target.closest('[data-reply-toggle]');
 			if (toggle) {
@@ -8648,6 +8681,28 @@
 			const send = target.closest('[data-reply-send]');
 			if (send) {
 				this.submitReply(send);
+			}
+		},
+
+		// Dismisses a plugin-overlap item for good (issue #346) — an
+		// optimistic remove-from-DOM, mirroring toggleBookmark()'s own
+		// optimistic-then-revert-on-failure shape, just with nothing to
+		// revert TO here (there's no un-dismiss action, so a failure just
+		// re-enables the button for a retry rather than restoring state).
+		async dismissPluginOverlap(trigger) {
+			const plugin = trigger.getAttribute('data-plugin-overlap-dismiss');
+			if (!plugin) {
+				return;
+			}
+			const card = trigger.closest('.daymark-note-card');
+			trigger.disabled = true;
+			try {
+				await apiPost('notifications/plugin-overlaps/' + plugin + '/dismiss', {});
+				if (card) {
+					card.remove();
+				}
+			} catch (err) {
+				trigger.disabled = false;
 			}
 		},
 

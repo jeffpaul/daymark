@@ -67,3 +67,10 @@ require_once __DIR__ . '/class-friends-stub.php';
 // for Daymark_Plugin_Detector::matches()'s own generic test fixtures and
 // the ATmosphere class-signal fixture (issue #342).
 require_once __DIR__ . '/class-plugin-detector-stub.php';
+
+// See class-plugin-overlap-fake.php's own docblock — a swappable fake
+// Daymark_Plugin_Overlap for tests/test-notifications.php, avoiding the
+// process-wide pollution a real plugin-detection signal (a class or
+// constant, once defined, can never be undefined for the rest of the
+// PHPUnit run) would otherwise cause.
+require_once __DIR__ . '/class-plugin-overlap-fake.php';

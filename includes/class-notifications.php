@@ -175,6 +175,22 @@ class Daymark_Notifications {
 			);
 		}
 
+		foreach ( $this->get_undismissed_plugin_overlaps() as $plugin_key => $overlap ) {
+			$dated_items[] = array(
+				// A currently-active overlap has no historical "date" of
+				// its own the way a comment or a failed poll does — it's
+				// simply true right now, for as long as the other plugin
+				// stays active and this user hasn't dismissed it. Sorting
+				// it as "now" is what keeps it near the top of the list
+				// while it's still relevant, which matches its own
+				// "something you should know about your setup" framing;
+				// see has_unread()'s docblock for why this same timestamp
+				// is deliberately NOT used to drive the unread bell dot.
+				'timestamp' => time(),
+				'item'      => $this->format_plugin_overlap( $plugin_key, $overlap ),
+			);
+		}
+
 		usort(
 			$dated_items,
 			static function ( array $a, array $b ): int {
@@ -208,6 +224,16 @@ class Daymark_Notifications {
 	 * reason for it to sit silently until the user happens to open
 	 * Subscription management. See get_notifications()'s docblock for why
 	 * `last_checked_at` is the right timestamp to compare against `$seen`.
+	 *
+	 * A plugin-overlap item (issue #346) deliberately never drives this
+	 * flag, unlike every other item type here. Its own list-sort timestamp
+	 * is always "now" (see get_notifications()), which would make it read
+	 * as freshly new on every single check — the bell dot would never
+	 * clear even after a user has already seen and consciously chosen not
+	 * to dismiss it yet, fighting the whole point of a "shows until you
+	 * dismiss it, not until you merely glance at it" design. It's a
+	 * standing observation about the site's own configuration, not new
+	 * activity the way a reply or a fresh subscription failure is.
 	 *
 	 * @return bool
 	 */
@@ -500,6 +526,60 @@ class Daymark_Notifications {
 				? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
 				: '',
 			'last_error'                => sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * Currently-active overlapping IndieWeb plugins this user has not yet
+	 * dismissed (issue #346). Thin combination of
+	 * Daymark_Plugin_Overlap::get_active_overlaps()/is_dismissed() — kept
+	 * as its own method for the same reason
+	 * get_subscriptions_with_issues() is: one shared lookup for both
+	 * get_notifications() and has_unread() (which deliberately does NOT
+	 * use this — see has_unread()'s own docblock).
+	 *
+	 * @return array<string, array{label: string, overlaps: string}>
+	 */
+	private function get_undismissed_plugin_overlaps(): array {
+		$user_id = get_current_user_id();
+
+		if ( ! $user_id ) {
+			return array();
+		}
+
+		$overlap = Daymark_Plugin::instance()->plugin_overlap;
+		$active  = $overlap->get_active_overlaps();
+
+		foreach ( array_keys( $active ) as $plugin_key ) {
+			if ( $overlap->is_dismissed( $user_id, $plugin_key ) ) {
+				unset( $active[ $plugin_key ] );
+			}
+		}
+
+		return $active;
+	}
+
+	/**
+	 * Build a plugin-overlap notification item (issue #346). Purely
+	 * informational — no severity/status fields the way a subscription
+	 * issue has, since this never represents something broken, only
+	 * something the site owner may want to know about and decide on.
+	 *
+	 * @param string                                 $plugin_key Plugin key (e.g. 'post-kinds').
+	 * @param array{label: string, overlaps: string} $overlap    From get_active_overlaps().
+	 * @return array<string, mixed>
+	 */
+	private function format_plugin_overlap( string $plugin_key, array $overlap ): array {
+		return array(
+			'type'    => 'plugin_overlap',
+			'plugin'  => $plugin_key,
+			'label'   => $overlap['label'],
+			'message' => sprintf(
+				/* translators: 1: plugin name, 2: what it overlaps. */
+				__( '%1$s is active, which %2$s.', 'daymark' ),
+				$overlap['label'],
+				$overlap['overlaps']
+			),
 		);
 	}
 

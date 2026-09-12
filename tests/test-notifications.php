@@ -526,4 +526,117 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertEquals( 'Portability test', $post->post_title );
 		$this->assertEquals( '1', get_post_meta( $post_id, '_daymark_is_mark', true ) );
 	}
+
+	// -----------------------------------------------------------------
+	// Plugin-overlap notifications (issue #346). These swap
+	// Daymark_Plugin::instance()->plugin_overlap for a fake instance
+	// (tests/class-plugin-overlap-fake.php) that reports one fixed
+	// overlap active, restoring the real instance in tear_down —
+	// deliberately never defining a real plugin's own detection
+	// class/constant directly, since that can never be undefined for the
+	// rest of the PHPUnit run once declared. An earlier version of this
+	// test suite did exactly that (a real SYNDICATION_LINKS_VERSION
+	// constant) and it leaked into Test_Rest_Permissions::test_notifications_scoped_to_editable_posts,
+	// which had no way to know a plugin-overlap notification would start
+	// appearing for every user.
+	// -----------------------------------------------------------------
+
+	/** @var Daymark_Plugin_Overlap|null */
+	private $real_plugin_overlap;
+
+	private function activate_fake_overlap(): void {
+		$this->real_plugin_overlap                 = Daymark_Plugin::instance()->plugin_overlap;
+		Daymark_Plugin::instance()->plugin_overlap = new Daymark_Test_Fake_Plugin_Overlap();
+	}
+
+	public function tear_down(): void {
+		if ( null !== $this->real_plugin_overlap ) {
+			Daymark_Plugin::instance()->plugin_overlap = $this->real_plugin_overlap;
+			$this->real_plugin_overlap                 = null;
+		}
+
+		parent::tear_down();
+	}
+
+	/** An active, undismissed overlap surfaces as a plugin_overlap notification item. */
+	public function test_active_overlap_appears_as_plugin_overlap_notification() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->activate_fake_overlap();
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $matching );
+		$this->assertSame( 'Syndication Links', $matching[0]['label'] );
+		$this->assertNotEmpty( $matching[0]['message'] );
+	}
+
+	/** Dismissing a plugin overlap removes it from get_notifications() for that user. */
+	public function test_dismissed_overlap_no_longer_appears() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->activate_fake_overlap();
+
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $user_id, 'syndication-links' );
+
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_filter(
+			$items,
+			static function ( array $item ) {
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+			}
+		);
+
+		$this->assertSame( array(), $matching );
+	}
+
+	/** Dismissal is per-user: a different user still sees the same active overlap. */
+	public function test_overlap_dismissal_is_scoped_per_user() {
+		$dismisser = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$other     = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$this->activate_fake_overlap();
+
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'syndication-links' );
+
+		wp_set_current_user( $other );
+		$notifications = new Daymark_Notifications();
+		$items         = $notifications->get_notifications();
+
+		$matching = array_filter(
+			$items,
+			static function ( array $item ) {
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+			}
+		);
+
+		$this->assertCount( 1, $matching );
+	}
+
+	/**
+	 * An active, undismissed plugin-overlap item must NOT drive
+	 * has_unread() — see that method's own docblock for why: its list-sort
+	 * timestamp is always "now", so treating it as fresh on every check
+	 * would mean the unread dot could never clear.
+	 */
+	public function test_active_overlap_does_not_drive_has_unread() {
+		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $user_id );
+		$this->activate_fake_overlap();
+
+		$notifications = new Daymark_Notifications();
+
+		$this->assertFalse( $notifications->has_unread(), 'An active plugin overlap alone must not mark notifications unread' );
+	}
 }
