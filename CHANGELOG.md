@@ -31,7 +31,7 @@ can't act on them.
 
 ### Fixed
 
-- A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip.
+- A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip. ([#384](https://github.com/jeffpaul/daymark/pull/384))
 
 ### Developer
 
