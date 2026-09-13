@@ -29,6 +29,10 @@ can't act on them.
 - Settings -> Daymark's "Choose from available feeds" action no longer reloads the whole page — clicking it now loads that site's discovered feeds directly into its own row, so you stay right where you were instead of the page jumping back to the top of the subscriptions table. ([#378](https://github.com/jeffpaul/daymark/pull/378))
 - Made the "plugin overlap" notification's own text clearer about what it's flagging and what to do about it — each message now names specifically what Daymark already renders that the other plugin might duplicate, and always suggests deactivating whichever one you don't need. Also fixes the IndieBlocks message, which previously referred to "the above" even when shown on its own with no other overlap notification alongside it.
 
+### Fixed
+
+- A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip.
+
 ### Developer
 
 - Fixed the release workflow's tag/version guard, which was comparing the plugin header's `Version:` and readme.txt's `Stable tag:` fields against the pushed tag using a whitespace-sensitive match — both fields are column-aligned with padding, so the extracted value silently carried that padding and never matched, failing the 0.16.0 tag push before it built or published anything. The guard now strips all whitespace from every value before comparing.

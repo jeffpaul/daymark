@@ -7245,11 +7245,32 @@
 	// the same reasoning renderMarkItem() already applies to skipping its
 	// site icon). `time`'s own `margin-left: auto` (CSS) keeps it
 	// right-aligned whether or not a site name precedes it.
+
+	// A subscription site's own <title> tag can carry a full tagline, not
+	// just a short name (e.g. "The Repository - The latest news in the
+	// WordPress ecosystem") — capped here so the displayed text itself
+	// stays short regardless of viewport width, text zoom, or a large
+	// system font-size setting, rather than relying only on
+	// .daymark-recent__sitename's own CSS text-overflow: ellipsis to catch
+	// it (kept as a second, narrower-viewport safety net, not replaced).
+	const SITE_NAME_MAX_LENGTH = 40;
+
+	function truncateSiteName(name) {
+		if (name.length <= SITE_NAME_MAX_LENGTH) {
+			return name;
+		}
+		return `${name.slice(0, SITE_NAME_MAX_LENGTH - 1).trimEnd()}…`;
+	}
+
 	function renderCardTimestampRow(item, siteLabel) {
 		if (!item.date && !siteLabel) {
 			return '';
 		}
-		const site = siteLabel ? `<span class="daymark-recent__sitename">${esc(siteLabel)}</span>` : '';
+		const site = siteLabel
+			? `<span class="daymark-recent__sitename" title="${esc(siteLabel)}">${esc(
+					truncateSiteName(siteLabel)
+				)}</span>`
+			: '';
 		const time = item.date ? renderCardTimestamp(item.date) : '';
 		return `<span class="daymark-recent__timestamprow">${site}${time}</span>`;
 	}

@@ -918,6 +918,7 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	flex-direction: column;
 	flex-basis: 100%;
+	min-width: 0;
 	gap: 2px;
 }
 
@@ -950,10 +951,22 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	align-items: baseline;
 	gap: var(--daymark-spacing-sm);
+	min-width: 0;
 	font-size: 12px;
 	color: var(--daymark-text-muted);
 }
 
+/* A very long subscribed site title (a plain <title> tag can carry a
+   tagline too, e.g. "The Repository - The latest news in the WordPress
+   ecosystem") needs min-width: 0 on every flex-item ancestor in this
+   chain to actually truncate here, not just on this element itself: a
+   flex item's automatic minimum size defaults to its content's
+   min-content width, and this row's own white-space: nowrap makes that
+   min-content width the full, un-truncated string — so without
+   .daymark-recent__footer's and .daymark-recent__timestamprow's own
+   min-width: 0 (added alongside this rule, not new here), that
+   automatic minimum silently overrides this ellipsis and widens the
+   whole card/page instead of clipping. */
 .daymark-recent__sitename {
 	overflow: hidden;
 	text-overflow: ellipsis;
