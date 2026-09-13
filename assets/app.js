@@ -3013,6 +3013,174 @@
 		}
 	}
 
+	// --- Timeline card link preview (issue #385, a follow-up to #349) ---
+	//
+	// The full-screen post view already shows a "link"-kind subscription
+	// post's best-effort Open Graph/oEmbed preview (PostScreen.
+	// maybeLoadOembedPreview() below); a Timeline/Search card only ever
+	// showed the plain excerpt text. This mirrors the exact lazy,
+	// IntersectionObserver-driven, single-in-flight, backoff-respecting
+	// pattern observeRehydrateCandidates()/drainRehydrateQueue() above
+	// already established for the identical "don't block or slow the
+	// Timeline's own render for an optional per-card fetch" shape — a
+	// second, separate queue/observer rather than folding into that one,
+	// since the two fetch genuinely different things (rehydration refills
+	// a card's own content; this decorates a "link"-kind card with a
+	// preview of its detected outbound link) and a link-kind card is
+	// typically a small fraction of a Timeline page — running its own
+	// modest, one-at-a-time queue alongside the rehydrate queue's is an
+	// accepted trade against the shared ACTION_SUBSCRIPTION_POST_FETCH
+	// budget both draw from (never more than two requests to that endpoint
+	// family in flight at once, well inside its 20-per-5-minute per-user
+	// limit for the handful of link-kind cards a page typically carries).
+	// Home-only, matching how several other Timeline-specific features
+	// above stayed Home-scoped.
+
+	const OEMBED_PREVIEW_LOOKAHEAD = '600px';
+
+	function observeOembedPreviewCandidates(screen, container) {
+		if (!('IntersectionObserver' in window) || !container) {
+			return;
+		}
+		if (!screen._oembedObserver) {
+			screen._oembedObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._oembedObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-subpost');
+						if (id && !screen._oembedAttempted.has(id) && !screen._oembedQueue.includes(id)) {
+							screen._oembedQueue.push(id);
+							drainOembedPreviewQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: OEMBED_PREVIEW_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-subpost]').forEach((el) => {
+			const id = el.getAttribute('data-subpost');
+			const item = id ? screen._bySubId.get(id) : null;
+			if (!item || !item.link_url || 'link' !== resolveCardKind(item) || screen._oembedAttempted.has(id)) {
+				return;
+			}
+			screen._oembedObserver.observe(el);
+		});
+	}
+
+	function teardownOembedPreviewObserver(screen) {
+		if (screen._oembedObserver) {
+			screen._oembedObserver.disconnect();
+			screen._oembedObserver = null;
+		}
+		screen._oembedAttempted = new Set();
+		screen._oembedQueue = [];
+		screen._oembedInFlight = false;
+		screen._oembedBackoffUntil = 0;
+	}
+
+	async function drainOembedPreviewQueue(screen) {
+		if (screen._oembedInFlight || Date.now() < screen._oembedBackoffUntil) {
+			return;
+		}
+		const id = screen._oembedQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._oembedInFlight = true;
+		try {
+			const result = await apiGet('subscription-posts/' + id + '/oembed');
+			screen._oembedAttempted.add(id);
+			renderCardOembedPreview(id, result);
+		} catch (err) {
+			if (err && 429 === err.status) {
+				// Rate-limited, not a real failure: leave it out of
+				// _oembedAttempted so a later observeOembedPreviewCandidates()
+				// call can still pick it back up once the backoff clears.
+				const waitMs = (Number(err.retryAfter) || 60) * 1000;
+				screen._oembedBackoffUntil = Date.now() + waitMs;
+			} else {
+				screen._oembedAttempted.add(id);
+			}
+		} finally {
+			screen._oembedInFlight = false;
+			drainOembedPreviewQueue(screen);
+		}
+	}
+
+	// The inner markup for a "link" (Open Graph) preview result — shared
+	// with PostScreen.maybeLoadOembedPreview() below so the two surfaces
+	// can never render this differently. Returns '' when there's nothing
+	// usable to show.
+	function oembedLinkPreviewInnerHtml(result) {
+		if (!result || !result.title) {
+			return '';
+		}
+		return `
+			${
+				result.image
+					? `<img class="daymark-oembed-preview__image" src="${esc(
+							result.image
+					  )}" alt="" loading="lazy">`
+					: ''
+			}
+			<div class="daymark-oembed-preview__text">
+				<p class="daymark-oembed-preview__title">${esc(result.title)}</p>
+				${
+					result.description
+						? `<p class="daymark-oembed-preview__description">${esc(
+								result.description
+						  )}</p>`
+						: ''
+				}
+			</div>`;
+	}
+
+	// A Timeline/Search card's whole surface is a real <button>
+	// (.daymark-recent__item--button) — HTML forbids nesting another
+	// interactive element (a real <a>, or an <iframe>) inside a <button>,
+	// the same constraint this file's other per-item toggles already route
+	// around with a span[role="button"] instead of a nested <a>/<button>.
+	// A "link" (Open Graph) result renders as plain, non-clickable content
+	// here (tapping anywhere in the card already opens the full post view,
+	// so the preview doesn't need its own click target); a "photo" result
+	// is already just a safe <img>, per Daymark_Subscription_Oembed. An
+	// "iframe" result is the one case genuinely unsafe to nest inside a
+	// <button> — left card-less here and full-post-view-only, where
+	// PostScreen isn't itself a button.
+	function cardOembedPreviewHtml(result) {
+		if (!result || !result.type) {
+			return '';
+		}
+		if ('photo' === result.type) {
+			return result.html || '';
+		}
+		if ('link' === result.type) {
+			return oembedLinkPreviewInnerHtml(result);
+		}
+		return '';
+	}
+
+	function renderCardOembedPreview(id, result) {
+		const inner = cardOembedPreviewHtml(result);
+		if (!inner) {
+			return;
+		}
+		const card = root.querySelector('[data-subpost="' + CSS.escape(id) + '"]');
+		const body = card && card.querySelector('.daymark-recent__body');
+		if (!body || body.querySelector('.daymark-oembed-preview')) {
+			return;
+		}
+		const wrapper = document.createElement('div');
+		wrapper.className =
+			'daymark-oembed-preview daymark-oembed-preview--card' +
+			('link' === result.type ? ' daymark-oembed-preview--link' : '');
+		wrapper.innerHTML = inner;
+		body.append(wrapper);
+	}
+
 	// --- Per-item ⋯ menu (edit / delete), shared by every feed-list screen ---
 
 	function closeItemMenus() {
@@ -4557,6 +4725,7 @@
 			}
 			this.teardownObserver();
 			teardownRehydrateObserver(this);
+			teardownOembedPreviewObserver(this);
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -4594,6 +4763,7 @@
 				}
 				list.innerHTML = renderFeedItemsWithGroups(this, arr);
 				observeRehydrateCandidates(this, list);
+				observeOembedPreviewCandidates(this, list);
 
 				if (arr.length < RECENT_PER_PAGE) {
 					// A short first page means there is nothing more to load.
@@ -4662,6 +4832,7 @@
 					// page's own headers from repeating one still in view.
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
 					observeRehydrateCandidates(this, list);
+					observeOembedPreviewCandidates(this, list);
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
@@ -7712,28 +7883,14 @@
 						wrapper.target = '_blank';
 						wrapper.rel = 'noopener noreferrer';
 						// Text/image fields are already sanitized server-side
-						// (Daymark_Subscription_Opengraph) — esc()'d here the
-						// same as any other server-provided string this file
-						// interpolates, not because the source is any less
-						// trusted than body_content already rendered above.
-						wrapper.innerHTML = `
-							${
-								result.image
-									? `<img class="daymark-oembed-preview__image" src="${esc(
-											result.image
-									  )}" alt="" loading="lazy">`
-									: ''
-							}
-							<div class="daymark-oembed-preview__text">
-								<p class="daymark-oembed-preview__title">${esc(result.title)}</p>
-								${
-									result.description
-										? `<p class="daymark-oembed-preview__description">${esc(
-												result.description
-										  )}</p>`
-										: ''
-								}
-							</div>`;
+						// (Daymark_Subscription_Opengraph) — esc()'d inside
+						// oembedLinkPreviewInnerHtml() (shared with a Timeline/
+						// Search card's own, non-interactive rendering of the
+						// same result) the same as any other server-provided
+						// string this file interpolates, not because the source
+						// is any less trusted than body_content already
+						// rendered above.
+						wrapper.innerHTML = oembedLinkPreviewInnerHtml(result);
 					} else if (result.html) {
 						// Built entirely server-side from an allowlist of safe
 						// attributes on a single <iframe>/<img> — never a
