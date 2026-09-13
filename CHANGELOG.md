@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Subscribing to a site running the MF2 Feed WordPress plugin now reads its structured JSON feed instead of scraping h-entry HTML markup, when a live check confirms it's actually available — more reliable parsing of the same content.
+
 ### Changed
 
 - Settings -> Daymark's "Choose from available feeds" action no longer reloads the whole page — clicking it now loads that site's discovered feeds directly into its own row, so you stay right where you were instead of the page jumping back to the top of the subscriptions table. ([#378](https://github.com/jeffpaul/daymark/pull/378))
