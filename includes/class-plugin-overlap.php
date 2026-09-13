@@ -61,25 +61,25 @@ class Daymark_Plugin_Overlap {
 	private const OVERLAPS = array(
 		'post-kinds'        => array(
 			'label'    => 'Post Kinds',
-			'overlaps' => 'may duplicate the Like, Repost, and Comment markup Daymark already renders on your Marks',
+			'overlaps' => 'may add its own Like, Repost, and Comment markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
 			'slugs'    => array( 'indieweb-post-kinds' ),
 			'classes'  => array( 'Post_Kinds_Plugin' ),
 		),
 		'microformats2'     => array(
 			'label'    => 'Microformats 2',
-			'overlaps' => 'may duplicate the h-entry/h-card markup Daymark already renders on your Marks',
+			'overlaps' => 'may add its own h-entry/h-card markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
 			'slugs'    => array( 'wp-uf2' ),
 			'classes'  => array( 'UF2_Plugin' ),
 		),
 		'syndication-links' => array(
 			'label'     => 'Syndication Links',
-			'overlaps'  => 'may duplicate the syndication markup Daymark already renders for Bridgy backfeed',
+			'overlaps'  => 'may add its own Bridgy-backfeed syndication markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
 			'slugs'     => array( 'syndication-links' ),
 			'constants' => array( 'SYNDICATION_LINKS_VERSION' ),
 		),
 		'indieblocks'       => array(
 			'label'    => 'IndieBlocks',
-			'overlaps' => 'may overlap several of the above at once (its own kinds, webmention, microformats, and syndication features)',
+			'overlaps' => 'bundles its own post-kind, webmention, microformats, and syndication features — each may duplicate something Daymark already renders, so consider deactivating whichever one you don\'t need',
 			'slugs'    => array( 'indieblocks' ),
 			'classes'  => array( 'IndieBlocks\\Plugin' ),
 		),
