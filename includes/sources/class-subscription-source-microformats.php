@@ -28,6 +28,30 @@
  * enough to bound each h-entry (and each property within it) to its own
  * matching closing tag.
  *
+ * Structured JSON preferred when discoverable (issue #343): a site running
+ * the MF2 Feed WordPress plugin (or any other producer of the same
+ * microformats2-parser JSON convention) advertises its feed via
+ * `<link rel="alternate" type="application/mf2+json">`. When discover()
+ * finds that link and a live fetch confirms it actually returns the
+ * expected `{"items": [...]}` shape, the returned candidate's own `url` is
+ * the JSON endpoint instead of the HTML page — the same "prefer the more
+ * structured, authoritative signal, actively verified rather than trusted
+ * on the tag's mere presence" precedent
+ * Daymark_Subscription_Source_WordPress already established for the
+ * `wp/v2/posts` REST API. fetch() needs no separate "which kind of URL is
+ * this" flag to act on: it sniffs the fetched body itself (decode_json_items())
+ * and branches to JSON or HTML parsing accordingly, so an already-existing
+ * subscription whose `feed_url` still points at an HTML page keeps parsing
+ * HTML exactly as before, with no migration needed. Both paths converge on
+ * the exact same raw-item shape parse_entry()/normalize() already define,
+ * so normalize() itself needed no changes at all. The JSON shape carries no
+ * `photo`/`video`/`audio` or reply/like/repost/bookmark/rsvp properties in
+ * MF2 Feed's own auto-generated output (confirmed against its public
+ * source — this environment cannot install a third-party plugin to verify
+ * live) — only a single `featured` image URL — so a JSON-derived entry's
+ * post_format/post_type detection is correspondingly narrower than an
+ * HTML-scraped one's; see parse_json_entry()'s own docblock.
+ *
  * @package Daymark
  */
 
@@ -103,6 +127,22 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	private const DAYMARK_NOTE_POST_TYPES = array( 'reply', 'rsvp' );
 
 	/**
+	 * The IndieWeb post-type-discovery algorithm's property-name equivalent
+	 * for a JSON-parsed h-entry (issue #343) — same fixed priority order as
+	 * POST_TYPE_CLASSES, keyed by mf2 JSON property name instead of an HTML
+	 * class token, since a JSON entry has no markup to scan for a class.
+	 *
+	 * @var array<string, string>
+	 */
+	private const POST_TYPE_JSON_PROPERTIES = array(
+		'rsvp'     => 'rsvp',
+		'reply'    => 'in-reply-to',
+		'repost'   => 'repost-of',
+		'like'     => 'like-of',
+		'bookmark' => 'bookmark-of',
+	);
+
+	/**
 	 * Source ID.
 	 *
 	 * @return string
@@ -125,6 +165,18 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 * URL. Unlike the feed source, there is no separate autodiscovery step
 	 * to a different locator — the site URL itself, once confirmed to carry
 	 * the markup, is what fetch() re-fetches and parses on every poll.
+	 *
+	 * Once markup is confirmed present, also looks for a discoverable
+	 * structured JSON feed (issue #343) — `<link rel="alternate"
+	 * type="application/mf2+json">` — and, only once a live fetch actually
+	 * confirms it returns the expected `{"items": [...]}` shape (never
+	 * trusted on the tag's mere presence alone, the same "actively probe,
+	 * don't just detect the tag" precedent
+	 * Daymark_Subscription_Source_WordPress::discover() already established
+	 * for `wp/v2/posts`), returns that JSON endpoint as the candidate's own
+	 * `url` instead of the HTML page. Falls back to the HTML page candidate
+	 * exactly as before when no such link is advertised, or it doesn't
+	 * verify.
 	 *
 	 * @param string $site_url Site URL entered by the user.
 	 * @return array<int, array{url: string, title: string, type: string}> A
@@ -150,27 +202,47 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			return array();
 		}
 
+		$title         = $this->extract_site_title( $html );
+		$json_feed_url = $this->find_json_feed_link( $html, $site_url );
+
+		if ( '' !== $json_feed_url && $this->verify_json_feed( $json_feed_url ) ) {
+			return array(
+				array(
+					'url'   => $json_feed_url,
+					'title' => $title,
+					'type'  => 'application/mf2+json',
+				),
+			);
+		}
+
 		return array(
 			array(
 				'url'   => $site_url,
-				'title' => $this->extract_site_title( $html ),
+				'title' => $title,
 				'type'  => 'text/html',
 			),
 		);
 	}
 
 	/**
-	 * Fetch and parse a page's h-entry elements.
+	 * Fetch and parse a page's h-entry elements — from a structured mf2 JSON
+	 * feed when the fetched body is one (issue #343), from HTML h-entry
+	 * markup otherwise. `$url` itself carries no marker either way: the
+	 * fetched body's own shape (decode_json_items() recognizes it or
+	 * doesn't) is what decides, so an already-existing subscription whose
+	 * `feed_url` still points at an HTML page keeps parsing HTML exactly as
+	 * before, with no migration needed.
 	 *
-	 * An empty array is a genuinely successful fetch of a page with no
-	 * current h-entry elements — distinct from a WP_Error, which means the
-	 * page itself could not be reached. Matches the same distinction
+	 * An empty array is a genuinely successful fetch of a page/feed with no
+	 * current entries — distinct from a WP_Error, which means the URL
+	 * itself could not be reached. Matches the same distinction
 	 * Daymark_Subscription_Source_Feed::fetch() documents, for the same
 	 * reason: the poller's dead-feed detection must not mark a
 	 * quiet-but-healthy site dead after enough empty-but-successful polls.
 	 *
-	 * @param string $url Page URL to fetch (the site URL discover() found
-	 *                    markup on).
+	 * @param string $url URL to fetch — either the HTML page discover()
+	 *                    found markup on, or the JSON feed endpoint it
+	 *                    found and verified.
 	 * @return array<int, array<string, mixed>>|WP_Error
 	 */
 	public function fetch( string $url ): array|WP_Error {
@@ -181,13 +253,25 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		$url  = esc_url_raw( trim( $url ) );
-		$html = $this->fetch_page( $url );
+		$body = $this->fetch_page( $url );
 
-		if ( is_wp_error( $html ) ) {
-			return new WP_Error( 'daymark_subscription_mf2_fetch_failed', $html->get_error_message() );
+		if ( is_wp_error( $body ) ) {
+			return new WP_Error( 'daymark_subscription_mf2_fetch_failed', $body->get_error_message() );
 		}
 
-		$entries = $this->find_elements_by_class( $html, 'h-entry' );
+		$json_entries = $this->decode_json_items( $body );
+
+		if ( null !== $json_entries ) {
+			$raw_items = array();
+
+			foreach ( $json_entries as $entry ) {
+				$raw_items[] = $this->parse_json_entry( $entry, $url );
+			}
+
+			return $raw_items;
+		}
+
+		$entries = $this->find_elements_by_class( $body, 'h-entry' );
 
 		if ( empty( $entries ) ) {
 			return array();
@@ -355,6 +439,271 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return 'note';
+	}
+
+	/**
+	 * Find a `<link rel="alternate" type="application/mf2+json">` in a
+	 * page's HTML (issue #343) — the structured JSON feed a site running the
+	 * MF2 Feed WordPress plugin (or any other producer of the same
+	 * microformats2-parser JSON convention) advertises.
+	 *
+	 * @param string $html     Fetched page HTML.
+	 * @param string $base_url Page URL the HTML was fetched from (a
+	 *                         relative `href` is resolved against it).
+	 * @return string Absolute, sanitized JSON feed URL, or '' if none is advertised.
+	 */
+	private function find_json_feed_link( string $html, string $base_url ): string {
+		if ( ! preg_match_all( '#<link\b[^>]*>#i', $html, $tags ) ) {
+			return '';
+		}
+
+		foreach ( $tags[0] as $tag ) {
+			$rel = strtolower( $this->get_attribute_value( $tag, 'rel' ) );
+
+			if ( ! in_array( 'alternate', preg_split( '/\s+/', trim( $rel ) ), true ) ) {
+				continue;
+			}
+
+			$type = strtolower( $this->get_attribute_value( $tag, 'type' ) );
+
+			if ( 'application/mf2+json' !== $type ) {
+				continue;
+			}
+
+			$href = $this->get_attribute_value( $tag, 'href' );
+
+			if ( '' === $href ) {
+				continue;
+			}
+
+			return esc_url_raw( WP_Http::make_absolute_url( $href, $base_url ) );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Actively confirm a discovered JSON feed URL actually returns the
+	 * expected `{"items": [...]}` shape before preferring it over the HTML
+	 * page — the same "don't trust the tag's mere presence" precedent
+	 * Daymark_Subscription_Source_WordPress::discover() already established
+	 * for `wp/v2/posts` (a site can advertise a stale link while the
+	 * endpoint itself is disabled, moved, or was never really there).
+	 *
+	 * @param string $json_url Candidate JSON feed URL found by find_json_feed_link().
+	 * @return bool
+	 */
+	private function verify_json_feed( string $json_url ): bool {
+		if ( is_wp_error( $this->validate_source_url( $json_url ) ) ) {
+			return false;
+		}
+
+		$body = $this->fetch_page( $json_url );
+
+		if ( is_wp_error( $body ) ) {
+			return false;
+		}
+
+		return null !== $this->decode_json_items( $body );
+	}
+
+	/**
+	 * Decode a fetched body as a microformats2-parser JSON feed
+	 * (`{"items": [...]}`, the same convention the MF2 Feed WordPress plugin
+	 * and every generic mf2 JSON parser produce), returning the flat list of
+	 * h-entry nodes it contains — an h-feed item's own `children` are
+	 * flattened in; a bare top-level h-entry (no h-feed wrapper) is kept
+	 * as-is. Returns null when the body isn't recognizable as this shape at
+	 * all, the signal fetch()/verify_json_feed() use to fall back to HTML
+	 * parsing.
+	 *
+	 * @param string $body Fetched response body.
+	 * @return array<int, array<string, mixed>>|null
+	 */
+	private function decode_json_items( string $body ): ?array {
+		$data = json_decode( trim( $body ), true );
+
+		if ( ! is_array( $data ) || ! isset( $data['items'] ) || ! is_array( $data['items'] ) ) {
+			return null;
+		}
+
+		$entries = array();
+
+		foreach ( $data['items'] as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+
+			$types = is_array( $item['type'] ?? null ) ? $item['type'] : array();
+
+			if ( in_array( 'h-feed', $types, true ) ) {
+				foreach ( ( is_array( $item['children'] ?? null ) ? $item['children'] : array() ) as $child ) {
+					if ( is_array( $child ) ) {
+						$entries[] = $child;
+					}
+				}
+
+				continue;
+			}
+
+			if ( in_array( 'h-entry', $types, true ) ) {
+				$entries[] = $item;
+			}
+		}
+
+		return $entries;
+	}
+
+	/**
+	 * Map one JSON-parsed h-entry node into the same raw-item shape
+	 * parse_entry() produces from HTML — so normalize() needs no changes at
+	 * all to consume either.
+	 *
+	 * MF2 Feed's own auto-generated feed (confirmed against its public
+	 * source) never populates `photo`/`video`/`audio` or any of the
+	 * reply/like/repost/bookmark/rsvp properties — only a single `featured`
+	 * image URL — so a JSON-derived entry's own post_format/post_type
+	 * detection is correspondingly narrower than an HTML-scraped one's for
+	 * that specific plugin; the property-based detection here still applies
+	 * generically for any other, more complete mf2 JSON producer that does
+	 * populate them.
+	 *
+	 * @param array<string, mixed> $entry    One h-entry node from decode_json_items().
+	 * @param string               $base_url Feed URL the entry was found on
+	 *                                       (a relative `url`/media value is
+	 *                                       resolved against it).
+	 * @return array<string, mixed>
+	 */
+	private function parse_json_entry( array $entry, string $base_url ): array {
+		$properties = is_array( $entry['properties'] ?? null ) ? $entry['properties'] : array();
+
+		$permalink = $this->first_json_value( $properties, 'url' );
+
+		if ( '' === $permalink ) {
+			$permalink = $this->first_json_value( $properties, 'uid' );
+		}
+
+		if ( '' !== $permalink ) {
+			$permalink = esc_url_raw( WP_Http::make_absolute_url( $permalink, $base_url ) );
+		}
+
+		$author_name = '';
+		$author_raw  = $properties['author'][0] ?? null;
+
+		if ( is_array( $author_raw ) && is_array( $author_raw['properties'] ?? null ) ) {
+			$author_name = $this->first_json_value( $author_raw['properties'], 'name' );
+		}
+
+		$photos = $this->json_media_urls( $properties, 'photo', $base_url );
+
+		$featured = $this->first_json_value( $properties, 'featured' );
+
+		if ( '' !== $featured ) {
+			$featured = esc_url_raw( WP_Http::make_absolute_url( $featured, $base_url ) );
+
+			if ( ! in_array( $featured, $photos, true ) ) {
+				array_unshift( $photos, $featured );
+			}
+		}
+
+		return array(
+			'name'         => $this->first_json_value( $properties, 'name' ),
+			'summary'      => $this->first_json_value( $properties, 'summary' ),
+			'content_html' => $this->first_json_html_value( $properties, 'content' ),
+			'permalink'    => $permalink,
+			'published'    => $this->first_json_value( $properties, 'published' ),
+			'author_name'  => sanitize_text_field( $author_name ),
+			'photos'       => $photos,
+			'videos'       => $this->json_media_urls( $properties, 'video', $base_url ),
+			'audios'       => $this->json_media_urls( $properties, 'audio', $base_url ),
+			'post_type'    => $this->detect_json_post_type( $properties ),
+		);
+	}
+
+	/**
+	 * The IndieWeb post-type-discovery algorithm applied to a JSON-parsed
+	 * h-entry's own properties (issue #343) — the property-based equivalent
+	 * of detect_post_type()'s HTML-class-based detection, same fixed
+	 * priority order (see POST_TYPE_JSON_PROPERTIES).
+	 *
+	 * @param array<string, mixed> $properties This entry's own `properties` object.
+	 * @return string One of 'rsvp'|'reply'|'repost'|'like'|'bookmark'|'note'.
+	 */
+	private function detect_json_post_type( array $properties ): string {
+		foreach ( self::POST_TYPE_JSON_PROPERTIES as $type => $property_key ) {
+			if ( ! empty( $properties[ $property_key ] ) ) {
+				return $type;
+			}
+		}
+
+		return 'note';
+	}
+
+	/**
+	 * First value of a JSON mf2 property that is a plain string (name, url,
+	 * uid, summary, published, featured, ...) — mf2 JSON properties are
+	 * always arrays even when single-valued.
+	 *
+	 * @param array<string, mixed> $properties Entry (or nested h-card) `properties` object.
+	 * @param string               $key        Property name, e.g. 'name'.
+	 * @return string
+	 */
+	private function first_json_value( array $properties, string $key ): string {
+		$value = $properties[ $key ][0] ?? null;
+
+		return is_string( $value ) ? trim( $value ) : '';
+	}
+
+	/**
+	 * First value of a JSON mf2 property that may carry an HTML variant —
+	 * `content` is conventionally `{"html": ..., "value": ...}`, though a
+	 * bare string is tolerated too.
+	 *
+	 * @param array<string, mixed> $properties Entry `properties` object.
+	 * @param string               $key        Property name, e.g. 'content'.
+	 * @return string
+	 */
+	private function first_json_html_value( array $properties, string $key ): string {
+		$value = $properties[ $key ][0] ?? null;
+
+		if ( is_array( $value ) && isset( $value['html'] ) && is_string( $value['html'] ) ) {
+			return $value['html'];
+		}
+
+		return is_string( $value ) ? $value : '';
+	}
+
+	/**
+	 * Every URL in a JSON mf2 media property (`photo`/`video`/`audio`) — each
+	 * value is either a bare URL string or, per the mf2 JSON extension for a
+	 * captioned media value, `{"value": "...", "alt": "..."}`.
+	 *
+	 * @param array<string, mixed> $properties Entry `properties` object.
+	 * @param string               $key        Property name, e.g. 'photo'.
+	 * @param string               $base_url   Feed URL the entry was found on.
+	 * @return string[]
+	 */
+	private function json_media_urls( array $properties, string $key, string $base_url ): array {
+		$values = is_array( $properties[ $key ] ?? null ) ? $properties[ $key ] : array();
+		$urls   = array();
+
+		foreach ( $values as $value ) {
+			if ( is_string( $value ) ) {
+				$url = $value;
+			} elseif ( is_array( $value ) && isset( $value['value'] ) && is_string( $value['value'] ) ) {
+				$url = $value['value'];
+			} else {
+				continue;
+			}
+
+			$url = trim( $url );
+
+			if ( '' !== $url ) {
+				$urls[] = esc_url_raw( WP_Http::make_absolute_url( $url, $base_url ) );
+			}
+		}
+
+		return $urls;
 	}
 
 	/**

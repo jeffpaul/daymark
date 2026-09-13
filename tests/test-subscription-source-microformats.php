@@ -329,4 +329,126 @@ HTML;
 		$this->assertSame( 'microformats', $row['source_type'] );
 		$this->assertSame( 'https://mf2only.example/', $row['feed_url'] );
 	}
+
+	// -----------------------------------------------------------------
+	// Structured JSON feed preference (issue #343) — a site advertising
+	// `<link rel="alternate" type="application/mf2+json">` (the MF2 Feed
+	// WordPress plugin's own convention) is preferred over HTML scraping
+	// once a live fetch confirms it actually returns the expected
+	// `{"items": [...]}` shape.
+	// -----------------------------------------------------------------
+
+	private const JSON_FEED_BODY = <<<'JSON'
+{
+	"items": [
+		{
+			"type": ["h-feed"],
+			"properties": { "name": ["Jane's Site"] },
+			"children": [
+				{
+					"type": ["h-entry"],
+					"properties": {
+						"name": ["Hello JSON"],
+						"summary": ["A short summary."],
+						"content": [{ "html": "<p>Hello <b>JSON</b> World</p>", "value": "Hello JSON World" }],
+						"url": ["/2024/hello-json/"],
+						"published": ["2024-03-05T10:00:00+00:00"],
+						"author": [{ "type": ["h-card"], "properties": { "name": ["Jane Doe"] } }],
+						"featured": ["/images/hero.jpg"]
+					}
+				},
+				{
+					"type": ["h-entry"],
+					"properties": {
+						"content": ["A plain reply."],
+						"url": ["https://jane.example/2024/a-reply/"],
+						"in-reply-to": ["https://other.example/post/1"]
+					}
+				}
+			]
+		}
+	]
+}
+JSON;
+
+	/** discover() finds an h-feed page with a JSON feed link and, once a live fetch confirms it, prefers that JSON endpoint over the HTML page. */
+	public function test_discover_prefers_verified_json_feed_link() {
+		$site_html = '<html><head><title>Jane\'s Site</title>'
+			. '<link rel="alternate" type="application/mf2+json" href="/feed/mf2/">'
+			. '</head><body><div class="h-feed"><article class="h-entry"><p class="p-name">Hi</p></article></div></body></html>';
+
+		$this->mock_response( 'https://jane.example/', $site_html );
+		$this->mock_response( 'https://jane.example/feed/mf2/', self::JSON_FEED_BODY );
+
+		$result = $this->source->discover( 'https://jane.example/' );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'https://jane.example/feed/mf2/', $result[0]['url'] );
+		$this->assertSame( 'application/mf2+json', $result[0]['type'] );
+		$this->assertSame( "Jane's Site", $result[0]['title'] );
+	}
+
+	/** discover() falls back to the HTML page candidate when the advertised JSON link doesn't actually verify — a stale/broken link is never trusted on presence alone. */
+	public function test_discover_falls_back_to_html_when_json_link_does_not_verify() {
+		$site_html = '<html><head><title>Jane\'s Site</title>'
+			. '<link rel="alternate" type="application/mf2+json" href="/feed/broken/">'
+			. '</head><body><div class="h-feed"><article class="h-entry"><p class="p-name">Hi</p></article></div></body></html>';
+
+		$this->mock_response( 'https://jane.example/', $site_html );
+		$this->mock_response( 'https://jane.example/feed/broken/', 'not valid json {{{' );
+
+		$result = $this->source->discover( 'https://jane.example/' );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'https://jane.example/', $result[0]['url'] );
+		$this->assertSame( 'text/html', $result[0]['type'] );
+	}
+
+	/** fetch() recognizes a JSON feed body and parses each h-entry into a raw item, unchanged by whether that URL is the site page or a dedicated JSON endpoint. */
+	public function test_fetch_parses_json_feed_body() {
+		$this->mock_response( 'https://jane.example/feed/mf2/', self::JSON_FEED_BODY );
+
+		$raw_items = $this->source->fetch( 'https://jane.example/feed/mf2/' );
+
+		$this->assertIsArray( $raw_items );
+		$this->assertCount( 2, $raw_items );
+		$this->assertSame( 'Hello JSON', $raw_items[0]['name'] );
+		$this->assertSame( 'reply', $raw_items[1]['post_type'] );
+	}
+
+	/** normalize() maps a JSON-parsed entry's `featured` property the same way it maps an HTML entry's u-photo — same source-agnostic shape either way. */
+	public function test_normalize_maps_json_entry_featured_image() {
+		$this->mock_response( 'https://jane.example/feed/mf2/', self::JSON_FEED_BODY );
+
+		$raw_items  = $this->source->fetch( 'https://jane.example/feed/mf2/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( 'Hello JSON', $normalized['title'] );
+		$this->assertSame( 'Jane Doe', $normalized['author'] );
+		$this->assertSame( 'https://jane.example/2024/hello-json/', $normalized['permalink'] );
+		$this->assertSame( '2024-03-05 10:00:00', $normalized['published_at'] );
+		$this->assertSame( 'image', $normalized['post_format'] );
+		$this->assertSame( 'https://jane.example/images/hero.jpg', $normalized['featured_image_url'] );
+	}
+
+	/** A JSON-parsed reply entry with no media promotes to `note`, the same as an HTML-scraped one (issue #292's precedent, reused via the shared normalize()). */
+	public function test_normalize_maps_json_reply_without_media_to_note() {
+		$this->mock_response( 'https://jane.example/feed/mf2/', self::JSON_FEED_BODY );
+
+		$raw_items  = $this->source->fetch( 'https://jane.example/feed/mf2/' );
+		$normalized = $this->source->normalize( $raw_items[1] );
+
+		$this->assertSame( 'note', $normalized['post_format'] );
+	}
+
+	/** fetch() still parses an ordinary HTML h-entry page correctly — sniffing the body's own shape, not anything about the URL, is what decides which parser runs. */
+	public function test_fetch_falls_back_to_html_when_body_is_not_json() {
+		$this->mock_response( 'https://jane.example/', self::H_FEED_PAGE );
+
+		$raw_items = $this->source->fetch( 'https://jane.example/' );
+
+		$this->assertIsArray( $raw_items );
+		$this->assertCount( 2, $raw_items );
+		$this->assertSame( 'Hello World', $raw_items[0]['name'] );
+	}
 }
