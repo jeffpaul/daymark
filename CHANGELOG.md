@@ -27,6 +27,7 @@ can't act on them.
 ### Changed
 
 - Settings -> Daymark's "Choose from available feeds" action no longer reloads the whole page — clicking it now loads that site's discovered feeds directly into its own row, so you stay right where you were instead of the page jumping back to the top of the subscriptions table. ([#378](https://github.com/jeffpaul/daymark/pull/378))
+- Made the "plugin overlap" notification's own text clearer about what it's flagging and what to do about it — each message now names specifically what Daymark already renders that the other plugin might duplicate, and always suggests deactivating whichever one you don't need. Also fixes the IndieBlocks message, which previously referred to "the above" even when shown on its own with no other overlap notification alongside it.
 
 ### Developer
 
