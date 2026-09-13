@@ -23,7 +23,7 @@ can't act on them.
 ### Added
 
 - Subscribing to a site running the MF2 Feed WordPress plugin now reads its structured JSON feed instead of scraping h-entry HTML markup, when a live check confirms it's actually available — more reliable parsing of the same content.
-- A "link"-kind subscription post's Timeline card now shows the same best-effort link preview (image, title, description) the full post view already did — previously only plain excerpt text.
+- A "link"-kind subscription post's Timeline card now shows the same best-effort link preview (image, title, description) the full post view already did — previously only plain excerpt text. ([#386](https://github.com/jeffpaul/daymark/pull/386))
 
 ### Changed
 
