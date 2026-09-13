@@ -142,6 +142,7 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 **Fixed**
 
+* The public "Try Daymark right now in your browser" Playground preview now uses the same install-and-subscriptions-only blueprint as the PR preview button, dropping the extra demo-Mark seeding step that could still crash inside WordPress Playground.
 * The "Try Daymark right now in your browser" Playground preview no longer crashes with a critical-error screen while seeding its demo Marks — the demo-image generation helper now guards against a Playground environment whose GD extension can't produce a JPEG, and each demo Mark's publish is now isolated so one failing to seed can't take the rest of the preview down with it.
 * The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph.
 * The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check.
