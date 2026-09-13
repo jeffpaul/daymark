@@ -19,7 +19,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 	 */
 	private function public_blueprint(): array {
 		$blueprint = json_decode(
-			(string) file_get_contents( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/blueprint.json' ),
+			(string) file_get_contents( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/blueprint.json' ), // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled blueprint file off disk, not a remote fetch (matches this codebase's other local-file reads, e.g. class-routes.php's own sw.js read).
 			true
 		);
 
