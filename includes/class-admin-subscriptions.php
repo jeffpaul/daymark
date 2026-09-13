@@ -1814,6 +1814,16 @@ class Daymark_Admin_Subscriptions {
 	 * table on every visit would be its own real cost for something most
 	 * rows will never need.
 	 *
+	 * The trigger form is progressively enhanced by
+	 * assets/admin-subscriptions.js to submit via `fetch()` (the same
+	 * `X-Daymark-Ajax` header convention handle_subscribe() already
+	 * established) so the resulting picker is injected directly into this
+	 * row's own cell instead of the whole page reloading and losing scroll
+	 * position back to the top of a possibly-long subscriptions table. A
+	 * plain browser POST (no JS, or the header stripped) is unaffected: it
+	 * still redirects exactly as before, and this method renders the
+	 * identical picker markup from the same stashed transient either way.
+	 *
 	 * @param int    $id       Subscription ID.
 	 * @param string $site_url The subscription's own site_url — discovery
 	 *                         runs against this, not feed_url.
@@ -1831,13 +1841,33 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
+		<form class="daymark-subscription-discover-sources-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;">
 			<input type="hidden" name="action" value="daymark_subscription_discover_sources" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_discover_sources_' . $id, 'daymark_subscription_discover_sources_nonce' ); ?>
 			<?php submit_button( __( 'Choose from available feeds', 'daymark' ), 'secondary small', 'submit', false ); ?>
 		</form>
+		<div class="description daymark-subscription-discover-sources-error" hidden></div>
 		<?php
+	}
+
+	/**
+	 * Capture render_source_switch_control()'s own echoed output as a
+	 * string, for handle_discover_sources()'s ajax response — the exact
+	 * same markup a full page reload would show for this row's own
+	 * "Choose from available feeds" cell, just returned instead of printed
+	 * directly so it can be injected in place of that cell's current content.
+	 *
+	 * @param int    $id       See render_source_switch_control().
+	 * @param string $site_url See render_source_switch_control().
+	 * @param string $feed_url See render_source_switch_control().
+	 * @return string
+	 */
+	private function captured_render_source_switch_control( int $id, string $site_url, string $feed_url ): string {
+		ob_start();
+		$this->render_source_switch_control( $id, $site_url, $feed_url );
+
+		return (string) ob_get_clean();
 	}
 
 	/**
@@ -2899,6 +2929,16 @@ class Daymark_Admin_Subscriptions {
 	 * itself — issues live requests to a site the user (already) named — so
 	 * it's rate limited the same way.
 	 *
+	 * Same `X-Daymark-Ajax` progressive-enhancement convention
+	 * handle_subscribe() already established: a request carrying that header
+	 * (assets/admin-subscriptions.js's own fetch-based submit) gets a
+	 * `wp_send_json_*` envelope back — this row's own re-rendered cell markup
+	 * on success, an error message on failure — instead of a redirect, so the
+	 * picker can replace the trigger button in place rather than the whole
+	 * page reloading. A plain browser POST (no JS, or the header stripped)
+	 * is completely unaffected: every early-return below still redirects
+	 * exactly as before.
+	 *
 	 * @return void
 	 */
 	public function handle_discover_sources(): void {
@@ -2910,10 +2950,12 @@ class Daymark_Admin_Subscriptions {
 
 		check_admin_referer( 'daymark_subscription_discover_sources_' . $id, 'daymark_subscription_discover_sources_nonce' );
 
+		$is_ajax = isset( $_SERVER['HTTP_X_DAYMARK_AJAX'] ) && '1' === sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_DAYMARK_AJAX'] ) );
+
 		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
 
 		if ( null === $subscription ) {
-			$this->redirect_with_error( __( 'That subscription no longer exists.', 'daymark' ) );
+			$this->respond_to_discover_sources_attempt( $is_ajax, __( 'That subscription no longer exists.', 'daymark' ) );
 
 			return;
 		}
@@ -2921,7 +2963,7 @@ class Daymark_Admin_Subscriptions {
 		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
 
 		if ( is_wp_error( $rate ) ) {
-			$this->redirect_with_error( $rate->get_error_message() );
+			$this->respond_to_discover_sources_attempt( $is_ajax, $rate->get_error_message() );
 
 			return;
 		}
@@ -2930,7 +2972,7 @@ class Daymark_Admin_Subscriptions {
 		$candidates = Daymark_Plugin::instance()->subscriptions->discover_candidates( $site_url );
 
 		if ( is_wp_error( $candidates ) ) {
-			$this->redirect_with_error( $candidates->get_error_message() );
+			$this->respond_to_discover_sources_attempt( $is_ajax, $candidates->get_error_message() );
 
 			return;
 		}
@@ -2944,7 +2986,39 @@ class Daymark_Admin_Subscriptions {
 			5 * MINUTE_IN_SECONDS
 		);
 
+		if ( $is_ajax ) {
+			wp_send_json_success(
+				array(
+					'html' => $this->captured_render_source_switch_control( $id, $site_url, (string) ( $subscription['feed_url'] ?? '' ) ),
+				)
+			);
+
+			return;
+		}
+
 		$this->redirect( array() );
+	}
+
+	/**
+	 * Respond to a failed handle_discover_sources() attempt the same way for
+	 * both the ajax and plain-form-post paths — a JSON error envelope for
+	 * the former, the existing redirect-with-error-notice behavior for the
+	 * latter. Mirrors respond_to_subscribe_attempt()'s own identical shape
+	 * for the new-subscribe flow.
+	 *
+	 * @param bool   $is_ajax Whether this request carried the
+	 *                        `X-Daymark-Ajax` header.
+	 * @param string $message Human-readable error message.
+	 * @return void
+	 */
+	private function respond_to_discover_sources_attempt( bool $is_ajax, string $message ): void {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => $message ) );
+
+			return;
+		}
+
+		$this->redirect_with_error( $message );
 	}
 
 	/**

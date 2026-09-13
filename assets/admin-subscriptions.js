@@ -38,6 +38,13 @@
  *    disclosure, with no network request of its own — the typed value is
  *    only actually saved once "Save Subscription" is submitted (a plain,
  *    unenhanced form post, same as ever). See bindNewSubscribeNameEditor().
+ * 5. Each row's own "Choose from available feeds" trigger form submits via
+ *    `fetch()` the same way the Subscribe form (behavior 1) does, so the
+ *    resulting candidate picker is injected directly into that row's own
+ *    cell instead of the whole page reloading and losing scroll position —
+ *    see bindDiscoverSourcesForms(). The picker's own "Update feeds"/
+ *    "Discard" forms are unchanged plain submits; only the initial discovery
+ *    trigger is enhanced here.
  */
 (function () {
 	'use strict';
@@ -47,6 +54,7 @@
 		bindNewSubscribeNameEditor( document.getElementById( 'daymark-new-subscribe-root' ) );
 		bindRefreshForms();
 		bindEditTitleDisclosures();
+		bindDiscoverSourcesForms();
 	} );
 
 	/**
@@ -118,6 +126,79 @@
 						errorEl.hidden = false;
 					}
 				} );
+		} );
+	}
+
+	/**
+	 * Wires every row's "Choose from available feeds" trigger form
+	 * (behavior 5) to run discovery via `fetch()` instead of letting the
+	 * browser navigate away, so the resulting picker replaces the trigger
+	 * button in place — right where that row already is in the table —
+	 * rather than the whole page reloading and scrolling back to the top. A
+	 * plain browser POST (no JS) never carries the `X-Daymark-Ajax` header
+	 * this relies on, so handle_discover_sources() keeps responding with its
+	 * original redirect for that case — this is purely additive. Only the
+	 * initial trigger is enhanced; the picker's own "Update feeds"/"Discard"
+	 * forms it's replaced with are unchanged plain submits.
+	 *
+	 * @return void
+	 */
+	function bindDiscoverSourcesForms() {
+		var forms = document.querySelectorAll( '.daymark-subscription-discover-sources-form' );
+
+		forms.forEach( function ( form ) {
+			var cell = form.closest( 'td' );
+			var button = form.querySelector( 'input[type="submit"]' );
+			var errorEl = cell ? cell.querySelector( '.daymark-subscription-discover-sources-error' ) : null;
+
+			if ( ! cell || ! button ) {
+				return;
+			}
+
+			var originalLabel = button.value;
+
+			form.addEventListener( 'submit', function ( event ) {
+				event.preventDefault();
+
+				button.disabled = true;
+
+				if ( errorEl ) {
+					errorEl.hidden = true;
+					errorEl.textContent = '';
+				}
+
+				fetch( form.getAttribute( 'action' ), {
+					method: 'POST',
+					credentials: 'same-origin',
+					headers: { 'X-Daymark-Ajax': '1' },
+					body: new FormData( form )
+				} )
+					.then( function ( response ) {
+						return response.json();
+					} )
+					.then( function ( result ) {
+						if ( result && result.success && result.data && result.data.html ) {
+							cell.innerHTML = result.data.html;
+
+							return;
+						}
+
+						throw new Error( result && result.data && result.data.message ? result.data.message : '' );
+					} )
+					.catch( function ( error ) {
+						button.disabled = false;
+						button.value = originalLabel;
+
+						if ( errorEl ) {
+							errorEl.textContent = ( error && error.message )
+								? error.message
+								: ( window.daymarkAdminSubscriptions && window.daymarkAdminSubscriptions.i18n
+									? window.daymarkAdminSubscriptions.i18n.genericError
+									: 'Something went wrong. Please try again.' );
+							errorEl.hidden = false;
+						}
+					} );
+			} );
 		} );
 	}
 
