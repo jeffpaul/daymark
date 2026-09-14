@@ -883,6 +883,138 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( array(), (array) $targets );
 	}
 
+	/**
+	 * A duplicate Like tap for the exact same origin URL must reuse the
+	 * existing, still-published Like Mark rather than create a sibling one —
+	 * the real bug behind reported "two identical Like posts" duplicates
+	 * (a stale client-side like state re-sending the same publish() call).
+	 */
+	public function test_duplicate_like_of_reuses_existing_mark_instead_of_creating_a_second() {
+		$publisher = new Daymark_Publisher();
+		$first_id  = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$second_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( $first_id, $second_id );
+
+		$count = count(
+			get_posts(
+				array(
+					'post_type'      => 'post',
+					'post_status'    => 'publish',
+					'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+					'meta_value'     => 'https://example.com/original-post/', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+					'posts_per_page' => -1,
+					'fields'         => 'ids',
+				)
+			)
+		);
+		$this->assertSame( 1, $count, 'Exactly one published Like Mark should exist for this URL.' );
+	}
+
+	/**
+	 * Untoggling a Like (trashing its Mark, the existing DELETE /marks/{id}
+	 * behavior) followed by liking the same URL again must create a fresh
+	 * Mark — a trashed match is deliberately not treated as "already liked".
+	 */
+	public function test_like_of_after_undo_creates_a_fresh_mark() {
+		$publisher = new Daymark_Publisher();
+		$first_id  = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		wp_trash_post( $first_id );
+
+		$second_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertNotSame( $first_id, $second_id );
+		$this->assertSame( 'trash', get_post_status( $first_id ) );
+		$this->assertSame( 'publish', get_post_status( $second_id ) );
+	}
+
+	/** Same duplicate-tap protection as Like, for Repost. */
+	public function test_duplicate_repost_of_reuses_existing_mark_instead_of_creating_a_second() {
+		$publisher = new Daymark_Publisher();
+		$first_id  = (int) $publisher->publish(
+			array(
+				'caption'      => 'Reblog: A post somewhere',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/original-post/',
+			)
+		);
+
+		$second_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Reblog: A post somewhere',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( $first_id, $second_id );
+	}
+
+	/**
+	 * Publishing a Like Mark sets Jetpack Publicize's own historical
+	 * "already handled, don't auto-share" post meta flag before it goes
+	 * live — the first of two defense-in-depth layers against an
+	 * independent plugin auto-sharing a Like Mark externally (issue #389;
+	 * see Daymark_Like_Visibility::suppress_publicize_on_insert()). An
+	 * ordinary Mark, and a Repost Mark specifically (real, user-chosen,
+	 * publishable content — unaffected by any Like-only guard), must never
+	 * get this meta.
+	 */
+	public function test_like_of_sets_jetpack_publicize_suppression_meta() {
+		$publisher = new Daymark_Publisher();
+		$like_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+		$this->assertSame( '1', get_post_meta( $like_id, '_wpas_done_all', true ) );
+
+		$repost_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Reblog: A post somewhere',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/another-post/',
+			)
+		);
+		$this->assertSame( '', get_post_meta( $repost_id, '_wpas_done_all', true ) );
+
+		$ordinary_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Just a note',
+				'primary_type' => 'note',
+			)
+		);
+		$this->assertSame( '', get_post_meta( $ordinary_id, '_wpas_done_all', true ) );
+	}
+
 	/** A long caption/transcript gets a reading-time estimate stored. */
 	public function test_long_caption_gets_reading_time_meta() {
 		$publisher = new Daymark_Publisher();

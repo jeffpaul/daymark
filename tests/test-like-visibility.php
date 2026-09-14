@@ -192,4 +192,49 @@ class Test_Like_Visibility extends WP_UnitTestCase {
 
 		$this->assertSame( array( 'some' => 'data' ), $result );
 	}
+
+	/**
+	 * A Like Mark is never auto-shared by Jetpack Social/Publicize (defense
+	 * in depth against issue #389's reported external leak) — this filter
+	 * would otherwise be untested since it needs an active Jetpack install
+	 * to actually fire in a real request.
+	 */
+	public function test_publicize_suppressed_for_like_mark() {
+		$like_id = $this->create_mark( array( '_daymark_like_of' => 'https://example.com/post/' ) );
+
+		$result = $this->visibility->suppress_publicize( true, get_post( $like_id ) );
+
+		$this->assertFalse( $result );
+	}
+
+	/** Publicize's own decision is untouched for a Repost Mark. */
+	public function test_publicize_untouched_for_repost_mark() {
+		$repost_id = $this->create_mark( array( '_daymark_repost_of' => 'https://example.com/post/' ) );
+
+		$result = $this->visibility->suppress_publicize( true, get_post( $repost_id ) );
+
+		$this->assertTrue( $result );
+	}
+
+	/** Publicize's own decision is untouched for an ordinary Mark. */
+	public function test_publicize_untouched_for_ordinary_mark() {
+		$ordinary_id = $this->create_mark();
+
+		$result = $this->visibility->suppress_publicize( true, get_post( $ordinary_id ) );
+
+		$this->assertTrue( $result );
+	}
+
+	/**
+	 * The static insert-time helper sets Jetpack Publicize's own historical
+	 * "already handled" post meta flag — the first of the two suppression
+	 * layers (see suppress_publicize() above for the second).
+	 */
+	public function test_suppress_publicize_on_insert_sets_meta_flag() {
+		$post_id = $this->create_mark( array( '_daymark_like_of' => 'https://example.com/post/' ) );
+
+		Daymark_Like_Visibility::suppress_publicize_on_insert( $post_id );
+
+		$this->assertSame( '1', get_post_meta( $post_id, '_wpas_done_all', true ) );
+	}
 }

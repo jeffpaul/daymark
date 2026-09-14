@@ -3644,7 +3644,19 @@
 	// shape as setBookmarkToggleState() above, parameterized on which of the
 	// two this is. `markId` is stashed on the element itself so a later undo
 	// tap knows which Mark to delete without a second lookup.
-	function setEngagementToggleState(trigger, kind, active, markId) {
+	//
+	// Also writes the same result back onto the in-memory `item` (its
+	// `liked_mark_id`/`reposted_mark_id` field), not just the trigger's own
+	// DOM attributes — a real, previously-unfixed bug: `screen._bySubId`
+	// entries are shared by reference with `PostScreen`'s own one-shot
+	// hand-off (see `openPostView()`/`rememberItem()`), so an item this
+	// screen just liked/reposted would otherwise still read as un-toggled
+	// the moment it's opened in the full post view (or re-rendered by a
+	// pull-to-refresh/pagination in the meantime) — reading `aria-pressed`
+	// off a *different* DOM element than the one this function touched.
+	// Leaving `item` un-updated on a duplicate-tap-in-flight was the actual
+	// root cause of duplicate Like/Repost Marks getting created.
+	function setEngagementToggleState(trigger, kind, active, markId, item) {
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
 		const label = active
 			? 'like' === kind
@@ -3659,6 +3671,9 @@
 		trigger.setAttribute('aria-label', label);
 		trigger.setAttribute('title', label);
 		trigger.setAttribute('data-' + kind + '-mark-id', String(markId || 0));
+		if (item) {
+			item[('like' === kind ? 'liked' : 'reposted') + '_mark_id'] = markId || 0;
+		}
 	}
 
 	// The minimal Mark a Like tap publishes: a plain 'note' with no media,
@@ -3695,6 +3710,13 @@
 	// to undo, trashes) a small Mark of the site owner's own; see
 	// buildEngagementFormData()'s own docblock for why.
 	async function toggleLike(screen, trigger) {
+		// Guards against a duplicate Like Mark from a rapid double-tap: the
+		// first tap's own request (create or undo) hasn't resolved yet, so
+		// `aria-pressed`/`data-like-mark-id` are still whatever they were
+		// before this toggle started, not yet the real, in-flight outcome.
+		if ('true' === trigger.getAttribute('data-like-busy')) {
+			return;
+		}
 		const id = trigger.getAttribute('data-like-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		if (!id || !item || !item.permalink) {
@@ -3702,7 +3724,8 @@
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
 		const existingMarkId = trigger.getAttribute('data-like-mark-id') || '0';
-		setEngagementToggleState(trigger, 'like', !wasLiked, existingMarkId);
+		trigger.setAttribute('data-like-busy', 'true');
+		setEngagementToggleState(trigger, 'like', !wasLiked, existingMarkId, item);
 		try {
 			if (!wasLiked) {
 				const caption = sprintf(
@@ -3711,14 +3734,16 @@
 					item.title || item.permalink
 				);
 				const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'like_of'));
-				setEngagementToggleState(trigger, 'like', true, mark.id);
+				setEngagementToggleState(trigger, 'like', true, mark.id, item);
 			} else {
 				await apiDelete('marks/' + existingMarkId);
-				setEngagementToggleState(trigger, 'like', false, 0);
+				setEngagementToggleState(trigger, 'like', false, 0, item);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
-			setEngagementToggleState(trigger, 'like', wasLiked, existingMarkId);
+			setEngagementToggleState(trigger, 'like', wasLiked, existingMarkId, item);
+		} finally {
+			trigger.removeAttribute('data-like-busy');
 		}
 	}
 
@@ -3733,6 +3758,13 @@
 	// skipped — never eagerly, since the user might yet dismiss the sheet
 	// without choosing either.
 	async function toggleRepost(screen, trigger) {
+		// Same duplicate-tap guard as toggleLike() above for the undo path;
+		// the create path's own TextPromptSheet is a full-screen modal, so
+		// its own backdrop already blocks a second tap on this trigger while
+		// it's open — the guard there instead lives in publishRepost() itself.
+		if ('true' === trigger.getAttribute('data-repost-busy')) {
+			return;
+		}
 		const id = trigger.getAttribute('data-repost-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		if (!id || !item || !item.permalink) {
@@ -3741,12 +3773,15 @@
 		const wasReposted = 'true' === trigger.getAttribute('aria-pressed');
 		const existingMarkId = trigger.getAttribute('data-repost-mark-id') || '0';
 		if (wasReposted) {
-			setEngagementToggleState(trigger, 'repost', false, 0);
+			trigger.setAttribute('data-repost-busy', 'true');
+			setEngagementToggleState(trigger, 'repost', false, 0, item);
 			try {
 				await apiDelete('marks/' + existingMarkId);
 				maybeShowInteractionHint('repost', trigger);
 			} catch (err) {
-				setEngagementToggleState(trigger, 'repost', true, existingMarkId);
+				setEngagementToggleState(trigger, 'repost', true, existingMarkId, item);
+			} finally {
+				trigger.removeAttribute('data-repost-busy');
 			}
 			return;
 		}
@@ -3806,12 +3841,15 @@
 	// undo branch above): toggleRepost() already showed/marked it seen, via
 	// maybeShowInteractionHintThen(), before this compose step ever opened.
 	async function publishRepost(trigger, item, comment) {
-		setEngagementToggleState(trigger, 'repost', true, 0);
+		trigger.setAttribute('data-repost-busy', 'true');
+		setEngagementToggleState(trigger, 'repost', true, 0, item);
 		try {
 			const mark = await apiUpload('marks', buildRepostFormData(item, comment));
-			setEngagementToggleState(trigger, 'repost', true, mark.id);
+			setEngagementToggleState(trigger, 'repost', true, mark.id, item);
 		} catch (err) {
-			setEngagementToggleState(trigger, 'repost', false, 0);
+			setEngagementToggleState(trigger, 'repost', false, 0, item);
+		} finally {
+			trigger.removeAttribute('data-repost-busy');
 		}
 	}
 
