@@ -3126,6 +3126,30 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
+/* The same "link"/"photo" preview on a Timeline/Search card itself (issue
+   #385, a follow-up to #349/#279) — a card's own body is a flex column
+   with its own gap between children (.daymark-recent__body), so this
+   variant drops the post-view rule's larger margin-top in favor of that
+   existing gap, and (being non-interactive here — see
+   cardOembedPreviewHtml()'s own docblock, app.js, for why a card can't
+   nest the post view's real, clickable <a>) drops the link-style hover/
+   focus border-color change too, since nothing about tapping this element
+   specifically opens the link the way it does on the post view. A shorter
+   image height keeps the preview from dominating what's still meant to
+   read as a compact, glanceable card. */
+.daymark-oembed-preview--card {
+	margin-top: var(--daymark-spacing-xs);
+}
+
+.daymark-oembed-preview--card.daymark-oembed-preview--link:hover,
+.daymark-oembed-preview--card.daymark-oembed-preview--link:focus-visible {
+	border-color: var(--daymark-border);
+}
+
+.daymark-oembed-preview--card.daymark-oembed-preview--link img {
+	height: 120px;
+}
+
 /* This content's source theme's own CSS never loads here (a subscription
  * post's fetched HTML, or even a local Mark/ordinary post's, since the app
  * shell never loads a theme's stylesheet) — so anything the original markup
