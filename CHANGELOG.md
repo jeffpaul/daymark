@@ -30,6 +30,7 @@ can't act on them.
 
 - Settings -> Daymark's "Choose from available feeds" action no longer reloads the whole page — clicking it now loads that site's discovered feeds directly into its own row, so you stay right where you were instead of the page jumping back to the top of the subscriptions table. ([#378](https://github.com/jeffpaul/daymark/pull/378))
 - Made the "plugin overlap" notification's own text clearer about what it's flagging and what to do about it — each message now names specifically what Daymark already renders that the other plugin might duplicate, and always suggests deactivating whichever one you don't need. Also fixes the IndieBlocks message, which previously referred to "the above" even when shown on its own with no other overlap notification alongside it.
+- Reblogging now opens a dedicated preview screen — the reblogged post as a real quote, an editable title, and a field for your own thoughts — instead of publishing straight away from a small caption sheet. Nothing is created until you tap Publish. ([#394](https://github.com/jeffpaul/daymark/pull/394))
 
 ### Fixed
 

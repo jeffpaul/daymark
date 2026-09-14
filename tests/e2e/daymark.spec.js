@@ -487,6 +487,50 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(subMeta.locator('[data-menu-unsubscribe]')).toBeVisible();
 });
 
+// The Reblog preview screen (issue #393): tapping Repost on a subscription
+// post no longer publishes straight away — it opens a dedicated screen
+// showing the quoted post and an editable title before anything is
+// created. Covers the full round trip: open the screen, confirm its
+// content, publish, and land back on Home with the toggle now active.
+test('Reblog preview screen shows the quoted post and publishes on confirm', async ({ page }) => {
+	await loginAs(page);
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const card = await findSubscriptionCard(page);
+	const title = (await card.locator('.daymark-recent__title').textContent()).trim();
+	const repostToggle = card.locator('[data-repost-toggle]');
+	await expect(repostToggle).toHaveAttribute('aria-pressed', 'false');
+	await repostToggle.click();
+
+	// First-ever-tap explainer (issue #321) — a fresh browser context has
+	// never seen it before. Dismissing it (by any means) is itself what
+	// proceeds to the real action for Comment/Reblog (issue #357) — no
+	// second tap on the toggle needed, or wanted: by the time dismiss
+	// resolves the app is already mid-navigation to #reblog.
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	if (await hint.isVisible().catch(() => false)) {
+		await page.locator('[data-sheet-dismiss]').click();
+	}
+
+	await expect(page).toHaveURL(/#reblog$/);
+
+	const titleInput = page.locator('[data-reblog-title]');
+	await expect(titleInput).toHaveValue(new RegExp(`^Reblog: ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+
+	const quote = page.locator('.daymark-reblog-quote');
+	await expect(quote.locator('a')).toHaveText(title);
+
+	await page.locator('[data-reblog-comment]').fill(`E2E reblog thoughts ${RUN_ID}`);
+	await page.locator('[data-action="reblog-publish"]').click();
+
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect((await findSubscriptionCard(page)).locator('[data-repost-toggle]')).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+});
+
 // The ⋯ overflow menu (issue #326): Open original/Share/Routing/Refresh
 // content move behind it, leaving Like/Comment/Reblog/Bookmark as the
 // primary row's own exposed entries; Unsubscribe is new, and — since it

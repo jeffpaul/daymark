@@ -1871,6 +1871,35 @@ h2[tabindex='-1']:focus {
 	min-height: 112px;
 }
 
+/* Reblog preview screen (issue #393): the reblogged post rendered as a
+   real quote, distinct from the app's own chrome — mirrors the
+   accent-washed quote block Daymark_Publisher::build_quote_block() stores
+   server-side once published. */
+.daymark-reblog-quote {
+	margin: 0;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border-left: 3px solid var(--daymark-accent);
+	background: var(--daymark-accent-wash);
+	border-radius: 0 var(--daymark-radius-sm) var(--daymark-radius-sm) 0;
+}
+
+.daymark-reblog-quote p {
+	margin: 0;
+	font-weight: 600;
+}
+
+.daymark-reblog-quote a {
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-reblog-quote cite {
+	display: block;
+	margin-top: var(--daymark-spacing-xs);
+	font-size: 13px;
+	font-style: normal;
+	color: var(--daymark-text-secondary);
+}
+
 .daymark-typebadge {
 	display: flex;
 	align-items: center;
