@@ -2050,6 +2050,13 @@ class Daymark_Admin_Subscriptions {
 				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
 				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
 			),
+			'jetpack'     => array(
+				'label'       => 'Jetpack',
+				'wporg_slug'  => 'jetpack',
+				'folder_slug' => 'jetpack',
+				'classes'     => array( 'Automattic\\Jetpack\\Connection\\Client' ),
+				'description' => __( "Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
+			),
 			'bridgy_fed'  => array(
 				'label'       => 'Bridgy Fed',
 				'type'        => 'service',

@@ -82,6 +82,17 @@ class Daymark_Comment_Delivery {
 
 		$signals = self::discover_origin_signals( $permalink );
 
+		if ( ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
+			$result = self::send_via_jetpack( $subscription_post_id, $signals, $text );
+
+			if ( ! is_wp_error( $result ) ) {
+				return $result;
+			}
+			// Jetpack attempt failed — fall through to Webmention/native
+			// below rather than a dead end; the origin's own signals were
+			// already fetched in the same discover_origin_signals() call.
+		}
+
 		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
 			return self::send_via_webmention( $permalink, $text );
 		}
@@ -131,6 +142,10 @@ class Daymark_Comment_Delivery {
 		}
 
 		$signals = self::discover_origin_signals( $permalink );
+
+		if ( ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
+			return array( 'method' => 'jetpack' );
+		}
 
 		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
 			return array( 'method' => 'webmention' );
@@ -225,6 +240,37 @@ class Daymark_Comment_Delivery {
 			'status'  => 'published',
 			'mark_id' => (int) $post_id,
 			'message' => __( 'Your comment was published on your site and will be delivered to the original post via Webmention.', 'daymark' ),
+		);
+	}
+
+	/**
+	 * Jetpack-native branch (issue #391): POST directly to WordPress.com's
+	 * own real Comment API — no local Mark, no third-party protocol code of
+	 * Daymark's own. Only reachable when discover_origin_signals() already
+	 * resolved this exact origin post via WordPress.com and the current
+	 * user has personally linked their own WordPress.com account (checked
+	 * by the caller before this is ever invoked) — see
+	 * Daymark_Jetpack_Engagement's own class docblock for the full
+	 * eligibility reasoning and its "not independently confirmed" caveat.
+	 *
+	 * @param int                  $subscription_post_id A `daymark_sub_post` post ID.
+	 * @param array<string, mixed> $signals               discover_origin_signals()'s own cached result.
+	 * @param string               $text                  Comment text.
+	 * @return array{method: string, status: string, message: string}|WP_Error
+	 */
+	private static function send_via_jetpack( int $subscription_post_id, array $signals, string $text ) {
+		$result = Daymark_Jetpack_Engagement::comment( (int) ( $signals['jetpack_site_id'] ?? 0 ), (int) ( $signals['jetpack_post_id'] ?? 0 ), $text );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		Daymark_Jetpack_Engagement::mark_commented( get_current_user_id(), $subscription_post_id );
+
+		return array(
+			'method'  => 'jetpack',
+			'status'  => 'published',
+			'message' => __( 'Your comment was posted directly to WordPress.com.', 'daymark' ),
 		);
 	}
 
@@ -346,8 +392,15 @@ class Daymark_Comment_Delivery {
 	 * repeatedly-tapped Comment icon on an unreachable/slow site never
 	 * re-attempts the same fetch on every tap.
 	 *
+	 * Also resolves the Jetpack-native fast path's own eligibility signal
+	 * (issue #391) in the same cached call — `jetpack_site_id`/
+	 * `jetpack_post_id`, both 0 unless this exact origin post resolves via
+	 * WordPress.com's own API. `Daymark_Jetpack_Engagement::resolve_origin()`
+	 * short-circuits to null with zero extra cost when Jetpack isn't even
+	 * active locally, so a non-Jetpack site pays nothing for this check.
+	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int}
 	 */
 	private static function discover_origin_signals( string $permalink ): array {
 		$cache_key = 'daymark_comment_sig_' . md5( $permalink );
@@ -372,13 +425,15 @@ class Daymark_Comment_Delivery {
 	 * The actual, uncached fetch discover_origin_signals() wraps.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int}
 	 */
 	private static function fetch_origin_signals( string $permalink ): array {
 		$empty = array(
 			'webmention_endpoint' => '',
 			'rest_root'           => '',
 			'post_id'             => 0,
+			'jetpack_site_id'     => 0,
+			'jetpack_post_id'     => 0,
 		);
 
 		$response = wp_safe_remote_get(
@@ -408,10 +463,14 @@ class Daymark_Comment_Delivery {
 			$webmention_endpoint = self::find_link_href( $html, 'webmention' );
 		}
 
+		$jetpack_origin = Daymark_Jetpack_Engagement::resolve_origin( $permalink );
+
 		return array(
 			'webmention_endpoint' => '' !== $webmention_endpoint ? esc_url_raw( WP_Http::make_absolute_url( $webmention_endpoint, $permalink ) ) : '',
 			'rest_root'           => self::find_link_href( $html, 'https://api.w.org/' ),
 			'post_id'             => self::extract_post_id( self::find_link_href( $html, 'alternate', 'application/json' ) ),
+			'jetpack_site_id'     => null !== $jetpack_origin ? $jetpack_origin['site_id'] : 0,
+			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
 		);
 	}
 
