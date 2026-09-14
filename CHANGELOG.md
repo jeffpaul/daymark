@@ -33,6 +33,7 @@ can't act on them.
 ### Fixed
 
 - A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip. ([#384](https://github.com/jeffpaul/daymark/pull/384))
+- The full-screen post view's back arrow/Daymark icon now genuinely top-align against the post title — a follow-up fix layered on top of an earlier attempt (#315) that only top-aligned the back link's own box, not its arrow/icon content. ([#388](https://github.com/jeffpaul/daymark/pull/388))
 
 ### Developer
 

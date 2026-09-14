@@ -171,6 +171,21 @@ h2[tabindex='-1']:focus {
 	align-items: flex-start;
 }
 
+/* The fix above only top-aligns the back link's own *box* against the
+   title — .daymark-backlink still centers its arrow/icon content *within*
+   that box's own 44px tap-target height (needed everywhere else this class
+   is used, where the surrounding topbar's own align-items: center already
+   centers the whole box against a short, single-line title), so the glyph
+   itself still sat a few pixels below the title's first line even with the
+   box-level fix above. Scoped to this one context — matching this file's
+   own established "scoped modifier over changing the shared rule"
+   precedent — rather than changing .daymark-backlink's own alignment
+   everywhere, which would misalign it on every other screen that still
+   relies on the topbar's own centering. */
+.daymark-topbar--top .daymark-backlink {
+	align-items: flex-start;
+}
+
 /* Daymark's own icon + wordmark act as one home-link. `gap` matches
    .daymark-topbar's own flex gap (var(--daymark-spacing-sm), see below) —
    deliberately the same token, not a separately hand-picked value, so the
