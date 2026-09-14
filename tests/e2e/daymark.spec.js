@@ -504,11 +504,13 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 	await repostToggle.click();
 
 	// First-ever-tap explainer (issue #321) — a fresh browser context has
-	// never seen it before.
+	// never seen it before. Dismissing it (by any means) is itself what
+	// proceeds to the real action for Comment/Reblog (issue #357) — no
+	// second tap on the toggle needed, or wanted: by the time dismiss
+	// resolves the app is already mid-navigation to #reblog.
 	const hint = page.locator('.daymark-sheet__panel--hint');
 	if (await hint.isVisible().catch(() => false)) {
 		await page.locator('[data-sheet-dismiss]').click();
-		await repostToggle.click();
 	}
 
 	await expect(page).toHaveURL(/#reblog$/);
