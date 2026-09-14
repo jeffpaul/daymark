@@ -2274,6 +2274,9 @@
 		if (target === '#post' && !pendingPostView) {
 			target = '#home';
 		}
+		if (target === '#reblog' && !pendingReblog) {
+			target = '#home';
+		}
 
 		AIAssistSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
@@ -3732,19 +3735,19 @@
 
 	// Toggles a Repost for the subscription post this trigger belongs to.
 	// Undoing (trashing an existing repost Mark) stays exactly as instant/
-	// optimistic as toggleLike() above — there's nothing to type when
-	// removing one. Creating one (issue #317) opens TextPromptSheet first
-	// for an optional comment alongside the reblogged post — Skip publishes
-	// just the reblogged post's own link, typing something adds that text
-	// as a second paragraph below it (see buildRepostFormData()). The
-	// optimistic UI flip only happens once the sheet is actually submitted/
-	// skipped — never eagerly, since the user might yet dismiss the sheet
-	// without choosing either.
+	// optimistic as toggleLike() above — there's nothing to preview when
+	// removing one. Creating one (issue #393) opens the dedicated Reblog
+	// preview screen (see ReblogScreen below) instead of publishing
+	// straight away — the reader sees the quoted post, an editable title,
+	// and a field for their own thoughts before anything is actually
+	// created. No optimistic UI flip on this path at all (unlike the undo
+	// branch, and unlike the old TextPromptSheet-based flow this replaces):
+	// nothing has happened yet, so there's nothing to flip until the
+	// preview screen's own Publish tap actually succeeds.
 	async function toggleRepost(screen, trigger) {
 		// Same duplicate-tap guard as toggleLike() above for the undo path;
-		// the create path's own TextPromptSheet is a full-screen modal, so
-		// its own backdrop already blocks a second tap on this trigger while
-		// it's open — the guard there instead lives in publishRepost() itself.
+		// the create path navigates to a whole new screen, which already
+		// makes a second tap on this (now-destroyed) trigger impossible.
 		if ('true' === trigger.getAttribute('data-repost-busy')) {
 			return;
 		}
@@ -3768,73 +3771,7 @@
 			}
 			return;
 		}
-		maybeShowInteractionHintThen('repost', trigger, () => {
-			TextPromptSheet.show({
-				title: __('Reblog', 'daymark'),
-				placeholder: __('Add your own thoughts (optional)…', 'daymark'),
-				submitLabel: __('Reblog', 'daymark'),
-				skipLabel: __('Skip', 'daymark'),
-				opener: trigger,
-				onSubmit: (text) => publishRepost(trigger, item, text || ''),
-				onSkip: () => publishRepost(trigger, item, ''),
-			});
-		});
-	}
-
-	// Builds the FormData for a Reblog Mark: an explicit "Reblog: {title}"
-	// post title (rather than one auto-derived from body text — see
-	// generate_title() server-side, which would otherwise just echo the
-	// link paragraph's own markup back), and content that's a real link to
-	// the reblogged post — its own title as the link text, never a bare
-	// URL, since a bare URL left as the whole caption is what
-	// entry_metadata_markup()'s own u-repost-of rendering already does for
-	// its own, separate, machine-readable purpose — followed, on its own
-	// paragraph, by the reader's optional comment. Distinct from the Like
-	// toggle (a pure content-less signal, and — since issue #391 — resolved
-	// server-side rather than built as FormData here at all) since a
-	// Reblog's content needs real structure a single caption string can't
-	// express.
-	function buildRepostFormData(item, comment) {
-		const formData = new FormData();
-		const linkText = item.title || item.permalink;
-		let content = '<a href="' + esc(item.permalink) + '">' + esc(linkText) + '</a>';
-
-		if (comment) {
-			content += '\n\n' + comment;
-		}
-
-		formData.append(
-			'title',
-			sprintf(
-				/* translators: %s: title of the reposted post */
-				__('Reblog: %s', 'daymark'),
-				linkText
-			)
-		);
-		formData.append('caption', content);
-		formData.append('primary_type', 'note');
-		formData.append('status', 'publish');
-		formData.append('ai_assist_used', '0');
-		formData.append('repost_of', item.permalink);
-		return formData;
-	}
-
-	// The actual Repost publish, shared by TextPromptSheet's Submit and
-	// Skip paths above — the only difference between them is which comment
-	// string this receives (empty on Skip). No hint call here (unlike the
-	// undo branch above): toggleRepost() already showed/marked it seen, via
-	// maybeShowInteractionHintThen(), before this compose step ever opened.
-	async function publishRepost(trigger, item, comment) {
-		trigger.setAttribute('data-repost-busy', 'true');
-		setEngagementToggleState(trigger, 'repost', true, 0, item);
-		try {
-			const mark = await apiUpload('marks', buildRepostFormData(item, comment));
-			setEngagementToggleState(trigger, 'repost', true, mark.id, item);
-		} catch (err) {
-			setEngagementToggleState(trigger, 'repost', false, 0, item);
-		} finally {
-			trigger.removeAttribute('data-repost-busy');
-		}
+		maybeShowInteractionHintThen('repost', trigger, () => openReblogScreen(screen, item));
 	}
 
 	// The Comment toggle (issue #317; pre-check added as a #351 follow-up).
@@ -7940,6 +7877,137 @@
 		},
 	};
 
+	// --- Screen: Reblog preview (issue #393) ---
+	//
+	// Replaces the old TextPromptSheet-based instant-publish flow
+	// (toggleRepost()'s create branch used to open a small sheet and
+	// publish immediately on Submit/Skip) with a real preview: the
+	// reblogged post rendered as a genuine quote, an editable
+	// "Reblog: {title}" title, and a field for the reader's own thoughts —
+	// all visible before the Mark actually exists. A client-side-only
+	// screen (like #create/#post — no PHP route; see
+	// Daymark_Routes::SCREENS), seeded via the one-shot pendingReblog
+	// hand-off below. Nothing is created until Publish is tapped; the
+	// Cancel link (and showScreen()'s own missing-state guard) simply
+	// leaves no trace, since no request has been made yet.
+
+	let pendingReblog = null;
+
+	// Mirrors openPostView()'s own pendingPostView hand-off. `screen` is
+	// whichever controller currently owns the tapped trigger (Home, Search,
+	// or PostScreen) — when it's PostScreen, its own one-shot view
+	// (`screen.view`) is re-armed as `pendingPostView` immediately, not just
+	// on the way back out: PostScreen.init() has already consumed and
+	// nulled the original hand-off by the time a Repost tap can fire, so
+	// without this, returning to '#post' (via ReblogScreen's plain Cancel
+	// link, or after a successful Publish) would find pendingPostView empty
+	// and bounce to Home via showScreen()'s existing guard. Re-arming it
+	// here means both exits work with no special-casing at ReblogScreen's
+	// own end — and since it's the exact same `item` reference this screen
+	// goes on to mutate (see ReblogScreen.submit()), PostScreen's next
+	// render already reflects the new repost state for free.
+	function openReblogScreen(screen, item) {
+		if (screen && screen.view) {
+			pendingPostView = screen.view;
+		}
+		pendingReblog = { item, returnTo: window.location.hash || '#home' };
+		navigate('#reblog');
+	}
+
+	const ReblogScreen = {
+		render() {
+			const hand = pendingReblog;
+			const item = hand && hand.item ? hand.item : {};
+			const linkText = item.title || item.permalink || '';
+			const defaultTitle = sprintf(
+				/* translators: %s: title of the reposted post */
+				__('Reblog: %s', 'daymark'),
+				linkText
+			);
+			const source = subscriptionSiteLabel(item);
+			return `
+			<header class="daymark-topbar">
+				<a class="daymark-backlink" href="${esc(hand ? hand.returnTo : '#home')}">&larr; ${esc(
+				__('Cancel', 'daymark')
+			)}</a>
+				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Reblog', 'daymark'))}</h1>
+			</header>
+			<section class="daymark-screen">
+				<div class="daymark-field">
+					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
+					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
+						defaultTitle
+					)}" />
+				</div>
+				<div class="daymark-field">
+					<div class="daymark-field__label">${esc(__('Reblogged post', 'daymark'))}</div>
+					<blockquote class="daymark-reblog-quote">
+						<p><a href="${esc(item.permalink || '#')}" target="_blank" rel="noopener noreferrer">${esc(
+				linkText
+			)}</a></p>
+						<cite>${esc(source)}</cite>
+					</blockquote>
+				</div>
+				<div class="daymark-field">
+					<label class="daymark-field__label" for="daymark-reblog-comment">${esc(__('Your thoughts', 'daymark'))}</label>
+					<textarea id="daymark-reblog-comment" class="daymark-textarea" rows="4" placeholder="${esc(
+						__('Add your own thoughts (optional)…', 'daymark')
+					)}" data-reblog-comment></textarea>
+				</div>
+			</section>
+			<footer class="daymark-actionbar">
+				<p class="daymark-status" data-reblog-status aria-live="polite"></p>
+				<button type="button" class="daymark-btn daymark-btn--primary" data-action="reblog-publish">${esc(
+					__('Publish', 'daymark')
+				)}</button>
+			</footer>`;
+		},
+
+		bindEvents() {
+			root.querySelector('[data-action="reblog-publish"]').addEventListener('click', () => this.submit());
+		},
+
+		// showScreen()'s own guard already redirects a direct/refreshed
+		// #reblog with no pending hand-off back to Home before this ever
+		// runs — same trust #post/#publish/#success's own guards get.
+		init() {
+			const hand = pendingReblog;
+			this.item = hand ? hand.item : {};
+			this.returnTo = hand ? hand.returnTo : '#home';
+			pendingReblog = null;
+		},
+
+		async submit() {
+			const button = root.querySelector('[data-action="reblog-publish"]');
+			const status = root.querySelector('[data-reblog-status]');
+			const title = root.querySelector('[data-reblog-title]').value.trim();
+			const comment = root.querySelector('[data-reblog-comment]').value.trim();
+
+			button.disabled = true;
+			button.textContent = __('Publishing…', 'daymark');
+			status.textContent = '';
+
+			const formData = new FormData();
+			formData.append('title', title);
+			formData.append('caption', comment);
+			formData.append('quote_title', this.item.title || this.item.permalink || '');
+			formData.append('primary_type', 'note');
+			formData.append('status', 'publish');
+			formData.append('ai_assist_used', '0');
+			formData.append('repost_of', this.item.permalink);
+
+			try {
+				const mark = await apiUpload('marks', formData);
+				this.item.reposted_mark_id = mark.id;
+				navigate(this.returnTo);
+			} catch (err) {
+				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
+				button.disabled = false;
+				button.textContent = __('Publish', 'daymark');
+			}
+		},
+	};
+
 	// --- Screen: Publish ---
 
 	// Why a connector can't take the current Mark type, phrased by what
@@ -8985,6 +9053,7 @@
 		'#publish': PublishScreen,
 		'#success': SuccessScreen,
 		'#post': PostScreen,
+		'#reblog': ReblogScreen,
 		'#notifications': NotificationsScreen,
 		'#explore': ExploreScreen,
 		'#search': SearchScreen,

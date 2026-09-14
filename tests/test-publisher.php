@@ -691,6 +691,65 @@ class Test_Publisher extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * The Reblog preview screen (issue #393) sends `quote_title` alongside
+	 * `repost_of` so the published Mark's content leads with a real
+	 * core/quote block — the reblogged post as a link, plus a short
+	 * attribution derived from the URL's own host — rather than a plain
+	 * link paragraph. The reader's own "Your thoughts" text (sent as
+	 * `caption`) still follows as an ordinary paragraph after it.
+	 */
+	public function test_repost_with_quote_title_renders_a_real_quote_block() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Excited to see this back in Miami.',
+				'title'        => 'Reblog: CloudFest Americas Returns to Miami',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://nomad.blog/cloudfest-americas/',
+				'quote_title'  => 'CloudFest Americas Returns to Miami',
+			)
+		);
+
+		$post = get_post( $post_id );
+
+		$this->assertStringContainsString( '<!-- wp:quote -->', $post->post_content );
+		$this->assertStringContainsString( '<blockquote class="wp-block-quote">', $post->post_content );
+		$this->assertStringContainsString(
+			'<a href="https://nomad.blog/cloudfest-americas/">CloudFest Americas Returns to Miami</a>',
+			$post->post_content
+		);
+		$this->assertStringContainsString( '<cite>nomad.blog</cite>', $post->post_content );
+		$this->assertStringContainsString( 'Excited to see this back in Miami.', $post->post_content );
+		// The quote block always leads, ahead of the reader's own paragraph.
+		$this->assertLessThan(
+			strpos( $post->post_content, 'Excited to see this back in Miami.' ),
+			strpos( $post->post_content, '<!-- wp:quote -->' )
+		);
+	}
+
+	/**
+	 * A repost_of sent with no quote_title (an older client, or a direct
+	 * API caller) falls back to the previous plain-caption behavior —
+	 * no quote block, and whatever the caller put in `caption` renders as
+	 * ordinary paragraphs.
+	 */
+	public function test_repost_without_quote_title_has_no_quote_block() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => '<a href="https://nomad.blog/cloudfest-americas/">CloudFest Americas Returns to Miami</a>',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://nomad.blog/cloudfest-americas/',
+			)
+		);
+
+		$post = get_post( $post_id );
+
+		$this->assertStringNotContainsString( 'wp:quote', $post->post_content );
+		$this->assertStringContainsString( 'wp:paragraph', $post->post_content );
+	}
+
 	/** An ordinary Mark with no repost_of sent never gets the meta at all. */
 	public function test_repost_of_absent_when_not_sent() {
 		$publisher = new Daymark_Publisher();

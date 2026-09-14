@@ -323,6 +323,26 @@ class Daymark_Publisher {
 		$repost_of  = $this->resolve_repost_of( $data );
 		$is_like_of = null !== $like_of;
 
+		// The Reblog preview screen (issue #393) sends the reblogged post's
+		// own title alongside repost_of, so its content can lead with a real
+		// core/quote block instead of a plain link paragraph — see
+		// build_quote_block(). A repost_of with no quote_title (an older
+		// client, or a direct API caller) falls back to the previous plain-
+		// caption behavior untouched.
+		$quote = null;
+
+		if ( null !== $repost_of ) {
+			$quote_title = sanitize_text_field( (string) ( $data['quote_title'] ?? '' ) );
+
+			if ( '' !== $quote_title ) {
+				$quote = array(
+					'url'    => $repost_of,
+					'title'  => $quote_title,
+					'source' => (string) wp_parse_url( $repost_of, PHP_URL_HOST ),
+				);
+			}
+		}
+
 		// Idempotency guard: Like/Repost are instant, tap-to-toggle actions
 		// whose "am I already liked/reposted" state is read from an
 		// in-memory item the client may not have refreshed since another
@@ -438,7 +458,7 @@ class Daymark_Publisher {
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
-			'post_content' => $this->build_block_markup( $media_ids, $caption ),
+			'post_content' => $this->build_block_markup( $media_ids, $caption, $quote ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 		);
 
@@ -1199,16 +1219,22 @@ class Daymark_Publisher {
 	/**
 	 * Build standard block markup for the Mark content.
 	 *
-	 * Uses core/image, core/gallery, core/video, core/audio, and
-	 * core/paragraph so the Mark renders in any theme.
+	 * Uses core/image, core/gallery, core/video, core/audio, core/quote,
+	 * and core/paragraph so the Mark renders in any theme.
 	 *
-	 * @param int[]  $media_ids Attachment IDs.
-	 * @param string $caption   Caption text (already run through wp_kses_post).
+	 * @param int[]                                                   $media_ids Attachment IDs.
+	 * @param string                                                  $caption   Caption text (already run through wp_kses_post).
+	 * @param array{url: string, title: string, source?: string}|null $quote Reblogged-post quote block
+	 *                                                                        to lead with, or null for none.
 	 * @return string Block markup.
 	 */
-	private function build_block_markup( array $media_ids, string $caption ): string {
+	private function build_block_markup( array $media_ids, string $caption, ?array $quote = null ): string {
 		$groups = $this->group_media_ids( $media_ids );
 		$blocks = array();
+
+		if ( $quote ) {
+			$blocks[] = $this->build_quote_block( $quote['url'], $quote['title'], $quote['source'] ?? '' );
+		}
 
 		if ( count( $groups['image'] ) > 1 ) {
 			$blocks[] = $this->build_gallery_block( $groups['image'] );
@@ -1240,6 +1266,29 @@ class Daymark_Publisher {
 		}
 
 		return implode( "\n\n", $blocks );
+	}
+
+	/**
+	 * Build a core/quote block linking to the post a Reblog Mark quotes
+	 * (issue #393 — the Reblog preview screen). Leads build_block_markup()'s
+	 * own output, ahead of any media and of the reader's own commentary
+	 * paragraphs, matching the screen's own layout: the reblogged post
+	 * first, the reader's own thoughts after it.
+	 *
+	 * @param string $url    The reblogged post's own permalink (already validated by resolve_repost_of()).
+	 * @param string $title  The reblogged post's own title (already sanitized).
+	 * @param string $source A short attribution — e.g. the origin site's host — or '' to omit it.
+	 * @return string Block markup.
+	 */
+	private function build_quote_block( string $url, string $title, string $source = '' ): string {
+		$link = sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $title ) );
+		$cite = '' !== $source ? sprintf( '<cite>%s</cite>', esc_html( $source ) ) : '';
+
+		return sprintf(
+			"<!-- wp:quote -->\n<blockquote class=\"wp-block-quote\"><p>%s</p>%s</blockquote>\n<!-- /wp:quote -->",
+			$link,
+			$cite
+		);
 	}
 
 	/**
