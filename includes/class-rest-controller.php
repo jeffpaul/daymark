@@ -602,6 +602,37 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/like',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'like_subscription_post' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'unlike_subscription_post' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/bookmarks/(?P<id>\d+)',
 			array(
 				array(
@@ -1889,6 +1920,30 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Validates that an ID refers to a published `daymark_subscription_post`
+	 * — the only kind of item Like/Comment engagement (Jetpack-native or
+	 * classic) makes sense for. Mirrors assert_bookmarkable()'s shape but is
+	 * scoped narrower: a Mark has no `permalink` post meta to engage with in
+	 * the first place, so it's excluded here rather than silently no-op'd.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return true|WP_Error
+	 */
+	private function assert_subscription_post( int $post_id ) {
+		$post = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status || Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * POST /daymark/v1/bookmarks/{id} — bookmark a Timeline item (a Mark or
 	 * a cached subscription post) for the current user, for offline
 	 * viewing in Explore's Bookmarks section.
@@ -2692,6 +2747,192 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/subscription-posts/{id}/like — like a subscription
+	 * post (issue #391). Prefers WordPress.com's own native Like API,
+	 * exactly the way the official Jetpack app does it, whenever the origin
+	 * itself resolves via WordPress.com's public API and the current user
+	 * has personally linked their own WordPress.com account — no local
+	 * Mark, nothing published anywhere on this site. Falls back to the
+	 * classic path (a minimal 'note' Mark carrying `_daymark_like_of`,
+	 * exactly as before this feature shipped) for every other origin.
+	 *
+	 * Idempotent on the classic path the same way Daymark_Publisher's own
+	 * Like/Repost guard already is (issue #389) — reuses an existing
+	 * published Like Mark for this permalink rather than creating a sibling
+	 * one on a duplicate tap.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function like_subscription_post( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_LIKE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$jetpack   = '' !== $permalink ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
+
+		if ( null !== $jetpack ) {
+			return $jetpack;
+		}
+
+		$existing = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
+
+		if ( $existing > 0 ) {
+			return rest_ensure_response(
+				array(
+					'method'  => 'classic',
+					'liked'   => true,
+					'mark_id' => $existing,
+				)
+			);
+		}
+
+		$title   = html_entity_decode( sanitize_text_field( get_the_title( $post_id ) ), ENT_QUOTES, 'UTF-8' );
+		$caption = sprintf(
+			/* translators: %s: title of the liked post */
+			__( 'Liked "%s"', 'daymark' ),
+			'' !== $title ? $title : $permalink
+		);
+
+		$mark_id = Daymark_Plugin::instance()->publisher->publish(
+			array(
+				'caption'        => $caption,
+				'primary_type'   => 'note',
+				'status'         => 'publish',
+				'ai_assist_used' => false,
+				'like_of'        => $permalink,
+			)
+		);
+
+		if ( is_wp_error( $mark_id ) ) {
+			return $mark_id;
+		}
+
+		return rest_ensure_response(
+			array(
+				'method'  => 'classic',
+				'liked'   => true,
+				'mark_id' => $mark_id,
+			)
+		);
+	}
+
+	/**
+	 * DELETE /daymark/v1/subscription-posts/{id}/like — undo a like,
+	 * whichever mechanism created it (Jetpack-native or a classic Mark) —
+	 * resolved entirely server-side from the current user's own recorded
+	 * state, so the client never needs to track or send which path was
+	 * used.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function unlike_subscription_post( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_LIKE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$user_id = get_current_user_id();
+
+		if ( Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id ) ) {
+			$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+			$origin    = '' !== $permalink ? Daymark_Jetpack_Engagement::resolve_origin( $permalink ) : null;
+
+			if ( null !== $origin ) {
+				$result = Daymark_Jetpack_Engagement::unlike( $origin['site_id'], $origin['post_id'] );
+
+				// A failed unlike call still clears our own local "liked"
+				// record — the alternative (leaving it set) would strand the
+				// toggle in a state the reader can never undo through this
+				// UI again, worse than a WordPress.com like that outlives it.
+				unset( $result );
+			}
+
+			Daymark_Jetpack_Engagement::unmark_liked( $user_id, $post_id );
+
+			return rest_ensure_response(
+				array(
+					'method' => 'jetpack',
+					'liked'  => false,
+				)
+			);
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$existing  = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
+
+		if ( $existing > 0 ) {
+			wp_trash_post( $existing );
+		}
+
+		return rest_ensure_response(
+			array(
+				'method' => 'classic',
+				'liked'  => false,
+			)
+		);
+	}
+
+	/**
+	 * Attempts the Jetpack-native Like fast path for like_subscription_post()
+	 * above. Returns null (meaning "not eligible, fall back to the classic
+	 * path") when Jetpack isn't available, the user hasn't linked their own
+	 * WordPress.com account, the origin doesn't resolve via WordPress.com's
+	 * API, or the actual Like call fails for any reason — this is
+	 * deliberately never a hard error, since the classic path is always a
+	 * safe fallback.
+	 *
+	 * @param int    $post_id   Subscription post ID.
+	 * @param string $permalink The post's own permalink.
+	 * @return WP_REST_Response|null
+	 */
+	private function maybe_jetpack_like( int $post_id, string $permalink ) {
+		if ( ! Daymark_Jetpack_Engagement::current_user_connected() ) {
+			return null;
+		}
+
+		$origin = Daymark_Jetpack_Engagement::resolve_origin( $permalink );
+
+		if ( null === $origin ) {
+			return null;
+		}
+
+		$result = Daymark_Jetpack_Engagement::like( $origin['site_id'], $origin['post_id'] );
+
+		if ( is_wp_error( $result ) ) {
+			return null;
+		}
+
+		Daymark_Jetpack_Engagement::mark_liked( get_current_user_id(), $post_id );
+
+		return rest_ensure_response(
+			array(
+				'method' => 'jetpack',
+				'liked'  => true,
+			)
+		);
+	}
+
+	/**
 	 * Prepare a subscription row response array: cast/escape every field per
 	 * the security checklist rather than passing the raw DB row straight
 	 * through.
@@ -2808,6 +3049,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'replied_mark_id'    => $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink ),
 			'liked_mark_id'      => $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ),
 			'reposted_mark_id'   => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
+			// Jetpack-native equivalents of the two fields above (issue #391)
+			// — set only when the Like/Comment was delivered directly to
+			// WordPress.com's own API rather than via a local Mark, so
+			// there's no Mark ID to key off of the way the classic path's
+			// own fields do.
+			'jetpack_liked'      => Daymark_Jetpack_Engagement::is_liked( get_current_user_id(), $post_id ),
+			'jetpack_commented'  => Daymark_Jetpack_Engagement::is_commented( get_current_user_id(), $post_id ),
 		);
 	}
 

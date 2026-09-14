@@ -98,6 +98,17 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIPTION_COMMENT = 'subscription_comment';
 
 	/**
+	 * Like/unlike a subscription post
+	 * (POST|DELETE /subscription-posts/{id}/like) — same risk class and tier
+	 * as ACTION_SUBSCRIPTION_COMMENT: either a Jetpack-native WordPress.com
+	 * API call or a classic Mark-create/trash, both outbound-fetch-shaped
+	 * actions a user triggers deliberately by tapping the Like icon.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIPTION_LIKE = 'subscription_like';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -132,6 +143,10 @@ class Daymark_Rate_Limiter {
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 		self::ACTION_SUBSCRIPTION_COMMENT    => array(
+			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIPTION_LIKE       => array(
 			'limit'  => 10,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),

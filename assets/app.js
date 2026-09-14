@@ -757,7 +757,12 @@
 	// `data-like-mark-id` carries that Mark's ID once one exists, letting the
 	// toggle undo itself without a second lookup.
 	function renderLikeToggle(item) {
-		const liked = !!item.liked_mark_id;
+		// A like can exist two ways now (issue #391): the classic local Mark
+		// (liked_mark_id) or a Jetpack-native WordPress.com like recorded
+		// with no local post at all (jetpack_liked) — either counts as
+		// "liked" for display purposes; toggleLike() below resolves which
+		// one to undo entirely server-side.
+		const liked = !!item.liked_mark_id || !!item.jetpack_liked;
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
 		const label = liked ? __('Unlike', 'daymark') : __('Like', 'daymark');
@@ -782,7 +787,11 @@
 	// Webmention-routed comment (toggleComment()'s own preferred path)
 	// creates exactly the same kind of Mark the old Reply action did.
 	function renderCommentToggle(item) {
-		const commented = !!item.replied_mark_id;
+		// Same "either mechanism counts as active" reasoning as
+		// renderLikeToggle() above (issue #391) — a Jetpack-native comment
+		// creates no local Mark, so jetpack_commented is the only signal
+		// for that path.
+		const commented = !!item.replied_mark_id || !!item.jetpack_commented;
 		const id = esc(String(item.id));
 		const label = __('Comment', 'daymark');
 		return `<span class="daymark-stat daymark-stat--comment${
@@ -3661,39 +3670,19 @@
 		trigger.setAttribute('data-' + kind + '-mark-id', String(markId || 0));
 	}
 
-	// The minimal Mark a Like tap publishes: a plain 'note' with no media,
-	// carrying only the one POSSE target-URL field the server needs
-	// (like_of) to render u-like-of and let whichever federation plugin the
-	// site owner runs discover and act on it — the same "compose a real
-	// Mark, let an already-installed plugin do the actual outbound protocol
-	// work" pattern the Comment toggle's own Webmention branch already uses
-	// (see toggleComment()). Deliberately omits targets[]/categories[]
-	// entirely (not even an explicit empty array) so this call gets exactly
-	// the same type-based default destination/category resolution any other
-	// Note Mark would — sending an explicit empty selection would get
-	// *remembered* as the user's new Note-type default (see
-	// Daymark_Publisher::remember_destination_prefs()), silently
-	// overwriting their real preference for a background action they
-	// didn't consciously make a destination choice for. Repost has its own
-	// builder, buildRepostFormData() below, since a Reblog's content needs
-	// a real link + optional comment structure a plain caption can't
-	// express — this one still backs Like alone, a pure content-less
-	// signal with a generic auto-caption.
-	function buildEngagementFormData(caption, item, targetField) {
-		const formData = new FormData();
-		formData.append('caption', caption);
-		formData.append('primary_type', 'note');
-		formData.append('status', 'publish');
-		formData.append('ai_assist_used', '0');
-		formData.append(targetField, item.permalink);
-		return formData;
-	}
 
 	// Toggles a Like for the subscription post this trigger belongs to.
-	// Optimistic, same as toggleBookmark() above, but — unlike a bookmark,
-	// which is pure per-user set membership — liking actually publishes (or,
-	// to undo, trashes) a small Mark of the site owner's own; see
-	// buildEngagementFormData()'s own docblock for why.
+	// Optimistic, same as toggleBookmark() above. Routes through a single
+	// REST pair (POST/DELETE subscription-posts/{id}/like, issue #391) that
+	// resolves entirely server-side which mechanism applies: WordPress.com's
+	// own native Like API when the origin and the current user are both
+	// eligible (no local Mark at all), or the classic fallback — a small,
+	// content-less 'note' Mark carrying `_daymark_like_of`, exactly what
+	// this used to build client-side before this endpoint existed — for
+	// every other origin. Either way this
+	// client code never needs to know or track which one is in play; the
+	// server's own per-user state (liked_mark_id / jetpack_liked) is what
+	// renderLikeToggle() already reads to decide the initial display state.
 	async function toggleLike(screen, trigger) {
 		const id = trigger.getAttribute('data-like-toggle');
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
@@ -3701,24 +3690,18 @@
 			return;
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
-		const existingMarkId = trigger.getAttribute('data-like-mark-id') || '0';
-		setEngagementToggleState(trigger, 'like', !wasLiked, existingMarkId);
+		setEngagementToggleState(trigger, 'like', !wasLiked, 0);
 		try {
 			if (!wasLiked) {
-				const caption = sprintf(
-					/* translators: %s: title of the liked post */
-					__('Liked "%s"', 'daymark'),
-					item.title || item.permalink
-				);
-				const mark = await apiUpload('marks', buildEngagementFormData(caption, item, 'like_of'));
-				setEngagementToggleState(trigger, 'like', true, mark.id);
+				const result = await apiPost('subscription-posts/' + id + '/like', {});
+				setEngagementToggleState(trigger, 'like', true, result.mark_id || 0);
 			} else {
-				await apiDelete('marks/' + existingMarkId);
+				await apiDelete('subscription-posts/' + id + '/like');
 				setEngagementToggleState(trigger, 'like', false, 0);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
-			setEngagementToggleState(trigger, 'like', wasLiked, existingMarkId);
+			setEngagementToggleState(trigger, 'like', wasLiked, 0);
 		}
 	}
 
@@ -3771,10 +3754,11 @@
 	// URL, since a bare URL left as the whole caption is what
 	// entry_metadata_markup()'s own u-repost-of rendering already does for
 	// its own, separate, machine-readable purpose — followed, on its own
-	// paragraph, by the reader's optional comment. Distinct from
-	// buildEngagementFormData() (which still backs Like, a plain
-	// content-less signal) since a Reblog's content needs real structure a
-	// single caption string can't express.
+	// paragraph, by the reader's optional comment. Distinct from the Like
+	// toggle (a pure content-less signal, and — since issue #391 — resolved
+	// server-side rather than built as FormData here at all) since a
+	// Reblog's content needs real structure a single caption string can't
+	// express.
 	function buildRepostFormData(item, comment) {
 		const formData = new FormData();
 		const linkText = item.title || item.permalink;
@@ -3842,7 +3826,11 @@
 			const target = await resolveCommentTarget(item, id);
 			trigger.removeAttribute('aria-busy');
 
-			if (!target || 'webmention' !== target.method) {
+			// 'jetpack' (issue #391) gets the same composer treatment as
+			// 'webmention': both are paths Daymark can silently guarantee
+			// delivery on, so there's nothing to warn about before typing —
+			// only the redirect-to-origin fallback needs the early return.
+			if (!target || !['webmention', 'jetpack'].includes(target.method)) {
 				openCommentTargetDirectly(target, item, trigger);
 				return;
 			}
@@ -3929,6 +3917,9 @@
 			if ('webmention' === result.method && result.mark_id && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.replied_mark_id = result.mark_id;
+			} else if ('jetpack' === result.method && item) {
+				trigger.classList.add('daymark-stat--active');
+				item.jetpack_commented = true;
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 		} catch (err) {

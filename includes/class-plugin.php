@@ -115,6 +115,16 @@ final class Daymark_Plugin {
 	public Daymark_Rate_Limiter $rate_limiter;
 
 	/**
+	 * Jetpack-native Like/Comment fast path for a subscribed post whose
+	 * origin is itself WordPress.com-hosted or Jetpack-connected (issue
+	 * #391) — detection, per-user WordPress.com connection state, origin
+	 * resolution, and the actual Like/Unlike/Comment calls.
+	 *
+	 * @var Daymark_Jetpack_Engagement
+	 */
+	public Daymark_Jetpack_Engagement $jetpack_engagement;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -254,6 +264,7 @@ final class Daymark_Plugin {
 		$this->admin_bar                    = new Daymark_Admin_Bar();
 		$this->websub_subscriber            = new Daymark_Websub_Subscriber();
 		$this->websub_endpoint              = new Daymark_Websub_Endpoint();
+		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -334,6 +345,7 @@ final class Daymark_Plugin {
 		$this->admin_subscriptions->register();
 		$this->admin_bar->register();
 		$this->websub_endpoint->register();
+		$this->jetpack_engagement->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
