@@ -24,7 +24,7 @@ can't act on them.
 
 - Subscribing to a site running the MF2 Feed WordPress plugin now reads its structured JSON feed instead of scraping h-entry HTML markup, when a live check confirms it's actually available — more reliable parsing of the same content.
 - A "link"-kind subscription post's Timeline card now shows the same best-effort link preview (image, title, description) the full post view already did — previously only plain excerpt text. ([#386](https://github.com/jeffpaul/daymark/pull/386))
-- Liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected now goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app uses — once you've personally linked your own WordPress.com account through Jetpack (Jetpack -> My Connection). No local Mark is published and no browser redirect is needed for those sites; every other subscribed site is unaffected and keeps working exactly as before. The Connectors tab (Settings -> Daymark) now also recommends the full Jetpack plugin for this.
+- Liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected now goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app uses — once you've personally linked your own WordPress.com account through Jetpack (Jetpack -> My Connection). No local Mark is published and no browser redirect is needed for those sites; every other subscribed site is unaffected and keeps working exactly as before. The Connectors tab (Settings -> Daymark) now also recommends the full Jetpack plugin for this. ([#392](https://github.com/jeffpaul/daymark/pull/392))
 
 ### Changed
 
