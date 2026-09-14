@@ -52,6 +52,7 @@ class Daymark_Like_Visibility {
 		add_filter( 'rest_pre_dispatch', array( $this, 'block_rest_single_item' ), 10, 3 );
 		add_filter( 'wp_sitemaps_posts_query_args', array( $this, 'exclude_from_sitemap' ), 10, 2 );
 		add_filter( 'oembed_response_data', array( $this, 'suppress_oembed' ), 10, 2 );
+		add_filter( 'publicize_should_publicize_published_post', array( $this, 'suppress_publicize' ), 10, 2 );
 	}
 
 	/**
@@ -156,6 +157,61 @@ class Daymark_Like_Visibility {
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Defense in depth against Jetpack Social/Publicize auto-sharing a Like
+	 * Mark to a site's connected social networks (a real, reported gap:
+	 * Daymark's own "never syndicates" guarantee — `Daymark_Publisher::publish()`
+	 * forcing `$targets`/`$defaults` to `array()` — only stops Daymark's own
+	 * outbound connector pipeline; it has no effect on an independent plugin
+	 * like Jetpack, which auto-shares any newly published public post to
+	 * every connection enabled by default, with no awareness of Daymark's
+	 * own post meta). `Daymark_Publisher::publish()` also sets a
+	 * `_wpas_done_all` post meta flag on a Like Mark before its publish
+	 * transition (Jetpack Publicize's own historical "already handled, don't
+	 * auto-share" convention) as the first, more broadly-applicable layer;
+	 * this filter is the second, in case that meta convention has since
+	 * changed underneath it.
+	 *
+	 * NOT independently confirmed against a live Jetpack install — this
+	 * environment cannot install a third-party plugin for testing, the same
+	 * posture already established elsewhere in this codebase for a plugin
+	 * this sandbox can't reach (see the ATmosphere/Friends-plugin/Bridgy Fed
+	 * rows, CLAUDE.md) — flagged for Jeff to verify the filter name and its
+	 * `(bool $should_publicize, WP_Post $post)` signature against Jetpack's
+	 * own current source before relying on either layer alone.
+	 *
+	 * @param bool         $should_publicize Whether Jetpack would otherwise auto-share this post.
+	 * @param WP_Post|null $post             The post being published.
+	 * @return bool
+	 */
+	public function suppress_publicize( $should_publicize, $post ) {
+		if ( $post instanceof WP_Post && '' !== (string) get_post_meta( $post->ID, '_daymark_like_of', true ) ) {
+			return false;
+		}
+
+		return $should_publicize;
+	}
+
+	/**
+	 * The first, more broadly-applicable Jetpack Social/Publicize
+	 * suppression layer — see suppress_publicize() above for the full
+	 * rationale and its own confidence caveat. Jetpack Publicize's own
+	 * historical "this post is already handled, don't auto-share it" post
+	 * meta flag. Must be set BEFORE the post's publish transition fires
+	 * (Publicize hooks that same transition): `Daymark_Publisher::publish()`
+	 * calls this immediately before transitioning a Like Mark from draft to
+	 * publish — the same "insert as draft, apply meta, then go live"
+	 * sequence that method already uses so `Daymark_Publish_Helpers`'
+	 * own adapters can see their control meta before a third-party plugin's
+	 * publish-time hook fires.
+	 *
+	 * @param int $post_id The Like Mark's post ID.
+	 * @return void
+	 */
+	public static function suppress_publicize_on_insert( int $post_id ): void {
+		update_post_meta( $post_id, '_wpas_done_all', 1 );
 	}
 
 	/**

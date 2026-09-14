@@ -319,7 +319,42 @@ class Daymark_Publisher {
 		// written below) so destinations are never even considered for it.
 		// See the "Like Marks never syndicate or appear in site discovery"
 		// decision.
-		$is_like_of = null !== $this->resolve_like_of( $data );
+		$like_of    = $this->resolve_like_of( $data );
+		$repost_of  = $this->resolve_repost_of( $data );
+		$is_like_of = null !== $like_of;
+
+		// Idempotency guard: Like/Repost are instant, tap-to-toggle actions
+		// whose "am I already liked/reposted" state is read from an
+		// in-memory item the client may not have refreshed since another
+		// screen (or an earlier tap) already created one for this exact
+		// target — see "Duplicate Like Marks" investigation. A second tap
+		// that still believes it's un-toggled must reuse the existing,
+		// still-published Mark rather than create a sibling one; a target
+		// whose only match is trashed (the toggle-off path) falls through
+		// and creates a fresh Mark as normal.
+		if ( null !== $like_of ) {
+			$existing_id = $this->find_published_mark_by_target_url( '_daymark_like_of', $like_of );
+
+			if ( 0 !== $existing_id ) {
+				foreach ( $media_ids as $attachment_id ) {
+					wp_delete_attachment( $attachment_id, true );
+				}
+
+				return $existing_id;
+			}
+		}
+
+		if ( null !== $repost_of ) {
+			$existing_id = $this->find_published_mark_by_target_url( '_daymark_repost_of', $repost_of );
+
+			if ( 0 !== $existing_id ) {
+				foreach ( $media_ids as $attachment_id ) {
+					wp_delete_attachment( $attachment_id, true );
+				}
+
+				return $existing_id;
+			}
+		}
 
 		if ( $is_like_of ) {
 			$defaults           = array();
@@ -381,10 +416,14 @@ class Daymark_Publisher {
 		$has_helper_selection = array_key_exists( 'publish_helpers', $data );
 		$helper_selection     = $has_helper_selection ? $this->sanitize_helper_ids( $data['publish_helpers'] ) : array();
 
-		// When helpers are in play we insert as a draft first so the
-		// selection meta is in place before the publish transition fires
-		// each plugin's control filter, then transition to publish below.
-		$defer_helpers = $final_publish && $has_helper_selection;
+		// When helpers are in play — or this is a Like Mark, which needs its
+		// own Jetpack Publicize suppression meta (see
+		// Daymark_Like_Visibility::suppress_publicize_on_insert()) in place
+		// before Jetpack's own publish-time hook fires — insert as a draft
+		// first so the relevant meta is already there when the publish
+		// transition runs each plugin's control filter, then transition to
+		// publish below.
+		$defer_helpers = $final_publish && ( $has_helper_selection || $is_like_of );
 
 		// Quiet capture: camera EXIF (first image only — video/audio never
 		// carry EXIF) is read once here, before the post exists, so its
@@ -511,13 +550,9 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_in_reply_to', $in_reply_to );
 		}
 
-		$repost_of = $this->resolve_repost_of( $data );
-
 		if ( null !== $repost_of ) {
 			update_post_meta( $post_id, '_daymark_repost_of', $repost_of );
 		}
-
-		$like_of = $this->resolve_like_of( $data );
 
 		if ( null !== $like_of ) {
 			update_post_meta( $post_id, '_daymark_like_of', $like_of );
@@ -552,6 +587,10 @@ class Daymark_Publisher {
 		do_action( 'daymark_published', $post_id, $daymark_data );
 
 		if ( $defer_helpers ) {
+			if ( $is_like_of && class_exists( 'Daymark_Like_Visibility' ) ) {
+				Daymark_Like_Visibility::suppress_publicize_on_insert( $post_id );
+			}
+
 			// Meta (incl. the helper selection) is now in place; go live.
 			// The draft→publish transition runs connector syndication via
 			// syndicate_on_publish() and lets each opted-in third-party
@@ -1670,6 +1709,41 @@ class Daymark_Publisher {
 		}
 
 		return $url;
+	}
+
+	/**
+	 * Look up this user's own already-published Like/Repost Mark for a given
+	 * target URL, if one exists — the idempotency check `publish()` runs
+	 * before creating a new one. Scoped to `publish` only (not `draft` or
+	 * `trash`): a Like/Repost Mark is always created already-published, so a
+	 * `trash` match (the toggle-off/undo path) is deliberately treated as "no
+	 * existing Mark" and allowed to create a fresh one.
+	 *
+	 * Same query shape as `Daymark_REST_Controller::find_own_mark_id_by_target_url()`
+	 * (that method also has to tolerate a `draft` Mark carrying `_daymark_in_reply_to`,
+	 * which this one doesn't need to) — personal-site scale, no pagination needed.
+	 *
+	 * @param string $meta_key One of '_daymark_like_of', '_daymark_repost_of'.
+	 * @param string $url      The resolved target URL to match against.
+	 * @return int Existing Mark post ID, or 0 when none found.
+	 */
+	private function find_published_mark_by_target_url( string $meta_key, string $url ): int {
+		$found = get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'author'         => get_current_user_id(),
+				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
+				'meta_value'     => $url, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact match is the point; see docblock above for scale reasoning.
+				'posts_per_page' => 1,
+				'orderby'        => 'ID',
+				'order'          => 'DESC',
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		return ! empty( $found ) ? absint( $found[0] ) : 0;
 	}
 
 	/**
