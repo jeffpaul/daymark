@@ -565,37 +565,42 @@ h2[tabindex='-1']:focus {
 	pointer-events: auto;
 }
 
+/* Five bubbles, evenly spaced every 25° around a single 112px-radius
+   circle centered on the launcher button (140°/115°/90°/65°/40°, measured
+   from the positive x-axis) — image/checkin/note sit at the same angles
+   the original four-bubble ellipse used for image/video/audio/note, but
+   on one shared radius instead of two, so every adjacent pair is the same
+   arc-length apart. The prior design kept the original four's own ellipse
+   coordinates pixel-for-pixel unchanged and only added checkin as a 5th
+   point on top — since that put checkin only ~15° from both video and
+   audio (versus ~35° between every other adjacent pair), it visibly
+   overlapped both. Recomputing all five removes that asymmetry outright. */
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(-50% - 78px), -66px) scale(1);
+	transform: translate(calc(-50% - 86px), -72px) scale(1);
 	opacity: 1;
 	transition-delay: 0.02s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(-50% - 30px), -110px) scale(1);
+	transform: translate(calc(-50% - 47px), -101px) scale(1);
 	opacity: 1;
 	transition-delay: 0.08s;
 }
 
-.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(-50% + 30px), -110px) scale(1);
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
+	transform: translate(-50%, -112px) scale(1);
 	opacity: 1;
 	transition-delay: 0.14s;
 }
 
-.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(-50% + 78px), -66px) scale(1);
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
+	transform: translate(calc(-50% + 47px), -101px) scale(1);
 	opacity: 1;
 	transition-delay: 0.2s;
 }
 
-/* Checkin (issue #143): a straight-up 5th point on the same arc the
-   original four already sit on (radius ~116px — solved from image/note's
-   own (±78px, -66px) and video/audio's own (±30px, -110px) coordinates as
-   points on one ellipse), rather than recomputing all five positions for a
-   symmetric spread — the original four stay pixel-for-pixel unchanged. */
-.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
-	transform: translate(-50%, -116px) scale(1);
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
+	transform: translate(calc(-50% + 86px), -72px) scale(1);
 	opacity: 1;
 	transition-delay: 0.26s;
 }
