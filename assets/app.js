@@ -5750,7 +5750,8 @@
 					state.placeName
 				)}" placeholder="${esc(
 					loading ? __('Detecting your location…', 'daymark') : __('Where are you?', 'daymark')
-				)}" />
+				)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-checkin-place-suggest" />
+				<ul class="daymark-tags__suggest" id="daymark-checkin-place-suggest" data-checkin-place-suggest hidden></ul>
 			</div>`;
 		},
 
@@ -5769,12 +5770,104 @@
 
 		bindPlaceFieldEvents() {
 			const place = root.querySelector('[data-checkin-place]');
-			if (place) {
-				place.addEventListener('input', () => {
-					state.placeName = place.value;
+			if (!place) {
+				return;
+			}
+
+			// Place search-as-you-type: reuses the exact Nominatim host
+			// Daymark_Geocoder::reverse() already calls — one OSM
+			// dependency for both directions, rather than a second
+			// geocoding service just for search — so a Checkin author can
+			// pick a real venue instead of only editing the quietly
+			// reverse-geocoded guess. Debounced and length-gated (never a
+			// fetch per keystroke) to stay well inside Nominatim's usage
+			// policy, the same posture the reverse lookup already takes.
+			const runPlaceSearch = debounce((query) => {
+				if (query.length < 3) {
+					this.hidePlaceSuggestions();
+					return;
+				}
+				apiGet('location/search?q=' + encodeURIComponent(query))
+					.then((result) =>
+						this.renderPlaceSuggestions(Array.isArray(result && result.results) ? result.results : [])
+					)
+					.catch(() => this.hidePlaceSuggestions());
+			}, 400);
+
+			place.addEventListener('input', () => {
+				state.placeName = place.value;
+				state.placeNameEdited = true;
+				scheduleAutosave();
+				runPlaceSearch(place.value.trim());
+			});
+			place.addEventListener('keydown', (event) => {
+				if ('Escape' === event.key) {
+					this.hidePlaceSuggestions();
+				}
+			});
+			place.addEventListener('blur', () => {
+				// Let a suggestion tap register before the list disappears —
+				// the same delay the tag autocomplete's own input blur
+				// already uses.
+				setTimeout(() => this.hidePlaceSuggestions(), 150);
+			});
+		},
+
+		// Render the Place field's search-as-you-type suggestions — reuses
+		// the exact `.daymark-tags__suggest`/`.daymark-tags__suggestitem`
+		// markup/CSS the AI-Assist tag autocomplete already established,
+		// so this needed no new styling.
+		renderPlaceSuggestions(results) {
+			const list = root.querySelector('[data-checkin-place-suggest]');
+			const input = root.querySelector('[data-checkin-place]');
+			if (!list || !input) {
+				return;
+			}
+			if (!results.length) {
+				this.hidePlaceSuggestions();
+				return;
+			}
+			list.innerHTML = results
+				.map(
+					(result, index) =>
+						`<li><button type="button" class="daymark-tags__suggestitem" data-checkin-place-pick="${index}">${esc(
+							result.place_name
+						)}</button></li>`
+				)
+				.join('');
+			list.hidden = false;
+			input.setAttribute('aria-expanded', 'true');
+			list.querySelectorAll('[data-checkin-place-pick]').forEach((button) => {
+				button.addEventListener('mousedown', (event) => {
+					// mousedown (not click) fires before the input's own blur handler.
+					event.preventDefault();
+					const picked = results[Number(button.getAttribute('data-checkin-place-pick'))];
+					if (!picked) {
+						return;
+					}
+					state.placeName = picked.place_name;
 					state.placeNameEdited = true;
+					// A searched-and-picked venue is the intended checkin
+					// location even when it differs from the quietly
+					// captured device GPS — the same "explicit input wins
+					// over background capture" precedent
+					// titleEdited/altEdited/tagsEdited already establish.
+					state.location = { lat: picked.lat, lng: picked.lng };
+					input.value = picked.place_name;
+					this.hidePlaceSuggestions();
 					scheduleAutosave();
 				});
+			});
+		},
+
+		hidePlaceSuggestions() {
+			const list = root.querySelector('[data-checkin-place-suggest]');
+			const input = root.querySelector('[data-checkin-place]');
+			if (list) {
+				list.hidden = true;
+			}
+			if (input) {
+				input.setAttribute('aria-expanded', 'false');
 			}
 		},
 

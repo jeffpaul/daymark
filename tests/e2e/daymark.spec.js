@@ -1058,6 +1058,40 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
 });
 
+// The Checkin Place field's own search-as-you-type: typing 3+ characters
+// shows a suggestion list, and tapping one fills the field with that
+// suggestion's own place name. The outbound Nominatim call this ultimately
+// makes happens server-side (Daymark_Geocoder::search()), so it's covered
+// by PHPUnit, not here — this test mocks the REST route itself, the same
+// way this suite already mocks GET /timeline and other endpoints, rather
+// than depending on a live third-party network response in CI.
+test('Checkin Place field shows and picks a search suggestion', async ({ page }) => {
+	await page.route('**/daymark/v1/location/search*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				results: [{ place_name: 'Blue Bottle Coffee, San Francisco', lat: 37.7749, lng: -122.4194 }],
+			}),
+		});
+	});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	const place = composer.locator('[data-checkin-place]');
+	await place.fill('Blue Bottle');
+
+	const suggestion = page.locator('[data-checkin-place-pick]', { hasText: 'Blue Bottle Coffee, San Francisco' });
+	await expect(suggestion).toBeVisible();
+	await suggestion.click();
+
+	await expect(place).toHaveValue('Blue Bottle Coffee, San Francisco');
+	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
+});
+
 // A small decorative touch bookending Home's own vertical rail: a
 // "sunrise" mark where it begins, a "sunset" mark where it currently
 // ends — both hidden while the Timeline is empty (CSS gates them on the

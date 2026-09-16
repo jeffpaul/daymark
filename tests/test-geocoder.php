@@ -82,6 +82,24 @@ class Test_Geocoder extends WP_UnitTestCase {
 		);
 	}
 
+	/**
+	 * @param string $body Response body.
+	 * @param int    $code HTTP status code.
+	 * @return void
+	 */
+	private function mock_nominatim_search_response( string $body, int $code = 200 ): void {
+		$this->http_responses['https://nominatim.openstreetmap.org/search'] = array(
+			'headers'  => array(),
+			'body'     => $body,
+			'response' => array(
+				'code'    => $code,
+				'message' => 200 === $code ? 'OK' : 'Error',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
+
 	/** A named point-of-interest (amenity) plus city reads as "Venue, City". */
 	public function test_reverse_prefers_a_named_amenity_over_the_full_address() {
 		$this->mock_nominatim_response(
@@ -169,5 +187,135 @@ class Test_Geocoder extends WP_UnitTestCase {
 
 		$this->assertNull( $data['place_name'] );
 		$this->assertSame( 0, $this->request_count, 'An invalid coordinate must never reach the outbound geocoder.' );
+	}
+
+	/** search() reduces Nominatim's own search-result array into place_name/lat/lng entries. */
+	public function test_search_returns_place_name_lat_lng_for_each_result() {
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name' => 'Blue Bottle Coffee',
+						'lat'  => '37.7749',
+						'lon'  => '-122.4194',
+					),
+					array(
+						'display_name' => 'Golden Gate Park, San Francisco, California, USA',
+						'lat'          => '37.7694',
+						'lon'          => '-122.4862',
+					),
+				)
+			)
+		);
+
+		$results = Daymark_Geocoder::search( 'coffee' );
+
+		$this->assertCount( 2, $results );
+		$this->assertSame( 'Blue Bottle Coffee', $results[0]['place_name'] );
+		$this->assertSame( 37.7749, $results[0]['lat'] );
+		$this->assertSame( -122.4194, $results[0]['lng'] );
+		$this->assertSame( 'Golden Gate Park, San Francisco', $results[1]['place_name'] );
+	}
+
+	/** An empty query never reaches Nominatim at all. */
+	public function test_search_returns_empty_array_for_blank_query() {
+		$this->assertSame( array(), Daymark_Geocoder::search( '   ' ) );
+		$this->assertSame( 0, $this->request_count );
+	}
+
+	/** A non-200 response degrades to an empty array, never a thrown error. */
+	public function test_search_returns_empty_array_on_http_failure() {
+		$this->mock_nominatim_search_response( '', 500 );
+
+		$this->assertSame( array(), Daymark_Geocoder::search( 'anywhere' ) );
+	}
+
+	/** A malformed (non-JSON-array) body degrades to an empty array. */
+	public function test_search_returns_empty_array_on_malformed_body() {
+		$this->mock_nominatim_search_response( 'not json' );
+
+		$this->assertSame( array(), Daymark_Geocoder::search( 'anywhere' ) );
+	}
+
+	/** A result missing usable coordinates is skipped rather than included with garbage lat/lng. */
+	public function test_search_skips_results_missing_coordinates() {
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array( 'name' => 'No Coordinates Here' ),
+					array(
+						'name' => 'Has Coordinates',
+						'lat'  => '1.0',
+						'lon'  => '2.0',
+					),
+				)
+			)
+		);
+
+		$results = Daymark_Geocoder::search( 'anywhere' );
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( 'Has Coordinates', $results[0]['place_name'] );
+	}
+
+	/** A second search for the same query is served from cache, not a live request. */
+	public function test_search_caches_by_query() {
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name' => 'Cached Venue',
+						'lat'  => '1.0',
+						'lon'  => '2.0',
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'Cached Venue', Daymark_Geocoder::search( 'Venue' )[0]['place_name'] );
+		$this->assertSame( 1, $this->request_count );
+
+		// Same query, different case — the cache key is lowercased.
+		$this->assertSame( 'Cached Venue', Daymark_Geocoder::search( 'venue' )[0]['place_name'] );
+		$this->assertSame( 1, $this->request_count );
+	}
+
+	/** GET /daymark/v1/location/search wraps Daymark_Geocoder::search(). */
+	public function test_rest_search_route_returns_results() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name' => 'Blue Bottle Coffee',
+						'lat'  => '37.7749',
+						'lon'  => '-122.4194',
+					),
+				)
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/location/search' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'q', 'coffee' );
+
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertCount( 1, $data['results'] );
+		$this->assertSame( 'Blue Bottle Coffee', $data['results'][0]['place_name'] );
+	}
+
+	/** An empty query never reaches the outbound geocoder — the endpoint just reports no results. */
+	public function test_rest_search_route_returns_empty_results_for_blank_query() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/location/search' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'q', '   ' );
+
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertSame( array(), $data['results'] );
+		$this->assertSame( 0, $this->request_count );
 	}
 }

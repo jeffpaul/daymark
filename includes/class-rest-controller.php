@@ -332,6 +332,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/location/search',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'location_search' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'q' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)',
 			array(
 				array(
@@ -1526,6 +1543,39 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return rest_ensure_response(
 			array(
 				'place_name' => Daymark_Geocoder::reverse( (float) $lat, (float) $lng ),
+			)
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/location/search — forward place search ("search as
+	 * you type") for the Checkin composer's own Place field, so an author
+	 * can pick a real venue instead of only editing the quietly
+	 * reverse-geocoded guess. Delegates to Daymark_Geocoder::search(),
+	 * sharing the same rate-limit bucket as the reverse lookup above —
+	 * one OSM dependency, one outbound-request risk class.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function location_search( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_LOCATION_LOOKUP );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$query = trim( (string) $request->get_param( 'q' ) );
+
+		if ( '' === $query ) {
+			return rest_ensure_response( array( 'results' => array() ) );
+		}
+
+		return rest_ensure_response(
+			array(
+				'results' => Daymark_Geocoder::search( $query ),
 			)
 		);
 	}

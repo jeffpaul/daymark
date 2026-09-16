@@ -77,6 +77,128 @@ class Daymark_Geocoder {
 	}
 
 	/**
+	 * Forward place search — the Checkin composer's own "search as you
+	 * type" typeahead, via the exact same Nominatim host reverse() already
+	 * calls (one OSM dependency for both directions, rather than adding a
+	 * second geocoding service just for search). Each result is reduced
+	 * through the same extract_place_name() a reverse lookup already uses,
+	 * so a picked suggestion and a quietly reverse-geocoded guess read as
+	 * the same kind of text in the Place field.
+	 *
+	 * Cached by the lowercased query (a shorter TTL than reverse()'s own —
+	 * a search result is more likely to be refined by further typing
+	 * within the same session than repeated verbatim) — never throws,
+	 * degrading to an empty array on any failure so a failed lookup just
+	 * shows no suggestions rather than an error.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param string $query Free-text place search query.
+	 * @param int    $limit Maximum number of results. Capped to 10.
+	 * @return array<int, array{place_name: string, lat: float, lng: float}>
+	 */
+	public static function search( string $query, int $limit = 5 ): array {
+		$query = trim( $query );
+
+		if ( '' === $query ) {
+			return array();
+		}
+
+		$limit = max( 1, min( 10, $limit ) );
+
+		$cache_key = 'daymark_geosearch_' . md5( mb_strtolower( $query ) . '|' . $limit );
+		$cached    = get_transient( $cache_key );
+
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$results = self::fetch_search( $query, $limit );
+
+		/**
+		 * Filters how long a forward place-search result (including an
+		 * empty one, cached the same way) is cached for.
+		 *
+		 * @since 0.17.0
+		 *
+		 * @param int $seconds Defaults to 10 minutes.
+		 */
+		$ttl = max( MINUTE_IN_SECONDS, (int) apply_filters( 'daymark_geocode_search_cache_ttl', 10 * MINUTE_IN_SECONDS ) );
+
+		set_transient( $cache_key, $results, $ttl );
+
+		return $results;
+	}
+
+	/**
+	 * The actual live search lookup, split out from search() so its own
+	 * early returns don't have to duplicate the caching wrapper above.
+	 *
+	 * @param string $query Free-text place search query.
+	 * @param int    $limit Maximum number of results.
+	 * @return array<int, array{place_name: string, lat: float, lng: float}>
+	 */
+	private static function fetch_search( string $query, int $limit ): array {
+		try {
+			$url = add_query_arg(
+				array(
+					'format'         => 'jsonv2',
+					'q'              => $query,
+					'limit'          => $limit,
+					'addressdetails' => 1,
+				),
+				'https://nominatim.openstreetmap.org/search'
+			);
+
+			$timeout = max( 1, (int) apply_filters( 'daymark_geocode_fetch_timeout', 4 ) );
+
+			$response = wp_safe_remote_get(
+				$url,
+				array(
+					'timeout' => $timeout,
+					'headers' => array(
+						'User-Agent' => 'Daymark WordPress Plugin (' . home_url( '/' ) . ')',
+					),
+				)
+			);
+
+			if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+				return array();
+			}
+
+			$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+
+			if ( ! is_array( $body ) ) {
+				return array();
+			}
+
+			$results = array();
+
+			foreach ( $body as $item ) {
+				if ( ! is_array( $item ) || ! isset( $item['lat'], $item['lon'] ) || ! is_numeric( $item['lat'] ) || ! is_numeric( $item['lon'] ) ) {
+					continue;
+				}
+
+				$place_name = self::extract_place_name( $item );
+
+				if ( null === $place_name ) {
+					continue;
+				}
+
+				$results[] = array(
+					'place_name' => $place_name,
+					'lat'        => (float) $item['lat'],
+					'lng'        => (float) $item['lon'],
+				);
+			}
+
+			return $results;
+		} catch ( Throwable $e ) {
+			return array();
+		}
+	}
+
+	/**
 	 * The actual live lookup, split out from reverse() so its own early
 	 * returns don't have to duplicate the caching wrapper above.
 	 *
