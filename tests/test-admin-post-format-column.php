@@ -37,13 +37,6 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 
 	public function tear_down() {
 		remove_theme_support( 'post-formats' );
-		// add_theme_support( 'post-formats', ... ) has a core side effect of
-		// calling add_post_type_support( 'post', 'post-formats' ) — but
-		// remove_theme_support() never calls the reverse. Without this,
-		// post_type_supports( 'post', 'post-formats' ) would stay true for
-		// the rest of the PHPUnit process once this file's first test runs,
-		// leaking into every other test file that runs afterward.
-		remove_post_type_support( 'post', 'post-formats' );
 		remove_filter( 'manage_post_posts_columns', array( $this->column, 'add_column' ) );
 		remove_action( 'manage_post_posts_custom_column', array( $this->column, 'render_column' ) );
 		remove_filter( 'manage_edit-post_sortable_columns', array( $this->column, 'add_sortable_column' ) );
@@ -269,11 +262,14 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 	}
 
 	public function test_register_does_not_hook_the_column_for_post_when_post_formats_is_unsupported() {
-		remove_theme_support( 'post-formats' );
-		// See tear_down()'s own comment: remove_theme_support() alone does not
-		// undo add_theme_support()'s add_post_type_support() side effect, so
-		// post_type_supports( 'post', 'post-formats' ) needs clearing directly
-		// for this test to actually exercise the "unsupported" case.
+		// remove_theme_support( 'post-formats' ) alone does not undo
+		// add_theme_support()'s own add_post_type_support( 'post',
+		// 'post-formats' ) side effect, so that flag needs clearing directly
+		// to actually exercise the "unsupported" case — and, since (unlike
+		// theme features) that flag isn't reset between tests by core's own
+		// test suite, it must be restored before this test ends: other test
+		// files (e.g. Test_Publisher, Test_Rest_Timeline) assume 'post'
+		// supports post-formats for the rest of the PHPUnit process.
 		remove_post_type_support( 'post', 'post-formats' );
 
 		$this->column->register();
@@ -281,5 +277,7 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 		$this->assertFalse( has_filter( 'manage_post_posts_columns', array( $this->column, 'add_column' ) ) );
 		$this->assertFalse( has_action( 'manage_post_posts_custom_column', array( $this->column, 'render_column' ) ) );
 		$this->assertFalse( has_filter( 'manage_edit-post_sortable_columns', array( $this->column, 'add_sortable_column' ) ) );
+
+		add_post_type_support( 'post', 'post-formats' );
 	}
 }
