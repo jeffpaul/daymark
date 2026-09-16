@@ -167,11 +167,22 @@ class Daymark_Admin_Post_Format_Column {
 	 * Post formats are `post_format` taxonomy terms, not a plain post
 	 * column, so this can't be a simple `orderby => 'meta_value'`-style
 	 * swap — it joins to the term tables directly, the same way any
-	 * taxonomy-backed admin column sort has to. A LEFT JOIN (never an INNER
-	 * JOIN) is required so a Standard post — one with no `post_format` term
-	 * at all — still appears in the results; `COALESCE` gives that missing
-	 * term a stable sort key (the same string a real 'standard' term would
-	 * have used, had one existed) so every Standard post sorts together,
+	 * taxonomy-backed admin column sort has to. The join is a LEFT JOIN to a
+	 * derived subquery — pre-filtered to `taxonomy = 'post_format'` before
+	 * it ever reaches `{$wpdb->posts}` — rather than three separate LEFT
+	 * JOINs chained directly off `{$wpdb->term_relationships}`: every post
+	 * also carries at least one unrelated term relationship (its category,
+	 * at minimum), and joining `term_relationships` to `{$wpdb->posts}`
+	 * before the taxonomy is known would match those too, multiplying a
+	 * formatted post into two result rows — one for its real `post_format`
+	 * relationship, one for its category relationship falling through to a
+	 * `NULL` match on the taxonomy-filtered join. Restricting the taxonomy
+	 * inside the subquery means only a genuine `post_format` relationship
+	 * (or none) ever reaches the outer join, so a Standard post — one with
+	 * no `post_format` term at all — still appears exactly once, via the
+	 * LEFT JOIN's own `NULL` extension; `COALESCE` gives that missing term a
+	 * stable sort key (the same string a real 'standard' term would have
+	 * used, had one existed) so every Standard post sorts together,
 	 * consistently, in both directions, rather than landing wherever a raw
 	 * `NULL` happens to sort in MySQL. Post title is always the secondary
 	 * sort key, preserving the normal tie-break a reader would expect when
@@ -179,16 +190,16 @@ class Daymark_Admin_Post_Format_Column {
 	 *
 	 * Deliberately no `GROUP BY`: `post_format` is a single-value taxonomy —
 	 * `set_post_format()`/`wp_set_post_terms()` always replace rather than
-	 * append — so a post can never have more than one `post_format` term
-	 * relationship for this join to multiply rows over. Adding one anyway
-	 * (as an earlier draft of this method did) breaks under MySQL's default
+	 * append — and the subquery's own filtering means only a `post_format`
+	 * relationship can ever reach the outer join, so a post can never
+	 * multiply into more than one output row here. Adding one anyway (as an
+	 * earlier draft of this method did) breaks under MySQL's default
 	 * `ONLY_FULL_GROUP_BY` mode: grouping by `{$wpdb->posts}.ID` alone while
-	 * `ORDER BY` references a column from the joined term tables isn't
+	 * `ORDER BY` references a column from the joined subquery isn't
 	 * recognized by MySQL as functionally dependent on that group, so the
 	 * query errors outright — silently, from `WP_Query`'s own perspective,
 	 * since a failed `$wpdb->get_results()` call just yields zero posts.
 	 *
-
 	 * Scoped narrowly: only the exact `orderby` key this class itself
 	 * registers as sortable, and only on the matching post type's own list
 	 * table screen — `get_current_screen()`, not `is_admin()`, is the check
@@ -226,11 +237,14 @@ class Daymark_Admin_Post_Format_Column {
 
 		$order = 'ASC' === strtoupper( (string) $query->get( 'order' ) ) ? 'ASC' : 'DESC';
 
-		$clauses['join'] .= " LEFT JOIN {$wpdb->term_relationships} AS daymark_pf_tr ON ( {$wpdb->posts}.ID = daymark_pf_tr.object_id )"
-			. " LEFT JOIN {$wpdb->term_taxonomy} AS daymark_pf_tt ON ( daymark_pf_tr.term_taxonomy_id = daymark_pf_tt.term_taxonomy_id AND daymark_pf_tt.taxonomy = 'post_format' )"
-			. " LEFT JOIN {$wpdb->terms} AS daymark_pf_t ON ( daymark_pf_tt.term_id = daymark_pf_t.term_id )"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table names only, not user input.
+		$clauses['join'] .= ' LEFT JOIN ('
+			. ' SELECT daymark_pf_tr.object_id AS object_id, daymark_pf_t.slug AS slug'
+			. " FROM {$wpdb->term_relationships} AS daymark_pf_tr"
+			. " INNER JOIN {$wpdb->term_taxonomy} AS daymark_pf_tt ON ( daymark_pf_tr.term_taxonomy_id = daymark_pf_tt.term_taxonomy_id AND daymark_pf_tt.taxonomy = 'post_format' )"
+			. " INNER JOIN {$wpdb->terms} AS daymark_pf_t ON ( daymark_pf_tt.term_id = daymark_pf_t.term_id )"
+			. " ) AS daymark_pf ON ( {$wpdb->posts}.ID = daymark_pf.object_id )"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table names only, not user input.
 
-		$clauses['orderby'] = "COALESCE( daymark_pf_t.slug, 'post-format-standard' ) {$order}, {$wpdb->posts}.post_title ASC"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- $order is validated to one of two literal values above, not user input.
+		$clauses['orderby'] = "COALESCE( daymark_pf.slug, 'post-format-standard' ) {$order}, {$wpdb->posts}.post_title ASC"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- $order is validated to one of two literal values above, not user input.
 
 		return $clauses;
 	}
