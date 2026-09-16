@@ -217,6 +217,68 @@ class Test_Geocoder extends WP_UnitTestCase {
 		$this->assertSame( 'Golden Gate Park, San Francisco', $results[1]['place_name'] );
 	}
 
+	/** Each result also carries Nominatim's own full formatted address, for disambiguating similarly-named results. */
+	public function test_search_includes_full_address_alongside_place_name() {
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name'         => 'Blue Bottle Coffee',
+						'display_name' => 'Blue Bottle Coffee, 66 Mint St, San Francisco, CA, USA',
+						'lat'          => '37.7749',
+						'lon'          => '-122.4194',
+					),
+				)
+			)
+		);
+
+		$results = Daymark_Geocoder::search( 'blue bottle' );
+
+		$this->assertSame( 'Blue Bottle Coffee, 66 Mint St, San Francisco, CA, USA', $results[0]['address'] );
+	}
+
+	/** A missing display_name degrades to an empty address string, not a missing key or an error. */
+	public function test_search_result_with_no_display_name_has_empty_address() {
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name' => 'Blue Bottle Coffee',
+						'lat'  => '37.7749',
+						'lon'  => '-122.4194',
+					),
+				)
+			)
+		);
+
+		$results = Daymark_Geocoder::search( 'blue bottle' );
+
+		$this->assertSame( '', $results[0]['address'] );
+	}
+
+	/** A very long display_name is capped, but to a longer limit than the short place-name cap. */
+	public function test_search_address_is_capped_but_longer_than_place_name_cap() {
+		$long_address = 'Blue Bottle Coffee, ' . str_repeat( 'Very Long Street Name ', 10 ) . 'San Francisco, CA, USA';
+
+		$this->mock_nominatim_search_response(
+			wp_json_encode(
+				array(
+					array(
+						'name'         => 'Blue Bottle Coffee',
+						'display_name' => $long_address,
+						'lat'          => '37.7749',
+						'lon'          => '-122.4194',
+					),
+				)
+			)
+		);
+
+		$results = Daymark_Geocoder::search( 'blue bottle' );
+
+		$this->assertLessThanOrEqual( 120, mb_strlen( $results[0]['address'] ) );
+		$this->assertGreaterThan( 60, mb_strlen( $results[0]['address'] ) );
+	}
+
 	/** An empty query never reaches Nominatim at all. */
 	public function test_search_returns_empty_array_for_blank_query() {
 		$this->assertSame( array(), Daymark_Geocoder::search( '   ' ) );

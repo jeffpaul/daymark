@@ -5815,8 +5815,9 @@
 
 		// Render the Place field's search-as-you-type suggestions — reuses
 		// the exact `.daymark-tags__suggest`/`.daymark-tags__suggestitem`
-		// markup/CSS the AI-Assist tag autocomplete already established,
-		// so this needed no new styling.
+		// shell/interaction the AI-Assist tag autocomplete already
+		// established; the two-line name+address layout inside each item is
+		// new (see the doc comment inline below).
 		renderPlaceSuggestions(results) {
 			const list = root.querySelector('[data-checkin-place-suggest]');
 			const input = root.querySelector('[data-checkin-place]');
@@ -5828,12 +5829,22 @@
 				return;
 			}
 			list.innerHTML = results
-				.map(
-					(result, index) =>
-						`<li><button type="button" class="daymark-tags__suggestitem" data-checkin-place-pick="${index}">${esc(
-							result.place_name
-						)}</button></li>`
-				)
+				.map((result, index) => {
+					// A result's full address (when present, and only when
+					// it isn't simply a repeat of the short place name
+					// already shown) renders as a second, muted line inside
+					// the same button — disambiguating two similarly-named
+					// results (two "Blue Bottle Coffee" locations in
+					// different cities) — never written into the Place
+					// field itself on a pick.
+					const address =
+						result.address && result.address !== result.place_name
+							? `<span class="daymark-tags__suggestitem-address">${esc(result.address)}</span>`
+							: '';
+					return `<li><button type="button" class="daymark-tags__suggestitem daymark-tags__suggestitem--place" data-checkin-place-pick="${index}"><span class="daymark-tags__suggestitem-name">${esc(
+						result.place_name
+					)}</span>${address}</button></li>`;
+				})
 				.join('');
 			list.hidden = false;
 			input.setAttribute('aria-expanded', 'true');

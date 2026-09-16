@@ -15,6 +15,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Geocoder {
 
 	/**
+	 * Cap for a search result's full address string — deliberately more
+	 * generous than the short place-name cap (`daymark_title_max_chars`,
+	 * 60 by default): a full formatted address is expected to run longer,
+	 * and cutting it too aggressively would defeat its one job (helping
+	 * tell two similarly-named results apart).
+	 *
+	 * @var int
+	 */
+	const ADDRESS_MAX_CHARS = 120;
+
+	/**
 	 * Best-effort reverse-geocode a lat/lng pair into a short, human-
 	 * readable place name via Nominatim (OpenStreetMap's own free, keyless
 	 * geocoder) — chosen for the same reason Daymark_Publisher::fetch_weather()
@@ -80,10 +91,15 @@ class Daymark_Geocoder {
 	 * Forward place search — the Checkin composer's own "search as you
 	 * type" typeahead, via the exact same Nominatim host reverse() already
 	 * calls (one OSM dependency for both directions, rather than adding a
-	 * second geocoding service just for search). Each result is reduced
-	 * through the same extract_place_name() a reverse lookup already uses,
-	 * so a picked suggestion and a quietly reverse-geocoded guess read as
-	 * the same kind of text in the Place field.
+	 * second geocoding service just for search). Each result's place_name
+	 * is reduced through the same extract_place_name() a reverse lookup
+	 * already uses, so a picked suggestion and a quietly reverse-geocoded
+	 * guess read as the same kind of text in the Place field; each result
+	 * also carries Nominatim's own full formatted address (display_name)
+	 * separately, so the composer can show it alongside the short name to
+	 * help disambiguate two similarly-named results (e.g. two "Blue Bottle
+	 * Coffee" locations in different cities) — never written into the
+	 * Place field itself on a pick, just shown in the suggestion list.
 	 *
 	 * Cached by the lowercased query (a shorter TTL than reverse()'s own —
 	 * a search result is more likely to be refined by further typing
@@ -95,7 +111,7 @@ class Daymark_Geocoder {
 	 *
 	 * @param string $query Free-text place search query.
 	 * @param int    $limit Maximum number of results. Capped to 10.
-	 * @return array<int, array{place_name: string, lat: float, lng: float}>
+	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
 	 */
 	public static function search( string $query, int $limit = 5 ): array {
 		$query = trim( $query );
@@ -136,7 +152,7 @@ class Daymark_Geocoder {
 	 *
 	 * @param string $query Free-text place search query.
 	 * @param int    $limit Maximum number of results.
-	 * @return array<int, array{place_name: string, lat: float, lng: float}>
+	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
 	 */
 	private static function fetch_search( string $query, int $limit ): array {
 		try {
@@ -185,8 +201,13 @@ class Daymark_Geocoder {
 					continue;
 				}
 
+				$address = isset( $item['display_name'] ) && is_string( $item['display_name'] )
+					? self::trim_place( $item['display_name'], self::ADDRESS_MAX_CHARS )
+					: '';
+
 				$results[] = array(
 					'place_name' => $place_name,
+					'address'    => $address,
 					'lat'        => (float) $item['lat'],
 					'lng'        => (float) $item['lon'],
 				);
@@ -304,11 +325,16 @@ class Daymark_Geocoder {
 	 * Nominatim result can never blow out the composer's Place field or
 	 * the generated "Checked in at …" title.
 	 *
-	 * @param string $place Raw place text.
+	 * @param string   $place     Raw place text.
+	 * @param int|null $max_chars Override the default cap — used for the
+	 *                            full address string, which is legitimately
+	 *                            longer than a short place name and only
+	 *                            ever shown as disambiguating suggestion
+	 *                            text, never written into a title.
 	 * @return string
 	 */
-	private static function trim_place( string $place ): string {
-		$max_chars = (int) apply_filters( 'daymark_title_max_chars', 60 );
+	private static function trim_place( string $place, ?int $max_chars = null ): string {
+		$max_chars ??= (int) apply_filters( 'daymark_title_max_chars', 60 );
 
 		if ( mb_strlen( $place ) <= $max_chars ) {
 			return $place;

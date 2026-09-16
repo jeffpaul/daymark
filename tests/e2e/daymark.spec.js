@@ -1066,12 +1066,28 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 // way this suite already mocks GET /timeline and other endpoints, rather
 // than depending on a live third-party network response in CI.
 test('Checkin Place field shows and picks a search suggestion', async ({ page }) => {
+	// Two similarly-named results, each with its own full address — the
+	// address is what should let a reader tell them apart in the list; the
+	// picked field value should still be just the short place name.
 	await page.route('**/daymark/v1/location/search*', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
 			body: JSON.stringify({
-				results: [{ place_name: 'Blue Bottle Coffee, San Francisco', lat: 37.7749, lng: -122.4194 }],
+				results: [
+					{
+						place_name: 'Blue Bottle Coffee',
+						address: 'Blue Bottle Coffee, 66 Mint St, San Francisco, CA, USA',
+						lat: 37.7749,
+						lng: -122.4194,
+					},
+					{
+						place_name: 'Blue Bottle Coffee',
+						address: 'Blue Bottle Coffee, 1 Rockefeller Plaza, New York, NY, USA',
+						lat: 40.7589,
+						lng: -73.9789,
+					},
+				],
 			}),
 		});
 	});
@@ -1084,11 +1100,15 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 	const place = composer.locator('[data-checkin-place]');
 	await place.fill('Blue Bottle');
 
-	const suggestion = page.locator('[data-checkin-place-pick]', { hasText: 'Blue Bottle Coffee, San Francisco' });
-	await expect(suggestion).toBeVisible();
-	await suggestion.click();
+	const suggestions = page.locator('[data-checkin-place-pick]');
+	await expect(suggestions).toHaveCount(2);
+	await expect(suggestions.first()).toContainText('San Francisco, CA, USA');
+	await expect(suggestions.nth(1)).toContainText('New York, NY, USA');
 
-	await expect(place).toHaveValue('Blue Bottle Coffee, San Francisco');
+	await suggestions.first().click();
+
+	// The field itself gets only the short place name, not the address.
+	await expect(place).toHaveValue('Blue Bottle Coffee');
 	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
 });
 

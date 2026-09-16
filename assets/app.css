@@ -2167,6 +2167,22 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-accent-wash);
 }
 
+/* The Checkin Place field's own search-as-you-type suggestions carry a
+   second, muted address line for disambiguating similarly-named results —
+   the tag autocomplete's plain single-line items never needed this, so
+   these two rules are scoped to the `--place` modifier only. */
+.daymark-tags__suggestitem--place {
+	flex-direction: column;
+	align-items: flex-start;
+	height: auto;
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+}
+
+.daymark-tags__suggestitem-address {
+	font-size: 12px;
+	color: var(--daymark-text-muted);
+}
+
 .daymark-tags__addrow .daymark-btn--secondary {
 	width: auto;
 	flex-shrink: 0;
