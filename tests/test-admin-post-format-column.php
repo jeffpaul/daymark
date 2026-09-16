@@ -183,10 +183,16 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 	 */
 	public function test_sorting_groups_standard_posts_and_orders_by_format_then_title() {
 		set_current_screen( 'edit-post' );
-		// A real WP_Query only runs sort_by_format() via the posts_clauses
-		// filter register() actually hooks — unlike the narrower unit tests
-		// above, which call sort_by_format() directly and need no hook.
-		$this->column->register();
+		// Deliberately does NOT call $this->column->register(): the real
+		// plugin bootstrap (Daymark_Plugin::instance(), loaded once for the
+		// whole PHPUnit run) already has its own Daymark_Admin_Post_Format_
+		// Column instance permanently hooked onto posts_clauses — registering
+		// a second instance here would make BOTH fire on the same real
+		// WP_Query below, each appending its own copy of the LEFT JOINs and
+		// producing a genuine "Not unique table/alias" SQL error. Letting the
+		// already-registered singleton do the real work is also the more
+		// realistic test: in production there is only ever one such
+		// instance active, never two.
 
 		$video_banana    = self::factory()->post->create(
 			array(
