@@ -1033,6 +1033,31 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// A Checkin Mark (issue #143) has no media picker at all — a manually
+// typed Place (geolocation is neither granted nor mocked in this test
+// context, so the field starts blank rather than reverse-geocoded) is
+// itself real, sufficient content: publishing succeeds with no caption,
+// and the auto-generated title reads "Checked in at {place}".
+test('Checkin Mark publishes from just a Place, with no caption or media', async ({ page }) => {
+	const place = `E2E Coffee Shop ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	await expect(composer.locator('#daymark-file-input')).toHaveCount(0);
+	await composer.locator('[data-checkin-place]').fill(place);
+	await page.locator('[data-action="next"]').click();
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="checkin"]').click();
+	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
+});
+
 // A small decorative touch bookending Home's own vertical rail: a
 // "sunrise" mark where it begins, a "sunset" mark where it currently
 // ends — both hidden while the Timeline is empty (CSS gates them on the

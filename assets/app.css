@@ -589,6 +589,17 @@ h2[tabindex='-1']:focus {
 	transition-delay: 0.2s;
 }
 
+/* Checkin (issue #143): a straight-up 5th point on the same arc the
+   original four already sit on (radius ~116px — solved from image/note's
+   own (±78px, -66px) and video/audio's own (±30px, -110px) coordinates as
+   points on one ellipse), rather than recomputing all five positions for a
+   symmetric spread — the original four stay pixel-for-pixel unchanged. */
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
+	transform: translate(-50%, -116px) scale(1);
+	opacity: 1;
+	transition-delay: 0.26s;
+}
+
 /* Closing is quicker and never staggered — snappy, not delightful. */
 .daymark-launcher:not(.is-open) .daymark-launcher__bubble {
 	transition: transform 0.16s ease-in, opacity 0.14s ease-in;
@@ -1409,9 +1420,12 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Explore --- */
+/* auto-fit (not a fixed repeat(4, 1fr)) so a 5th type (Checkin, issue
+   #143) wraps to its own evenly-sized row instead of a lone narrow item
+   stranded under an otherwise-empty row. */
 .daymark-exploretypes {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
 	gap: var(--daymark-spacing-sm);
 }
 

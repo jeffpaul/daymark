@@ -1,0 +1,173 @@
+<?php
+/**
+ * Daymark_Geocoder tests (issue #143) — best-effort reverse geocoding for
+ * the Checkin Mark type.
+ *
+ * All HTTP is mocked via `pre_http_request`, matching the existing pattern
+ * in tests/test-comment-delivery.php.
+ *
+ * @package Daymark
+ */
+
+/**
+ * Tests Daymark_Geocoder::reverse().
+ */
+class Test_Geocoder extends WP_UnitTestCase {
+
+	/**
+	 * URL => canned wp_remote_get()-shaped response.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $http_responses = array();
+
+	/**
+	 * How many times the mocked HTTP filter was actually invoked for a
+	 * request that matched a canned response — used to assert caching
+	 * avoids a second live lookup.
+	 *
+	 * @var int
+	 */
+	private int $request_count = 0;
+
+	public function set_up(): void {
+		parent::set_up();
+
+		$this->http_responses = array();
+		$this->request_count  = 0;
+
+		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
+	}
+
+	public function tear_down(): void {
+		remove_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10 );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @param mixed  $preempt     Existing short-circuit value.
+	 * @param array  $parsed_args Request args (unused).
+	 * @param string $url         Requested URL.
+	 * @return mixed
+	 */
+	public function intercept_http_request( $preempt, $parsed_args, $url ) {
+		unset( $parsed_args );
+
+		foreach ( $this->http_responses as $prefix => $response ) {
+			if ( str_starts_with( $url, $prefix ) ) {
+				++$this->request_count;
+				return $response;
+			}
+		}
+
+		return new WP_Error( 'daymark_test_http_blocked', 'Unmocked HTTP request blocked in test: ' . $url );
+	}
+
+	/**
+	 * @param string $body Response body.
+	 * @param int    $code HTTP status code.
+	 * @return void
+	 */
+	private function mock_nominatim_response( string $body, int $code = 200 ): void {
+		$this->http_responses['https://nominatim.openstreetmap.org/reverse'] = array(
+			'headers'  => array(),
+			'body'     => $body,
+			'response' => array(
+				'code'    => $code,
+				'message' => 200 === $code ? 'OK' : 'Error',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
+
+	/** A named point-of-interest (amenity) plus city reads as "Venue, City". */
+	public function test_reverse_prefers_a_named_amenity_over_the_full_address() {
+		$this->mock_nominatim_response(
+			wp_json_encode(
+				array(
+					'display_name' => 'Blue Bottle Coffee, 66 Mint St, San Francisco, CA, USA',
+					'address'      => array(
+						'amenity' => 'Blue Bottle Coffee',
+						'city'    => 'San Francisco',
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'Blue Bottle Coffee, San Francisco', Daymark_Geocoder::reverse( 37.7749, -122.4194 ) );
+	}
+
+	/** With no address hierarchy match, falls back to the first two display_name segments. */
+	public function test_reverse_falls_back_to_display_name_segments() {
+		$this->mock_nominatim_response(
+			wp_json_encode(
+				array(
+					'display_name' => 'Golden Gate Park, San Francisco, California, USA',
+					'address'      => array( 'city' => 'San Francisco' ),
+				)
+			)
+		);
+
+		$this->assertSame( 'Golden Gate Park, San Francisco', Daymark_Geocoder::reverse( 37.7694, -122.4862 ) );
+	}
+
+	/** A non-200 response degrades to null, never a thrown error. */
+	public function test_reverse_returns_null_on_http_failure() {
+		$this->mock_nominatim_response( '', 500 );
+
+		$this->assertNull( Daymark_Geocoder::reverse( 0.0, 0.0 ) );
+	}
+
+	/** A malformed (non-JSON-object) body degrades to null. */
+	public function test_reverse_returns_null_on_malformed_body() {
+		$this->mock_nominatim_response( 'not json' );
+
+		$this->assertNull( Daymark_Geocoder::reverse( 1.0, 1.0 ) );
+	}
+
+	/** A second lookup for the same (rounded) coordinates is served from cache, not a live request. */
+	public function test_reverse_caches_by_rounded_coordinates() {
+		$this->mock_nominatim_response(
+			wp_json_encode( array( 'name' => 'Cached Place' ) )
+		);
+
+		$this->assertSame( 'Cached Place', Daymark_Geocoder::reverse( 10.12345, 20.12345 ) );
+		$this->assertSame( 1, $this->request_count );
+
+		// Same location, rounded to 3 decimals — must hit the cache, not fire a second request.
+		$this->assertSame( 'Cached Place', Daymark_Geocoder::reverse( 10.12349, 20.12341 ) );
+		$this->assertSame( 1, $this->request_count );
+	}
+
+	/** GET /daymark/v1/location/reverse-geocode wraps Daymark_Geocoder::reverse(). */
+	public function test_rest_route_returns_resolved_place_name() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->mock_nominatim_response( wp_json_encode( array( 'name' => 'Blue Bottle Coffee' ) ) );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/location/reverse-geocode' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'lat', 37.7749 );
+		$request->set_param( 'lng', -122.4194 );
+
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertSame( 'Blue Bottle Coffee', $data['place_name'] );
+	}
+
+	/** An out-of-range coordinate never reaches Daymark_Geocoder — the endpoint just reports null. */
+	public function test_rest_route_returns_null_place_name_for_invalid_coordinates() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/location/reverse-geocode' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'lat', 999 );
+		$request->set_param( 'lng', 0 );
+
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertNull( $data['place_name'] );
+		$this->assertSame( 0, $this->request_count, 'An invalid coordinate must never reach the outbound geocoder.' );
+	}
+}

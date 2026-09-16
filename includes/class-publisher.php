@@ -21,9 +21,15 @@ class Daymark_Publisher {
 	/**
 	 * Allowed primary Mark types.
 	 *
+	 * 'checkin' (issue #143) is a location/activity Mark — never
+	 * auto-detected from uploaded media the way image/video/audio/gallery
+	 * are; it's only ever reached via an explicit `primary_type=checkin`
+	 * request, matching how 'note' itself is only ever explicit or the
+	 * no-media fallback. See resolve_place_name()/build_place_block().
+	 *
 	 * @var string[]
 	 */
-	public const PRIMARY_TYPES = array( 'image', 'video', 'audio', 'note', 'gallery', 'mixed' );
+	public const PRIMARY_TYPES = array( 'image', 'video', 'audio', 'note', 'gallery', 'mixed', 'checkin' );
 
 	/**
 	 * Per-type policy for the composer's optional Title field.
@@ -49,6 +55,7 @@ class Daymark_Publisher {
 			'image'   => 'hidden',
 			'gallery' => 'hidden',
 			'mixed'   => 'hidden',
+			'checkin' => 'hidden', // Title derives from the place name — see generate_title().
 		);
 
 		/**
@@ -83,6 +90,10 @@ class Daymark_Publisher {
 		'audio'   => 'audio',
 		'note'    => 'aside',
 		'mixed'   => 'standard',
+		// 'status' is otherwise unused by this map — a short, personal,
+		// in-the-moment update is exactly what core's own format is meant
+		// for, and it's a closer semantic fit than 'aside' (already 'note's).
+		'checkin' => 'status',
 	);
 
 	/**
@@ -285,9 +296,23 @@ class Daymark_Publisher {
 		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
 		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
+		// Resolved up front (independent of the not-yet-known media-derived
+		// $type below) since a Checkin Mark's place name is itself real,
+		// substantive content — the empty-content guard immediately below
+		// must treat "a place, no caption, no media" as a valid Checkin,
+		// not an empty Mark. $location is resolved here too (rather than
+		// only after the post exists, where it was resolved before this
+		// Mark type existed) since build_block_markup()'s own place block
+		// needs it before the insert — resolve_location() is a pure
+		// read of $data with no side effects, so computing it this early
+		// costs nothing and lets both the pre-insert block markup and the
+		// post-insert meta write below share one resolved value.
+		$place_name = $this->resolve_place_name( $data );
+		$location   = $this->resolve_location( $data );
+
 		$file_list = $this->normalize_files( $files );
 
-		if ( empty( $file_list ) && '' === $caption ) {
+		if ( empty( $file_list ) && '' === $caption && null === $place_name ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -421,7 +446,7 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption );
+			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
 		}
 
 		// An explicitly requested draft always wins; a requested (or
@@ -453,12 +478,21 @@ class Daymark_Publisher {
 		$camera_info = $this->extract_camera_info( $media_ids );
 		$captured_at = $this->resolve_captured_at( $data['captured_at'] ?? null, $camera_info['exif_timestamp'] );
 
+		$checkin = null;
+
+		if ( 'checkin' === $type && null !== $place_name ) {
+			$checkin = array(
+				'place'    => $place_name,
+				'location' => $location,
+			);
+		}
+
 		$post_data = array(
 			'post_type'    => 'post', // NEVER a custom post type — the Daymark is a standard post.
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
-			'post_content' => $this->build_block_markup( $media_ids, $caption, $quote ),
+			'post_content' => $this->build_block_markup( $media_ids, $caption, $quote, $checkin ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 		);
 
@@ -549,8 +583,9 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
 		}
 
-		$location = $this->resolve_location( $data );
-
+		// $location was already resolved above (needed before the insert
+		// for the checkin place block) — reused here rather than resolved
+		// a second time.
 		if ( null !== $location ) {
 			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
 
@@ -562,6 +597,12 @@ class Daymark_Publisher {
 			if ( null !== $weather ) {
 				update_post_meta( $post_id, '_daymark_weather', wp_json_encode( $weather ) );
 			}
+
+			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
+		}
+
+		if ( null !== $place_name ) {
+			update_post_meta( $post_id, '_daymark_place_name', $place_name );
 		}
 
 		$in_reply_to = $this->resolve_in_reply_to( $data );
@@ -685,6 +726,11 @@ class Daymark_Publisher {
 		$caption    = trim( wp_kses_post( (string) ( $data['caption'] ?? '' ) ) );
 		$transcript = mb_substr( sanitize_textarea_field( (string) ( $data['transcript'] ?? '' ) ), 0, self::MAX_TRANSCRIPT_CHARS );
 
+		// See publish()'s matching resolution for why this happens up
+		// front — a Checkin Mark's place name is itself real content.
+		$place_name = $this->resolve_place_name( $data );
+		$location   = $this->resolve_location( $data );
+
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
 
@@ -698,7 +744,7 @@ class Daymark_Publisher {
 
 		$file_list = $this->normalize_files( $files );
 
-		if ( '' === $caption && empty( $existing_media ) && empty( $file_list ) ) {
+		if ( '' === $caption && empty( $existing_media ) && empty( $file_list ) && null === $place_name ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -752,7 +798,7 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption );
+			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
 		}
 
 		$new_status = $post->post_status;
@@ -812,10 +858,19 @@ class Daymark_Publisher {
 		$camera_info = $this->extract_camera_info( $media_ids );
 		$captured_at = $this->resolve_captured_at( $data['captured_at'] ?? null, $camera_info['exif_timestamp'] );
 
+		$checkin = null;
+
+		if ( 'checkin' === $type && null !== $place_name ) {
+			$checkin = array(
+				'place'    => $place_name,
+				'location' => $location,
+			);
+		}
+
 		$update_data = array(
 			'ID'           => $post_id,
 			'post_title'   => $title,
-			'post_content' => $this->build_block_markup( $media_ids, $caption ),
+			'post_content' => $this->build_block_markup( $media_ids, $caption, null, $checkin ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 			'post_status'  => $new_status,
 		);
@@ -852,10 +907,16 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
 		}
 
-		$location = $this->resolve_location( $data );
-
+		// $location was already resolved above (needed before the update
+		// for the checkin place block) — reused here rather than resolved
+		// a second time.
 		if ( null !== $location ) {
 			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
+			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
+		}
+
+		if ( null !== $place_name ) {
+			update_post_meta( $post_id, '_daymark_place_name', $place_name );
 		}
 
 		$in_reply_to = $this->resolve_in_reply_to( $data );
@@ -1222,15 +1283,21 @@ class Daymark_Publisher {
 	 * Uses core/image, core/gallery, core/video, core/audio, core/quote,
 	 * and core/paragraph so the Mark renders in any theme.
 	 *
-	 * @param int[]                                                   $media_ids Attachment IDs.
-	 * @param string                                                  $caption   Caption text (already run through wp_kses_post).
-	 * @param array{url: string, title: string, source?: string}|null $quote Reblogged-post quote block
+	 * @param int[]                                                                   $media_ids Attachment IDs.
+	 * @param string                                                                  $caption   Caption text (already run through wp_kses_post).
+	 * @param array{url: string, title: string, source?: string}|null                 $quote Reblogged-post quote block
+	 *                                                                                        to lead with, or null for none.
+	 * @param array{place: string, location: array{lat: float, lng: float}|null}|null $checkin Checkin place block
 	 *                                                                        to lead with, or null for none.
 	 * @return string Block markup.
 	 */
-	private function build_block_markup( array $media_ids, string $caption, ?array $quote = null ): string {
+	private function build_block_markup( array $media_ids, string $caption, ?array $quote = null, ?array $checkin = null ): string {
 		$groups = $this->group_media_ids( $media_ids );
 		$blocks = array();
+
+		if ( $checkin ) {
+			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'] );
+		}
 
 		if ( $quote ) {
 			$blocks[] = $this->build_quote_block( $quote['url'], $quote['title'], $quote['source'] ?? '' );
@@ -1288,6 +1355,40 @@ class Daymark_Publisher {
 			"<!-- wp:quote -->\n<blockquote class=\"wp-block-quote\"><p>%s</p>%s</blockquote>\n<!-- /wp:quote -->",
 			$link,
 			$cite
+		);
+	}
+
+	/**
+	 * Build the place block a Checkin Mark leads its content with (issue
+	 * #143's "location/activity" card kind) — a bold place-name line,
+	 * carrying the mf2 `p-location` class so IndieWeb tooling can read it
+	 * as h-entry structured data, plus a link out to an OpenStreetMap view
+	 * of the resolved coordinates when a location was captured. This is
+	 * the Mark's own visible content (the author explicitly chose to check
+	 * in here), so — unlike the raw p-geo/h-geo coordinate markup
+	 * Daymark_Microformats::location_markup() renders, which stays gated
+	 * behind the `daymark_publish_location_publicly` privacy option — the
+	 * place name itself is always part of the published post.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param string                             $place    Resolved/edited place name (already sanitized).
+	 * @param array{lat: float, lng: float}|null $location Resolved coordinates, or null when unavailable.
+	 * @return string Block markup.
+	 */
+	private function build_place_block( string $place, ?array $location ): string {
+		$map_link = null !== $location
+			? sprintf(
+				' — <a href="%s">%s</a>',
+				esc_url( sprintf( 'https://www.openstreetmap.org/?mlat=%1$s&mlng=%2$s#map=16/%1$s/%2$s', $location['lat'], $location['lng'] ) ),
+				esc_html__( 'View on map', 'daymark' )
+			)
+			: '';
+
+		return sprintf(
+			"<!-- wp:paragraph -->\n<p><strong class=\"p-location\">📍 %s</strong>%s</p>\n<!-- /wp:paragraph -->",
+			esc_html( $place ),
+			$map_link
 		);
 	}
 
@@ -1684,6 +1785,36 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * Resolve an optional client-supplied place name for a Checkin Mark
+	 * (issue #143) — already reverse-geocoded and possibly hand-edited by
+	 * the composer (see the new `GET /daymark/v1/location/reverse-geocode`
+	 * route, which does the actual third-party lookup; this method just
+	 * sanitizes whatever the client ultimately sends). A short, plain-text
+	 * field, capped the same way a title is, so a pasted/garbled value
+	 * can't blow out the place block or the generated title.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @return string|null The place name, or null when absent/empty.
+	 */
+	private function resolve_place_name( array $data ): ?string {
+		$place = sanitize_text_field( (string) ( $data['place_name'] ?? '' ) );
+
+		if ( '' === $place ) {
+			return null;
+		}
+
+		$max_chars = (int) apply_filters( 'daymark_title_max_chars', self::MAX_TITLE_CHARS );
+
+		if ( mb_strlen( $place ) > $max_chars ) {
+			$place = $this->trim_chars( $place, $max_chars, '…' );
+		}
+
+		return $place;
+	}
+
+	/**
 	 * Resolve a reply-to URL sent by the composer's "Reply" action on a
 	 * subscribed post (issue #83), if present and a well-formed http(s) URL.
 	 *
@@ -1903,6 +2034,69 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * Best-effort, one-time bridge of a Mark's already-resolved location
+	 * into Simple Location's (David Shanske) own post-meta convention,
+	 * when that plugin is active (issue #345). Daymark's own zero-dependency
+	 * quiet capture (`_daymark_location`) is completely unchanged by this —
+	 * it must keep working with Simple Location absent — this purely
+	 * *additionally* writes the same coordinates (and, for a Checkin Mark,
+	 * the resolved place name as the address) into Simple Location's own
+	 * `geo_latitude`/`geo_longitude`/`geo_address` meta keys via its own
+	 * `Geo_Data::set_geodata()` helper, confirmed directly against that
+	 * plugin's public source (`includes/class-geo-data.php`) rather than
+	 * guessed — so Simple Location's reverse-geocoding (when no address is
+	 * given), map, and display features apply to the Mark for free, with no
+	 * duplicate geocoding/mapping code inside Daymark itself.
+	 *
+	 * Deliberately not a live sync: this runs once, at publish time, the
+	 * same as fetch_weather() above — an edit to an existing Mark's
+	 * location (there is no UI for that today) would not update Simple
+	 * Location's own copy. Weather is deliberately NOT bridged: Simple
+	 * Location's own weather-storage schema could not be confirmed against
+	 * its public source in this environment (see the issue's own "open
+	 * question, needs verification" note) — safer to leave it unbridged
+	 * than guess at a wrong meta shape.
+	 *
+	 * Never throws and never blocks the publish — wrapped in try/catch,
+	 * and a missing class (Simple Location inactive) short-circuits before
+	 * any of that even runs.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param int                           $post_id    Mark post ID.
+	 * @param array{lat: float, lng: float} $location   Already-resolved coordinates.
+	 * @param string|null                   $place_name Resolved place name (Checkin Marks only), or null.
+	 * @return void
+	 */
+	private function maybe_bridge_location_to_simple_location( int $post_id, array $location, ?string $place_name ): void {
+		if ( ! Daymark_Plugin_Detector::matches(
+			array(
+				'slugs'   => array( 'simple-location' ),
+				'classes' => array( 'Geo_Data' ),
+			)
+		) ) {
+			return;
+		}
+
+		try {
+			Geo_Data::set_geodata(
+				'post',
+				$post_id,
+				'',
+				array(
+					'latitude'  => $location['lat'],
+					'longitude' => $location['lng'],
+					'address'   => $place_name ?? '',
+				)
+			);
+		} catch ( Throwable $e ) {
+			// A bridge write should never take down a publish — Simple
+			// Location's own storage is a bonus, not a requirement.
+			unset( $e );
+		}
+	}
+
+	/**
 	 * Compute and store a reading-time estimate from a Mark's caption plus
 	 * transcript (when present — audio/video Marks add the two word counts
 	 * together). Only stored when there's enough text to make the estimate
@@ -1949,13 +2143,15 @@ class Daymark_Publisher {
 	/**
 	 * Generate a post title from the caption (first ~8 words, with a
 	 * character-count backstop for a space-less caption — see
-	 * MAX_TITLE_CHARS) or a timestamp fallback like
-	 * "Mark — March 3, 2026 4:12 pm".
+	 * MAX_TITLE_CHARS), a "Checked in at {place}" fallback for a Checkin
+	 * Mark with a resolved place but no caption, or a timestamp fallback
+	 * like "Mark — March 3, 2026 4:12 pm" when neither is available.
 	 *
-	 * @param string $caption Caption text.
+	 * @param string      $caption Caption text.
+	 * @param string|null $place   Resolved place name (see resolve_place_name()), or null.
 	 * @return string Title.
 	 */
-	private function generate_title( string $caption ): string {
+	private function generate_title( string $caption, ?string $place = null ): string {
 		$plain = trim( wp_strip_all_tags( $caption ) );
 
 		if ( '' !== $plain ) {
@@ -1967,6 +2163,14 @@ class Daymark_Publisher {
 			}
 
 			return $title;
+		}
+
+		if ( null !== $place && '' !== $place ) {
+			return sprintf(
+				/* translators: %s: a place name, e.g. "Blue Bottle Coffee". */
+				__( 'Checked in at %s', 'daymark' ),
+				$place
+			);
 		}
 
 		return sprintf(

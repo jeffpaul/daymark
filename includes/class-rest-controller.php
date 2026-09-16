@@ -117,6 +117,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'description'       => __( 'Captured location accuracy in meters, if available.', 'daymark' ),
 							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
 						),
+						'place_name'           => array(
+							'type'              => 'string',
+							'description'       => __( 'Resolved (composer-editable) place name for a Checkin Mark.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
 					),
 				),
 				array(
@@ -305,6 +310,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/location/reverse-geocode',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'location_reverse_geocode' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'lat' => array(
+						'type'              => 'number',
+						'required'          => true,
+						'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+					),
+					'lng' => array(
+						'type'              => 'number',
+						'required'          => true,
+						'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)',
 			array(
 				array(
@@ -363,6 +390,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'type'              => 'number',
 							'description'       => __( 'Captured location accuracy in meters, if available.', 'daymark' ),
 							'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+						),
+						'place_name'        => array(
+							'type'              => 'string',
+							'description'       => __( 'Resolved (composer-editable) place name for a Checkin Mark.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
 						),
 					),
 				),
@@ -945,6 +977,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lat'         => $request->get_param( 'location_lat' ),
 			'location_lng'         => $request->get_param( 'location_lng' ),
 			'location_accuracy'    => $request->get_param( 'location_accuracy' ),
+			// A Checkin Mark's resolved (composer-editable) place name —
+			// see Daymark_Publisher::resolve_place_name().
+			'place_name'           => sanitize_text_field( (string) $request->get_param( 'place_name' ) ),
 			// Set only when composing a reply from a subscribed post's
 			// expanded card (issue #83) — see Daymark_Publisher::resolve_in_reply_to().
 			'in_reply_to'          => (string) $request->get_param( 'in_reply_to' ),
@@ -1455,6 +1490,42 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'tags'           => $tags,
 				'is_mocked'      => ! $ai->is_available(),
 				'provider_label' => $ai->get_provider_label(),
+			)
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/location/reverse-geocode — a short, human-readable
+	 * place name for a lat/lng pair, for the Checkin composer's own Place
+	 * field (issue #143). Delegates to Daymark_Geocoder::reverse(), which
+	 * degrades to null on any failure — never an error response, matching
+	 * this endpoint's own optional, best-effort role: a failed lookup just
+	 * leaves the composer's Place field blank for the author to type by
+	 * hand rather than surfacing an error for what is, either way, a field
+	 * the author can always edit before publishing.
+	 *
+	 * @since 0.17.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function location_reverse_geocode( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_LOCATION_LOOKUP );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$lat = $request->get_param( 'lat' );
+		$lng = $request->get_param( 'lng' );
+
+		if ( ! is_numeric( $lat ) || ! is_numeric( $lng ) || (float) $lat < -90 || (float) $lat > 90 || (float) $lng < -180 || (float) $lng > 180 ) {
+			return rest_ensure_response( array( 'place_name' => null ) );
+		}
+
+		return rest_ensure_response(
+			array(
+				'place_name' => Daymark_Geocoder::reverse( (float) $lat, (float) $lng ),
 			)
 		);
 	}
@@ -2081,6 +2152,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lat'        => $request->get_param( 'location_lat' ),
 			'location_lng'        => $request->get_param( 'location_lng' ),
 			'location_accuracy'   => $request->get_param( 'location_accuracy' ),
+			'place_name'          => sanitize_text_field( (string) $request->get_param( 'place_name' ) ),
 			'in_reply_to'         => (string) $request->get_param( 'in_reply_to' ),
 			'repost_of'           => (string) $request->get_param( 'repost_of' ),
 			'like_of'             => (string) $request->get_param( 'like_of' ),
@@ -3171,6 +3243,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'lat' => (float) $location['lat'],
 				'lng' => (float) $location['lng'],
 			);
+		}
+
+		// A Checkin Mark's resolved place name (issue #143) — the composer's
+		// own "Place" field re-populates from this when resuming a draft.
+		$place_name = (string) get_post_meta( $post_id, '_daymark_place_name', true );
+
+		if ( '' !== $place_name ) {
+			$summary['place_name'] = $place_name;
 		}
 
 		return $summary;

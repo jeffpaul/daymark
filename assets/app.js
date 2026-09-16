@@ -71,6 +71,13 @@
 		capturedAt: null, // ISO 8601 string — "when this Mark was actually created"
 		location: null, // { lat, lng, accuracy } | null — best-effort, silent geolocation
 		locationRequested: false, // guards against asking more than once per session
+		// Checkin-only (issue #143): a resolved/edited place name, shown in
+		// its own composer field and sent as `place_name`. Reverse-geocoded
+		// once state.location resolves (see maybeFetchPlaceName()) — never
+		// overwritten once the author has typed their own value.
+		placeName: '',
+		placeNameStatus: 'idle', // idle | loading | done — reverse-geocode lifecycle
+		placeNameEdited: false, // author typed/edited it: never overwrite with a later lookup
 		primaryType: 'note',
 		// Set by the Home launcher before navigating to #create so the
 		// composer opens pre-set to the chosen type; cleared by
@@ -103,6 +110,7 @@
 		video: __('Video', 'daymark'),
 		audio: __('Audio', 'daymark'),
 		mixed: __('Mixed media', 'daymark'),
+		checkin: __('Check In', 'daymark'),
 	};
 
 	// --- Helpers ---
@@ -436,6 +444,7 @@
 		{ type: 'video', label: __('Videos', 'daymark') },
 		{ type: 'audio', label: __('Audio', 'daymark') },
 		{ type: 'note', label: __('Notes', 'daymark') },
+		{ type: 'checkin', label: __('Check-ins', 'daymark') },
 	];
 
 	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
@@ -456,10 +465,14 @@
 		return `<svg class="daymark-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
 
-	// The 4 Mark types the Home launcher offers — Gallery isn't its own
+	// The 5 Mark types the Home launcher offers — Gallery isn't its own
 	// bubble since it's just "pick more than one image" in the existing
 	// file picker (detectType() already upgrades image → gallery for you).
-	const LAUNCHER_TYPES = ['image', 'video', 'audio', 'note'];
+	// Checkin (issue #143) is last, added after the original 4 — see its
+	// own bubble position in app.css (a straight-up 5th point on the same
+	// arc, not a recomputed 5-way spread, so the original 4 positions stay
+	// untouched).
+	const LAUNCHER_TYPES = ['image', 'video', 'audio', 'note', 'checkin'];
 
 	// Kept as their own constant (not derived from the bottom nav's icons —
 	// there is no per-type nav destination anymore) so the launcher's visual
@@ -472,6 +485,8 @@
 		audio:
 			'<path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle>',
 		note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline>',
+		checkin:
+			'<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle>',
 	};
 
 	const PLUS_GLYPH = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
@@ -983,6 +998,9 @@
 		state.capturedAt = null;
 		state.location = null;
 		state.locationRequested = false;
+		state.placeName = '';
+		state.placeNameStatus = 'idle';
+		state.placeNameEdited = false;
 		state.primaryType = 'note';
 		state.pendingType = null;
 		state.replyTo = null;
@@ -1030,12 +1048,46 @@
 					lng: position.coords.longitude,
 					accuracy: position.coords.accuracy,
 				};
+				maybeFetchPlaceName();
 			},
 			() => {
 				// Denied, unsupported, or timed out — nothing to surface.
 			},
 			{ enableHighAccuracy: false, timeout: 5000 }
 		);
+	}
+
+	// Reverse-geocode state.location into a short place name for the
+	// Checkin composer's own Place field (issue #143) — a real, on-demand
+	// action (unlike the rest of quiet capture), so unlike
+	// maybeBeginQuietCapture() this both runs more than once per session
+	// (called again from CreateScreen.bindEvents() in case the Checkin
+	// bubble was tapped after location already resolved from an earlier
+	// point in this same composing session) and shows its own loading/done
+	// state — but still never blocks or errors visibly: a failed lookup
+	// just leaves the field blank for the author to type by hand, exactly
+	// like every other quiet-capture signal degrades.
+	function maybeFetchPlaceName() {
+		if ('checkin' !== effectiveType() || state.placeNameEdited || 'idle' !== state.placeNameStatus || !state.location) {
+			return;
+		}
+		state.placeNameStatus = 'loading';
+		apiGet(
+			'location/reverse-geocode?lat=' +
+				encodeURIComponent(state.location.lat) +
+				'&lng=' +
+				encodeURIComponent(state.location.lng)
+		)
+			.then((result) => {
+				state.placeNameStatus = 'done';
+				if (!state.placeNameEdited && result && result.place_name) {
+					state.placeName = result.place_name;
+					CreateScreen.refreshPlaceField();
+				}
+			})
+			.catch(() => {
+				state.placeNameStatus = 'done';
+			});
 	}
 
 	// Abandon the composer's in-progress work (starting a new Mark, or
@@ -1492,6 +1544,7 @@
 			// other composer field does.
 			capturedAt: state.capturedAt || null,
 			location: state.location ? Object.assign({}, state.location) : null,
+			placeName: 'checkin' === effectiveType() ? state.placeName || '' : null,
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
@@ -1539,6 +1592,9 @@
 			if (payload.location.accuracy !== undefined && payload.location.accuracy !== null) {
 				formData.append('location_accuracy', String(payload.location.accuracy));
 			}
+		}
+		if (payload.placeName !== null) {
+			formData.append('place_name', payload.placeName);
 		}
 		if (payload.inReplyTo) {
 			formData.append('in_reply_to', payload.inReplyTo);
@@ -1983,6 +2039,9 @@
 		state.transcript = mark.transcript || '';
 		state.transcriptStatus = state.transcript ? 'done' : 'idle';
 		state.transcriptEdited = false;
+		state.placeName = mark.place_name || '';
+		state.placeNameStatus = state.placeName ? 'done' : 'idle';
+		state.placeNameEdited = false;
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
 		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : [];
@@ -2019,7 +2078,8 @@
 		return (
 			Boolean(state.caption.trim()) ||
 			state.files.length > 0 ||
-			Boolean(state.editing && state.editing.media && state.editing.media.length)
+			Boolean(state.editing && state.editing.media && state.editing.media.length) ||
+			('checkin' === effectiveType() && Boolean(state.placeName.trim()))
 		);
 	}
 
@@ -5596,12 +5656,14 @@
 				}
 				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				${
-					// The Home launcher's Note bubble jumps straight past the
-					// picker into a focused writing flow — attaching any file
-					// would flip the type away from 'note' anyway (detectType()
-					// only ever returns 'note' when nothing is attached), so
-					// hiding it here loses no real capability.
-					'note' === state.pendingType && !state.files.length && !editing
+					// The Home launcher's Note bubble (and, per the same
+					// reasoning, the Checkin bubble — issue #143 — which has
+					// no media picker at all) jumps straight past the picker
+					// into a focused writing flow — attaching any file would
+					// flip the type away from 'note'/'checkin' anyway
+					// (detectType() only ever returns 'note' when nothing is
+					// attached), so hiding it here loses no real capability.
+					('note' === state.pendingType || 'checkin' === state.pendingType) && !state.files.length && !editing
 						? ''
 						: ACCEPT_BY_TYPE[state.pendingType]
 						? // A typed launcher entry (Image/Video/Audio): camera-first
@@ -5643,10 +5705,11 @@
 					esc(__('Mark type: %s', 'daymark')),
 					`<span class="daymark-chip" data-type-badge>${esc(TYPE_LABELS[effectiveType()])}</span>`
 				)}</p>
+				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
 					<textarea id="daymark-caption" class="daymark-textarea" rows="4" placeholder="${esc(
-						__("What's happening?", 'daymark')
+						'checkin' === effectiveType() ? __('Any thoughts to add? (optional)', 'daymark') : __("What's happening?", 'daymark')
 					)}">${esc(state.caption)}</textarea>
 				</div>
 				<div data-title-slot></div>
@@ -5665,6 +5728,54 @@
 					__('Next: Publish →', 'daymark')
 				)}</button>
 			</footer>`;
+		},
+
+		// A Checkin Mark's own Place field (issue #143) — shown for a fresh
+		// Checkin composition and for a resumed Checkin draft alike (unlike
+		// the picker-bypass above, which only ever applies to a fresh
+		// session — a resumed draft always shows this field regardless of
+		// how it was entered). Pre-filled from the best-effort reverse
+		// geocode once state.location resolves (see maybeFetchPlaceName()),
+		// always editable — the same "manual entry/correction" affordance
+		// CLAUDE.md's own Simple Location comparison names as a real gap
+		// Daymark had no equivalent for before this.
+		placeFieldMarkup() {
+			if ('checkin' !== effectiveType()) {
+				return '';
+			}
+			const loading = 'loading' === state.placeNameStatus;
+			return `<div class="daymark-field daymark-checkin-place">
+				<label class="daymark-field__label" for="daymark-checkin-place">${esc(__('Place', 'daymark'))}</label>
+				<input type="text" id="daymark-checkin-place" class="daymark-input" data-checkin-place value="${esc(
+					state.placeName
+				)}" placeholder="${esc(
+					loading ? __('Detecting your location…', 'daymark') : __('Where are you?', 'daymark')
+				)}" />
+			</div>`;
+		},
+
+		// Re-render placeFieldMarkup() into its own slot once a background
+		// reverse-geocode result arrives (see maybeFetchPlaceName()) —
+		// without touching the rest of the screen or stealing focus from
+		// whatever the author is doing elsewhere in the composer.
+		refreshPlaceField() {
+			const slot = root.querySelector('[data-place-slot]');
+			if (!slot) {
+				return;
+			}
+			slot.innerHTML = this.placeFieldMarkup();
+			this.bindPlaceFieldEvents();
+		},
+
+		bindPlaceFieldEvents() {
+			const place = root.querySelector('[data-checkin-place]');
+			if (place) {
+				place.addEventListener('input', () => {
+					state.placeName = place.value;
+					state.placeNameEdited = true;
+					scheduleAutosave();
+				});
+			}
 		},
 
 		// Media already attached to a draft (state.editing.media) — its own
@@ -5812,6 +5923,11 @@
 			// maybeBeginQuietCapture()'s own docblock for why this single call
 			// site covers every entry path into a new Mark.
 			maybeBeginQuietCapture();
+			// Idempotent — a no-op unless this is a fresh Checkin session
+			// whose location already resolved earlier (e.g. the composer was
+			// left open on another type for a while before switching).
+			maybeFetchPlaceName();
+			this.bindPlaceFieldEvents();
 
 			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
@@ -7288,7 +7404,7 @@
 	// for a kind with none (note/link). A broken image degrades to the
 	// same placeholder via imgWithFallback()'s shared error handling.
 	function renderCardMedia(item, kind) {
-		if ('note' === kind || 'link' === kind) {
+		if ('note' === kind || 'link' === kind || 'checkin' === kind) {
 			return '';
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);

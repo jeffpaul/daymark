@@ -109,6 +109,17 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIPTION_LIKE = 'subscription_like';
 
 	/**
+	 * Reverse-geocode a lat/lng pair for the Checkin composer
+	 * (GET /location/reverse-geocode) — an outbound-to-a-third-party-host
+	 * action (Daymark_Geocoder's own Nominatim lookup), same tier as
+	 * ACTION_AI: a normal per-composition action a user triggers by opening
+	 * the Checkin composer, not a one-off admin action.
+	 *
+	 * @var string
+	 */
+	public const ACTION_LOCATION_LOOKUP = 'location_lookup';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -148,6 +159,10 @@ class Daymark_Rate_Limiter {
 		),
 		self::ACTION_SUBSCRIPTION_LIKE       => array(
 			'limit'  => 10,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_LOCATION_LOOKUP         => array(
+			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 	);
