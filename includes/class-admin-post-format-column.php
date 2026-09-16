@@ -177,6 +177,18 @@ class Daymark_Admin_Post_Format_Column {
 	 * sort key, preserving the normal tie-break a reader would expect when
 	 * several posts share one format.
 	 *
+	 * Deliberately no `GROUP BY`: `post_format` is a single-value taxonomy —
+	 * `set_post_format()`/`wp_set_post_terms()` always replace rather than
+	 * append — so a post can never have more than one `post_format` term
+	 * relationship for this join to multiply rows over. Adding one anyway
+	 * (as an earlier draft of this method did) breaks under MySQL's default
+	 * `ONLY_FULL_GROUP_BY` mode: grouping by `{$wpdb->posts}.ID` alone while
+	 * `ORDER BY` references a column from the joined term tables isn't
+	 * recognized by MySQL as functionally dependent on that group, so the
+	 * query errors outright — silently, from `WP_Query`'s own perspective,
+	 * since a failed `$wpdb->get_results()` call just yields zero posts.
+	 *
+
 	 * Scoped narrowly: only the exact `orderby` key this class itself
 	 * registers as sortable, and only on the matching post type's own list
 	 * table screen — `get_current_screen()`, not `is_admin()`, is the check
@@ -217,8 +229,6 @@ class Daymark_Admin_Post_Format_Column {
 		$clauses['join'] .= " LEFT JOIN {$wpdb->term_relationships} AS daymark_pf_tr ON ( {$wpdb->posts}.ID = daymark_pf_tr.object_id )"
 			. " LEFT JOIN {$wpdb->term_taxonomy} AS daymark_pf_tt ON ( daymark_pf_tr.term_taxonomy_id = daymark_pf_tt.term_taxonomy_id AND daymark_pf_tt.taxonomy = 'post_format' )"
 			. " LEFT JOIN {$wpdb->terms} AS daymark_pf_t ON ( daymark_pf_tt.term_id = daymark_pf_t.term_id )"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table names only, not user input.
-
-		$clauses['groupby'] = $clauses['groupby'] ? $clauses['groupby'] : "{$wpdb->posts}.ID";
 
 		$clauses['orderby'] = "COALESCE( daymark_pf_t.slug, 'post-format-standard' ) {$order}, {$wpdb->posts}.post_title ASC"; // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- $order is validated to one of two literal values above, not user input.
 

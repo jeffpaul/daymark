@@ -171,7 +171,11 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'COALESCE', $clauses['orderby'] );
 		$this->assertStringContainsString( 'post-format-standard', $clauses['orderby'] );
 		$this->assertStringContainsString( 'post_title', $clauses['orderby'] );
-		$this->assertNotSame( '', $clauses['groupby'] );
+		// Deliberately no GROUP BY — see sort_by_format()'s own docblock:
+		// post_format is a single-value taxonomy, so the join can't multiply
+		// rows, and adding one anyway breaks under MySQL's default
+		// ONLY_FULL_GROUP_BY mode.
+		$this->assertSame( '', $clauses['groupby'] );
 	}
 
 	/**
