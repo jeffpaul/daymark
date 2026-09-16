@@ -28,6 +28,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-routes.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rest-controller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publisher.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-geocoder.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publish-helpers.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-ai-assist.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-federated-comments.php';

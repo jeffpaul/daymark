@@ -565,28 +565,50 @@ h2[tabindex='-1']:focus {
 	pointer-events: auto;
 }
 
+/* Five bubbles, evenly spaced every 25° around a single 136px-radius
+   circle centered on the launcher button (140°/115°/90°/65°/40°, measured
+   from the positive x-axis) — image/checkin/note sit at the same angles
+   the original four-bubble ellipse used for image/video/audio/note, but
+   on one shared radius instead of two, so every adjacent pair is the same
+   arc-length apart. The prior design kept the original four's own ellipse
+   coordinates pixel-for-pixel unchanged and only added checkin as a 5th
+   point on top — since that put checkin only ~15° from both video and
+   audio (versus ~35° between every other adjacent pair), it visibly
+   overlapped both. Recomputing all five removes that asymmetry outright.
+   The radius (originally 112px) was widened to 136px on top of that fix —
+   at 112px, adjacent 44px bubbles (--daymark-tap-min) were only ~4.5px
+   apart edge-to-edge on the same 25° spacing, too tight a margin for a
+   thumb to land accurately on one and not its neighbor; 136px keeps the
+   same angles (so the same overlap fix above still holds) but grows that
+   gap to ~15px, comfortable finger-error room on a touch screen. */
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(-50% - 78px), -66px) scale(1);
+	transform: translate(calc(-50% - 104px), -87px) scale(1);
 	opacity: 1;
 	transition-delay: 0.02s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(-50% - 30px), -110px) scale(1);
+	transform: translate(calc(-50% - 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.08s;
 }
 
-.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(-50% + 30px), -110px) scale(1);
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
+	transform: translate(-50%, -136px) scale(1);
 	opacity: 1;
 	transition-delay: 0.14s;
 }
 
-.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(-50% + 78px), -66px) scale(1);
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
+	transform: translate(calc(-50% + 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.2s;
+}
+
+.daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
+	transform: translate(calc(-50% + 104px), -87px) scale(1);
+	opacity: 1;
+	transition-delay: 0.26s;
 }
 
 /* Closing is quicker and never staggered — snappy, not delightful. */
@@ -1409,9 +1431,12 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Explore --- */
+/* auto-fit (not a fixed repeat(4, 1fr)) so a 5th type (Checkin, issue
+   #143) wraps to its own evenly-sized row instead of a lone narrow item
+   stranded under an otherwise-empty row. */
 .daymark-exploretypes {
 	display: grid;
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
 	gap: var(--daymark-spacing-sm);
 }
 
@@ -2140,6 +2165,22 @@ h2[tabindex='-1']:focus {
 .daymark-tags__suggestitem:hover,
 .daymark-tags__suggestitem:focus-visible {
 	background: var(--daymark-accent-wash);
+}
+
+/* The Checkin Place field's own search-as-you-type suggestions carry a
+   second, muted address line for disambiguating similarly-named results —
+   the tag autocomplete's plain single-line items never needed this, so
+   these two rules are scoped to the `--place` modifier only. */
+.daymark-tags__suggestitem--place {
+	flex-direction: column;
+	align-items: flex-start;
+	height: auto;
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+}
+
+.daymark-tags__suggestitem-address {
+	font-size: 12px;
+	color: var(--daymark-text-muted);
 }
 
 .daymark-tags__addrow .daymark-btn--secondary {

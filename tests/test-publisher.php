@@ -1648,4 +1648,109 @@ class Test_Publisher extends WP_UnitTestCase {
 		$stored_order = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$this->assertSame( $original_order, $stored_order );
 	}
+
+	/**
+	 * A Checkin Mark with a place name but no caption and no media is a
+	 * genuinely valid Mark, not an empty one — the place name IS the
+	 * content (issue #143). Its title auto-generates as "Checked in at
+	 * {place}" and its content leads with a place block carrying the
+	 * mf2 p-location class and a map link (location was also sent).
+	 */
+	public function test_checkin_with_place_name_and_no_caption_publishes() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$post = get_post( $post_id );
+		$this->assertEquals( 'checkin', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertEquals( 'Blue Bottle Coffee', get_post_meta( $post_id, '_daymark_place_name', true ) );
+		$this->assertEquals( 'Checked in at Blue Bottle Coffee', $post->post_title );
+		$this->assertStringContainsString( 'p-location', $post->post_content );
+		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
+		$this->assertStringContainsString( 'openstreetmap.org', $post->post_content );
+		$this->assertEquals( 'status', get_post_format( $post_id ) );
+	}
+
+	/**
+	 * A Checkin Mark with a caption uses the caption as its title, same as
+	 * every other type — the place-name title fallback only applies when
+	 * there's no caption to generate a title from.
+	 */
+	public function test_checkin_with_caption_uses_caption_title() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Great coffee this morning',
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertEquals( 'Great coffee this morning', $post->post_title );
+		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
+		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
+		// The place block always leads, ahead of the reader's own paragraph.
+		$this->assertLessThan(
+			strpos( $post->post_content, 'Great coffee this morning' ),
+			strpos( $post->post_content, 'Blue Bottle Coffee' )
+		);
+	}
+
+	/** A checkin with no place name and no caption/media is still rejected as empty. */
+	public function test_checkin_with_no_place_name_and_no_caption_rejected() {
+		$publisher = new Daymark_Publisher();
+		$result    = $publisher->publish( array( 'primary_type' => 'checkin' ) );
+		$this->assertInstanceOf( 'WP_Error', $result );
+		$this->assertEquals( 'daymark_empty', $result->get_error_code() );
+	}
+
+	/** GET-shaped summary (prepare_mark_summary) exposes the resolved place name. */
+	public function test_checkin_place_name_exposed_on_rest_summary() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertSame( 'Blue Bottle Coffee', $data['place_name'] );
+	}
+
+	/**
+	 * Simple Location's own post-meta convention (issue #345) is bridged
+	 * to only when that plugin is genuinely active — its defining
+	 * `Geo_Data` class isn't loaded in this test environment, so the
+	 * bridge must be a silent no-op rather than a fatal on an undefined
+	 * class.
+	 */
+	public function test_simple_location_bridge_is_a_no_op_when_plugin_absent() {
+		$this->assertFalse( class_exists( 'Geo_Data' ), 'Precondition: Simple Location is not active in this test run.' );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'A quiet check-in',
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$this->assertNotEmpty( get_post_meta( $post_id, '_daymark_location', true ) );
+	}
 }

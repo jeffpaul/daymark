@@ -78,11 +78,17 @@ Any WordPress AI Client provider plugin — Anthropic (Claude), Google (Gemini),
 
 Composing a Mark quietly captures a few pieces of metadata in the background, without any field to fill in: the date/time it was created, your device's location (only if your browser grants permission — never a form field to fill in), current weather for that location, camera details from a photo's own EXIF data (camera model, aperture, ISO, and similar), an estimated reading time for a longer caption, and AI-suggested tags. None of it is required, none of it can block or delay publishing, and anything that isn't available (permission denied, no EXIF data, no AI provider configured, etc.) is simply left out rather than causing an error.
 
-This is captured ahead of planned future work: showing where a Mark was made ("checkins"), its weather at the time, and richer photo details, directly in the Timeline. Location and weather aren't shown anywhere in Daymark yet — they're captured now so that display work has real data to build on rather than starting from a Timeline with nothing to show. If you'd rather this wasn't captured at all while it's still invisible, location, weather, and camera metadata can each be turned off independently from the **Privacy** section of Settings -> Daymark — no code required.
+This same captured location is what powers the Check In Mark type (see the next question) and, when you have the Simple Location plugin active, is bridged into that plugin's own data too. Weather and richer photo details still aren't shown anywhere in Daymark yet — captured ahead of that planned future display work so it has real data to build on. If you'd rather this wasn't captured at all, location, weather, and camera metadata can each be turned off independently from the **Privacy** section of Settings -> Daymark — no code required.
 
 A developer can also set these same defaults from code, which still takes priority over the Settings -> Daymark checkboxes — see [the Daymark developer docs on GitHub](https://github.com/jeffpaul/daymark) for the specific filters.
 
 Turning off location capture also stops the weather lookup, since weather is only ever attempted alongside a resolved location; the weather toggle alone leaves location capture on but skips just the weather lookup. A Mark's captured location is stored for your own site's use and is never published on its public permalink page unless you explicitly opt in via the "Publish location publicly" checkbox in the same Privacy section.
+
+= What's a Check In? =
+
+A Check In is a Mark whose point is *where* you are, not media or a written caption — tap the "+ New Mark" launcher's Check In bubble and Daymark quietly reverse-geocodes your captured location into an editable Place field (no address lookup service credentials needed on your end — it uses a free, keyless geocoding service). You can always edit or replace the detected place before publishing, and add your own thoughts too, but neither is required: a Check In with just a place name is a complete, publishable Mark. It publishes as a real post naming the place (linking out to a map when a location was captured), titled "Checked in at {place}" when you haven't added your own caption.
+
+If you have the [Simple Location plugin](https://wordpress.org/plugins/simple-location/) active, a Mark's captured coordinates (and a Check In's own place name) are additionally bridged into that plugin's own data the moment you publish — its reverse-geocoding, "posted from" display, and map/archive view all become available for free. Settings -> Daymark's Connectors tab recommends it for exactly this.
 
 = Does Daymark create a custom post type? =
 

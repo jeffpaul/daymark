@@ -1033,6 +1033,85 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// A Checkin Mark (issue #143) has no media picker at all — a manually
+// typed Place (geolocation is neither granted nor mocked in this test
+// context, so the field starts blank rather than reverse-geocoded) is
+// itself real, sufficient content: publishing succeeds with no caption,
+// and the auto-generated title reads "Checked in at {place}".
+test('Checkin Mark publishes from just a Place, with no caption or media', async ({ page }) => {
+	const place = `E2E Coffee Shop ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	await expect(composer.locator('#daymark-file-input')).toHaveCount(0);
+	await composer.locator('[data-checkin-place]').fill(place);
+	await page.locator('[data-action="next"]').click();
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="checkin"]').click();
+	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
+});
+
+// The Checkin Place field's own search-as-you-type: typing 3+ characters
+// shows a suggestion list, and tapping one fills the field with that
+// suggestion's own place name. The outbound Nominatim call this ultimately
+// makes happens server-side (Daymark_Geocoder::search()), so it's covered
+// by PHPUnit, not here — this test mocks the REST route itself, the same
+// way this suite already mocks GET /timeline and other endpoints, rather
+// than depending on a live third-party network response in CI.
+test('Checkin Place field shows and picks a search suggestion', async ({ page }) => {
+	// Two similarly-named results, each with its own full address — the
+	// address is what should let a reader tell them apart in the list; the
+	// picked field value should still be just the short place name.
+	await page.route('**/daymark/v1/location/search*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				results: [
+					{
+						place_name: 'Blue Bottle Coffee',
+						address: 'Blue Bottle Coffee, 66 Mint St, San Francisco, CA, USA',
+						lat: 37.7749,
+						lng: -122.4194,
+					},
+					{
+						place_name: 'Blue Bottle Coffee',
+						address: 'Blue Bottle Coffee, 1 Rockefeller Plaza, New York, NY, USA',
+						lat: 40.7589,
+						lng: -73.9789,
+					},
+				],
+			}),
+		});
+	});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	const place = composer.locator('[data-checkin-place]');
+	await place.fill('Blue Bottle');
+
+	const suggestions = page.locator('[data-checkin-place-pick]');
+	await expect(suggestions).toHaveCount(2);
+	await expect(suggestions.first()).toContainText('San Francisco, CA, USA');
+	await expect(suggestions.nth(1)).toContainText('New York, NY, USA');
+
+	await suggestions.first().click();
+
+	// The field itself gets only the short place name, not the address.
+	await expect(place).toHaveValue('Blue Bottle Coffee');
+	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
+});
+
 // A small decorative touch bookending Home's own vertical rail: a
 // "sunrise" mark where it begins, a "sunset" mark where it currently
 // ends — both hidden while the Timeline is empty (CSS gates them on the

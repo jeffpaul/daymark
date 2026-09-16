@@ -2028,20 +2028,20 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private static function recommended_connectors(): array {
 		return array(
-			'webmention'  => array(
+			'webmention'      => array(
 				'label'       => 'Webmention',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
 				'description' => __( "Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
 			),
-			'activitypub' => array(
+			'activitypub'     => array(
 				'label'       => 'ActivityPub',
 				'wporg_slug'  => 'activitypub',
 				'folder_slug' => 'activitypub',
 				/* translators: "Reply from the Fediverse" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
 				'description' => __( 'Makes your site followable from Mastodon, Threads, Pixelfed, and the rest of the fediverse — a published Mark reaches those followers automatically, and their replies come back into Daymark Notifications labeled "Reply from the Fediverse."', 'daymark' ),
 			),
-			'atmosphere'  => array(
+			'atmosphere'      => array(
 				'label'       => 'ATmosphere',
 				'wporg_slug'  => 'atmosphere',
 				'folder_slug' => 'wordpress-atmosphere',
@@ -2050,18 +2050,25 @@ class Daymark_Admin_Subscriptions {
 				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
 				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
 			),
-			'jetpack'     => array(
+			'jetpack'         => array(
 				'label'       => 'Jetpack',
 				'wporg_slug'  => 'jetpack',
 				'folder_slug' => 'jetpack',
 				'classes'     => array( 'Automattic\\Jetpack\\Connection\\Client' ),
 				'description' => __( "Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
 			),
-			'bridgy_fed'  => array(
+			'bridgy_fed'      => array(
 				'label'       => 'Bridgy Fed',
 				'type'        => 'service',
 				'url'         => 'https://fed.brid.gy/',
 				'description' => __( 'A free, hosted bridge — not a plugin to install — that gives your site a fediverse and Bluesky presence through the Webmention support above, with no ActivityPub or AT Protocol plugin of its own required. An alternative to the ActivityPub plugin above rather than an addition to it: Bridgy Fed bridges you in under an auto-generated handle tied to its own domain, where the ActivityPub plugin gives your site its own native handle on your own domain. See CLAUDE.md for the full comparison.', 'daymark' ),
+			),
+			'simple_location' => array(
+				'label'       => 'Simple Location',
+				'wporg_slug'  => 'simple-location',
+				'folder_slug' => 'simple-location',
+				'classes'     => array( 'Geo_Data' ),
+				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself.', 'daymark' ),
 			),
 		);
 	}
