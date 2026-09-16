@@ -37,6 +37,13 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 
 	public function tear_down() {
 		remove_theme_support( 'post-formats' );
+		// add_theme_support( 'post-formats', ... ) has a core side effect of
+		// calling add_post_type_support( 'post', 'post-formats' ) — but
+		// remove_theme_support() never calls the reverse. Without this,
+		// post_type_supports( 'post', 'post-formats' ) would stay true for
+		// the rest of the PHPUnit process once this file's first test runs,
+		// leaking into every other test file that runs afterward.
+		remove_post_type_support( 'post', 'post-formats' );
 		remove_filter( 'manage_post_posts_columns', array( $this->column, 'add_column' ) );
 		remove_action( 'manage_post_posts_custom_column', array( $this->column, 'render_column' ) );
 		remove_filter( 'manage_edit-post_sortable_columns', array( $this->column, 'add_sortable_column' ) );
@@ -179,6 +186,10 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 	 */
 	public function test_sorting_groups_standard_posts_and_orders_by_format_then_title() {
 		set_current_screen( 'edit-post' );
+		// A real WP_Query only runs sort_by_format() via the posts_clauses
+		// filter register() actually hooks — unlike the narrower unit tests
+		// above, which call sort_by_format() directly and need no hook.
+		$this->column->register();
 
 		$video_banana    = self::factory()->post->create(
 			array(
@@ -259,6 +270,11 @@ class Test_Admin_Post_Format_Column extends WP_UnitTestCase {
 
 	public function test_register_does_not_hook_the_column_for_post_when_post_formats_is_unsupported() {
 		remove_theme_support( 'post-formats' );
+		// See tear_down()'s own comment: remove_theme_support() alone does not
+		// undo add_theme_support()'s add_post_type_support() side effect, so
+		// post_type_supports( 'post', 'post-formats' ) needs clearing directly
+		// for this test to actually exercise the "unsupported" case.
+		remove_post_type_support( 'post', 'post-formats' );
 
 		$this->column->register();
 
