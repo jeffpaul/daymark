@@ -482,7 +482,7 @@ class Daymark_Featured_Content {
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'media-editor', 'media-models' ),
 			DAYMARK_VERSION,
 			true
 		);
@@ -498,10 +498,9 @@ class Daymark_Featured_Content {
 			'daymark-featured-content-editor',
 			'daymarkFeaturedContent',
 			array(
-				'metaType'       => self::META_TYPE,
-				'metaData'       => self::META_DATA,
-				'allowedTypes'   => self::allowed_types(),
-				'oembedEndpoint' => rest_url( 'daymark/v1/featured-content/oembed' ),
+				'metaType'     => self::META_TYPE,
+				'metaData'     => self::META_DATA,
+				'allowedTypes' => self::allowed_types(),
 			)
 		);
 	}

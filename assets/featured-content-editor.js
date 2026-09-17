@@ -20,6 +20,28 @@
  * was replaced with this filter-based approach once that mismatch was
  * pointed out against the real editor UI.
  *
+ * Clicking "Set featured content" opens the same classic media modal
+ * overlay "Set featured image" does (via wp.media()), titled "Featured
+ * content" instead of "Featured image", with a third "Add by URL" tab
+ * alongside core's own "Upload files"/"Media Library" tabs — a real change
+ * from this feature's second draft, which expanded an inline sidebar picker
+ * (a "Choose from Media Library" button plus a plain URL field) instead of
+ * reusing the modal overlay. Reaching that third tab means extending
+ * wp.media's own Backbone-based frame classes (wp.media.view.MediaFrame.Select,
+ * reusing wp.media.controller.Embed and wp.media.view.Embed for the URL
+ * tab's own input+live-preview UI — the exact classes/pattern WordPress
+ * core's own classic "Add Media" button's "Insert from URL" tab is built
+ * from) rather than the documented, stable `editor.PostFeaturedImage`
+ * filter above — this part of the WP media JS API has no public reference
+ * docs and could not be exercised against a live site in this environment.
+ * getFeaturedContentFrameClass() feature-detects every class it touches and
+ * openMediaPicker() falls back to a plain wp.media() call (Upload files +
+ * Media Library only, no URL tab) if any of them are missing or if
+ * constructing the custom frame throws — so a wrong assumption about this
+ * internal API costs the URL tab, never the whole control. Flagged for Jeff
+ * to verify against a real site: opening the modal, using each of the three
+ * tabs, and confirming no console errors.
+ *
  * Plain ES2020 calling wp.element.createElement — no JSX, no build step,
  * enqueued only against WordPress core's own bundled scripts. This matches
  * the "vanilla, no build" posture CLAUDE.md's "Block vs shortcode" decision
@@ -46,8 +68,6 @@
 
 	var el = wp.element.createElement;
 	var Fragment = wp.element.Fragment;
-	var RawHTML = wp.element.RawHTML;
-	var useState = wp.element.useState;
 	var __ = wp.i18n.__;
 	var sprintf = wp.i18n.sprintf;
 	var useSelect = wp.data.useSelect;
@@ -56,7 +76,6 @@
 	var config = window.daymarkFeaturedContent || {};
 	var META_TYPE = config.metaType || '_daymark_featured_content_type';
 	var META_DATA = config.metaData || '_daymark_featured_content';
-	var OEMBED_ENDPOINT = config.oembedEndpoint || '';
 
 	// File extensions this guesses as audio vs video when a pasted URL is a
 	// direct media file rather than a page a provider's oEmbed would resolve.
@@ -154,35 +173,174 @@
 		editPost( { meta: meta } );
 	}
 
+	// Lazily built, memoized once the required wp.media classes are confirmed
+	// present — see getFeaturedContentFrameClass().
+	var FeaturedContentFrame;
+	var frameBuildAttempted = false;
+
 	/**
-	 * Open WordPress's own classic media modal, scoped to audio+video, and
-	 * hand the picked attachment back to the caller. Requires
+	 * Builds (once) a wp.media frame class that behaves exactly like core's
+	 * own Featured Image frame (wp.media.view.MediaFrame.Select — "Upload
+	 * files"/"Media Library" tabs, a working "Use this file" button) plus one
+	 * extra "Add by URL" tab, reusing wp.media.controller.Embed and
+	 * wp.media.view.Embed for that tab's own input+live-preview UI — the
+	 * same classes WordPress core's own classic "Add Media" button's own
+	 * "Insert from URL" tab is built from.
+	 *
+	 * Every class this touches is feature-detected first; if any is missing
+	 * (a WordPress version this wasn't built against, a customized media
+	 * modal), this returns null and the caller falls back to a plain
+	 * wp.media() call with no URL tab, rather than risk a half-working frame.
+	 *
+	 * @return {Function|null} The frame constructor, or null if unsupported.
+	 */
+	function getFeaturedContentFrameClass() {
+		if ( frameBuildAttempted ) {
+			return FeaturedContentFrame;
+		}
+
+		frameBuildAttempted = true;
+
+		var MediaFrameSelect = wp.media && wp.media.view && wp.media.view.MediaFrame && wp.media.view.MediaFrame.Select;
+
+		if (
+			! MediaFrameSelect ||
+			! wp.media.controller || ! wp.media.controller.Embed ||
+			! wp.media.view.Toolbar || ! wp.media.view.Toolbar.Select ||
+			! wp.media.view.Embed ||
+			! wp.media.view.l10n
+		) {
+			return null;
+		}
+
+		try {
+			FeaturedContentFrame = MediaFrameSelect.extend( {
+				createStates: function () {
+					MediaFrameSelect.prototype.createStates.apply( this, arguments );
+
+					this.states.add(
+						new wp.media.controller.Embed( {
+							id: 'daymark-embed',
+							title: this.options.title,
+							priority: 40,
+							toolbar: 'daymark-embed-toolbar',
+							metadata: {},
+						} )
+					);
+				},
+
+				bindHandlers: function () {
+					MediaFrameSelect.prototype.bindHandlers.apply( this, arguments );
+
+					this.on( 'content:create:embed', this.daymarkEmbedContent, this );
+					this.on( 'toolbar:create:daymark-embed-toolbar', this.daymarkEmbedToolbar, this );
+				},
+
+				daymarkEmbedContent: function () {
+					var view = new wp.media.view.Embed( {
+						controller: this,
+						model: this.state(),
+					} ).render();
+
+					this.content.set( view );
+				},
+
+				daymarkEmbedToolbar: function ( toolbar ) {
+					var controller = this;
+
+					toolbar.view = new wp.media.view.Toolbar.Select( {
+						text: __( 'Use this URL', 'daymark' ),
+						controller: controller,
+						click: function () {
+							var state = controller.state();
+							var url = state && state.props ? state.props.get( 'url' ) : '';
+
+							if ( ! url ) {
+								return;
+							}
+
+							controller.trigger( 'daymark:url-selected', url );
+							controller.close();
+						},
+					} );
+				},
+
+				browseRouter: function ( routerView ) {
+					routerView.set( {
+						upload: {
+							text: wp.media.view.l10n.uploadFilesTitle,
+							priority: 20,
+						},
+						browse: {
+							text: wp.media.view.l10n.mediaLibraryTitle,
+							priority: 40,
+						},
+						'daymark-embed': {
+							text: __( 'Add by URL', 'daymark' ),
+							priority: 60,
+						},
+					} );
+				},
+			} );
+		} catch ( err ) {
+			FeaturedContentFrame = null;
+		}
+
+		return FeaturedContentFrame;
+	}
+
+	/**
+	 * Open the media picker for Featured Content — the same modal overlay
+	 * "Set featured image" opens, titled "Featured content", scoped to
+	 * audio/video. Uses the custom frame above when available (adding the
+	 * "Add by URL" tab); otherwise falls back to a plain wp.media() call
+	 * with just the two default tabs. Requires
 	 * Daymark_Featured_Content::enqueue_editor_assets() to have called
 	 * wp_enqueue_media() — the block editor's own Featured Image panel
 	 * doesn't use wp.media at all (it fetches media via REST directly), so
 	 * it can't be assumed available on every post-edit screen without
 	 * asking for it explicitly.
 	 *
-	 * @param {Function} onSelect Called with the picked attachment's REST-shaped object.
+	 * @param {Function} onLibrarySelect Called with the picked attachment's REST-shaped object.
+	 * @param {Function} onUrlSelect     Called with a pasted URL string.
 	 */
-	function openMediaPicker( onSelect ) {
+	function openMediaPicker( onLibrarySelect, onUrlSelect ) {
 		if ( ! wp.media ) {
 			return;
 		}
 
-		var frame = wp.media( {
-			title: __( 'Select audio or video', 'daymark' ),
+		var options = {
+			title: __( 'Featured content', 'daymark' ),
 			library: { type: [ 'audio', 'video' ] },
 			multiple: false,
 			button: { text: __( 'Use this file', 'daymark' ) },
-		} );
+		};
+
+		var FrameClass = getFeaturedContentFrameClass();
+		var frame;
+
+		if ( FrameClass ) {
+			try {
+				frame = new FrameClass( options );
+			} catch ( err ) {
+				frame = null;
+			}
+		}
+
+		if ( ! frame ) {
+			frame = wp.media( options );
+		}
 
 		frame.on( 'select', function () {
 			var selection = frame.state().get( 'selection' ).first();
 
 			if ( selection ) {
-				onSelect( selection.toJSON() );
+				onLibrarySelect( selection.toJSON() );
 			}
+		} );
+
+		frame.on( 'daymark:url-selected', function ( url ) {
+			onUrlSelect( url );
 		} );
 
 		frame.open();
@@ -216,9 +374,9 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Three states: unset (a single toggle button), the picker open (media
-	 * library button + URL field, with a live preview), or already set (a
-	 * one-line summary plus Replace/Remove).
+	 * Two states: unset (a single toggle button opening the media modal) or
+	 * already set (a one-line summary plus Replace/Remove — Replace reopens
+	 * the same modal).
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -230,29 +388,6 @@
 		var editPost = useDispatch( 'core/editor' ).editPost;
 		var current = readFeaturedContent( meta );
 
-		var openState = useState( false );
-		var isOpen = openState[ 0 ];
-		var setOpen = openState[ 1 ];
-
-		var urlState = useState( '' );
-		var url = urlState[ 0 ];
-		var setUrl = urlState[ 1 ];
-
-		var previewState = useState( null );
-		var preview = previewState[ 0 ];
-		var setPreview = previewState[ 1 ];
-
-		var busyState = useState( false );
-		var busy = busyState[ 0 ];
-		var setBusy = busyState[ 1 ];
-
-		function resetPicker() {
-			setOpen( false );
-			setUrl( '' );
-			setPreview( null );
-			setBusy( false );
-		}
-
 		function handleLibrarySelect( attachment ) {
 			var mime = attachment.mime || '';
 			var kind = 0 === mime.indexOf( 'audio/' ) ? 'audio' : ( 0 === mime.indexOf( 'video/' ) ? 'video' : '' );
@@ -262,35 +397,18 @@
 			}
 
 			saveFeaturedContent( editPost, kind, { source: 'library', attachment_id: attachment.id } );
-			resetPicker();
 		}
 
-		function handleUseUrl() {
+		function handleUrlSelect( url ) {
 			if ( ! url ) {
 				return;
 			}
 
 			saveFeaturedContent( editPost, guessUrlKind( url ), { source: 'url', url: url } );
-			resetPicker();
 		}
 
-		function handlePreview() {
-			if ( ! url || ! OEMBED_ENDPOINT || ! wp.apiFetch ) {
-				return;
-			}
-
-			setBusy( true );
-
-			wp.apiFetch( { url: OEMBED_ENDPOINT + '?url=' + encodeURIComponent( url ) } ).then(
-				function ( response ) {
-					setBusy( false );
-					setPreview( response && response.embed ? response.embed : '' );
-				},
-				function () {
-					setBusy( false );
-					setPreview( '' );
-				}
-			);
+		function openPicker() {
+			openMediaPicker( handleLibrarySelect, handleUrlSelect );
 		}
 
 		if ( current.type ) {
@@ -303,7 +421,7 @@
 					{ className: 'daymark-fc-summary-actions' },
 					el(
 						'button',
-						{ type: 'button', className: 'daymark-fc-link', onClick: function () { setOpen( true ); } },
+						{ type: 'button', className: 'daymark-fc-link', onClick: openPicker },
 						__( 'Replace', 'daymark' )
 					),
 					el(
@@ -313,72 +431,19 @@
 							className: 'daymark-fc-link daymark-fc-link--danger',
 							onClick: function () {
 								clearFeaturedContent( editPost );
-								resetPicker();
 							},
 						},
 						__( 'Remove', 'daymark' )
 					)
-				),
-				isOpen ? renderPicker() : null
+				)
 			);
 		}
 
-		if ( ! isOpen ) {
-			return el(
-				'button',
-				{ type: 'button', className: 'daymark-fc-toggle', onClick: function () { setOpen( true ); } },
-				__( 'Set featured content', 'daymark' )
-			);
-		}
-
-		return renderPicker();
-
-		/**
-		 * @return {Object} The open picker's own element tree.
-		 */
-		function renderPicker() {
-			return el(
-				'div',
-				{ className: 'daymark-fc-picker' },
-				el(
-					'button',
-					{ type: 'button', className: 'daymark-fc-toggle', onClick: function () { openMediaPicker( handleLibrarySelect ); } },
-					__( 'Choose from Media Library', 'daymark' )
-				),
-				el( 'p', { className: 'daymark-fc-or' }, __( 'Or paste a URL (YouTube, Vimeo, a podcast episode link, etc.):', 'daymark' ) ),
-				el( 'input', {
-					type: 'url',
-					className: 'daymark-fc-url-input',
-					placeholder: __( 'https://…', 'daymark' ),
-					value: url,
-					onChange: function ( event ) {
-						setUrl( event.target.value );
-						setPreview( null );
-					},
-				} ),
-				el(
-					'div',
-					{ className: 'daymark-fc-url-actions' },
-					el(
-						'button',
-						{ type: 'button', className: 'daymark-fc-link', disabled: ! url || busy, onClick: handlePreview },
-						busy ? __( 'Loading preview…', 'daymark' ) : __( 'Preview', 'daymark' )
-					),
-					el(
-						'button',
-						{ type: 'button', className: 'daymark-fc-link', disabled: ! url, onClick: handleUseUrl },
-						__( 'Use this URL', 'daymark' )
-					),
-					el(
-						'button',
-						{ type: 'button', className: 'daymark-fc-link', onClick: resetPicker },
-						__( 'Cancel', 'daymark' )
-					)
-				),
-				preview ? el( RawHTML, { className: 'daymark-fc-preview' }, preview ) : null,
-				'' === preview ? el( 'p', { className: 'daymark-fc-preview-empty' }, __( "Couldn't generate a preview for this URL — it will still be saved and rendered on the front end.", 'daymark' ) ) : null
-			);
-		}
+		return el(
+			'button',
+			{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
+			__( 'Set featured content', 'daymark' )
+		);
 	}
 
 	/**

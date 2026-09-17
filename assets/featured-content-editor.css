@@ -1,9 +1,10 @@
 /**
  * Minimal styling for the Featured Content control (assets/featured-content-editor.js,
- * issue #401) — rendered as plain elements (not wp-components), matching the
- * plain-button look of core's own "Set featured image"/"Remove featured
- * image" controls in the same panel rather than pulling in wp-components
- * for one small control.
+ * issue #401) — a toggle button matching the visual style of core's own
+ * "Set featured image" button, plus a plain summary/Replace/Remove row once
+ * a value is set. The picker itself is the standard wp.media() modal
+ * overlay (with an added "Add by URL" tab), which comes fully styled from
+ * wp-admin's own bundled media-views.css — nothing here targets it.
  */
 
 .daymark-fc-toggle {
@@ -28,29 +29,6 @@
 	border-color: #1e1e1e;
 }
 
-.daymark-fc-picker {
-	margin-top: 8px;
-}
-
-.daymark-fc-or {
-	margin: 8px 0 4px;
-	font-size: 12px;
-}
-
-.daymark-fc-url-input {
-	display: block;
-	width: 100%;
-	box-sizing: border-box;
-	margin-bottom: 6px;
-	padding: 6px 8px;
-}
-
-.daymark-fc-url-actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-}
-
 .daymark-fc-link {
 	background: none;
 	border: none;
@@ -59,12 +37,6 @@
 	cursor: pointer;
 	font-size: 13px;
 	text-decoration: underline;
-}
-
-.daymark-fc-link:disabled {
-	color: #a7a7a7;
-	cursor: default;
-	text-decoration: none;
 }
 
 .daymark-fc-link--danger {
@@ -81,22 +53,4 @@
 	display: flex;
 	gap: 12px;
 	margin-top: 4px;
-}
-
-.daymark-fc-preview,
-.daymark-fc-preview-empty {
-	margin-top: 8px;
-	max-width: 100%;
-	overflow: hidden;
-}
-
-.daymark-fc-preview iframe,
-.daymark-fc-preview audio,
-.daymark-fc-preview video {
-	max-width: 100%;
-}
-
-.daymark-fc-preview-empty {
-	font-size: 12px;
-	font-style: italic;
 }
