@@ -131,6 +131,18 @@ class Daymark_Admin_Post_Format_Icon {
 	 * @return string
 	 */
 	public function add_format_icon( string $title, int $post_id ): string {
+		// the_title fires on every front-end/login/feed request too, not
+		// only in wp-admin — and get_current_screen() isn't merely absent
+		// there, the function itself is undefined (it only exists once
+		// wp-admin/includes/screen.php has loaded, which never happens
+		// outside an actual wp-admin request), so calling it unguarded
+		// fatals the whole page rather than just returning null. Confirmed
+		// directly via a real crash on wp-login.php's own privacy-policy
+		// link, which also calls get_the_title().
+		if ( ! function_exists( 'get_current_screen' ) ) {
+			return $title;
+		}
+
 		$screen = get_current_screen();
 
 		if ( ! $screen || 'edit' !== $screen->base ) {

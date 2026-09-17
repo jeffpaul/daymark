@@ -8,7 +8,13 @@
 // get_current_screen()/set_current_screen() live in wp-admin/includes/screen.php,
 // which the plain WP PHPUnit bootstrap never loads (it's only pulled in by a
 // real wp-admin/admin.php request) — the same reason test-admin-bar.php
-// conditionally requires WP_Admin_Bar's own class file.
+// conditionally requires WP_Admin_Bar's own class file. This also means
+// add_format_icon()'s own function_exists( 'get_current_screen' ) guard (a
+// real, CI-crash-confirmed fix — the_title fires on every front-end/login/
+// feed request too, where that function is genuinely undefined, not merely
+// returning null) can't be exercised by a dedicated test in this same
+// process: once this require runs, the function stays defined for every
+// later test here regardless of what it checks.
 if ( ! function_exists( 'set_current_screen' ) ) {
 	require_once ABSPATH . 'wp-admin/includes/screen.php';
 }
