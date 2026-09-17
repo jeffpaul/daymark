@@ -444,10 +444,20 @@
 	 * broken picker. Re-bound fresh on every `openMediaPicker()` call (a new
 	 * frame instance each time), so it always starts back on "All".
 	 *
+	 * Bound to both `content:create:browse` and `content:render:browse` —
+	 * this file's own "Add by URL" tab (above) only ever needed the former
+	 * for its *custom* content mode, but which of the two actually fires
+	 * first for the *built-in* 'browse' mode (used for both the frame's
+	 * initial default state and every later "Media Library" tab click) isn't
+	 * confirmed the same way in this sandbox; the duplicate-insertion guard
+	 * below already makes binding both safe regardless of whether one or
+	 * both end up firing, unlike the double-binding this file's own history
+	 * already flags as a real bug for a view with no such guard.
+	 *
 	 * @param {Object} frame The just-constructed wp.media frame instance.
 	 */
 	function bindLibraryTypeFilter( frame ) {
-		frame.on( 'content:render:browse', function () {
+		function insertFilter() {
 			try {
 				var browse = frame.content.get();
 				var collection = browse && browse.collection;
@@ -464,9 +474,9 @@
 				}
 
 				// A prior render of this same browse view (e.g. switching away
-				// to "Add by URL" and back) already has the control — content
-				// re-renders per activation, not per keystroke, so this only
-				// ever guards against a duplicate on re-activation.
+				// to "Add by URL" and back, or the other of the two events
+				// above also firing for this same activation) already has the
+				// control.
 				if ( toolbar.$el.find( '.daymark-fc-typefilter' ).length ) {
 					return;
 				}
@@ -496,9 +506,18 @@
 				toolbar.$el.prepend( $select );
 			} catch ( err ) {
 				// A missing/unexpected internal shape costs only this filter
-				// control — the picker itself is untouched.
+				// control — the picker itself is untouched. Logged (not
+				// thrown) so a real browser session can actually reveal which
+				// assumption broke, since this file has no other diagnostic
+				// path for a pure client-side Backbone issue like this one.
+				if ( window.console && window.console.warn ) {
+					window.console.warn( '[Daymark Featured Content] library type filter skipped:', err );
+				}
 			}
-		} );
+		}
+
+		frame.on( 'content:create:browse', insertFilter );
+		frame.on( 'content:render:browse', insertFilter );
 	}
 
 	/**
