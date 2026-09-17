@@ -490,17 +490,23 @@
 				// `library`/`state` persists across every router tab, not
 				// just "Media Library" — the frame's own state doesn't
 				// change just because "Upload files"/"Add by URL" is the
-				// tab actually showing. `.media-toolbar-secondary` — the
-				// row "Filter by date" itself lives in — is the real,
-				// structural signal for whether the library-browse content
-				// is genuinely the one on screen right now (confirmed
-				// directly from a report: on "Upload files", that entire
-				// row, "Filter by date" included, disappears too) rather
-				// than a guessed content-mode name or event. `:visible`
-				// covers a case where the row still exists in the DOM but
-				// is merely hidden for the active tab, not removed outright.
+				// tab actually showing. The previous fix gated on
+				// `.media-toolbar-secondary`'s own `:visible` state,
+				// assuming that whole row disappears on "Upload files" —
+				// wrong, confirmed directly from a captured DOM snippet:
+				// the row's *container* div stays in the DOM and stays
+				// CSS-visible (nonzero width, as any block element in a
+				// wider container) on every tab; what actually disappears
+				// on "Upload files" is only its *content* — core's real
+				// "Filter by date" `<label>`/`<select>`/spinner are never
+				// rendered into it there, leaving a genuinely empty
+				// `<div class="media-toolbar-secondary"></div>`. Checking
+				// for that real content (any child element at all) is the
+				// actual structural signal for "the library-browse toolbar
+				// is genuinely the one on screen," not the container's own
+				// always-true visibility.
 				var showFilter = !! ( library && library.props && 'function' === typeof library.props.set &&
-					$secondary.length && $secondary.is( ':visible' ) );
+					$secondary.length && $secondary.children().length > 0 );
 
 				if ( ! showFilter ) {
 					// Not on a tab where this filter applies right now —
