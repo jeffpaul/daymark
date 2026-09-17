@@ -509,6 +509,16 @@ h2[tabindex='-1']:focus {
 	pointer-events: auto;
 }
 
+/* .daymark-topbar's own z-index (needed to stay above scrolled content
+   while sticky, see below) otherwise sits above the launcher scrim too,
+   leaving the header the one bright, still-tappable thing on an otherwise
+   dimmed, inert screen while the launcher's fanned out. Dropping it below
+   the scrim's z-index here — only while #daymark-app carries this class —
+   gives it the exact same darkening and click-blocking as everything else. */
+#daymark-app.is-launcher-open .daymark-topbar {
+	z-index: 0;
+}
+
 .daymark-launcher__bubble {
 	/* Positioned relative to .daymark-launcher (the flex row's own box, not
 	   this bubble's immediate parent) so left: 50% lands on the row's true

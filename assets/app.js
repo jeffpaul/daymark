@@ -2460,6 +2460,13 @@
 			clearTimeout(screen._launcherSettleTimer);
 			launcher.classList.remove('is-settled');
 			launcher.classList.add('is-open');
+			// The topbar's own z-index (needed to stay above scrolled
+			// content while sticky) otherwise sits above the scrim, so it
+			// stayed bright — and tappable — while everything else dimmed
+			// and went inert. This drops it below the scrim's layer too,
+			// for the same darkening and the same "inert until you close
+			// the launcher" treatment as the rest of the page.
+			root.classList.add('is-launcher-open');
 			screen._launcherSettleTimer = setTimeout(() => {
 				launcher.classList.add('is-settled');
 			}, SETTLE_MS);
@@ -2487,6 +2494,7 @@
 			screen._launcherOpen = false;
 			clearTimeout(screen._launcherSettleTimer);
 			launcher.classList.remove('is-open', 'is-settled');
+			root.classList.remove('is-launcher-open');
 			btn.setAttribute('aria-expanded', 'false');
 			bubbles.forEach((bubble) => {
 				bubble.setAttribute('tabindex', '-1');
