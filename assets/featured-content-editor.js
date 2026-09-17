@@ -495,8 +495,21 @@
 					return;
 				}
 
-				var $select = $jq(
-					'<select class="daymark-fc-typefilter" aria-label="' +
+				// Wrapped in a visible label + select, matching core's own
+				// "Filter by date" shape (a two-row label-above-select
+				// widget, confirmed from Jeff's own screenshot) — a bare
+				// `<select>` alone is a single-row element with a different
+				// vertical footprint than its stacked sibling, which is what
+				// threw the two out of alignment once the filter itself
+				// started rendering. Matching the shape avoids a second
+				// round of guessing at whatever flex/alignment rule the
+				// toolbar container itself uses.
+				var $wrap = $jq(
+					'<div class="daymark-fc-typefilter">' +
+						'<label class="daymark-fc-typefilter-label" for="daymark-fc-typefilter-select">' +
+						__( 'Filter by type', 'daymark' ) +
+						'</label>' +
+						'<select id="daymark-fc-typefilter-select" aria-label="' +
 						__( 'Filter by content type', 'daymark' ) +
 						'">' +
 						'<option value="">' +
@@ -508,16 +521,17 @@
 						'<option value="audio">' +
 						__( 'Audio', 'daymark' ) +
 						'</option>' +
-						'</select>'
+						'</select>' +
+						'</div>'
 				);
 
-				$select.on( 'change', function () {
+				$wrap.find( 'select' ).on( 'change', function () {
 					var value = $jq( this ).val();
 
 					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
 				} );
 
-				$secondary.prepend( $select );
+				$secondary.prepend( $wrap );
 			} catch ( err ) {
 				// A missing/unexpected internal shape costs only this filter
 				// control — the picker itself is untouched. Logged (not
