@@ -495,15 +495,28 @@
 					return;
 				}
 
-				// Wrapped in a visible label + select, matching core's own
-				// "Filter by date" shape (a two-row label-above-select
-				// widget, confirmed from Jeff's own screenshot) — a bare
-				// `<select>` alone is a single-row element with a different
-				// vertical footprint than its stacked sibling, which is what
-				// threw the two out of alignment once the filter itself
-				// started rendering. Matching the shape avoids a second
-				// round of guessing at whatever flex/alignment rule the
-				// toolbar container itself uses.
+				// Wrapped in a visible label + select. The prior fix assumed
+				// `.media-toolbar-secondary` was a flex row and tried to
+				// match "Filter by date"'s own two-row shape to align with
+				// it — Jeff's own browser inspector screenshot showed that
+				// assumption was wrong: the container is `display: grid`
+				// (a real computed-style badge, not a guess), and core's
+				// own label/select are two independent, unwrapped grid
+				// items, not one grouped unit — wrapping ours in a single
+				// `<div>` made it one grid item where core's own filter is
+				// two, which is exactly the kind of difference that throws
+				// off an auto-placed grid's row/column assignment
+				// regardless of the container's specific track definitions.
+				// Rather than reverse-engineer those track definitions (the
+				// same category of undocumented-core-CSS guessing that
+				// already cost several rounds on this exact filter), the
+				// wrapper's own CSS (`assets/featured-content-editor.css`)
+				// now spans every column via `grid-column: 1 / -1` — a
+				// standard, line-based CSS Grid span that works correctly
+				// no matter how many columns the container actually
+				// defines — giving this filter a dedicated, predictable
+				// full-width row of its own, decoupled entirely from
+				// wherever core's own "Filter by date" row lands.
 				var $wrap = $jq(
 					'<div class="daymark-fc-typefilter">' +
 						'<label class="daymark-fc-typefilter-label" for="daymark-fc-typefilter-select">' +

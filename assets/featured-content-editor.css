@@ -145,22 +145,26 @@
  * bindLibraryTypeFilter() in the JS file) — prepended as a plain sibling of
  * core's own toolbar groups (.media-toolbar-primary/.media-toolbar-secondary,
  * both styled by wp-admin's bundled media-views.css, which this rule doesn't
- * touch). Deliberately a label-above-select column, matching the two-row
- * shape core's own "Filter by date" widget renders in the same toolbar row
- * (confirmed from Jeff's own screenshot) — a single bare `<select>` sat at a
- * different vertical position than that taller sibling once the filter
- * itself started rendering correctly; matching its shape (rather than
- * guessing at whatever flex/alignment rule the toolbar container applies)
- * is what keeps the two aligned regardless of that rule.
+ * touch). `.media-toolbar-secondary` is confirmed `display: grid` (Jeff's
+ * own browser inspector, a real computed-style badge, not a guess) with
+ * core's own "Filter by date" label/select as two independent, unwrapped
+ * grid items — wrapping ours in one `<div>` made it a single grid item where
+ * core's is two, which threw off the grid's auto-placement regardless of the
+ * container's specific column/track definitions. `grid-column: 1 / -1` spans
+ * every column of whatever grid the container actually defines — a standard,
+ * line-based CSS Grid span, not a guess at track sizing — giving this filter
+ * its own dedicated, predictable full-width row rather than trying to land
+ * in the same row/column core's own filter happens to occupy.
  */
 .daymark-fc-typefilter {
 	display: flex;
-	flex-direction: column;
-	margin-right: 10px;
+	align-items: center;
+	gap: 8px;
+	grid-column: 1 / -1;
+	margin-bottom: 8px;
 }
 
 .daymark-fc-typefilter-label {
-	margin-bottom: 3px;
 	color: #757575;
 	font-size: 12px;
 	line-height: 1.4;
