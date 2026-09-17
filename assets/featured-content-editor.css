@@ -56,25 +56,41 @@
 }
 
 /*
- * The "Add by URL" tab's content: wp.media.view.Embed's own input+preview
- * (unstyled here — it comes from wp-admin's own bundled media-views.css)
- * plus our own submit button rendered directly alongside it, since a
- * router tab's content isn't tied to a state that would otherwise let the
- * frame's toolbar region swap in a URL-specific button for us.
+ * The "Add by URL" tab's content — a small, fully self-built view (no
+ * longer wp.media.view.Embed; see the JS file's own docblock for why),
+ * so every element here is plain block markup this stylesheet fully
+ * controls, with no undocumented internal layout to fight.
  */
 .daymark-fc-embed-tab {
+	display: block;
 	padding: 16px;
-	/* Contains any floated row wp.media.view.Embed's own markup uses
-	 * internally (a common media-views.css convention for label+input
-	 * pairs), so our own button below always starts on a clean line
-	 * rather than risking an unresolved float from its sibling. */
-	overflow: hidden;
+}
+
+.daymark-fc-embed-label {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.daymark-fc-embed-url {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	margin-bottom: 12px;
+}
+
+.daymark-fc-embed-preview {
+	display: block;
+	margin-bottom: 12px;
+	max-width: 100%;
+}
+
+.daymark-fc-embed-preview img,
+.daymark-fc-embed-preview iframe {
+	max-width: 100%;
 }
 
 .daymark-fc-embed-submit {
 	display: block;
-	position: static;
-	float: none;
-	clear: both;
-	margin-top: 16px;
 }
