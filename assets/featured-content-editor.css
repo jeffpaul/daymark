@@ -8,25 +8,32 @@
  */
 
 /*
- * "Set featured image" (core's `@wordpress/components` Button, secondary
- * variant) outlines itself with an inset box-shadow, not a real border — a
- * deliberate core technique that keeps the outline from adding to the
- * button's own layout box. Matching that (rather than a real `border`,
- * which visibly read thicker/darker and made this button's rendered height
- * differ from "Set featured image" immediately above it, reported directly
- * with a screenshot) is what actually makes the two match pixel-for-pixel.
+ * "Set featured image" is core's plain `@wordpress/components` Button (no
+ * `is-secondary`/`is-primary` variant at all — confirmed directly from a
+ * browser inspection Jeff attached, and from Gutenberg's own source:
+ * `packages/components/src/button/style.scss`'s base `.components-button`
+ * sets `border: $border-width solid transparent;`/`border-radius:
+ * $radius-small;`, and `packages/editor/src/components/post-featured-image
+ * /style.scss`'s `.editor-post-featured-image__toggle` overrides only the
+ * transparent border's *color* to `$gray-400`). A real 1px border, not an
+ * inset box-shadow — the previous fix (issue #401's Twelfth follow-up)
+ * guessed the secondary-variant box-shadow technique without checking which
+ * variant this actually is, which is exactly the wrong border mechanism.
+ * $border-width/$radius-small/$gray-400 resolve to 1px/2px/#ccc in
+ * Gutenberg's own base-styles variables.
  */
 .daymark-fc-toggle {
-	display: block;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	width: 100%;
 	box-sizing: border-box;
-	min-height: 36px;
+	min-height: 40px;
 	margin-top: 8px;
-	padding: 6px 12px;
-	background: #fff;
-	border: none;
+	padding: 4px 12px;
+	background: none;
+	border: 1px solid #ccc;
 	border-radius: 2px;
-	box-shadow: inset 0 0 0 1px #949494;
 	cursor: pointer;
 	text-align: center;
 	font-size: 13px;
@@ -36,7 +43,7 @@
 }
 
 .daymark-fc-toggle:hover {
-	box-shadow: inset 0 0 0 1px #1e1e1e;
+	border-color: #1e1e1e;
 }
 
 .daymark-fc-link {
