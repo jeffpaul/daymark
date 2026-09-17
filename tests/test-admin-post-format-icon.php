@@ -91,17 +91,20 @@ class Test_Admin_Post_Format_Icon extends WP_UnitTestCase {
 		$this->icon->render_format_icon_column( 'date', $post_id );
 	}
 
-	public function test_render_format_icon_column_wraps_standard_posts_in_an_empty_data_format_span() {
+	public function test_render_format_icon_column_shows_the_standard_icon_with_an_empty_data_format_attribute() {
 		$post_id = self::factory()->post->create();
 
 		ob_start();
 		$this->icon->render_format_icon_column( 'daymark_format_icon', $post_id );
 		$output = ob_get_clean();
 
-		// Always wrapped, even for Standard — assets/admin-post-format.js
-		// reads this attribute to prefill Quick Edit's own Format field, so
-		// every row needs it, not only rows that also show an icon.
-		$this->assertSame( '<span class="daymark-format-icon-cell" data-format=""></span>', $output );
+		// The data-format attribute stays the raw, empty taxonomy value
+		// (matching Quick Edit's own value="" option for Standard, and what
+		// assets/admin-post-format.js reads to prefill it) even though the
+		// icon itself falls back to the literal 'standard' dashicon lookup.
+		$this->assertStringContainsString( 'data-format=""', $output );
+		$this->assertStringContainsString( 'dashicons-format-standard', $output );
+		$this->assertStringContainsString( 'Standard', $output );
 	}
 
 	public function test_render_format_icon_column_echoes_the_matching_dashicon_for_a_real_format() {

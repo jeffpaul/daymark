@@ -123,21 +123,27 @@ class Daymark_Admin_Post_Format_Icon {
 	 * icon asset is needed here — except `link`, whose dashicon class is
 	 * pluralized ("format-links") unlike every other format's own
 	 * slug-matching class name; confirmed directly against core's own CSS
-	 * rather than assumed. `standard` has no entry: a Standard post gets no
-	 * icon at all.
+	 * rather than assumed. `standard` maps to `dashicons-format-standard` —
+	 * reported directly as visibly missing once every other format's own
+	 * icon made its absence obvious; confirmed against core's own CSS that
+	 * this class genuinely exists (it's the same glyph as
+	 * `dashicons-admin-post`, core's own icon for "an ordinary written
+	 * post") rather than assumed missing, the same verification-first
+	 * posture as the `link` pluralization above.
 	 *
 	 * @var array<string, string>
 	 */
 	private const FORMAT_DASHICONS = array(
-		'aside'   => 'dashicons-format-aside',
-		'audio'   => 'dashicons-format-audio',
-		'chat'    => 'dashicons-format-chat',
-		'gallery' => 'dashicons-format-gallery',
-		'image'   => 'dashicons-format-image',
-		'link'    => 'dashicons-format-links',
-		'quote'   => 'dashicons-format-quote',
-		'status'  => 'dashicons-format-status',
-		'video'   => 'dashicons-format-video',
+		'standard' => 'dashicons-format-standard',
+		'aside'    => 'dashicons-format-aside',
+		'audio'    => 'dashicons-format-audio',
+		'chat'     => 'dashicons-format-chat',
+		'gallery'  => 'dashicons-format-gallery',
+		'image'    => 'dashicons-format-image',
+		'link'     => 'dashicons-format-links',
+		'quote'    => 'dashicons-format-quote',
+		'status'   => 'dashicons-format-status',
+		'video'    => 'dashicons-format-video',
 	);
 
 	/**
@@ -231,13 +237,18 @@ class Daymark_Admin_Post_Format_Icon {
 		$format = get_post_format( $post_id );
 		$format = false === $format ? '' : $format;
 
+		// The `data-format` attribute stays the raw taxonomy value (empty
+		// for Standard, matching Quick Edit's own `value=""` option) — only
+		// the icon lookup below falls back to the literal 'standard' key.
+		$icon_key = '' === $format ? 'standard' : $format;
+
 		printf( '<span class="daymark-format-icon-cell" data-format="%s">', esc_attr( $format ) );
 
-		if ( '' !== $format && isset( self::FORMAT_DASHICONS[ $format ] ) ) {
+		if ( isset( self::FORMAT_DASHICONS[ $icon_key ] ) ) {
 			printf(
 				'<span class="dashicons %1$s daymark-format-icon" aria-hidden="true"></span><span class="screen-reader-text">%2$s</span>',
-				esc_attr( self::FORMAT_DASHICONS[ $format ] ),
-				esc_html( get_post_format_string( $format ) )
+				esc_attr( self::FORMAT_DASHICONS[ $icon_key ] ),
+				esc_html( get_post_format_string( $icon_key ) )
 			);
 		}
 
