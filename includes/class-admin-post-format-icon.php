@@ -10,10 +10,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Prepends a small dashicon indicating a post's format immediately before
- * its title on every wp-admin post list screen for a post type Daymark
- * integrates with that also supports WordPress core's own post-formats
- * feature.
+ * Adds a narrow, icon-only column immediately before Title on every
+ * wp-admin post list screen for a post type Daymark integrates with that
+ * also supports WordPress core's own post-formats feature.
  *
  * Today that's `post` alone — Marks live there (Daymark_Publisher already
  * writes the real `post_format` taxonomy via `set_post_format()`, see its
@@ -25,20 +24,55 @@ if ( ! defined( 'ABSPATH' ) ) {
  * checking `post`, so a future post type Daymark integrates with picks
  * this up automatically instead of needing a second change here.
  *
- * Deliberately no new "All formats" filter dropdown, and deliberately no
- * dedicated column: WordPress core already renders a filter dropdown on
- * this same screen automatically (`WP_Posts_List_Table::
- * formats_dropdown()`, confirmed directly against core source) once at
- * least one post uses a non-Standard format — building a second one here
- * would be exactly the duplicate UI a plain, purely visual icon avoids.
- * This class is a pure identifier, not a second filtering mechanism.
+ * This is the class's SECOND implementation. The first hooked the generic
+ * `the_title` filter to prepend icon markup directly into the title string,
+ * on the theory that a later priority (20) than core's own `the_title` ->
+ * `esc_html` pass (added inside `display_rows()`, priority 10) would let
+ * the icon's HTML survive uncscaped. That shipped, then broke in
+ * production: `WP_Posts_List_Table::column_title()` doesn't render the
+ * `the_title` filter chain's result directly — it calls
+ * `_draft_or_post_title()`, which wraps the ENTIRE chain's output (icon
+ * markup included) in its own second, unconditional `esc_html()` call,
+ * confirmed directly against core source
+ * (`wp-admin/includes/template.php`). No filter priority can outrun a
+ * separate escape applied by the calling function itself, so the icon's
+ * markup always rendered as literal, visible text instead of an icon.
+ *
+ * A narrow custom column (this implementation) sidesteps the problem
+ * entirely: `WP_Posts_List_Table::column_default()` fires a plain action
+ * hook (`manage_{$post_type}_posts_custom_column`) for any non-built-in
+ * column and never escapes or otherwise post-processes whatever that
+ * action echoes — confirmed directly against core source — the same
+ * mechanism every plugin that renders a thumbnail, a star rating, or any
+ * other inline markup in the list table already relies on. Positioning is
+ * controlled by where a key is inserted into the array the matching
+ * `manage_{$post_type}_posts_columns` filter returns (also confirmed
+ * against core source), so inserting this column's key immediately before
+ * `title` puts the icon exactly where the mockup showed it — visually
+ * beside the post name — without ever touching the title string itself.
+ *
+ * Deliberately no header text (screen-reader-only instead) and
+ * deliberately no sorting: WordPress core already renders a filter
+ * dropdown on this same screen automatically
+ * (`WP_Posts_List_Table::formats_dropdown()`, confirmed directly against
+ * core source) once at least one post uses a non-Standard format —
+ * building a second one here would be exactly the duplicate UI a plain,
+ * purely visual icon avoids. This class is a pure identifier, not a
+ * second filtering mechanism.
  */
 class Daymark_Admin_Post_Format_Icon {
 
 	/**
+	 * The column key this class adds.
+	 *
+	 * @var string
+	 */
+	private const COLUMN = 'daymark_format_icon';
+
+	/**
 	 * Post types Daymark integrates with — see the class docblock above for
 	 * why `daymark_sub_post` is named here even though it never currently
-	 * qualifies (no post-formats support, no list table to add an icon to).
+	 * qualifies (no post-formats support, no list table to add a column to).
 	 *
 	 * @var string[]
 	 */
@@ -51,8 +85,7 @@ class Daymark_Admin_Post_Format_Icon {
 	 * pluralized ("format-links") unlike every other format's own
 	 * slug-matching class name; confirmed directly against core's own CSS
 	 * rather than assumed. `standard` has no entry: a Standard post gets no
-	 * icon at all, matching the plain "no badge" convention this same
-	 * feature's earlier column-based design also used.
+	 * icon at all.
 	 *
 	 * @var array<string, string>
 	 */
@@ -71,18 +104,23 @@ class Daymark_Admin_Post_Format_Icon {
 	/**
 	 * Register hooks.
 	 *
+	 * One column-filter/custom-column-action pair per currently-supported
+	 * post type, since both hook names are post-type-specific
+	 * (`manage_{$post_type}_posts_columns` /
+	 * `manage_{$post_type}_posts_custom_column`) — there is no single,
+	 * post-type-agnostic hook for either. Registered at `init` (this
+	 * method's own caller), after a theme's `after_setup_theme` has already
+	 * run any `add_theme_support( 'post-formats', ... )` call, so
+	 * `supported_post_types()` reflects real support by the time this runs.
+	 *
 	 * @return void
 	 */
 	public function register(): void {
-		// Priority 20: WP_Posts_List_Table::display_rows() itself hooks
-		// `the_title` to `esc_html` at the default priority (10) every time
-		// it renders the list — confirmed directly against core source, with
-		// no matching remove_filter. Running at a later priority (a higher
-		// number, since WordPress runs filters in ascending priority order)
-		// is required so this icon's own HTML is appended *after* that
-		// escaping pass, not escaped into literal, visible text alongside
-		// the title itself.
-		add_filter( 'the_title', array( $this, 'add_format_icon' ), 20, 2 );
+		foreach ( self::supported_post_types() as $post_type ) {
+			add_filter( "manage_{$post_type}_posts_columns", array( $this, 'add_format_icon_column' ) );
+			add_action( "manage_{$post_type}_posts_custom_column", array( $this, 'render_format_icon_column' ), 10, 2 );
+		}
+
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_icon_style' ) );
 	}
 
@@ -106,72 +144,60 @@ class Daymark_Admin_Post_Format_Icon {
 	}
 
 	/**
-	 * Prepend a small format icon to a post's title on the matching
-	 * wp-admin list table screen.
+	 * Insert the icon column immediately before Title.
 	 *
-	 * Hooked to the generic `the_title` filter — not a `manage_..._columns`
-	 * pattern, since core owns rendering of the Title column itself — and
-	 * scoped narrowly via `get_current_screen()`, the same "reliably set on
-	 * the intended screen, reliably absent everywhere else" signal this
-	 * feature's earlier column-based design already relied on, rather than
-	 * `is_admin()` (also true for e.g. admin-ajax). Safe from duplicate
-	 * rendering: `WP_Posts_List_Table::column_title()` computes a row's
-	 * title exactly once (`_draft_or_post_title()`) and reuses that same
-	 * value for every row action's own aria-label — confirmed directly
-	 * against core source — so this filter never fires more than once per
-	 * row. Quick Edit's own title input is pre-filled from the raw
-	 * `$post->post_title` database field via JS, not `get_the_title()`, so
-	 * it never sees this icon's markup either — also confirmed directly
-	 * against core source.
-	 *
-	 * @param string $title   The post's title, already run through core's
-	 *                        own `esc_html` pass (see register()'s own
-	 *                        priority comment).
-	 * @param int    $post_id Post ID.
-	 * @return string
+	 * @param array<string, string> $columns Existing column key => label map.
+	 * @return array<string, string>
 	 */
-	public function add_format_icon( string $title, int $post_id ): string {
-		// the_title fires on every front-end/login/feed request too, not
-		// only in wp-admin — and get_current_screen() isn't merely absent
-		// there, the function itself is undefined (it only exists once
-		// wp-admin/includes/screen.php has loaded, which never happens
-		// outside an actual wp-admin request), so calling it unguarded
-		// fatals the whole page rather than just returning null. Confirmed
-		// directly via a real crash on wp-login.php's own privacy-policy
-		// link, which also calls get_the_title().
-		if ( ! function_exists( 'get_current_screen' ) ) {
-			return $title;
+	public function add_format_icon_column( array $columns ): array {
+		$positioned = array();
+
+		foreach ( $columns as $key => $label ) {
+			if ( 'title' === $key ) {
+				$positioned[ self::COLUMN ] = '<span class="screen-reader-text">' . esc_html__( 'Format', 'daymark' ) . '</span>';
+			}
+
+			$positioned[ $key ] = $label;
 		}
 
-		$screen = get_current_screen();
+		return $positioned;
+	}
 
-		if ( ! $screen || 'edit' !== $screen->base ) {
-			return $title;
-		}
-
-		if (
-			! in_array( $screen->post_type, self::supported_post_types(), true )
-			|| get_post_type( $post_id ) !== $screen->post_type
-		) {
-			return $title;
+	/**
+	 * Render the icon for this column.
+	 *
+	 * A plain action hook — WordPress core never escapes or otherwise
+	 * post-processes what this echoes (confirmed directly against core
+	 * source), unlike the `the_title` filter this class's earlier design
+	 * relied on; see the class docblock for why that distinction is exactly
+	 * what makes this implementation actually work.
+	 *
+	 * @param string $column  Column key being rendered.
+	 * @param int    $post_id Post ID.
+	 * @return void
+	 */
+	public function render_format_icon_column( string $column, int $post_id ): void {
+		if ( self::COLUMN !== $column ) {
+			return;
 		}
 
 		$format = get_post_format( $post_id );
 
 		if ( false === $format || ! isset( self::FORMAT_DASHICONS[ $format ] ) ) {
-			return $title;
+			return;
 		}
 
-		return sprintf(
-			'<span class="dashicons %1$s daymark-format-icon" aria-hidden="true"></span><span class="screen-reader-text">%2$s </span>%3$s',
+		printf(
+			'<span class="dashicons %1$s daymark-format-icon" aria-hidden="true"></span><span class="screen-reader-text">%2$s</span>',
 			esc_attr( self::FORMAT_DASHICONS[ $format ] ),
-			esc_html( get_post_format_string( $format ) ),
-			$title
+			esc_html( get_post_format_string( $format ) )
 		);
 	}
 
 	/**
-	 * Size and color the icon — a small inline style on core's own always-
+	 * Size and color the icon, and tighten the column itself so it reads as
+	 * sitting immediately beside the title rather than as its own
+	 * wide, padded column — a small inline style on core's own always-
 	 * loaded `common` handle, matching this codebase's established pattern
 	 * for a narrow, screen-specific style rule (e.g. Daymark_Admin_
 	 * Subscriptions's `<details>`-marker suppression) rather than
@@ -188,7 +214,8 @@ class Daymark_Admin_Post_Format_Icon {
 
 		wp_add_inline_style(
 			'common',
-			'.daymark-format-icon { margin-right: 4px; color: #787c82; vertical-align: text-bottom; }'
+			'.fixed .column-' . self::COLUMN . ' { width: 2em; padding: 8px 0 8px 8px; text-align: center; }'
+			. ' .daymark-format-icon { color: #787c82; vertical-align: text-bottom; }'
 		);
 	}
 }
