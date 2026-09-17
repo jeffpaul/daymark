@@ -415,20 +415,47 @@
 	 * tab, requested directly once the tab's default state — every audio and
 	 * video file mixed together, with no way to narrow to just one — shipped
 	 * with no way to tell them apart other than scrolling past whichever
-	 * type isn't wanted. There is no confirmed, stable public option that
-	 * reliably adds a media-*type* filter dropdown to a custom, single-state
-	 * Select frame the way core's own richer "Insert Media" modal gets one
-	 * (that modal's own `filterable: 'all'` lives on a controller config this
-	 * frame doesn't build) — rather than guess at that undocumented territory
-	 * (the exact category of assumption that already cost three real bugs on
-	 * the "Add by URL" tab, per this file's own docblock above), this is
-	 * built the same way that tab's content ultimately was: plain markup this
-	 * stylesheet fully controls, reacting through the one genuinely stable,
-	 * widely-documented mechanism a media-library browse view's underlying
-	 * collection exposes for exactly this — its own `props` Backbone model,
-	 * which `wp.media.model.Query` already watches and re-queries against
-	 * whenever a query-affecting prop like `type` changes (the same
-	 * mechanism core's own type-filter dropdown relies on internally).
+	 * type isn't wanted.
+	 *
+	 * Two earlier attempts (still visible in this function's own git history)
+	 * tried to hook the browse content view's own internal lifecycle —
+	 * `content:create:browse`/`content:render:browse`, reading
+	 * `frame.content.get().collection`/`.toolbar` — guessed by analogy with
+	 * the "Add by URL" tab's own (real, working) `content:create:<mode>`
+	 * binding. The second attempt (binding both events, plus a
+	 * `console.warn()` on any thrown error) still shipped with no filter
+	 * ever appearing and no warning logged either, which is the tell: the
+	 * failure isn't an exception mid-lookup, it's this code's own early
+	 * `return` guards silently no-op'ing because the assumed property names
+	 * (`.content.get()`, `.collection`, `.toolbar`) are wrong, or the events
+	 * fire before/after the view actually exists — exactly the same category
+	 * of undocumented-internals guess that already cost three real bugs on
+	 * the "Add by URL" tab (this file's own docblock above), just not caught
+	 * by CI or a screenshot until now.
+	 *
+	 * Rewritten to depend on nothing but two things confirmed stable: (1)
+	 * `frame.el`/`frame.$el` — not a wp.media guess at all, every
+	 * Backbone.View (which `wp.media.view.MediaFrame` is) sets these in its
+	 * own constructor, long before `render()`/`open()`; (2) `frame.state()`
+	 * and `state.get( 'library' )` — wp.media's own public, commonly-used
+	 * frame API for reaching the active state's attachments query
+	 * (`frame.state().get( 'selection' )` for the current picks is the same
+	 * pattern countless real-world plugins already rely on), rather than the
+	 * browse content view's own private, undocumented `.collection`
+	 * property. `library.props` is the same Backbone model
+	 * `wp.media.model.Query` already watches for a `type` change — the one
+	 * piece of the original design that was never actually in question.
+	 *
+	 * For *where* to insert the `<select>`, this no longer waits on any
+	 * Backbone event at all — it watches the frame's own rendered DOM via
+	 * `MutationObserver` for `.media-toolbar-secondary` (the toolbar region
+	 * "Filter by date" already sits in on every "Media Library" tab, ours
+	 * and core's alike, confirmed directly from Jeff's own two side-by-side
+	 * screenshots) to exist, and inserts there. This sidesteps every one of
+	 * the Backbone-internals questions above by relying only on rendered
+	 * markup, which — unlike undocumented method/event/property names —
+	 * has to match reality once the toolbar is actually on screen,
+	 * regardless of which internal mechanism produced it.
 	 *
 	 * Deliberately Video/Audio only, no Image option: `openMediaPicker()`'s
 	 * own `library: { type: [ 'audio', 'video' ] }` restriction already
@@ -439,45 +466,32 @@
 	 *
 	 * Feature-detected and wrapped defensively, matching this file's
 	 * established posture toward every other wp.media internal it touches: a
-	 * missing/unexpected collection shape (a future core version, a
-	 * customized media modal) just means no filter control appears, never a
-	 * broken picker. Re-bound fresh on every `openMediaPicker()` call (a new
-	 * frame instance each time), so it always starts back on "All".
-	 *
-	 * Bound to both `content:create:browse` and `content:render:browse` —
-	 * this file's own "Add by URL" tab (above) only ever needed the former
-	 * for its *custom* content mode, but which of the two actually fires
-	 * first for the *built-in* 'browse' mode (used for both the frame's
-	 * initial default state and every later "Media Library" tab click) isn't
-	 * confirmed the same way in this sandbox; the duplicate-insertion guard
-	 * below already makes binding both safe regardless of whether one or
-	 * both end up firing, unlike the double-binding this file's own history
-	 * already flags as a real bug for a view with no such guard.
+	 * missing/unexpected shape (a future core version, a customized media
+	 * modal) just means no filter control appears, never a broken picker.
 	 *
 	 * @param {Object} frame The just-constructed wp.media frame instance.
 	 */
 	function bindLibraryTypeFilter( frame ) {
+		var observer = null;
+
 		function insertFilter() {
 			try {
-				var browse = frame.content.get();
-				var collection = browse && browse.collection;
-
-				if ( ! collection || ! collection.props || 'function' !== typeof collection.props.set ) {
-					return;
-				}
-
-				var toolbar = browse.toolbar;
 				var $jq = window.jQuery;
 
-				if ( ! toolbar || ! toolbar.$el || ! $jq ) {
+				if ( ! $jq || ! frame.$el || ! frame.$el.length ) {
 					return;
 				}
 
-				// A prior render of this same browse view (e.g. switching away
-				// to "Add by URL" and back, or the other of the two events
-				// above also firing for this same activation) already has the
-				// control.
-				if ( toolbar.$el.find( '.daymark-fc-typefilter' ).length ) {
+				var state = frame.state && frame.state();
+				var library = state && state.get && state.get( 'library' );
+
+				if ( ! library || ! library.props || 'function' !== typeof library.props.set ) {
+					return;
+				}
+
+				var $secondary = frame.$el.find( '.media-toolbar-secondary' ).first();
+
+				if ( ! $secondary.length || $secondary.find( '.daymark-fc-typefilter' ).length ) {
 					return;
 				}
 
@@ -500,24 +514,44 @@
 				$select.on( 'change', function () {
 					var value = $jq( this ).val();
 
-					collection.props.set( 'type', value ? value : [ 'audio', 'video' ] );
+					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
 				} );
 
-				toolbar.$el.prepend( $select );
+				$secondary.prepend( $select );
 			} catch ( err ) {
 				// A missing/unexpected internal shape costs only this filter
 				// control — the picker itself is untouched. Logged (not
 				// thrown) so a real browser session can actually reveal which
 				// assumption broke, since this file has no other diagnostic
-				// path for a pure client-side Backbone issue like this one.
+				// path for a pure client-side Backbone/DOM issue like this
+				// one.
 				if ( window.console && window.console.warn ) {
 					window.console.warn( '[Daymark Featured Content] library type filter skipped:', err );
 				}
 			}
 		}
 
-		frame.on( 'content:create:browse', insertFilter );
-		frame.on( 'content:render:browse', insertFilter );
+		frame.on( 'open', function () {
+			insertFilter();
+
+			if ( observer || ! window.MutationObserver || ! frame.el ) {
+				return;
+			}
+
+			try {
+				observer = new MutationObserver( insertFilter );
+				observer.observe( frame.el, { childList: true, subtree: true } );
+			} catch ( err ) {
+				observer = null;
+			}
+		} );
+
+		frame.on( 'close', function () {
+			if ( observer ) {
+				observer.disconnect();
+				observer = null;
+			}
+		} );
 	}
 
 	/**
