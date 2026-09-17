@@ -491,7 +491,7 @@
 
 				var $secondary = frame.$el.find( '.media-toolbar-secondary' ).first();
 
-				if ( ! $secondary.length || frame.$el.find( '.daymark-fc-typefilter' ).length ) {
+				if ( ! $secondary.length ) {
 					return;
 				}
 
@@ -505,18 +505,39 @@
 				// exactly how the container's own grid/track rules interact
 				// with an inserted item — the same category of undocumented-
 				// core-CSS guessing that has now cost several rounds on this
-				// one filter. Rather than guess a third time, this drops out
-				// of that container's layout algorithm entirely: `$toolbar`
-				// is `.media-toolbar-secondary`'s own parent (the bar that
-				// holds both the primary and secondary toolbar halves), and
-				// the wrapper is inserted as a plain sibling *after* it —
-				// ordinary block-level document flow, not a grid/flex item of
-				// anything, so it can't be mis-placed by a track/column rule
-				// it was never actually asked to participate in. Falls back
-				// to the old in-toolbar prepend only if `.media-toolbar`
-				// itself can't be found, so a missing/renamed wrapper class
-				// costs only the ideal placement, not the filter itself.
-				var $toolbar = $secondary.closest( '.media-toolbar' );
+				// one filter. `$toolbar` is `.media-toolbar-secondary`'s own
+				// parent (the bar holding both toolbar halves); the wrapper
+				// is inserted as a plain sibling *after* it — ordinary
+				// block-level document flow, not a grid/flex item of
+				// anything. Falls back to the old in-toolbar prepend only if
+				// `.media-toolbar` itself can't be found.
+				var $toolbar    = $secondary.closest( '.media-toolbar' );
+				var $target     = $toolbar.length ? $toolbar : $secondary;
+				var $existing   = frame.$el.find( '.daymark-fc-typefilter' ).first();
+				var isDisplaced = function () {
+					return $toolbar.length
+						? $existing.get( 0 ).previousElementSibling !== $toolbar.get( 0 )
+						: $existing.get( 0 ) !== $secondary.get( 0 ).firstElementChild;
+				};
+
+				if ( $existing.length ) {
+					// A later re-render of a sibling Backbone view (the
+					// attachments grid, in particular — its own view can
+					// detach and re-append its element with no awareness of
+					// ours) can silently displace where this was placed the
+					// first time. Re-home it rather than only checking that
+					// it still exists somewhere, so placement stays correct
+					// across however many times the surrounding views
+					// re-render, not just on first insertion.
+					if ( isDisplaced() ) {
+						if ( $toolbar.length ) {
+							$toolbar.after( $existing );
+						} else {
+							$secondary.prepend( $existing );
+						}
+					}
+					return;
+				}
 
 				var $wrap = $jq(
 					'<div class="daymark-fc-typefilter">' +
