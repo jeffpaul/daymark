@@ -71,7 +71,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';
-require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-post-format-column.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-post-format-icon.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-subscriber.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-endpoint.php';
 
