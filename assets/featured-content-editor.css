@@ -155,12 +155,30 @@
  * not a grid/flex item of anything, so no track/column rule can misplace it.
  * This rule is just that row's own internal layout (label beside its
  * select) and spacing, not a fit against the toolbar's own grid.
+ *
+ * `position: relative` + `z-index` (added once a full `.attachments-browser`
+ * DOM capture proved the wrapper genuinely exists at exactly this spot, not
+ * missing): `.attachments-wrapper` — the scrollable attachment grid, WP
+ * core's own next sibling after this one — is positioned to fill the space
+ * below the toolbar at a fixed vertical offset sized to `.media-toolbar`
+ * alone, with no awareness of an extra sibling row inserted after it. That
+ * paints the grid directly over this filter rather than pushing it down,
+ * making a real, correctly-placed element invisible without either being
+ * hidden or missing. A solid background plus a z-index above the grid's own
+ * (default, unset) stacking order is what actually makes it visible again;
+ * this doesn't fix the grid's own vertical offset (a real cosmetic overlap
+ * with the grid's first row is an accepted, lesser trade against "filter is
+ * simply invisible").
  */
 .daymark-fc-typefilter {
 	display: flex;
 	align-items: center;
 	gap: 8px;
 	margin: 8px 16px;
+	position: relative;
+	z-index: 5;
+	background: #fff;
+	padding: 4px 0;
 }
 
 .daymark-fc-typefilter-label {
