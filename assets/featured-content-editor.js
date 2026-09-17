@@ -221,7 +221,19 @@
 					this.states.add(
 						new wp.media.controller.Embed( {
 							id: 'daymark-embed',
-							title: this.options.title,
+							title: __( 'Add by URL', 'daymark' ),
+							// wp.media.controller.Embed defaults to menu: 'default',
+							// which is how the classic multi-action "Insert Media"
+							// modal lists Insert Media/Create Gallery/Insert from
+							// URL as a left-hand "Actions" sidebar. This frame has
+							// only one other state (the inherited library/upload
+							// browsing state, which declares no menu at all), so
+							// leaving this at its default would be the only thing
+							// introducing that sidebar — this state is reached via
+							// the "Add by URL" router tab below instead, exactly
+							// like core's own Featured Image frame reaches Upload
+							// files/Media Library.
+							menu: false,
 							priority: 40,
 							toolbar: 'daymark-embed-toolbar',
 							metadata: {},
