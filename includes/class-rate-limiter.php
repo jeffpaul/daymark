@@ -120,6 +120,17 @@ class Daymark_Rate_Limiter {
 	public const ACTION_LOCATION_LOOKUP = 'location_lookup';
 
 	/**
+	 * Profile a URL for the Featured Content editor panel
+	 * (GET /featured-content/oembed) — an outbound-fetch-shaped action
+	 * (Daymark_Subscription_Oembed::resolve(), reused as-is) a user triggers
+	 * by typing a video/audio URL into the panel, same tier as
+	 * ACTION_LOCATION_LOOKUP.
+	 *
+	 * @var string
+	 */
+	public const ACTION_FEATURED_CONTENT_OEMBED = 'featured_content_oembed';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -162,6 +173,10 @@ class Daymark_Rate_Limiter {
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 		self::ACTION_LOCATION_LOOKUP         => array(
+			'limit'  => 20,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_FEATURED_CONTENT_OEMBED => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),

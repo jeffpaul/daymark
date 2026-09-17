@@ -1,0 +1,40 @@
+/**
+ * Minimal styling for the Featured Content block-editor sidebar panel
+ * (assets/featured-content-editor.js, issue #401) — the panel's own
+ * components (Button/TextControl/Spinner/Notice) already come fully
+ * styled from wp-components; this only spaces out the panel's own custom
+ * layout, matching wp-admin's own default spacing conventions rather than
+ * introducing a distinct visual language for one small panel.
+ */
+
+.daymark-fc-type-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.daymark-fc-or {
+	margin-top: 12px;
+}
+
+.daymark-fc-url-actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.daymark-fc-preview {
+	margin-top: 12px;
+	max-width: 100%;
+	overflow: hidden;
+}
+
+.daymark-fc-preview iframe,
+.daymark-fc-preview audio,
+.daymark-fc-preview video {
+	max-width: 100%;
+}
+
+.daymark-fc-summary {
+	word-break: break-word;
+}

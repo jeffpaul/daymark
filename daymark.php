@@ -74,6 +74,8 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-post-format-icon.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-subscriber.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-endpoint.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-featured-content.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/functions-featured-content.php';
 
 register_activation_hook( __FILE__, array( 'Daymark_Plugin', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'Daymark_Plugin', 'deactivate' ) );
