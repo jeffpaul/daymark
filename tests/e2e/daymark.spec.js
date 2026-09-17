@@ -2732,6 +2732,9 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/#create$/);
 		await expect(page.getByText('New Mark')).toBeVisible();
+		// The back link (icon + arrow, matching Notifications and the
+		// full-screen post view) — not a plain "Back" text link.
+		await expect(page.locator('a.daymark-backlink--icon')).toBeVisible();
 	}
 });
 

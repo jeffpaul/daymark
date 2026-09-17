@@ -5627,7 +5627,7 @@
 			const editing = state.editing;
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#home">&larr; ${esc(__('Back', 'daymark'))}</a>
+				${backLinkWithIcon('#home', __('Back to Timeline', 'daymark'))}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
 				)}</h1>
