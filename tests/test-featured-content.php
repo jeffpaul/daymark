@@ -3,7 +3,8 @@
  * Daymark_Featured_Content tests (issue #401, Phase 1: audio/video): meta
  * sanitization, get_featured_content()/has_featured_content(), the
  * post_thumbnail_html substitution (and its opt-out filter), the theme-facing
- * daymark_*_featured_content() template tags, and the
+ * daymark_*_featured_content() template tags, render_audio()/render_video()'s
+ * is_direct_media_url()-gated native-tag fallback, and the
  * GET /daymark/v1/featured-content/oembed REST route.
  *
  * @package Daymark
@@ -291,6 +292,74 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertSame( $original, $featured_content->maybe_replace_post_thumbnail_html( $original, $this->post_id, 0, 'thumbnail', '' ) );
 
 		remove_filter( 'daymark_featured_content_replaces_featured_image', '__return_false' );
+	}
+
+	// -- render_audio()/render_video() direct-media-URL fallback gating ---
+	//
+	// A provider *page* URL (a Vimeo/YouTube watch page, a podcast episode
+	// page with no file extension) can never be played by a plain native
+	// <audio>/<video src> element — only a genuine direct media file URL
+	// can. Forcing oEmbed resolution to fail (the same `pre_oembed_result`
+	// technique the REST oembed tests below already use) exercises exactly
+	// the fallback branch is_direct_media_url() gates.
+
+	public function test_video_url_with_no_oembed_and_no_file_extension_renders_nothing() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'video' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://vimeo.com/1070507470/3ef796e429',
+					),
+				)
+			)
+		);
+
+		add_filter( 'pre_oembed_result', '__return_false' );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		remove_filter( 'pre_oembed_result', '__return_false' );
+
+		// Never a broken <video src="https://vimeo.com/..."> tag the browser
+		// can't decode — and never the outer wrapper either, since render()
+		// only emits it once render_video() actually returned markup.
+		$this->assertStringNotContainsString( '<video', $output );
+		$this->assertSame( '', $output );
+	}
+
+	public function test_audio_url_with_no_oembed_and_a_direct_file_extension_falls_back_to_native_audio() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'audio' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'audio' => array(
+						'source' => 'url',
+						'url'    => 'https://example.com/episode.mp3',
+					),
+				)
+			)
+		);
+
+		add_filter( 'pre_oembed_result', '__return_false' );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		remove_filter( 'pre_oembed_result', '__return_false' );
+
+		// A direct .mp3 URL genuinely can be played by a native <audio> tag,
+		// so this is the one case the shortcode fallback should still fire.
+		$this->assertStringContainsString( '<audio', $output );
+		$this->assertStringContainsString( 'episode.mp3', $output );
 	}
 
 	// wp-admin's own callers of this same core filter (is_admin()) are left

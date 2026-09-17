@@ -82,6 +82,19 @@ class Daymark_Featured_Content {
 	private const SUPPORTED_TYPES = array( 'audio', 'video' );
 
 	/**
+	 * File extensions a profiled URL's own path can end in and still be
+	 * played by a plain native `<audio>`/`<video src>` element (via
+	 * `wp_audio_shortcode()`/`wp_video_shortcode()`) — mirrors the
+	 * AUDIO_EXTENSIONS/VIDEO_EXTENSIONS lists
+	 * assets/featured-content-editor.js already keeps for the same reason,
+	 * so is_direct_media_url() and that file's own isDirectMediaUrl() never
+	 * disagree about which URLs qualify.
+	 *
+	 * @var string[]
+	 */
+	private const DIRECT_MEDIA_EXTENSIONS = array( 'mp3', 'm4a', 'wav', 'ogg', 'oga', 'flac', 'aac', 'wma', 'mp4', 'm4v', 'mov', 'webm', 'ogv', 'avi', 'wmv' );
+
+	/**
 	 * Hook up. Called from Daymark_Plugin::on_init(), itself an `init`
 	 * callback — register_meta() runs directly rather than via a nested
 	 * `add_action( 'init', ... )`, matching the pattern
@@ -400,13 +413,36 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Whether a URL itself is a direct media file (matches
+	 * DIRECT_MEDIA_EXTENSIONS) rather than a provider *page* URL (a Vimeo/
+	 * YouTube watch page, a podcast episode page with no file extension,
+	 * etc.). Only a direct file URL can ever be played by a plain native
+	 * `<audio>`/`<video src>` element — falling back to one for a provider
+	 * page URL whenever oEmbed resolution finds nothing (e.g. a private or
+	 * unlisted video oEmbed declines to embed) always renders a broken
+	 * player, never a degraded-but-working one, so render_audio()/
+	 * render_video() only take that fallback path when this returns true.
+	 *
+	 * @param string $url URL to check.
+	 * @return bool
+	 */
+	private static function is_direct_media_url( string $url ): bool {
+		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+		$ext  = strtolower( (string) pathinfo( $path, PATHINFO_EXTENSION ) );
+
+		return in_array( $ext, self::DIRECT_MEDIA_EXTENSIONS, true );
+	}
+
+	/**
 	 * Render an audio-type Featured Content: an attachment via core's own
 	 * `wp_audio_shortcode()`, or a URL via a resolved oEmbed preview
 	 * (Daymark_Subscription_Oembed::resolve() — already fully generic, no
 	 * subscription-specific logic in it, so reused rather than forked),
 	 * falling back to a plain native `<audio>` element via the same
-	 * shortcode function for a direct file URL (e.g. a podcast host's own
-	 * `.mp3` episode link) an oEmbed provider can't resolve.
+	 * shortcode function only for a direct file URL (e.g. a podcast host's
+	 * own `.mp3` episode link) an oEmbed provider can't resolve — never for
+	 * a provider page URL, which that native fallback can't play either
+	 * way (see is_direct_media_url()).
 	 *
 	 * @param array{source: string, attachment_id?: int, url?: string} $data Sanitized audio data.
 	 * @return string
@@ -428,7 +464,7 @@ class Daymark_Featured_Content {
 			return (string) $embed['html'];
 		}
 
-		return (string) wp_audio_shortcode( array( 'src' => $url ) );
+		return self::is_direct_media_url( $url ) ? (string) wp_audio_shortcode( array( 'src' => $url ) ) : '';
 	}
 
 	/**
@@ -455,7 +491,7 @@ class Daymark_Featured_Content {
 			return (string) $embed['html'];
 		}
 
-		return (string) wp_video_shortcode( array( 'src' => $url ) );
+		return self::is_direct_media_url( $url ) ? (string) wp_video_shortcode( array( 'src' => $url ) ) : '';
 	}
 
 	/**

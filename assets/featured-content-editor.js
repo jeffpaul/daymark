@@ -149,6 +149,29 @@
 	}
 
 	/**
+	 * Whether a URL itself is a direct media file (matches a known
+	 * audio/video extension) rather than a provider *page* URL (a Vimeo/
+	 * YouTube watch page, a podcast episode page with no file extension,
+	 * etc.). Only a direct file URL can ever be played by a plain native
+	 * <audio>/<video src> element — a provider page URL is never itself a
+	 * media file the browser can decode, so falling back to a native tag
+	 * for one (as an earlier version of both this file and
+	 * Daymark_Featured_Content::render_audio()/render_video() did whenever
+	 * oEmbed found nothing) always renders a broken player, never a
+	 * degraded-but-working one.
+	 *
+	 * @param {string} url
+	 * @return {boolean}
+	 */
+	function isDirectMediaUrl( url ) {
+		var clean = String( url ).split( '?' )[ 0 ].split( '#' )[ 0 ];
+		var match = clean.match( /\.([a-zA-Z0-9]+)$/ );
+		var ext = match ? match[ 1 ].toLowerCase() : '';
+
+		return -1 !== AUDIO_EXTENSIONS.indexOf( ext ) || -1 !== VIDEO_EXTENSIONS.indexOf( ext );
+	}
+
+	/**
 	 * Read the currently-saved Featured Content type + that type's own data
 	 * sub-object out of post meta — mirrors
 	 * Daymark_Featured_Content::get_featured_content()'s own tolerance for
@@ -566,17 +589,30 @@
 		}
 
 		// No usable oEmbed (checked and found none, or the fetch itself
-		// failed) — fall back to a plain native element for a direct file
-		// URL, matching the server-side fallback order. `embed` is still
-		// `null` while genuinely loading, so this doesn't flash a broken
-		// player before the fetch above resolves either way.
+		// failed). `embed` is still `null` while genuinely loading, so this
+		// doesn't flash anything before the fetch above resolves either
+		// way. A native <audio>/<video src> fallback only ever works for a
+		// direct media file — a provider page URL (a Vimeo/YouTube watch
+		// page, a private/unlisted video oEmbed declined to embed, a
+		// podcast episode page with no real file extension) is never
+		// itself something the browser can decode, so falling back to one
+		// unconditionally here would just swap a missing preview for a
+		// guaranteed-broken one.
 		if ( false === embed ) {
+			if ( isDirectMediaUrl( data.url ) ) {
+				return el(
+					'div',
+					{ className: 'daymark-fc-preview' },
+					'audio' === type
+						? el( 'audio', { src: data.url, controls: true } )
+						: el( 'video', { src: data.url, controls: true } )
+				);
+			}
+
 			return el(
-				'div',
-				{ className: 'daymark-fc-preview' },
-				'audio' === type
-					? el( 'audio', { src: data.url, controls: true } )
-					: el( 'video', { src: data.url, controls: true } )
+				'p',
+				{ className: 'daymark-fc-preview-unavailable' },
+				__( 'No preview available for this link.', 'daymark' )
 			);
 		}
 
