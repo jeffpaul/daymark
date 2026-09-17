@@ -64,8 +64,17 @@
  */
 .daymark-fc-embed-tab {
 	padding: 16px;
+	/* Contains any floated row wp.media.view.Embed's own markup uses
+	 * internally (a common media-views.css convention for label+input
+	 * pairs), so our own button below always starts on a clean line
+	 * rather than risking an unresolved float from its sibling. */
+	overflow: hidden;
 }
 
 .daymark-fc-embed-submit {
-	margin-top: 12px;
+	display: block;
+	position: static;
+	float: none;
+	clear: both;
+	margin-top: 16px;
 }

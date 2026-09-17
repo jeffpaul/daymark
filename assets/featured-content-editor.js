@@ -305,15 +305,34 @@
 				bindHandlers: function () {
 					MediaFrameSelect.prototype.bindHandlers.apply( this, arguments );
 
-					this.on( 'content:create:daymark-embed content:render:daymark-embed', this.daymarkEmbedContent, this );
+					// content:create:<mode> is the single event a router tab's
+					// content.mode() switch fires per activation — the standard,
+					// documented pattern real-world wp.media frame customizations
+					// use for this. An earlier version of this fix also bound
+					// content:render:daymark-embed to the same handler out of
+					// defensive over-caution; if that event also fires for the
+					// same switch, binding both constructs two competing view
+					// instances on one tab click, which is consistent with the
+					// overlapping/doubled element reported from a live
+					// click-through. One event, one view.
+					this.on( 'content:create:daymark-embed', this.daymarkEmbedContent, this );
 				},
 
 				daymarkEmbedContent: function () {
+					// Defensive: if this ever does fire more than once for the
+					// same activation, tear down any previous instance first
+					// rather than layering a second one on top of it.
+					if ( this._daymarkEmbedView ) {
+						this._daymarkEmbedView.remove();
+						this._daymarkEmbedView = null;
+					}
+
 					var view = new EmbedTabView( {
 						frame: this,
 						embedModel: this.daymarkEmbedModel,
 					} ).render();
 
+					this._daymarkEmbedView = view;
 					this.content.set( view );
 				},
 
