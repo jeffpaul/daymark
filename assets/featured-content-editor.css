@@ -54,3 +54,18 @@
 	gap: 12px;
 	margin-top: 4px;
 }
+
+/*
+ * The "Add by URL" tab's content: wp.media.view.Embed's own input+preview
+ * (unstyled here — it comes from wp-admin's own bundled media-views.css)
+ * plus our own submit button rendered directly alongside it, since a
+ * router tab's content isn't tied to a state that would otherwise let the
+ * frame's toolbar region swap in a URL-specific button for us.
+ */
+.daymark-fc-embed-tab {
+	padding: 16px;
+}
+
+.daymark-fc-embed-submit {
+	margin-top: 12px;
+}

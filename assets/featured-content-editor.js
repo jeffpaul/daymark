@@ -27,20 +27,37 @@
  * from this feature's second draft, which expanded an inline sidebar picker
  * (a "Choose from Media Library" button plus a plain URL field) instead of
  * reusing the modal overlay. Reaching that third tab means extending
- * wp.media's own Backbone-based frame classes (wp.media.view.MediaFrame.Select,
- * reusing wp.media.controller.Embed and wp.media.view.Embed for the URL
- * tab's own input+live-preview UI — the exact classes/pattern WordPress
- * core's own classic "Add Media" button's "Insert from URL" tab is built
- * from) rather than the documented, stable `editor.PostFeaturedImage`
- * filter above — this part of the WP media JS API has no public reference
- * docs and could not be exercised against a live site in this environment.
- * getFeaturedContentFrameClass() feature-detects every class it touches and
- * openMediaPicker() falls back to a plain wp.media() call (Upload files +
- * Media Library only, no URL tab) if any of them are missing or if
- * constructing the custom frame throws — so a wrong assumption about this
- * internal API costs the URL tab, never the whole control. Flagged for Jeff
- * to verify against a real site: opening the modal, using each of the three
- * tabs, and confirming no console errors.
+ * wp.media's own Backbone-based frame classes (wp.media.view.MediaFrame.Select),
+ * reusing wp.media.view.Embed for the URL tab's own input+live-preview UI —
+ * the same view core's own classic "Add Media" button's "Insert from URL"
+ * tab uses — rather than the documented, stable `editor.PostFeaturedImage`
+ * filter above. This part of the WP media JS API has no public reference
+ * docs and could not be exercised against a live site in this environment
+ * before shipping; two real bugs turned up on Jeff's own click-through and
+ * were fixed from that feedback rather than further guessing: (1) adding
+ * wp.media.controller.Embed as a second top-level frame *state* (an early
+ * version of this file did, via this.states.add()) introduced an unwanted
+ * "Actions" sidebar, because that controller defaults to menu: 'default' —
+ * the mechanism the classic, multi-state "Insert Media" modal uses to list
+ * Insert Media/Create Gallery/Insert from URL as top-level sidebar actions;
+ * core's real single-state "Featured image" frame never creates that
+ * sidebar at all. (2) Once that state was removed and the Embed controller
+ * kept only as a plain, un-registered props model instead (never added via
+ * this.states.add()), the "Add by URL" router tab (browseRouter() below)
+ * still didn't render anything when clicked, because a router tab only
+ * ever switches this frame's *content mode*, never which *state* is
+ * active — a content:create handler has to be bound to the router tab's
+ * own key ('daymark-embed'), not to the Embed controller's own default
+ * content mode ('embed'), which is only reachable by activating it as a
+ * genuine state (i.e. via a menu, never a router tab). getFeaturedContentFrameClass()
+ * still feature-detects every class it touches and openMediaPicker() still
+ * falls back to a plain wp.media() call (Upload files + Media Library only,
+ * no URL tab) if any of them are missing or constructing the custom frame
+ * throws — so a wrong assumption about this internal API costs the URL
+ * tab, never the whole control. Flagged for Jeff to re-verify against a
+ * real site: opening the modal, confirming no Actions sidebar, and that
+ * pasting a URL under "Add by URL" now shows a live preview and "Use this
+ * URL" actually saves it.
  *
  * Plain ES2020 calling wp.element.createElement — no JSX, no build step,
  * enqueued only against WordPress core's own bundled scripts. This matches
@@ -205,8 +222,8 @@
 
 		if (
 			! MediaFrameSelect ||
+			! window.Backbone ||
 			! wp.media.controller || ! wp.media.controller.Embed ||
-			! wp.media.view.Toolbar || ! wp.media.view.Toolbar.Select ||
 			! wp.media.view.Embed ||
 			! wp.media.view.l10n
 		) {
@@ -214,67 +231,90 @@
 		}
 
 		try {
-			FeaturedContentFrame = MediaFrameSelect.extend( {
-				createStates: function () {
-					MediaFrameSelect.prototype.createStates.apply( this, arguments );
+			// A plain URL input + live-preview view (reusing wp.media.view.Embed,
+			// the same class core's own classic "Insert from URL" tab uses) plus
+			// our own submit button rendered directly alongside it. This is
+			// deliberately its own small Backbone view, not a second top-level
+			// wp.media state: an earlier version added the Embed controller via
+			// this.states.add(), which — because that controller defaults to
+			// menu: 'default' — introduced an unwanted "Actions" sidebar (the
+			// mechanism the classic, multi-state "Insert Media" modal uses to
+			// list its top-level actions). A follow-up fix suppressed that with
+			// menu: false, but a live click-through then showed the "Add by
+			// URL" router tab highighting itself without ever rendering the
+			// embed content at all: a router tab only ever switches this
+			// frame's *content mode* (browseRouter below), it does not switch
+			// which *state* is active — so a content:create handler has to be
+			// bound to the router tab's own key ('daymark-embed'), not to the
+			// Embed controller's own default content mode ('embed'), which is
+			// only ever reached by activating it as a genuine top-level state
+			// (i.e. via a menu, not a router tab). Not adding it as a state at
+			// all — just keeping one persistent Embed *controller* instance
+			// (below) purely as the props model this view reads/writes — sidesteps
+			// both problems together: no second state, so no menu sidebar, and
+			// no reliance on state-switching for the router tab to work.
+			var EmbedTabView = Backbone.View.extend( {
+				className: 'daymark-fc-embed-tab',
 
-					this.states.add(
-						new wp.media.controller.Embed( {
-							id: 'daymark-embed',
-							title: __( 'Add by URL', 'daymark' ),
-							// wp.media.controller.Embed defaults to menu: 'default',
-							// which is how the classic multi-action "Insert Media"
-							// modal lists Insert Media/Create Gallery/Insert from
-							// URL as a left-hand "Actions" sidebar. This frame has
-							// only one other state (the inherited library/upload
-							// browsing state, which declares no menu at all), so
-							// leaving this at its default would be the only thing
-							// introducing that sidebar — this state is reached via
-							// the "Add by URL" router tab below instead, exactly
-							// like core's own Featured Image frame reaches Upload
-							// files/Media Library.
-							menu: false,
-							priority: 40,
-							toolbar: 'daymark-embed-toolbar',
-							metadata: {},
-						} )
-					);
+				initialize: function ( options ) {
+					this.frame = options.frame;
+					this.embedModel = options.embedModel;
+				},
+
+				render: function () {
+					this.embedView = new wp.media.view.Embed( {
+						controller: this.frame,
+						model: this.embedModel,
+					} );
+					this.embedView.render();
+
+					var button = document.createElement( 'button' );
+					button.type = 'button';
+					button.className = 'button button-primary daymark-fc-embed-submit';
+					button.textContent = __( 'Use this URL', 'daymark' );
+					button.addEventListener( 'click', this.handleSubmit.bind( this ) );
+
+					this.$el.empty().append( this.embedView.el, button );
+
+					return this;
+				},
+
+				handleSubmit: function () {
+					var url = this.embedModel.props ? this.embedModel.props.get( 'url' ) : '';
+
+					if ( ! url ) {
+						return;
+					}
+
+					this.frame.trigger( 'daymark:url-selected', url );
+					this.frame.close();
+				},
+			} );
+
+			FeaturedContentFrame = MediaFrameSelect.extend( {
+				initialize: function () {
+					MediaFrameSelect.prototype.initialize.apply( this, arguments );
+
+					// Never registered via this.states.add() — see the note
+					// above. Just a plain props model for the URL input/preview
+					// to read and write, independent of whatever state (upload
+					// or browse) is actually active while this tab is open.
+					this.daymarkEmbedModel = new wp.media.controller.Embed( { metadata: {} } );
 				},
 
 				bindHandlers: function () {
 					MediaFrameSelect.prototype.bindHandlers.apply( this, arguments );
 
-					this.on( 'content:create:embed', this.daymarkEmbedContent, this );
-					this.on( 'toolbar:create:daymark-embed-toolbar', this.daymarkEmbedToolbar, this );
+					this.on( 'content:create:daymark-embed content:render:daymark-embed', this.daymarkEmbedContent, this );
 				},
 
 				daymarkEmbedContent: function () {
-					var view = new wp.media.view.Embed( {
-						controller: this,
-						model: this.state(),
+					var view = new EmbedTabView( {
+						frame: this,
+						embedModel: this.daymarkEmbedModel,
 					} ).render();
 
 					this.content.set( view );
-				},
-
-				daymarkEmbedToolbar: function ( toolbar ) {
-					var controller = this;
-
-					toolbar.view = new wp.media.view.Toolbar.Select( {
-						text: __( 'Use this URL', 'daymark' ),
-						controller: controller,
-						click: function () {
-							var state = controller.state();
-							var url = state && state.props ? state.props.get( 'url' ) : '';
-
-							if ( ! url ) {
-								return;
-							}
-
-							controller.trigger( 'daymark:url-selected', url );
-							controller.close();
-						},
-					} );
 				},
 
 				browseRouter: function ( routerView ) {
