@@ -96,22 +96,36 @@ class Daymark_Subscription_Url_Guard {
 		foreach ( self::resolve_addresses( $host ) as $address ) {
 			if ( self::is_unsafe_address( $address ) ) {
 				// TEMPORARY diagnostic while chasing issue #402's Playground
-				// report — see should_skip_dns_resolution()'s own docblock:
-				// its PHP_SAPI === 'wasm' guess for issue #365 evidently
-				// doesn't match whatever SAPI/gethostbynamel() behavior the
-				// reporter's actual Playground instance has, since this
-				// branch is firing there anyway. Logging the real values
-				// rather than guessing again. Remove alongside the rest of
-				// this PR's oEmbed diagnostics once root-caused.
+				// report — confirmed real data: PHP_SAPI is 'cli' there, not
+				// 'wasm' (issue #365's own guess), and gethostbynamel()
+				// returns a synthetic 172.29.x.0-pattern address per host,
+				// matching wordpress-playground#400's documented bug. 'cli'
+				// can't be blanket-trusted the way 'wasm' was meant to be —
+				// it's also the SAPI for a real production site's own
+				// WP-CLI/cron runs, where this guard must stay active.
+				// Testing one specific hypothesis instead of guessing a
+				// third environment signal: WP core's own
+				// wp_http_validate_url() (which every wp_safe_remote_get()
+				// call — including the oEmbed fetch that already succeeds
+				// on this reporter's own Playground instance — already goes
+				// through) resolves via gethostbyname() (singular), not
+				// gethostbynamel() (plural, the function this class calls).
+				// If Playground's shim only fixed the singular form, this
+				// would explain why core's own IP-safety check already
+				// works there while this one doesn't. Logging both, rather
+				// than switching blind. Remove alongside the rest of this
+				// PR's oEmbed diagnostics once root-caused.
 				self::log_debug(
 					sprintf(
-						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, gethostbynamel()=%5$s, dns_get_record(AAAA)=%6$s',
+						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, gethostbyname()=%5$s, gethostbynamel()=%6$s, dns_get_record(A)=%7$s, dns_get_record(AAAA)=%8$s',
 						$url,
 						$host,
 						$address,
 						PHP_SAPI,
+						function_exists( 'gethostbyname' ) ? gethostbyname( $host ) : 'undefined',
 						function_exists( 'gethostbynamel' ) ? wp_json_encode( gethostbynamel( $host ) ) : 'undefined',
-						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_AAAA ) ) : 'undefined' // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same "no AAAA record is expected, not an error" reasoning as resolve_addresses()'s own call.
+						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_A ) ) : 'undefined', // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same "no record is expected, not an error" reasoning as resolve_addresses()'s own call.
+						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_AAAA ) ) : 'undefined' // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same reasoning.
 					)
 				);
 
