@@ -472,7 +472,8 @@
 	 * @param {Object} frame The just-constructed wp.media frame instance.
 	 */
 	function bindLibraryTypeFilter( frame ) {
-		var observer = null;
+		var observer         = null;
+		var lastLoggedDiagKey = null;
 
 		function insertFilter() {
 			try {
@@ -507,6 +508,34 @@
 				// always-true visibility.
 				var showFilter = !! ( library && library.props && 'function' === typeof library.props.set &&
 					$secondary.length && $secondary.children().length > 0 );
+
+				// Temporary diagnostic (issue #401's own "Set featured
+				// content" saga has cost many rounds of guessing at
+				// undocumented wp.media/core-DOM behavior) — logs the exact
+				// intermediate values `showFilter` was computed from, so the
+				// next report can point at precisely which condition failed
+				// instead of another guess. Throttled to log only on a
+				// change (not every MutationObserver tick) to stay
+				// readable; `console.warn` rather than `.debug` since a
+				// warning is visible under a console's default log-level
+				// filter without the viewer needing to enable "Verbose."
+				// Safe to remove once this filter is confirmed working
+				// reliably across tabs.
+				if ( window.console && window.console.warn ) {
+					var diag = {
+						secondaryFound: !! $secondary.length,
+						secondaryChildCount: $secondary.length ? $secondary.children().length : 0,
+						libraryFound: !! library,
+						librarySetIsFn: !! ( library && library.props && 'function' === typeof library.props.set ),
+						showFilter: showFilter,
+					};
+					var diagKey = JSON.stringify( diag );
+
+					if ( diagKey !== lastLoggedDiagKey ) {
+						lastLoggedDiagKey = diagKey;
+						window.console.warn( '[Daymark Featured Content] type filter diagnostic:', diag );
+					}
+				}
 
 				if ( ! showFilter ) {
 					// Not on a tab where this filter applies right now —
