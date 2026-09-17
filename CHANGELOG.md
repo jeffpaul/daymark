@@ -36,6 +36,7 @@ can't act on them.
 
 ### Fixed
 
+- Home's Drafts row no longer shows its leading icon misaligned against the Timeline rows and rail beneath it — a Draft has no leading site icon, so its type icon now lands on the same shared rail position every other row's type icon already sits at, instead of flush against the screen edge. ([#403](https://github.com/jeffpaul/daymark/issues/403))
 - A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip. ([#384](https://github.com/jeffpaul/daymark/pull/384))
 - The full-screen post view's back arrow/Daymark icon now genuinely top-align against the post title — a follow-up fix layered on top of an earlier attempt (#315) that only top-aligned the back link's own box, not its arrow/icon content. ([#388](https://github.com/jeffpaul/daymark/pull/388))
 - Tapping Like on the same subscribed post twice no longer creates two identical Like Marks — a stale like-state on another screen (or a rapid double-tap) is now recognized and reused instead. Also adds defense-in-depth against an independent plugin like Jetpack Social auto-sharing a Like Mark externally, on top of Daymark's own "Like Marks never syndicate" guarantee. ([#390](https://github.com/jeffpaul/daymark/pull/390))
