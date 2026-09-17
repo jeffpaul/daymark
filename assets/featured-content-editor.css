@@ -122,3 +122,16 @@
 .daymark-fc-embed-submit {
 	display: block;
 }
+
+/*
+ * The "Media Library" tab's own Video/Audio content-type filter (see
+ * bindLibraryTypeFilter() in the JS file) — prepended as a plain sibling of
+ * core's own toolbar groups (.media-toolbar-primary/.media-toolbar-secondary,
+ * both styled by wp-admin's bundled media-views.css, which this rule doesn't
+ * touch), so only this one element's own spacing/vertical alignment needs
+ * setting here.
+ */
+.daymark-fc-typefilter {
+	margin-right: 10px;
+	align-self: center;
+}

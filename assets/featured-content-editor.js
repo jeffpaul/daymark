@@ -411,6 +411,97 @@
 	}
 
 	/**
+	 * A "All / Video / Audio" content-type filter for the "Media Library"
+	 * tab, requested directly once the tab's default state — every audio and
+	 * video file mixed together, with no way to narrow to just one — shipped
+	 * with no way to tell them apart other than scrolling past whichever
+	 * type isn't wanted. There is no confirmed, stable public option that
+	 * reliably adds a media-*type* filter dropdown to a custom, single-state
+	 * Select frame the way core's own richer "Insert Media" modal gets one
+	 * (that modal's own `filterable: 'all'` lives on a controller config this
+	 * frame doesn't build) — rather than guess at that undocumented territory
+	 * (the exact category of assumption that already cost three real bugs on
+	 * the "Add by URL" tab, per this file's own docblock above), this is
+	 * built the same way that tab's content ultimately was: plain markup this
+	 * stylesheet fully controls, reacting through the one genuinely stable,
+	 * widely-documented mechanism a media-library browse view's underlying
+	 * collection exposes for exactly this — its own `props` Backbone model,
+	 * which `wp.media.model.Query` already watches and re-queries against
+	 * whenever a query-affecting prop like `type` changes (the same
+	 * mechanism core's own type-filter dropdown relies on internally).
+	 *
+	 * Deliberately Video/Audio only, no Image option: `openMediaPicker()`'s
+	 * own `library: { type: [ 'audio', 'video' ] }` restriction already
+	 * excludes every other mime type from the underlying query before this
+	 * filter ever runs, so an Image option would only ever show zero results
+	 * — this filter narrows *within* that existing restriction, it doesn't
+	 * loosen it.
+	 *
+	 * Feature-detected and wrapped defensively, matching this file's
+	 * established posture toward every other wp.media internal it touches: a
+	 * missing/unexpected collection shape (a future core version, a
+	 * customized media modal) just means no filter control appears, never a
+	 * broken picker. Re-bound fresh on every `openMediaPicker()` call (a new
+	 * frame instance each time), so it always starts back on "All".
+	 *
+	 * @param {Object} frame The just-constructed wp.media frame instance.
+	 */
+	function bindLibraryTypeFilter( frame ) {
+		frame.on( 'content:render:browse', function () {
+			try {
+				var browse = frame.content.get();
+				var collection = browse && browse.collection;
+
+				if ( ! collection || ! collection.props || 'function' !== typeof collection.props.set ) {
+					return;
+				}
+
+				var toolbar = browse.toolbar;
+				var $jq = window.jQuery;
+
+				if ( ! toolbar || ! toolbar.$el || ! $jq ) {
+					return;
+				}
+
+				// A prior render of this same browse view (e.g. switching away
+				// to "Add by URL" and back) already has the control — content
+				// re-renders per activation, not per keystroke, so this only
+				// ever guards against a duplicate on re-activation.
+				if ( toolbar.$el.find( '.daymark-fc-typefilter' ).length ) {
+					return;
+				}
+
+				var $select = $jq(
+					'<select class="daymark-fc-typefilter" aria-label="' +
+						__( 'Filter by content type', 'daymark' ) +
+						'">' +
+						'<option value="">' +
+						__( 'All media types', 'daymark' ) +
+						'</option>' +
+						'<option value="video">' +
+						__( 'Video', 'daymark' ) +
+						'</option>' +
+						'<option value="audio">' +
+						__( 'Audio', 'daymark' ) +
+						'</option>' +
+						'</select>'
+				);
+
+				$select.on( 'change', function () {
+					var value = $jq( this ).val();
+
+					collection.props.set( 'type', value ? value : [ 'audio', 'video' ] );
+				} );
+
+				toolbar.$el.prepend( $select );
+			} catch ( err ) {
+				// A missing/unexpected internal shape costs only this filter
+				// control — the picker itself is untouched.
+			}
+		} );
+	}
+
+	/**
 	 * Open the media picker for Featured Content — the same modal overlay
 	 * "Set featured image" opens, titled "Featured content", scoped to
 	 * audio/video. Uses the custom frame above when available (adding the
@@ -451,6 +542,8 @@
 		if ( ! frame ) {
 			frame = wp.media( options );
 		}
+
+		bindLibraryTypeFilter( frame );
 
 		frame.on( 'select', function () {
 			var selection = frame.state().get( 'selection' ).first();
