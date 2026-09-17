@@ -2732,6 +2732,9 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 		await page.keyboard.press('Enter');
 		await expect(page).toHaveURL(/#create$/);
 		await expect(page.getByText('New Mark')).toBeVisible();
+		// The back link (icon + arrow, matching Notifications and the
+		// full-screen post view) — not a plain "Back" text link.
+		await expect(page.locator('a.daymark-backlink--icon')).toBeVisible();
 	}
 });
 
@@ -2831,11 +2834,17 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 		await expect(page.getByRole('button', { name: `New ${type} Mark` })).toBeVisible();
 	}
 
+	// The header dims (and goes inert) along with the rest of the page
+	// while the launcher's open — it used to sit above the scrim, staying
+	// bright and still tappable while everything else darkened.
+	await expect(page.locator('#daymark-app')).toHaveClass(/is-launcher-open/);
+
 	// An outside tap (the dimming scrim over the recent list) closes it —
 	// the scrim covers that area while open and is the real hit target,
 	// since it sits on top of the content underneath it.
 	await page.locator('.daymark-launcher__scrim').evaluate((el) => el.click());
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('#daymark-app')).not.toHaveClass(/is-launcher-open/);
 
 	// Escape closes it too, and returns focus to the launcher button.
 	await btn.evaluate((el) => el.click());
@@ -2843,6 +2852,7 @@ test('launcher fans out accessible Image/Video/Audio/Note bubbles and dismisses 
 	await page.keyboard.press('Escape');
 	await expect(btn).toHaveAttribute('aria-expanded', 'false');
 	await expect(btn).toBeFocused();
+	await expect(page.locator('#daymark-app')).not.toHaveClass(/is-launcher-open/);
 });
 
 // prefers-reduced-motion collapses the bounce/spin to an instant toggle —
