@@ -95,6 +95,26 @@ class Daymark_Subscription_Url_Guard {
 
 		foreach ( self::resolve_addresses( $host ) as $address ) {
 			if ( self::is_unsafe_address( $address ) ) {
+				// TEMPORARY diagnostic while chasing issue #402's Playground
+				// report — see should_skip_dns_resolution()'s own docblock:
+				// its PHP_SAPI === 'wasm' guess for issue #365 evidently
+				// doesn't match whatever SAPI/gethostbynamel() behavior the
+				// reporter's actual Playground instance has, since this
+				// branch is firing there anyway. Logging the real values
+				// rather than guessing again. Remove alongside the rest of
+				// this PR's oEmbed diagnostics once root-caused.
+				self::log_debug(
+					sprintf(
+						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, gethostbynamel()=%5$s, dns_get_record(AAAA)=%6$s',
+						$url,
+						$host,
+						$address,
+						PHP_SAPI,
+						function_exists( 'gethostbynamel' ) ? wp_json_encode( gethostbynamel( $host ) ) : 'undefined',
+						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_AAAA ) ) : 'undefined' // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same "no AAAA record is expected, not an error" reasoning as resolve_addresses()'s own call.
+					)
+				);
+
 				return new WP_Error(
 					'daymark_subscription_unsafe_url',
 					__( 'This URL resolves to a private or internal network address.', 'daymark' )
@@ -103,6 +123,20 @@ class Daymark_Subscription_Url_Guard {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Log a debug message when WP_DEBUG is enabled. Never throws. Matches
+	 * Daymark_AI_Assist::log_debug()'s own established convention.
+	 *
+	 * @param string $message The message.
+	 * @return void
+	 */
+	private static function log_debug( string $message ): void {
+		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug-only fallback logging.
+			error_log( '[Daymark Subscription Url Guard] ' . $message );
+		}
 	}
 
 	/**
