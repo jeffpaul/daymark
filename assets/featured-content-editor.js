@@ -482,16 +482,35 @@
 					return;
 				}
 
-				var state = frame.state && frame.state();
-				var library = state && state.get && state.get( 'library' );
-
-				if ( ! library || ! library.props || 'function' !== typeof library.props.set ) {
-					return;
-				}
-
+				var state      = frame.state && frame.state();
+				var library    = state && state.get && state.get( 'library' );
 				var $secondary = frame.$el.find( '.media-toolbar-secondary' ).first();
+				var $existing  = frame.$el.find( '.daymark-fc-typefilter' ).first();
 
-				if ( ! $secondary.length ) {
+				// `library`/`state` persists across every router tab, not
+				// just "Media Library" — the frame's own state doesn't
+				// change just because "Upload files"/"Add by URL" is the
+				// tab actually showing. `.media-toolbar-secondary` — the
+				// row "Filter by date" itself lives in — is the real,
+				// structural signal for whether the library-browse content
+				// is genuinely the one on screen right now (confirmed
+				// directly from a report: on "Upload files", that entire
+				// row, "Filter by date" included, disappears too) rather
+				// than a guessed content-mode name or event. `:visible`
+				// covers a case where the row still exists in the DOM but
+				// is merely hidden for the active tab, not removed outright.
+				var showFilter = !! ( library && library.props && 'function' === typeof library.props.set &&
+					$secondary.length && $secondary.is( ':visible' ) );
+
+				if ( ! showFilter ) {
+					// Not on a tab where this filter applies right now —
+					// hide rather than remove an already-built filter, so
+					// switching back to "Media Library" doesn't have to
+					// rebuild it (and re-bind its own `change` handler) from
+					// scratch every time.
+					if ( $existing.length ) {
+						$existing.hide();
+					}
 					return;
 				}
 
@@ -512,8 +531,6 @@
 				// anything. Falls back to the old in-toolbar prepend only if
 				// `.media-toolbar` itself can't be found.
 				var $toolbar    = $secondary.closest( '.media-toolbar' );
-				var $target     = $toolbar.length ? $toolbar : $secondary;
-				var $existing   = frame.$el.find( '.daymark-fc-typefilter' ).first();
 				var isDisplaced = function () {
 					return $toolbar.length
 						? $existing.get( 0 ).previousElementSibling !== $toolbar.get( 0 )
@@ -521,6 +538,8 @@
 				};
 
 				if ( $existing.length ) {
+					$existing.show();
+
 					// A later re-render of a sibling Backbone view (the
 					// attachments grid, in particular — its own view can
 					// detach and re-append its element with no awareness of
