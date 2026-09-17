@@ -1,9 +1,24 @@
 /**
- * "Featured Content" block-editor sidebar panel (issue #401) — a
- * PluginDocumentSettingPanel sibling to core's own Featured Image panel,
- * letting an author set an audio or video file (from the media library, or
- * a profiled URL — YouTube/Vimeo/a podcast episode link) as a post's
- * Featured Content instead of a static image.
+ * "Featured Content" (issue #401) — a single "Set featured content" control
+ * that renders immediately after core's own "Set featured image" button,
+ * inside the same Featured Image panel, letting an author set an audio or
+ * video file (from the media library, or a profiled URL — YouTube/Vimeo/a
+ * podcast episode link) as a post's Featured Content instead of a static
+ * image.
+ *
+ * There is no public way to inject a sibling control directly into core's
+ * PostFeaturedImage component's own rendered output other than the
+ * documented `editor.PostFeaturedImage` wp.hooks filter — the same
+ * mechanism the Block Editor Handbook's own "extend a component" example
+ * uses to wrap it and render additional content after it. That filter wraps
+ * whatever `@wordpress/editor` renders inside the sidebar's existing
+ * "Featured image" panel, so this needed no new PluginDocumentSettingPanel
+ * (and no new panel heading) at all — a real change from this feature's
+ * first draft, which did register its own separate "Featured Content"
+ * panel; that approach worked, but visually and structurally didn't match
+ * what was actually asked for (a second button in the *same* panel), so it
+ * was replaced with this filter-based approach once that mismatch was
+ * pointed out against the real editor UI.
  *
  * Plain ES2020 calling wp.element.createElement — no JSX, no build step,
  * enqueued only against WordPress core's own bundled scripts. This matches
@@ -13,127 +28,151 @@
  * for the dependency list and localized daymarkFeaturedContent config this
  * file reads.
  *
- * Content-kind coverage here matches Daymark_Featured_Content::SUPPORTED_TYPES
- * (audio/video only, in this phase) — the panel only ever offers what
- * daymarkFeaturedContent.allowedTypes lists, so a future phase's own
- * gallery/quote/link buttons appear automatically once that phase widens
- * the server-side allow-list, with no changes needed here.
+ * Type (audio vs video) is no longer chosen by the author up front: picking
+ * a file from the media library reads its own MIME type directly
+ * (attachment.mime), and a pasted URL is guessed from its file extension or
+ * known audio-hosting domains, defaulting to video otherwise (most oEmbed
+ * providers — YouTube, Vimeo, etc. — are video). The guess only decides
+ * which meta type gets stored and which shortcode function backs the
+ * fallback render path when oEmbed itself doesn't resolve — Daymark_Featured_Content::render()
+ * still renders a resolved oEmbed's own markup unchanged either way.
  */
 ( function ( wp ) {
 	'use strict';
 
-	if ( ! wp || ! wp.plugins || ! wp.element || ! wp.data || ! wp.i18n || ! wp.components ) {
-		return;
-	}
-
-	var PluginDocumentSettingPanel = ( wp.editPost && wp.editPost.PluginDocumentSettingPanel ) || ( wp.editor && wp.editor.PluginDocumentSettingPanel );
-
-	if ( ! PluginDocumentSettingPanel ) {
+	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.data || ! wp.i18n ) {
 		return;
 	}
 
 	var el = wp.element.createElement;
+	var Fragment = wp.element.Fragment;
 	var RawHTML = wp.element.RawHTML;
 	var useState = wp.element.useState;
 	var __ = wp.i18n.__;
+	var sprintf = wp.i18n.sprintf;
 	var useSelect = wp.data.useSelect;
 	var useDispatch = wp.data.useDispatch;
-	var Button = wp.components.Button;
-	var TextControl = wp.components.TextControl;
-	var Spinner = wp.components.Spinner;
-	var Notice = wp.components.Notice;
 
 	var config = window.daymarkFeaturedContent || {};
 	var META_TYPE = config.metaType || '_daymark_featured_content_type';
 	var META_DATA = config.metaData || '_daymark_featured_content';
-	var ALLOWED_TYPES = config.allowedTypes || [ 'audio', 'video' ];
 	var OEMBED_ENDPOINT = config.oembedEndpoint || '';
 
-	var TYPE_LABELS = {
-		audio: __( 'Audio', 'daymark' ),
-		video: __( 'Video', 'daymark' ),
-	};
+	// File extensions this guesses as audio vs video when a pasted URL is a
+	// direct media file rather than a page a provider's oEmbed would resolve.
+	var AUDIO_EXTENSIONS = [ 'mp3', 'm4a', 'wav', 'ogg', 'oga', 'flac', 'aac', 'wma' ];
+	var VIDEO_EXTENSIONS = [ 'mp4', 'm4v', 'mov', 'webm', 'ogv', 'avi', 'wmv' ];
 
-	var LIBRARY_LABELS = {
-		audio: __( 'Select Audio', 'daymark' ),
-		video: __( 'Select Video', 'daymark' ),
-	};
+	// Hosts that are audio-first even though their pages aren't a direct
+	// media-file URL — a podcast episode page's own URL rarely ends in
+	// ".mp3". Everything else (YouTube, Vimeo, and most other oEmbed
+	// providers) is treated as video, the more common case for an arbitrary
+	// profiled URL.
+	var AUDIO_HOST_PATTERN = /soundcloud\.com|anchor\.fm|buzzsprout\.com|podbean\.com|transistor\.fm|libsyn\.com|spotify\.com\/episode|open\.spotify\.com\/show|podcasts\.apple\.com/i;
 
 	/**
-	 * Read one content kind's sub-object out of the JSON-encoded meta
-	 * data blob — mirrors Daymark_Featured_Content::get_featured_content()'s
-	 * own "empty/malformed decodes to {}" tolerance.
+	 * Guess whether a pasted URL is audio or video content, since the
+	 * author no longer picks a type up front. This only decides which meta
+	 * type gets stored (and which native <audio>/<video> fallback shortcode
+	 * function backs it if oEmbed resolution itself comes up empty) — a
+	 * resolved oEmbed's own markup renders exactly the same either way.
 	 *
-	 * @param {string} raw  JSON-encoded _daymark_featured_content value.
-	 * @param {string} type Content kind to read.
-	 * @return {Object} That kind's own sub-object, or {}.
+	 * @param {string} url Pasted URL.
+	 * @return {string} 'audio' or 'video'.
 	 */
-	function readTypeData( raw, type ) {
-		if ( ! raw ) {
-			return {};
+	function guessUrlKind( url ) {
+		var clean = String( url ).split( '?' )[ 0 ].split( '#' )[ 0 ];
+		var match = clean.match( /\.([a-zA-Z0-9]+)$/ );
+		var ext = match ? match[ 1 ].toLowerCase() : '';
+
+		if ( -1 !== AUDIO_EXTENSIONS.indexOf( ext ) ) {
+			return 'audio';
 		}
 
-		try {
-			var decoded = JSON.parse( raw );
-
-			return decoded && typeof decoded === 'object' && decoded[ type ] && typeof decoded[ type ] === 'object' ? decoded[ type ] : {};
-		} catch ( err ) {
-			return {};
+		if ( -1 !== VIDEO_EXTENSIONS.indexOf( ext ) ) {
+			return 'video';
 		}
+
+		return AUDIO_HOST_PATTERN.test( url ) ? 'audio' : 'video';
 	}
 
 	/**
-	 * Merge one content kind's new value into the existing JSON blob,
-	 * leaving every other kind's own already-saved sub-object untouched —
-	 * e.g. switching from a saved `video` back to `audio` doesn't discard
-	 * whatever video data was already there, since only the type meta
-	 * actually decides which sub-key renders.
+	 * Read the currently-saved Featured Content type + that type's own data
+	 * sub-object out of post meta — mirrors
+	 * Daymark_Featured_Content::get_featured_content()'s own tolerance for
+	 * an empty/malformed blob.
 	 *
-	 * @param {string} raw   Existing JSON-encoded value.
-	 * @param {string} type  Content kind being written.
-	 * @param {Object} value That kind's new sub-object.
-	 * @return {string} Re-encoded JSON.
+	 * @param {Object} meta Current post meta object.
+	 * @return {{type: string, data: Object}}
 	 */
-	function writeTypeData( raw, type, value ) {
-		var decoded = {};
+	function readFeaturedContent( meta ) {
+		var type = meta[ META_TYPE ] || '';
+		var raw = meta[ META_DATA ] || '';
+		var data = {};
 
 		if ( raw ) {
 			try {
-				var parsed = JSON.parse( raw );
+				var decoded = JSON.parse( raw );
 
-				if ( parsed && typeof parsed === 'object' ) {
-					decoded = parsed;
+				if ( decoded && typeof decoded === 'object' && decoded[ type ] && typeof decoded[ type ] === 'object' ) {
+					data = decoded[ type ];
 				}
 			} catch ( err ) {
-				decoded = {};
+				data = {};
 			}
 		}
 
-		decoded[ type ] = value;
-
-		return JSON.stringify( decoded );
+		return { type: type, data: data };
 	}
 
 	/**
-	 * Open WordPress's own classic media modal, scoped to one MIME family,
-	 * and hand the picked attachment back to the caller. Requires
-	 * Daymark_Featured_Content::enqueue_editor_assets() to have called
-	 * wp_enqueue_media() and enqueued media-editor/media-models — the block
-	 * editor's own Featured Image panel doesn't use wp.media at all (it
-	 * fetches media via REST directly), so it can't be assumed available on
-	 * every post-edit screen without asking for it explicitly.
+	 * Save a content kind's value as the post's Featured Content.
 	 *
+	 * @param {Function} editPost `core/editor`'s editPost dispatcher.
 	 * @param {string}   type     'audio' or 'video'.
+	 * @param {Object}   value    That kind's data sub-object.
+	 */
+	function saveFeaturedContent( editPost, type, value ) {
+		var payload = {};
+		payload[ type ] = value;
+
+		var meta = {};
+		meta[ META_TYPE ] = type;
+		meta[ META_DATA ] = JSON.stringify( payload );
+		editPost( { meta: meta } );
+	}
+
+	/**
+	 * Clear the post's Featured Content.
+	 *
+	 * @param {Function} editPost `core/editor`'s editPost dispatcher.
+	 */
+	function clearFeaturedContent( editPost ) {
+		var meta = {};
+		meta[ META_TYPE ] = '';
+		meta[ META_DATA ] = '';
+		editPost( { meta: meta } );
+	}
+
+	/**
+	 * Open WordPress's own classic media modal, scoped to audio+video, and
+	 * hand the picked attachment back to the caller. Requires
+	 * Daymark_Featured_Content::enqueue_editor_assets() to have called
+	 * wp_enqueue_media() — the block editor's own Featured Image panel
+	 * doesn't use wp.media at all (it fetches media via REST directly), so
+	 * it can't be assumed available on every post-edit screen without
+	 * asking for it explicitly.
+	 *
 	 * @param {Function} onSelect Called with the picked attachment's REST-shaped object.
 	 */
-	function openMediaPicker( type, onSelect ) {
+	function openMediaPicker( onSelect ) {
 		if ( ! wp.media ) {
 			return;
 		}
 
 		var frame = wp.media( {
-			title: LIBRARY_LABELS[ type ] || type,
-			library: { type: type },
+			title: __( 'Select audio or video', 'daymark' ),
+			library: { type: [ 'audio', 'video' ] },
 			multiple: false,
 			button: { text: __( 'Use this file', 'daymark' ) },
 		} );
@@ -150,12 +189,38 @@
 	}
 
 	/**
-	 * The panel itself. Three states: nothing set yet (pick a type), a type
-	 * chosen but not yet saved (pick a source — library or URL), or already
-	 * set (a summary + Remove action) — mirroring core's own Featured Image
-	 * panel's "Set" -> preview-and-remove flow.
+	 * One-line summary of the currently-saved Featured Content, for the
+	 * already-set state.
+	 *
+	 * @param {string} type Saved type ('audio'/'video').
+	 * @param {Object} data That type's saved data sub-object.
+	 * @return {string}
 	 */
-	function FeaturedContentPanel() {
+	function summaryLabel( type, data ) {
+		var kindLabel = 'audio' === type ? __( 'Audio', 'daymark' ) : __( 'Video', 'daymark' );
+
+		if ( 'url' === data.source ) {
+			return sprintf(
+				/* translators: %s: Audio or Video. */
+				__( 'Featured content: %s (URL)', 'daymark' ),
+				kindLabel
+			);
+		}
+
+		return sprintf(
+			/* translators: %s: Audio or Video. */
+			__( 'Featured content: %s file', 'daymark' ),
+			kindLabel
+		);
+	}
+
+	/**
+	 * The control rendered right after core's own Featured Image button.
+	 * Three states: unset (a single toggle button), the picker open (media
+	 * library button + URL field, with a live preview), or already set (a
+	 * one-line summary plus Replace/Remove).
+	 */
+	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
 			var editor = select( 'core/editor' );
 
@@ -163,130 +228,185 @@
 		}, [] );
 
 		var editPost = useDispatch( 'core/editor' ).editPost;
+		var current = readFeaturedContent( meta );
 
-		var currentType = meta[ META_TYPE ] || '';
-		var currentRawData = meta[ META_DATA ] || '';
-		var isSet = '' !== currentType && -1 !== ALLOWED_TYPES.indexOf( currentType );
-
-		var choosingTypeState = useState( '' );
-		var choosingType = choosingTypeState[ 0 ];
-		var setChoosingType = choosingTypeState[ 1 ];
+		var openState = useState( false );
+		var isOpen = openState[ 0 ];
+		var setOpen = openState[ 1 ];
 
 		var urlState = useState( '' );
-		var urlValue = urlState[ 0 ];
-		var setUrlValue = urlState[ 1 ];
+		var url = urlState[ 0 ];
+		var setUrl = urlState[ 1 ];
 
 		var previewState = useState( null );
 		var preview = previewState[ 0 ];
 		var setPreview = previewState[ 1 ];
 
-		function resetChooser() {
-			setChoosingType( '' );
-			setUrlValue( '' );
+		var busyState = useState( false );
+		var busy = busyState[ 0 ];
+		var setBusy = busyState[ 1 ];
+
+		function resetPicker() {
+			setOpen( false );
+			setUrl( '' );
 			setPreview( null );
+			setBusy( false );
 		}
 
-		function save( type, value ) {
-			var next = {};
+		function handleLibrarySelect( attachment ) {
+			var mime = attachment.mime || '';
+			var kind = 0 === mime.indexOf( 'audio/' ) ? 'audio' : ( 0 === mime.indexOf( 'video/' ) ? 'video' : '' );
 
-			next[ META_TYPE ] = type;
-			next[ META_DATA ] = writeTypeData( currentRawData, type, value );
-			editPost( { meta: next } );
-			resetChooser();
-		}
-
-		function remove() {
-			var next = {};
-
-			next[ META_TYPE ] = '';
-			editPost( { meta: next } );
-			resetChooser();
-		}
-
-		function pickFromLibrary( type ) {
-			openMediaPicker( type, function ( attachment ) {
-				save( type, { source: 'library', attachment_id: attachment.id } );
-			} );
-		}
-
-		function previewUrl( type ) {
-			if ( ! urlValue || ! OEMBED_ENDPOINT || ! wp.apiFetch ) {
+			if ( ! kind ) {
 				return;
 			}
 
-			setPreview( { loading: true, embed: null } );
+			saveFeaturedContent( editPost, kind, { source: 'library', attachment_id: attachment.id } );
+			resetPicker();
+		}
 
-			wp.apiFetch( { url: OEMBED_ENDPOINT + '?url=' + encodeURIComponent( urlValue ) } ).then(
+		function handleUseUrl() {
+			if ( ! url ) {
+				return;
+			}
+
+			saveFeaturedContent( editPost, guessUrlKind( url ), { source: 'url', url: url } );
+			resetPicker();
+		}
+
+		function handlePreview() {
+			if ( ! url || ! OEMBED_ENDPOINT || ! wp.apiFetch ) {
+				return;
+			}
+
+			setBusy( true );
+
+			wp.apiFetch( { url: OEMBED_ENDPOINT + '?url=' + encodeURIComponent( url ) } ).then(
 				function ( response ) {
-					setPreview( { loading: false, embed: response && response.embed ? response.embed : null } );
+					setBusy( false );
+					setPreview( response && response.embed ? response.embed : '' );
 				},
 				function () {
-					setPreview( { loading: false, embed: null } );
+					setBusy( false );
+					setPreview( '' );
 				}
 			);
 		}
 
-		function useUrl( type ) {
-			save( type, { source: 'url', url: urlValue } );
-		}
-
-		if ( isSet ) {
-			var data = readTypeData( currentRawData, currentType );
-			var summary = 'url' === data.source ? data.url : __( 'From your media library', 'daymark' );
-
+		if ( current.type ) {
 			return el(
-				PluginDocumentSettingPanel,
-				{ name: 'daymark-featured-content', title: __( 'Featured Content', 'daymark' ) },
-				el( 'p', { className: 'daymark-fc-summary' }, ( TYPE_LABELS[ currentType ] || currentType ) + ': ' + summary ),
-				el( Button, { variant: 'link', isDestructive: true, onClick: remove }, __( 'Remove Featured Content', 'daymark' ) )
-			);
-		}
-
-		if ( ! choosingType ) {
-			return el(
-				PluginDocumentSettingPanel,
-				{ name: 'daymark-featured-content', title: __( 'Featured Content', 'daymark' ) },
+				'div',
+				{ className: 'daymark-fc-summary' },
+				el( 'span', {}, summaryLabel( current.type, current.data ) ),
 				el(
 					'div',
-					{ className: 'daymark-fc-type-buttons' },
-					ALLOWED_TYPES.map( function ( type ) {
-						return el(
-							Button,
-							{ key: type, variant: 'secondary', onClick: function () { setChoosingType( type ); } },
-							TYPE_LABELS[ type ] || type
-						);
-					} )
-				)
+					{ className: 'daymark-fc-summary-actions' },
+					el(
+						'button',
+						{ type: 'button', className: 'daymark-fc-link', onClick: function () { setOpen( true ); } },
+						__( 'Replace', 'daymark' )
+					),
+					el(
+						'button',
+						{
+							type: 'button',
+							className: 'daymark-fc-link daymark-fc-link--danger',
+							onClick: function () {
+								clearFeaturedContent( editPost );
+								resetPicker();
+							},
+						},
+						__( 'Remove', 'daymark' )
+					)
+				),
+				isOpen ? renderPicker() : null
 			);
 		}
 
-		return el(
-			PluginDocumentSettingPanel,
-			{ name: 'daymark-featured-content', title: __( 'Featured Content', 'daymark' ) },
-			el( 'p', {}, TYPE_LABELS[ choosingType ] || choosingType ),
-			el( Button, { variant: 'secondary', onClick: function () { pickFromLibrary( choosingType ); } }, __( 'Choose from Media Library', 'daymark' ) ),
-			el( 'p', { className: 'daymark-fc-or' }, __( 'Or paste a URL (YouTube, Vimeo, a podcast episode link, etc.):', 'daymark' ) ),
-			el( TextControl, {
-				value: urlValue,
-				onChange: setUrlValue,
-				placeholder: __( 'https://…', 'daymark' ),
-			} ),
-			el(
+		if ( ! isOpen ) {
+			return el(
+				'button',
+				{ type: 'button', className: 'daymark-fc-toggle', onClick: function () { setOpen( true ); } },
+				__( 'Set featured content', 'daymark' )
+			);
+		}
+
+		return renderPicker();
+
+		/**
+		 * @return {Object} The open picker's own element tree.
+		 */
+		function renderPicker() {
+			return el(
 				'div',
-				{ className: 'daymark-fc-url-actions' },
-				el( Button, { variant: 'tertiary', disabled: ! urlValue, onClick: function () { previewUrl( choosingType ); } }, __( 'Preview', 'daymark' ) ),
-				el( Button, { variant: 'primary', disabled: ! urlValue, onClick: function () { useUrl( choosingType ); } }, __( 'Use this URL', 'daymark' ) )
-			),
-			preview && preview.loading ? el( Spinner, {} ) : null,
-			preview && ! preview.loading && preview.embed && preview.embed.html ? el( RawHTML, { className: 'daymark-fc-preview' }, preview.embed.html ) : null,
-			preview && ! preview.loading && ! preview.embed ? el(
-				Notice,
-				{ status: 'warning', isDismissible: false },
-				__( "Couldn't generate a preview for this URL — it will still be saved and rendered on the front end.", 'daymark' )
-			) : null,
-			el( Button, { variant: 'link', onClick: resetChooser }, __( 'Cancel', 'daymark' ) )
-		);
+				{ className: 'daymark-fc-picker' },
+				el(
+					'button',
+					{ type: 'button', className: 'daymark-fc-toggle', onClick: function () { openMediaPicker( handleLibrarySelect ); } },
+					__( 'Choose from Media Library', 'daymark' )
+				),
+				el( 'p', { className: 'daymark-fc-or' }, __( 'Or paste a URL (YouTube, Vimeo, a podcast episode link, etc.):', 'daymark' ) ),
+				el( 'input', {
+					type: 'url',
+					className: 'daymark-fc-url-input',
+					placeholder: __( 'https://…', 'daymark' ),
+					value: url,
+					onChange: function ( event ) {
+						setUrl( event.target.value );
+						setPreview( null );
+					},
+				} ),
+				el(
+					'div',
+					{ className: 'daymark-fc-url-actions' },
+					el(
+						'button',
+						{ type: 'button', className: 'daymark-fc-link', disabled: ! url || busy, onClick: handlePreview },
+						busy ? __( 'Loading preview…', 'daymark' ) : __( 'Preview', 'daymark' )
+					),
+					el(
+						'button',
+						{ type: 'button', className: 'daymark-fc-link', disabled: ! url, onClick: handleUseUrl },
+						__( 'Use this URL', 'daymark' )
+					),
+					el(
+						'button',
+						{ type: 'button', className: 'daymark-fc-link', onClick: resetPicker },
+						__( 'Cancel', 'daymark' )
+					)
+				),
+				preview ? el( RawHTML, { className: 'daymark-fc-preview' }, preview ) : null,
+				'' === preview ? el( 'p', { className: 'daymark-fc-preview-empty' }, __( "Couldn't generate a preview for this URL — it will still be saved and rendered on the front end.", 'daymark' ) ) : null
+			);
+		}
 	}
 
-	wp.plugins.registerPlugin( 'daymark-featured-content', { render: FeaturedContentPanel } );
+	/**
+	 * Wraps core's own PostFeaturedImage component via the documented
+	 * `editor.PostFeaturedImage` filter — the Block Editor Handbook's own
+	 * "extend a component" example wraps a filtered component the same way:
+	 * render the original unchanged, then append additional content after
+	 * it. This is what actually places "Set featured content" directly
+	 * below "Set featured image" inside the same, single "Featured image"
+	 * sidebar panel, with no second panel/heading of our own.
+	 *
+	 * @param {Function} OriginalPostFeaturedImage Core's own component.
+	 * @return {Function} Wrapped component.
+	 */
+	function withFeaturedContentControl( OriginalPostFeaturedImage ) {
+		return function ( props ) {
+			return el(
+				Fragment,
+				{},
+				el( OriginalPostFeaturedImage, props ),
+				el( FeaturedContentControl, {} )
+			);
+		};
+	}
+
+	wp.hooks.addFilter(
+		'editor.PostFeaturedImage',
+		'daymark/featured-content-control',
+		withFeaturedContentControl
+	);
 } )( window.wp );

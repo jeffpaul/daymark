@@ -1,30 +1,87 @@
 /**
- * Minimal styling for the Featured Content block-editor sidebar panel
- * (assets/featured-content-editor.js, issue #401) — the panel's own
- * components (Button/TextControl/Spinner/Notice) already come fully
- * styled from wp-components; this only spaces out the panel's own custom
- * layout, matching wp-admin's own default spacing conventions rather than
- * introducing a distinct visual language for one small panel.
+ * Minimal styling for the Featured Content control (assets/featured-content-editor.js,
+ * issue #401) — rendered as plain elements (not wp-components), matching the
+ * plain-button look of core's own "Set featured image"/"Remove featured
+ * image" controls in the same panel rather than pulling in wp-components
+ * for one small control.
  */
 
-.daymark-fc-type-buttons {
+.daymark-fc-toggle {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-top: 8px;
+	padding: 6px 12px;
+	background: #f0f0f0;
+	border: none;
+	border-radius: 2px;
+	cursor: pointer;
+	text-align: center;
+	font-size: 13px;
+}
+
+.daymark-fc-toggle:hover {
+	background: #e0e0e0;
+}
+
+.daymark-fc-picker {
+	margin-top: 8px;
+}
+
+.daymark-fc-or {
+	margin: 8px 0 4px;
+	font-size: 12px;
+}
+
+.daymark-fc-url-input {
+	display: block;
+	width: 100%;
+	box-sizing: border-box;
+	margin-bottom: 6px;
+	padding: 6px 8px;
+}
+
+.daymark-fc-url-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 }
 
-.daymark-fc-or {
-	margin-top: 12px;
+.daymark-fc-link {
+	background: none;
+	border: none;
+	padding: 0;
+	color: var(--wp-admin-theme-color, #2271b1);
+	cursor: pointer;
+	font-size: 13px;
+	text-decoration: underline;
 }
 
-.daymark-fc-url-actions {
-	display: flex;
-	gap: 8px;
+.daymark-fc-link:disabled {
+	color: #a7a7a7;
+	cursor: default;
+	text-decoration: none;
+}
+
+.daymark-fc-link--danger {
+	color: #b32d2e;
+}
+
+.daymark-fc-summary {
 	margin-top: 8px;
+	font-size: 13px;
+	word-break: break-word;
 }
 
-.daymark-fc-preview {
-	margin-top: 12px;
+.daymark-fc-summary-actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 4px;
+}
+
+.daymark-fc-preview,
+.daymark-fc-preview-empty {
+	margin-top: 8px;
 	max-width: 100%;
 	overflow: hidden;
 }
@@ -35,6 +92,7 @@
 	max-width: 100%;
 }
 
-.daymark-fc-summary {
-	word-break: break-word;
+.daymark-fc-preview-empty {
+	font-size: 12px;
+	font-style: italic;
 }

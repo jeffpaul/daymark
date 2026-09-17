@@ -1,11 +1,14 @@
 <?php
 /**
- * "Featured Content" — a block-editor sidebar panel, sibling to core's own
- * Featured Image panel, letting an author set an audio file, a video file
- * (media library, or a profiled URL — YouTube/Vimeo/a podcast episode link),
- * a gallery, a quote, or (for the `link` post format) a plain link as a
- * post's featured content instead of a static image. See issue #401 for the
- * full design and phased build order this class implements incrementally.
+ * "Featured Content" — a "Set featured content" control rendered directly
+ * inside core's own Featured Image panel, right after "Set featured image"
+ * (via the documented `editor.PostFeaturedImage` wp.hooks filter — see
+ * assets/featured-content-editor.js), letting an author set an audio file,
+ * a video file (media library, or a profiled URL — YouTube/Vimeo/a podcast
+ * episode link), a gallery, a quote, or (for the `link` post format) a
+ * plain link as a post's featured content instead of a static image. See
+ * issue #401 for the full design and phased build order this class
+ * implements incrementally.
  *
  * Scoped site-wide, not to Marks: any post type that already shows a
  * Featured Image panel (declares `thumbnail` support) and actually uses the
@@ -96,8 +99,9 @@ class Daymark_Featured_Content {
 	}
 
 	/**
-	 * Which post types get the Featured Content panel: every registered
-	 * post type that already declares Featured Image (`thumbnail`) support
+	 * Which post types get the "Set featured content" control: every
+	 * registered post type that already declares Featured Image
+	 * (`thumbnail`) support
 	 * AND is genuinely edited in the block editor — `use_block_editor_for_post_type()`
 	 * accounts for a type with no editor UI at all (`daymark_sub_post`) or one
 	 * a site owner has explicitly opted back into the classic editor, neither
@@ -115,7 +119,7 @@ class Daymark_Featured_Content {
 		}
 
 		/**
-		 * Filters which post types show the Featured Content sidebar panel.
+		 * Filters which post types show the "Set featured content" control.
 		 *
 		 * @since 0.18.0
 		 *
@@ -455,8 +459,8 @@ class Daymark_Featured_Content {
 	}
 
 	/**
-	 * Enqueue the Featured Content editor panel, only on a post-edit screen
-	 * for a post type this class actually supports.
+	 * Enqueue the Featured Content editor control, only on a post-edit
+	 * screen for a post type this class actually supports.
 	 *
 	 * @return void
 	 */
@@ -478,7 +482,7 @@ class Daymark_Featured_Content {
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
 			DAYMARK_VERSION,
 			true
 		);
