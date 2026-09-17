@@ -102,6 +102,7 @@ jobs:
             // rather than part of the publisher's own Mark contract.
             '$featured_mark_id = $plugin->publisher->publish(',
             '\tarray(',
+            "\t\t'title'        => 'Featured Content demo',",
             "\t\t'caption'      => 'Demo of Featured Content: this Mark uses a YouTube video as its featured video instead of an image.',",
             "\t\t'primary_type' => 'note',",
             '\t)',
