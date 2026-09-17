@@ -32,7 +32,7 @@
     },
     {
       "step": "runPHP",
-      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n$plugin = Daymark_Plugin::instance();\n\nforeach ( [ 'https://jeffpaul.com', 'https://jondesrosiers.com', 'https://aaron.jorb.in' ] as $site_url ) {\n\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );\n\tif ( ! is_wp_error( $result ) ) {\n\t\t$plugin->subscription_poller->poll_subscription( (int) $result );\n\t}\n}\n"
+      "code": "<?php\nrequire_once '/wordpress/wp-load.php';\n\n$plugin = Daymark_Plugin::instance();\n\nforeach ( [ 'https://jeffpaul.com', 'https://jondesrosiers.com', 'https://aaron.jorb.in' ] as $site_url ) {\n\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );\n\tif ( ! is_wp_error( $result ) ) {\n\t\t$plugin->subscription_poller->poll_subscription( (int) $result );\n\t}\n}\n\n$featured_mark_id = $plugin->publisher->publish(\n\tarray(\n\t\t'caption'      => 'Demo of Featured Content: this Mark uses a YouTube video as its featured video instead of an image.',\n\t\t'primary_type' => 'note',\n\t)\n);\n\nif ( ! is_wp_error( $featured_mark_id ) ) {\n\tupdate_post_meta( $featured_mark_id, '_daymark_featured_content_type', 'video' );\n\tupdate_post_meta(\n\t\t$featured_mark_id,\n\t\t'_daymark_featured_content',\n\t\twp_json_encode( array( 'video' => array( 'source' => 'url', 'url' => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ' ) ) )\n\t);\n}\n"
     }
   ]
 }

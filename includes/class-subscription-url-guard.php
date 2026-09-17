@@ -95,31 +95,6 @@ class Daymark_Subscription_Url_Guard {
 
 		foreach ( self::resolve_addresses( $host ) as $address ) {
 			if ( self::is_unsafe_address( $address ) ) {
-				// TEMPORARY diagnostic while chasing issue #402's Playground
-				// report — the gethostbyname()-vs-gethostbynamel() hypothesis
-				// (see the removed comment this replaces) is now refuted:
-				// confirmed real data shows both functions return the
-				// identical synthetic, per-host-incrementing 172.29.x.0
-				// address. Now also logging php_uname('s') to test a second,
-				// independently-researched hypothesis — see
-				// should_skip_dns_resolution()'s own updated docblock.
-				// Remove alongside the rest of this PR's oEmbed diagnostics
-				// once root-caused.
-				self::log_debug(
-					sprintf(
-						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, php_uname(s)=%5$s, gethostbyname()=%6$s, gethostbynamel()=%7$s, dns_get_record(A)=%8$s, dns_get_record(AAAA)=%9$s',
-						$url,
-						$host,
-						$address,
-						PHP_SAPI,
-						function_exists( 'php_uname' ) ? php_uname( 's' ) : 'undefined',
-						function_exists( 'gethostbyname' ) ? gethostbyname( $host ) : 'undefined',
-						function_exists( 'gethostbynamel' ) ? wp_json_encode( gethostbynamel( $host ) ) : 'undefined',
-						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_A ) ) : 'undefined', // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same "no record is expected, not an error" reasoning as resolve_addresses()'s own call.
-						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_AAAA ) ) : 'undefined' // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same reasoning.
-					)
-				);
-
 				return new WP_Error(
 					'daymark_subscription_unsafe_url',
 					__( 'This URL resolves to a private or internal network address.', 'daymark' )
@@ -128,20 +103,6 @@ class Daymark_Subscription_Url_Guard {
 		}
 
 		return true;
-	}
-
-	/**
-	 * Log a debug message when WP_DEBUG is enabled. Never throws. Matches
-	 * Daymark_AI_Assist::log_debug()'s own established convention.
-	 *
-	 * @param string $message The message.
-	 * @return void
-	 */
-	private static function log_debug( string $message ): void {
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug-only fallback logging.
-			error_log( '[Daymark Subscription Url Guard] ' . $message );
-		}
 	}
 
 	/**

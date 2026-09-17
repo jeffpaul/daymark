@@ -86,20 +86,12 @@ class Daymark_Subscription_Oembed {
 		$scheme = strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) );
 
 		if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
-			self::log_debug( sprintf( 'Rejected %1$s: scheme "%2$s" is not http(s).', $url, $scheme ) );
-
 			return array();
 		}
 
 		$guard_result = Daymark_Subscription_Url_Guard::check( $url );
 
 		if ( is_wp_error( $guard_result ) ) {
-			// TEMPORARY diagnostic, see fetch_and_extract()'s own note —
-			// resolve() returns before ever reaching that method's own
-			// logging when the guard itself rejects a URL, so this is the
-			// one place that failure mode gets surfaced at all.
-			self::log_debug( sprintf( 'Rejected %1$s by Daymark_Subscription_Url_Guard: %2$s', $url, $guard_result->get_error_message() ) );
-
 			return array();
 		}
 
@@ -107,8 +99,6 @@ class Daymark_Subscription_Oembed {
 		$cached    = get_transient( $cache_key );
 
 		if ( is_array( $cached ) ) {
-			self::log_debug( sprintf( 'Serving cached result for %1$s (%2$s).', $url, empty( $cached ) ? 'empty/failed' : 'has embed' ) );
-
 			return $cached;
 		}
 
@@ -150,96 +140,20 @@ class Daymark_Subscription_Oembed {
 		// direct way to pass a response size cap or timeout through to the
 		// underlying HTTP request.
 		add_filter( 'http_request_args', array( __CLASS__, 'inject_request_limits' ), 10, 1 );
-		// TEMPORARY, WP_DEBUG-only diagnostic while chasing a report of
-		// several known-public Vimeo/YouTube URLs all resolving to nothing —
-		// see log_http_debug()'s own docblock. Remove once root-caused.
-		add_action( 'http_api_debug', array( __CLASS__, 'log_http_debug' ), 10, 5 );
 
 		try {
 			$html = wp_oembed_get( $url, array( 'discover' => true ) );
 		} catch ( Throwable $e ) {
 			$html = false;
-			self::log_debug( sprintf( 'wp_oembed_get(%1$s) threw: %2$s', $url, $e->getMessage() ) );
 		}
 
 		remove_filter( 'http_request_args', array( __CLASS__, 'inject_request_limits' ), 10 );
-		remove_action( 'http_api_debug', array( __CLASS__, 'log_http_debug' ), 10 );
 
 		if ( ! is_string( $html ) || '' === trim( $html ) ) {
-			self::log_debug(
-				sprintf(
-					'wp_oembed_get(%1$s) returned nothing embeddable (%2$s).',
-					$url,
-					is_string( $html ) ? 'empty string' : 'false'
-				)
-			);
-
 			return array();
 		}
 
-		self::log_debug( sprintf( 'wp_oembed_get(%1$s) returned %2$d bytes of HTML.', $url, strlen( $html ) ) );
-
-		$extracted = self::extract_safe_embed( $html );
-
-		if ( empty( $extracted ) ) {
-			self::log_debug( sprintf( 'extract_safe_embed() found no iframe/img in the oEmbed response for %s.', $url ) );
-		}
-
-		return $extracted;
-	}
-
-	/**
-	 * TEMPORARY diagnostic, added while chasing a report of several
-	 * known-public Vimeo/YouTube URLs all resolving to "no preview" —
-	 * hooked/unhooked around the single wp_oembed_get() call above the same
-	 * way inject_request_limits() already is, so it only ever observes the
-	 * HTTP request(s) that call itself makes (a direct provider-endpoint
-	 * fetch, or a page fetch + endpoint fetch when discovery is needed).
-	 * Logs the real cause a caller has otherwise had no visibility into:
-	 * a network-level failure (WP_Error — e.g. a blocked/refused outbound
-	 * connection) vs. a non-2xx response from the provider (e.g. embedding
-	 * declined) vs. a 200 response whose body wp_oembed_get()/
-	 * extract_safe_embed() still found nothing usable in. Remove once
-	 * root-caused.
-	 *
-	 * @param array|WP_Error $response HTTP response array, or WP_Error on failure.
-	 * @param string         $context  Debug context string core passes (e.g. 'response').
-	 * @param string         $transport_class HTTP transport class name.
-	 * @param array          $args            Request args.
-	 * @param string         $url             Request URL.
-	 * @return void
-	 */
-	public static function log_http_debug( $response, string $context, string $transport_class, array $args, string $url ): void {
-		if ( is_wp_error( $response ) ) {
-			self::log_debug( sprintf( 'HTTP request to %1$s failed: %2$s', $url, $response->get_error_message() ) );
-
-			return;
-		}
-
-		$code = (int) wp_remote_retrieve_response_code( $response );
-
-		self::log_debug(
-			sprintf(
-				'HTTP request to %1$s returned %2$d, body starts: %3$s',
-				$url,
-				$code,
-				substr( (string) wp_remote_retrieve_body( $response ), 0, 300 )
-			)
-		);
-	}
-
-	/**
-	 * Log a debug message when WP_DEBUG is enabled. Never throws. Matches
-	 * Daymark_AI_Assist::log_debug()'s own established convention.
-	 *
-	 * @param string $message The message.
-	 * @return void
-	 */
-	private static function log_debug( string $message ): void {
-		if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Debug-only fallback logging.
-			error_log( '[Daymark Subscription Oembed] ' . $message );
-		}
+		return self::extract_safe_embed( $html );
 	}
 
 	/**
