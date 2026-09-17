@@ -182,6 +182,13 @@ final class Daymark_Plugin {
 	public Daymark_Admin_Bar $admin_bar;
 
 	/**
+	 * The post-format icon indicator on wp-admin's post list screens.
+	 *
+	 * @var Daymark_Admin_Post_Format_Icon
+	 */
+	public Daymark_Admin_Post_Format_Icon $admin_post_format_icon;
+
+	/**
 	 * WebSub (PubSubHubbub) subscribing — sends/renews a hub subscription
 	 * after a poll finds one advertised. Invoked directly by
 	 * Daymark_Subscription_Poller::poll_subscription(); no hooks of its own
@@ -262,6 +269,7 @@ final class Daymark_Plugin {
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 		$this->share_target                 = new Daymark_Share_Target();
 		$this->admin_bar                    = new Daymark_Admin_Bar();
+		$this->admin_post_format_icon       = new Daymark_Admin_Post_Format_Icon();
 		$this->websub_subscriber            = new Daymark_Websub_Subscriber();
 		$this->websub_endpoint              = new Daymark_Websub_Endpoint();
 		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
@@ -344,6 +352,7 @@ final class Daymark_Plugin {
 		$this->subscription_poller->register();
 		$this->admin_subscriptions->register();
 		$this->admin_bar->register();
+		$this->admin_post_format_icon->register();
 		$this->websub_endpoint->register();
 		$this->jetpack_engagement->register();
 		// Bridge active third-party publishing plugins' control filters to
