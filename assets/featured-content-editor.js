@@ -491,32 +491,33 @@
 
 				var $secondary = frame.$el.find( '.media-toolbar-secondary' ).first();
 
-				if ( ! $secondary.length || $secondary.find( '.daymark-fc-typefilter' ).length ) {
+				if ( ! $secondary.length || frame.$el.find( '.daymark-fc-typefilter' ).length ) {
 					return;
 				}
 
-				// Wrapped in a visible label + select. The prior fix assumed
-				// `.media-toolbar-secondary` was a flex row and tried to
-				// match "Filter by date"'s own two-row shape to align with
-				// it — Jeff's own browser inspector screenshot showed that
-				// assumption was wrong: the container is `display: grid`
-				// (a real computed-style badge, not a guess), and core's
-				// own label/select are two independent, unwrapped grid
-				// items, not one grouped unit — wrapping ours in a single
-				// `<div>` made it one grid item where core's own filter is
-				// two, which is exactly the kind of difference that throws
-				// off an auto-placed grid's row/column assignment
-				// regardless of the container's specific track definitions.
-				// Rather than reverse-engineer those track definitions (the
-				// same category of undocumented-core-CSS guessing that
-				// already cost several rounds on this exact filter), the
-				// wrapper's own CSS (`assets/featured-content-editor.css`)
-				// now spans every column via `grid-column: 1 / -1` — a
-				// standard, line-based CSS Grid span that works correctly
-				// no matter how many columns the container actually
-				// defines — giving this filter a dedicated, predictable
-				// full-width row of its own, decoupled entirely from
-				// wherever core's own "Filter by date" row lands.
+				// The previous two fixes both tried to make this filter a
+				// well-behaved participant *inside* `.media-toolbar-secondary`
+				// — first assuming it was a flex row, then (once Jeff's own
+				// inspector showed it's actually `display: grid`, with core's
+				// "Filter by date" as two independent, unwrapped grid items)
+				// trying to span every grid column instead. Both rounds still
+				// left it visibly misaligned, because both still depended on
+				// exactly how the container's own grid/track rules interact
+				// with an inserted item — the same category of undocumented-
+				// core-CSS guessing that has now cost several rounds on this
+				// one filter. Rather than guess a third time, this drops out
+				// of that container's layout algorithm entirely: `$toolbar`
+				// is `.media-toolbar-secondary`'s own parent (the bar that
+				// holds both the primary and secondary toolbar halves), and
+				// the wrapper is inserted as a plain sibling *after* it —
+				// ordinary block-level document flow, not a grid/flex item of
+				// anything, so it can't be mis-placed by a track/column rule
+				// it was never actually asked to participate in. Falls back
+				// to the old in-toolbar prepend only if `.media-toolbar`
+				// itself can't be found, so a missing/renamed wrapper class
+				// costs only the ideal placement, not the filter itself.
+				var $toolbar = $secondary.closest( '.media-toolbar' );
+
 				var $wrap = $jq(
 					'<div class="daymark-fc-typefilter">' +
 						'<label class="daymark-fc-typefilter-label" for="daymark-fc-typefilter-select">' +
@@ -544,7 +545,11 @@
 					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
 				} );
 
-				$secondary.prepend( $wrap );
+				if ( $toolbar.length ) {
+					$toolbar.after( $wrap );
+				} else {
+					$secondary.prepend( $wrap );
+				}
 			} catch ( err ) {
 				// A missing/unexpected internal shape costs only this filter
 				// control — the picker itself is untouched. Logged (not

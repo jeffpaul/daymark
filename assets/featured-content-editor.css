@@ -142,26 +142,25 @@
 
 /*
  * The "Media Library" tab's own Video/Audio content-type filter (see
- * bindLibraryTypeFilter() in the JS file) — prepended as a plain sibling of
- * core's own toolbar groups (.media-toolbar-primary/.media-toolbar-secondary,
- * both styled by wp-admin's bundled media-views.css, which this rule doesn't
- * touch). `.media-toolbar-secondary` is confirmed `display: grid` (Jeff's
- * own browser inspector, a real computed-style badge, not a guess) with
- * core's own "Filter by date" label/select as two independent, unwrapped
- * grid items — wrapping ours in one `<div>` made it a single grid item where
- * core's is two, which threw off the grid's auto-placement regardless of the
- * container's specific column/track definitions. `grid-column: 1 / -1` spans
- * every column of whatever grid the container actually defines — a standard,
- * line-based CSS Grid span, not a guess at track sizing — giving this filter
- * its own dedicated, predictable full-width row rather than trying to land
- * in the same row/column core's own filter happens to occupy.
+ * bindLibraryTypeFilter() in the JS file). Two earlier attempts tried to
+ * make this filter a well-behaved participant *inside*
+ * `.media-toolbar-secondary` (first assuming a flex row, then — once Jeff's
+ * own inspector showed it's actually `display: grid` with core's "Filter by
+ * date" as two independent, unwrapped grid items — spanning every grid
+ * column instead); both still landed visibly misaligned, since both still
+ * depended on exactly how that container's own grid/track rules treat an
+ * inserted item. The JS now inserts this wrapper as a plain sibling *after*
+ * `.media-toolbar` itself (the bar holding both toolbar halves) instead of
+ * inside `.media-toolbar-secondary` — ordinary block-level document flow,
+ * not a grid/flex item of anything, so no track/column rule can misplace it.
+ * This rule is just that row's own internal layout (label beside its
+ * select) and spacing, not a fit against the toolbar's own grid.
  */
 .daymark-fc-typefilter {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	grid-column: 1 / -1;
-	margin-bottom: 8px;
+	margin: 8px 16px;
 }
 
 .daymark-fc-typefilter-label {
