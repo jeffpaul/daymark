@@ -83,6 +83,12 @@
  * which meta type gets stored and which shortcode function backs the
  * fallback render path when oEmbed itself doesn't resolve — Daymark_Featured_Content::render()
  * still renders a resolved oEmbed's own markup unchanged either way.
+ *
+ * Once set, FeaturedContentControl's own "already set" state renders a
+ * small preview above its summary text/Replace/Remove row — matching core's
+ * own Featured Image thumbnail — via FeaturedContentPreview, using the same
+ * source_url/oEmbed/native-fallback resolution order described on that
+ * function's own docblock.
  */
 ( function ( wp ) {
 	'use strict';
@@ -93,6 +99,8 @@
 
 	var el = wp.element.createElement;
 	var Fragment = wp.element.Fragment;
+	var useState = wp.element.useState;
+	var useEffect = wp.element.useEffect;
 	var __ = wp.i18n.__;
 	var sprintf = wp.i18n.sprintf;
 	var useSelect = wp.data.useSelect;
@@ -463,10 +471,123 @@
 	}
 
 	/**
+	 * A small preview of the currently-set Featured Content, mirroring
+	 * core's own Featured Image thumbnail. A `library` attachment renders
+	 * its own native <audio>/<video> element directly, via that
+	 * attachment's REST `source_url` (resolved through the `core` data
+	 * store's `getMedia()` — the same lookup core's own PostFeaturedImage
+	 * component already uses for its own thumbnail, so no new script
+	 * dependency is needed here: `wp-core-data` is already a hard
+	 * dependency of the block editor itself). A profiled `url` resolves a
+	 * live oEmbed preview through the same
+	 * GET /daymark/v1/featured-content/oembed route the "Add by URL" tab
+	 * already uses, falling back to a plain native <audio>/<video> tag for
+	 * a direct file URL an oEmbed provider can't resolve — the same
+	 * fallback order Daymark_Featured_Content::render_audio()/render_video()
+	 * already use server-side, so the sidebar preview and the eventual
+	 * front-end rendering never disagree about what a given value shows.
+	 *
+	 * @param {{type: string, data: Object}} props Resolved Featured Content.
+	 * @return {Object|null}
+	 */
+	function FeaturedContentPreview( props ) {
+		var type = props.type;
+		var data = props.data;
+		var isUrl = 'url' === data.source;
+
+		var attachment = useSelect(
+			function ( select ) {
+				return isUrl ? null : select( 'core' ).getMedia( data.attachment_id );
+			},
+			[ isUrl, data.attachment_id ]
+		);
+
+		var embedState = useState( null );
+		var embed = embedState[ 0 ];
+		var setEmbed = embedState[ 1 ];
+
+		useEffect(
+			function () {
+				if ( ! isUrl ) {
+					return;
+				}
+
+				var endpoint = ( window.daymarkFeaturedContent || {} ).oembedEndpoint;
+
+				if ( ! wp.apiFetch || ! endpoint ) {
+					setEmbed( false );
+					return;
+				}
+
+				var cancelled = false;
+
+				wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( data.url ) } )
+					.then( function ( response ) {
+						if ( ! cancelled ) {
+							setEmbed( response && response.embed ? response.embed : false );
+						}
+					} )
+					.catch( function () {
+						if ( ! cancelled ) {
+							setEmbed( false );
+						}
+					} );
+
+				return function () {
+					cancelled = true;
+				};
+			},
+			[ isUrl, data.url ]
+		);
+
+		if ( ! isUrl ) {
+			if ( ! attachment || ! attachment.source_url ) {
+				return null;
+			}
+
+			return el(
+				'div',
+				{ className: 'daymark-fc-preview' },
+				'audio' === type
+					? el( 'audio', { src: attachment.source_url, controls: true } )
+					: el( 'video', { src: attachment.source_url, controls: true } )
+			);
+		}
+
+		if ( embed && embed.html ) {
+			// embed.html is Daymark_Subscription_Oembed::resolve()'s own
+			// rebuilt, attribute-allowlisted markup (never a provider's raw
+			// response) — the same trusted shape the "Add by URL" tab's own
+			// preview already renders this way.
+			return el( 'div', {
+				className: 'daymark-fc-preview',
+				dangerouslySetInnerHTML: { __html: embed.html },
+			} );
+		}
+
+		// No usable oEmbed (checked and found none, or the fetch itself
+		// failed) — fall back to a plain native element for a direct file
+		// URL, matching the server-side fallback order. `embed` is still
+		// `null` while genuinely loading, so this doesn't flash a broken
+		// player before the fetch above resolves either way.
+		if ( false === embed ) {
+			return el(
+				'div',
+				{ className: 'daymark-fc-preview' },
+				'audio' === type
+					? el( 'audio', { src: data.url, controls: true } )
+					: el( 'video', { src: data.url, controls: true } )
+			);
+		}
+
+		return null;
+	}
+
+	/**
 	 * The control rendered right after core's own Featured Image button.
 	 * Two states: unset (a single toggle button opening the media modal) or
-	 * already set (a one-line summary plus Replace/Remove — Replace reopens
-	 * the same modal).
+	 * already set (a preview plus a one-line summary and Replace/Remove —
+	 * Replace reopens the same modal).
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -505,6 +626,7 @@
 			return el(
 				'div',
 				{ className: 'daymark-fc-summary' },
+				el( FeaturedContentPreview, { type: current.type, data: current.data } ),
 				el( 'span', {}, summaryLabel( current.type, current.data ) ),
 				el(
 					'div',

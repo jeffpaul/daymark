@@ -49,6 +49,27 @@
 	word-break: break-word;
 }
 
+/*
+ * A small preview above the summary text, mirroring core's own Featured
+ * Image thumbnail (an <img>, similarly unstyled beyond width/spacing).
+ */
+.daymark-fc-preview {
+	margin-bottom: 8px;
+}
+
+.daymark-fc-preview audio,
+.daymark-fc-preview video,
+.daymark-fc-preview img,
+.daymark-fc-preview iframe {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+}
+
+.daymark-fc-preview video {
+	max-height: 200px;
+}
+
 .daymark-fc-summary-actions {
 	display: flex;
 	gap: 12px;
