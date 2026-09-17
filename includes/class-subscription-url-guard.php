@@ -96,32 +96,23 @@ class Daymark_Subscription_Url_Guard {
 		foreach ( self::resolve_addresses( $host ) as $address ) {
 			if ( self::is_unsafe_address( $address ) ) {
 				// TEMPORARY diagnostic while chasing issue #402's Playground
-				// report — confirmed real data: PHP_SAPI is 'cli' there, not
-				// 'wasm' (issue #365's own guess), and gethostbynamel()
-				// returns a synthetic 172.29.x.0-pattern address per host,
-				// matching wordpress-playground#400's documented bug. 'cli'
-				// can't be blanket-trusted the way 'wasm' was meant to be —
-				// it's also the SAPI for a real production site's own
-				// WP-CLI/cron runs, where this guard must stay active.
-				// Testing one specific hypothesis instead of guessing a
-				// third environment signal: WP core's own
-				// wp_http_validate_url() (which every wp_safe_remote_get()
-				// call — including the oEmbed fetch that already succeeds
-				// on this reporter's own Playground instance — already goes
-				// through) resolves via gethostbyname() (singular), not
-				// gethostbynamel() (plural, the function this class calls).
-				// If Playground's shim only fixed the singular form, this
-				// would explain why core's own IP-safety check already
-				// works there while this one doesn't. Logging both, rather
-				// than switching blind. Remove alongside the rest of this
-				// PR's oEmbed diagnostics once root-caused.
+				// report — the gethostbyname()-vs-gethostbynamel() hypothesis
+				// (see the removed comment this replaces) is now refuted:
+				// confirmed real data shows both functions return the
+				// identical synthetic, per-host-incrementing 172.29.x.0
+				// address. Now also logging php_uname('s') to test a second,
+				// independently-researched hypothesis — see
+				// should_skip_dns_resolution()'s own updated docblock.
+				// Remove alongside the rest of this PR's oEmbed diagnostics
+				// once root-caused.
 				self::log_debug(
 					sprintf(
-						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, gethostbyname()=%5$s, gethostbynamel()=%6$s, dns_get_record(A)=%7$s, dns_get_record(AAAA)=%8$s',
+						'Rejected %1$s: host "%2$s" resolved to "%3$s" (unsafe). PHP_SAPI=%4$s, php_uname(s)=%5$s, gethostbyname()=%6$s, gethostbynamel()=%7$s, dns_get_record(A)=%8$s, dns_get_record(AAAA)=%9$s',
 						$url,
 						$host,
 						$address,
 						PHP_SAPI,
+						function_exists( 'php_uname' ) ? php_uname( 's' ) : 'undefined',
 						function_exists( 'gethostbyname' ) ? gethostbyname( $host ) : 'undefined',
 						function_exists( 'gethostbynamel' ) ? wp_json_encode( gethostbynamel( $host ) ) : 'undefined',
 						function_exists( 'dns_get_record' ) ? wp_json_encode( @dns_get_record( $host, DNS_A ) ) : 'undefined', // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- same "no record is expected, not an error" reasoning as resolve_addresses()'s own call.
@@ -246,31 +237,46 @@ class Daymark_Subscription_Url_Guard {
 	 * "nothing to check, safe to proceed" path an ordinary unresolvable host
 	 * already takes (issue #365).
 	 *
-	 * Defaults to true under WordPress Playground's own php-wasm SAPI
-	 * (`PHP_SAPI === 'wasm'`). Reported directly: subscribing to *any* site
-	 * inside a Playground preview failed with "Please enter a valid site
-	 * URL." — confirmed to happen for every URL tried, not just specific
-	 * ones. `gethostbynamel()`/`dns_get_record()` being *undefined* there
-	 * was already guarded against (issue #311); this is the other half —
-	 * per wordpress-playground's own tracker
-	 * (https://github.com/WordPress/wordpress-playground/issues/400,
-	 * "Networking: Implement gethostbyname"), the function exists but isn't
-	 * genuinely implemented, and was found to hand back something that
-	 * parses as a private/internal-looking IP address for every host rather
-	 * than failing cleanly — is_unsafe_address() then correctly-but-wrongly
-	 * flags that address, rejecting even an ordinary, resolvable public
-	 * site. There is no real internal network for this client-side,
-	 * single-user sandbox to protect against SSRF-wise in the first place,
-	 * and the actual outbound `wp_safe_remote_get()` call still goes
-	 * through Playground's own genuinely proxied networking layer
-	 * regardless of what this pre-flight decides — so skipping it there
-	 * costs nothing real.
+	 * Originally (issue #365) this defaulted to `PHP_SAPI === 'wasm'` alone.
+	 * A later report (issue #402) showed that check silently stopping a
+	 * different Playground build/version from ever engaging: `PHP_SAPI` came
+	 * back `'cli'` there instead, with `gethostbyname()`/`gethostbynamel()`
+	 * (confirmed — both singular and plural forms, ruling out a
+	 * function-specific gap) still handing back the exact same synthetic,
+	 * per-host-incrementing `172.29.x.0`-pattern address issue #365 already
+	 * diagnosed. Root-caused by reading WordPress Playground's own php-wasm
+	 * C source (`packages/php-wasm/compile/php/php_wasm.c`): the `"wasm"`
+	 * SAPI name is only a compile-time *default* — the same file exposes a
+	 * `wasm_set_sapi_name()` hook the embedding layer can call before SAPI
+	 * startup to override it, which is almost certainly why a newer/different
+	 * Playground build no longer reports it. `PHP_SAPI`'s exact string can
+	 * therefore never be a fully reliable signal on its own, however tempting
+	 * a single hardcoded value looks.
+	 *
+	 * A second, more intrinsic signal now backs it up: `php_uname( 's' )`.
+	 * Emscripten's own C runtime — what php-wasm itself compiles against —
+	 * hardcodes its `uname()` syscall emulation to always report `sysname`
+	 * as the literal string `"Emscripten"` (confirmed against Emscripten's
+	 * own public documentation/source; e.g. the emscripten-core project's own
+	 * `library_syscall.js`). Unlike the SAPI name, this is baked into the
+	 * WASM runtime's libc layer itself, not something the embedding
+	 * application configures per build/version — and it is not a value any
+	 * real production Linux server's own WP-CLI/cron invocation could ever
+	 * report, so trusting it costs nothing for the real-site case this guard
+	 * exists to protect.
+	 *
+	 * Either signal matching is enough: there is no real internal network for
+	 * this client-side, single-user sandbox to protect against SSRF-wise in
+	 * the first place, and the actual outbound `wp_safe_remote_get()` call
+	 * still goes through Playground's own genuinely proxied networking layer
+	 * regardless of what this pre-flight decides — so skipping it there costs
+	 * nothing real.
 	 *
 	 * Not independently confirmed against a live Playground instance — this
 	 * environment's own egress policy has no route to
 	 * playground.wordpress.net to execute against directly; diagnosed from
-	 * the reported symptom plus wordpress-playground's own public issue
-	 * tracker, the same "researched against public source, flagged for
+	 * the reported symptom plus wordpress-playground's/Emscripten's own
+	 * public source, the same "researched against public source, flagged for
 	 * verification" posture already used for several other Playground/
 	 * environment-constrained diagnoses in this codebase.
 	 *
@@ -285,10 +291,27 @@ class Daymark_Subscription_Url_Guard {
 		 *
 		 * @since 0.16.0
 		 *
-		 * @param bool $skip Whether to skip DNS resolution. Defaults to
-		 *                    `'wasm' === PHP_SAPI`.
+		 * @param bool $skip Whether to skip DNS resolution. Defaults to true
+		 *                    when either `PHP_SAPI === 'wasm'` or
+		 *                    `php_uname( 's' ) === 'Emscripten'` — see this
+		 *                    method's own docblock for why both are checked.
 		 */
-		return (bool) apply_filters( 'daymark_subscription_url_guard_skip_dns_resolution', 'wasm' === PHP_SAPI );
+		return (bool) apply_filters( 'daymark_subscription_url_guard_skip_dns_resolution', self::is_php_wasm_runtime() );
+	}
+
+	/**
+	 * Whether this request is running under a php-wasm (e.g. WordPress
+	 * Playground) build, via either of the two signals
+	 * should_skip_dns_resolution()'s own docblock explains.
+	 *
+	 * @return bool
+	 */
+	private static function is_php_wasm_runtime(): bool {
+		if ( 'wasm' === PHP_SAPI ) {
+			return true;
+		}
+
+		return function_exists( 'php_uname' ) && 'Emscripten' === php_uname( 's' );
 	}
 
 	/**
