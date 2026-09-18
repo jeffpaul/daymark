@@ -2602,6 +2602,37 @@ h2[tabindex='-1']:focus {
 	outline-offset: 2px;
 }
 
+/* The Search screen's secondary filter row (issue #293): Author, Date,
+   Tag, and With-location sit below the type-chip/source row, on the same
+   card-less "filters" surface. Same flex-wrap treatment as the row above
+   — each control wraps onto its own line(s) on a narrow screen, and the
+   author field stretches to absorb leftover width on wider ones. .daymark-input
+   brings its own min-height tap target; the selects reuse the source
+   filter's own pill styling above. */
+.daymark-searchfilters--extras {
+	margin-top: var(--daymark-spacing-sm);
+}
+
+.daymark-searchfilters__author {
+	flex: 1 1 180px;
+	min-width: 0;
+}
+
+.daymark-searchfilters__location {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.daymark-searchfilters__location input {
+	accent-color: var(--daymark-accent);
+}
+
 /* --- Recent item: per-item ⋯ actions menu --- */
 /* A flex row: the site icon column (.daymark-recent__siteicon, below) sits
    first, then the card's own thumbnail/title/meta content takes the

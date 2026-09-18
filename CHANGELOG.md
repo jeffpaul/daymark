@@ -20,6 +20,11 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- The Search screen gained four new filters beside the existing keyword/type/source ones: an **Author** field (any part of the author's name or username), a **Date** dropdown reusing the same buckets the Timeline itself groups its items into (Today / This Week / Last Week / This Month / Last Month — the same meaning in both places, new spec rather than a free-form date range), a **Tag** dropdown of the site's most-used tags, and a **With location** toggle for Marks that quietly captured a location. All four combine with each other and with the existing filters, degrade to "no filter" on empty input, and are backed by the same merged `GET /timeline` endpoint — Search stays one source of truth rather than growing a parallel query path. Tag and location filter to your own Marks only (a subscription post has neither a Daymark tag nor a captured location); author and date cover both Marks and subscription posts. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- Explore's Timeline gained an **On this day** section showing the Marks you published on this calendar date in past years — last year's memory, the year before's, and so on, newest first — sitting between Bookmarks and Following. Backed by the same merged `GET /timeline` endpoint the rest of Explore and Timeline already use, filtered to your own Marks from prior years (nothing from today itself), so the section shares every card behavior the others already have: open the full post view, bookmark, like, comment, share. Marks you publish today won't appear here until next year. ([#294](https://github.com/jeffpaul/daymark/issues/294), [#413](https://github.com/jeffpaul/daymark/pull/413))
+
 ## [0.17.0] - 2026-09-17
 
 ### Added

@@ -203,6 +203,51 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
+					// Issue #293 Search filters — each new param is purely
+					// additive to the params above (an empty/default value
+					// means "no filter"), and all of them degrade to "no
+					// filter" rather than erroring on bad input (see
+					// get_timeline()'s own docblock for the full semantics,
+					// especially which filters structurally restrict results
+					// to Marks only).
+					'author'          => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'after'           => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: omitting the param entirely skips
+						// the date-time validation against '' which would
+						// fail on every request.  get_timeline() treats a
+						// missing/empty value as "no lower bound".
+					),
+					'before'          => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: see 'after' note above.
+					),
+					'tag'             => array(
+						'type'              => 'integer',
+						'default'           => 0,
+						'sanitize_callback' => 'absint',
+					),
+					'with_location'   => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					// "On this day" (Memories, issue #294): restrictions
+					// replicate `mine` (Marks only, subscription posts
+					// skipped entirely) and narrow the Marks query to the
+					// same calendar month and day as today in any prior
+					// year — see get_timeline()'s own docblock.
+					'on_this_day'     => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -787,24 +832,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
+					// Issue #293: `all=1` makes an empty search return the
+					// site's most-used tags anyway, so the Search screen
+					// can populate a tag-filter dropdown without the
+					// composer's typeahead behavior changing at all (an
+					// empty search still returns [] without this flag).
+					'all'    => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
 	}
 
 	/**
-	 * GET /tags — existing post_tag terms matching a search string, so the
+	 * GET /tags — post_tag terms matching a search string, so the
 	 * composer's tag field can offer a tap-to-pick suggestion instead of
 	 * requiring the full name to be typed every time (product principle:
-	 * minimal text entry).
+	 * minimal text entry). With `all=1`, an empty search instead returns
+	 * the site's most-used tags (top 10 by count), so the Search screen's
+	 * tag-filter dropdown can be populated while the composer typeahead
+	 * keeps its existing empty-search-returns-nothing behavior.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
 	public function get_tags( WP_REST_Request $request ) {
 		$search = (string) $request->get_param( 'search' );
+		$all    = rest_sanitize_boolean( $request->get_param( 'all' ) );
 
-		if ( '' === trim( $search ) ) {
+		if ( '' === trim( $search ) && ! $all ) {
 			return new WP_REST_Response( array() );
 		}
 
@@ -1192,6 +1251,35 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * own bookmarked filter). If both `mine` and `subscription_id` are set,
 	 * `mine` wins and `subscription_id` is ignored.
 	 *
+	 * Four more optional filter params, the Search filters (issue #293):
+	 * `author` (a site user or subscription-post author name; substring
+	 * match against user_login/user_nicename/display_name on the Marks
+	 * side, a LIKE against the `author` meta on the subscription-posts
+	 * side), `after`/`before` (an inclusive publication datetime window,
+	 * REST format 'date-time' — over post_date for Marks, over the
+	 * subscription post's own `published_at` meta otherwise), `tag` (a
+	 * post_tag term ID, via native tax_query), and `with_location` (a
+	 * Mark carrying captured `_daymark_location` meta). `tag` and
+	 * `with_location` are Marks-only by construction — the
+	 * daymark_subscription_post CPT registers no taxonomies and is never
+	 * given location meta — so setting either one skips the
+	 * subscription-posts query entirely, exactly like `mine`, rather than
+	 * returning unfiltered posts of the other kind. Every new param
+	 * degrades to "no filter" on an empty/default value (and, by design,
+	 * never errors on a bad one — the two datetime bounds are the only
+	 * ones core validates, via their own 'date-time' format).
+	 *
+	 * One more optional param, "On this day" (issue #294): `on_this_day`
+	 * (boolean). Marks only and subscription posts skipped entirely,
+	 * exactly like `mine`; the Marks query narrows to the same calendar
+	 * month and day as today in any prior year via a date_query clause
+	 * over post_date (`month`/`day` with an exclusive `before` bound at
+	 * local midnight today, all from wp_date() so the comparison stays in
+	 * the site's own timezone). Today's own Marks are excluded by that
+	 * bound; a leap-day query degrades to empty on non-leap prior years.
+	 * Purely additive to every filter above — combining it with an
+	 * explicit `after`/`before` window ANDs both date clauses.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -1207,6 +1295,57 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
 		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
+
+		// Issue #293 Search filters:
+		// author  — a site user's login/nickname/display name, OR a
+		// subscription post's own `author` meta (the source
+		// site's author name). One string, two interpretations:
+		// the Marks branch resolves it to a site user (or no
+		// match) via user_login/user_nicename/display_name -
+		// see resolve_author_ids() below — while the
+		// subscription-posts branch does a LIKE against the
+		// `author` meta key. There is no canonical single match
+		// for a typed name, so the resolution intentionally
+		// covers all three calling conventions together.
+		// after / before — an inclusive publication datetime window
+		// (REST format 'date-time', so core validates the shape
+		// before this method runs). Normalized to MySQL
+		// 'Y-m-d H:i:s' for both branches: the Marks side uses
+		// a real WP date_query over post_date, the
+		// subscription-posts side a meta range over its own
+		// `published_at` (that source's real publication time,
+		// per the existing sort below).
+		// tag — a post_tag term ID; Marks only, via native tax_query.
+		// with_location — a Mark carrying captured `_daymark_location`
+		// meta; Marks only.
+		// `tag` and `with_location` are fundamentally Marks-only: the
+		// daymark_subscription_post CPT registers no taxonomies and is
+		// never given location meta, so when either is set the whole
+		// subscription-posts query is skipped (matching how `mine` already
+		// behaves) rather than silently returning unfiltered posts of the
+		// other kind.
+		$author        = sanitize_text_field( (string) $request->get_param( 'author' ) );
+		$after         = (string) $request->get_param( 'after' );
+		$before        = (string) $request->get_param( 'before' );
+		$tag_id        = absint( $request->get_param( 'tag' ) );
+		$with_location = rest_sanitize_boolean( $request->get_param( 'with_location' ) );
+
+		// "On this day" (Memories, issue #294): true restricts the whole
+		// Timeline to Marks published on today's calendar date in a prior
+		// year. Forces the Marks-only skip below exactly like `mine`, and
+		// adds a date_query clause over post_date — see the marks-query
+		// section further down.
+		$on_this_day = rest_sanitize_boolean( $request->get_param( 'on_this_day' ) );
+
+		// datetime-window bounds normalized once so both branches compare
+		// the same values against their own date source. REST core has
+		// already validated the date-time shape, so strtotime() can be
+		// trusted to parse (a genuinely unparseable value would have been
+		// rejected at the arg-validation layer).
+		$after_mysql  = '' !== $after ? gmdate( 'Y-m-d H:i:s', strtotime( $after ) ) : '';
+		$before_mysql = '' !== $before ? gmdate( 'Y-m-d H:i:s', strtotime( $before ) ) : '';
+
+		$marks_only_filters = $tag_id > 0 || $with_location;
 
 		// Bookmarks live in user meta, not post meta, so there's no
 		// meta_query to add — resolve the current user's bookmarked IDs
@@ -1226,9 +1365,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		// `mine` takes precedence over `subscription_id` when both are set:
-		// Marks only, subscription posts skipped entirely either way.
-		$include_marks              = $mine || 0 === $subscription_id;
-		$include_subscription_posts = ! $mine;
+		// Marks only, subscription posts skipped entirely either way. `tag`,
+		// `with_location` (the Marks-only filters, above), and `on_this_day`
+		// (a prior-year post has no subscription-post equivalent, so "On
+		// this day" is Marks-only by construction) force the same skip —
+		// structurally, a subscription post can never match any of them, so
+		// querying that side would only ever return noise.
+		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
+		$include_subscription_posts = ! $mine && ! $marks_only_filters && ! $on_this_day;
 
 		$items = array();
 
@@ -1294,6 +1438,67 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$marks_args['post__in'] = $bookmarked_post_in;
 			}
 
+			// Issue #293 filters on the Marks side — all purely additive to
+			// the base query above; every one degrades to "no filter".
+			if ( '' !== $author ) {
+				$author_ids = $this->resolve_author_ids( $author );
+				// `author__in => array( 0 )` (a real site user ID can never
+				// be 0) forces an empty Marks result when the typed name
+				// matches no site user — same shape as the bookmarked
+				// empty-list handling above. Without it, an author that
+				// only matches subscription posts would silently return
+				// every Mark on the site.
+				$marks_args['author__in'] = ! empty( $author_ids ) ? $author_ids : array( 0 );
+			}
+
+			if ( $tag_id > 0 ) {
+				$marks_args['tag__in'] = array( $tag_id );
+			}
+
+			if ( $with_location ) {
+				// A Mark with a captured location records it in
+				// _daymark_location (see "Quiet Mark metadata capture",
+				// CLAUDE.md) — presence of that meta is the signal; the
+				// JSON payload itself is never parsed here.
+				$marks_args['meta_query'][] = array(
+					'key'     => '_daymark_location',
+					'compare' => 'EXISTS',
+				);
+			}
+
+			// Inclusive single-column window over post_date: "after This
+			// Week" should keep a Mark published exactly at the window's
+			// boundary, matching how the calendar reads in the app shell.
+			$marks_window = array( 'inclusive' => true );
+			if ( '' !== $after_mysql ) {
+				$marks_window['after'] = $after_mysql;
+			}
+			if ( '' !== $before_mysql ) {
+				$marks_window['before'] = $before_mysql;
+			}
+
+			// "On this day" (Memories, issue #294): the same calendar month
+			// and day as today in any prior year. The clause uses `month`/
+			// `day` with no `year` and an exclusive `before` bound at local
+			// midnight today, so only strictly-earlier same-date Marks match
+			// (today's own are excluded). `post_date` is stored in the
+			// site's own configured timezone, so wp_date() — which applies
+			// that same timezone — supplies the month/day and the bound,
+			// keeping "this day" aligned with what the author sees on their
+			// own calendar. A leap-day query (Feb 29) degrades naturally to
+			// empty on non-leap prior years, since no row ever matches.
+			if ( $on_this_day ) {
+				$marks_window['month']  = (int) wp_date( 'n' );
+				$marks_window['day']    = (int) wp_date( 'j' );
+				$marks_window['before'] = wp_date( 'Y-m-d 00:00:00' );
+			}
+
+			// With both an explicit after/before window and `on_this_day`
+			// set, both clauses AND together on the same post_date column.
+			if ( count( $marks_window ) > 1 ) {
+				$marks_args['date_query'] = array( $marks_window );
+			}
+
 			$marks_query = new WP_Query( $marks_args );
 
 			foreach ( $marks_query->posts as $post ) {
@@ -1348,6 +1553,52 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				);
 			}
 
+			// Issue #293 filters on the subscription-posts side. These run
+			// alongside the raw `meta_key`/`orderby` sort above; WP_Query
+			// supports a sort meta_key and a separate meta_query together.
+			if ( '' !== $author ) {
+				// Substring match against the source site's author name,
+				// the same matching semantics the Marks branch's user
+				// resolution uses. WP_Meta_Query turns the bare value into
+				// a %..% wildcard itself (and escapes the value on top),
+				// so a wildcard-laden input is never treated as a raw LIKE
+				// pattern — and the % must not be pre-concatenated here,
+				// since WP's own query-placeholder system would otherwise
+				// mangle the manual wildcards.
+				$subscription_meta_conditions[] = array(
+					'key'     => 'author',
+					'value'   => $author,
+					'compare' => 'LIKE',
+				);
+			}
+
+			// published_at range: a single bound is a >= / <= comparison, a
+			// bracket is a BETWEEN; either way the DATETIME cast makes the
+			// string comparison safe. The bounds were already normalized to
+			// the meta value's own 'Y-m-d H:i:s' GMT shape above.
+			if ( '' !== $after_mysql && '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => array( $after_mysql, $before_mysql ),
+					'compare' => 'BETWEEN',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $after_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $after_mysql,
+					'compare' => '>=',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $before_mysql,
+					'compare' => '<=',
+					'type'    => 'DATETIME',
+				);
+			}
+
 			if ( ! empty( $subscription_meta_conditions ) ) {
 				$meta_query = 1 === count( $subscription_meta_conditions )
 					? $subscription_meta_conditions
@@ -1386,6 +1637,35 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$page_of_items = array_slice( $items, $offset, $per_page );
 
 		return rest_ensure_response( array_column( $page_of_items, 'item' ) );
+	}
+
+	/**
+	 * Resolve a typed author string to matching site user IDs, for the
+	 * Timeline's `author` filter's Marks branch.
+	 *
+	 * A Mark's author is a native site user (post_author), but a typed
+	 * name is not reliably any one of login / nicename / display name — a
+	 * user is found by any of the three, the same calling-convention
+	 * tolerance a search box implies. Substring semantics match both the
+	 * subscription-posts branch's own LIKE over the `author` meta and
+	 * everyday search expectations.
+	 *
+	 * @since 0.18.0
+	 *
+	 * @param string $author The typed author name.
+	 * @return int[] Matching site user IDs (possibly empty).
+	 */
+	private function resolve_author_ids( string $author ): array {
+		$users = get_users(
+			array(
+				'search'         => $author,
+				'search_columns' => array( 'user_login', 'user_nicename', 'display_name' ),
+				'number'         => 50,
+				'fields'         => 'ids',
+			)
+		);
+
+		return array_map( 'absint', $users );
 	}
 
 	/**
