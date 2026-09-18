@@ -142,39 +142,38 @@
 
 /*
  * The "Media Library" tab's own Video/Audio content-type filter (see
- * bindLibraryTypeFilter() in the JS file). Two earlier attempts tried to
- * make this filter a well-behaved participant *inside*
- * `.media-toolbar-secondary` (first assuming a flex row, then — once Jeff's
- * own inspector showed it's actually `display: grid` with core's "Filter by
- * date" as two independent, unwrapped grid items — spanning every grid
- * column instead); both still landed visibly misaligned, since both still
- * depended on exactly how that container's own grid/track rules treat an
- * inserted item. The JS now inserts this wrapper as a plain sibling *after*
- * `.media-toolbar` itself (the bar holding both toolbar halves) instead of
- * inside `.media-toolbar-secondary` — ordinary block-level document flow,
- * not a grid/flex item of anything, so no track/column rule can misplace it.
- * This rule is just that row's own internal layout (label beside its
- * select) and spacing, not a fit against the toolbar's own grid.
- *
- * `position: relative` + `z-index` (added once a full `.attachments-browser`
- * DOM capture proved the wrapper genuinely exists at exactly this spot, not
- * missing): `.attachments-wrapper` — the scrollable attachment grid, WP
- * core's own next sibling after this one — is positioned to fill the space
- * below the toolbar at a fixed vertical offset sized to `.media-toolbar`
- * alone, with no awareness of an extra sibling row inserted after it. That
- * paints the grid directly over this filter rather than pushing it down,
- * making a real, correctly-placed element invisible without either being
- * hidden or missing. A solid background plus a z-index above the grid's own
- * (default, unset) stacking order is what actually makes it visible again;
- * this doesn't fix the grid's own vertical offset (a real cosmetic overlap
- * with the grid's first row is an accepted, lesser trade against "filter is
- * simply invisible").
+ * bindLibraryTypeFilter() in the JS file). Several earlier attempts
+ * inserted this wrapper as a plain sibling *after* `.media-toolbar`
+ * (ordinary block-level document flow, to escape `.media-toolbar-secondary`'s
+ * own grid-track misalignment) plus a z-index/background pair once a DOM
+ * capture proved it genuinely existed there. Still invisible: a
+ * hover-highlight overlay on the wrapper (Firefox's own on-page box
+ * outline) showed its rendered box sitting in the *exact same rectangle* as
+ * "Filter by date"/"Search media", not below them — `.media-toolbar` is
+ * evidently positioned/elevated specifically so it always stays visible
+ * above the scrolling attachments grid beneath it, and an external sibling
+ * added after it in markup never gets pushed down by that positioning or
+ * wins the stacking fight, no matter what z-index it carries. The JS now
+ * appends this wrapper as a direct *child* of `.media-toolbar` itself
+ * instead — the one container confirmed, by that same overlay and every
+ * earlier round, to actually render above the grid (that's literally where
+ * "Filter by date" lives). Both `flex-basis: 100%` and `grid-column: 1/-1`
+ * are set defensively since it's still unconfirmed which display mode
+ * `.media-toolbar` uses for its own two existing children — CSS simply
+ * ignores whichever doesn't apply — so this filter gets its own full-width
+ * row rather than squeezing into the date-filter/search two-column layout.
+ * `position`/`z-index`/background are kept as a defensive holdover from the
+ * prior sibling-based attempt, in case any of `.media-toolbar`'s own
+ * children still have their own z-ordering this filter needs to beat.
  */
 .daymark-fc-typefilter {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	margin: 8px 16px;
+	flex-basis: 100%;
+	grid-column: 1 / -1;
+	order: 999;
+	margin-top: 8px;
 	position: relative;
 	z-index: 5;
 	background: #fff;

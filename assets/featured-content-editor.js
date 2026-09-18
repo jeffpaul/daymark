@@ -549,27 +549,38 @@
 					return;
 				}
 
-				// The previous two fixes both tried to make this filter a
-				// well-behaved participant *inside* `.media-toolbar-secondary`
-				// — first assuming it was a flex row, then (once Jeff's own
-				// inspector showed it's actually `display: grid`, with core's
-				// "Filter by date" as two independent, unwrapped grid items)
-				// trying to span every grid column instead. Both rounds still
-				// left it visibly misaligned, because both still depended on
-				// exactly how the container's own grid/track rules interact
-				// with an inserted item — the same category of undocumented-
-				// core-CSS guessing that has now cost several rounds on this
-				// one filter. `$toolbar` is `.media-toolbar-secondary`'s own
-				// parent (the bar holding both toolbar halves); the wrapper
-				// is inserted as a plain sibling *after* it — ordinary
-				// block-level document flow, not a grid/flex item of
-				// anything. Falls back to the old in-toolbar prepend only if
-				// `.media-toolbar` itself can't be found.
+				// Several previous fixes inserted this wrapper as a plain
+				// sibling *after* `.media-toolbar` (ordinary block-level
+				// document flow) to escape `.media-toolbar-secondary`'s own
+				// grid-track misalignment. That still left the wrapper
+				// invisible: a full `.media-frame-content` DOM capture
+				// showed it genuinely existed there, correctly positioned in
+				// markup — but a hover-highlight on it (Firefox's own
+				// on-page box overlay) showed its rendered box sitting in
+				// the *exact same rectangle* as "Filter by date"/"Search
+				// media", hidden underneath them. `.media-toolbar` is
+				// evidently positioned/elevated (fixed, sticky, or a raised
+				// z-index) specifically so it always stays visible above
+				// the scrolling attachments grid beneath it — an external
+				// sibling added *after* it in markup never gets pushed down
+				// by that positioning and loses the stacking fight outright.
+				// `.media-toolbar-secondary` (a `.media-toolbar` child) is
+				// the one container confirmed, by both this same hover
+				// overlay and every earlier round, to actually render
+				// above the grid — "Filter by date" lives there and is
+				// plainly visible — so the wrapper is now appended as a
+				// direct *child* of `.media-toolbar` itself instead of an
+				// external sibling, inheriting whatever keeps its own
+				// children visible for free rather than fighting it with
+				// z-index. `flex-basis: 100%`/`grid-column: 1 / -1` in the
+				// CSS (whichever display mode `.media-toolbar` turns out to
+				// use) is what keeps it from squeezing into the existing
+				// two-column date-filter/search row.
 				var $toolbar    = $secondary.closest( '.media-toolbar' );
 				var isDisplaced = function () {
 					return $toolbar.length
-						? $existing.get( 0 ).previousElementSibling !== $toolbar.get( 0 )
-						: $existing.get( 0 ) !== $secondary.get( 0 ).firstElementChild;
+						? $existing.parent().get( 0 ) !== $toolbar.get( 0 )
+						: $existing.parent().get( 0 ) !== $secondary.get( 0 );
 				};
 
 				if ( $existing.length ) {
@@ -585,9 +596,9 @@
 					// re-render, not just on first insertion.
 					if ( isDisplaced() ) {
 						if ( $toolbar.length ) {
-							$toolbar.after( $existing );
+							$toolbar.append( $existing );
 						} else {
-							$secondary.prepend( $existing );
+							$secondary.append( $existing );
 						}
 					}
 					return;
@@ -621,9 +632,9 @@
 				} );
 
 				if ( $toolbar.length ) {
-					$toolbar.after( $wrap );
+					$toolbar.append( $wrap );
 				} else {
-					$secondary.prepend( $wrap );
+					$secondary.append( $wrap );
 				}
 			} catch ( err ) {
 				// A missing/unexpected internal shape costs only this filter
