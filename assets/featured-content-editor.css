@@ -1,10 +1,12 @@
 /**
  * Minimal styling for the Featured Content control (assets/featured-content-editor.js,
  * issue #401) — a toggle button matching the visual style of core's own
- * "Set featured image" button, plus a plain summary/Replace/Remove row once
- * a value is set. The picker itself is the standard wp.media() modal
- * overlay (with an added "Add by URL" tab), which comes fully styled from
- * wp-admin's own bundled media-views.css — nothing here targets it.
+ * "Set featured image" button, plus a preview with Replace/Remove overlaid
+ * on hover/focus once a value is set, matching core's own Featured Image
+ * thumbnail treatment rather than a separate row below it. The picker
+ * itself is the standard wp.media() modal overlay (with an added "Add by
+ * URL" tab), which comes fully styled from wp-admin's own bundled
+ * media-views.css — nothing here targets it.
  */
 
 /*
@@ -46,32 +48,31 @@
 	border-color: #1e1e1e;
 }
 
-.daymark-fc-link {
-	background: none;
-	border: none;
-	padding: 0;
-	color: var(--wp-admin-theme-color, #2271b1);
-	cursor: pointer;
-	font-size: 13px;
-	text-decoration: underline;
-}
-
-.daymark-fc-link--danger {
-	color: #b32d2e;
-}
-
 .daymark-fc-summary {
 	margin-top: 8px;
-	font-size: 13px;
-	word-break: break-word;
 }
 
 /*
- * A small preview above the summary text, mirroring core's own Featured
- * Image thumbnail (an <img>, similarly unstyled beyond width/spacing).
+ * Wraps the preview so Replace/Remove (`.daymark-fc-actions`) can be
+ * absolutely positioned against it — the same `position: relative`
+ * container/overlay pairing core's own
+ * `.editor-post-featured-image__container`/`__actions` uses (confirmed
+ * directly against Gutenberg's `post-featured-image/index.jsx`), so the
+ * two actions sit over the bottom edge of the preview itself rather than
+ * a separate row below it. No standalone type label here either — the
+ * preview already shows what kind of Featured Content this is, the same
+ * way core's own thumbnail needs no caption of its own.
+ */
+.daymark-fc-preview-wrap {
+	position: relative;
+}
+
+/*
+ * A small preview, mirroring core's own Featured Image thumbnail (an
+ * <img>, similarly unstyled beyond width/spacing).
  */
 .daymark-fc-preview {
-	margin-bottom: 8px;
+	margin-bottom: 0;
 }
 
 .daymark-fc-preview:not(.daymark-fc-preview--playlist) audio,
@@ -99,20 +100,71 @@
  * that inner element once it initializes.
  */
 .daymark-fc-preview--playlist {
-	margin-bottom: 8px;
+	margin-bottom: 0;
 }
 
 .daymark-fc-preview-unavailable {
-	margin: 0 0 8px;
+	margin: 0;
 	color: #757575;
 	font-size: 12px;
 	font-style: italic;
 }
 
-.daymark-fc-summary-actions {
+/*
+ * Replace/Remove, overlaid at the bottom edge of `.daymark-fc-preview-wrap`
+ * — the same absolutely-positioned, opacity-toggled-on-hover/focus overlay
+ * core's own `.editor-post-featured-image__actions` uses over its Featured
+ * Image thumbnail (confirmed directly against Gutenberg's
+ * `post-featured-image/style.scss`: `position: absolute; bottom: 0; opacity:
+ * 0;`, revealed via the *container's* own `:hover`/`:focus-within`, each
+ * action `flex-grow: 1` with a frosted-glass `backdrop-filter`/translucent
+ * white background). Applied uniformly here regardless of what the preview
+ * itself renders (a playlist widget, a native player, an oEmbed embed, or —
+ * rarely — the "No preview available" fallback text or a brief loading
+ * gap): a deliberately accepted, minor cosmetic trade against reproducing
+ * core's per-content-kind overlay logic for what's a fallback/loading edge
+ * case, not the common path this request was actually about.
+ */
+.daymark-fc-actions {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
 	display: flex;
-	gap: 12px;
-	margin-top: 4px;
+	gap: 8px;
+	padding: 8px;
+	opacity: 0;
+	transition: opacity 50ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-fc-actions {
+		transition: none;
+	}
+}
+
+.daymark-fc-preview-wrap:hover .daymark-fc-actions,
+.daymark-fc-preview-wrap:focus-within .daymark-fc-actions {
+	opacity: 1;
+}
+
+.daymark-fc-action {
+	flex: 1;
+	justify-content: center;
+	min-height: 32px;
+	padding: 4px 8px;
+	border: none;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.75);
+	backdrop-filter: blur(16px) saturate(180%);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 500;
+	color: #1e1e1e;
+}
+
+.daymark-fc-action:hover {
+	background: rgba(255, 255, 255, 0.9);
 }
 
 /*

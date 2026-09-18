@@ -102,7 +102,6 @@
 	var useState = wp.element.useState;
 	var useEffect = wp.element.useEffect;
 	var __ = wp.i18n.__;
-	var sprintf = wp.i18n.sprintf;
 	var useSelect = wp.data.useSelect;
 	var useDispatch = wp.data.useDispatch;
 
@@ -732,32 +731,6 @@
 	}
 
 	/**
-	 * One-line summary of the currently-saved Featured Content, for the
-	 * already-set state.
-	 *
-	 * @param {string} type Saved type ('audio'/'video').
-	 * @param {Object} data That type's saved data sub-object.
-	 * @return {string}
-	 */
-	function summaryLabel( type, data ) {
-		var kindLabel = 'audio' === type ? __( 'Audio', 'daymark' ) : __( 'Video', 'daymark' );
-
-		if ( 'url' === data.source ) {
-			return sprintf(
-				/* translators: %s: Audio or Video. */
-				__( 'Featured content: %s (URL)', 'daymark' ),
-				kindLabel
-			);
-		}
-
-		return sprintf(
-			/* translators: %s: Audio or Video. */
-			__( 'Featured content: %s file', 'daymark' ),
-			kindLabel
-		);
-	}
-
-	/**
 	 * A small preview of the currently-set Featured Content, mirroring
 	 * core's own Featured Image thumbnail. A `library` **video** attachment
 	 * renders its own native <video> element directly, via that
@@ -976,8 +949,15 @@
 	/**
 	 * The control rendered right after core's own Featured Image button.
 	 * Two states: unset (a single toggle button opening the media modal) or
-	 * already set (a preview plus a one-line summary and Replace/Remove —
-	 * Replace reopens the same modal).
+	 * already set — a preview with Replace/Remove overlaid at its bottom
+	 * edge on hover/focus, matching core's own Featured Image thumbnail
+	 * treatment (`.editor-post-featured-image__actions`, confirmed directly
+	 * against Gutenberg's own `post-featured-image/index.jsx`/`style.scss`)
+	 * rather than a separate text row below the preview — Replace reopens
+	 * the same modal. No standalone "Featured content: Audio/Video" label:
+	 * the preview itself (a playlist widget, a native player, an oEmbed
+	 * embed) already denotes the type, the same reasoning core's own
+	 * thumbnail needs no "Featured image: JPEG" caption either.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -1016,26 +996,29 @@
 			return el(
 				'div',
 				{ className: 'daymark-fc-summary' },
-				el( FeaturedContentPreview, { type: current.type, data: current.data } ),
-				el( 'span', {}, summaryLabel( current.type, current.data ) ),
 				el(
 					'div',
-					{ className: 'daymark-fc-summary-actions' },
+					{ className: 'daymark-fc-preview-wrap' },
+					el( FeaturedContentPreview, { type: current.type, data: current.data } ),
 					el(
-						'button',
-						{ type: 'button', className: 'daymark-fc-link', onClick: openPicker },
-						__( 'Replace', 'daymark' )
-					),
-					el(
-						'button',
-						{
-							type: 'button',
-							className: 'daymark-fc-link daymark-fc-link--danger',
-							onClick: function () {
-								clearFeaturedContent( editPost );
+						'div',
+						{ className: 'daymark-fc-actions' },
+						el(
+							'button',
+							{ type: 'button', className: 'daymark-fc-action', onClick: openPicker },
+							__( 'Replace', 'daymark' )
+						),
+						el(
+							'button',
+							{
+								type: 'button',
+								className: 'daymark-fc-action',
+								onClick: function () {
+									clearFeaturedContent( editPost );
+								},
 							},
-						},
-						__( 'Remove', 'daymark' )
+							__( 'Remove', 'daymark' )
+						)
 					)
 				)
 			);
