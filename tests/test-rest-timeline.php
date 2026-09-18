@@ -205,6 +205,50 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A Mark with Featured Content set (issue #401) exposes its type on the
+	 * Timeline so the app shell can show it in the card's own media slot
+	 * (mediaKindForItem(), assets/app.js) even when the Mark's own primary
+	 * type — a Note here, deliberately, matching the real report — has
+	 * nothing else to show there.
+	 */
+	public function test_mark_with_featured_content_reports_its_type() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Featured Content demo', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'video' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+					),
+				)
+			)
+		);
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+		$items    = $response->get_data();
+
+		$this->assertSame( $mark_id, $items[0]['id'] );
+		$this->assertSame( array( 'type' => 'video' ), $items[0]['featured_content'] );
+	}
+
+	/** A Mark with no Featured Content set omits the field entirely, rather than reporting a null/empty value. */
+	public function test_mark_without_featured_content_omits_the_field() {
+		wp_set_current_user( $this->author_a );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'Plain Note', 'note' );
+
+		$response = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+		$items    = $response->get_data();
+
+		$this->assertArrayNotHasKey( 'featured_content', $items[0] );
+	}
+
+	/**
 	 * The Timeline's Marks query is deliberately NOT gated on
 	 * _daymark_is_mark (see get_timeline()'s own docblock,
 	 * class-rest-controller.php) — a site owner publishing some content
