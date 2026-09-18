@@ -307,20 +307,33 @@ decision rows for the full technical record.
 - [x] **Explore v1**: "Browse by type" and "Following" — real, working
   sections built entirely on data the plugin already exposed. Deliberately
   not a second Timeline, and deliberately not further than that yet.
+- [x] **Explore memories ("On this day")**: Explore's third in-place section,
+  showing the Marks you published on this calendar date in prior years,
+  newest first — backed by the same merged `GET /timeline` endpoint the rest
+  of Explore and Timeline already use (a new `on_this_day` boolean param
+  narrows the Marks query to today's month/day in prior years; subscription
+  posts are skipped, exactly like `mine`), rendering the same real feed
+  cards as Search's own results list. Delivered in the same
+  PR as Search's extended filters. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- [x] **Search extended filters**: Author (any part of a name or username),
+  Date presets reusing the Timeline's own buckets, the site's most-used
+  Tags, and a With-location toggle — all four backed by the existing merged
+  `GET /timeline` endpoint (new params) rather than a parallel query path,
+  combining with each other and with keyword/type/source. ([#413](https://github.com/jeffpaul/daymark/pull/413))
 - [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
   a view-only Drafts list, and links out to Notifications, wp-admin
   Subscriptions, and WordPress's own profile/logout.
 
 **Still open from this era:**
 
-- [ ] Explore beyond "Browse by type"/"Following"/"Bookmarks" ([#294](https://github.com/jeffpaul/daymark/issues/294))
-  — Explore gained a third section, "Bookmarks" (a link into Search
-  preset to a reader's own saved items), as a side effect of the Bookmarks
-  feature shipping (see "Shipped — Engagement" below), but memories,
-  highlights, collections, recently-popular, and suggested accounts/content
-  all still need their own supporting data before they can be real sections.
-- [ ] Search filters beyond type and source ([#293](https://github.com/jeffpaul/daymark/issues/293))
-  — author, date, tag, and location all need their own REST support first.
+- [ ] Explore beyond "Browse by type"/"Following"/"Bookmarks"/"On this day" ([#294](https://github.com/jeffpaul/daymark/issues/294))
+  — Explore gained a third section, "Bookmarks" (a link into Search preset
+  to a reader's own saved items), as a side effect of the Bookmarks feature
+  shipping, and an "On this day" memories section (prior-year same-date
+  Marks) arrived with the Search-filters PR ([#413](https://github.com/jeffpaul/daymark/pull/413)) —
+  but highlights, collections, recently-popular, and suggested
+  accounts/content all still need their own supporting data before they can
+  be real sections.
 - [ ] Me beyond its current links ([#295](https://github.com/jeffpaul/daymark/issues/295))
   — published-content browsing beyond "all your Marks", drafts management
   (edit/delete) inline on Me instead of pointing back to Home, and any of
@@ -756,12 +769,14 @@ that loop without new destinations or a new social network.
   never confirmed (this environment can't reach Bridgy Fed's own service to
   check), so it's the concrete next step before any further native
   ActivityPub-reading work.
-- **Explore, Search, and Me's remaining scope** — see "Still open from this
-  era" under "Shipped — Bottom navigation rework" above
+- **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
+  navigation rework" above. Search's extended filters and Explore's
+  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
+  the still-open halves of Explore and Me
   ([#294](https://github.com/jeffpaul/daymark/issues/294),
-  [#293](https://github.com/jeffpaul/daymark/issues/293),
-  [#295](https://github.com/jeffpaul/daymark/issues/295)). Each needs new
-  supporting REST/data work before it can grow past its current foundation.
+  [#295](https://github.com/jeffpaul/daymark/issues/295)) each still need new
+  supporting REST/data work before they can grow past their current
+  foundation.
 
 ---
 
