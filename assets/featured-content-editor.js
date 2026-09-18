@@ -861,21 +861,63 @@
 		// against double-initializing anything, so calling this broadly
 		// rather than trying to scope it to just this one node is safe even
 		// if another already-initialized playlist exists elsewhere on the
-		// same screen).
+		// same screen). Confirmed working as far as WPPlaylistView's own
+		// template-driven rendering (title, tracklist) — the one open
+		// question is whether MediaElementPlayer's own skin (in place of
+		// the browser's native <audio controls>) actually applies once
+		// this runs inside a React-inserted, editor-sidebar DOM node
+		// rather than a normal server-rendered page; the deferred call and
+		// diagnostic below exist to answer that without another guess.
 		useEffect(
 			function () {
 				if ( ! playlist ) {
 					return;
 				}
 
-				try {
-					if ( window.wp && window.wp.playlist && 'function' === typeof window.wp.playlist.initialize ) {
-						window.wp.playlist.initialize();
+				// Deferred one tick past this commit: WPPlaylistView's own
+				// constructor (wp-playlist.js) synchronously calls
+				// `new MediaElementPlayer(...)`, which measures/wraps the
+				// real DOM node — a React effect runs right after the DOM
+				// mutation is committed, but before the browser has
+				// necessarily settled layout for a freshly-inserted node
+				// inside a scrollable sidebar panel. A `setTimeout` (rather
+				// than `requestAnimationFrame`, which some admin contexts
+				// throttle in a background/inactive tab) pushes the call
+				// to a fresh macrotask, after layout has had a chance to
+				// settle either way — a cheap, safe thing to try regardless
+				// of whether this turns out to be the actual cause.
+				var timeoutId = window.setTimeout( function () {
+					try {
+						if ( window.wp && window.wp.playlist && 'function' === typeof window.wp.playlist.initialize ) {
+							window.wp.playlist.initialize();
+						}
+					} catch ( e ) {
+						// Nothing to do — the plain <audio> fallback below
+						// already covers this failure mode structurally.
 					}
-				} catch ( e ) {
-					// Nothing to do — the plain <audio> fallback below
-					// already covers this failure mode structurally.
-				}
+
+					// Temporary diagnostic (not left permanently): confirms
+					// or rules out, in one console line, exactly why the
+					// widget might still show native controls instead of
+					// core's own skin — whether MediaElementPlayer's global
+					// constructor was even defined at call time, and
+					// whether a .mejs-container wrapper actually got
+					// created afterward.
+					window.setTimeout( function () {
+						var node = document.querySelector( '.wp-playlist' );
+
+						// eslint-disable-next-line no-console
+						console.log( '[Daymark Featured Content] playlist init diagnostic:', {
+							hasMediaElementPlayer: 'function' === typeof window.MediaElementPlayer,
+							wpPlaylistFound: !! node,
+							mejsContainerFound: !! ( node && node.querySelector( '.mejs-container' ) ),
+						} );
+					}, 0 );
+				}, 0 );
+
+				return function () {
+					window.clearTimeout( timeoutId );
+				};
 			},
 			[ playlist ]
 		);
