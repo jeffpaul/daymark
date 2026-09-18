@@ -44,8 +44,17 @@
 	color: #1e1e1e;
 }
 
+/*
+ * Reported directly, with side-by-side screenshots: "Set featured image"'s
+ * own hover state doesn't darken its border at all — only its text color
+ * changes, to WP admin's own theme-color CSS custom property (the same
+ * `--wp-admin-theme-color` core's Button component itself reads on hover,
+ * confirmed against Gutenberg's own button/style.scss default-variant hover
+ * rule) — while this button was darkening its border to near-black instead,
+ * a mismatch, not a match.
+ */
 .daymark-fc-toggle:hover {
-	border-color: #1e1e1e;
+	color: var( --wp-admin-theme-color, #007cba );
 }
 
 .daymark-fc-summary {
