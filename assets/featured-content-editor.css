@@ -74,8 +74,8 @@
 	margin-bottom: 8px;
 }
 
-.daymark-fc-preview audio,
-.daymark-fc-preview video,
+.daymark-fc-preview:not(.daymark-fc-preview--playlist) audio,
+.daymark-fc-preview:not(.daymark-fc-preview--playlist) video,
 .daymark-fc-preview img,
 .daymark-fc-preview iframe {
 	display: block;
@@ -85,6 +85,21 @@
 
 .daymark-fc-preview video {
 	max-height: 200px;
+}
+
+/*
+ * The audio "playlist" preview (FeaturedContentPreview's own library-audio
+ * branch, assets/featured-content-editor.js) is core's real
+ * wp_playlist_shortcode() markup — a hidden native <audio> element that
+ * core's own wp-mediaelement/wp-playlist scripts and styles (already
+ * enqueued alongside this control) size and skin themselves, the same way
+ * they already do for a real [playlist] shortcode elsewhere on the site.
+ * Deliberately excluded from the generic audio/video sizing rule above so
+ * this stylesheet never fights whatever inline sizing mejs applies to
+ * that inner element once it initializes.
+ */
+.daymark-fc-preview--playlist {
+	margin-bottom: 8px;
 }
 
 .daymark-fc-preview-unavailable {

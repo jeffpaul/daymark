@@ -436,4 +436,77 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertNull( $response->get_data()['embed'] );
 	}
+
+	// -- render_audio_playlist_preview() -----------------------------------
+	//
+	// The editor sidebar's own "playlist" preview (a follow-up to issue
+	// #401), delegating entirely to core's real wp_playlist_shortcode() —
+	// these tests only assert this class's own contract (empty for
+	// anything that isn't a real audio attachment; core's markup for one
+	// that is), never the exact internal shape of core's own output.
+
+	public function test_render_audio_playlist_preview_returns_empty_for_a_non_audio_attachment() {
+		$attachment_id = $this->create_attachment( 'video/mp4' );
+
+		$this->assertSame( '', Daymark_Featured_Content::render_audio_playlist_preview( $attachment_id ) );
+	}
+
+	public function test_render_audio_playlist_preview_returns_empty_for_a_nonexistent_attachment() {
+		$this->assertSame( '', Daymark_Featured_Content::render_audio_playlist_preview( 0 ) );
+		$this->assertSame( '', Daymark_Featured_Content::render_audio_playlist_preview( 999999 ) );
+	}
+
+	public function test_render_audio_playlist_preview_renders_core_playlist_markup_for_a_real_audio_attachment() {
+		$attachment_id = $this->create_attachment( 'audio/mpeg' );
+
+		$html = Daymark_Featured_Content::render_audio_playlist_preview( $attachment_id );
+
+		$this->assertStringContainsString( 'wp-playlist', $html );
+		$this->assertStringContainsString( 'audio', $html );
+	}
+
+	// -- REST: GET /featured-content/audio-playlist ------------------------
+
+	public function test_rest_audio_playlist_route_returns_playlist_html_for_a_real_audio_attachment() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$attachment_id = $this->create_attachment( 'audio/mpeg' );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/featured-content/audio-playlist' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'attachment_id', $attachment_id );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertStringContainsString( 'wp-playlist', $response->get_data()['html'] );
+	}
+
+	public function test_rest_audio_playlist_route_returns_empty_html_for_a_non_audio_attachment() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$attachment_id = $this->create_attachment( 'video/mp4' );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/featured-content/audio-playlist' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'attachment_id', $attachment_id );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( '', $response->get_data()['html'] );
+	}
+
+	public function test_rest_audio_playlist_route_requires_authentication() {
+		wp_set_current_user( 0 );
+
+		$attachment_id = $this->create_attachment( 'audio/mpeg' );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/featured-content/audio-playlist' );
+		$request->set_param( 'attachment_id', $attachment_id );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 401, $response->get_status() );
+	}
 }

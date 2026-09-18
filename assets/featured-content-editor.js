@@ -759,20 +759,31 @@
 
 	/**
 	 * A small preview of the currently-set Featured Content, mirroring
-	 * core's own Featured Image thumbnail. A `library` attachment renders
-	 * its own native <audio>/<video> element directly, via that
+	 * core's own Featured Image thumbnail. A `library` **video** attachment
+	 * renders its own native <video> element directly, via that
 	 * attachment's REST `source_url` (resolved through the `core` data
 	 * store's `getMedia()` — the same lookup core's own PostFeaturedImage
 	 * component already uses for its own thumbnail, so no new script
 	 * dependency is needed here: `wp-core-data` is already a hard
-	 * dependency of the block editor itself). A profiled `url` resolves a
-	 * live oEmbed preview through the same
+	 * dependency of the block editor itself). A `library` **audio**
+	 * attachment instead fetches and renders core's own richer "playlist"
+	 * widget (GET /daymark/v1/featured-content/audio-playlist ->
+	 * Daymark_Featured_Content::render_audio_playlist_preview() ->
+	 * wp_playlist_shortcode()) — title/artist, a scrubber, and a tracklist
+	 * row, matching core's own single-item playlist preview rather than a
+	 * bare native <audio> element — falling back to that same plain
+	 * <audio> tag while the fetch is still in flight or on any failure, so
+	 * nothing ever flashes to empty. A profiled `url` resolves a live
+	 * oEmbed preview through the same
 	 * GET /daymark/v1/featured-content/oembed route the "Add by URL" tab
 	 * already uses, falling back to a plain native <audio>/<video> tag for
 	 * a direct file URL an oEmbed provider can't resolve — the same
 	 * fallback order Daymark_Featured_Content::render_audio()/render_video()
 	 * already use server-side, so the sidebar preview and the eventual
 	 * front-end rendering never disagree about what a given value shows.
+	 * (The playlist upgrade above is deliberately editor-preview-only —
+	 * front-end rendering stays on wp_audio_shortcode(), per the request's
+	 * own framing of "the sidebar panel".)
 	 *
 	 * @param {{type: string, data: Object}} props Resolved Featured Content.
 	 * @return {Object|null}
@@ -781,6 +792,7 @@
 		var type = props.type;
 		var data = props.data;
 		var isUrl = 'url' === data.source;
+		var isLibraryAudio = ! isUrl && 'audio' === type;
 
 		var attachment = useSelect(
 			function ( select ) {
@@ -792,6 +804,10 @@
 		var embedState = useState( null );
 		var embed = embedState[ 0 ];
 		var setEmbed = embedState[ 1 ];
+
+		var playlistState = useState( null );
+		var playlist = playlistState[ 0 ];
+		var setPlaylist = playlistState[ 1 ];
 
 		useEffect(
 			function () {
@@ -827,9 +843,83 @@
 			[ isUrl, data.url ]
 		);
 
+		useEffect(
+			function () {
+				if ( ! isLibraryAudio || ! data.attachment_id ) {
+					return;
+				}
+
+				var endpoint = ( window.daymarkFeaturedContent || {} ).audioPlaylistEndpoint;
+
+				if ( ! wp.apiFetch || ! endpoint ) {
+					setPlaylist( false );
+					return;
+				}
+
+				var cancelled = false;
+
+				wp.apiFetch( { url: endpoint + '?attachment_id=' + encodeURIComponent( data.attachment_id ) } )
+					.then( function ( response ) {
+						if ( ! cancelled ) {
+							setPlaylist( response && response.html ? response.html : false );
+						}
+					} )
+					.catch( function () {
+						if ( ! cancelled ) {
+							setPlaylist( false );
+						}
+					} );
+
+				return function () {
+					cancelled = true;
+				};
+			},
+			[ isLibraryAudio, data.attachment_id ]
+		);
+
+		// Once the fetched playlist markup has actually mounted (the render
+		// branch below, on the very next commit after setPlaylist() above),
+		// hand it to core's own wp.playlist.initialize() — the documented,
+		// public API for activating a .wp-playlist element inserted after
+		// the page's own initial document-ready scan already ran (confirmed
+		// directly against wp-playlist.js's own source: it only auto-inits
+		// once, at document ready, and its own selector —
+		// `.wp-playlist:not(:has(.mejs-container))` — already guards
+		// against double-initializing anything, so calling this broadly
+		// rather than trying to scope it to just this one node is safe even
+		// if another already-initialized playlist exists elsewhere on the
+		// same screen).
+		useEffect(
+			function () {
+				if ( ! playlist ) {
+					return;
+				}
+
+				try {
+					if ( window.wp && window.wp.playlist && 'function' === typeof window.wp.playlist.initialize ) {
+						window.wp.playlist.initialize();
+					}
+				} catch ( e ) {
+					// Nothing to do — the plain <audio> fallback below
+					// already covers this failure mode structurally.
+				}
+			},
+			[ playlist ]
+		);
+
 		if ( ! isUrl ) {
 			if ( ! attachment || ! attachment.source_url ) {
 				return null;
+			}
+
+			if ( isLibraryAudio && playlist ) {
+				return el( 'div', {
+					className: 'daymark-fc-preview daymark-fc-preview--playlist',
+					// playlist is Daymark_Featured_Content::render_audio_playlist_preview()'s
+					// own output — core's real wp_playlist_shortcode() markup,
+					// never anything this file builds or a provider returns.
+					dangerouslySetInnerHTML: { __html: playlist },
+				} );
 			}
 
 			return el(

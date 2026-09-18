@@ -495,6 +495,38 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Render a single audio attachment as core's own "playlist" widget —
+	 * `wp_playlist_shortcode()`'s own markup/JSON/mejs-skinned player (title,
+	 * artist, scrubber, tracklist row) — for the editor sidebar's own
+	 * preview, in place of a bare native `<audio>` element. Delegates
+	 * entirely to core's real function rather than reimplementing any of
+	 * its own undocumented markup/JSON shape, the same "let core do the
+	 * templating" posture render_audio()'s own `wp_audio_shortcode()` call
+	 * and Daymark_Subscription_Oembed already establish elsewhere in this
+	 * class. Always passed an explicit `ids` value, so this never falls
+	 * back to `wp_playlist_shortcode()`'s own "current post's children"
+	 * default and needs no global `$post` context — safe to call from a
+	 * REST request with no post in scope. Front-end rendering
+	 * (render_audio() above) is deliberately untouched — this is scoped to
+	 * the editor's own sidebar preview only, per the request's own framing.
+	 *
+	 * @param int $attachment_id Attachment ID.
+	 * @return string Playlist HTML, or '' when the ID isn't a real audio attachment.
+	 */
+	public static function render_audio_playlist_preview( int $attachment_id ): string {
+		if ( $attachment_id <= 0 || ! wp_attachment_is( 'audio', $attachment_id ) ) {
+			return '';
+		}
+
+		return (string) wp_playlist_shortcode(
+			array(
+				'ids'  => (string) $attachment_id,
+				'type' => 'audio',
+			)
+		);
+	}
+
+	/**
 	 * Enqueue the Featured Content editor control, only on a post-edit
 	 * screen for a post type this class actually supports.
 	 *
@@ -515,10 +547,20 @@ class Daymark_Featured_Content {
 		// classic editor/media-library screens call for the same reason.
 		wp_enqueue_media();
 
+		// The sidebar preview's own "playlist" rendering for a library audio
+		// attachment (render_audio_playlist_preview()) needs core's real
+		// wp-playlist script and its wp-mediaelement styles present on this
+		// screen — normally a side effect of calling wp_playlist_shortcode()
+		// itself, which only ever happens inside the separate REST request
+		// that fetches the preview HTML, with no bearing on this already-
+		// rendered admin page. Enqueued explicitly here instead, mirroring
+		// core's own wp_playlist_scripts( 'audio' ) helper's exact two calls.
+		wp_enqueue_style( 'wp-mediaelement' );
+
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models', 'wp-playlist' ),
 			DAYMARK_VERSION,
 			true
 		);
@@ -534,10 +576,11 @@ class Daymark_Featured_Content {
 			'daymark-featured-content-editor',
 			'daymarkFeaturedContent',
 			array(
-				'metaType'       => self::META_TYPE,
-				'metaData'       => self::META_DATA,
-				'allowedTypes'   => self::allowed_types(),
-				'oembedEndpoint' => rest_url( 'daymark/v1/featured-content/oembed' ),
+				'metaType'              => self::META_TYPE,
+				'metaData'              => self::META_DATA,
+				'allowedTypes'          => self::allowed_types(),
+				'oembedEndpoint'        => rest_url( 'daymark/v1/featured-content/oembed' ),
+				'audioPlaylistEndpoint' => rest_url( 'daymark/v1/featured-content/audio-playlist' ),
 			)
 		);
 	}
