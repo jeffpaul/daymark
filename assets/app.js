@@ -2808,8 +2808,7 @@
 	function renderMarkItem(item) {
 		// Drafts look identical to published Marks otherwise — and their
 		// permalinks are invisible to visitors — so tapping one reopens the
-		// composer instead of opening it on the post-view screen.
-		// (renderMarkCore() handles the visible "Draft" chip itself.) A
+		// composer instead of opening it on the post-view screen. A
 		// published item — a true Mark or an ordinary block-editor post
 		// alike — opens its own content on the full-screen post view
 		// instead (see openPostView()/onFeedListClick()), the same as a
@@ -7557,16 +7556,17 @@
 		}</svg></span>${playButton}`;
 	}
 
-	// The meta line every card kind shares: an optional leading chip
-	// ('Draft' on an unpublished Mark — a subscription post carries no chip
-	// at all, since its site icon already makes clear it isn't yours), and —
-	// only when the server resolved one (prepare_mark_summary(),
-	// class-rest-controller.php) — a reading-time estimate. Deliberately
-	// doesn't repeat the kind as a text label the way this line used to for
-	// a Mark (TYPE_LABELS[item.type]) — the rail's own type icon (see
-	// renderTypeIcon()) already says that now, so the text stays free for
-	// what the icon can't show. Camera and weather metadata stay
-	// server-stored-only for now — deliberately not rendered here, to keep
+	// The meta line every card kind shares: only when the server resolved
+	// one (prepare_mark_summary(), class-rest-controller.php) — a
+	// reading-time estimate. (A Draft's card used to lead this line with a
+	// "Draft" chip, but every caller that renders a Draft's card already
+	// puts it inside its own "Drafts" section, so the chip was dropped as
+	// redundant with the section heading right above it — issue #405.)
+	// Deliberately doesn't repeat the kind as a text label the way this
+	// line used to for a Mark (TYPE_LABELS[item.type]) — the rail's own
+	// type icon (see renderTypeIcon()) already says that now, so the text
+	// stays free for what the icon can't show. Camera and weather metadata
+	// stay server-stored-only for now — deliberately not rendered here, to keep
 	// this compact card from getting cluttered. The timestamp and the site
 	// name aren't part of this line either — see renderCardTimestampRow(),
 	// rendered as their own bottom row instead. A subscription post's own
@@ -7575,11 +7575,8 @@
 	// site name the bottom row and the site icon's own tooltip already
 	// show — so it was dropped as redundant (issue #285) rather than
 	// repeating a site's identity twice on one card.
-	function renderCardMeta(item, chipHtml) {
+	function renderCardMeta(item) {
 		const parts = [];
-		if (chipHtml) {
-			parts.push(chipHtml);
-		}
 		if (item.reading_time_minutes) {
 			parts.push(
 				esc(
@@ -7672,14 +7669,15 @@
 	function renderMarkCore(item) {
 		const kind = resolveCardKind(item);
 		const title = item.title || __('Untitled Mark', 'daymark');
-		// Drafts look identical to published Marks otherwise — and their
-		// permalinks are invisible to visitors — so say so. (The Timeline
-		// endpoint only ever returns published Marks, so this never fires
-		// there; Home's Recent/Drafts lists are what actually rely on it.)
+		// A Draft's own card renders with no "Draft" chip (issue #405) —
+		// every caller that renders one (Home's Drafts row, Me's own Drafts
+		// list) already puts it inside its own "Drafts" section, so the
+		// chip only ever repeated what the section heading above it already
+		// said. (The Timeline endpoint only ever returns published Marks,
+		// so isDraft below is never true there — it still governs the
+		// timestamp row's site name and the stats row, both meaningless for
+		// a Mark with nothing published yet.)
 		const isDraft = item.status && 'publish' !== item.status;
-		const chip = isDraft
-			? '<span class="daymark-chip daymark-chip--draft">' + esc(__('Draft', 'daymark')) + '</span>'
-			: '';
 		// A caption longer than generate_title()'s own 8-word title trim
 		// (class-publisher.php) carries real content beyond the title —
 		// show it as a secondary line; a short caption's title already
@@ -7700,7 +7698,7 @@
 					${renderCardMedia(item, kind)}
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
-						<span class="daymark-recent__meta">${renderCardMeta(item, chip)}</span>
+						<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
 					<span class="daymark-recent__footer">

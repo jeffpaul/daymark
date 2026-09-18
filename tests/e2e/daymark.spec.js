@@ -2161,12 +2161,13 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
-	// Home shows the Drafts row; the row is chip-marked.
+	// Home shows the Drafts row; the row is findable by its edit-draft
+	// attribute (no "Draft" chip on the card itself — the Drafts section
+	// heading above it already says so).
 	await page.goto('/daymark');
 	await expect(page.getByRole('heading', { name: 'Drafts' })).toBeVisible();
 	const row = page.locator('[data-edit-draft]').filter({ hasText: caption }).first();
 	await expect(row).toBeVisible();
-	await expect(row.locator('.daymark-chip--draft')).toBeVisible();
 
 	// Resume: composer reopens prefilled with the draft's caption.
 	await row.click();
@@ -2239,7 +2240,6 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 
 	const row = page.locator('[data-edit-draft]').filter({ hasText: caption }).first();
 	await expect(row).toBeVisible();
-	await expect(row.locator('.daymark-chip--draft')).toBeVisible();
 
 	// Resuming shows the autosaved caption, and the draft publishes normally.
 	await row.click();
