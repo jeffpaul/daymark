@@ -2719,13 +2719,22 @@ h2[tabindex='-1']:focus {
 	z-index: -1;
 }
 
-/* A Drafts-only list (Home's Drafts row, Me's) never renders the leading
-   site icon column — see renderMarkItem()'s isDraft check in app.js, which
-   skips it because a draft has no separate site to filter to. The type
-   icon rail is the row's first element there instead, so the line shifts
-   to sit under just half its own width. */
-.daymark-recent__list:has(.daymark-recent__typeicon):not(:has(.daymark-recent__siteicon))::before {
-	left: 14px;
+/* A Draft row never renders the leading site icon column — see
+   renderMarkItem()'s isDraft check in app.js, which skips it because a
+   draft has no separate site to filter to. Home's Drafts row sits directly
+   above the main Timeline list in the very same visual context (unlike
+   Me's own drafts list, which uses a plain renderMarkCore() anchor with no
+   item-wrap/type-icon rail at all), so its lone type icon still needs to
+   land on the exact same rail x-position every row below it uses — left as
+   the row's own first, flush-left flex child, it read as its own
+   disconnected column sitting hard against the screen edge instead of
+   continuing that line (reported directly, with a screenshot). Adding the
+   site icon column's own width + gap as a margin achieves that without a
+   separate (invisible) placeholder element in the markup, and the rail
+   line above needs no matching override anymore since every type icon in
+   the list now sits at the same offset regardless of a leading site icon. */
+.daymark-recent__item-wrap:not(:has(.daymark-recent__siteicon)) .daymark-recent__typeicon {
+	margin-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 }
 
 /* Relative-period group headers (Today, This Week, Last Month, ...; see
