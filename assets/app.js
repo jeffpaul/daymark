@@ -7475,6 +7475,24 @@
 			: 'article';
 	}
 
+	// The card-media kind to actually render, once a Mark's own Featured
+	// Content (issue #401) is taken into account. `resolveCardKind()` above
+	// answers "what kind of Mark is this" — the rail icon's own question,
+	// unaffected by Featured Content — but the media slot's job is showing
+	// whatever the Mark's front-end permalink page itself would show there,
+	// and Featured Content already replaces a post's Featured Image there
+	// by default (`maybe_replace_post_thumbnail_html()`,
+	// class-featured-content.php) regardless of the Mark's own primary
+	// type. A Note/Checkin Mark that sets a video/audio Featured Content is
+	// exactly the case this exists for: its own `kind` renders no media
+	// slot at all, but Featured Content is real, chosen content worth
+	// showing. Gallery/quote/link Featured Content aren't handled yet —
+	// `item.featured_content.type` is only ever 'audio'/'video' until those
+	// later phases ship their own card treatment.
+	function mediaKindForItem(item, kind) {
+		return item.featured_content && item.featured_content.type ? item.featured_content.type : kind;
+	}
+
 	// The rail column every card carries between its site icon and its own
 	// body — a quiet, muted indicator of what kind of thing this is,
 	// visually threaded to the item above and below by a thin connecting
@@ -7695,7 +7713,7 @@
 		// .daymark-recent__footer in app.css for how this wraps onto its own
 		// full-width line regardless of kind.
 		return `
-					${renderCardMedia(item, kind)}
+					${renderCardMedia(item, mediaKindForItem(item, kind))}
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
 						<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
