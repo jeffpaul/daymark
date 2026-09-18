@@ -447,6 +447,62 @@
 		{ type: 'checkin', label: __('Check-ins', 'daymark') },
 	];
 
+	// Search's date-preset filter, mapped to an inclusive after/before
+	// window on GET /timeline (issue #293). Deliberately a preset list —
+	// not a free-form date range — reusing the exact same vocabulary the
+	// Timeline's relative-period group headers already show (timelinePeriod,
+	// below), so a person reads the same buckets in both places: "This
+	// Week" in a group header and "This Week" in this dropdown mean the
+	// same span of dates. `''` is "any time", no date constraint at all.
+	const SEARCH_DATE_FILTERS = [
+		{ key: '', label: __('Any time', 'daymark') },
+		{ key: 'today', label: __('Today', 'daymark') },
+		{ key: 'this_week', label: __('This Week', 'daymark') },
+		{ key: 'last_week', label: __('Last Week', 'daymark') },
+		{ key: 'this_month', label: __('This Month', 'daymark') },
+		{ key: 'last_month', label: __('Last Month', 'daymark') },
+	];
+
+	// Resolves a SEARCH_DATE_FILTERS key into its inclusive [after, before]
+	// bound(s), as RFC 3339 (the format GET /timeline's own args validate).
+	// Matching timelinePeriod()'s calendar semantics: weeks start Sunday
+	// (Date#getDay()'s 0-based convention), "This Month" means the 1st.
+	// `before` is exclusive of the *next* bucket's start so an item exactly
+	// at a boundary never matches two adjacent presets; the backend treats
+	// both as inclusive, so given `after`/`before` here are the last
+	// committed instant on each side.
+	function dateFilterBounds(key) {
+		const now = new Date();
+		const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const startOfWeek = (d) => {
+			const s = startOfDay(d);
+			s.setDate(s.getDate() - s.getDay());
+			return s;
+		};
+		const toIso = (d) => d.toISOString();
+		switch (key) {
+			case 'today':
+				return { after: toIso(startOfDay(now)) };
+			case 'this_week':
+				return { after: toIso(startOfWeek(now)) };
+			case 'last_week': {
+				const end = startOfWeek(now);
+				const start = new Date(end);
+				start.setDate(start.getDate() - 7);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			case 'this_month':
+				return { after: toIso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+			case 'last_month': {
+				const end = new Date(now.getFullYear(), now.getMonth(), 1);
+				const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			default:
+				return null;
+		}
+	}
+
 	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
 	// nav, matching the app's other inline icons. Text stays as the
 	// accessible name and hover title — see NAV_TABS/navFooterMarkup().
@@ -2725,6 +2781,20 @@
 		} catch (err) {
 			return [];
 		}
+	}
+
+	// The Tag filter's <option>s: an "Any tag" default plus the site's
+	// most-used tags (top 10 by count, via GET /tags?all=1 — the same
+	// endpoint the composer's typeahead uses, just without a search
+	// string). Each option carries the term ID, which is what GET
+	// /timeline's own `tag` arg expects. Never throws; an empty list just
+	// leaves the dropdown with the default option only.
+	function tagOptionsMarkup(tags) {
+		const list = Array.isArray(tags) ? tags : [];
+		const options = list
+			.map((tag) => `<option value="${esc(String(tag.id))}">${esc(tag.name)}</option>`)
+			.join('');
+		return `<option value="">${esc(__('Any tag', 'daymark'))}</option>${options}`;
 	}
 
 	// Wires "tap a draft to resume editing it" for any list of drafts —
@@ -5130,6 +5200,31 @@
 						this._subscriptions
 					)}</select>
 				</div>
+				<div class="daymark-searchfilters daymark-searchfilters--extras">
+					<label class="daymark-visually-hidden" for="daymark-author-filter">${esc(
+						__('Filter by author', 'daymark')
+					)}</label>
+					<input type="search" id="daymark-author-filter" class="daymark-input daymark-searchfilters__author" data-author-filter placeholder="${esc(
+						__('Author', 'daymark')
+					)}" autocomplete="off" />
+					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
+						__('Filter by date', 'daymark')
+					)}</label>
+					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${SEARCH_DATE_FILTERS.map(
+						(filter) =>
+							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
+					).join('')}</select>
+					<label class="daymark-visually-hidden" for="daymark-tag-filter">${esc(
+						__('Filter by tag', 'daymark')
+					)}</label>
+					<select id="daymark-tag-filter" class="daymark-sourcefilter" data-tag-filter>${tagOptionsMarkup(
+						this._tags
+					)}</select>
+					<label class="daymark-searchfilters__location">
+						<input type="checkbox" data-location-filter />
+						<span>${esc(__('With location', 'daymark'))}</span>
+					</label>
+				</div>
 			</div>
 			<section class="daymark-screen">
 				<p class="daymark-searchbookmarks-banner" data-search-bookmarks-banner hidden>
@@ -5171,6 +5266,39 @@
 				});
 			}
 
+			const authorFilter = root.querySelector('[data-author-filter]');
+			if (authorFilter) {
+				const runAuthorDebounced = debounce(() => this.runSearch(), 400);
+				authorFilter.addEventListener('input', () => {
+					this.searchAuthor = authorFilter.value.trim();
+					runAuthorDebounced();
+				});
+			}
+
+			const dateFilter = root.querySelector('[data-date-filter]');
+			if (dateFilter) {
+				dateFilter.addEventListener('change', () => {
+					this.searchDate = dateFilter.value;
+					this.runSearch();
+				});
+			}
+
+			const tagFilter = root.querySelector('[data-tag-filter]');
+			if (tagFilter) {
+				tagFilter.addEventListener('change', () => {
+					this.searchTag = tagFilter.value;
+					this.runSearch();
+				});
+			}
+
+			const locationFilter = root.querySelector('[data-location-filter]');
+			if (locationFilter) {
+				locationFilter.addEventListener('change', () => {
+					this.searchWithLocation = locationFilter.checked;
+					this.runSearch();
+				});
+			}
+
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
@@ -5197,9 +5325,14 @@
 			this.searchType = '';
 			this.searchSource = '';
 			this.searchBookmarked = false;
+			this.searchAuthor = '';
+			this.searchDate = '';
+			this.searchTag = '';
+			this.searchWithLocation = false;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
+			this._tags = [];
 
 			// A preset handed from Explore/Me ("browse by type", "your
 			// Marks", "Following", "Bookmarks") right before navigate('#search')
@@ -5215,12 +5348,14 @@
 
 			this.syncFilterChips();
 			this.syncBookmarksBanner();
+			this.syncSearchExtras();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
 			}
 
 			this.loadSubscriptionsForFilter();
+			this.loadTagsForFilter();
 			await this.runSearch();
 		},
 
@@ -5242,6 +5377,50 @@
 			const banner = root.querySelector('[data-search-bookmarks-banner]');
 			if (banner) {
 				banner.hidden = !this.searchBookmarked;
+			}
+		},
+
+		// Reflects the current author/date/tag/location filter values back
+		// onto their controls — called at boot so a fresh render (or deep
+		// link) shows any state searchPreset may have been carrying. The
+		// date/tag seeds have no counterpart in searchPreset today (Explore
+		// hands over type/source only), so these are effectively no-ops
+		// until a future preset carries them.
+		syncSearchExtras() {
+			const author = root.querySelector('[data-author-filter]');
+			if (author && author.value !== this.searchAuthor) {
+				author.value = this.searchAuthor;
+			}
+			const date = root.querySelector('[data-date-filter]');
+			if (date && date.value !== this.searchDate) {
+				date.value = this.searchDate;
+			}
+			const tag = root.querySelector('[data-tag-filter]');
+			if (tag && tag.value !== this.searchTag) {
+				tag.value = this.searchTag;
+			}
+			const location = root.querySelector('[data-location-filter]');
+			if (location) {
+				location.checked = this.searchWithLocation;
+			}
+		},
+
+		// Fetch the site's most-used tags once per visit to populate the
+		// Tag filter's options. Never blocks the search itself; the dropdown
+		// keeps "Any tag" (and any already-selected tag that happened to
+		// resolve) until this resolves. Reuses GET /tags?all=1 — the same
+		// endpoint the composer's typeahead calls.
+		async loadTagsForFilter() {
+			try {
+				const result = await apiGet('tags?all=1');
+				this._tags = Array.isArray(result) ? result : [];
+			} catch (err) {
+				this._tags = [];
+			}
+			const select = root.querySelector('[data-tag-filter]');
+			if (select && select.isConnected) {
+				select.innerHTML = tagOptionsMarkup(this._tags);
+				select.value = this.searchTag;
 			}
 		},
 
@@ -5289,6 +5468,26 @@
 			if (this.searchBookmarked) {
 				params.set('bookmarked', '1');
 			}
+			if (this.searchAuthor) {
+				params.set('author', this.searchAuthor);
+			}
+			if (this.searchDate) {
+				const bounds = dateFilterBounds(this.searchDate);
+				if (bounds) {
+					if (bounds.after) {
+						params.set('after', bounds.after);
+					}
+					if (bounds.before) {
+						params.set('before', bounds.before);
+					}
+				}
+			}
+			if (this.searchTag) {
+				params.set('tag', this.searchTag);
+			}
+			if (this.searchWithLocation) {
+				params.set('with_location', '1');
+			}
 			try {
 				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
@@ -5333,9 +5532,10 @@
 		// Offline fallback for the Bookmarks-filtered view: renders from
 		// BOOKMARK_STORE's own cached item summaries instead of a live
 		// GET /timeline. Applies the type/keyword filters client-side,
-		// best-effort — the Source filter (mine/a specific subscription)
-		// is skipped here, since the cache has no reliable per-source
-		// membership to filter by offline.
+		// best-effort — the Source filter (mine/a specific subscription) and
+		// the author/date/tag/location filters (issue #293) are skipped
+		// here, since the cache has no reliable per-source membership or
+		// per-item meta to filter by offline.
 		async renderCachedBookmarks(list, seq) {
 			const cached = await getAllCachedBookmarks();
 			if (seq !== this._searchSeq || !list.isConnected) {

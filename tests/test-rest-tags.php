@@ -89,4 +89,31 @@ class Test_Rest_Tags extends WP_UnitTestCase {
 
 		$this->assertSame( array(), $data );
 	}
+
+	/** Issue #293 — `all=1` returns popular site tags for the Search screen's dropdown even with an empty search. */
+	public function test_all_returns_tags_with_empty_search() {
+		$request = $this->request();
+		$request->set_param( 'all', '1' );
+
+		$data  = rest_do_request( $request )->get_data();
+		$names = wp_list_pluck( $data, 'name' );
+
+		$this->assertCount( 3, $data );
+		$this->assertContains( 'Sunrise', $names );
+		$this->assertContains( 'Sunset', $names );
+		$this->assertContains( 'Mountains', $names );
+	}
+
+	/** Issue #293 — `all` is ignored once a search string is present; search still wins. */
+	public function test_all_with_search_still_respects_the_search_string() {
+		$request = $this->request( 'sun' );
+		$request->set_param( 'all', '1' );
+
+		$data  = rest_do_request( $request )->get_data();
+		$names = wp_list_pluck( $data, 'name' );
+
+		$this->assertContains( 'Sunrise', $names );
+		$this->assertContains( 'Sunset', $names );
+		$this->assertNotContains( 'Mountains', $names );
+	}
 }
