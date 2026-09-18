@@ -4,7 +4,7 @@ Tags:              publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
-Stable tag:        0.16.0
+Stable tag:        0.17.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -123,7 +123,41 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.17.0 - 2026-09-17 =
+**Added**
+
+* A new Check In Mark type: tap the launcher's Check In bubble, and Daymark quietly reverse-geocodes your captured location into an editable Place field — no media, no caption required, though you can add your own thoughts too. The Place field also searches as you type, so you can pick a real venue instead of only editing the reverse-geocoded guess — each suggestion also shows its full address alongside the name, so you can tell apart two similarly-named places. The launcher's 5 type bubbles are also spaced further apart now, so a thumb tap is less likely to land on the wrong one. Publishes as a real post leading with the place name (linking out to a map when a location resolved), auto-titled "Checked in at {place}" when there's no caption. Once the Simple Location plugin is active, a Mark's captured coordinates (and a Checkin's own place name) are additionally bridged into its own data at publish time — reverse-geocoding, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark. The Connectors tab (Settings -> Daymark) now recommends Simple Location for this.
+* Subscribing to a site running the MF2 Feed WordPress plugin now reads its structured JSON feed instead of scraping h-entry HTML markup, when a live check confirms it's actually available — more reliable parsing of the same content.
+* A "link"-kind subscription post's Timeline card now shows the same best-effort link preview (image, title, description) the full post view already did — previously only plain excerpt text.
+* Liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected now goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app uses — once you've personally linked your own WordPress.com account through Jetpack (Jetpack -> My Connection). No local Mark is published and no browser redirect is needed for those sites; every other subscribed site is unaffected and keeps working exactly as before. The Connectors tab (Settings -> Daymark) now also recommends the full Jetpack plugin for this.
+* The Posts list in wp-admin now shows a small icon next to a post's title indicating its post format (Aside, Image, Video, Standard, etc.); WordPress core's own "All formats" dropdown, which already appears on this screen once any post uses a non-Standard format, remains the way to filter by format. Quick Edit also gained its own Format field — core's Quick Edit row has never exposed post format at all, only the classic editor and block editor sidebar could set one.
+* A new **"Set featured content"** button in the block editor sidebar, right below "Set featured image" in the same Featured Image panel, for any post type that already shows one (not just Marks): opens the same media modal overlay as "Set featured image," titled "Featured content," with a third "Add by URL" tab alongside "Upload files"/"Media Library" for pasting a YouTube/Vimeo/podcast-episode link with a live preview — audio vs. video is detected automatically rather than asked up front. Once set, a small preview (the audio/video file itself, or a resolved oEmbed preview for a pasted URL) shows in the sidebar with Replace/Remove overlaid on it, revealed on hover/focus — matching how core's own "Set featured image" thumbnail shows its own Replace/Remove, rather than a separate row below the preview — and it's shown in place of your Featured Image everywhere your theme already renders one, with no theme changes needed; a theme that wants it to render somewhere different instead can opt out and use the new `daymark_the_featured_content()`/`daymark_has_featured_content()`/`daymark_get_featured_content()` template tags directly. A pasted provider link (e.g. a private/unlisted video) that oEmbed can't resolve now shows a plain "No preview available" message instead of a broken player, both in the sidebar and on the front end. The modal's own "Media Library" tab also gained a Video/Audio content-type filter, so a library mixing both isn't one long scroll to find the file you actually want. Gallery, quote, and a link-format-specific link field are planned as follow-up phases of the same feature.
+* The WordPress Playground preview (both the per-PR preview button and the public "Try Daymark" blueprint) now also seeds a sample Mark that uses a YouTube video as its Featured Content, so a reviewer sees that feature already working without setting it up themselves. Published as a plain text Mark with no picked/generated media of its own — unlike an earlier, now-removed demo-Mark seeding step that used to generate a JPEG and could crash a Playground instance whose GD extension couldn't produce one, this reuses the exact same publisher call the subscription-seeding step above already makes.
+
+**Changed**
+
+* Settings -> Daymark's "Choose from available feeds" action no longer reloads the whole page — clicking it now loads that site's discovered feeds directly into its own row, so you stay right where you were instead of the page jumping back to the top of the subscriptions table.
+* Made the "plugin overlap" notification's own text clearer about what it's flagging and what to do about it — each message now names specifically what Daymark already renders that the other plugin might duplicate, and always suggests deactivating whichever one you don't need. Also fixes the IndieBlocks message, which previously referred to "the above" even when shown on its own with no other overlap notification alongside it.
+* Reblogging now opens a dedicated preview screen — the reblogged post as a real quote, an editable title, and a field for your own thoughts — instead of publishing straight away from a small caption sheet. Nothing is created until you tap Publish.
+
+**Fixed**
+
+* Home's Drafts row no longer shows its leading icon misaligned against the Timeline rows and rail beneath it — a Draft has no leading site icon, so its type icon now lands on the same shared rail position every other row's type icon already sits at, instead of flush against the screen edge.
+* A Draft's own card no longer shows a "Draft" chip — Home's Drafts row and Me's own Drafts list already group it under a "Drafts" section heading, so the chip only ever repeated what that heading already said.
+* A Mark with Featured Content set (audio or video, for now) now shows it on the Timeline card — previously the card showed nothing at all for a Note or Checkin Mark whose only visual content was its Featured Content.
+* A YouTube/Vimeo/podcast link pasted into the new Featured Content "Add by URL" tab — or any subscription oEmbed/link preview — inside a WordPress Playground preview would wrongly show "No preview available" for every URL, even a fully public, working one. The SSRF safety check that runs before any of these fetches was mistaking WordPress Playground's own simulated DNS lookups for a real, private/internal address; it now also recognizes Playground's php-wasm runtime directly, rather than relying only on a SAPI name that isn't consistent across every Playground build/version. Real self-hosted sites are unaffected either way.
+* A subscribed site's own long name (its plain `<title>` tag can carry a full tagline, not just a short name) no longer overflows and widens a Timeline card — the displayed name is now shortened with an ellipsis, with the full name still available as a hover tooltip.
+* The full-screen post view's back arrow/Daymark icon now genuinely top-align against the post title — a follow-up fix layered on top of an earlier attempt (#315) that only top-aligned the back link's own box, not its arrow/icon content.
+* Tapping Like on the same subscribed post twice no longer creates two identical Like Marks — a stale like-state on another screen (or a rapid double-tap) is now recognized and reused instead. Also adds defense-in-depth against an independent plugin like Jetpack Social auto-sharing a Like Mark externally, on top of Daymark's own "Like Marks never syndicate" guarantee.
+* The composer's own header (New Mark / Edit Draft) still showed a plain "Back" text link instead of the arrow-plus-Daymark-icon chrome every other screen with a back destination already uses — now matches Notifications and the full-screen post view.
+* Opening the "+ New Mark" launcher now dims the header along with the rest of the Timeline, instead of leaving it the one bright, still-tappable thing on an otherwise darkened screen.
+
+**Developer**
+
+* Fixed the release workflow's tag/version guard, which was comparing the plugin header's `Version:` and readme.txt's `Stable tag:` fields against the pushed tag using a whitespace-sensitive match — both fields are column-aligned with padding, so the extracted value silently carried that padding and never matched, failing the 0.16.0 tag push before it built or published anything. The guard now strips all whitespace from every value before comparing.
+
 = 0.16.0 - 2026-09-12 =
+
 **Added**
 
 * Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming.
@@ -249,38 +283,12 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * The hooks reference site (<https://jeffpaul.github.io/daymark/>) now shows Daymark's own icon as its browser tab favicon instead of the Docusaurus generator's default.
 * The hooks reference site now includes a "Writing a Connector" guide — a complete, minimal `Daymark_Syndication_Connector` example (the interface, the `publish()` payload/result shapes, and the relevant hooks) for anyone building a real syndication destination.
 
-= 0.12.0 - 2026-09-07 =
-
-**Added**
-
-* A subscribed post's Timeline card now has a "Replied" indicator plus real Like and Repost toggles — Like/Repost publish a small Mark of your own, letting an already-installed federation plugin (ActivityPub/Webmention/ATmosphere) send the actual outbound like/reblog, the same way the existing Reply action already works. Full engagement counts from the origin site aren't obtainable in general, so this shows your own engagement instead.
-
-**Changed**
-
-* An expanded Timeline card now gives the borrowed post content its own light gray background, distinct from the card's own white chrome — so a subscription post's "Reply" action reads clearly as Daymark's own UI rather than part of the quoted page.
-* A Timeline card's excerpt no longer gets clamped to a fixed 1-2 lines — it now shows in full whenever the server provides one (up to ~40 words for a subscription post), instead of cutting off real content at an arbitrary card-height cap.
-* The Settings -> Daymark subscriptions table's "Edit name" text link is now a pencil icon next to the site name — clicking it makes the name editable inline, saving on Enter, Tab, or clicking away instead of a separate Save button.
-* The Settings -> Daymark subscriptions table's Refresh action is now a circular-arrows icon next to "Last fetched" instead of a labeled button in the Actions column — clicking it spins the icon while the refresh is in flight.
-
-**Fixed**
-
-* Reduced the empty vertical space between the header and the first Timeline item — the pull-to-refresh indicator's collapsed box and the empty refresh-status message were each still costing a full flex gap even though neither had any visible content.
-* A subscription post's expanded content could show a Jetpack "Share this:" block, a Jetpack "Related" posts block, floated images overlapping surrounding text, a "Skip to content" link the existing stripping didn't catch, a theme's own publish-date/category markup nested alongside the real post body, and a "Previous:"/"Next:" post-navigation link — none of that is part of the post content from an RSS-feed point of view.
-* A Timeline card for a post with no featured image and no cached site icon no longer shows a manufactured placeholder icon — the title/excerpt/date now use the card's full width instead.
-* The Timeline could show a raw WordPress error ("Could not load your timeline. Cookie check failed") when the app-shell page's nonce went stale — most commonly a home-screen-installed PWA session resumed after a long background suspension. It now shows "Your session has expired" with a Reload button.
-* A subscription post whose only image was lazy-loaded (a placeholder `src` with the real URL in `data-src`/`data-lazy-src`/`srcset`) previously showed no Timeline card thumbnail at all — the content sniffer now falls back through those common lazy-load attributes when `src` itself is empty or a placeholder.
-* The Home/Explore/Search/Me header now always shows Daymark's own icon instead of the site's configured Site Icon, tightens Explore/Search/Me's header title spacing to match Home's, and replaces the Notifications page's "Back" text with the Daymark icon (keeping the arrow).
-* Search's "Showing your bookmarks." banner text now matches the size of its "Show everything" link — they previously rendered at two different sizes.
-* The Share icon's clipboard-copy fallback (used on any browser without a native share sheet, e.g. Firefox) now shows a visible on-screen "Link copied" confirmation instead of only a subtle color change — it previously looked like nothing had happened.
-* A Timeline card's date, once shown as an actual date rather than a relative "Xd ago" reading, now formats it using the site's own Settings -> General -> Date Format instead of the browser's locale default (previously always MM/DD/YYYY-style).
-* A bookmarked post's images now render correctly when viewed offline — its cached content markup displayed fine with no connectivity, but its `<img>` tags still pointed at the live origin site, so images showed as broken links. Images are now cached alongside the content and swapped in from that local copy when offline.
-* The Settings -> Daymark subscriptions table's site icon now renders inline, just to the left of the site title, instead of in its own dedicated column.
-* On a screen with very little content (e.g. a near-empty Timeline), the bottom nav and the floating "+New" launcher no longer float mid-page instead of pinned to the bottom — the screen itself now always claims the full available height it's meant to.
-* A subscription post's Timeline stat row (Like, Comment, Repost, Bookmark, "open original", Share) now spaces every icon evenly instead of splitting into two unevenly-spaced clusters.
-
 [View the full changelog history](https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 0.17.0 =
+A new Check In Mark type reverse-geocodes your location into an editable, searchable Place field. The block editor sidebar gains a "Set featured content" button (audio/video, with more formats planned) that shows in place of your Featured Image everywhere your theme already renders one. Liking or commenting on a WordPress.com/Jetpack-connected subscribed post now goes straight through Jetpack's own API, with no local post or redirect needed. Reblogging opens a preview screen before publishing instead of going straight out. Also fixes a false "No preview available" for Featured Content/link previews inside WordPress Playground, and a Timeline card that showed nothing at all for a Note/Checkin Mark whose only visual content was its Featured Content.
 
 = 0.16.0 =
 Subscribing to a new site now shows every feed Daymark found for it up front — the best one pre-checked for you, with a separate option per language on multilingual sites — so you can follow more than one feed from the same site in a single step; "Choose from available feeds" (renamed "Update feeds") now lets you add and drop feeds together too. Link-format subscription posts get a real preview (title, excerpt, image) via Open Graph when there's no oEmbed provider. Reblog now creates a Mark with a real link to the original post instead of just caption text, Comment checks whether it can actually deliver before you start typing, and Like no longer shows up in your own site's feeds, search, or sitemap. Also fixes a Playground preview crash and a false-positive "invalid site URL" failure when subscribing inside WordPress Playground.
