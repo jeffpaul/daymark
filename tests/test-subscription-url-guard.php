@@ -179,20 +179,35 @@ class Test_Subscription_Url_Guard extends WP_UnitTestCase {
 	}
 
 	// -----------------------------------------------------------------
-	// should_skip_dns_resolution() (issue #365) — exercised via Reflection,
-	// matching this codebase's established pattern for private logic that
-	// can't be driven deterministically through the public check() entry
-	// point alone (PHP_SAPI can't be reassigned mid-test, and the real DNS
-	// lookup a non-forced, non-literal-IP host would otherwise reach isn't
-	// something a test should depend on).
+	// should_skip_dns_resolution() (issue #365, extended by issue #402) —
+	// exercised via Reflection, matching this codebase's established pattern
+	// for private logic that can't be driven deterministically through the
+	// public check() entry point alone (neither PHP_SAPI nor php_uname('s')
+	// can be reassigned mid-test, and the real DNS lookup a non-forced,
+	// non-literal-IP host would otherwise reach isn't something a test
+	// should depend on).
 	// -----------------------------------------------------------------
 
 	/**
-	 * The default (no filter applied) reflects the real running SAPI —
-	 * which, in a PHPUnit process, is never 'wasm'.
+	 * The default (no filter applied) reflects the real running environment —
+	 * a PHPUnit process is never php-wasm, so neither `PHP_SAPI === 'wasm'`
+	 * nor `php_uname( 's' ) === 'Emscripten'` (issue #402's own added signal —
+	 * see is_php_wasm_runtime()) is ever true here.
 	 */
-	public function test_should_skip_dns_resolution_defaults_to_false_outside_wasm_sapi() {
+	public function test_should_skip_dns_resolution_defaults_to_false_outside_playground() {
 		$method = new ReflectionMethod( Daymark_Subscription_Url_Guard::class, 'should_skip_dns_resolution' );
+
+		$this->assertFalse( $method->invoke( null ) );
+	}
+
+	/**
+	 * is_php_wasm_runtime() itself — issue #402's own added
+	 * php_uname('s') === 'Emscripten' signal — also reads false in a real
+	 * PHPUnit/CI environment, confirming the new signal doesn't introduce a
+	 * false positive outside Playground.
+	 */
+	public function test_is_php_wasm_runtime_defaults_to_false_outside_playground() {
+		$method = new ReflectionMethod( Daymark_Subscription_Url_Guard::class, 'is_php_wasm_runtime' );
 
 		$this->assertFalse( $method->invoke( null ) );
 	}

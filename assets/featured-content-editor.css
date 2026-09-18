@@ -1,0 +1,248 @@
+/**
+ * Minimal styling for the Featured Content control (assets/featured-content-editor.js,
+ * issue #401) — a toggle button matching the visual style of core's own
+ * "Set featured image" button, plus a preview with Replace/Remove overlaid
+ * on hover/focus once a value is set, matching core's own Featured Image
+ * thumbnail treatment rather than a separate row below it. The picker
+ * itself is the standard wp.media() modal overlay (with an added "Add by
+ * URL" tab), which comes fully styled from wp-admin's own bundled
+ * media-views.css — nothing here targets it.
+ */
+
+/*
+ * "Set featured image" is core's plain `@wordpress/components` Button (no
+ * `is-secondary`/`is-primary` variant at all — confirmed directly from a
+ * browser inspection Jeff attached, and from Gutenberg's own source:
+ * `packages/components/src/button/style.scss`'s base `.components-button`
+ * sets `border: $border-width solid transparent;`/`border-radius:
+ * $radius-small;`, and `packages/editor/src/components/post-featured-image
+ * /style.scss`'s `.editor-post-featured-image__toggle` overrides only the
+ * transparent border's *color* to `$gray-400`). A real 1px border, not an
+ * inset box-shadow — the previous fix (issue #401's Twelfth follow-up)
+ * guessed the secondary-variant box-shadow technique without checking which
+ * variant this actually is, which is exactly the wrong border mechanism.
+ * $border-width/$radius-small/$gray-400 resolve to 1px/2px/#ccc in
+ * Gutenberg's own base-styles variables.
+ */
+.daymark-fc-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 40px;
+	margin-top: 8px;
+	padding: 4px 12px;
+	background: none;
+	border: 1px solid #ccc;
+	border-radius: 2px;
+	cursor: pointer;
+	text-align: center;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: #1e1e1e;
+}
+
+/*
+ * Reported directly, with side-by-side screenshots: "Set featured image"'s
+ * own hover state doesn't darken its border at all — only its text color
+ * changes, to WP admin's own theme-color CSS custom property (the same
+ * `--wp-admin-theme-color` core's Button component itself reads on hover,
+ * confirmed against Gutenberg's own button/style.scss default-variant hover
+ * rule) — while this button was darkening its border to near-black instead,
+ * a mismatch, not a match.
+ */
+.daymark-fc-toggle:hover {
+	color: var( --wp-admin-theme-color, #007cba );
+}
+
+.daymark-fc-summary {
+	margin-top: 8px;
+}
+
+/*
+ * Wraps the preview so Replace/Remove (`.daymark-fc-actions`) can be
+ * absolutely positioned against it — the same `position: relative`
+ * container/overlay pairing core's own
+ * `.editor-post-featured-image__container`/`__actions` uses (confirmed
+ * directly against Gutenberg's `post-featured-image/index.jsx`), so the
+ * two actions sit over the bottom edge of the preview itself rather than
+ * a separate row below it. No standalone type label here either — the
+ * preview already shows what kind of Featured Content this is, the same
+ * way core's own thumbnail needs no caption of its own.
+ */
+.daymark-fc-preview-wrap {
+	position: relative;
+}
+
+/*
+ * A small preview, mirroring core's own Featured Image thumbnail (an
+ * <img>, similarly unstyled beyond width/spacing).
+ */
+.daymark-fc-preview {
+	margin-bottom: 0;
+}
+
+.daymark-fc-preview audio,
+.daymark-fc-preview video,
+.daymark-fc-preview img,
+.daymark-fc-preview iframe {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+}
+
+.daymark-fc-preview video {
+	max-height: 200px;
+}
+
+.daymark-fc-preview-unavailable {
+	margin: 0;
+	color: #757575;
+	font-size: 12px;
+	font-style: italic;
+}
+
+/*
+ * Replace/Remove, overlaid at the bottom edge of `.daymark-fc-preview-wrap`
+ * — the same absolutely-positioned, opacity-toggled-on-hover/focus overlay
+ * core's own `.editor-post-featured-image__actions` uses over its Featured
+ * Image thumbnail (confirmed directly against Gutenberg's
+ * `post-featured-image/style.scss`: `position: absolute; bottom: 0; opacity:
+ * 0;`, revealed via the *container's* own `:hover`/`:focus-within`, each
+ * action `flex-grow: 1` with a frosted-glass `backdrop-filter`/translucent
+ * white background). Applied uniformly here regardless of what the preview
+ * itself renders (a native player, an oEmbed embed, or — rarely — the "No
+ * preview available" fallback text or a brief loading gap): a deliberately
+ * accepted, minor cosmetic trade against reproducing core's per-content-kind
+ * overlay logic for what's a fallback/loading edge case, not the common
+ * path this request was actually about.
+ */
+.daymark-fc-actions {
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	left: 0;
+	display: flex;
+	gap: 8px;
+	padding: 8px;
+	opacity: 0;
+	transition: opacity 50ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-fc-actions {
+		transition: none;
+	}
+}
+
+.daymark-fc-preview-wrap:hover .daymark-fc-actions,
+.daymark-fc-preview-wrap:focus-within .daymark-fc-actions {
+	opacity: 1;
+}
+
+.daymark-fc-action {
+	flex: 1;
+	justify-content: center;
+	min-height: 32px;
+	padding: 4px 8px;
+	border: none;
+	border-radius: 2px;
+	background: rgba(255, 255, 255, 0.75);
+	backdrop-filter: blur(16px) saturate(180%);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 500;
+	color: #1e1e1e;
+}
+
+.daymark-fc-action:hover {
+	background: rgba(255, 255, 255, 0.9);
+}
+
+/*
+ * The "Add by URL" tab's content — a small, fully self-built view (no
+ * longer wp.media.view.Embed; see the JS file's own docblock for why),
+ * so every element here is plain block markup this stylesheet fully
+ * controls, with no undocumented internal layout to fight.
+ */
+.daymark-fc-embed-tab {
+	display: block;
+	padding: 16px;
+}
+
+.daymark-fc-embed-label {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.daymark-fc-embed-url {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	margin-bottom: 12px;
+}
+
+.daymark-fc-embed-preview {
+	display: block;
+	margin-bottom: 12px;
+	max-width: 100%;
+}
+
+.daymark-fc-embed-preview img,
+.daymark-fc-embed-preview iframe {
+	max-width: 100%;
+}
+
+.daymark-fc-embed-submit {
+	display: block;
+}
+
+/*
+ * The "Media Library" tab's own Video/Audio content-type filter (see
+ * bindLibraryTypeFilter() in the JS file). Several earlier attempts
+ * inserted this wrapper as a plain sibling *after* `.media-toolbar`
+ * (ordinary block-level document flow, to escape `.media-toolbar-secondary`'s
+ * own grid-track misalignment) plus a z-index/background pair once a DOM
+ * capture proved it genuinely existed there. Still invisible: a
+ * hover-highlight overlay on the wrapper (Firefox's own on-page box
+ * outline) showed its rendered box sitting in the *exact same rectangle* as
+ * "Filter by date"/"Search media", not below them — `.media-toolbar` is
+ * evidently positioned/elevated specifically so it always stays visible
+ * above the scrolling attachments grid beneath it, and an external sibling
+ * added after it in markup never gets pushed down by that positioning or
+ * wins the stacking fight, no matter what z-index it carries. The JS now
+ * appends this wrapper as a direct *child* of `.media-toolbar` itself
+ * instead — the one container confirmed, by that same overlay and every
+ * earlier round, to actually render above the grid (that's literally where
+ * "Filter by date" lives). Both `flex-basis: 100%` and `grid-column: 1/-1`
+ * are set defensively since it's still unconfirmed which display mode
+ * `.media-toolbar` uses for its own two existing children — CSS simply
+ * ignores whichever doesn't apply — so this filter gets its own full-width
+ * row rather than squeezing into the date-filter/search two-column layout.
+ * `position`/`z-index`/background are kept as a defensive holdover from the
+ * prior sibling-based attempt, in case any of `.media-toolbar`'s own
+ * children still have their own z-ordering this filter needs to beat.
+ */
+.daymark-fc-typefilter {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-basis: 100%;
+	grid-column: 1 / -1;
+	order: 999;
+	margin-top: 8px;
+	position: relative;
+	z-index: 5;
+	background: #fff;
+	padding: 4px 0;
+}
+
+.daymark-fc-typefilter-label {
+	color: #757575;
+	font-size: 12px;
+	line-height: 1.4;
+}

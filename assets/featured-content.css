@@ -1,0 +1,18 @@
+/**
+ * Frontend rendering for Featured Content (issue #401) — enqueued only on a
+ * singular request for a post that actually has Featured Content set
+ * (Daymark_Featured_Content::maybe_enqueue_frontend_style()), never loaded
+ * site-wide. Distinct from assets/app.css, which is scoped to the /daymark
+ * app shell only and never loaded on the public theme frontend.
+ */
+
+.daymark-featured-content {
+	max-width: 100%;
+}
+
+.daymark-featured-content iframe,
+.daymark-featured-content audio,
+.daymark-featured-content video {
+	max-width: 100%;
+	width: 100%;
+}

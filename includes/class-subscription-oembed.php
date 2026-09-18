@@ -89,7 +89,9 @@ class Daymark_Subscription_Oembed {
 			return array();
 		}
 
-		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $url ) ) ) {
+		$guard_result = Daymark_Subscription_Url_Guard::check( $url );
+
+		if ( is_wp_error( $guard_result ) ) {
 			return array();
 		}
 
