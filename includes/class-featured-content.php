@@ -549,13 +549,26 @@ class Daymark_Featured_Content {
 
 		// The sidebar preview's own "playlist" rendering for a library audio
 		// attachment (render_audio_playlist_preview()) needs core's real
-		// wp-playlist script and its wp-mediaelement styles present on this
-		// screen — normally a side effect of calling wp_playlist_shortcode()
-		// itself, which only ever happens inside the separate REST request
-		// that fetches the preview HTML, with no bearing on this already-
-		// rendered admin page. Enqueued explicitly here instead, mirroring
-		// core's own wp_playlist_scripts( 'audio' ) helper's exact two calls.
+		// wp-playlist script, its wp-mediaelement styles, AND the
+		// tmpl-wp-playlist-current-item/tmpl-wp-playlist-item Underscore
+		// templates WPPlaylistView's own constructor looks up via
+		// wp.template() — normally all three are wired up together by
+		// wp_playlist_scripts( $type ), but that call only ever happens
+		// inside the *separate* REST request that fetches the preview HTML,
+		// where hooking admin_footer/wp_footer is pointless (that request
+		// has no such action to fire). Confirmed directly against core's
+		// own wp_playlist_scripts()/wp_underscore_playlist_templates()
+		// source: the templates are never printed inline, only ever
+		// queued onto admin_footer for the *page that calls them* — so
+		// without this, wp.template() finds nothing, WPPlaylistView's
+		// constructor throws (silently caught by the JS's own try/catch),
+		// and the raw, un-activated shortcode markup — an empty
+		// .wp-playlist-current-item div, a src-less <audio> — is all that
+		// ever renders. Reproducing all three calls here, on the actual
+		// edit-post admin page this JS runs on, is what makes wp.template()
+		// find its templates when WPPlaylistView is constructed.
 		wp_enqueue_style( 'wp-mediaelement' );
+		add_action( 'admin_footer', 'wp_underscore_playlist_templates', 0 );
 
 		wp_enqueue_script(
 			'daymark-featured-content-editor',

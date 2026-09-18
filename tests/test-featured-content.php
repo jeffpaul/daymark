@@ -10,6 +10,14 @@
  * @package Daymark
  */
 
+// get_current_screen()/set_current_screen() live in wp-admin/includes/screen.php,
+// which the plain WP PHPUnit bootstrap never loads (it's only pulled in by a
+// real wp-admin/admin.php request) — the same reason test-admin-post-format-icon.php
+// conditionally requires it.
+if ( ! function_exists( 'set_current_screen' ) ) {
+	require_once ABSPATH . 'wp-admin/includes/screen.php';
+}
+
 /**
  * Exercises Daymark_Featured_Content and its REST route.
  */
@@ -508,5 +516,42 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$response = rest_do_request( $request );
 
 		$this->assertSame( 401, $response->get_status() );
+	}
+
+	// -- enqueue_editor_assets(): the playlist-templates admin_footer hook -
+	//
+	// WPPlaylistView's own constructor (wp-playlist.js) looks up
+	// tmpl-wp-playlist-current-item/tmpl-wp-playlist-item via wp.template(),
+	// which core only ever prints by hooking wp_underscore_playlist_templates()
+	// onto admin_footer/wp_footer — normally a side effect of
+	// wp_playlist_shortcode() itself, which here only ever runs inside the
+	// *separate* REST request the sidebar preview fetches, where no
+	// admin_footer action ever fires. Without this class also hooking it
+	// directly on the real edit-post admin page, wp.template() finds
+	// nothing there, WPPlaylistView's constructor throws, and the sidebar
+	// preview silently renders as an empty box (a real bug this asserts
+	// against, not a hypothetical one).
+
+	public function test_enqueue_editor_assets_hooks_playlist_templates_onto_admin_footer_for_a_supported_screen() {
+		set_current_screen( 'post' );
+
+		$featured_content = new Daymark_Featured_Content();
+		$featured_content->enqueue_editor_assets();
+
+		$this->assertSame( 0, has_action( 'admin_footer', 'wp_underscore_playlist_templates' ) );
+
+		remove_action( 'admin_footer', 'wp_underscore_playlist_templates', 0 );
+		set_current_screen( 'front' );
+	}
+
+	public function test_enqueue_editor_assets_does_nothing_for_an_unsupported_screen() {
+		set_current_screen( 'plugins' );
+
+		$featured_content = new Daymark_Featured_Content();
+		$featured_content->enqueue_editor_assets();
+
+		$this->assertFalse( has_action( 'admin_footer', 'wp_underscore_playlist_templates' ) );
+
+		set_current_screen( 'front' );
 	}
 }
