@@ -366,23 +366,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
-			'/featured-content/audio-playlist',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'featured_content_audio_playlist' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
-				'args'                => array(
-					'attachment_id' => array(
-						'type'              => 'integer',
-						'required'          => true,
-						'sanitize_callback' => 'absint',
-					),
-				),
-			)
-		);
-
-		register_rest_route(
-			$this->namespace,
 			'/marks/(?P<id>\d+)',
 			array(
 				array(
@@ -1650,36 +1633,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return rest_ensure_response(
 			array(
 				'embed' => empty( $embed ) ? null : $embed,
-			)
-		);
-	}
-
-	/**
-	 * GET /daymark/v1/featured-content/audio-playlist — renders a single
-	 * audio attachment via core's own wp_playlist_shortcode(), for the
-	 * Featured Content editor panel's own sidebar preview (a follow-up to
-	 * issue #401: matching core's richer "playlist" widget rather than a
-	 * bare native `<audio>` element). Delegates entirely to
-	 * Daymark_Featured_Content::render_audio_playlist_preview(), which
-	 * degrades to '' for anything that isn't a real audio attachment.
-	 *
-	 * No rate limit: a pure local wp_attachment_is()/wp_playlist_shortcode()
-	 * read over an attachment ID the caller already picked via the block
-	 * editor's own media library — no outbound request of any kind, the
-	 * same "pure local read, no bucket needed" posture GET /tags already
-	 * established.
-	 *
-	 * @since 0.18.0
-	 *
-	 * @param WP_REST_Request $request The request.
-	 * @return WP_REST_Response
-	 */
-	public function featured_content_audio_playlist( WP_REST_Request $request ) {
-		$attachment_id = absint( $request->get_param( 'attachment_id' ) );
-
-		return rest_ensure_response(
-			array(
-				'html' => Daymark_Featured_Content::render_audio_playlist_preview( $attachment_id ),
 			)
 		);
 	}

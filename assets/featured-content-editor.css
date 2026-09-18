@@ -75,8 +75,8 @@
 	margin-bottom: 0;
 }
 
-.daymark-fc-preview:not(.daymark-fc-preview--playlist) audio,
-.daymark-fc-preview:not(.daymark-fc-preview--playlist) video,
+.daymark-fc-preview audio,
+.daymark-fc-preview video,
 .daymark-fc-preview img,
 .daymark-fc-preview iframe {
 	display: block;
@@ -86,21 +86,6 @@
 
 .daymark-fc-preview video {
 	max-height: 200px;
-}
-
-/*
- * The audio "playlist" preview (FeaturedContentPreview's own library-audio
- * branch, assets/featured-content-editor.js) is core's real
- * wp_playlist_shortcode() markup — a hidden native <audio> element that
- * core's own wp-mediaelement/wp-playlist scripts and styles (already
- * enqueued alongside this control) size and skin themselves, the same way
- * they already do for a real [playlist] shortcode elsewhere on the site.
- * Deliberately excluded from the generic audio/video sizing rule above so
- * this stylesheet never fights whatever inline sizing mejs applies to
- * that inner element once it initializes.
- */
-.daymark-fc-preview--playlist {
-	margin-bottom: 0;
 }
 
 .daymark-fc-preview-unavailable {
@@ -119,11 +104,11 @@
  * 0;`, revealed via the *container's* own `:hover`/`:focus-within`, each
  * action `flex-grow: 1` with a frosted-glass `backdrop-filter`/translucent
  * white background). Applied uniformly here regardless of what the preview
- * itself renders (a playlist widget, a native player, an oEmbed embed, or —
- * rarely — the "No preview available" fallback text or a brief loading
- * gap): a deliberately accepted, minor cosmetic trade against reproducing
- * core's per-content-kind overlay logic for what's a fallback/loading edge
- * case, not the common path this request was actually about.
+ * itself renders (a native player, an oEmbed embed, or — rarely — the "No
+ * preview available" fallback text or a brief loading gap): a deliberately
+ * accepted, minor cosmetic trade against reproducing core's per-content-kind
+ * overlay logic for what's a fallback/loading edge case, not the common
+ * path this request was actually about.
  */
 .daymark-fc-actions {
 	position: absolute;

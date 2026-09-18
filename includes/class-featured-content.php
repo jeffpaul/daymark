@@ -495,38 +495,6 @@ class Daymark_Featured_Content {
 	}
 
 	/**
-	 * Render a single audio attachment as core's own "playlist" widget —
-	 * `wp_playlist_shortcode()`'s own markup/JSON/mejs-skinned player (title,
-	 * artist, scrubber, tracklist row) — for the editor sidebar's own
-	 * preview, in place of a bare native `<audio>` element. Delegates
-	 * entirely to core's real function rather than reimplementing any of
-	 * its own undocumented markup/JSON shape, the same "let core do the
-	 * templating" posture render_audio()'s own `wp_audio_shortcode()` call
-	 * and Daymark_Subscription_Oembed already establish elsewhere in this
-	 * class. Always passed an explicit `ids` value, so this never falls
-	 * back to `wp_playlist_shortcode()`'s own "current post's children"
-	 * default and needs no global `$post` context — safe to call from a
-	 * REST request with no post in scope. Front-end rendering
-	 * (render_audio() above) is deliberately untouched — this is scoped to
-	 * the editor's own sidebar preview only, per the request's own framing.
-	 *
-	 * @param int $attachment_id Attachment ID.
-	 * @return string Playlist HTML, or '' when the ID isn't a real audio attachment.
-	 */
-	public static function render_audio_playlist_preview( int $attachment_id ): string {
-		if ( $attachment_id <= 0 || ! wp_attachment_is( 'audio', $attachment_id ) ) {
-			return '';
-		}
-
-		return (string) wp_playlist_shortcode(
-			array(
-				'ids'  => (string) $attachment_id,
-				'type' => 'audio',
-			)
-		);
-	}
-
-	/**
 	 * Enqueue the Featured Content editor control, only on a post-edit
 	 * screen for a post type this class actually supports.
 	 *
@@ -547,33 +515,10 @@ class Daymark_Featured_Content {
 		// classic editor/media-library screens call for the same reason.
 		wp_enqueue_media();
 
-		// The sidebar preview's own "playlist" rendering for a library audio
-		// attachment (render_audio_playlist_preview()) needs core's real
-		// wp-playlist script, its wp-mediaelement styles, AND the
-		// tmpl-wp-playlist-current-item/tmpl-wp-playlist-item Underscore
-		// templates WPPlaylistView's own constructor looks up via
-		// wp.template() — normally all three are wired up together by
-		// wp_playlist_scripts( $type ), but that call only ever happens
-		// inside the *separate* REST request that fetches the preview HTML,
-		// where hooking admin_footer/wp_footer is pointless (that request
-		// has no such action to fire). Confirmed directly against core's
-		// own wp_playlist_scripts()/wp_underscore_playlist_templates()
-		// source: the templates are never printed inline, only ever
-		// queued onto admin_footer for the *page that calls them* — so
-		// without this, wp.template() finds nothing, WPPlaylistView's
-		// constructor throws (silently caught by the JS's own try/catch),
-		// and the raw, un-activated shortcode markup — an empty
-		// .wp-playlist-current-item div, a src-less <audio> — is all that
-		// ever renders. Reproducing all three calls here, on the actual
-		// edit-post admin page this JS runs on, is what makes wp.template()
-		// find its templates when WPPlaylistView is constructed.
-		wp_enqueue_style( 'wp-mediaelement' );
-		add_action( 'admin_footer', 'wp_underscore_playlist_templates', 0 );
-
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models', 'wp-playlist' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
 			DAYMARK_VERSION,
 			true
 		);
@@ -589,11 +534,10 @@ class Daymark_Featured_Content {
 			'daymark-featured-content-editor',
 			'daymarkFeaturedContent',
 			array(
-				'metaType'              => self::META_TYPE,
-				'metaData'              => self::META_DATA,
-				'allowedTypes'          => self::allowed_types(),
-				'oembedEndpoint'        => rest_url( 'daymark/v1/featured-content/oembed' ),
-				'audioPlaylistEndpoint' => rest_url( 'daymark/v1/featured-content/audio-playlist' ),
+				'metaType'       => self::META_TYPE,
+				'metaData'       => self::META_DATA,
+				'allowedTypes'   => self::allowed_types(),
+				'oembedEndpoint' => rest_url( 'daymark/v1/featured-content/oembed' ),
 			)
 		);
 	}
