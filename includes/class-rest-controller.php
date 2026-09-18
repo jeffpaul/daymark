@@ -349,6 +349,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/featured-content/oembed',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'featured_content_oembed' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'url' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)',
 			array(
 				array(
@@ -1576,6 +1593,46 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return rest_ensure_response(
 			array(
 				'results' => Daymark_Geocoder::search( $query ),
+			)
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/featured-content/oembed — profiles a URL typed into
+	 * the Featured Content editor panel (issue #401), so an author sees a
+	 * live preview of what a YouTube/Vimeo/podcast-episode link will
+	 * actually render as before saving. Delegates entirely to
+	 * Daymark_Subscription_Oembed::resolve() — already fully generic
+	 * (SSRF-guarded, size-capped, cached, never trusts a provider's raw
+	 * HTML) with no subscription-specific logic in it, reused here rather
+	 * than forked into a second resolver. Degrades to an empty result on
+	 * any failure, matching that class's own "never throws" contract —
+	 * the panel's own fallback (a plain link/file field) still works either
+	 * way.
+	 *
+	 * @since 0.18.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function featured_content_oembed( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_FEATURED_CONTENT_OEMBED );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$url = trim( (string) $request->get_param( 'url' ) );
+
+		if ( '' === $url ) {
+			return rest_ensure_response( array( 'embed' => null ) );
+		}
+
+		$embed = Daymark_Subscription_Oembed::resolve( $url );
+
+		return rest_ensure_response(
+			array(
+				'embed' => empty( $embed ) ? null : $embed,
 			)
 		);
 	}

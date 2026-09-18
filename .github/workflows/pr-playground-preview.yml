@@ -92,6 +92,31 @@ jobs:
             '\t}',
             '}',
             '',
+            // A sample Mark using Featured Content (issue #401): a YouTube
+            // video set as this post's own featured content instead of an
+            // image, so a reviewer already sees that feature working without
+            // setting it up themselves. Published via the publisher (the same
+            // one code path every other Mark-creation caller uses) with the
+            // two Featured Content meta keys set directly afterward, since
+            // Featured Content is a general block-editor feature (issue #401)
+            // rather than part of the publisher's own Mark contract.
+            '$featured_mark_id = $plugin->publisher->publish(',
+            '\tarray(',
+            "\t\t'title'        => 'Featured Content demo',",
+            "\t\t'caption'      => 'Demo of Featured Content: this Mark uses a YouTube video as its featured video instead of an image.',",
+            "\t\t'primary_type' => 'note',",
+            '\t)',
+            ');',
+            '',
+            'if ( ! is_wp_error( $featured_mark_id ) ) {',
+            "\tupdate_post_meta( $featured_mark_id, '_daymark_featured_content_type', 'video' );",
+            '\tupdate_post_meta(',
+            '\t\t$featured_mark_id,',
+            "\t\t'_daymark_featured_content',",
+            "\t\twp_json_encode( array( 'video' => array( 'source' => 'url', 'url' => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ' ) ) )",
+            '\t);',
+            '}',
+            '',
           ].join('\n');
 
           const blueprint = {
@@ -103,6 +128,21 @@ jobs:
             // Land straight in the Daymark app shell.
             landingPage: '/daymark',
             steps: [
+              {
+                // A reviewer debugging a real failure in this preview (a
+                // silent PHP notice, an outbound fetch that didn't do what
+                // was expected) has no SSH/file manager to inspect
+                // wp-content/debug.log with — WP_DEBUG_DISPLAY stays false
+                // so a real visitor (there are none here) never sees a raw
+                // error, but WP_DEBUG_LOG means the log is at least being
+                // written for whatever admin-side tooling reads it.
+                step: 'defineWpConfigConsts',
+                consts: {
+                  WP_DEBUG: true,
+                  WP_DEBUG_LOG: true,
+                  WP_DEBUG_DISPLAY: false,
+                },
+              },
               {
                 // /daymark relies on rewrite rules; Playground defaults to
                 // plain permalinks, so set a pretty structure before the
