@@ -5573,11 +5573,15 @@
 	// A first, deliberately non-chronological browsing destination — never
 	// a second Timeline. Every section here is real, built entirely on
 	// data the plugin already exposes (Mark type filtering, bookmark
-	// state, active subscriptions): "Browse by type", "Bookmarks", and
-	// "Following" all hand a preset off to Search rather than duplicating
-	// its results rendering. Memories, highlights, collections, favorites,
-	// and suggested content are future sections on this same screen, not
-	// implied by anything rendered here.
+	// state, prior-year same-date Marks, active subscriptions): "Browse by
+	// type", "Bookmarks", "On this day", and "Following". The preset
+	// sections hand results off to Search rather than duplicating its
+	// rendering; "On this day" (issue #294) and "Following" render their
+	// own card lists in place, with "On this day" reusing the shared
+	// feed-item pipeline (renderFeedItem()/rememberItem()/onFeedListClick)
+	// exactly like Search's own results list. Highlights, collections,
+	// favorites, and suggested content are future sections on this same
+	// screen, not implied by anything rendered here.
 
 	const ExploreScreen = {
 		render() {
@@ -5608,6 +5612,15 @@
 						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
 							BOOKMARK_GLYPH
 						)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
+					</div>
+				</section>
+				<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
+					<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
+						__('On this day', 'daymark')
+					)}</h2>
+					<div class="daymark-recent__list" data-explore-memories>
+						${skeletonRows(2)}
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
@@ -5651,11 +5664,38 @@
 				});
 			}
 
-			bindDismissible(this, [navFooterDismissEntry(this)]);
+			// "On this day" renders real feed cards (renderFeedItem), so it
+			// gets the exact same delegated click/keydown handlers Search
+			// binds on its own results list — card taps open the post view,
+			// and the stat-row toggles work identically here.
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				memories.addEventListener('click', (event) => onFeedListClick(this, event));
+				memories.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
+
+			// Like Search's results list, the memories list renders cards
+			// whose ⋯/routing/overflow menus need the shared dismissal
+			// entry, not just the bottom-nav one.
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
 
 		async init() {
+			// "On this day" renders real feed cards, so it needs the same
+			// per-item Maps Search keeps — card taps hand openPostView() the
+			// item via these (onFeedListClick()'s data-expand-post branch).
+			this._bySubId = new Map();
+			this._byMarkId = new Map();
+
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				// Deliberately kicked off and left running, not awaited:
+				// memories and Following load independently, and one failing
+				// never blocks the other.
+				this.loadMemories(memories);
+			}
+
 			const list = root.querySelector('[data-explore-following]');
 			if (!list) {
 				return;
@@ -5689,6 +5729,51 @@
 					)}</span></span></button>`;
 				})
 				.join('');
+		},
+
+		// Fills the "On this day" list: GET /timeline?on_this_day=1 (Marks
+		// published on today's calendar date in a prior year, per issue
+		// #294), rendered through the same shared feed-item pipeline Search
+		// uses — renderFeedItem() for the cards, rememberItem() so taps can
+		// hand openPostView() the item, no group headers (the section has
+		// its own heading; a single "this day" bucket would add nothing).
+		// A genuinely empty result keeps the section visible with a
+		// friendly note rather than removing it; a fetch failure shows an
+		// inline error, same shape as the Following list's own loading
+		// states.
+		async loadMemories(list) {
+			let items;
+			try {
+				items = await apiGet('timeline?on_this_day=1&per_page=50');
+			} catch (err) {
+				if (list.isConnected) {
+					list.innerHTML =
+						'<p class="daymark-error" role="alert">' +
+						esc(__("Couldn't load your memories. Try again in a moment.", 'daymark')) +
+						'</p>';
+				}
+				return;
+			}
+			if (!list.isConnected) {
+				return;
+			}
+			const arr = Array.isArray(items) ? items : [];
+			this._bySubId.clear();
+			this._byMarkId.clear();
+			arr.forEach((item) => rememberItem(this, item));
+			if (!arr.length) {
+				list.innerHTML =
+					'<p class="daymark-empty">' +
+					esc(
+						__(
+							'No memories from this day yet. Marks you publish today will appear here next year.',
+							'daymark'
+						)
+					) +
+					'</p>';
+				return;
+			}
+			list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 		},
 	};
 

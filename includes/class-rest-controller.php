@@ -238,6 +238,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
+					// "On this day" (Memories, issue #294): restrictions
+					// replicate `mine` (Marks only, subscription posts
+					// skipped entirely) and narrow the Marks query to the
+					// same calendar month and day as today in any prior
+					// year — see get_timeline()'s own docblock.
+					'on_this_day'     => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -1259,6 +1269,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * never errors on a bad one — the two datetime bounds are the only
 	 * ones core validates, via their own 'date-time' format).
 	 *
+	 * One more optional param, "On this day" (issue #294): `on_this_day`
+	 * (boolean). Marks only and subscription posts skipped entirely,
+	 * exactly like `mine`; the Marks query narrows to the same calendar
+	 * month and day as today in any prior year via a date_query clause
+	 * over post_date (`month`/`day` with an exclusive `before` bound at
+	 * local midnight today, all from wp_date() so the comparison stays in
+	 * the site's own timezone). Today's own Marks are excluded by that
+	 * bound; a leap-day query degrades to empty on non-leap prior years.
+	 * Purely additive to every filter above — combining it with an
+	 * explicit `after`/`before` window ANDs both date clauses.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -1309,6 +1330,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$tag_id        = absint( $request->get_param( 'tag' ) );
 		$with_location = rest_sanitize_boolean( $request->get_param( 'with_location' ) );
 
+		// "On this day" (Memories, issue #294): true restricts the whole
+		// Timeline to Marks published on today's calendar date in a prior
+		// year. Forces the Marks-only skip below exactly like `mine`, and
+		// adds a date_query clause over post_date — see the marks-query
+		// section further down.
+		$on_this_day = rest_sanitize_boolean( $request->get_param( 'on_this_day' ) );
+
 		// datetime-window bounds normalized once so both branches compare
 		// the same values against their own date source. REST core has
 		// already validated the date-time shape, so strtotime() can be
@@ -1337,12 +1365,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		// `mine` takes precedence over `subscription_id` when both are set:
-		// Marks only, subscription posts skipped entirely either way. `tag`
-		// and `with_location` (the Marks-only filters, above) force the
-		// same skip — structurally, a subscription post can never match
-		// either one, so querying that side would only ever return noise.
-		$include_marks              = $mine || 0 === $subscription_id;
-		$include_subscription_posts = ! $mine && ! $marks_only_filters;
+		// Marks only, subscription posts skipped entirely either way. `tag`,
+		// `with_location` (the Marks-only filters, above), and `on_this_day`
+		// (a prior-year post has no subscription-post equivalent, so "On
+		// this day" is Marks-only by construction) force the same skip —
+		// structurally, a subscription post can never match any of them, so
+		// querying that side would only ever return noise.
+		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
+		$include_subscription_posts = ! $mine && ! $marks_only_filters && ! $on_this_day;
 
 		$items = array();
 
@@ -1446,6 +1476,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			if ( '' !== $before_mysql ) {
 				$marks_window['before'] = $before_mysql;
 			}
+
+			// "On this day" (Memories, issue #294): the same calendar month
+			// and day as today in any prior year. The clause uses `month`/
+			// `day` with no `year` and an exclusive `before` bound at local
+			// midnight today, so only strictly-earlier same-date Marks match
+			// (today's own are excluded). `post_date` is stored in the
+			// site's own configured timezone, so wp_date() — which applies
+			// that same timezone — supplies the month/day and the bound,
+			// keeping "this day" aligned with what the author sees on their
+			// own calendar. A leap-day query (Feb 29) degrades naturally to
+			// empty on non-leap prior years, since no row ever matches.
+			if ( $on_this_day ) {
+				$marks_window['month']  = (int) wp_date( 'n' );
+				$marks_window['day']    = (int) wp_date( 'j' );
+				$marks_window['before'] = wp_date( 'Y-m-d 00:00:00' );
+			}
+
+			// With both an explicit after/before window and `on_this_day`
+			// set, both clauses AND together on the same post_date column.
 			if ( count( $marks_window ) > 1 ) {
 				$marks_args['date_query'] = array( $marks_window );
 			}
