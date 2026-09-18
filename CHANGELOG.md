@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-18
+
 ### Added
 
 - A new Check In Mark type: tap the launcher's Check In bubble, and Daymark quietly reverse-geocodes your captured location into an editable Place field — no media, no caption required, though you can add your own thoughts too. The Place field also searches as you type, so you can pick a real venue instead of only editing the reverse-geocoded guess — each suggestion also shows its full address alongside the name, so you can tell apart two similarly-named places. The launcher's 5 type bubbles are also spaced further apart now, so a thumb tap is less likely to land on the wrong one. Publishes as a real post leading with the place name (linking out to a map when a location resolved), auto-titled "Checked in at {place}" when there's no caption. Once the Simple Location plugin is active, a Mark's captured coordinates (and a Checkin's own place name) are additionally bridged into its own data at publish time — reverse-geocoding, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark. The Connectors tab (Settings -> Daymark) now recommends Simple Location for this. ([#143](https://github.com/jeffpaul/daymark/issues/143), [#345](https://github.com/jeffpaul/daymark/issues/345))
@@ -544,7 +546,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.16.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[0.17.0]: https://github.com/jeffpaul/daymark/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/jeffpaul/daymark/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/jeffpaul/daymark/compare/0.14.0...0.15.0
 [0.14.0]: https://github.com/jeffpaul/daymark/compare/0.13.0...0.14.0
