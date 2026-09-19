@@ -22,6 +22,7 @@ can't act on them.
 
 ### Fixed
 
+- Scrolling past the top or bottom of the Timeline in an ordinary mobile browser tab (Safari/Chrome) no longer lets the page's native overscroll bounce slide content up past the header before snapping back — matching how the installed app already behaves, since it has no browser chrome to bounce past. Home's own pull-to-refresh gesture is unaffected; it never relied on this native bounce.
 - Saving Daymark to your phone's home screen now always uses Daymark's own icon, even when your site has its own Site Icon configured (Settings -> General) — previously the home-screen icon used your Site Icon instead, and could show a blank icon if it failed to load. Your browser tab's own favicon is unaffected and still shows your Site Icon. ([#414](https://github.com/jeffpaul/daymark/issues/414))
 
 ## [0.17.0] - 2026-09-17
