@@ -197,4 +197,38 @@ class Test_App_Shell extends WP_UnitTestCase {
 			'The inline bootstrap script must carry the exact nonce the CSP header allows'
 		);
 	}
+
+	/**
+	 * The home-screen icon (apple-touch-icon) always uses Daymark's own
+	 * bundled icon, even when the site has its own Site Icon configured — a
+	 * home-screen install is an install of Daymark, not of the site
+	 * (issue #414). The browser-tab favicon is unaffected, and still
+	 * prefers the Site Icon.
+	 */
+	public function test_apple_touch_icon_never_uses_site_icon() {
+		$filter = static function () {
+			return 'https://example.test/site-icon.png';
+		};
+		add_filter( 'get_site_icon_url', $filter );
+
+		$html = $this->render_shell();
+
+		remove_filter( 'get_site_icon_url', $filter );
+
+		$this->assertStringNotContainsString(
+			'rel="apple-touch-icon" href="https://example.test/site-icon.png"',
+			$html,
+			'apple-touch-icon must never use the Site Icon'
+		);
+		$this->assertStringContainsString(
+			str_replace( '/', '\/', Daymark_Routes::daymark_icon_url( 180 ) ),
+			$html,
+			'apple-touch-icon must use Daymark\'s own bundled icon'
+		);
+		$this->assertStringContainsString(
+			'rel="icon" href="https://example.test/site-icon.png"',
+			$html,
+			'The browser-tab favicon must still prefer the Site Icon'
+		);
+	}
 }
