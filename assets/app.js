@@ -2696,10 +2696,10 @@
 		navigate('#search');
 	}
 
-	// The Source filter's <option>s: "All" and "My Marks" always render
-	// first, in that order; the per-subscription options appear after them,
-	// alphabetized by their own displayed label, once the subscriptions
-	// fetch below resolves.
+	// The Source filter's <option>s: "All sites" and "My Marks" always
+	// render first, in that order; the per-subscription options appear
+	// after them, alphabetized by their own displayed label, once the
+	// subscriptions fetch below resolves.
 	function sourceOptionsMarkup(subscriptions) {
 		const list = Array.isArray(subscriptions) ? subscriptions : [];
 		const subscriptionOptions = list
@@ -2710,7 +2710,7 @@
 			.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
 			.map((sub) => `<option value="${esc(String(sub.id))}">${esc(sub.label)}</option>`)
 			.join('');
-		return `<option value="">${esc(__('All', 'daymark'))}</option><option value="mine">${esc(
+		return `<option value="">${esc(__('All sites', 'daymark'))}</option><option value="mine">${esc(
 			__('My Marks', 'daymark')
 		)}</option>${subscriptionOptions}`;
 	}
