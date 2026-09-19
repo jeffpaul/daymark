@@ -41,8 +41,18 @@
 
 html {
 	-webkit-text-size-adjust: 100%;
+	overscroll-behavior-y: none;
 }
 
+/* Home already renders its own pull-to-refresh affordance from touch
+   events (bindPullGesture(), assets/app.js) rather than the browser's
+   native rubber-band bounce, so disabling that bounce here costs nothing —
+   it only ever duplicated Home's own gesture with a second, native one.
+   Without this, scrolling past the top/bottom of the document in an
+   ordinary mobile browser tab (Safari/Chrome, not an installed PWA, which
+   has no page chrome to bounce past) let the native overscroll glide the
+   whole document — Timeline content included — up past the sticky
+   .daymark-topbar header before snapping back, unlike the installed app. */
 body.daymark-app {
 	margin: 0;
 	background: var(--daymark-bg);
@@ -52,6 +62,7 @@ body.daymark-app {
 	line-height: 1.5;
 	-webkit-tap-highlight-color: transparent;
 	overflow-x: hidden;
+	overscroll-behavior-y: none;
 }
 
 .daymark-shell {
