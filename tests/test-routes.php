@@ -317,7 +317,26 @@ class Test_Routes extends WP_UnitTestCase {
 		add_filter( 'get_site_icon_url', $filter );
 
 		$this->assertSame( 'https://example.test/site-icon.png', Daymark_Routes::icon_url( 180 ) );
-		$this->assertSame( 'https://example.test/site-icon.png', Daymark_Routes::build_manifest()['icons'][0]['src'] );
+
+		remove_filter( 'get_site_icon_url', $filter );
+	}
+
+	/**
+	 * The manifest's own icons never use the site's Site Icon, even when one
+	 * is set — a home-screen install is an install of Daymark, not of the
+	 * site (issue #414).
+	 */
+	public function test_manifest_icons_never_use_site_icon() {
+		$filter = static function () {
+			return 'https://example.test/site-icon.png';
+		};
+		add_filter( 'get_site_icon_url', $filter );
+
+		$manifest = Daymark_Routes::build_manifest();
+
+		foreach ( $manifest['icons'] as $icon ) {
+			$this->assertStringStartsWith( DAYMARK_PLUGIN_URL, $icon['src'] );
+		}
 
 		remove_filter( 'get_site_icon_url', $filter );
 	}
