@@ -23,6 +23,7 @@ can't act on them.
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
+- The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.
 
 ### Fixed
 
