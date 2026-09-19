@@ -5474,9 +5474,13 @@
 				)}</p>`;
 				return;
 			}
+			const subscriptionLabel = (sub) =>
+				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
 			list.innerHTML = subscriptions
+				.slice()
+				.sort((a, b) => subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
 				.map((sub) => {
-					const label = sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+					const label = subscriptionLabel(sub);
 					const icon = sub.site_icon_url
 						? `<img class="daymark-recent__thumb" src="${esc(sub.site_icon_url)}" alt="" />`
 						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
@@ -5522,7 +5526,7 @@
 					<span class="daymark-mename">${esc(user.displayName || '')}</span>
 				</div>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
-					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('Your Marks', 'daymark'))}</button>
+					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
 							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
