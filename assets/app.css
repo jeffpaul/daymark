@@ -984,10 +984,14 @@ h2[tabindex='-1']:focus {
    an ellipsis at a fixed single line — the same "don't withhold content the
    server already decided was worth including" reasoning already applied to
    the excerpt (see the "Timeline card excerpt no longer line-clamped"
-   decision, CLAUDE.md). */
+   decision, CLAUDE.md). overflow-wrap: anywhere for the same reason the
+   excerpt needs it (see that rule's own comment) — a title with no natural
+   break point (e.g. a long bare URL used as a post's title) would otherwise
+   overflow past the card instead of wrapping. */
 .daymark-recent__title {
 	font-weight: 600;
 	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 .daymark-recent__meta {
@@ -3036,11 +3040,18 @@ h2[tabindex='-1']:focus {
    subscription post — see Daymark_Subscription_Source_Feed::normalize())
    rather than clamping it to a fixed 1-2 lines: a card-height cap is an
    arbitrary display constraint, not a reason to cut off real content the
-   server already decided was worth including. */
+   server already decided was worth including. overflow-wrap: anywhere
+   handles the case white-space: normal alone doesn't: a raw URL or other
+   long unbroken run of characters with no natural break point (a bare
+   link pasted into a caption, common on a subscription post pulled in
+   verbatim from another site) has nowhere to wrap at all under ordinary
+   whitespace-only wrapping, so it overflowed past the card's own right
+   edge instead of wrapping onto a new line. */
 .daymark-recent__excerpt {
 	font-size: 13px;
 	color: var(--daymark-text-secondary);
 	white-space: normal;
+	overflow-wrap: anywhere;
 }
 
 /* A link card deliberately carries no per-kind override at all (issue
