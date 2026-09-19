@@ -54,7 +54,8 @@ wp_enqueue_style( 'daymark-app' );
 	<meta http-equiv="Content-Security-Policy" content="<?php echo esc_attr( $daymark_offline_csp ); ?>" />
 	<title><?php esc_html_e( 'Daymark', 'daymark' ); ?></title>
 	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest.json' ) ); ?>" />
-	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 180 ) ); ?>" />
+	<?php /* Home-screen icon (issue #414): always Daymark's own icon, matching the online app shell's own tag — see its comment for why. */ ?>
+	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
 	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
 </head>

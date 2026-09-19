@@ -264,8 +264,12 @@ class Daymark_Routes {
 			'background_color' => '#ffffff',
 			'theme_color'      => '#c93a06',
 			// PNG icons only — iOS chokes on an SVG "any" entry and then
-			// shows no home-screen icon at all. The site's own Site Icon is
-			// preferred when set, so the installed app matches the site.
+			// shows no home-screen icon at all. Always Daymark's own icon,
+			// never the site's Site Icon (issue #414) — a home-screen
+			// install is an install of the Daymark app, not of the site
+			// itself, matching the same "our own chrome, not the site's"
+			// reasoning icon_url()'s own header-chrome carve-out already
+			// established (see daymark_icon_url()'s docblock).
 			'icons'            => array(
 				self::icon_descriptor( 192 ),
 				self::icon_descriptor( 512 ),
@@ -309,8 +313,12 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * A home-screen/app icon URL at (approximately) the given size: the
-	 * site's own Site Icon when one is set, else Daymark's bundled icon.
+	 * An icon URL at (approximately) the given size: the site's own Site
+	 * Icon when one is set, else Daymark's bundled icon. Used by the
+	 * browser-tab favicon and a Timeline card's own-Mark leading icon — both
+	 * represent this site's own identity. NOT used for the home-screen/PWA
+	 * icon (apple-touch-icon, manifest icons) — see daymark_icon_url()'s own
+	 * docblock for why those are scoped differently (issue #414).
 	 *
 	 * @param int $size Desired square size in px.
 	 * @return string
@@ -329,10 +337,13 @@ class Daymark_Routes {
 	/**
 	 * Daymark's own bundled icon URL at (approximately) the given size —
 	 * never the site's own Site Icon, even when one is configured. Used for
-	 * the app shell's own header/nav chrome, which is Daymark's brand
-	 * identity, not the site's — see icon_url() for the Site-Icon-first
-	 * resolution used everywhere else (Timeline card site icons, browser
-	 * favicon, PWA manifest icons).
+	 * the app shell's own header/nav chrome (Daymark's brand identity, not
+	 * the site's) and, since issue #414, for every home-screen/PWA icon
+	 * (apple-touch-icon, the manifest's own icons/shortcuts) — a home-screen
+	 * install is an install of the Daymark app, not of the site itself, so
+	 * it should always look like Daymark regardless of the site's own Site
+	 * Icon. See icon_url() for the Site-Icon-first resolution still used for
+	 * the browser-tab favicon and a Timeline card's own-Mark leading icon.
 	 *
 	 * @param int $size Desired square size in px.
 	 * @return string
@@ -349,22 +360,19 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * A manifest icon descriptor at the given size.
+	 * A manifest icon descriptor at the given size — always Daymark's own
+	 * bundled icon (see build_manifest()'s own comment for why).
 	 *
 	 * @param int $size Square size in px.
 	 * @return array<string, string>
 	 */
 	private static function icon_descriptor( int $size ): array {
-		$url        = self::icon_url( $size );
+		$url        = self::daymark_icon_url( $size );
 		$descriptor = array(
 			'src'   => $url,
 			'sizes' => $size . 'x' . $size,
+			'type'  => 'image/png',
 		);
-
-		// Only claim a type we're sure of (bundled PNGs, or a .png Site Icon).
-		if ( str_ends_with( strtok( $url, '?' ), '.png' ) ) {
-			$descriptor['type'] = 'image/png';
-		}
 
 		return $descriptor;
 	}
