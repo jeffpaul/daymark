@@ -8643,9 +8643,6 @@
 				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">${esc(
 					__('Create Another', 'daymark')
 				)}</button>
-				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">${esc(
-					__('View Timeline →', 'daymark')
-				)}</a></p>
 			</footer>`;
 		},
 
