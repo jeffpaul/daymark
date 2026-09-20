@@ -7526,6 +7526,52 @@
 		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
 	}
 
+	// Which single 256x256 OpenStreetMap raster tile best previews a
+	// coordinate, and where within that one tile the coordinate itself
+	// falls (as a 0-100 percentage of the tile's own width/height, for
+	// positioning a pin overlay with plain CSS left/top) — the same
+	// slippy-map tile math every OSM-based map already uses to pick a
+	// tile for a given latitude/longitude/zoom. Mirrors
+	// Daymark_Publisher::resolve_map_tile() in class-publisher.php
+	// exactly; keep the two in sync, the same "two implementations that
+	// must agree" shape AUDIO_EXTENSIONS/DIRECT_MEDIA_EXTENSIONS already
+	// established for Featured Content (issue #401).
+	function osmTileForLocation(lat, lng, zoom) {
+		const scale = Math.pow(2, zoom);
+		const latRad = (lat * Math.PI) / 180;
+		const x = ((lng + 180) / 360) * scale;
+		const y = ((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * scale;
+		return {
+			x: Math.floor(x),
+			y: Math.floor(y),
+			zoom,
+			pinLeft: ((x - Math.floor(x)) * 100).toFixed(3),
+			pinTop: ((y - Math.floor(y)) * 100).toFixed(3),
+		};
+	}
+
+	// A Checkin Mark's own leading visual on the Timeline card — a single
+	// OpenStreetMap tile centered on its captured location (issue #143's
+	// own follow-up), with a small pin overlaid at the exact position
+	// osmTileForLocation() resolved. No API key: OSM's own public tile
+	// server, the same one build_place_block()'s "View on map" link
+	// already sends a reader to. A Checkin's own captured location is the
+	// author's explicit, chosen content (unlike another Mark type's quiet
+	// background location capture, which never reaches this function at
+	// all — see renderCardMedia()'s own 'checkin'-only branch below), so
+	// this needs no daymark_publish_location_publicly privacy check of
+	// its own; class-publisher.php's docblock for build_map_preview_block()
+	// carries the full reasoning.
+	function renderCheckinMapPreview(location) {
+		const tile = osmTileForLocation(location.lat, location.lng, 15);
+		const tileUrl = `https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`;
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--checkin">${imgWithFallback(
+			tileUrl,
+			'daymark-recent__thumb',
+			'📍'
+		)}<span class="daymark-checkin-map__pin" style="left:${tile.pinLeft}%;top:${tile.pinTop}%" aria-hidden="true"></span></span>`;
+	}
+
 	// One card's media slot: a real image — a Mark's own thumbnail, a
 	// subscription post's featured_image_url, or (only when there's no
 	// post image at all) the subscription's own site icon — when there is
@@ -7535,9 +7581,14 @@
 	// class-publisher.php — so the placeholder keeps the media slot's own
 	// visual promise instead of collapsing to nothing); or no slot at all
 	// for a kind with none (note/link). A broken image degrades to the
-	// same placeholder via imgWithFallback()'s shared error handling.
+	// same placeholder via imgWithFallback()'s shared error handling. A
+	// Checkin Mark with a captured location is handled first, on its own —
+	// see renderCheckinMapPreview() above.
 	function renderCardMedia(item, kind) {
-		if ('note' === kind || 'link' === kind || 'checkin' === kind) {
+		if ('checkin' === kind) {
+			return item.location ? renderCheckinMapPreview(item.location) : '';
+		}
+		if ('note' === kind || 'link' === kind) {
 			return '';
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
