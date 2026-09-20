@@ -5696,20 +5696,21 @@
 						? ''
 						: 'checkin' === effectiveType()
 						? // Optional media for a Check In (issue #424): a place
-						  // is the whole point of a checkin, so this stays a
-						  // clearly secondary, easy-to-skip affordance — a
-						  // compact zone, not the camera-first flow a typed
-						  // Image/Video/Audio entry gets — rather than a
-						  // picker the author must resolve before proceeding.
-						  // Image/video only (no audio — the ask this covers
-						  // is "show where you are," not a voice memo).
-						  `<div class="daymark-picker daymark-picker--compact">
+						  // is the whole point of a checkin — this is deliberately
+						  // the smallest, plainest affordance in the composer, on
+						  // purpose disproportionate to the Place field below it
+						  // (no icon, no dashed border box, no hint line — just a
+						  // small underlined text link, the same weight
+						  // "Choose from library instead" already carries for a
+						  // typed entry's own secondary action), never the
+						  // camera-first flow a typed Image/Video/Audio entry
+						  // gets. Image/video only (no audio — the ask this
+						  // covers is "show where you are," not a voice memo).
+						  `<div class="daymark-picker daymark-picker--minimal">
 					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*" multiple />
-					<label for="daymark-file-input" class="daymark-picker__zone">
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-						<span>${esc(__('Add a photo or video (optional)', 'daymark'))}</span>
-						<span class="daymark-picker__hint">${esc(__('Show where you are', 'daymark'))}</span>
-					</label>
+					<label for="daymark-file-input" class="daymark-btn daymark-btn--text daymark-picker__zone">${esc(
+						__('+ Add a photo or video (optional)', 'daymark')
+					)}</label>
 				</div>`
 						: ACCEPT_BY_TYPE[state.pendingType]
 						? // A typed launcher entry (Image/Video/Audio): camera-first
