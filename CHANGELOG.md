@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A Check In can now carry an optional photo or video ("see it's me at the Leaning Tower of Pisa!") — the composer's picker, previously hidden for Check In entirely, now shows a compact, clearly optional "Add a photo or video" zone; attaching one never reclassifies the Mark away from Check In, and its Timeline card now shows the attached media instead of no media slot at all. ([#424](https://github.com/jeffpaul/daymark/issues/424))
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.

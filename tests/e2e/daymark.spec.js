@@ -1033,11 +1033,12 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
-// A Checkin Mark (issue #143) has no media picker at all — a manually
-// typed Place (geolocation is neither granted nor mocked in this test
-// context, so the field starts blank rather than reverse-geocoded) is
-// itself real, sufficient content: publishing succeeds with no caption,
-// and the auto-generated title reads "Checked in at {place}".
+// A Checkin Mark's own optional photo/video (issue #424) is a genuinely
+// optional media picker, not a required one — a manually typed Place
+// (geolocation is neither granted nor mocked in this test context, so the
+// field starts blank rather than reverse-geocoded) is itself real,
+// sufficient content: publishing succeeds with no caption and no media at
+// all, and the auto-generated title reads "Checked in at {place}".
 test('Checkin Mark publishes from just a Place, with no caption or media', async ({ page }) => {
 	const place = `E2E Coffee Shop ${RUN_ID}`;
 
@@ -1046,7 +1047,9 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await openComposer(page, 'checkin');
 
 	const composer = page.locator('.daymark-screen').first();
-	await expect(composer.locator('#daymark-file-input')).toHaveCount(0);
+	// The picker is present (see the next test) but never blocks publishing
+	// on its own — skipping it entirely still succeeds.
+	await expect(composer.locator('#daymark-file-input')).toHaveCount(1);
 	await composer.locator('[data-checkin-place]').fill(place);
 	await page.locator('[data-action="next"]').click();
 
@@ -1056,6 +1059,43 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="checkin"]').click();
 	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
+});
+
+// Attaching a photo to a Check In (issue #424 — "see it's me at the
+// Leaning Tower of Pisa!") keeps the Mark a genuine Checkin throughout the
+// composer session: the type badge never flips to "Image," the Place field
+// stays visible and required content still isn't, and the published Mark's
+// Timeline card renders the attached photo in its media slot (via the
+// server's own media_kind signal) while its rail icon still reads "Check
+// In."
+test('Checkin Mark keeps its type and Place field once a photo is attached', async ({ page }) => {
+	const place = `E2E Landmark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	await composer.locator('[data-checkin-place]').fill(place);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+
+	// Still a Check In, not reclassified to Image by the attached photo.
+	await expect(composer.locator('[data-type-badge]')).toHaveText('Check In');
+	await expect(composer.locator('[data-checkin-place]')).toBeVisible();
+
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="checkin"]').click();
+	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: `Checked in at ${place}` });
+	await expect(card).toBeVisible();
+	// The rail icon still identifies this as a Check In...
+	await expect(card.locator('.daymark-recent__typeicon')).toHaveAttribute('title', 'Check In');
+	// ...while the media slot shows the attached photo, not an empty/no-media
+	// card the way a Checkin with nothing attached renders.
+	await expect(card.locator('.daymark-recent__thumb')).toBeVisible();
 });
 
 // The Checkin Place field's own search-as-you-type: typing 3+ characters

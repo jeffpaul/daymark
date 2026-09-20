@@ -1250,6 +1250,27 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * The media-derived kind for a set of already-attached media, with no
+	 * explicit-type override — i.e. exactly what detect_primary_type()
+	 * would resolve to from media alone, ignoring whatever the Mark's own
+	 * stored primary type actually is.
+	 *
+	 * Used by the REST controller (issue #424) to give a Check In Mark's
+	 * Timeline card the right media-slot kind (image/gallery/video/mixed)
+	 * once it carries an optional attached photo/video — the Mark's own
+	 * `_daymark_primary_type` stays 'checkin' throughout (that's the whole
+	 * point: an explicit override always wins in detect_primary_type()
+	 * itself), so the REST layer needs this separate, override-free read
+	 * of the same media to know what's actually attached.
+	 *
+	 * @param int[] $media_ids Attachment IDs.
+	 * @return string One of PRIMARY_TYPES's media-derived values ('note' when $media_ids is empty).
+	 */
+	public function detect_media_kind( array $media_ids ): string {
+		return $this->detect_primary_type( $media_ids );
+	}
+
+	/**
 	 * Group attachment IDs by media kind.
 	 *
 	 * @param int[] $media_ids Attachment IDs.

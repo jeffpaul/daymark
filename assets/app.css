@@ -1595,6 +1595,16 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* A Check In's own optional photo/video zone (issue #424) — visually
+   lighter than the default 120px zone every other type gets, since a
+   checkin's whole point is the place, not the media: this reads as a
+   clearly skippable extra, not a picker the author has to resolve first. */
+.daymark-picker--compact .daymark-picker__zone {
+	min-height: 64px;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-lg);
+	flex-direction: row;
+}
+
 /* Camera-first: the primary picker action is a <button> (opens the device
    camera/mic directly via `capture`), not the <label> the neutral,
    untyped picker still uses — reset button chrome while keeping the same
