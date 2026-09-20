@@ -1466,8 +1466,8 @@ class Daymark_Publisher {
 
 		return sprintf(
 			"<!-- wp:html -->\n" .
-			"<figure class=\"daymark-checkin-map\"><img src=\"%1\$s\" width=\"256\" height=\"256\" alt=\"\" loading=\"lazy\" />" .
-			"<span class=\"daymark-checkin-map__pin\" style=\"left:%2\$s%%;top:%3\$s%%\" aria-hidden=\"true\"></span></figure>\n" .
+			'<figure class="daymark-checkin-map"><img src="%1$s" width="256" height="256" alt="" loading="lazy" />' .
+			'<span class="daymark-checkin-map__pin" style="left:%2$s%%;top:%3$s%%" aria-hidden="true"></span></figure>' . "\n" .
 			'<!-- /wp:html -->',
 			esc_url( $tile_url ),
 			esc_attr( (string) round( $tile['pixel_x'] / 256 * 100, 3 ) ),
