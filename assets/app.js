@@ -1969,7 +1969,22 @@
 	// stored type; otherwise the Home launcher's chosen type (if any);
 	// otherwise the caption-only default. The server recomputes
 	// authoritatively on save.
+	//
+	// Checkin is the one deliberate exception (issue #424): once declared —
+	// via a fresh Checkin launcher entry or a resumed Checkin draft — it
+	// never gets reclassified by attached media the way every other type
+	// does. A checkin's own point is the place; an optional photo/video
+	// showing where you are ("see it's me at the Leaning Tower of Pisa!")
+	// is real, additional content, not a competing type — the server's own
+	// detect_primary_type() already honors this same override for a
+	// checkin+media publish, so the composer's own type badge/Place field
+	// must agree throughout the session rather than silently flipping to
+	// Image/Video/Gallery the instant a file is picked.
 	function effectiveType() {
+		const declaredType = state.editing ? state.editing.type : state.pendingType;
+		if ('checkin' === declaredType) {
+			return 'checkin';
+		}
 		if (state.files.length && state.editing && state.editing.media.length) {
 			return 'mixed';
 		}
@@ -5667,15 +5682,36 @@
 				}
 				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				${
-					// The Home launcher's Note bubble (and, per the same
-					// reasoning, the Checkin bubble — issue #143 — which has
-					// no media picker at all) jumps straight past the picker
-					// into a focused writing flow — attaching any file would
-					// flip the type away from 'note'/'checkin' anyway
-					// (detectType() only ever returns 'note' when nothing is
-					// attached), so hiding it here loses no real capability.
-					('note' === state.pendingType || 'checkin' === state.pendingType) && !state.files.length && !editing
+					// The Home launcher's Note bubble jumps straight past the
+					// picker into a focused writing flow — attaching any file
+					// would flip the type away from 'note' anyway (detectType()
+					// only ever returns 'note' when nothing is attached), so
+					// hiding it here loses no real capability. Checkin (issue
+					// #143) used to bypass the picker the exact same way, but a
+					// Check In can now carry an optional photo/video of its own
+					// (issue #424 — see the dedicated branch below), so it no
+					// longer skips the picker at all, fresh session or resumed
+					// draft alike.
+					'note' === state.pendingType && !state.files.length && !editing
 						? ''
+						: 'checkin' === effectiveType()
+						? // Optional media for a Check In (issue #424): a place
+						  // is the whole point of a checkin — this is deliberately
+						  // the smallest, plainest affordance in the composer, on
+						  // purpose disproportionate to the Place field below it
+						  // (no icon, no dashed border box, no hint line — just a
+						  // small underlined text link, the same weight
+						  // "Choose from library instead" already carries for a
+						  // typed entry's own secondary action), never the
+						  // camera-first flow a typed Image/Video/Audio entry
+						  // gets. Image/video only (no audio — the ask this
+						  // covers is "show where you are," not a voice memo).
+						  `<div class="daymark-picker daymark-picker--minimal">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*" multiple />
+					<label for="daymark-file-input" class="daymark-btn daymark-btn--text daymark-picker__zone">${esc(
+						__('+ Add a photo or video (optional)', 'daymark')
+					)}</label>
+				</div>`
 						: ACCEPT_BY_TYPE[state.pendingType]
 						? // A typed launcher entry (Image/Video/Audio): camera-first
 						  // — the primary action opens the device's camera/mic
@@ -7480,21 +7516,35 @@
 	}
 
 	// The card-media kind to actually render, once a Mark's own Featured
-	// Content (issue #401) is taken into account. `resolveCardKind()` above
-	// answers "what kind of Mark is this" — the rail icon's own question,
-	// unaffected by Featured Content — but the media slot's job is showing
-	// whatever the Mark's front-end permalink page itself would show there,
-	// and Featured Content already replaces a post's Featured Image there
-	// by default (`maybe_replace_post_thumbnail_html()`,
-	// class-featured-content.php) regardless of the Mark's own primary
-	// type. A Note/Checkin Mark that sets a video/audio Featured Content is
-	// exactly the case this exists for: its own `kind` renders no media
-	// slot at all, but Featured Content is real, chosen content worth
-	// showing. Gallery/quote/link Featured Content aren't handled yet —
-	// `item.featured_content.type` is only ever 'audio'/'video' until those
-	// later phases ship their own card treatment.
+	// Content (issue #401) and — for a Check In specifically (issue #424) —
+	// its own optional attached photo/video are taken into account.
+	// `resolveCardKind()` above answers "what kind of Mark is this" — the
+	// rail icon's own question, unaffected by either — but the media slot's
+	// job is showing whatever real media the Mark actually carries.
+	// Featured Content already replaces a post's Featured Image there by
+	// default (`maybe_replace_post_thumbnail_html()`, class-
+	// featured-content.php) regardless of the Mark's own primary type — a
+	// Note/Checkin Mark that sets a video/audio Featured Content is exactly
+	// the case this exists for. Checked first: a deliberately, explicitly
+	// chosen Featured Content value should still win over an incidentally
+	// attached photo, matching how Featured Content already overrides a
+	// post's ordinary Featured Image everywhere else. Failing that, a
+	// Checkin Mark's own `media_kind` (prepare_mark_summary(),
+	// class-rest-controller.php — set only when the Mark actually carries
+	// attached media) resolves to whatever real kind that media is
+	// (image/gallery/video/mixed), so "see it's me at the Leaning Tower of
+	// Pisa!" renders as a real photo, not an empty checkin card. Gallery/
+	// quote/link Featured Content aren't handled yet — `item.featured_
+	// content.type` is only ever 'audio'/'video' until those later phases
+	// ship their own card treatment.
 	function mediaKindForItem(item, kind) {
-		return item.featured_content && item.featured_content.type ? item.featured_content.type : kind;
+		if (item.featured_content && item.featured_content.type) {
+			return item.featured_content.type;
+		}
+		if ('checkin' === kind && item.media_kind) {
+			return item.media_kind;
+		}
+		return kind;
 	}
 
 	// The rail column every card carries between its site icon and its own

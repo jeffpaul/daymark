@@ -1595,6 +1595,29 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* A Check In's own optional photo/video zone (issue #424) — deliberately
+   the smallest, plainest control in the composer: a small underlined text
+   link (the same weight already given to "Choose from library instead"
+   below, via the shared .daymark-btn--text class this element also
+   carries), not a bordered dashed box at all, so it reads as genuinely
+   secondary — almost incidental — next to the Place field's own more
+   substantial bordered-input treatment. Overrides every box-like property
+   the shared .daymark-picker__zone rule otherwise sets. */
+.daymark-picker--minimal .daymark-picker__zone {
+	display: inline-flex;
+	min-height: var(--daymark-tap-min);
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.daymark-picker--minimal.is-dragover .daymark-picker__zone {
+	color: var(--daymark-accent);
+}
+
 /* Camera-first: the primary picker action is a <button> (opens the device
    camera/mic directly via `capture`), not the <label> the neutral,
    untyped picker still uses — reset button chrome while keeping the same

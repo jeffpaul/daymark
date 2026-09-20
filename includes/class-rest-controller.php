@@ -3360,6 +3360,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['place_name'] = $place_name;
 		}
 
+		// A Check In's own optional attached photo/video (issue #424): its
+		// `type` above always stays 'checkin' (an explicit primary_type
+		// override wins in Daymark_Publisher::detect_primary_type() itself —
+		// a checkin's own point is the place, so media never reclassifies
+		// it), so the Timeline card needs a second signal to know what real
+		// media, if any, is actually attached. Omitted (not a null/empty
+		// value) whenever there's nothing attached, so mediaKindForItem()
+		// (assets/app.js) can use a plain presence check the same way
+		// captured_at/reading_time_minutes/location/place_name above do.
+		if ( 'checkin' === $summary['type'] ) {
+			$raw_media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+			$media_ids     = is_array( $raw_media_ids ) ? array_map( 'absint', $raw_media_ids ) : array();
+
+			if ( ! empty( $media_ids ) ) {
+				$summary['media_kind'] = Daymark_Plugin::instance()->publisher->detect_media_kind( $media_ids );
+			}
+		}
+
 		// Featured Content (issue #401) — any post type, not Mark-specific,
 		// but a Timeline card is exactly the kind of "where a Featured Image
 		// would show" slot that feature already replaces by default on the
