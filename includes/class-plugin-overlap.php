@@ -61,7 +61,7 @@ class Daymark_Plugin_Overlap {
 	private const OVERLAPS = array(
 		'post-kinds'        => array(
 			'label'    => 'Post Kinds',
-			'overlaps' => 'may add its own Like, Repost, and Comment markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
+			'overlaps' => 'may add its own Like, Reblog, and Comment markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
 			'slugs'    => array( 'indieweb-post-kinds' ),
 			'classes'  => array( 'Post_Kinds_Plugin' ),
 		),
