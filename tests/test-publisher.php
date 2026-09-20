@@ -1710,7 +1710,7 @@ class Test_Publisher extends WP_UnitTestCase {
 	 * every other type — the place-name title fallback only applies when
 	 * there's no caption to generate a title from.
 	 */
-	public function test_checkin_with_caption_uses_caption_title() {
+	public function test_checkin_with_caption_uses_place_name_title() {
 		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
@@ -1721,7 +1721,10 @@ class Test_Publisher extends WP_UnitTestCase {
 		);
 
 		$post = get_post( $post_id );
-		$this->assertEquals( 'Great coffee this morning', $post->post_title );
+		// A Checkin's own title always comes from its place, never its
+		// caption — unlike every other Mark type, where the caption is the
+		// title's own primary source (generate_title()'s own docblock).
+		$this->assertEquals( 'Checked in at Blue Bottle Coffee', $post->post_title );
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 		// The place block always leads, ahead of the reader's own paragraph.
@@ -1729,6 +1732,27 @@ class Test_Publisher extends WP_UnitTestCase {
 			strpos( $post->post_content, 'Great coffee this morning' ),
 			strpos( $post->post_content, 'Blue Bottle Coffee' )
 		);
+	}
+
+	/**
+	 * A Checkin's title stays place-derived even with no place name at
+	 * all — it never falls back to using the caption as generate_title()
+	 * would for every other type, since that's exactly the behavior this
+	 * decision replaces. It falls through to the same timestamp fallback
+	 * an ordinary caption-less, place-less Mark already gets.
+	 */
+	public function test_checkin_with_caption_and_no_place_name_uses_timestamp_title() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Great coffee this morning',
+				'primary_type' => 'checkin',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringStartsWith( 'Mark — ', $post->post_title );
+		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 	}
 
 	/** A checkin with no place name and no caption/media is still rejected as empty. */

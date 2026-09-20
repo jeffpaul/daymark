@@ -446,7 +446,9 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
+			$title = 'checkin' === $type
+				? $this->generate_title( '', $place_name )
+				: $this->generate_title( $caption );
 		}
 
 		// An explicitly requested draft always wins; a requested (or
@@ -798,7 +800,9 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
+			$title = 'checkin' === $type
+				? $this->generate_title( '', $place_name )
+				: $this->generate_title( $caption );
 		}
 
 		$new_status = $post->post_status;
@@ -2226,11 +2230,19 @@ class Daymark_Publisher {
 	/**
 	 * Generate a post title from the caption (first ~8 words, with a
 	 * character-count backstop for a space-less caption — see
-	 * MAX_TITLE_CHARS), a "Checked in at {place}" fallback for a Checkin
-	 * Mark with a resolved place but no caption, or a timestamp fallback
-	 * like "Mark — March 3, 2026 4:12 pm" when neither is available.
+	 * MAX_TITLE_CHARS), a "Checked in at {place}" fallback when there's a
+	 * resolved place but no caption to use, or a timestamp fallback like
+	 * "Mark — March 3, 2026 4:12 pm" when neither is available.
 	 *
-	 * @param string      $caption Caption text.
+	 * A Checkin Mark's own title always comes from its place, never its
+	 * caption — both call sites (publish()/update()) pass an empty
+	 * `$caption` here for a Checkin regardless of whether the author typed
+	 * a comment, so a typed comment stays body text only ("Go 'Cats!"
+	 * belongs in the post, not standing in for the venue as its title).
+	 * This is a deliberate, Checkin-only departure from every other Mark
+	 * type, where the caption is the title's own primary source.
+	 *
+	 * @param string      $caption Caption text — always '' for a Checkin Mark; see this method's own docblock above.
 	 * @param string|null $place   Resolved place name (see resolve_place_name()), or null.
 	 * @return string Title.
 	 */
