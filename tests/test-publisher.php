@@ -1676,6 +1676,33 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'openstreetmap.org', $post->post_content );
 		$this->assertEquals( 'status', get_post_format( $post_id ) );
+		// The map-preview tile (build_map_preview_block()) leads the place
+		// block itself, ahead of the p-location paragraph.
+		$this->assertStringContainsString( 'daymark-checkin-map', $post->post_content );
+		$this->assertStringContainsString( 'https://tile.openstreetmap.org/15/5241/12665.png', $post->post_content );
+		$this->assertLessThan(
+			strpos( $post->post_content, 'p-location' ),
+			strpos( $post->post_content, 'daymark-checkin-map' )
+		);
+	}
+
+	/**
+	 * A checkin with a place name but no resolved location has no
+	 * coordinates to preview — the map-preview tile is skipped entirely
+	 * (build_block_markup()'s own `null !== $checkin['location']` guard),
+	 * same as the existing map link in the place block itself.
+	 */
+	public function test_checkin_with_no_location_has_no_map_preview() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Somewhere unresolved',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringNotContainsString( 'daymark-checkin-map', $post->post_content );
 	}
 
 	/**

@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A Checkin Mark with a resolved location now shows a small map preview — a single OpenStreetMap tile with a pin at your captured spot — leading its Timeline card and its full post view, above the place name. A Checkin published before this change doesn't gain one retroactively; only a newly published Checkin's content includes it.
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.

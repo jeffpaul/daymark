@@ -1296,6 +1296,9 @@ class Daymark_Publisher {
 		$blocks = array();
 
 		if ( $checkin ) {
+			if ( null !== $checkin['location'] ) {
+				$blocks[] = $this->build_map_preview_block( $checkin['location'] );
+			}
 			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'] );
 		}
 
@@ -1389,6 +1392,86 @@ class Daymark_Publisher {
 			"<!-- wp:paragraph -->\n<p><strong class=\"p-location\">📍 %s</strong>%s</p>\n<!-- /wp:paragraph -->",
 			esc_html( $place ),
 			$map_link
+		);
+	}
+
+	/**
+	 * Zoom level for a Checkin Mark's own map preview tile — close enough to
+	 * pinpoint a specific venue (a stadium, a cafe) without the single-tile
+	 * preview covering so little ground the surrounding context is lost.
+	 *
+	 * @var int
+	 */
+	private const MAP_PREVIEW_ZOOM = 15;
+
+	/**
+	 * Resolves the single OpenStreetMap raster tile that best previews a
+	 * coordinate, plus where within that one 256x256 tile the coordinate
+	 * itself falls — the same slippy-map tile math every OSM-based map
+	 * already uses to pick which tile image to load for a given
+	 * latitude/longitude/zoom, reused here for a static one-tile preview
+	 * instead of an interactive map. Kept in sync with its JS mirror,
+	 * osmTileForLocation() in assets/app.js, the same "two implementations
+	 * that must agree" shape DIRECT_MEDIA_EXTENSIONS/AUDIO_EXTENSIONS
+	 * already established for Featured Content (issue #401).
+	 *
+	 * @param float $lat  Latitude.
+	 * @param float $lng  Longitude.
+	 * @param int   $zoom Zoom level.
+	 * @return array{x: int, y: int, zoom: int, pixel_x: float, pixel_y: float}
+	 */
+	private function resolve_map_tile( float $lat, float $lng, int $zoom ): array {
+		$scale   = 2 ** $zoom;
+		$lat_rad = deg2rad( $lat );
+		$x       = ( $lng + 180 ) / 360 * $scale;
+		$y       = ( 1 - asinh( tan( $lat_rad ) ) / M_PI ) / 2 * $scale;
+
+		return array(
+			'x'       => (int) floor( $x ),
+			'y'       => (int) floor( $y ),
+			'zoom'    => $zoom,
+			'pixel_x' => ( $x - floor( $x ) ) * 256,
+			'pixel_y' => ( $y - floor( $y ) ) * 256,
+		);
+	}
+
+	/**
+	 * Build the map-preview image block a Checkin Mark leads with, ahead of
+	 * its place-name paragraph, when a location was actually captured
+	 * alongside the chosen place name — a single OpenStreetMap tile (no API
+	 * key; OSM's own public tile server, the same one the place block's own
+	 * "View on map" link already sends a reader to) with a small pin
+	 * overlaid at the coordinate's exact pixel position within that tile.
+	 * Uses `wp:html` rather than `core/image`: the pin overlay's nested
+	 * `<span>` wouldn't match `core/image`'s own strict save-markup
+	 * validation if this post were later opened in the block editor,
+	 * whereas an `wp:html` block accepts arbitrary markup by design.
+	 *
+	 * A Checkin's own captured location is the author's own explicit,
+	 * chosen content (the same reasoning build_place_block()'s own docblock
+	 * gives for its unconditional map link) — unlike the quiet-captured
+	 * background location any other Mark type may also carry, which stays
+	 * gated behind the `daymark_publish_location_publicly` privacy option
+	 * (Daymark_Microformats::location_markup()). This block is never shown
+	 * for any type but Checkin, so that gate is never bypassed by it.
+	 *
+	 * @since 0.18.0
+	 *
+	 * @param array{lat: float, lng: float} $location Resolved coordinates.
+	 * @return string Block markup.
+	 */
+	private function build_map_preview_block( array $location ): string {
+		$tile     = $this->resolve_map_tile( $location['lat'], $location['lng'], self::MAP_PREVIEW_ZOOM );
+		$tile_url = sprintf( 'https://tile.openstreetmap.org/%1$d/%2$d/%3$d.png', $tile['zoom'], $tile['x'], $tile['y'] );
+
+		return sprintf(
+			"<!-- wp:html -->\n" .
+			"<figure class=\"daymark-checkin-map\"><img src=\"%1\$s\" width=\"256\" height=\"256\" alt=\"\" loading=\"lazy\" />" .
+			"<span class=\"daymark-checkin-map__pin\" style=\"left:%2\$s%%;top:%3\$s%%\" aria-hidden=\"true\"></span></figure>\n" .
+			'<!-- /wp:html -->',
+			esc_url( $tile_url ),
+			esc_attr( (string) round( $tile['pixel_x'] / 256 * 100, 3 ) ),
+			esc_attr( (string) round( $tile['pixel_y'] / 256 * 100, 3 ) )
 		);
 	}
 

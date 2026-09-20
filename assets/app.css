@@ -845,6 +845,61 @@ h2[tabindex='-1']:focus {
 	padding: 0;
 }
 
+/* A Checkin Mark's own map-preview banner (osmTileForLocation()/
+   renderCheckinMapPreview() in app.js) is a single square OpenStreetMap
+   tile, not a wide photo — square, not this banner's usual 176px-tall
+   rectangle, is what keeps the pin overlay's precomputed percentage
+   position aligned with what's actually drawn. A rectangular container
+   would force object-fit: cover to crop the square tile asymmetrically,
+   sliding the pin out of registration with the real pixel it marks. */
+.daymark-recent__thumbwrap--checkin {
+	height: auto;
+	aspect-ratio: 1;
+}
+
+/* The same map preview's standalone form — build_map_preview_block() in
+   class-publisher.php emits this exact markup into a Checkin Mark's own
+   post_content, so it renders unstyled-by-default wherever that content
+   does: a Mark's real theme-rendered permalink page, and the app shell's
+   full-screen post view (PostScreen), which loads that same content HTML
+   verbatim. Square for the same registration reason as the Timeline
+   card's own .daymark-recent__thumbwrap--checkin above. */
+.daymark-checkin-map {
+	position: relative;
+	display: block;
+	width: 100%;
+	max-width: 480px;
+	aspect-ratio: 1;
+	margin: 0 0 var(--daymark-spacing-md);
+	overflow: hidden;
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+}
+
+.daymark-checkin-map img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* A simple CSS teardrop (a square rotated 45°, one corner squared off) —
+   no icon font/SVG needed for a single-color marker. Positioned by its own
+   point, not its center: osmTileForLocation()/resolve_map_tile()'s
+   pinLeft/pinTop mark exactly where the coordinate falls, so the pin's tip
+   — not its rounded body — needs to land there. */
+.daymark-checkin-map__pin {
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	margin-left: -7px;
+	margin-top: -14px;
+	border-radius: 50% 50% 50% 0;
+	background: var(--daymark-accent);
+	box-shadow: 0 0 0 2px #fff;
+	transform: rotate(-45deg);
+}
+
 .daymark-recent__thumb {
 	width: 48px;
 	height: 48px;
