@@ -8175,9 +8175,7 @@
 			const source = subscriptionSiteLabel(item);
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="${esc(hand ? hand.returnTo : '#home')}">&larr; ${esc(
-				__('Cancel', 'daymark')
-			)}</a>
+				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Reblog', 'daymark'))}</h1>
 			</header>
 			<section class="daymark-screen">
