@@ -16,3 +16,32 @@
 	max-width: 100%;
 	width: 100%;
 }
+
+.daymark-featured-quote {
+	margin: 0;
+	padding: 0.25rem 0 0.25rem 1rem;
+	border-left: 4px solid #ffd9a8;
+}
+
+.daymark-featured-quote p {
+	margin: 0 0 0.5rem;
+	white-space: pre-wrap;
+}
+
+.daymark-featured-quote footer {
+	font-size: 0.9em;
+	font-style: normal;
+}
+
+.daymark-featured-quote cite {
+	font-style: normal;
+}
+
+.daymark-featured-quote a {
+	text-decoration: underline;
+}
+
+.daymark-featured-link {
+	display: inline-block;
+	text-decoration: underline;
+}

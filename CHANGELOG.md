@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- The Featured Content sidebar control (block editor) now supports two more kinds alongside audio and video: a **quote** (text with an optional author and a source URL, rendered as a real `<blockquote>` with attribution in place of your featured image) and a **link** (a readable link out to the linked page, available only when the post's own Format is set to Link). ([#407](https://github.com/jeffpaul/daymark/issues/407))
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
