@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Featured Content now supports a Gallery type: pick multiple images from the Media Library when setting featured content in the block editor's Featured Image panel, and they render as an accessible carousel (swipe or arrow keys) in place of the featured image on the post's page. ([#406](https://github.com/jeffpaul/daymark/issues/406))
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.

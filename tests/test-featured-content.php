@@ -1,11 +1,13 @@
 <?php
 /**
- * Daymark_Featured_Content tests (issue #401, Phase 1: audio/video): meta
- * sanitization, get_featured_content()/has_featured_content(), the
- * post_thumbnail_html substitution (and its opt-out filter), the theme-facing
+ * Daymark_Featured_Content tests (issue #401, Phase 1: audio/video, Phase 2
+ * #406: gallery): meta sanitization,
+ * get_featured_content()/has_featured_content(), the post_thumbnail_html
+ * substitution (and its opt-out filter), the theme-facing
  * daymark_*_featured_content() template tags, render_audio()/render_video()'s
- * is_direct_media_url()-gated native-tag fallback, and the
- * GET /daymark/v1/featured-content/oembed REST route.
+ * is_direct_media_url()-gated native-tag fallback, render_gallery()'s
+ * slider-shell markup (controls only when there's more than one image),
+ * and the GET /daymark/v1/featured-content/oembed REST route.
  *
  * @package Daymark
  */
@@ -57,11 +59,12 @@ class Test_Featured_Content extends WP_UnitTestCase {
 	public function test_sanitize_type_accepts_allowed_values() {
 		$this->assertSame( 'audio', Daymark_Featured_Content::sanitize_type( 'audio' ) );
 		$this->assertSame( 'video', Daymark_Featured_Content::sanitize_type( 'video' ) );
+		$this->assertSame( 'gallery', Daymark_Featured_Content::sanitize_type( 'gallery' ) );
 	}
 
 	public function test_sanitize_type_rejects_unsupported_or_garbage_values() {
-		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'gallery' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'quote' ) );
+		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'link' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '<script>' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '' ) );
 	}
@@ -165,14 +168,144 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		);
 	}
 
-	/** A gallery/quote/link sub-key isn't implemented yet — silently dropped, not stored unsanitized. */
+	/** A quote/link sub-key isn't implemented yet (their phases haven't landed) — silently dropped, not stored unsanitized. */
 	public function test_sanitize_data_drops_unrecognized_sub_keys() {
 		$clean = json_decode(
-			Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'gallery' => array( 'attachment_ids' => array( 1, 2 ) ) ) ) ),
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array( 'text' => 'Something someone said' ),
+						'link'  => array( 'url' => 'https://example.com' ),
+					)
+				)
+			),
 			true
 		);
 
 		$this->assertSame( array(), $clean );
+	}
+
+	public function test_sanitize_data_keeps_a_valid_gallery_shape() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => $ids ),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( $ids, $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery's ID order is preserved and duplicates are collapsed, not re-sorted. */
+	public function test_sanitize_data_preserves_gallery_order_and_deduplicates() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array(
+							'attachment_ids' => array( $ids[2], $ids[0], $ids[2], $ids[1], $ids[1] ),
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( $ids[2], $ids[0], $ids[1] ), $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery's attachment IDs are gated against `wp_attachment_is_image()`, like audio/video's own MIME gates. */
+	public function test_sanitize_data_drops_non_image_attachment_ids_from_a_gallery() {
+		$image_id = $this->create_attachment( 'image/png' );
+		$audio_id = $this->create_attachment( 'audio/mpeg' );
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array( $image_id, $audio_id ) ),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( $image_id ), $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery whose every ID is invalid (or missing entirely) resolves to "no gallery stored", not a half-empty one. */
+	public function test_sanitize_data_drops_a_fully_invalid_gallery() {
+		$from_bad_ids = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array( 0, 'garbage', -3 ) ),
+					)
+				)
+			),
+			true
+		);
+		$this->assertArrayNotHasKey( 'gallery', $from_bad_ids );
+
+		$from_empty = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array() ),
+					)
+				)
+			),
+			true
+		);
+		$this->assertArrayNotHasKey( 'gallery', $from_empty );
+	}
+
+	/** The gallery's per-gallery cap is filterable, not a hardcoded constant. */
+	public function test_sanitize_data_applies_the_filterable_gallery_cap() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
+		add_filter( 'daymark_featured_content_gallery_max', array( $this, 'return_two_gallery_max' ) );
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => $ids ),
+					)
+				)
+			),
+			true
+		);
+
+		remove_filter( 'daymark_featured_content_gallery_max', array( $this, 'return_two_gallery_max' ) );
+
+		$this->assertSame( array_slice( $ids, 0, 2 ), $clean['gallery']['attachment_ids'] );
+	}
+
+	public function return_two_gallery_max() {
+		return 2;
 	}
 
 	public function test_sanitize_data_handles_malformed_json() {
@@ -302,6 +435,31 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		remove_filter( 'daymark_featured_content_replaces_featured_image', '__return_false' );
 	}
 
+	public function test_post_thumbnail_html_is_replaced_with_a_gallery_when_set() {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'gallery' => array(
+						'attachment_ids' => $attachment_ids,
+					),
+				)
+			)
+		);
+
+		$featured_content = new Daymark_Featured_Content();
+		$replaced         = $featured_content->maybe_replace_post_thumbnail_html( '<img src="fallback.jpg">', $this->post_id, 0, 'thumbnail', '' );
+
+		$this->assertStringContainsString( 'daymark-featured-content', $replaced );
+		$this->assertStringContainsString( 'daymark-featured-content--gallery', $replaced );
+	}
+
 	// -- render_audio()/render_video() direct-media-URL fallback gating ---
 	//
 	// A provider *page* URL (a Vimeo/YouTube watch page, a podcast episode
@@ -368,6 +526,89 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		// so this is the one case the shortcode fallback should still fire.
 		$this->assertStringContainsString( '<audio', $output );
 		$this->assertStringContainsString( 'episode.mp3', $output );
+	}
+
+	// -- render_gallery() -------------------------------------------------
+
+	public function test_render_gallery_renders_all_slides_and_controls() {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'gallery' => array(
+						'attachment_ids' => $attachment_ids,
+					),
+				)
+			)
+		);
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		// Wrapper + carousel shell.
+		$this->assertStringContainsString( 'daymark-featured-content', $output );
+		$this->assertStringContainsString( 'daymark-featured-content--gallery', $output );
+		$this->assertStringContainsString( 'daymark-fc-gallery', $output );
+		$this->assertStringContainsString( 'data-daymark-gallery', $output );
+		$this->assertStringContainsString( 'role="region"', $output );
+		$this->assertStringContainsString( 'aria-roledescription="carousel"', $output );
+		$this->assertStringContainsString( 'aria-label="Featured gallery"', $output );
+		$this->assertStringContainsString( 'daymark-fc-gallery__track', $output );
+
+		// Slides + images.
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'aria-label="Slide 1 of 3"', $output );
+		$this->assertStringContainsString( 'aria-label="Slide 3 of 3"', $output );
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__img' ) );
+
+		// Controls + dots.
+		$this->assertStringContainsString( 'data-daymark-gallery-prev', $output );
+		$this->assertStringContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertSame( 3, substr_count( $output, 'data-daymark-gallery-dot' ) );
+		$this->assertStringContainsString( 'data-index="0"', $output );
+		$this->assertStringContainsString( 'data-index="2"', $output );
+		$this->assertStringContainsString( 'aria-label="Show slide 1"', $output );
+		$this->assertStringContainsString( 'aria-label="Show slide 3"', $output );
+
+		// Live region + announce template.
+		$this->assertStringContainsString( 'data-daymark-gallery-live', $output );
+		$this->assertStringContainsString( 'aria-live="polite"', $output );
+		$this->assertStringContainsString( 'data-template="Slide %1$d of %2$d"', $output );
+	}
+
+	public function test_render_gallery_single_image_has_no_carousel_controls() {
+		$attachment_id = $this->create_attachment( 'image/png' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'gallery' => array(
+						'attachment_ids' => array( $attachment_id ),
+					),
+				)
+			)
+		);
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'daymark-fc-gallery', $output );
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-prev', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-dot', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-live', $output );
 	}
 
 	// wp-admin's own callers of this same core filter (is_admin()) are left

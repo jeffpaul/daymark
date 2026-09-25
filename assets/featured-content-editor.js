@@ -731,6 +731,48 @@
 	}
 
 	/**
+	 * Multi-select image picker for gallery Featured Content. Library images
+	 * only — a gallery has no URL shape (issue #406).
+	 *
+	 * @param {Function} onSelect Called with an array of attachment IDs.
+	 */
+	function openGalleryPicker( onSelect ) {
+		if ( ! wp.media ) {
+			return;
+		}
+
+		var frame = wp.media( {
+			title: __( 'Photo gallery', 'daymark' ),
+			library: { type: 'image' },
+			multiple: true,
+			button: { text: __( 'Use these images', 'daymark' ) },
+		} );
+
+		frame.on( 'select', function () {
+			var selection = frame.state().get( 'selection' );
+			var ids = [];
+
+			if ( ! selection ) {
+				return;
+			}
+
+			selection.each( function ( model ) {
+				var json = model.toJSON();
+
+				if ( json && json.id ) {
+					ids.push( json.id );
+				}
+			} );
+
+			if ( ids.length ) {
+				onSelect( ids );
+			}
+		} );
+
+		frame.open();
+	}
+
+	/**
 	 * A small preview of the currently-set Featured Content, mirroring
 	 * core's own Featured Image thumbnail. A `library` attachment renders
 	 * its own native <audio>/<video> element directly, via that
@@ -759,14 +801,31 @@
 	 */
 	function FeaturedContentPreview( props ) {
 		var type = props.type;
-		var data = props.data;
-		var isUrl = 'url' === data.source;
+		var data = props.data || {};
+		var isGallery = 'gallery' === type;
+		var isUrl = ! isGallery && 'url' === data.source;
+		var galleryIds = isGallery && Array.isArray( data.attachment_ids ) ? data.attachment_ids : [];
 
 		var attachment = useSelect(
 			function ( select ) {
-				return isUrl ? null : select( 'core' ).getMedia( data.attachment_id );
+				return isUrl || isGallery ? null : select( 'core' ).getMedia( data.attachment_id );
 			},
-			[ isUrl, data.attachment_id ]
+			[ isUrl, isGallery, data.attachment_id ]
+		);
+
+		var galleryMedia = useSelect(
+			function ( select ) {
+				if ( ! isGallery ) {
+					return [];
+				}
+
+				return galleryIds.map( function ( id ) {
+					return select( 'core' ).getMedia( id );
+				} ).filter( function ( item ) {
+					return item && item.source_url;
+				} );
+			},
+			[ isGallery, galleryIds.join( ',' ) ]
 		);
 
 		var embedState = useState( null );
@@ -806,6 +865,24 @@
 			},
 			[ isUrl, data.url ]
 		);
+
+		if ( isGallery ) {
+			if ( ! galleryMedia.length ) {
+				return null;
+			}
+
+			return el(
+				'div',
+				{ className: 'daymark-fc-preview daymark-fc-preview--gallery' },
+				galleryMedia.slice( 0, 4 ).map( function ( item ) {
+					return el( 'img', {
+						key: item.id,
+						src: item.source_url,
+						alt: item.alt_text || '',
+					} );
+				} )
+			);
+		}
 
 		if ( ! isUrl ) {
 			if ( ! attachment || ! attachment.source_url ) {
@@ -865,16 +942,19 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Two states: unset (a single toggle button opening the media modal) or
-	 * already set — a preview with Replace/Remove overlaid at its bottom
-	 * edge on hover/focus, matching core's own Featured Image thumbnail
-	 * treatment (`.editor-post-featured-image__actions`, confirmed directly
-	 * against Gutenberg's own `post-featured-image/index.jsx`/`style.scss`)
-	 * rather than a separate text row below the preview — Replace reopens
-	 * the same modal. No standalone "Featured content: Audio/Video" label:
-	 * the preview itself (a native player or an oEmbed embed) already
-	 * denotes the type, the same reasoning core's own thumbnail needs no
-	 * "Featured image: JPEG" caption either.
+	 * Two states: unset (a single "Set featured content" toggle opening a
+	 * small popover menu of supported kinds — Audio or video, Photo
+	 * gallery; quote/link arrive in later phases — each item opening its
+	 * own picker) or already set — a preview with Replace/Remove overlaid
+	 * at its bottom edge on hover/focus, matching core's own Featured Image
+	 * thumbnail treatment (`.editor-post-featured-image__actions`,
+	 * confirmed directly against Gutenberg's own
+	 * `post-featured-image/index.jsx`/`style.scss` rather than a separate
+	 * text row below the preview) — Replace reopens the active kind's own
+	 * picker. No standalone "Featured content: Audio/Video" label: the
+	 * preview itself (a native player, an oEmbed embed, or a gallery strip)
+	 * already denotes the type, the same reasoning core's own thumbnail
+	 * needs no "Featured image: JPEG" caption either.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -885,6 +965,9 @@
 
 		var editPost = useDispatch( 'core/editor' ).editPost;
 		var current = readFeaturedContent( meta );
+		var menuState = useState( false );
+		var menuOpen = menuState[ 0 ];
+		var setMenuOpen = menuState[ 1 ];
 
 		function handleLibrarySelect( attachment ) {
 			var mime = attachment.mime || '';
@@ -906,6 +989,28 @@
 		}
 
 		function openPicker() {
+			setMenuOpen( false );
+
+			if ( 'gallery' === current.type ) {
+				openGalleryPicker( function ( ids ) {
+					saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
+				} );
+				return;
+			}
+
+			openMediaPicker( handleLibrarySelect, handleUrlSelect );
+		}
+
+		function openKind( kind ) {
+			setMenuOpen( false );
+
+			if ( 'gallery' === kind ) {
+				openGalleryPicker( function ( ids ) {
+					saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
+				} );
+				return;
+			}
+
 			openMediaPicker( handleLibrarySelect, handleUrlSelect );
 		}
 
@@ -942,9 +1047,51 @@
 		}
 
 		return el(
-			'button',
-			{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
-			__( 'Set featured content', 'daymark' )
+			'div',
+			{ className: 'daymark-fc-chooser' },
+			el(
+				'button',
+				{
+					type: 'button',
+					className: 'daymark-fc-toggle',
+					'aria-expanded': menuOpen ? 'true' : 'false',
+					'aria-haspopup': 'menu',
+					onClick: function () {
+						setMenuOpen( ! menuOpen );
+					},
+				},
+				__( 'Set featured content', 'daymark' )
+			),
+			menuOpen
+				? el(
+					'div',
+					{ className: 'daymark-fc-menu', role: 'menu' },
+					el(
+						'button',
+						{
+							type: 'button',
+							className: 'daymark-fc-menu__item',
+							role: 'menuitem',
+							onClick: function () {
+								openKind( 'media' );
+							},
+						},
+						__( 'Audio or video', 'daymark' )
+					),
+					el(
+						'button',
+						{
+							type: 'button',
+							className: 'daymark-fc-menu__item',
+							role: 'menuitem',
+							onClick: function () {
+								openKind( 'gallery' );
+							},
+						},
+						__( 'Photo gallery', 'daymark' )
+					)
+				)
+				: null
 		);
 	}
 

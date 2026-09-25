@@ -57,6 +57,44 @@
 	color: var( --wp-admin-theme-color, #007cba );
 }
 
+.daymark-fc-menu {
+	display: flex;
+	flex-direction: column;
+	margin-top: 4px;
+	border: 1px solid #ccc;
+	border-radius: 2px;
+	background: #fff;
+}
+
+.daymark-fc-menu__item {
+	display: block;
+	width: 100%;
+	padding: 8px 12px;
+	border: 0;
+	background: none;
+	text-align: left;
+	font-size: 13px;
+	cursor: pointer;
+	color: #1e1e1e;
+}
+
+.daymark-fc-menu__item:hover,
+.daymark-fc-menu__item:focus {
+	color: var( --wp-admin-theme-color, #007cba );
+	background: #f0f0f0;
+}
+
+.daymark-fc-preview--gallery {
+	display: flex;
+	gap: 4px;
+}
+
+.daymark-fc-preview--gallery img {
+	width: 25%;
+	height: 64px;
+	object-fit: cover;
+}
+
 .daymark-fc-summary {
 	margin-top: 8px;
 }
