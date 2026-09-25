@@ -34,10 +34,12 @@
  * pending value in the same request.
  *
  * `SUPPORTED_TYPES` (filterable via `daymark_featured_content_allowed_types`)
- * is deliberately scoped to what's actually implemented end-to-end so far —
- * `array( 'audio', 'video' )` for this phase — so the editor panel and the
- * meta sanitizer can never accept or render a content kind before its own
- * phase has actually shipped a frontend renderer for it.
+ * is deliberately scoped to what's actually implemented end-to-end —
+ * `array( 'audio', 'video', 'quote', 'link' )` as of the issue #407 phase —
+ * so the editor panel and the meta sanitizer can never accept or render a
+ * content kind before its own phase has actually shipped a frontend
+ * renderer for it. (`gallery`, the remaining kind in issue #401's plan,
+ * ships separately as issue #406.)
  *
  * No new build step: the editor panel (`assets/featured-content-editor.js`)
  * is plain ES2020 calling `wp.element.createElement` against WordPress
@@ -73,13 +75,15 @@ class Daymark_Featured_Content {
 
 	/**
 	 * Content-kind values this phase implements end-to-end (editor UI +
-	 * frontend rendering). Later phases widen this — gallery, quote, and a
-	 * link-post-format-only `link` kind — as each one's own frontend
-	 * rendering ships; see issue #401's phased plan.
+	 * frontend rendering). The `link` kind is only honored for a post that
+	 * genuinely uses the `link` post format — that constraint is enforced at
+	 * read time in get_featured_content(), since a meta sanitizer has no
+	 * post ID to check. Gallery is still pending as issue #406's own phase;
+	 * see issue #401's phased plan for the full order.
 	 *
 	 * @var string[]
 	 */
-	private const SUPPORTED_TYPES = array( 'audio', 'video' );
+	private const SUPPORTED_TYPES = array( 'audio', 'video', 'quote', 'link' );
 
 	/**
 	 * File extensions a profiled URL's own path can end in and still be
@@ -150,13 +154,11 @@ class Daymark_Featured_Content {
 	private static function allowed_types(): array {
 		/**
 		 * Filters which Featured Content type values are accepted by the
-		 * meta sanitizer and offered by the editor panel. Starts scoped to
-		 * what this phase actually implements end-to-end; later phases
-		 * widen this as gallery/quote/link ship — see issue #401.
+		 * meta sanitizer and offered by the editor panel.
 		 *
 		 * @since 0.18.0
 		 *
-		 * @param string[] $types Defaults to `array( 'audio', 'video' )`.
+		 * @param string[] $types Defaults to `array( 'audio', 'video', 'quote', 'link' )`.
 		 */
 		return array_values( array_unique( array_map( 'strval', (array) apply_filters( 'daymark_featured_content_allowed_types', self::SUPPORTED_TYPES ) ) ) );
 	}
@@ -220,11 +222,11 @@ class Daymark_Featured_Content {
 
 	/**
 	 * Sanitize `_daymark_featured_content` — keeps only sub-keys this class
-	 * currently recognizes (`audio`/`video`), each narrowed to its own
-	 * allowed shape; a gallery/quote/link sub-key sent by a future client
-	 * ahead of this phase's own rollout is silently dropped rather than
-	 * stored unsanitized, since nothing here can validate a shape this
-	 * class doesn't implement yet.
+	 * currently recognizes (`audio`/`video`/`quote`/`link`), each narrowed
+	 * to its own allowed shape; a `gallery` sub-key sent by a future client
+	 * ahead of that phase's own rollout (issue #406) is silently dropped
+	 * rather than stored unsanitized, since nothing here can validate a
+	 * shape this class doesn't implement yet.
 	 *
 	 * @param mixed $value Raw JSON string.
 	 * @return string Re-encoded, sanitized JSON (possibly `'{}'`).
@@ -251,6 +253,22 @@ class Daymark_Featured_Content {
 
 			if ( ! empty( $video ) ) {
 				$clean['video'] = $video;
+			}
+		}
+
+		if ( isset( $decoded['quote'] ) && is_array( $decoded['quote'] ) ) {
+			$quote = self::sanitize_quote_shape( $decoded['quote'] );
+
+			if ( ! empty( $quote ) ) {
+				$clean['quote'] = $quote;
+			}
+		}
+
+		if ( isset( $decoded['link'] ) && is_array( $decoded['link'] ) ) {
+			$link = self::sanitize_link_shape( $decoded['link'] );
+
+			if ( ! empty( $link ) ) {
+				$clean['link'] = $link;
 			}
 		}
 
@@ -299,6 +317,67 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Sanitize a `quote` shape — `{ text, author?, citation_url? }`. `text`
+	 * is required: a quote with nothing to quote is stored as nothing, the
+	 * same "don't persist a shape you can't render" rule sanitize_data()
+	 * applies per sub-key. `author` is optional plain text (often a speaker
+	 * a citation URL's host already implies). `citation_url` must survive
+	 * esc_url_raw() as an http(s) URL or it's dropped entirely — never
+	 * stored raw, never half-sanitized.
+	 *
+	 * Deliberately no length caps on the text: a quote is the author's own
+	 * words, not a generated metadata string, so truncating it would corrupt
+	 * content rather than bound risk, and WP core's own post/request limits
+	 * already bound what can reach this sanitizer at all.
+	 *
+	 * @param array<string, mixed> $raw Decoded sub-array.
+	 * @return array<string, mixed> Sanitized sub-array; empty when unusable.
+	 */
+	private static function sanitize_quote_shape( array $raw ): array {
+		$text = isset( $raw['text'] ) ? trim( (string) $raw['text'] ) : '';
+		$text = '' === $text ? '' : sanitize_textarea_field( $text );
+
+		if ( '' === $text ) {
+			return array();
+		}
+
+		$clean = array( 'text' => $text );
+
+		if ( isset( $raw['author'] ) ) {
+			$author = sanitize_text_field( (string) $raw['author'] );
+
+			if ( '' !== $author ) {
+				$clean['author'] = $author;
+			}
+		}
+
+		if ( isset( $raw['citation_url'] ) ) {
+			$citation_url = esc_url_raw( trim( (string) $raw['citation_url'] ) );
+
+			if ( '' !== $citation_url ) {
+				$clean['citation_url'] = $citation_url;
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Sanitize a `link` shape — `{ url }`. Honored only for a post actually
+	 * carrying the `link` post format (enforced at read time in
+	 * get_featured_content(), since a sanitizer has no post ID). `url` is
+	 * required and must survive esc_url_raw() as an http(s) URL.
+	 *
+	 * @param array<string, mixed> $raw Decoded sub-array.
+	 * @return array<string, mixed> Sanitized sub-array; empty when unusable.
+	 */
+	private static function sanitize_link_shape( array $raw ): array {
+		$url = isset( $raw['url'] ) ? esc_url_raw( trim( (string) $raw['url'] ) ) : '';
+
+		return '' === $url ? array() : array( 'url' => $url );
+	}
+
+	/**
 	 * Whether a post has a genuinely usable Featured Content set.
 	 *
 	 * @param int|WP_Post|null $post Post ID/object, or null for the current post.
@@ -334,6 +413,14 @@ class Daymark_Featured_Content {
 		$data = ( is_array( $raw ) && isset( $raw[ $type ] ) && is_array( $raw[ $type ] ) ) ? $raw[ $type ] : array();
 
 		if ( empty( $data ) ) {
+			return array();
+		}
+
+		// The `link` kind is only meaningful for a post that genuinely uses
+		// the `link` post format. Enforced here at read time because the meta
+		// sanitizers have no post ID to check against, so a `link` value set
+		// on a standard/aside/etc. post is never rendered.
+		if ( 'link' === $type && 'link' !== get_post_format( $post->ID ) ) {
 			return array();
 		}
 
@@ -381,6 +468,10 @@ class Daymark_Featured_Content {
 			$html = self::render_audio( $fc['data'] );
 		} elseif ( 'video' === $fc['type'] ) {
 			$html = self::render_video( $fc['data'] );
+		} elseif ( 'quote' === $fc['type'] ) {
+			$html = self::render_quote( $fc['data'] );
+		} elseif ( 'link' === $fc['type'] ) {
+			$html = self::render_link( $fc['data'] );
 		}
 
 		/**
@@ -492,6 +583,95 @@ class Daymark_Featured_Content {
 		}
 
 		return self::is_direct_media_url( $url ) ? (string) wp_video_shortcode( array( 'src' => $url ) ) : '';
+	}
+
+	/**
+	 * Render a quote-type Featured Content: a `<blockquote>` with the quoted
+	 * text plus an attribution line where one was provided. Attribution is
+	 * the author when one exists, else the citation URL's own host — a
+	 * speaker's name often lives in bibiliography/permalink context without
+	 * a typed-out author — and a citation URL's host is never repeated as
+	 * link text when the author already serves as the label. Escaped
+	 * throughout at output, never wpautop()'d (the stored text's line breaks
+	 * are preserved via white-space CSS instead of being re-flowed, so a
+	 * quote keeps its own punctuation intact).
+	 *
+	 * @param array{text: string, author?: string, citation_url?: string} $data Sanitized quote data.
+	 * @return string
+	 */
+	private static function render_quote( array $data ): string {
+		$text = (string) ( $data['text'] ?? '' );
+
+		if ( '' === $text ) {
+			return '';
+		}
+
+		$author       = (string) ( $data['author'] ?? '' );
+		$citation_url = (string) ( $data['citation_url'] ?? '' );
+		$has_credit   = '' !== $author || '' !== $citation_url;
+
+		$html  = '<blockquote class="daymark-featured-quote">';
+		$html .= '<p>' . esc_html( $text ) . '</p>';
+
+		if ( $has_credit ) {
+			$label = '' !== $author ? $author : self::url_host_label( $citation_url );
+
+			$html .= '<footer>';
+
+			if ( '' !== $author && '' !== $citation_url ) {
+				$html .= '<cite>' . esc_html( $author ) . ' — <a href="' . esc_url( $citation_url ) . '" rel="noopener">' . esc_html( self::url_host_label( $citation_url ) ) . '</a></cite>';
+			} elseif ( '' !== $author ) {
+				$html .= '<cite>' . esc_html( $author ) . '</cite>';
+			} else {
+				$html .= '<cite><a href="' . esc_url( $citation_url ) . '" rel="noopener">' . esc_html( $label ) . '</a></cite>';
+			}
+
+			$html .= '</footer>';
+		}
+
+		$html .= '</blockquote>';
+
+		return $html;
+	}
+
+	/**
+	 * Render a link-type Featured Content: a single, self-contained anchor
+	 * labelled with the link's own host — the visual language of a "link"
+	 * card, not a media embed. Only ever reached for a post that genuinely
+	 * carries the `link` post format (the read-time gate in
+	 * get_featured_content()), so there's no format check here.
+	 *
+	 * @param array{url: string} $data Sanitized link data.
+	 * @return string
+	 */
+	private static function render_link( array $data ): string {
+		$url = (string) ( $data['url'] ?? '' );
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		return sprintf(
+			'<a class="daymark-featured-link" href="%1$s" target="_blank" rel="noopener">%2$s</a>',
+			esc_url( $url ),
+			esc_html( self::url_host_label( $url ) )
+		);
+	}
+
+	/**
+	 * A short, human-readable label for a URL — its host with a leading
+	 * `www.` prefix stripped (e.g. `https://www.example.com/some/path` →
+	 * `example.com`). Falls back to the URL itself when its host can't be
+	 * parsed, so the caller never emits an empty label.
+	 *
+	 * @param string $url URL to derive a label from.
+	 * @return string
+	 */
+	private static function url_host_label( string $url ): string {
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+		$host = preg_replace( '/^www\./', '', $host );
+
+		return '' !== $host ? $host : $url;
 	}
 
 	/**

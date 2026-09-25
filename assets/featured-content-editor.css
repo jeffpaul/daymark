@@ -246,3 +246,100 @@
 	font-size: 12px;
 	line-height: 1.4;
 }
+
+/*
+ * Quote + link phases of Featured Content (issue #407). Both new content
+ * kinds are composed and previewed entirely in this sidebar control, so all
+ * four additions below are new editor-side layout only:
+ *
+ *  - .daymark-fc-set wraps the "Set featured content" toggle plus the
+ *    quick-add links (.daymark-fc-set-extra, buttons styled by wp-admin's
+ *    own .button-link class, only spaced out here) shown to the right of it
+ *    on the unset state.
+ *  - .daymark-fc-compose* lays out the inline quote/link compose forms
+ *    (label/input rows plus a trailing action row); textarea and text/url
+ *    inputs share one .daymark-fc-compose-input, since only box-sizing and
+ *    full width apply to all three.
+ *  - .daymark-fc-format-note is the one-line reminder shown when a link
+ *    kind is set but the post isn't actually using the Link post format.
+ *  - The .daymark-featured-quote / .daymark-featured-link previews are the
+ *    exact same classes (and values) the frontend stylesheet
+ *    assets/featured-content.css applies to the published post, scoped here
+ *    inside the preview wrap so the sidebar preview and the front-end
+ *    rendering can never disagree about what a given value shows. The one
+ *    deliberate difference is the box (margin/padding/background wash +
+ *    border-left) borrowed from the brand palette, since the editor sidebar,
+ *    unlike a real theme's blockquote context, has no surrounding chrome to
+ *    anchor the block.
+ */
+.daymark-fc-set {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.daymark-fc-set-extra {
+	display: flex;
+	gap: 8px;
+}
+
+.daymark-fc-compose {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.daymark-fc-compose-label {
+	display: block;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.daymark-fc-compose-input {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+}
+
+.daymark-fc-compose-actions {
+	display: flex;
+	gap: 8px;
+}
+
+.daymark-fc-format-note {
+	margin: 8px 0 0;
+	font-size: 12px;
+	font-style: italic;
+	color: #757575;
+}
+
+.daymark-fc-preview-wrap .daymark-featured-quote {
+	margin: 0 0 4px;
+	padding: 8px 12px;
+	border-left: 4px solid #ffd9a8;
+	background: rgba(201, 58, 6, 0.06);
+}
+
+.daymark-fc-preview-wrap .daymark-featured-quote p {
+	margin: 0 0 0.5rem;
+	white-space: pre-wrap;
+}
+
+.daymark-fc-preview-wrap .daymark-featured-quote footer {
+	font-size: 0.9em;
+	font-style: normal;
+	color: #757575;
+}
+
+.daymark-fc-preview-wrap .daymark-featured-quote cite {
+	font-style: normal;
+}
+
+.daymark-fc-preview-wrap .daymark-featured-quote a {
+	text-decoration: underline;
+}
+
+.daymark-fc-preview-wrap .daymark-featured-link {
+	display: inline-block;
+	text-decoration: underline;
+}

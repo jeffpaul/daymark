@@ -731,6 +731,270 @@
 	}
 
 	/**
+	 * The display host of a URL, mirroring Daymark_Featured_Content::
+	 * url_host_label() — the hostname with a leading "www." stripped,
+	 * falling back to the raw URL when it can't be parsed. Used by the
+	 * quote/link previews (and the quote form's citation link) so the
+	 * sidebar never disagrees with what the front end renders.
+	 *
+	 * @param {string} url
+	 * @return {string}
+	 */
+	function hostLabel( url ) {
+		try {
+			return new URL( url ).hostname.replace( /^www\./, '' );
+		} catch ( err ) {
+			return url;
+		}
+	}
+
+	/**
+	 * A static preview for a quote or link Featured Content value — mirroring
+	 * Daymark_Featured_Content::render_quote()/render_link() exactly (and the
+	 * .daymark-featured-quote / .daymark-featured-link rules in
+	 * assets/featured-content.css), built purely from the stored data rather
+	 * than resolving a live oEmbed or attachment the way FeaturedContentPreview
+	 * does for audio/video. A quote renders as a <blockquote> with an optional
+	 * <footer><cite> attribution when an author and/or a citation URL is set
+	 * (author and citation together read "author — citation host"; citation
+	 * alone just links its host); a link renders as a single new-tab anchor
+	 * labeled by its host. Rendered directly from FeaturedContentControl —
+	 * never as a component with hooks of its own — since neither kind has
+	 * anything worth resolving asynchronously.
+	 *
+	 * @param {{type: string, data: Object}} current Resolved Featured Content.
+	 * @return {Object|null}
+	 */
+	function renderStaticFeaturedContentPreview( current ) {
+		var type = current.type;
+		var data = current.data || {};
+
+		if ( 'quote' === type ) {
+			var text = data.text || '';
+			var author = data.author || '';
+			var citationUrl = data.citation_url || '';
+			var credit = null;
+
+			if ( '' !== author || '' !== citationUrl ) {
+				var citeChildren = [];
+
+				if ( '' !== author && '' !== citationUrl ) {
+					citeChildren.push( author, ' — ' );
+				}
+
+				if ( '' !== citationUrl ) {
+					citeChildren.push(
+						el( 'a', { href: citationUrl, rel: 'noopener' }, hostLabel( citationUrl ) )
+					);
+				} else {
+					citeChildren.push( author );
+				}
+
+				credit = el( 'footer', null, el( 'cite', null, citeChildren ) );
+			}
+
+			return el(
+				'blockquote',
+				{ className: 'daymark-featured-quote' },
+				el( 'p', null, text ),
+				credit
+			);
+		}
+
+		if ( 'link' === type ) {
+			var url = data.url || '';
+
+			if ( ! url ) {
+				return null;
+			}
+
+			return el(
+				'a',
+				{ className: 'daymark-featured-link', href: url, target: '_blank', rel: 'noopener' },
+				hostLabel( url )
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * A small compose form for a quote Featured Content value: the quoted
+	 * text (required), an optional author, and an optional citation URL
+	 * (rendered as its host in the credit's link). Shown from
+	 * FeaturedContentControl's own compose state rather than the media
+	 * modal — a quote is typed, not picked. "Add a quote" opens it blank;
+	 * Replace on an already-set quote opens it pre-filled. Save is
+	 * disabled until the text field has a non-whitespace value, and only
+	 * ever sends fields the author actually filled in, matching how
+	 * Daymark_Featured_Content::sanitize_quote_shape() stores a value.
+	 *
+	 * @param {{initialData: ?Object, onSave: Function, onCancel: Function}} props
+	 * @return {Object}
+	 */
+	function FeaturedContentQuoteForm( props ) {
+		var initialData = props.initialData || {};
+
+		var textState = useState( initialData.text || '' );
+		var text = textState[ 0 ];
+		var setText = textState[ 1 ];
+
+		var authorState = useState( initialData.author || '' );
+		var author = authorState[ 0 ];
+		var setAuthor = authorState[ 1 ];
+
+		var citationState = useState( initialData.citation_url || '' );
+		var citation = citationState[ 0 ];
+		var setCitation = citationState[ 1 ];
+
+		function submit() {
+			var data = { text: text.trim() };
+
+			if ( author.trim() ) {
+				data.author = author.trim();
+			}
+
+			if ( citation.trim() ) {
+				data.citation_url = citation.trim();
+			}
+
+			props.onSave( data );
+		}
+
+		return el(
+			'div',
+			{ className: 'daymark-fc-compose' },
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-text' },
+				__( 'Quote', 'daymark' )
+			),
+			el( 'textarea', {
+				id: 'daymark-fc-quote-text',
+				className: 'daymark-fc-compose-input',
+				rows: 4,
+				value: text,
+				onChange: function ( event ) {
+					setText( event.target.value );
+				},
+			} ),
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-author' },
+				__( 'Author (optional)', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-quote-author',
+				type: 'text',
+				className: 'daymark-fc-compose-input',
+				value: author,
+				onChange: function ( event ) {
+					setAuthor( event.target.value );
+				},
+			} ),
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-citation' },
+				__( 'Link to the source (optional)', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-quote-citation',
+				type: 'url',
+				className: 'daymark-fc-compose-input',
+				value: citation,
+				onChange: function ( event ) {
+					setCitation( event.target.value );
+				},
+			} ),
+			el(
+				'div',
+				{ className: 'daymark-fc-compose-actions' },
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-primary',
+						disabled: ! text.trim(),
+						onClick: submit,
+					},
+					__( 'Save', 'daymark' )
+				),
+				el(
+					'button',
+					{ type: 'button', className: 'button-link', onClick: props.onCancel },
+					__( 'Cancel', 'daymark' )
+				)
+			)
+		);
+	}
+
+	/**
+	 * A small single-field compose form for a link Featured Content value:
+	 * just the URL. Shown from FeaturedContentControl's own compose state
+	 * (the URL is typed, not picked through the media modal) whenever the
+	 * post's format is Link. Save is disabled until the field has a
+	 * non-whitespace value.
+	 *
+	 * @param {{initialData: ?Object, onSave: Function, onCancel: Function}} props
+	 * @return {Object}
+	 */
+	function FeaturedContentLinkForm( props ) {
+		var initialData = props.initialData || {};
+
+		var urlState = useState( initialData.url || '' );
+		var url = urlState[ 0 ];
+		var setUrl = urlState[ 1 ];
+
+		function submit() {
+			var value = url.trim();
+
+			if ( ! value ) {
+				return;
+			}
+
+			props.onSave( { url: value } );
+		}
+
+		return el(
+			'div',
+			{ className: 'daymark-fc-compose' },
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-link-url' },
+				__( 'URL', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-link-url',
+				type: 'url',
+				className: 'daymark-fc-compose-input',
+				value: url,
+				onChange: function ( event ) {
+					setUrl( event.target.value );
+				},
+			} ),
+			el(
+				'div',
+				{ className: 'daymark-fc-compose-actions' },
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-primary',
+						disabled: ! url.trim(),
+						onClick: submit,
+					},
+					__( 'Save', 'daymark' )
+				),
+				el(
+					'button',
+					{ type: 'button', className: 'button-link', onClick: props.onCancel },
+					__( 'Cancel', 'daymark' )
+				)
+			)
+		);
+	}
+
+	/**
 	 * A small preview of the currently-set Featured Content, mirroring
 	 * core's own Featured Image thumbnail. A `library` attachment renders
 	 * its own native <audio>/<video> element directly, via that
@@ -865,16 +1129,28 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Two states: unset (a single toggle button opening the media modal) or
-	 * already set — a preview with Replace/Remove overlaid at its bottom
-	 * edge on hover/focus, matching core's own Featured Image thumbnail
-	 * treatment (`.editor-post-featured-image__actions`, confirmed directly
-	 * against Gutenberg's own `post-featured-image/index.jsx`/`style.scss`)
-	 * rather than a separate text row below the preview — Replace reopens
-	 * the same modal. No standalone "Featured content: Audio/Video" label:
-	 * the preview itself (a native player or an oEmbed embed) already
-	 * denotes the type, the same reasoning core's own thumbnail needs no
-	 * "Featured image: JPEG" caption either.
+	 * Three states: unset (a single toggle button opening the media modal,
+	 * with quick "add" links for quote/link when those kinds are allowed —
+	 * quote always, link only when the post's own format is already Link,
+	 * mirroring the server-side `get_featured_content()` read-time gate);
+	 * already set with an audio/video value (a preview with Replace/Remove
+	 * overlaid at its bottom edge on hover/focus, matching core's own
+	 * Featured Image thumbnail treatment — `.editor-post-featured-image__
+	 * actions`, confirmed directly against Gutenberg's own
+	 * `post-featured-image/index.jsx`/`style.scss` — where Replace reopens
+	 * the same media modal); or already set with a quote/link value (a plain
+	 * static preview mirroring the front end's own render, where Replace
+	 * re-opens that kind's compose form pre-filled rather than the modal —
+	 * a quote is typed, not picked). A third, transient compose state shows
+	 * the quote or link form itself in place of the summary; save writes it
+	 * and returns to the preview, cancel discards the draft and returns to
+	 * whatever the control showed before. No standalone "Featured content:
+	 * Audio/Video" label: the preview itself (a native player, an oEmbed
+	 * embed, a link, or a styled quote) already denotes the type, the same
+	 * reasoning core's own thumbnail needs no "Featured image: JPEG"
+	 * caption either. A small note appears under the preview when a link
+	 * kind is set but the post isn't on the Link format, since that's the
+	 * only case where it won't render on the front end.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -883,8 +1159,23 @@
 			return editor ? editor.getEditedPostAttribute( 'meta' ) || {} : {};
 		}, [] );
 
+		var postFormat = useSelect( function ( select ) {
+			var editor = select( 'core/editor' );
+
+			return editor ? editor.getEditedPostAttribute( 'format' ) || '' : '';
+		}, [] );
+
+		var composeState = useState( null );
+		var compose = composeState[ 0 ];
+		var setCompose = composeState[ 1 ];
+
 		var editPost = useDispatch( 'core/editor' ).editPost;
 		var current = readFeaturedContent( meta );
+		var allowedTypes = config.allowedTypes || [];
+
+		function closeCompose() {
+			setCompose( null );
+		}
 
 		function handleLibrarySelect( attachment ) {
 			var mime = attachment.mime || '';
@@ -905,24 +1196,74 @@
 			saveFeaturedContent( editPost, guessUrlKind( url ), { source: 'url', url: url } );
 		}
 
+		function handleQuoteSave( data ) {
+			saveFeaturedContent( editPost, 'quote', data );
+			setCompose( null );
+		}
+
+		function handleLinkSave( data ) {
+			saveFeaturedContent( editPost, 'link', data );
+			setCompose( null );
+		}
+
 		function openPicker() {
 			openMediaPicker( handleLibrarySelect, handleUrlSelect );
 		}
 
+		if ( compose ) {
+			var composeInitial = null;
+
+			if ( compose === current.type ) {
+				composeInitial = current.data;
+			}
+
+			var composeForm = 'quote' === compose
+				? el( FeaturedContentQuoteForm, {
+					initialData: composeInitial,
+					onSave: handleQuoteSave,
+					onCancel: closeCompose,
+				} )
+				: el( FeaturedContentLinkForm, {
+					initialData: composeInitial,
+					onSave: handleLinkSave,
+					onCancel: closeCompose,
+				} );
+
+			return el( 'div', { className: 'daymark-fc-summary' }, composeForm );
+		}
+
 		if ( current.type ) {
+			var isStaticKind = 'quote' === current.type || 'link' === current.type;
+			var replaceAction = isStaticKind
+				? function () {
+					setCompose( current.type );
+				}
+				: openPicker;
+			var formatNote = '';
+
+			if ( 'link' === current.type && 'link' !== postFormat ) {
+				formatNote = el(
+					'p',
+					{ className: 'daymark-fc-format-note' },
+					__( 'This link only shows on the front end for posts using the Link format.', 'daymark' )
+				);
+			}
+
 			return el(
 				'div',
 				{ className: 'daymark-fc-summary' },
 				el(
 					'div',
 					{ className: 'daymark-fc-preview-wrap' },
-					el( FeaturedContentPreview, { type: current.type, data: current.data } ),
+					isStaticKind
+						? renderStaticFeaturedContentPreview( current )
+						: el( FeaturedContentPreview, { type: current.type, data: current.data } ),
 					el(
 						'div',
 						{ className: 'daymark-fc-actions' },
 						el(
 							'button',
-							{ type: 'button', className: 'daymark-fc-action', onClick: openPicker },
+							{ type: 'button', className: 'daymark-fc-action', onClick: replaceAction },
 							__( 'Replace', 'daymark' )
 						),
 						el(
@@ -937,14 +1278,54 @@
 							__( 'Remove', 'daymark' )
 						)
 					)
+				),
+				formatNote
+			);
+		}
+
+		var quickAdds = [];
+
+		if ( -1 !== allowedTypes.indexOf( 'quote' ) ) {
+			quickAdds.push(
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-link daymark-fc-set-extra',
+						onClick: function () {
+							setCompose( 'quote' );
+						},
+					},
+					__( 'Add a quote', 'daymark' )
+				)
+			);
+		}
+
+		if ( -1 !== allowedTypes.indexOf( 'link' ) && 'link' === postFormat ) {
+			quickAdds.push(
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-link daymark-fc-set-extra',
+						onClick: function () {
+							setCompose( 'link' );
+						},
+					},
+					__( 'Add a link', 'daymark' )
 				)
 			);
 		}
 
 		return el(
-			'button',
-			{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
-			__( 'Set featured content', 'daymark' )
+			'div',
+			{ className: 'daymark-fc-set' },
+			el(
+				'button',
+				{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
+				__( 'Set featured content', 'daymark' )
+			),
+			quickAdds
 		);
 	}
 
