@@ -34,8 +34,8 @@
  * pending value in the same request.
  *
  * `SUPPORTED_TYPES` (filterable via `daymark_featured_content_allowed_types`)
- * is deliberately scoped to what's actually implemented end-to-end so far —
- * `array( 'audio', 'video' )` for this phase — so the editor panel and the
+ * is deliberately scoped to what's actually implemented end-to-end —
+ * `audio`, `video`, and (issue #406) `gallery` — so the editor panel and the
  * meta sanitizer can never accept or render a content kind before its own
  * phase has actually shipped a frontend renderer for it.
  *
@@ -72,14 +72,22 @@ class Daymark_Featured_Content {
 	public const META_DATA = '_daymark_featured_content';
 
 	/**
-	 * Content-kind values this phase implements end-to-end (editor UI +
-	 * frontend rendering). Later phases widen this — gallery, quote, and a
+	 * Content-kind values implemented end-to-end (editor UI + frontend
+	 * rendering). Later phases widen this — quote, and a
 	 * link-post-format-only `link` kind — as each one's own frontend
 	 * rendering ships; see issue #401's phased plan.
 	 *
 	 * @var string[]
 	 */
-	private const SUPPORTED_TYPES = array( 'audio', 'video' );
+	private const SUPPORTED_TYPES = array( 'audio', 'video', 'gallery' );
+
+	/**
+	 * Default cap on how many images a gallery Featured Content may store.
+	 * Filterable via `daymark_featured_content_gallery_max`.
+	 *
+	 * @var int
+	 */
+	private const GALLERY_MAX = 20;
 
 	/**
 	 * File extensions a profiled URL's own path can end in and still be
@@ -150,13 +158,13 @@ class Daymark_Featured_Content {
 	private static function allowed_types(): array {
 		/**
 		 * Filters which Featured Content type values are accepted by the
-		 * meta sanitizer and offered by the editor panel. Starts scoped to
-		 * what this phase actually implements end-to-end; later phases
-		 * widen this as gallery/quote/link ship — see issue #401.
+		 * meta sanitizer and offered by the editor panel. Scoped to what
+		 * is implemented end-to-end; later phases widen this as quote/link
+		 * ship — see issue #401.
 		 *
 		 * @since 0.18.0
 		 *
-		 * @param string[] $types Defaults to `array( 'audio', 'video' )`.
+		 * @param string[] $types Defaults to `array( 'audio', 'video', 'gallery' )`.
 		 */
 		return array_values( array_unique( array_map( 'strval', (array) apply_filters( 'daymark_featured_content_allowed_types', self::SUPPORTED_TYPES ) ) ) );
 	}
@@ -220,11 +228,11 @@ class Daymark_Featured_Content {
 
 	/**
 	 * Sanitize `_daymark_featured_content` — keeps only sub-keys this class
-	 * currently recognizes (`audio`/`video`), each narrowed to its own
-	 * allowed shape; a gallery/quote/link sub-key sent by a future client
-	 * ahead of this phase's own rollout is silently dropped rather than
-	 * stored unsanitized, since nothing here can validate a shape this
-	 * class doesn't implement yet.
+	 * currently recognizes (`audio`/`video`/`gallery`), each narrowed to its
+	 * own allowed shape; a quote/link sub-key sent by a future client ahead
+	 * of that phase's own rollout is silently dropped rather than stored
+	 * unsanitized, since nothing here can validate a shape this class
+	 * doesn't implement yet.
 	 *
 	 * @param mixed $value Raw JSON string.
 	 * @return string Re-encoded, sanitized JSON (possibly `'{}'`).
@@ -251,6 +259,14 @@ class Daymark_Featured_Content {
 
 			if ( ! empty( $video ) ) {
 				$clean['video'] = $video;
+			}
+		}
+
+		if ( isset( $decoded['gallery'] ) && is_array( $decoded['gallery'] ) ) {
+			$gallery = self::sanitize_gallery_shape( $decoded['gallery'] );
+
+			if ( ! empty( $gallery ) ) {
+				$clean['gallery'] = $gallery;
 			}
 		}
 
@@ -295,6 +311,60 @@ class Daymark_Featured_Content {
 		return array(
 			'source'        => 'library',
 			'attachment_id' => $attachment_id,
+		);
+	}
+
+	/**
+	 * How many images a gallery Featured Content may store.
+	 *
+	 * @return int
+	 */
+	private static function gallery_max(): int {
+		/**
+		 * Filters the maximum number of images stored for gallery Featured Content.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param int $max Defaults to 20.
+		 */
+		return max( 1, (int) apply_filters( 'daymark_featured_content_gallery_max', self::GALLERY_MAX ) );
+	}
+
+	/**
+	 * Sanitize a gallery sub-key: `{ attachment_ids: [int, ...] }`. IDs are
+	 * absint'd, de-duplicated (first occurrence wins, order preserved), and
+	 * kept only when they are real image attachments. Anything else — a
+	 * video ID, a missing attachment, a non-numeric value — is dropped.
+	 * An empty result is rejected entirely so a type of `gallery` with no
+	 * usable images never gets stored.
+	 *
+	 * @param array<string, mixed> $raw Decoded gallery sub-array.
+	 * @return array{attachment_ids: int[]}|array{}
+	 */
+	private static function sanitize_gallery_shape( array $raw ): array {
+		$ids   = isset( $raw['attachment_ids'] ) && is_array( $raw['attachment_ids'] ) ? $raw['attachment_ids'] : array();
+		$clean = array();
+
+		foreach ( $ids as $id ) {
+			$id = absint( $id );
+
+			if ( $id <= 0 || isset( $clean[ $id ] ) || ! wp_attachment_is_image( $id ) ) {
+				continue;
+			}
+
+			$clean[ $id ] = $id;
+
+			if ( count( $clean ) >= self::gallery_max() ) {
+				break;
+			}
+		}
+
+		if ( empty( $clean ) ) {
+			return array();
+		}
+
+		return array(
+			'attachment_ids' => array_values( $clean ),
 		);
 	}
 
@@ -381,6 +451,8 @@ class Daymark_Featured_Content {
 			$html = self::render_audio( $fc['data'] );
 		} elseif ( 'video' === $fc['type'] ) {
 			$html = self::render_video( $fc['data'] );
+		} elseif ( 'gallery' === $fc['type'] ) {
+			$html = self::render_gallery( $fc['data'] );
 		}
 
 		/**
@@ -495,6 +567,106 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Render a gallery Featured Content as a slider shell. Every slide is in
+	 * the markup (a no-JS visitor sees them stacked; assets/featured-content.js
+	 * adds `is-enhanced` and shows one at a time). Controls, dots, and the
+	 * live region are omitted for a single image — there is nothing to slide.
+	 *
+	 * @param array{attachment_ids?: int[]} $data Sanitized gallery data.
+	 * @return string
+	 */
+	private static function render_gallery( array $data ): string {
+		$ids    = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
+		$images = array();
+
+		foreach ( $ids as $id ) {
+			$id = absint( $id );
+
+			if ( $id <= 0 || ! wp_attachment_is_image( $id ) ) {
+				continue;
+			}
+
+			$img = wp_get_attachment_image(
+				$id,
+				'large',
+				false,
+				array(
+					'class' => 'daymark-fc-gallery__img',
+				)
+			);
+
+			if ( '' === $img ) {
+				continue;
+			}
+
+			$images[] = $img;
+		}
+
+		$count = count( $images );
+
+		if ( 0 === $count ) {
+			return '';
+		}
+
+		$slides = array();
+
+		foreach ( $images as $index => $img ) {
+			$slides[] = sprintf(
+				'<div class="daymark-fc-gallery__slide" role="group" aria-roledescription="%1$s" aria-label="%2$s">%3$s</div>',
+				esc_attr__( 'slide', 'daymark' ),
+				esc_attr(
+					sprintf(
+						/* translators: 1: current slide number, 2: total slides. */
+						__( 'Slide %1$d of %2$d', 'daymark' ),
+						$index + 1,
+						$count
+					)
+				),
+				$img
+			);
+		}
+
+		$controls = '';
+
+		if ( $count > 1 ) {
+			$dots = array();
+
+			for ( $i = 0; $i < $count; $i++ ) {
+				$dots[] = sprintf(
+					'<button type="button" class="daymark-fc-gallery__dot" data-daymark-gallery-dot data-index="%1$d" aria-label="%2$s"></button>',
+					$i,
+					esc_attr(
+						sprintf(
+							/* translators: %d: slide number. */
+							__( 'Show slide %d', 'daymark' ),
+							$i + 1
+						)
+					)
+				);
+			}
+
+			$controls = sprintf(
+				'<button type="button" class="daymark-fc-gallery__nav daymark-fc-gallery__nav--prev" data-daymark-gallery-prev aria-label="%1$s"></button><button type="button" class="daymark-fc-gallery__nav daymark-fc-gallery__nav--next" data-daymark-gallery-next aria-label="%2$s"></button><div class="daymark-fc-gallery__dots">%3$s</div><div class="screen-reader-text" data-daymark-gallery-live aria-live="polite" data-template="%4$s"></div>',
+				esc_attr__( 'Previous slide', 'daymark' ),
+				esc_attr__( 'Next slide', 'daymark' ),
+				implode( '', $dots ),
+				esc_attr(
+					/* translators: 1: current slide number, 2: total slides. */
+					__( 'Slide %1$d of %2$d', 'daymark' )
+				)
+			);
+		}
+
+		return sprintf(
+			'<div class="daymark-fc-gallery" data-daymark-gallery tabindex="0" role="region" aria-roledescription="%1$s" aria-label="%2$s"><div class="daymark-fc-gallery__track">%3$s</div>%4$s</div>',
+			esc_attr__( 'carousel', 'daymark' ),
+			esc_attr__( 'Featured gallery', 'daymark' ),
+			implode( '', $slides ),
+			$controls
+		);
+	}
+
+	/**
 	 * Enqueue the Featured Content editor control, only on a post-edit
 	 * screen for a post type this class actually supports.
 	 *
@@ -551,7 +723,9 @@ class Daymark_Featured_Content {
 	 * @return void
 	 */
 	public function maybe_enqueue_frontend_style(): void {
-		if ( ! is_singular() || ! self::has_featured_content( get_queried_object_id() ) ) {
+		$post_id = (int) get_queried_object_id();
+
+		if ( ! is_singular() || ! self::has_featured_content( $post_id ) ) {
 			return;
 		}
 
@@ -561,6 +735,18 @@ class Daymark_Featured_Content {
 			array(),
 			DAYMARK_VERSION
 		);
+
+		$fc = self::get_featured_content( $post_id );
+
+		if ( isset( $fc['type'] ) && 'gallery' === $fc['type'] ) {
+			wp_enqueue_script(
+				'daymark-featured-content',
+				DAYMARK_PLUGIN_URL . 'assets/featured-content.js',
+				array(),
+				DAYMARK_VERSION,
+				true
+			);
+		}
 	}
 
 	/**

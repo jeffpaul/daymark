@@ -16,3 +16,103 @@
 	max-width: 100%;
 	width: 100%;
 }
+
+/*
+ * Gallery slider (issue #406). Without JS every slide stacks. Once
+ * featured-content.js adds .is-enhanced, only the active slide shows and
+ * the prev/next/dot controls appear.
+ */
+.daymark-fc-gallery {
+	position: relative;
+}
+
+.daymark-fc-gallery:focus {
+	outline: 2px solid currentColor;
+	outline-offset: 2px;
+}
+
+.daymark-fc-gallery__img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__slide[hidden] {
+	display: none;
+}
+
+.daymark-fc-gallery__nav,
+.daymark-fc-gallery__dots {
+	display: none;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__nav {
+	display: block;
+	position: absolute;
+	top: 50%;
+	z-index: 1;
+	width: 44px;
+	height: 44px;
+	margin-top: -22px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.85);
+	cursor: pointer;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__nav--prev {
+	left: 8px;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__nav--next {
+	right: 8px;
+}
+
+.daymark-fc-gallery__nav--prev::before,
+.daymark-fc-gallery__nav--next::before {
+	content: "";
+	display: block;
+	width: 8px;
+	height: 8px;
+	margin: 0 auto;
+	border-top: 2px solid #1e1e1e;
+	border-right: 2px solid #1e1e1e;
+}
+
+.daymark-fc-gallery__nav--prev::before {
+	transform: rotate( -135deg );
+	margin-left: 18px;
+}
+
+.daymark-fc-gallery__nav--next::before {
+	transform: rotate( 45deg );
+	margin-right: 18px;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__dots {
+	display: flex;
+	justify-content: center;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.daymark-fc-gallery__dot {
+	width: 10px;
+	height: 10px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: #ccc;
+	cursor: pointer;
+}
+
+.daymark-fc-gallery__dot[aria-current="true"] {
+	background: #1e1e1e;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-fc-gallery__slide {
+		transition: none;
+	}
+}
