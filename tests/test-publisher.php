@@ -1781,6 +1781,37 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The full-screen post view (PostScreen) loads a Mark's content via
+	 * GET /marks/{id}/content, not the raw post — unlike
+	 * test_checkin_with_place_name_and_no_caption_publishes()'s own direct
+	 * assertions against $post->post_content, this exercises the exact
+	 * pipeline that endpoint applies (`the_content` then wp_kses_post()),
+	 * confirming the map-preview block's `<figure>`/`<img>`/pin `<span>`
+	 * (including its inline `style="left:...;top:..."`) all survive that
+	 * extra sanitization pass rather than only the stored post_content.
+	 */
+	public function test_checkin_map_preview_survives_rest_content_endpoint() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}/content" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertStringContainsString( 'daymark-checkin-map', $data['content'] );
+		$this->assertStringContainsString( 'tile.openstreetmap.org/15/5241/12665.png', $data['content'] );
+		$this->assertStringContainsString( 'daymark-checkin-map__pin', $data['content'] );
+		$this->assertStringContainsString( 'style=', $data['content'] );
+	}
+
+	/**
 	 * Simple Location's own post-meta convention (issue #345) is bridged
 	 * to only when that plugin is genuinely active — its defining
 	 * `Geo_Data` class isn't loaded in this test environment, so the
