@@ -492,57 +492,77 @@ class Daymark_Routes {
 		);
 
 		return array(
-			'restUrl'               => esc_url_raw( rest_url( 'daymark/v1/' ) ),
-			'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
+			'restUrl'                 => esc_url_raw( rest_url( 'daymark/v1/' ) ),
+			'assetsUrl'               => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 			// Trailing-slash directory URL for the app's own base
 			// (/daymark/, or /daymark-app/) — the service worker
 			// registration scope (issue #126) needs a directory-shaped
 			// URL, not app_url()'s own bare (no trailing slash) form.
-			'appUrl'                => esc_url_raw( self::app_url() . '/' ),
-			'nonce'                 => wp_create_nonce( 'wp_rest' ),
-			'siteUrl'               => esc_url_raw( home_url( '/' ) ),
-			'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
+			'appUrl'                  => esc_url_raw( self::app_url() . '/' ),
+			'nonce'                   => wp_create_nonce( 'wp_rest' ),
+			'siteUrl'                 => esc_url_raw( home_url( '/' ) ),
+			'siteTitle'               => sanitize_text_field( get_bloginfo( 'name' ) ),
 			// A raw PHP date() format string (Settings -> General -> Date
 			// Format) — assets/app.js's formatDateWithPhpFormat() maps it
 			// token-by-token onto a Timeline card's own absolute-date
 			// display, so a card reads dates the same way the rest of
 			// wp-admin already does rather than the browser's own locale
 			// default.
-			'dateFormat'            => sanitize_text_field( get_option( 'date_format' ) ),
+			'dateFormat'              => sanitize_text_field( get_option( 'date_format' ) ),
 			// Site Icon first, Daymark's own bundled icon otherwise — same
 			// resolution icon_url() already uses for the browser favicon
 			// and PWA manifest icons.
-			'siteIconUrl'           => esc_url_raw( self::icon_url( 96 ) ),
+			'siteIconUrl'             => esc_url_raw( self::icon_url( 96 ) ),
 			// Always Daymark's own bundled icon, never the site's Site Icon
 			// — used for the app shell's own header/nav chrome.
-			'daymarkIconUrl'        => esc_url_raw( self::daymark_icon_url( 96 ) ),
-			'screen'                => $screen,
-			'connectors'            => $connectors,
-			'defaults'              => $type_defaults,
-			'categories'            => $categories,
-			'categoryDefaults'      => $category_defaults,
-			'titlePolicy'           => $title_policy,
-			'defaultCategory'       => (int) get_option( 'default_category' ),
-			'ai'                    => array(
+			'daymarkIconUrl'          => esc_url_raw( self::daymark_icon_url( 96 ) ),
+			'screen'                  => $screen,
+			'connectors'              => $connectors,
+			'defaults'                => $type_defaults,
+			'categories'              => $categories,
+			'categoryDefaults'        => $category_defaults,
+			'titlePolicy'             => $title_policy,
+			'defaultCategory'         => (int) get_option( 'default_category' ),
+			'ai'                      => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),
 			),
-			'notifications'         => array(
+			'notifications'           => array(
 				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
 			),
-			'controllableHelpers'   => $controllable_helpers,
-			'publishHelpers'        => $awareness_helpers,
-			'currentUser'           => array(
+			// Subscriptions currently failing a poll check, as a minimal,
+			// fully-sanitized array for the Me screen's Connections tab — a
+			// raw `get_with_issues()` row is a SELECT * off the
+			// `daymark_subscription` table and would carry fields this app
+			// shell must never receive (notably `websub_secret`, issue #82).
+			// Only the fields the tab actually renders are exposed.
+			'subscriptionsWithIssues' => array_map(
+				static function ( array $row ): array {
+					return array(
+						'id'                        => absint( $row['id'] ?? 0 ),
+						'site_title'                => sanitize_text_field( (string) ( $row['site_title'] ?? '' ) ),
+						'site_url'                  => esc_url_raw( (string) ( $row['site_url'] ?? '' ) ),
+						'site_icon_url'             => esc_url_raw( (string) ( $row['site_icon_url'] ?? '' ) ),
+						'status'                    => sanitize_key( (string) ( $row['status'] ?? '' ) ),
+						'last_error'                => sanitize_text_field( (string) ( $row['last_error'] ?? '' ) ),
+						'consecutive_failure_count' => absint( $row['consecutive_failure_count'] ?? 0 ),
+					);
+				},
+				Daymark_Plugin::instance()->subscriptions->get_with_issues()
+			),
+			'controllableHelpers'     => $controllable_helpers,
+			'publishHelpers'          => $awareness_helpers,
+			'currentUser'             => array(
 				'id'             => (int) $user->ID,
 				'displayName'    => $user->display_name,
 				'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $user->ID, array( 'size' => 96 ) ) ),
 				'profileEditUrl' => esc_url_raw( get_edit_profile_url( $user->ID ) ),
 				'logoutUrl'      => esc_url_raw( wp_logout_url( self::app_url( 'me' ) ) ),
 			),
-			'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
-			'pluginsUrl'            => esc_url_raw( admin_url( 'plugins.php' ) ),
-			'pendingDraftId'        => $pending_draft_id,
-			'pendingType'           => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
+			'adminSubscriptionsUrl'   => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
+			'pluginsUrl'              => esc_url_raw( admin_url( 'plugins.php' ) ),
+			'pendingDraftId'          => $pending_draft_id,
+			'pendingType'             => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
 	}
 

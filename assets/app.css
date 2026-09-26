@@ -1550,6 +1550,126 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-accent-wash);
 }
 
+/* --- Me: Published / Drafts / Connections tabs --- */
+.daymark-metabs {
+	display: flex;
+	gap: var(--daymark-spacing-xs);
+	padding: var(--daymark-spacing-sm) 0;
+	border-bottom: 1px solid var(--daymark-border);
+}
+
+.daymark-metabtab {
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
+	border: none;
+	border-radius: var(--daymark-radius-sm);
+	background: transparent;
+	color: var(--daymark-text-secondary);
+	font-size: 15px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+}
+
+.daymark-metabtab:hover {
+	color: var(--daymark-text-primary);
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-metabtab:focus-visible {
+	color: var(--daymark-text-primary);
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: -2px;
+}
+
+.daymark-metabtab.is-active,
+.daymark-metabtab[aria-selected='true'] {
+	color: var(--daymark-accent);
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-metabpanel {
+	margin: var(--daymark-spacing-md) 0;
+}
+
+/* --- Me: Connections tab --- */
+.daymark-connsection {
+	margin-bottom: var(--daymark-spacing-lg);
+}
+
+.daymark-connsection:last-child {
+	margin-bottom: 0;
+}
+
+.daymark-connlist {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	overflow: hidden;
+	list-style: none;
+}
+
+.daymark-connrow {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-md);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	background: var(--daymark-bg);
+}
+
+.daymark-connrow + .daymark-connrow {
+	border-top: 1px solid var(--daymark-border);
+}
+
+.daymark-connrow__label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.daymark-connrow__detail {
+	flex: 0 0 auto;
+	max-width: 55%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+	text-align: right;
+}
+
+.daymark-connrow__detail a {
+	color: var(--daymark-accent);
+	text-decoration: none;
+}
+
+.daymark-connrow__detail a:hover,
+.daymark-connrow__detail a:focus-visible {
+	text-decoration: underline;
+}
+
+.daymark-connsection__action {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 14px;
+}
+
+.daymark-connsection__action a {
+	color: var(--daymark-accent);
+	text-decoration: none;
+}
+
+.daymark-connsection__action a:hover,
+.daymark-connsection__action a:focus-visible {
+	text-decoration: underline;
+}
+
 /* --- Create: media picker --- */
 .daymark-picker__input {
 	position: absolute;

@@ -4443,6 +4443,30 @@
 					__('subscribe to a site', 'daymark')
 				)}</a>`
 			)}</p>`;
+		} else if (list.hasAttribute('data-me-drafts')) {
+			// Me's Drafts tab chrome stays put; only the list's own content
+			// empties. _draftsLoaded is deliberately left true so a later
+			// switch to the tab doesn't re-fetch a just-emptied list.
+			list.innerHTML = `<p class="daymark-empty">${sprintf(
+				/* translators: %s: "Start one" link */
+				__('No drafts. %s.', 'daymark'),
+				'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
+			)}</p>`;
+		} else if (list.hasAttribute('data-me-published-list')) {
+			screen.teardownPublishedObserver();
+			const sentinel = root.querySelector('[data-me-published-sentinel]');
+			if (sentinel) {
+				sentinel.hidden = true;
+			}
+			const more = root.querySelector('[data-me-published-more]');
+			if (more) {
+				more.hidden = true;
+			}
+			list.innerHTML = `<p class="daymark-empty">${sprintf(
+				/* translators: %s: "Publish a Mark" link */
+				__('Nothing published yet. %s.', 'daymark'),
+				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
+			)}</p>`;
 		}
 	}
 
@@ -5498,13 +5522,22 @@
 
 	// --- Screen: Me ---
 	//
-	// A minimal foundation for the user's own Daymark identity: who they
-	// are, their drafts, and the surfaces that already exist elsewhere
-	// (Subscriptions in wp-admin, their WordPress profile — Notifications
-	// is reached from the header icon every screen now shares, so it's no
-	// longer a link in this body). Deliberately doesn't duplicate
-	// WordPress's own account settings — Edit profile and Log out link
-	// out to WordPress rather than reimplementing them.
+	// The user's own Daymark surfaces, organized into three tabs (plain
+	// internal state — never hash routes, so the post view's returnTo
+	// hand-off keeps landing back on Me; see showScreen()'s guards):
+	//   * Published — this user's own published Marks, newest-first, with
+	//     the same infinite-scroll pattern Home's Timeline uses.
+	//   * Drafts — lazy-loaded on its first activation; full inline
+	//     management (Edit / Publish / Delete via the shared ⋯ menu) on
+	//     Me itself, not just Home (issue #295).
+	//   * Connections — the connected services, notification state, and
+	//     subscription health summarized in place from the already-inlined
+	//     config (issue #295's "summarized rather than linked out").
+	//     Deliberately no fetch: everything this tab shows is in config
+	//     by the time Me renders.
+	// Beyond the tabs, the same minimal out-links as before — Edit profile
+	// and Log out go to WordPress rather than being reimplemented, and full
+	// subscription management stays in wp-admin.
 
 	const MeScreen = {
 		render() {
@@ -5514,6 +5547,24 @@
 				: `<span class="daymark-meavatar daymark-meavatar--glyph" aria-hidden="true">${navIcon(
 						ME_GLYPH
 				  )}</span>`;
+			// Which tab is visually active is only ever internal state
+			// (_activeTab); the first render defaults to Published.
+			const active = 'drafts' === this._activeTab || 'connections' === this._activeTab ? this._activeTab : 'published';
+			const tabMarkup = ['published', 'drafts', 'connections']
+				.map(
+					(key) => `<button type="button" role="tab" id="daymark-me-tab-${key}" class="daymark-metabtab${
+						active === key ? ' is-active' : ''
+					}" data-me-tab="${key}" aria-selected="${active === key ? 'true' : 'false'}" aria-controls="daymark-me-panel-${key}" tabindex="${
+						active === key ? '0' : '-1'
+					}">${esc(
+						'published' === key
+							? __('Published', 'daymark')
+							: 'drafts' === key
+								? __('Drafts', 'daymark')
+								: __('Connections', 'daymark')
+					)}</button>`
+				)
+				.join('');
 			return `
 			<header class="daymark-topbar">
 				${daymarkIconLink()}
@@ -5525,8 +5576,25 @@
 					${avatar}
 					<span class="daymark-mename">${esc(user.displayName || '')}</span>
 				</div>
+				<div class="daymark-metabs" role="tablist" aria-label="${esc(__('Your Daymark', 'daymark'))}" data-me-tablist>
+					${tabMarkup}
+				</div>
+				<section class="daymark-metabpanel" id="daymark-me-panel-published" role="tabpanel" aria-labelledby="daymark-me-tab-published" data-me-panel="published" ${'published' === active ? '' : 'hidden'}>
+					<div class="daymark-recent__list" data-me-published-list aria-live="polite">
+						${'published' === active ? skeletonRows(3) + `<span class="daymark-visually-hidden">${esc(__('Loading your published Marks', 'daymark'))}</span>` : ''}
+					</div>
+					<div class="daymark-recent__sentinel" data-me-published-sentinel aria-hidden="true"></div>
+					<p class="daymark-recent__more" data-me-published-more hidden></p>
+				</section>
+				<section class="daymark-metabpanel" id="daymark-me-panel-drafts" role="tabpanel" aria-labelledby="daymark-me-tab-drafts" data-me-panel="drafts" ${'drafts' === active ? '' : 'hidden'}>
+					<div class="daymark-recent__list" data-me-drafts aria-live="polite">
+						${'drafts' === active ? skeletonRows(2) + `<span class="daymark-visually-hidden">${esc(__('Loading drafts', 'daymark'))}</span>` : ''}
+					</div>
+				</section>
+				<section class="daymark-metabpanel" id="daymark-me-panel-connections" role="tabpanel" aria-labelledby="daymark-me-tab-connections" data-me-panel="connections" ${'connections' === active ? '' : 'hidden'}>
+					${this.connectionsMarkup()}
+				</section>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
-					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
 							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
@@ -5549,25 +5617,115 @@
 							: ''
 					}
 				</nav>
-				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
-					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
-					<div class="daymark-recent__list" data-me-drafts>
-						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
-					</div>
-				</section>
 			</section>
 			${navFooterMarkup('me')}`;
 		},
 
+		// The Connections tab's content, built eagerly at render() time from
+		// the already-inlined config — no fetch, so switching to this tab is
+		// instant and works even on the offline-fallback shell. Kept to the
+		// three facts the app genuinely tracks (issue #295's "summarized
+		// rather than linked out"); a full account of connected
+		// destinations lives on wp-admin's own Subscriptions screen.
+		connectionsMarkup() {
+			const connectors = Array.isArray(config.connectors) ? config.connectors : [];
+			const hasUnread = Boolean(config.notifications && config.notifications.hasUnread);
+			const issues = Array.isArray(config.subscriptionsWithIssues) ? config.subscriptionsWithIssues : [];
+
+			const connectorRows = connectors.length
+				? connectors
+						.map(
+							(c) =>
+								`<li class="daymark-connrow"><span class="daymark-connrow__label">${esc(
+									c.label || ''
+								)}</span><span class="daymark-connrow__detail">${esc(
+									c.status_label || c.status || ''
+								)}</span></li>`
+						)
+						.join('')
+				: `<li class="daymark-connrow"><span class="daymark-connrow__detail">${esc(
+						__('No connected services.', 'daymark')
+				  )}</span></li>`;
+
+			const notificationRow = `<li class="daymark-connrow"><span class="daymark-connrow__detail">${
+				hasUnread
+					? `<a href="#notifications">${esc(__('You have unread notifications.', 'daymark'))}</a>`
+					: esc(__('No unread notifications.', 'daymark'))
+			}</span></li>`;
+
+			const issueRows = issues.length
+				? issues
+						.map(
+							(s) =>
+								`<li class="daymark-connrow"><span class="daymark-connrow__label">${esc(
+									s.site_title || s.site_url || ''
+								)}</span><span class="daymark-connrow__detail">${esc(
+									s.last_error || ''
+								)}</span></li>`
+						)
+						.join('')
+				: `<li class="daymark-connrow"><span class="daymark-connrow__detail">${esc(
+						__('All subscriptions are healthy.', 'daymark')
+				  )}</span></li>`;
+
+			return `
+				<div class="daymark-connsection">
+					<h2 class="daymark-section-heading">${esc(__('Connected services', 'daymark'))}</h2>
+					<ul class="daymark-connlist">${connectorRows}</ul>
+				</div>
+				<div class="daymark-connsection">
+					<h2 class="daymark-section-heading">${esc(__('Notifications', 'daymark'))}</h2>
+					<ul class="daymark-connlist">${notificationRow}</ul>
+				</div>
+				<div class="daymark-connsection">
+					<h2 class="daymark-section-heading">${esc(__('Subscriptions', 'daymark'))}</h2>
+					<ul class="daymark-connlist">${issueRows}</ul>
+					${
+						config.adminSubscriptionsUrl
+							? `<p class="daymark-connsection__action"><a href="${esc(
+									config.adminSubscriptionsUrl
+							  )}">${esc(__('Manage subscriptions', 'daymark'))}</a></p>`
+							: ''
+					}
+				</div>`;
+		},
+
 		bindEvents() {
-			const myMarks = root.querySelector('[data-me-mymarks]');
-			if (myMarks) {
-				myMarks.addEventListener('click', () => {
-					searchPreset = { source: 'mine' };
-					navigate('#search');
+			root.querySelectorAll('[data-me-tab]').forEach((tab) => {
+				tab.addEventListener('click', () => {
+					this.switchTab(tab.getAttribute('data-me-tab'));
+				});
+			});
+
+			// Arrow-key navigation across the tab list (the WAI-ARIA tabs
+			// pattern); activating a tab is automatic on arrival.
+			const tablist = root.querySelector('[data-me-tablist]');
+			if (tablist) {
+				tablist.addEventListener('keydown', (event) => {
+					if ('ArrowRight' !== event.key && 'ArrowLeft' !== event.key) {
+						return;
+					}
+					const tabs = Array.from(root.querySelectorAll('[data-me-tab]'));
+					const index = tabs.indexOf(document.activeElement);
+					if (-1 === index) {
+						return;
+					}
+					event.preventDefault();
+					const next = 'ArrowRight' === event.key ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
+					this.switchTab(tabs[next].getAttribute('data-me-tab'));
+					tabs[next].focus();
 				});
 			}
+
+			// Per-item ⋯ menu / card taps via the same shared delegation
+			// Home's lists use — a published Mark opens the full post view;
+			// a Draft (and its ⋯ Edit/Publish/Delete menu) works on Me
+			// exactly as it does on Home's own Drafts row. Direct card taps
+			// on a Draft are handled by bindDraftTaps() below, not here.
+			root.querySelectorAll('[data-me-published-list], [data-me-drafts]').forEach((list) => {
+				list.addEventListener('click', (event) => onFeedListClick(this, event));
+				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			});
 
 			const logout = root.querySelector('[data-me-logout]');
 			if (logout) {
@@ -5584,17 +5742,210 @@
 			bindNavFooter(this);
 		},
 
-		async init() {
+		// Switch the visible Me tab. Tabs are plain internal state — no hash
+		// change, no re-render — so a post view's returnTo hand-off and any
+		// already-loaded list content survive across switches. Closing open
+		// item menus first keeps the "at most one menu open" invariant the
+		// other feed-list screens already hold.
+		switchTab(name) {
+			if ('published' !== name && 'drafts' !== name && 'connections' !== name) {
+				return;
+			}
+			this._activeTab = name;
+			closeItemMenus();
+			root.querySelectorAll('[data-me-tab]').forEach((tab) => {
+				const active = name === tab.getAttribute('data-me-tab');
+				tab.classList.toggle('is-active', active);
+				tab.setAttribute('aria-selected', active ? 'true' : 'false');
+				tab.setAttribute('tabindex', active ? '0' : '-1');
+			});
+			root.querySelectorAll('[data-me-panel]').forEach((panel) => {
+				panel.hidden = name !== panel.getAttribute('data-me-panel');
+			});
+			if ('drafts' === name) {
+				this.ensureDraftsLoaded();
+			}
+		},
+
+		// --- Published tab: this user's own published Marks with the same
+		// infinite-scroll trio Home's Timeline uses (loadRecent → observer
+		// → loadMorePage), but scoped to one source via GET /marks.
+
+		async loadPublished() {
+			const list = root.querySelector('[data-me-published-list]');
+			const sentinel = root.querySelector('[data-me-published-sentinel]');
+			const more = root.querySelector('[data-me-published-more]');
+			if (!list) {
+				return;
+			}
+			this._publishedPage = 1;
+			this._publishedDone = false;
+			this._publishedLoading = false;
+			this.teardownPublishedObserver();
+			const seq = ++this._searchSeq;
+			if (more) {
+				more.hidden = true;
+			}
+			if (sentinel) {
+				sentinel.hidden = false;
+			}
+			try {
+				const items = await apiGet('marks?status=publish&per_page=' + RECENT_PER_PAGE + '&page=1');
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				const arr = Array.isArray(items) ? items : [];
+				this._byMarkId.clear();
+				arr.forEach((item) => rememberItem(this, item));
+				if (!arr.length) {
+					list.innerHTML = `<p class="daymark-empty">${sprintf(
+						/* translators: %s: "Publish a Mark" link */
+						__('Nothing published yet. %s.', 'daymark'),
+						'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
+					)}</p>`;
+					this._publishedDone = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+				list.innerHTML = arr.map((item) => renderMarkItem(item)).join('');
+				if (arr.length < RECENT_PER_PAGE) {
+					// A short first page means there is nothing more to load.
+					this._publishedDone = true;
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+					return;
+				}
+				// A full page: prefer infinite scroll, falling back to an
+				// in-place "Load more" button when IntersectionObserver is
+				// unavailable — the same choice Home's Timeline makes.
+				if ('IntersectionObserver' in window) {
+					this.setupPublishedObserver();
+				} else if (more) {
+					more.innerHTML =
+						'<button type="button" class="daymark-btn daymark-btn--text" data-me-published-loadmore>' +
+						esc(__('Load more', 'daymark')) +
+						'</button>';
+					more.hidden = false;
+					const btn = more.querySelector('[data-me-published-loadmore]');
+					if (btn) {
+						btn.addEventListener('click', () => this.loadMorePublished());
+					}
+				}
+			} catch (err) {
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				list.innerHTML = isAuthExpiredError(err)
+					? authExpiredErrorHtml()
+					: '<p class="daymark-error" role="alert">' +
+					  sprintf(
+							/* translators: %s: error message */
+							esc(__('Could not load your published Marks. %s', 'daymark')),
+							esc(err.message)
+					  ) +
+					  '</p>';
+			}
+		},
+
+		// Append the next page when the sentinel scrolls into view.
+		async loadMorePublished() {
+			if (this._publishedLoading || this._publishedDone) {
+				return;
+			}
+			this._publishedLoading = true;
+			const list = root.querySelector('[data-me-published-list]');
+			const sentinel = root.querySelector('[data-me-published-sentinel]');
+			if (!list || !list.isConnected) {
+				this._publishedLoading = false;
+				return;
+			}
+			const nextPage = this._publishedPage + 1;
+			try {
+				const items = await apiGet('marks?status=publish&per_page=' + RECENT_PER_PAGE + '&page=' + nextPage);
+				const arr = Array.isArray(items) ? items : [];
+				if (arr.length && list.isConnected) {
+					this._publishedPage = nextPage;
+					arr.forEach((item) => rememberItem(this, item));
+					list.insertAdjacentHTML('beforeend', arr.map((item) => renderMarkItem(item)).join(''));
+				}
+				if (arr.length < RECENT_PER_PAGE) {
+					this._publishedDone = true;
+					this.teardownPublishedObserver();
+					if (sentinel) {
+						sentinel.hidden = true;
+					}
+				}
+			} catch (err) {
+				// Stop trying on error; keep whatever already loaded.
+				this._publishedDone = true;
+				this.teardownPublishedObserver();
+			} finally {
+				this._publishedLoading = false;
+			}
+		},
+
+		setupPublishedObserver() {
+			if (!('IntersectionObserver' in window)) {
+				return; // The "Load more" button is the fallback path.
+			}
+			const sentinel = root.querySelector('[data-me-published-sentinel]');
+			if (!sentinel) {
+				return;
+			}
+			this.teardownPublishedObserver();
+			this._publishedObserver = new IntersectionObserver(
+				(entries) => {
+					for (const entry of entries) {
+						if (entry.isIntersecting) {
+							this.loadMorePublished();
+						}
+					}
+				},
+				{ rootMargin: '200px' }
+			);
+			this._publishedObserver.observe(sentinel);
+		},
+
+		teardownPublishedObserver() {
+			if (this._publishedObserver) {
+				this._publishedObserver.disconnect();
+				this._publishedObserver = null;
+			}
+		},
+
+		// --- Drafts tab: lazy, one-shot — fetched only the first time the
+		// tab is actually activated for this render of Me (a draft list
+		// never opened isn't worth a request), then kept for the rest of
+		// the screen's life. Rendered with the shared renderMarkItem() so
+		// Edit/Publish/Delete work on Me exactly as on Home (issue #295).
+
+		ensureDraftsLoaded() {
+			if (this._draftsLoaded || this._draftsLoading) {
+				return;
+			}
+			this._draftsLoading = true;
+			this.loadDrafts();
+		},
+
+		async loadDrafts() {
 			const list = root.querySelector('[data-me-drafts]');
 			if (!list) {
 				return;
 			}
+			const seq = ++this._draftsSeq;
+			list.innerHTML =
+				skeletonRows(2) +
+				`<span class="daymark-visually-hidden">${esc(__('Loading drafts', 'daymark'))}</span>`;
 			try {
 				const drafts = await apiGet('marks?status=draft&per_page=10');
-				const draftItems = Array.isArray(drafts) ? drafts : [];
-				if (!list.isConnected) {
+				if (seq !== this._draftsSeq || !list.isConnected) {
 					return;
 				}
+				const draftItems = Array.isArray(drafts) ? drafts : [];
+				this._draftsLoaded = true;
 				if (!draftItems.length) {
 					list.innerHTML = `<p class="daymark-empty">${sprintf(
 						/* translators: %s: "Start one" link */
@@ -5603,31 +5954,39 @@
 					)}</p>`;
 					return;
 				}
-				// View-only here (tap to resume editing) — full Edit/Delete
-				// management stays on Home's own Drafts row.
-				list.innerHTML = draftItems
-					.map(
-						(item) =>
-							`<a class="daymark-recent__item daymark-recent__item--${esc(
-								resolveCardKind(item)
-							)}" href="#create" data-edit-draft="${esc(
-								String(item.id)
-							)}">${renderMarkCore(item)}</a>`
-					)
-					.join('');
+				list.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
+				draftItems.forEach((item) => rememberItem(this, item));
 				bindDraftTaps(list);
 			} catch (err) {
-				if (list.isConnected) {
-					list.innerHTML =
-						'<p class="daymark-error" role="alert">' +
-						sprintf(
-							/* translators: %s: error message */
-							esc(__('Could not load drafts. %s', 'daymark')),
-							esc(err.message)
-						) +
-						'</p>';
+				if (seq !== this._draftsSeq || !list.isConnected) {
+					return;
 				}
+				list.innerHTML =
+					'<p class="daymark-error" role="alert">' +
+					sprintf(
+						/* translators: %s: error message */
+						esc(__('Could not load drafts. %s', 'daymark')),
+						esc(err.message)
+					) +
+					'</p>';
+			} finally {
+				this._draftsLoading = false;
 			}
+		},
+
+		init() {
+			this._activeTab = 'published';
+			this._searchSeq = 0;
+			this._draftsSeq = 0;
+			this._bySubId = new Map();
+			this._byMarkId = new Map();
+			this._publishedPage = 1;
+			this._publishedDone = false;
+			this._publishedLoading = false;
+			this._draftsLoaded = false;
+			this._draftsLoading = false;
+			this.teardownPublishedObserver();
+			this.loadPublished();
 		},
 	};
 

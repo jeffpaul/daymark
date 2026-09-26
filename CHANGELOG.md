@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- The Me screen now has three tabs — Published, Drafts, and Connections — instead of its old single column of links. Published shows this user's own Marks (newest first, with the same infinite scroll Home's Timeline uses); Drafts now supports inline resuming and discarding right on the tab itself rather than only through Home's Drafts row; Connections shows connected services alongside any subscriptions currently having fetch trouble. The old "My Marks" link is gone, superseded by the Published tab's own scope. ([#295](https://github.com/jeffpaul/daymark/issues/295))
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
