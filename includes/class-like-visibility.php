@@ -159,13 +159,12 @@ class Daymark_Like_Visibility {
 
 		$ids = get_posts(
 			array(
-				'post_type'        => 'post',
-				'post_status'      => 'any',
-				'meta_key'         => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
-				'posts_per_page'   => self::MIGRATION_BATCH,
-				'fields'           => 'ids',
-				'no_found_rows'    => true,
-				'suppress_filters' => true,
+				'post_type'      => 'post',
+				'post_status'    => 'any',
+				'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
+				'posts_per_page' => self::MIGRATION_BATCH,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
 			)
 		);
 
@@ -173,13 +172,12 @@ class Daymark_Like_Visibility {
 		// a later restore can never bring it back as an ordinary post.
 		$trashed = get_posts(
 			array(
-				'post_type'        => 'post',
-				'post_status'      => 'trash',
-				'meta_key'         => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
-				'posts_per_page'   => self::MIGRATION_BATCH,
-				'fields'           => 'ids',
-				'no_found_rows'    => true,
-				'suppress_filters' => true,
+				'post_type'      => 'post',
+				'post_status'    => 'trash',
+				'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
+				'posts_per_page' => self::MIGRATION_BATCH,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
 			)
 		);
 
