@@ -108,7 +108,7 @@ class Test_Rest_Subscription_Like extends WP_UnitTestCase {
 
 		$marks = get_posts(
 			array(
-				'post_type'      => 'post',
+				'post_type'      => Daymark_Like_Visibility::POST_TYPE,
 				'post_status'    => 'publish',
 				'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 				'meta_value'     => $this->permalink, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value

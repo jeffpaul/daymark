@@ -488,7 +488,12 @@ class Daymark_Publisher {
 		}
 
 		$post_data = array(
-			'post_type'    => 'post', // NEVER a custom post type — the Daymark is a standard post.
+			// NEVER a custom post type for real content — a Mark is a
+			// standard post. The one exception is a Like Mark: a pure
+			// engagement signal, not content, so it lives on its own
+			// non-listed post type and never appears anywhere a post does
+			// (see Daymark_Like_Visibility::POST_TYPE).
+			'post_type'    => $is_like_of ? Daymark_Like_Visibility::POST_TYPE : 'post',
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
@@ -530,13 +535,14 @@ class Daymark_Publisher {
 		if ( $category_provided ) {
 			$this->remember_category_prefs( $type, $categories );
 		}
-		if ( $category_provided || ! empty( $categories ) ) {
+		// A Like Mark's own post type has no categories/tags at all.
+		if ( ! $is_like_of && ( $category_provided || ! empty( $categories ) ) ) {
 			wp_set_post_categories( $post_id, $categories, false );
 		}
 
 		// Apply AI-Assist-accepted tags and alt text when provided.
 		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
-		if ( $tags ) {
+		if ( $tags && ! $is_like_of ) {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
@@ -935,6 +941,7 @@ class Daymark_Publisher {
 
 		if ( null !== $like_of ) {
 			update_post_meta( $post_id, '_daymark_like_of', $like_of );
+			Daymark_Like_Visibility::convert_to_like_post_type( $post_id );
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
@@ -1910,7 +1917,9 @@ class Daymark_Publisher {
 	private function find_published_mark_by_target_url( string $meta_key, string $url ): int {
 		$found = get_posts(
 			array(
-				'post_type'      => 'post',
+				// Both types: a legacy Like Mark created before the move to
+				// its own post type may not have been migrated yet.
+				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
 				'post_status'    => 'publish',
 				'author'         => get_current_user_id(),
 				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
@@ -2134,6 +2143,11 @@ class Daymark_Publisher {
 	 * @return void
 	 */
 	private function apply_post_format( int $post_id, string $type ): void {
+		// A Like Mark's own post type doesn't support post formats.
+		if ( Daymark_Like_Visibility::POST_TYPE === get_post_type( $post_id ) ) {
+			return;
+		}
+
 		$format = self::TYPE_POST_FORMATS[ $type ] ?? 'standard';
 
 		// 'standard' clears the format term (set_post_format( , false )).
