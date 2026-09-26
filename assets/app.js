@@ -5657,6 +5657,9 @@
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
 				)}</h1>
+				<span class="daymark-chip daymark-topbar__typechip" data-type-badge>${esc(
+					TYPE_LABELS[effectiveType()]
+				)}</span>
 			</header>
 			<section class="daymark-screen">
 				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
@@ -5747,11 +5750,6 @@
 				</div>`
 				}
 				<div class="daymark-preview" data-preview></div>
-				<p class="daymark-typebadge">${sprintf(
-					/* translators: %s: Mark type label (e.g. "Image") */
-					esc(__('Mark type: %s', 'daymark')),
-					`<span class="daymark-chip" data-type-badge>${esc(TYPE_LABELS[effectiveType()])}</span>`
-				)}</p>
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>

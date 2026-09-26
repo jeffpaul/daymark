@@ -168,6 +168,16 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* CreateScreen's Mark-type chip, sitting after the title in the same flex
+   row — the title's own `flex: 1` already pushes it flush against the
+   header's trailing edge with no positioning of its own needed; `flex: none`
+   only guards its .daymark-chip white-space: nowrap text against flex-shrink
+   compression on a narrow viewport. Replaces the former .daymark-typebadge
+   paragraph that used to sit below the media picker. */
+.daymark-topbar__typechip {
+	flex: none;
+}
+
 /* PostScreen's own header (issue #315): its title is the post's own,
    arbitrary length, and — unlike every other screen's short, always-single-
    line title (Search/Explore/Me/Notifications) — can wrap to several lines.

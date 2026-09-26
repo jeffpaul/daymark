@@ -26,6 +26,7 @@ can't act on them.
 
 ### Changed
 
+- The composer's "Mark type: {Type}" line — previously its own paragraph below the media picker — is now a chip in the header, next to "New Mark"/"Edit Draft", for every Mark type.
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
 - The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.
 - Search's Source filter dropdown default option is now labeled "All sites" instead of "All", to distinguish it from the type-filter chips' own "All" option just above it. ([#420](https://github.com/jeffpaul/daymark/issues/420))

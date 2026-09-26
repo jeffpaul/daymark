@@ -1080,7 +1080,10 @@ test('Checkin Mark keeps its type and Place field once a photo is attached', asy
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
 
 	// Still a Check In, not reclassified to Image by the attached photo.
-	await expect(composer.locator('[data-type-badge]')).toHaveText('Check In');
+	// The type chip now lives in the header, a sibling of .daymark-screen —
+	// not scoped under `composer` — matching every other type-badge
+	// assertion in this file (e.g. line ~1255).
+	await expect(page.locator('[data-type-badge]')).toHaveText('Check In');
 	await expect(composer.locator('[data-checkin-place]')).toBeVisible();
 
 	await page.locator('[data-action="next"]').click();
