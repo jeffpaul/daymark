@@ -821,7 +821,7 @@
 		const reposted = !!item.reposted_mark_id;
 		const id = esc(String(item.id));
 		const markId = esc(String(item.reposted_mark_id || 0));
-		const label = reposted ? __('Undo repost', 'daymark') : __('Repost', 'daymark');
+		const label = reposted ? __('Undo reblog', 'daymark') : __('Reblog', 'daymark');
 		return `<span class="daymark-stat daymark-stat--repost${
 			reposted ? ' daymark-stat--active daymark-stat--reposted' : ''
 		}" role="button" tabindex="0" aria-pressed="${reposted ? 'true' : 'false'}" aria-label="${esc(
@@ -858,8 +858,8 @@
 			repostCount,
 			'reposts',
 			sprintf(
-				/* translators: %d: number of reposts */
-				_n('%d repost', '%d reposts', repostCount, 'daymark'),
+				/* translators: %d: number of reblogs */
+				_n('%d reblog', '%d reblogs', repostCount, 'daymark'),
 				repostCount
 			)
 		)}${renderBookmarkToggle(item, 'mark')}${renderOverflowToggle(item, markOverflowMenuItems(item))}</span>`;
@@ -3755,10 +3755,10 @@
 		const label = active
 			? 'like' === kind
 				? __('Unlike', 'daymark')
-				: __('Undo repost', 'daymark')
+				: __('Undo reblog', 'daymark')
 			: 'like' === kind
 			? __('Like', 'daymark')
-			: __('Repost', 'daymark');
+			: __('Reblog', 'daymark');
 		trigger.classList.toggle(activeClass, active);
 		trigger.classList.toggle('daymark-stat--active', active);
 		trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -8225,9 +8225,7 @@
 			const source = subscriptionSiteLabel(item);
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="${esc(hand ? hand.returnTo : '#home')}">&larr; ${esc(
-				__('Cancel', 'daymark')
-			)}</a>
+				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Reblog', 'daymark'))}</h1>
 			</header>
 			<section class="daymark-screen">
@@ -8695,9 +8693,6 @@
 				<button type="button" class="daymark-btn daymark-btn--primary" data-action="create-another">${esc(
 					__('Create Another', 'daymark')
 				)}</button>
-				<p class="daymark-status"><a class="daymark-btn--text daymark-btn" href="#home">${esc(
-					__('View Timeline →', 'daymark')
-				)}</a></p>
 			</footer>`;
 		},
 
