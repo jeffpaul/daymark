@@ -1753,4 +1753,198 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertIsInt( $post_id );
 		$this->assertNotEmpty( get_post_meta( $post_id, '_daymark_location', true ) );
 	}
+
+	/**
+	 * The weather bridge (issue #397) is a silent no-op when Simple
+	 * Location's defining `Sloc_Weather_Data` class isn't loaded — the
+	 * detection gate must short-circuit before any reference to it, so a
+	 * publish while the plugin is absent never fatals on an undefined
+	 * class.
+	 */
+	public function test_simple_location_weather_bridge_is_a_silent_no_op_when_plugin_absent() {
+		$this->assertFalse( class_exists( 'Sloc_Weather_Data' ), 'Precondition: Simple Location is not active in this test run.' );
+
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => wp_json_encode(
+					array(
+						'current' => array(
+							'temperature_2m' => 21.5,
+							'weather_code'   => 1,
+						),
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Weather bridge no-op test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertNotEmpty( get_post_meta( $post_id, '_daymark_weather', true ) );
+	}
+
+	/**
+	 * When Simple Location is active (modelled by a stub `Sloc_Weather_Data`
+	 * class defined here, mirroring test-publish-helpers.php), a successful
+	 * weather capture bridges the temperature and condition text into that
+	 * plugin's own meta — and only those two fields: `unit` (a display
+	 * concern, not a weather property) and `code` (Open-Meteo's WMO
+	 * vocabulary, which Simple Location's OpenWeatherMap-derived helpers
+	 * cannot map) are deliberately excluded.
+	 */
+	public function test_simple_location_weather_bridge_writes_temperature_and_summary_only() {
+		if ( ! class_exists( 'Sloc_Weather_Data' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only stub class; no user input.
+			eval(
+				'class Sloc_Weather_Data {
+					public static $calls = array();
+					public static function set_object_weatherdata( $type, $id, $key, $weather ) {
+						self::$calls[] = func_get_args();
+						return true;
+					}
+				}'
+			);
+		}
+
+		Sloc_Weather_Data::$calls = array();
+
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => wp_json_encode(
+					array(
+						'current' => array(
+							'temperature_2m' => 21.5,
+							'weather_code'   => 1,
+						),
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Weather bridge write test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertCount( 1, Sloc_Weather_Data::$calls );
+		$this->assertSame( 'post', Sloc_Weather_Data::$calls[0][0] );
+		$this->assertSame( $post_id, Sloc_Weather_Data::$calls[0][1] );
+		$this->assertSame( '', Sloc_Weather_Data::$calls[0][2] );
+		$this->assertSame(
+			array(
+				'temperature' => 21.5,
+				'summary'     => 'Mostly clear',
+			),
+			Sloc_Weather_Data::$calls[0][3]
+		);
+	}
+
+	/**
+	 * The condition text is not bridged when the captured code has no known
+	 * label (fetch_weather() stores the `—` fallback) — persisting that
+	 * sentinel as Simple Location's own summary would be worse than leaving
+	 * the summary unset, so the bridge sends temperature only.
+	 */
+	public function test_simple_location_weather_bridge_skips_unlabeled_condition() {
+		if ( ! class_exists( 'Sloc_Weather_Data' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only stub class; no user input.
+			eval(
+				'class Sloc_Weather_Data {
+					public static $calls = array();
+					public static function set_object_weatherdata( $type, $id, $key, $weather ) {
+						self::$calls[] = func_get_args();
+						return true;
+					}
+				}'
+			);
+		}
+
+		Sloc_Weather_Data::$calls = array();
+
+		$filter = static function ( $preempt, $args, $url ) {
+			unset( $args );
+			if ( false === strpos( $url, 'api.open-meteo.com' ) ) {
+				return $preempt;
+			}
+			return array(
+				'headers'  => array(),
+				'body'     => wp_json_encode(
+					array(
+						'current' => array(
+							'temperature_2m' => 21.5,
+							'weather_code'   => 6,
+						),
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Weather bridge unlabeled test',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertIsInt( $post_id );
+		$this->assertCount( 1, Sloc_Weather_Data::$calls );
+		$this->assertSame(
+			array( 'temperature' => 21.5 ),
+			Sloc_Weather_Data::$calls[0][3]
+		);
+	}
 }
