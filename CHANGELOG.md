@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Publishing a Mark with a captured location and weather while the Simple Location plugin is active now also bridges the temperature and a human-readable condition text into Simple Location's own post-meta at publish time, so that plugin's weather display extends to the Mark for free — no duplicate weather fetch or storage inside Daymark. The weather code itself is deliberately not bridged, since Simple Location's icon/code vocabulary is OpenWeatherMap-derived and can't map Daymark's Open-Meteo codes; a bridged-but-wrong code would render worse than no code at all. ([#397](https://github.com/jeffpaul/daymark/issues/397))
+
 ### Changed
 
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.

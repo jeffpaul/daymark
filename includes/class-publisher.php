@@ -596,6 +596,7 @@ class Daymark_Publisher {
 
 			if ( null !== $weather ) {
 				update_post_meta( $post_id, '_daymark_weather', wp_json_encode( $weather ) );
+				$this->maybe_bridge_weather_to_simple_location( $post_id, $weather );
 			}
 
 			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
@@ -2051,11 +2052,11 @@ class Daymark_Publisher {
 	 * Deliberately not a live sync: this runs once, at publish time, the
 	 * same as fetch_weather() above — an edit to an existing Mark's
 	 * location (there is no UI for that today) would not update Simple
-	 * Location's own copy. Weather is deliberately NOT bridged: Simple
-	 * Location's own weather-storage schema could not be confirmed against
-	 * its public source in this environment (see the issue's own "open
-	 * question, needs verification" note) — safer to leave it unbridged
-	 * than guess at a wrong meta shape.
+	 * Location's own copy. Weather is bridged separately by
+	 * maybe_bridge_weather_to_simple_location() (same once-at-publish
+	 * posture); it was originally held back here pending this same schema
+	 * question, but that was resolved against the plugin's public source
+	 * (issue #397) and the bridge written.
 	 *
 	 * Never throws and never blocks the publish — wrapped in try/catch,
 	 * and a missing class (Simple Location inactive) short-circuits before
@@ -2089,6 +2090,95 @@ class Daymark_Publisher {
 					'address'   => $place_name ?? '',
 				)
 			);
+		} catch ( Throwable $e ) {
+			// A bridge write should never take down a publish — Simple
+			// Location's own storage is a bonus, not a requirement.
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Best-effort, one-time bridge of an already-captured Mark's weather
+	 * into Simple Location's (David Shanske) own post-meta convention, when
+	 * that plugin is active. Daymark's own zero-dependency quiet capture
+	 * (`_daymark_weather`, see fetch_weather()) is the source of truth and
+	 * works identically with Simple Location absent — this purely
+	 * *additionally* writes the captured temperature and a human-readable
+	 * condition text into Simple Location's own `weather_temperature` /
+	 * `weather_summary` post-meta keys (confirmed against the plugin's
+	 * public source at includes/class-weather-data.php) via that
+	 * plugin's own `Sloc_Weather_Data::set_object_weatherdata()` helper —
+	 * so Simple Location's weather display extends to the Mark for free,
+	 * with no duplicate fetch or storage inside Daymark.
+	 *
+	 * Only the fields whose meaning genuinely overlaps are bridged:
+	 *
+	 *  - `temperature`  → `weather_temperature`. Daymark requests Celsius
+	 *    (unit `C`) and Simple Location stores and converts the raw value
+	 *    itself (its own `temp_unit()`/`metric_to_imperial()` honor the
+	 *    site's `sloc_measurements` setting), so the numeric field passes
+	 *    through directly as what it already is.
+	 *  - `condition`    → `weather_summary`. Simple Location's summary is a
+	 *    plain string and its own `weather_condition_codes()`/`_icons()`
+	 *    helpers expect OpenWeatherMap-derived 3-digit `code` values
+	 *    (confirmed against includes/trait-weather-info.php) — Daymark's
+	 *    `code` is Open-Meteo's WMO vocabulary (0-99), which does not map
+	 *    onto that table and would render as a blank/fallback condition
+	 *    icon (worse than not providing a code at all). So the human
+	 *    readable label is bridged instead of the machine code.
+	 *
+	 * `unit` and `code` are therefore deliberately not bridged: `unit` is
+	 * Simple Location's own display concern (metric default) rather than a
+	 * weather property, and `code`'s vocabularies do not overlap (see
+	 * above). Simple Location's `weather_summary` then drives its own
+	 * human-readable condition while `weather_temperature` feeds any
+	 * measurement-configured display.
+	 *
+	 * Deliberately not a live sync: this runs once, at publish time, only
+	 * when fetch_weather() succeeded — an edit to an existing Mark never
+	 * re-fetches weather (see publish()'s other comment) and therefore
+	 * never re-bridges it either.
+	 *
+	 * Never throws and never blocks the publish — wrapped in try/catch,
+	 * and a missing class (Simple Location inactive) short-circuits before
+	 * any of that even runs. The plugin's own `set_object_weatherdata()`
+	 * slices the passed array against its `$properties` whitelist, so
+	 * passing exactly the two bridged keys is all that's written; an
+	 * empty-value property is *deleted* from its own meta by that helper,
+	 * so skipping a render-less `temperature` (e.g. an all-NaN response)
+	 * is handled by simply not including it.
+	 *
+	 * @since 0.18.0
+	 *
+	 * @param int                                                                   $post_id Mark post ID.
+	 * @param array{temperature: float, unit: string, condition: string, code: int} $weather Already-captured weather (as stored in `_daymark_weather`).
+	 * @return void
+	 */
+	private function maybe_bridge_weather_to_simple_location( int $post_id, array $weather ): void {
+		if ( ! Daymark_Plugin_Detector::matches(
+			array(
+				'slugs'   => array( 'simple-location' ),
+				'classes' => array( 'Sloc_Weather_Data' ),
+			)
+		) ) {
+			return;
+		}
+
+		$bridge = array(
+			'temperature' => (float) $weather['temperature'],
+		);
+
+		// Condition text only — the '—' fallback (a WMO code with no label in
+		// WEATHER_CONDITION_LABELS) isn't a meaningful summary to persist.
+		if ( ! empty( $weather['condition'] ) && '—' !== $weather['condition'] ) {
+			$bridge['summary'] = $weather['condition'];
+		}
+
+		try {
+			// `$key = ''` tells the helper to spread across Simple Location's
+			// `$properties` whitelist (weather_temperature, weather_summary,
+			// ...) rather than nest under one key.
+			Sloc_Weather_Data::set_object_weatherdata( 'post', $post_id, '', $bridge );
 		} catch ( Throwable $e ) {
 			// A bridge write should never take down a publish — Simple
 			// Location's own storage is a bonus, not a requirement.
