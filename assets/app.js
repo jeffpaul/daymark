@@ -5581,16 +5581,14 @@
 				</div>
 				<section class="daymark-metabpanel" id="daymark-me-panel-published" role="tabpanel" aria-labelledby="daymark-me-tab-published" data-me-panel="published" ${'published' === active ? '' : 'hidden'}>
 					<div class="daymark-recent__list" data-me-published-list aria-live="polite">
-						${skeletonRows(3)}
-						<span class="daymark-visually-hidden">${esc(__('Loading your published Marks', 'daymark'))}</span>
+						${'published' === active ? skeletonRows(3) + `<span class="daymark-visually-hidden">${esc(__('Loading your published Marks', 'daymark'))}</span>` : ''}
 					</div>
 					<div class="daymark-recent__sentinel" data-me-published-sentinel aria-hidden="true"></div>
 					<p class="daymark-recent__more" data-me-published-more hidden></p>
 				</section>
 				<section class="daymark-metabpanel" id="daymark-me-panel-drafts" role="tabpanel" aria-labelledby="daymark-me-tab-drafts" data-me-panel="drafts" ${'drafts' === active ? '' : 'hidden'}>
 					<div class="daymark-recent__list" data-me-drafts aria-live="polite">
-						${skeletonRows(2)}
-						<span class="daymark-visually-hidden">${esc(__('Loading drafts', 'daymark'))}</span>
+						${'drafts' === active ? skeletonRows(2) + `<span class="daymark-visually-hidden">${esc(__('Loading drafts', 'daymark'))}</span>` : ''}
 					</div>
 				</section>
 				<section class="daymark-metabpanel" id="daymark-me-panel-connections" role="tabpanel" aria-labelledby="daymark-me-tab-connections" data-me-panel="connections" ${'connections' === active ? '' : 'hidden'}>
@@ -5938,6 +5936,9 @@
 				return;
 			}
 			const seq = ++this._draftsSeq;
+			list.innerHTML =
+				skeletonRows(2) +
+				`<span class="daymark-visually-hidden">${esc(__('Loading drafts', 'daymark'))}</span>`;
 			try {
 				const drafts = await apiGet('marks?status=draft&per_page=10');
 				if (seq !== this._draftsSeq || !list.isConnected) {
