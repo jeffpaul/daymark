@@ -36,6 +36,7 @@ can't act on them.
 
 ### Fixed
 
+- The composer's empty existing-media and preview slots no longer reserve a full row of blank vertical space when nothing is attached — most noticeable around Check In's own small "+ Add a photo or video" text link, which previously sat with a disproportionate amount of whitespace above and below it.
 - Scrolling past the top or bottom of the Timeline in an ordinary mobile browser tab (Safari/Chrome) no longer lets the page's native overscroll bounce slide content up past the header before snapping back — matching how the installed app already behaves, since it has no browser chrome to bounce past. Home's own pull-to-refresh gesture is unaffected; it never relied on this native bounce.
 - Saving Daymark to your phone's home screen now always uses Daymark's own icon, even when your site has its own Site Icon configured (Settings -> General) — previously the home-screen icon used your Site Icon instead, and could show a blank icon if it failed to load. Your browser tab's own favicon is unaffected and still shows your Site Icon. ([#414](https://github.com/jeffpaul/daymark/issues/414))
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))

@@ -1661,6 +1661,17 @@ h2[tabindex='-1']:focus {
 	gap: var(--daymark-spacing-sm);
 }
 
+/* Same reasoning as [data-existing-media-slot]:empty above: before any file
+   is picked, this is a plain empty <div> — still its own flex item in
+   .daymark-screen's column, costing a full gap on both sides (a picker's
+   own bottom gap, then a second gap before whatever field follows it) for
+   no visible content. Most noticeable next to the Check In composer's own
+   small, plain-text media picker (issue #424), where the reserved space
+   reads as disproportionate next to how little the picker itself is. */
+.daymark-preview:empty {
+	display: none;
+}
+
 .daymark-preview__grid {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
@@ -1786,6 +1797,16 @@ h2[tabindex='-1']:focus {
 .daymark-alt__improve {
 	align-self: flex-start;
 	padding: 0;
+}
+
+/* The composer's existing-media slot renders nothing (its own
+   existingMediaMarkup() returns '') for a fresh session or a draft with no
+   media attached yet — but as a plain <div>, an empty one still counted as
+   its own flex item in .daymark-screen's column, costing a full gap above
+   the picker below it for no visible content. Matches the same :empty
+   precedent .daymark-autosave-status already established. */
+[data-existing-media-slot]:empty {
+	display: none;
 }
 
 /* Editable media list when reopening a draft: thumbnail + alt field. */
