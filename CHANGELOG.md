@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- With Jetpack connected, WordPress.com likes on your own Marks now count toward each Mark's like total and show up in Notifications ("Ada liked this"). Jetpack stores these likes on WordPress.com instead of on your site, so Daymark now fetches them in the background.
 - A Check In can now carry an optional photo or video ("see it's me at the Leaning Tower of Pisa!") — the composer's picker, previously hidden for Check In entirely, now shows a small, plain "+ Add a photo or video" text link, deliberately understated next to the Place field; attaching one never reclassifies the Mark away from Check In, and its Timeline card now shows the attached media instead of no media slot at all. ([#424](https://github.com/jeffpaul/daymark/issues/424))
 
 ### Changed

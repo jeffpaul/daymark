@@ -9039,6 +9039,9 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
+			if ('jetpack_like' === item.type) {
+				return this.renderJetpackLikeItem(item);
+			}
 
 			const text = toPlainText(item.comment_content);
 			const long = text.length > 140;
@@ -9158,6 +9161,37 @@
 						__('→ Manage subscriptions', 'daymark')
 					)}</a>
 				</div>
+			</article>`;
+		},
+
+		// A WordPress.com like on one of your own Marks. Jetpack keeps these
+		// on WordPress.com rather than as comments on your site, so the
+		// server pulls them in separately
+		// (Daymark_Jetpack_Engagement::sync_own_likes()). It carries the
+		// same post_id/source fields as a comment, so it groups into that
+		// Mark's conversation card and the source filter like any reply —
+		// just with nothing to reply to.
+		renderJetpackLikeItem(item) {
+			const name = item.author || __('Someone', 'daymark');
+			const when = item.date ? relativeTime(item.date) : '';
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip">${esc(item.source_label || __('WordPress.com', 'daymark'))}</span>
+				<p class="daymark-note-card__text">${esc(
+					sprintf(
+						/* translators: %s: name of the person who liked the Mark */
+						__('%s liked this', 'daymark'),
+						name
+					)
+				)}</p>
+				${when ? `<p class="daymark-note-card__meta">${esc(when)}</p>` : ''}
+				${
+					item.author_url
+						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+								item.author_url
+						  )}" target="_blank" rel="noopener">${esc(__('↗ View profile', 'daymark'))}</a></div>`
+						: ''
+				}
 			</article>`;
 		},
 

@@ -3317,7 +3317,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
-			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
+			// Federation-plugin likes (stored as comments) plus WordPress.com
+			// likes, which Jetpack keeps off-site — see
+			// Daymark_Jetpack_Engagement::sync_own_likes().
+			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
+				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
 			// Only the federation plugins (ActivityPub/ATmosphere/Webmention)
 			// ever write a 'repost' comment_type today — see issue #41 for the
 			// cross-plugin confirmation. A polling connector's own reactions

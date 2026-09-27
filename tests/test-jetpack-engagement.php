@@ -166,4 +166,137 @@ class Test_Jetpack_Engagement extends WP_UnitTestCase {
 
 		$this->assertTrue( Daymark_Jetpack_Engagement::is_liked( $this->user_a, $post_id ) );
 	}
+
+	// -----------------------------------------------------------------
+	// Likes on this site's own Marks (pulled in from WordPress.com).
+	// -----------------------------------------------------------------
+
+	public function test_site_connected_is_false_when_unavailable() {
+		$this->assertFalse( Daymark_Jetpack_Engagement::site_connected() );
+	}
+
+	public function test_sync_own_likes_no_ops_when_unavailable() {
+		$post_id = (int) self::factory()->post->create();
+
+		$this->assertFalse( Daymark_Jetpack_Engagement::sync_own_likes( $post_id ) );
+		$this->assertSame( 0, Daymark_Jetpack_Engagement::own_likes( $post_id )['count'] );
+	}
+
+	public function test_store_own_likes_records_count_and_likers() {
+		$post_id = (int) self::factory()->post->create();
+
+		Daymark_Jetpack_Engagement::store_own_likes(
+			$post_id,
+			array(
+				'found' => 3,
+				'likes' => array(
+					array(
+						'ID'         => 11,
+						'name'       => 'Ada',
+						'URL'        => 'https://ada.example/',
+						'avatar_URL' => 'https://gravatar.example/ada.png',
+						'date_liked' => '2026-09-01T10:00:00+00:00',
+					),
+					array(
+						'ID'   => 12,
+						'name' => 'Grace',
+					),
+				),
+			)
+		);
+
+		$likes = Daymark_Jetpack_Engagement::own_likes( $post_id );
+
+		$this->assertSame( 3, $likes['count'] );
+		$this->assertCount( 2, $likes['likers'] );
+		$this->assertSame( 'Ada', $likes['likers']['11']['name'] );
+		$this->assertSame( strtotime( '2026-09-01T10:00:00+00:00' ), $likes['likers']['11']['liked_at'] );
+		$this->assertGreaterThan( 0, $likes['likers']['12']['liked_at'] );
+	}
+
+	public function test_store_own_likes_keeps_first_seen_date_and_drops_unlikes() {
+		$post_id = (int) self::factory()->post->create();
+
+		Daymark_Jetpack_Engagement::store_own_likes(
+			$post_id,
+			array(
+				'likes' => array(
+					array(
+						'ID'   => 21,
+						'name' => 'First',
+					),
+					array(
+						'ID'   => 22,
+						'name' => 'Leaver',
+					),
+				),
+			)
+		);
+		$first_seen = Daymark_Jetpack_Engagement::own_likes( $post_id )['likers']['21']['liked_at'];
+
+		Daymark_Jetpack_Engagement::store_own_likes(
+			$post_id,
+			array(
+				'likes' => array(
+					array(
+						'ID'         => 21,
+						'name'       => 'First',
+						'date_liked' => '2020-01-01T00:00:00+00:00',
+					),
+				),
+			)
+		);
+		$likes = Daymark_Jetpack_Engagement::own_likes( $post_id );
+
+		$this->assertSame( 1, $likes['count'] );
+		$this->assertSame( $first_seen, $likes['likers']['21']['liked_at'] );
+		$this->assertArrayNotHasKey( '22', $likes['likers'] );
+	}
+
+	public function test_own_likes_add_to_the_timeline_like_count_and_notifications() {
+		$editor = (int) self::factory()->user->create( array( 'role' => 'editor' ) );
+		wp_set_current_user( $editor );
+
+		$post_id = (int) self::factory()->post->create(
+			array(
+				'post_author' => $editor,
+				'post_status' => 'publish',
+			)
+		);
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
+
+		Daymark_Jetpack_Engagement::store_own_likes(
+			$post_id,
+			array(
+				'found' => 1,
+				'likes' => array(
+					array(
+						'ID'   => 31,
+						'name' => 'Linus',
+					),
+				),
+			)
+		);
+
+		$items = Daymark_Plugin::instance()->notifications->get_notifications();
+		$likes = array_values(
+			array_filter(
+				$items,
+				static function ( $item ) {
+					return 'jetpack_like' === ( $item['type'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $likes );
+		$this->assertSame( 'Linus', $likes[0]['author'] );
+		$this->assertSame( $post_id, $likes[0]['post_id'] );
+		$this->assertSame( 'wpcom', $likes[0]['source'] );
+
+		$request  = new WP_REST_Request( 'GET', '/daymark/v1/marks/' . $post_id );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 1, $response->get_data()['like_count'] );
+	}
 }
