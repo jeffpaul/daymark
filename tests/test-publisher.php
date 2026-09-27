@@ -1676,6 +1676,33 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'openstreetmap.org', $post->post_content );
 		$this->assertEquals( 'status', get_post_format( $post_id ) );
+		// The map-preview tile (build_map_preview_block()) leads the place
+		// block itself, ahead of the p-location paragraph.
+		$this->assertStringContainsString( 'daymark-checkin-map', $post->post_content );
+		$this->assertStringContainsString( 'https://tile.openstreetmap.org/15/5241/12665.png', $post->post_content );
+		$this->assertLessThan(
+			strpos( $post->post_content, 'p-location' ),
+			strpos( $post->post_content, 'daymark-checkin-map' )
+		);
+	}
+
+	/**
+	 * A checkin with a place name but no resolved location has no
+	 * coordinates to preview — the map-preview tile is skipped entirely
+	 * (build_block_markup()'s own `null !== $checkin['location']` guard),
+	 * same as the existing map link in the place block itself.
+	 */
+	public function test_checkin_with_no_location_has_no_map_preview() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Somewhere unresolved',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringNotContainsString( 'daymark-checkin-map', $post->post_content );
 	}
 
 	/**
@@ -1683,7 +1710,7 @@ class Test_Publisher extends WP_UnitTestCase {
 	 * every other type — the place-name title fallback only applies when
 	 * there's no caption to generate a title from.
 	 */
-	public function test_checkin_with_caption_uses_caption_title() {
+	public function test_checkin_with_caption_uses_place_name_title() {
 		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
@@ -1694,7 +1721,10 @@ class Test_Publisher extends WP_UnitTestCase {
 		);
 
 		$post = get_post( $post_id );
-		$this->assertEquals( 'Great coffee this morning', $post->post_title );
+		// A Checkin's own title always comes from its place, never its
+		// caption — unlike every other Mark type, where the caption is the
+		// title's own primary source (generate_title()'s own docblock).
+		$this->assertEquals( 'Checked in at Blue Bottle Coffee', $post->post_title );
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 		// The place block always leads, ahead of the reader's own paragraph.
@@ -1702,6 +1732,27 @@ class Test_Publisher extends WP_UnitTestCase {
 			strpos( $post->post_content, 'Great coffee this morning' ),
 			strpos( $post->post_content, 'Blue Bottle Coffee' )
 		);
+	}
+
+	/**
+	 * A Checkin's title stays place-derived even with no place name at
+	 * all — it never falls back to using the caption as generate_title()
+	 * would for every other type, since that's exactly the behavior this
+	 * decision replaces. It falls through to the same timestamp fallback
+	 * an ordinary caption-less, place-less Mark already gets.
+	 */
+	public function test_checkin_with_caption_and_no_place_name_uses_timestamp_title() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Great coffee this morning',
+				'primary_type' => 'checkin',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringStartsWith( 'Mark — ', $post->post_title );
+		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 	}
 
 	/** A checkin with no place name and no caption/media is still rejected as empty. */
@@ -1727,6 +1778,37 @@ class Test_Publisher extends WP_UnitTestCase {
 		$data = rest_do_request( $request )->get_data();
 
 		$this->assertSame( 'Blue Bottle Coffee', $data['place_name'] );
+	}
+
+	/**
+	 * The full-screen post view (PostScreen) loads a Mark's content via
+	 * GET /marks/{id}/content, not the raw post — unlike
+	 * test_checkin_with_place_name_and_no_caption_publishes()'s own direct
+	 * assertions against $post->post_content, this exercises the exact
+	 * pipeline that endpoint applies (`the_content` then wp_kses_post()),
+	 * confirming the map-preview block's `<figure>`/`<img>`/pin `<span>`
+	 * (including its inline `style="left:...;top:..."`) all survive that
+	 * extra sanitization pass rather than only the stored post_content.
+	 */
+	public function test_checkin_map_preview_survives_rest_content_endpoint() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}/content" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertStringContainsString( 'daymark-checkin-map', $data['content'] );
+		$this->assertStringContainsString( 'tile.openstreetmap.org/15/5241/12665.png', $data['content'] );
+		$this->assertStringContainsString( 'daymark-checkin-map__pin', $data['content'] );
+		$this->assertStringContainsString( 'style=', $data['content'] );
 	}
 
 	/**
