@@ -2776,20 +2776,22 @@
 		return __('this site', 'daymark');
 	}
 
-	// The site icon that sits on every Timeline item except a Draft, as its
-	// own leading-column element — not a small circular badge overlapping
-	// the thumbnail's corner. A single click is the only interaction: it
-	// filters Timeline down to just that source (applySourceFilter(), via
-	// the data-filter-site attribute onFeedListClick() reads), no popover
-	// menu and no separate "visit the site" action (a live product review
-	// asked for both simplifications — the popover read as a false circular
-	// tap target, and "visit" left the app for a use case that didn't earn
-	// its own menu). Shared by a Mark's own icon (renderMarkItem()) and a
-	// subscription post's site icon (renderSubscriptionPostCard()) so the
-	// two can never drift apart. Kept as its own sibling element in the
-	// card's flex layout (not nested inside the card's own link/button) so
-	// a future Daymark content type can render its own card differently
-	// without this icon's placement following along.
+	// The site icon that sits on every Timeline item except a Draft — the
+	// top half of the item-wrap's leading column (renderLeadColumn(), below,
+	// stacks it above its row's type icon), not a small circular badge
+	// overlapping the thumbnail's corner. A single click is the only
+	// interaction: it filters Timeline down to just that source
+	// (applySourceFilter(), via the data-filter-site attribute
+	// onFeedListClick() reads), no popover menu and no separate "visit the
+	// site" action (a live product review asked for both simplifications —
+	// the popover read as a false circular tap target, and "visit" left the
+	// app for a use case that didn't earn its own menu). Shared by a Mark's
+	// own icon (renderMarkItem()) and a subscription post's site icon
+	// (renderSubscriptionPostCard()) so the two can never drift apart. Kept
+	// as its own sibling element in the card's flex layout (not nested
+	// inside the card's own link/button) so a future Daymark content type
+	// can render its own card differently without this icon's placement
+	// following along.
 	//
 	// `title` carries the site's name and URL as a native on-hover tooltip
 	// (issue #181) — deliberately separate from `aria-label`, which
@@ -2814,6 +2816,23 @@
 					${icon}
 				</button>
 			</div>`;
+	}
+
+	// The item-wrap's leading column: the site icon (renderSiteIconButton(),
+	// omitted for a Draft — see renderMarkItem()'s own isDraft check) stacked
+	// directly above its row's type icon (renderTypeIcon()), instead of the
+	// two sitting side by side as separate columns — reclaiming the type
+	// icon's own former column width plus one item-wrap gap for the card's
+	// own content. Always rendered, even for a Draft (siteIconHtml empty),
+	// so every row's type icon lands in the identical, fixed-width column
+	// regardless of whether a site icon happens to be present — the same
+	// consistent-rail-position goal the now-removed
+	// :not(:has(.daymark-recent__siteicon)) margin-left rule (issue #403)
+	// used to solve by fixing up a lone type icon's position after the fact.
+	// Shared by renderMarkItem() and renderSubscriptionPostCard() so the two
+	// can never render this column differently.
+	function renderLeadColumn(siteIconHtml, kind) {
+		return `<div class="daymark-recent__leadcol">${siteIconHtml}${renderTypeIcon(kind)}</div>`;
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
@@ -2914,8 +2933,7 @@
 		const overflowItems = isDraft ? '' : markOverflowMenuItems(item);
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
-				${siteIcon}
-				${renderTypeIcon(kind)}
+				${renderLeadColumn(siteIcon, kind)}
 				${card}
 				${actions}
 				${renderOverflowPanel(item, overflowItems, '')}
@@ -7545,8 +7563,9 @@
 		return kind;
 	}
 
-	// The rail column every card carries between its site icon and its own
-	// body — a quiet, muted indicator of what kind of thing this is,
+	// The rail icon every card carries directly below its site icon, in the
+	// same leading column (renderLeadColumn()) — a quiet, muted indicator of
+	// what kind of thing this is,
 	// visually threaded to the item above and below by a thin connecting
 	// line (see .daymark-recent__typeicon::before in app.css) so a scan
 	// down the list reads as one continuous chronological flow, the way
@@ -7862,18 +7881,20 @@
 		const overflowItems = subscriptionOverflowMenuItems(item);
 		return `
 				<div class="daymark-recent__item-wrap">
-					${renderSiteIconButton({
-						iconSrc: item.site_icon_url || '',
-						iconAlt: siteLabel,
-						ariaLabel: sprintf(
-							/* translators: %s: site name */
-							__('Filter Timeline to posts from %s', 'daymark'),
-							siteLabel
-						),
-						filterValue: String(item.subscription_id),
-						siteUrl: item.site_url || '',
-					})}
-					${renderTypeIcon(kind)}
+					${renderLeadColumn(
+						renderSiteIconButton({
+							iconSrc: item.site_icon_url || '',
+							iconAlt: siteLabel,
+							ariaLabel: sprintf(
+								/* translators: %s: site name */
+								__('Filter Timeline to posts from %s', 'daymark'),
+								siteLabel
+							),
+							filterValue: String(item.subscription_id),
+							siteUrl: item.site_url || '',
+						}),
+						kind
+					)}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 						kind
 					)}" data-subpost="${id}">

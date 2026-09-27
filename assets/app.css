@@ -2727,11 +2727,11 @@ h2[tabindex='-1']:focus {
 }
 
 /* --- Recent item: per-item ⋯ actions menu --- */
-/* A flex row: the site icon column (.daymark-recent__siteicon, below) sits
-   first, then the card's own thumbnail/title/meta content takes the
-   remaining space — position: relative is kept only so
-   .daymark-recent__actions (the ⋯ button) can still pin itself to the
-   wrap's right edge, absolutely, same as before. */
+/* A flex row: the leading column (.daymark-recent__leadcol, below — the
+   site icon stacked above the type icon) sits first, then the card's own
+   thumbnail/title/meta content takes the remaining space — position:
+   relative is kept only so .daymark-recent__actions (the ⋯ button) can
+   still pin itself to the wrap's right edge, absolutely, same as before. */
 .daymark-recent__item-wrap {
 	position: relative;
 	display: flex;
@@ -2773,10 +2773,10 @@ h2[tabindex='-1']:focus {
 }
 
 /* A media-dominant card is much taller than the wrap's other children
-   (the site icon, type icon, and — Mark only — the ⋯ button) — center
-   alignment would otherwise float those against the photo's own
-   midpoint; top-aligning them instead keeps them where Path's own
-   reference lines its icons up: against each moment's leading edge. */
+   (the leading column, and — Mark only — the ⋯ button) — center alignment
+   would otherwise float those against the photo's own midpoint;
+   top-aligning them instead keeps them where Path's own reference lines
+   its icons up: against each moment's leading edge. */
 .daymark-recent__item-wrap:has(.daymark-recent__item--image),
 .daymark-recent__item-wrap:has(.daymark-recent__item--gallery),
 .daymark-recent__item-wrap:has(.daymark-recent__item--video),
@@ -2784,23 +2784,42 @@ h2[tabindex='-1']:focus {
 	align-items: flex-start;
 }
 
-.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__typeicon {
+.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__leadcol,
+.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__leadcol,
+.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__leadcol,
+.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__leadcol {
 	margin-top: var(--daymark-spacing-sm);
 }
 
-/* The rail: a small, quiet type-indicator between the site icon and the
-   card itself (see renderTypeIcon() in app.js), threaded to the item
-   above and below by a thin connecting line so a scan down the list reads
-   as one continuous chronological flow — Path's own timeline spine, kept
-   deliberately muted (grey, not the accent color) since this is a glance
-   aid, not something competing with the content for attention. */
+/* The leading column: the site icon stacked directly above its row's type
+   icon (renderLeadColumn(), app.js), instead of the two sitting side by
+   side as separate columns — reclaiming the type icon's own former column
+   width plus one item-wrap gap for the card's own content (reported
+   directly: the card read as narrower than it needed to be, with two
+   leading columns competing for horizontal space that could go to the
+   title/excerpt/media instead). A fixed width — matching the site icon's
+   own 44px tap target — keeps every row's column the same width whether or
+   not a site icon is actually present (a Draft has none; see below), so a
+   card's own content always starts at the identical x position. `background`
+   masks the rail line (below) behind this column's own full height,
+   including the gap between the two icons, the same way each type icon's
+   own opaque circle already masked its own narrower slice before this
+   change. */
+.daymark-recent__leadcol {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex-shrink: 0;
+	gap: var(--daymark-spacing-xs);
+	width: var(--daymark-tap-min);
+	background: var(--daymark-bg);
+}
+
+/* A small, quiet type-indicator (see renderTypeIcon() in app.js), threaded
+   to the item above and below by a thin connecting line so a scan down the
+   list reads as one continuous chronological flow — Path's own timeline
+   spine, kept deliberately muted (grey, not the accent color) since this is
+   a glance aid, not something competing with the content for attention. */
 .daymark-recent__typeicon {
 	flex-shrink: 0;
 	display: inline-flex;
@@ -2818,12 +2837,12 @@ h2[tabindex='-1']:focus {
    confined to each icon's own small box only ever reached a few px past
    it — never far enough to touch the next row's icon. Drawing it once
    behind the whole list instead makes it genuinely continuous from the
-   first icon to the last; each icon's own opaque background then masks
-   the segment directly behind it, which is what keeps the line looking
-   like it passes behind the icons rather than over them. `isolation:
-   isolate` scopes the line's negative z-index to this list, so it stays
-   behind this list's own icons without also dropping behind unrelated
-   content elsewhere on the page. */
+   first icon to the last; each leading column's own opaque background
+   (.daymark-recent__leadcol, above) then masks the segment directly behind
+   it, which is what keeps the line looking like it passes behind the
+   column rather than over it. `isolation: isolate` scopes the line's
+   negative z-index to this list, so it stays behind this list's own icons
+   without also dropping behind unrelated content elsewhere on the page. */
 .daymark-recent__list:has(.daymark-recent__typeicon) {
 	position: relative;
 	isolation: isolate;
@@ -2834,31 +2853,14 @@ h2[tabindex='-1']:focus {
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	/* Site icon column width + the item-wrap gap to the type icon + half
-	   the type icon's own 28px width — centers the line under every
-	   type icon in a list that has a leading site icon column. */
-	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
+	/* Half the leading column's own fixed width — centers the line under
+	   every column in the list, site icon present or not (see
+	   .daymark-recent__leadcol's own fixed width, above, which is what lets
+	   a single offset work for every row regardless). */
+	left: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 	z-index: -1;
-}
-
-/* A Draft row never renders the leading site icon column — see
-   renderMarkItem()'s isDraft check in app.js, which skips it because a
-   draft has no separate site to filter to. Home's Drafts row sits directly
-   above the main Timeline list in the very same visual context (unlike
-   Me's own drafts list, which uses a plain renderMarkCore() anchor with no
-   item-wrap/type-icon rail at all), so its lone type icon still needs to
-   land on the exact same rail x-position every row below it uses — left as
-   the row's own first, flush-left flex child, it read as its own
-   disconnected column sitting hard against the screen edge instead of
-   continuing that line (reported directly, with a screenshot). Adding the
-   site icon column's own width + gap as a margin achieves that without a
-   separate (invisible) placeholder element in the markup, and the rail
-   line above needs no matching override anymore since every type icon in
-   the list now sits at the same offset regardless of a leading site icon. */
-.daymark-recent__item-wrap:not(:has(.daymark-recent__siteicon)) .daymark-recent__typeicon {
-	margin-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 }
 
 /* Relative-period group headers (Today, This Week, Last Month, ...; see

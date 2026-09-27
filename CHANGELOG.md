@@ -27,6 +27,7 @@ can't act on them.
 
 ### Changed
 
+- A Timeline card's leading site icon and type icon are now stacked in one column instead of sitting side by side, reclaiming that horizontal space for the card's own title, excerpt, and media.
 - The composer's "Mark type: {Type}" line — previously its own paragraph below the media picker — is now a chip in the header, next to "New Mark"/"Edit Draft", for every Mark type.
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
 - The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.
