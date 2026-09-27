@@ -168,6 +168,16 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* CreateScreen's Mark-type chip, sitting after the title in the same flex
+   row — the title's own `flex: 1` already pushes it flush against the
+   header's trailing edge with no positioning of its own needed; `flex: none`
+   only guards its .daymark-chip white-space: nowrap text against flex-shrink
+   compression on a narrow viewport. Replaces the former .daymark-typebadge
+   paragraph that used to sit below the media picker. */
+.daymark-topbar__typechip {
+	flex: none;
+}
+
 /* PostScreen's own header (issue #315): its title is the post's own,
    arbitrary length, and — unlike every other screen's short, always-single-
    line title (Search/Explore/Me/Notifications) — can wrap to several lines.
@@ -1595,6 +1605,29 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* A Check In's own optional photo/video zone (issue #424) — deliberately
+   the smallest, plainest control in the composer: a small underlined text
+   link (the same weight already given to "Choose from library instead"
+   below, via the shared .daymark-btn--text class this element also
+   carries), not a bordered dashed box at all, so it reads as genuinely
+   secondary — almost incidental — next to the Place field's own more
+   substantial bordered-input treatment. Overrides every box-like property
+   the shared .daymark-picker__zone rule otherwise sets. */
+.daymark-picker--minimal .daymark-picker__zone {
+	display: inline-flex;
+	min-height: var(--daymark-tap-min);
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.daymark-picker--minimal.is-dragover .daymark-picker__zone {
+	color: var(--daymark-accent);
+}
+
 /* Camera-first: the primary picker action is a <button> (opens the device
    camera/mic directly via `capture`), not the <label> the neutral,
    untyped picker still uses — reset button chrome while keeping the same
@@ -1626,6 +1659,17 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-sm);
+}
+
+/* Same reasoning as [data-existing-media-slot]:empty above: before any file
+   is picked, this is a plain empty <div> — still its own flex item in
+   .daymark-screen's column, costing a full gap on both sides (a picker's
+   own bottom gap, then a second gap before whatever field follows it) for
+   no visible content. Most noticeable next to the Check In composer's own
+   small, plain-text media picker (issue #424), where the reserved space
+   reads as disproportionate next to how little the picker itself is. */
+.daymark-preview:empty {
+	display: none;
 }
 
 .daymark-preview__grid {
@@ -1753,6 +1797,16 @@ h2[tabindex='-1']:focus {
 .daymark-alt__improve {
 	align-self: flex-start;
 	padding: 0;
+}
+
+/* The composer's existing-media slot renders nothing (its own
+   existingMediaMarkup() returns '') for a fresh session or a draft with no
+   media attached yet — but as a plain <div>, an empty one still counted as
+   its own flex item in .daymark-screen's column, costing a full gap above
+   the picker below it for no visible content. Matches the same :empty
+   precedent .daymark-autosave-status already established. */
+[data-existing-media-slot]:empty {
+	display: none;
 }
 
 /* Editable media list when reopening a draft: thumbnail + alt field. */
