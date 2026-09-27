@@ -293,7 +293,8 @@ class Test_Jetpack_Engagement extends WP_UnitTestCase {
 		$this->assertSame( $post_id, $likes[0]['post_id'] );
 		$this->assertSame( 'wpcom', $likes[0]['source'] );
 
-		$request  = new WP_REST_Request( 'GET', '/daymark/v1/marks/' . $post_id );
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/marks/' . $post_id );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$response = rest_do_request( $request );
 
 		$this->assertSame( 200, $response->get_status() );
