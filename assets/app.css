@@ -2731,11 +2731,16 @@ h2[tabindex='-1']:focus {
    site icon stacked above the type icon) sits first, then the card's own
    thumbnail/title/meta content takes the remaining space — position:
    relative is kept only so .daymark-recent__actions (the ⋯ button) can
-   still pin itself to the wrap's right edge, absolutely, same as before. */
+   still pin itself to the wrap's right edge, absolutely, same as before.
+   align-items: flex-start (rather than center) pins the leading column to
+   every card's own top edge regardless of how tall the card grows (a long
+   excerpt, a footer row, a media banner) — center alignment used to float
+   the site icon against the card's vertical midpoint instead, which drifted
+   further from the title the longer a card's own content ran. */
 .daymark-recent__item-wrap {
 	position: relative;
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: var(--daymark-spacing-sm);
 }
 
@@ -2772,25 +2777,6 @@ h2[tabindex='-1']:focus {
 	padding-right: 0;
 }
 
-/* A media-dominant card is much taller than the wrap's other children
-   (the leading column, and — Mark only — the ⋯ button) — center alignment
-   would otherwise float those against the photo's own midpoint;
-   top-aligning them instead keeps them where Path's own reference lines
-   its icons up: against each moment's leading edge. */
-.daymark-recent__item-wrap:has(.daymark-recent__item--image),
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery),
-.daymark-recent__item-wrap:has(.daymark-recent__item--video),
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) {
-	align-items: flex-start;
-}
-
-.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__leadcol,
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__leadcol,
-.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__leadcol,
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__leadcol {
-	margin-top: var(--daymark-spacing-sm);
-}
-
 /* The leading column: the site icon stacked directly above its row's type
    icon (renderLeadColumn(), app.js), instead of the two sitting side by
    side as separate columns — reclaiming the type icon's own former column
@@ -2804,7 +2790,21 @@ h2[tabindex='-1']:focus {
    masks the rail line (below) behind this column's own full height,
    including the gap between the two icons, the same way each type icon's
    own opaque circle already masked its own narrower slice before this
-   change. */
+   change.
+
+   margin-top gives every card kind the same small offset below the wrap's
+   own top edge (the wrap itself is align-items: flex-start, above) rather
+   than sitting flush against it, so the site icon lines up with the card's
+   own visible content instead of its outer border. For a plain (non-media)
+   card this value is deliberately identical to .daymark-recent__item's own
+   padding-top (also --daymark-spacing-sm) — the two are meant to match
+   exactly, so the site icon's top edge lands level with the title text's
+   own top edge rather than floating above it. A media-dominant card
+   (image/gallery/video/mixed — see .daymark-recent__item--image and
+   friends, above) dropped its own padding so the banner runs full bleed,
+   so this same offset instead reads as a small, deliberate buffer against
+   the photo's own top edge — Path's own reference lines its icons up this
+   way, against each moment's leading edge rather than its midpoint. */
 .daymark-recent__leadcol {
 	display: flex;
 	flex-direction: column;
@@ -2812,6 +2812,7 @@ h2[tabindex='-1']:focus {
 	flex-shrink: 0;
 	gap: var(--daymark-spacing-xs);
 	width: var(--daymark-tap-min);
+	margin-top: var(--daymark-spacing-sm);
 	background: var(--daymark-bg);
 }
 
