@@ -75,13 +75,19 @@ class Daymark_Like_Visibility {
 	private const MIGRATION_BATCH = 100;
 
 	/**
-	 * Hook up. Called from Daymark_Plugin::on_init(), which already runs on
-	 * `init`, so the post type registers directly here.
+	 * Hook up. Called from Daymark_Plugin::on_init() (`init`, default
+	 * priority), after the post type itself registered at priority 5.
 	 *
 	 * @return void
 	 */
 	public function register(): void {
-		$this->register_post_type();
+		// The post type itself registers earlier, on init at priority 5
+		// (see Daymark_Plugin::setup()) — registered here too only if that
+		// didn't run (e.g. a caller invoking register() directly).
+		if ( ! post_type_exists( self::POST_TYPE ) ) {
+			$this->register_post_type();
+		}
+
 		$this->maybe_migrate_legacy_likes();
 
 		add_action( 'template_redirect', array( $this, 'redirect_legacy_permalink' ) );

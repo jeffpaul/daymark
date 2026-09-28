@@ -39,6 +39,7 @@ can't act on them.
 
 ### Fixed
 
+- Likes and comments on subscribed posts now actually reach the original post. The Webmention plugin never saw the liked or replied-to link (it only reads a post's saved content), so nothing was sent; and the WordPress.com (Jetpack) like and comment route was calling the wrong API address, so it silently fell back to a local Like.
 - Likes no longer show up as ordinary posts — in wp-admin's Posts list, on your site's home page and archives (including block-theme Query Loops), in its RSS feed, the REST API, or anywhere a social-sharing plugin picks up new posts. A Like now lives on its own hidden post type whose only public presence is its own permalink (kept so Webmention likes still verify); existing Likes are moved over automatically, and their old URLs redirect.
 - The composer's empty existing-media and preview slots no longer reserve a full row of blank vertical space when nothing is attached — most noticeable around Check In's own small "+ Add a photo or video" text link, which previously sat with a disproportionate amount of whitespace above and below it.
 - Scrolling past the top or bottom of the Timeline in an ordinary mobile browser tab (Safari/Chrome) no longer lets the page's native overscroll bounce slide content up past the header before snapping back — matching how the installed app already behaves, since it has no browser chrome to bounce past. Home's own pull-to-refresh gesture is unaffected; it never relied on this native bounce.

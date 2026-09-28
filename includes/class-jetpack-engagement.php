@@ -546,7 +546,11 @@ class Daymark_Jetpack_Engagement {
 				'v1.1',
 				array( 'method' => 'POST' ),
 				$body,
-				'wpcom'
+				// WordPress.com's v1.1 like/reply endpoints live under
+				// `rest`, not `wpcom` (the wpcom/v2 base) — the Client
+				// builds `{base}/{base_api_path}/v{version}/{path}`,
+				// confirmed against Automattic/jetpack's connection package.
+				'rest'
 			);
 		} catch ( \Throwable $e ) {
 			return new WP_Error( 'daymark_jetpack_request_failed', $e->getMessage() );
