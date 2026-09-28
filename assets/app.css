@@ -2268,7 +2268,13 @@ h2[tabindex='-1']:focus {
 }
 
 /* Existing-tag autocomplete dropdown, shown under the "Add a tag" input
-   while typing — tapping an item avoids typing the full tag name. */
+   while typing — tapping an item avoids typing the full tag name.
+   Height-capped and independently scrollable (rather than growing to fit
+   every result) so a long result list stays reachable once the on-screen
+   keyboard has claimed the bottom half of a phone's viewport — reported
+   directly against the Checkin Place field's own search results, where
+   more than one candidate could render entirely behind the keyboard with
+   no way to scroll down to it. */
 .daymark-tags__suggest {
 	display: flex;
 	flex-direction: column;
@@ -2279,6 +2285,11 @@ h2[tabindex='-1']:focus {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius-sm);
 	background: var(--daymark-bg);
+	max-height: 180px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
 }
 
 .daymark-tags__suggestitem {
@@ -2304,12 +2315,29 @@ h2[tabindex='-1']:focus {
 /* The Checkin Place field's own search-as-you-type suggestions carry a
    second, muted address line for disambiguating similarly-named results —
    the tag autocomplete's plain single-line items never needed this, so
-   these two rules are scoped to the `--place` modifier only. */
+   these two rules are scoped to the `--place` modifier only. Both lines
+   are clipped to one line with an ellipsis (rather than wrapping a long
+   address across two or three lines) so each result stays compact — a
+   full postal address, as Nominatim often returns, would otherwise blow
+   past the tap-min-derived row height and force fewer results into the
+   suggestion list's now-capped, scrollable viewport above. min-width: 0
+   is required for a flex child's own text-overflow to actually truncate,
+   rather than force the flex column wider. */
 .daymark-tags__suggestitem--place {
 	flex-direction: column;
 	align-items: flex-start;
 	height: auto;
 	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+}
+
+.daymark-tags__suggestitem--place .daymark-tags__suggestitem-name,
+.daymark-tags__suggestitem-address {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }
 
 .daymark-tags__suggestitem-address {
