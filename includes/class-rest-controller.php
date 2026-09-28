@@ -2960,9 +2960,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * GET /daymark/v1/subscription-posts/{id}/like-availability — whether a
-	 * Like on this post can actually reach its origin (Jetpack-native, or a
-	 * Webmention the local Webmention plugin will send to an endpoint the
-	 * origin advertises). The Timeline summary only ever reports a cached
+	 * Like on this post can actually reach its origin (Jetpack-native, an
+	 * ActivityPub Like through the ActivityPub plugin, or a Webmention the
+	 * local Webmention plugin will send to an endpoint the origin
+	 * advertises). The Timeline summary only ever reports a cached
 	 * answer (`like_available`, null when unknown); the client calls this to
 	 * resolve an unknown card lazily, and hides the Like icon on `false`.
 	 *
@@ -3048,20 +3049,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		if ( $existing > 0 ) {
 			return rest_ensure_response(
 				array(
-					'method'   => 'classic',
+					'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
 					'liked'    => true,
 					'mark_id'  => $existing,
-					'delivery' => Daymark_Like_Delivery::webmention_state( $existing, $permalink ),
+					'delivery' => Daymark_Like_Delivery::like_state( false, $existing, $permalink ),
 				)
 			);
 		}
 
-		// Never create a local Like Mark nothing can deliver: without a
-		// Webmention route (and with the Jetpack route unavailable or just
-		// failed), the origin's author would never see it. The client hides
-		// the icon on this code; the check is repeated here so it never has
-		// to be trusted.
-		if ( ! $availability['webmention'] ) {
+		// ActivityPub route (issue #439): queue a real `Like` through the
+		// ActivityPub plugin's outbox. The local Like Mark is still published
+		// below (the liked-state UI reads it), but its Webmention is
+		// suppressed so the origin receives exactly one Like. 0 when the
+		// route isn't available or the queue failed — then Webmention alone.
+		$outbox_id = '' !== $permalink && $availability['activitypub']
+			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
+			: 0;
+
+		// Never create a local Like Mark nothing can deliver: without an
+		// ActivityPub or Webmention route (and with the Jetpack route
+		// unavailable or just failed), the origin's author would never see
+		// it. The client hides the icon on this code; the check is repeated
+		// here so it never has to be trusted.
+		if ( 0 === $outbox_id && ! $availability['webmention'] ) {
 			return new WP_Error(
 				'daymark_like_undeliverable',
 				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
@@ -3087,15 +3097,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		);
 
 		if ( is_wp_error( $mark_id ) ) {
+			// Don't leave a queued Like with no local record to undo it from.
+			if ( $outbox_id > 0 ) {
+				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
+			}
+
 			return $mark_id;
+		}
+
+		if ( $outbox_id > 0 ) {
+			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
 		}
 
 		return rest_ensure_response(
 			array(
-				'method'   => 'classic',
+				'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
 				'liked'    => true,
 				'mark_id'  => $mark_id,
-				'delivery' => Daymark_Like_Delivery::webmention_state( (int) $mark_id, $permalink ),
+				'delivery' => Daymark_Like_Delivery::like_state( false, (int) $mark_id, $permalink ),
 			)
 		);
 	}
@@ -3153,6 +3172,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
 		$existing  = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
 
+		// Trashing the Mark also queues an ActivityPub `Undo` when it
+		// carried a queued Like (Daymark_ActivityPub_Engagement::maybe_undo()
+		// on `trashed_post`), so every route is undone from this one call.
 		if ( $existing > 0 ) {
 			wp_trash_post( $existing );
 		}

@@ -340,6 +340,16 @@ class Daymark_Microformats {
 	 * comment text — so without this, the plugin found nothing to ping and
 	 * no like or reply ever reached the origin.
 	 *
+	 * The one exception: a like/repost target an ActivityPub `Like`/
+	 * `Announce` was already queued for (issue #439,
+	 * Daymark_ActivityPub_Engagement::suppressed_webmention_target()) is not
+	 * added, and is removed if the plugin extracted it from the content
+	 * itself (a Reblog Mark's quote links the reposted post) — so an origin
+	 * running both ActivityPub and Webmention receives one Like, not two.
+	 * The filter's return value is the full target list the sender pings, so
+	 * removing a URL here is enough to stop that one Webmention; any other
+	 * link in the Mark still gets its own.
+	 *
 	 * @param string[] $urls    URLs the plugin already extracted.
 	 * @param int      $post_id Post being sent.
 	 * @return string[]
@@ -352,6 +362,8 @@ class Daymark_Microformats {
 			return $urls;
 		}
 
+		$suppressed = untrailingslashit( Daymark_ActivityPub_Engagement::suppressed_webmention_target( $post_id ) );
+
 		foreach ( array( '_daymark_in_reply_to', '_daymark_repost_of', '_daymark_like_of' ) as $meta_key ) {
 			$target = esc_url_raw( (string) get_post_meta( $post_id, $meta_key, true ) );
 
@@ -360,7 +372,18 @@ class Daymark_Microformats {
 			}
 		}
 
-		return $urls;
+		if ( '' === $suppressed ) {
+			return $urls;
+		}
+
+		return array_values(
+			array_filter(
+				$urls,
+				static function ( $url ) use ( $suppressed ) {
+					return untrailingslashit( (string) $url ) !== $suppressed;
+				}
+			)
+		);
 	}
 
 	/**
