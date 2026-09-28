@@ -764,6 +764,39 @@
 		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
+	// A short, low-key description of whether this user's own Like/Comment
+	// actually reached the origin (Daymark_Like_Delivery's STATE_*): '' when
+	// there's nothing to report.
+	function deliveryStatusText(state) {
+		switch (state) {
+			case 'sent':
+				return __('Delivered to the original site', 'daymark');
+			case 'pending':
+				return __('Delivery pending', 'daymark');
+			case 'failed':
+			case 'not_sent':
+				return __('Not delivered to the original site', 'daymark');
+			default:
+				return '';
+		}
+	}
+
+	function withDeliveryStatus(label, state) {
+		const status = deliveryStatusText(state);
+		return status
+			? sprintf(
+					/* translators: 1: action label (e.g. "Unlike"), 2: delivery status */
+					__('%1$s · %2$s', 'daymark'),
+					label,
+					status
+			  )
+			: label;
+	}
+
+	function likeToggleLabel(liked, delivery) {
+		return liked ? withDeliveryStatus(__('Unlike', 'daymark'), delivery) : __('Like', 'daymark');
+	}
+
 	// The Like toggle for a subscription post — the row's other *interactive*
 	// entry besides Bookmark/Repost, same span[role="button"] reasoning as
 	// renderBookmarkToggle() (nested inside the card's own expand-trigger
@@ -778,9 +811,17 @@
 		// "liked" for display purposes; toggleLike() below resolves which
 		// one to undo entirely server-side.
 		const liked = !!item.liked_mark_id || !!item.jetpack_liked;
+		// Only offered when a Like can actually reach the origin (see
+		// Daymark_Like_Delivery): `like_available` is false when nothing
+		// could deliver one, null while still unknown (kept visible;
+		// observeLikeAvailability() resolves it lazily). An already-liked
+		// item always keeps its icon so it can be unliked.
+		if (!liked && false === item.like_available) {
+			return '';
+		}
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
-		const label = liked ? __('Unlike', 'daymark') : __('Like', 'daymark');
+		const label = likeToggleLabel(liked, item.like_delivery);
 		return `<span class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
 		}" role="button" tabindex="0" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
@@ -808,7 +849,9 @@
 		// for that path.
 		const commented = !!item.replied_mark_id || !!item.jetpack_commented;
 		const id = esc(String(item.id));
-		const label = __('Comment', 'daymark');
+		const label = commented
+			? withDeliveryStatus(__('Comment', 'daymark'), item.comment_delivery)
+			: __('Comment', 'daymark');
 		return `<span class="daymark-stat daymark-stat--comment${
 			commented ? ' daymark-stat--active' : ''
 		}" role="button" tabindex="0" aria-label="${esc(label)}" title="${esc(
@@ -3752,13 +3795,12 @@
 	// root cause of duplicate Like/Repost Marks getting created.
 	function setEngagementToggleState(trigger, kind, active, markId, item) {
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
-		const label = active
-			? 'like' === kind
-				? __('Unlike', 'daymark')
-				: __('Undo reblog', 'daymark')
-			: 'like' === kind
-			? __('Like', 'daymark')
-			: __('Reblog', 'daymark');
+		const label =
+			'like' === kind
+				? likeToggleLabel(active, active && item ? item.like_delivery : '')
+				: active
+				? __('Undo reblog', 'daymark')
+				: __('Reblog', 'daymark');
 		trigger.classList.toggle(activeClass, active);
 		trigger.classList.toggle('daymark-stat--active', active);
 		trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -3798,20 +3840,171 @@
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
 		trigger.setAttribute('data-like-busy', 'true');
+		// Not yet known whether a Like can reach this origin: check first
+		// (the same answer observeLikeAvailability() would have fetched),
+		// so a tap never creates a Like nothing can deliver.
+		if (!wasLiked && true !== item.like_available) {
+			const available = await resolveLikeAvailability(item, id);
+			if (false === available) {
+				trigger.removeAttribute('data-like-busy');
+				hideUnavailableLikeToggle(trigger);
+				return;
+			}
+		}
 		setEngagementToggleState(trigger, 'like', !wasLiked, 0, item);
 		try {
 			if (!wasLiked) {
 				const result = await apiPost('subscription-posts/' + id + '/like', {});
+				item.like_delivery = result.delivery || '';
 				setEngagementToggleState(trigger, 'like', true, result.mark_id || 0, item);
 			} else {
 				await apiDelete('subscription-posts/' + id + '/like');
+				item.like_delivery = '';
 				setEngagementToggleState(trigger, 'like', false, 0, item);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
 			setEngagementToggleState(trigger, 'like', wasLiked, 0, item);
+			// The server refuses a Like nothing can deliver even when the
+			// client thought it could (a stale cached answer) — treat that
+			// exactly like a negative pre-check.
+			if (err && 'daymark_like_undeliverable' === err.code) {
+				item.like_available = false;
+				hideUnavailableLikeToggle(trigger);
+			}
 		} finally {
 			trigger.removeAttribute('data-like-busy');
+		}
+	}
+
+	// Resolve (and remember on the item) whether a Like can reach this
+	// post's origin. Resolves to true/false, or null when the check itself
+	// failed (e.g. offline or rate-limited) — the caller then proceeds and
+	// lets the server's own refusal be the backstop.
+	async function resolveLikeAvailability(item, id) {
+		if (true === item.like_available || false === item.like_available) {
+			return item.like_available;
+		}
+		try {
+			const result = await apiGet('subscription-posts/' + id + '/like-availability');
+			item.like_available = !!(result && result.available);
+			return item.like_available;
+		} catch (err) {
+			return null;
+		}
+	}
+
+	// A tapped Like that turned out to be undeliverable: say so briefly on
+	// the icon itself, then remove it — and every other copy of the same
+	// post's Like icon on screen (the Timeline card and the full post view
+	// share renderers, so the same id can appear more than once).
+	function hideUnavailableLikeToggle(trigger) {
+		const id = trigger.getAttribute('data-like-toggle');
+		showFlashBubble(trigger, __("This site can't receive Likes", 'daymark'));
+		window.setTimeout(() => removeLikeToggles(id), 2000);
+	}
+
+	// Removes every not-yet-liked Like icon for one subscription post id.
+	// An already-liked one is left alone so it can still be unliked.
+	function removeLikeToggles(id) {
+		if (!id) {
+			return;
+		}
+		document.querySelectorAll('[data-like-toggle]').forEach((el) => {
+			if (id === el.getAttribute('data-like-toggle') && 'true' !== el.getAttribute('aria-pressed')) {
+				el.remove();
+			}
+		});
+	}
+
+	// --- Lazy Like availability ---
+	//
+	// A subscription post's `like_available` is null until its origin has
+	// been looked up (a Timeline response never makes that fetch itself).
+	// Mirrors observeOembedPreviewCandidates()/drainOembedPreviewQueue():
+	// an IntersectionObserver with the same lookahead, a single-in-flight
+	// queue, and the same 429 backoff. A card that resolves to false loses
+	// its Like icon; everything else keeps it.
+	function observeLikeAvailability(screen, container) {
+		if (!('IntersectionObserver' in window) || !container) {
+			return;
+		}
+		if (!screen._likeAvailQueue) {
+			teardownLikeAvailabilityObserver(screen);
+		}
+		if (!screen._likeAvailObserver) {
+			screen._likeAvailObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._likeAvailObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-like-toggle');
+						if (id && !screen._likeAvailAttempted.has(id) && !screen._likeAvailQueue.includes(id)) {
+							screen._likeAvailQueue.push(id);
+							drainLikeAvailabilityQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: OEMBED_PREVIEW_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-like-toggle]').forEach((el) => {
+			const id = el.getAttribute('data-like-toggle');
+			const item = id && screen._bySubId ? screen._bySubId.get(id) : null;
+			const known = item && (true === item.like_available || false === item.like_available);
+			if (!item || known || 'true' === el.getAttribute('aria-pressed') || screen._likeAvailAttempted.has(id)) {
+				return;
+			}
+			screen._likeAvailObserver.observe(el);
+		});
+	}
+
+	function teardownLikeAvailabilityObserver(screen) {
+		if (screen._likeAvailObserver) {
+			screen._likeAvailObserver.disconnect();
+			screen._likeAvailObserver = null;
+		}
+		screen._likeAvailAttempted = new Set();
+		screen._likeAvailQueue = [];
+		screen._likeAvailInFlight = false;
+		screen._likeAvailBackoffUntil = 0;
+	}
+
+	async function drainLikeAvailabilityQueue(screen) {
+		if (screen._likeAvailInFlight || Date.now() < screen._likeAvailBackoffUntil) {
+			return;
+		}
+		const id = screen._likeAvailQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._likeAvailInFlight = true;
+		try {
+			const result = await apiGet('subscription-posts/' + id + '/like-availability');
+			screen._likeAvailAttempted.add(id);
+			const item = screen._bySubId && screen._bySubId.get(id);
+			const available = !!(result && result.available);
+			if (item) {
+				item.like_available = available;
+			}
+			if (!available) {
+				removeLikeToggles(id);
+			}
+		} catch (err) {
+			if (err && 429 === err.status) {
+				// Rate-limited, not a real answer: leave it out of
+				// _likeAvailAttempted so a later observeLikeAvailability()
+				// call can pick it back up once the backoff clears.
+				const waitMs = (Number(err.retryAfter) || 60) * 1000;
+				screen._likeAvailBackoffUntil = Date.now() + waitMs;
+			} else {
+				screen._likeAvailAttempted.add(id);
+			}
+		} finally {
+			screen._likeAvailInFlight = false;
+			drainLikeAvailabilityQueue(screen);
 		}
 	}
 
@@ -3977,6 +4170,12 @@
 			} else if ('jetpack' === result.method && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.jetpack_commented = true;
+			}
+			if (item && result.delivery) {
+				item.comment_delivery = result.delivery;
+				const label = withDeliveryStatus(__('Comment', 'daymark'), result.delivery);
+				trigger.setAttribute('aria-label', label);
+				trigger.setAttribute('title', label);
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 		} catch (err) {
@@ -4774,6 +4973,7 @@
 			this.teardownObserver();
 			teardownRehydrateObserver(this);
 			teardownOembedPreviewObserver(this);
+			teardownLikeAvailabilityObserver(this);
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -4812,6 +5012,7 @@
 				list.innerHTML = renderFeedItemsWithGroups(this, arr);
 				observeRehydrateCandidates(this, list);
 				observeOembedPreviewCandidates(this, list);
+				observeLikeAvailability(this, list);
 
 				if (arr.length < RECENT_PER_PAGE) {
 					// A short first page means there is nothing more to load.
@@ -4881,6 +5082,7 @@
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
 					observeRehydrateCandidates(this, list);
 					observeOembedPreviewCandidates(this, list);
+				observeLikeAvailability(this, list);
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
@@ -5312,6 +5514,7 @@
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
 				this._byMarkId.clear();
+				teardownLikeAvailabilityObserver(this);
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -5321,6 +5524,7 @@
 					return;
 				}
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
+				observeLikeAvailability(this, list);
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
@@ -8129,6 +8333,8 @@
 			this._byMarkId = new Map();
 			this._bySubId = new Map();
 			rememberItem(this, this.view.item);
+			teardownLikeAvailabilityObserver(this);
+			observeLikeAvailability(this, root.querySelector('.daymark-postview-meta'));
 			await this.load(false);
 		},
 
