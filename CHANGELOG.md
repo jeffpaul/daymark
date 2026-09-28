@@ -30,6 +30,7 @@ can't act on them.
 ### Changed
 
 - The Like icon on a subscribed post now only appears when a Like can actually reach that post's site — through your linked WordPress.com account (Jetpack), or the Webmention plugin plus a site that accepts Webmentions — instead of creating a Like nobody would ever receive. A post you've already liked keeps its icon so you can unlike it.
+- The readme, README, and the Webmention and Jetpack entries on Settings -> Daymark -> Connectors now say plainly that liking a subscribed post needs one of those two plugins; without either, subscribed posts show no Like icon.
 - The composer's "Mark type: {Type}" line — previously its own paragraph below the media picker — is now a chip in the header, next to "New Mark"/"Edit Draft", for every Mark type.
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
 - The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.

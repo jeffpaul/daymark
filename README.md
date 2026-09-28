@@ -105,6 +105,11 @@ how that works from a user's side.
 
 - WordPress 7.0+ (the bundled AI Client powers optional AI Assist)
 - PHP 8.2+
+- To like subscribed posts: the [Webmention](https://wordpress.org/plugins/webmention/)
+  plugin (for sites that accept Webmentions), or [Jetpack](https://wordpress.org/plugins/jetpack/)
+  with your own WordPress.com account linked (for WordPress.com and
+  Jetpack-connected sites). Without either, subscribed posts show no Like icon.
+  Both are listed on Settings -> Daymark -> Connectors.
 
 ### Extending Daymark
 

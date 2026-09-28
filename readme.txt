@@ -48,6 +48,8 @@ Daymark's code and its full design history are public on [GitHub](https://github
 3. Visit `https://yoursite.example/daymark` on your phone while logged in.
 4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
+To like subscribed posts, you also need the Webmention plugin or Jetpack with your WordPress.com account linked — see "Why don't I see a Like icon on subscribed posts?" below.
+
 Activation creates no public pages of its own. Timeline, Explore, Search, and Me all live inside the authenticated `/daymark` app shell.
 
 == Frequently Asked Questions ==
@@ -65,6 +67,15 @@ Daymark only offers destinations that can actually publish (and pull replies bac
 If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver arrive as native WordPress comments and are recognized and labeled in Daymark notifications ("Reply from Bluesky", "Reply from the Fediverse", …) — by push, live, with no polling. When a polling connector is registered, an hourly background sync (plus a refresh whenever you view notifications) imports replies from your syndicated copies too, deduplicated per reply.
 
 Replying to a subscribed post works the same way, in reverse: tap "Reply" on an expanded Timeline card, write your reply, and publish it as a normal Mark. The published Mark's permalink carries a `u-in-reply-to` link to the source, and the Webmention plugin (if installed and active) notifies the source automatically the moment your reply goes live — Daymark itself never sends, receives, or verifies a Webmention, it just makes sure the markup a Webmention plugin looks for is there. For the best Daymark + IndieWeb experience, install the [Webmention plugin](https://wordpress.org/plugins/webmention/) (and ActivityPub/ATmosphere alongside it) so replies and mentions from across the web show up in your notifications automatically — Settings -> Daymark's Connectors tab lists all three with an Install/Activate button right there, no need to leave wp-admin. Don't want to install the ActivityPub plugin at all? [Bridgy Fed](https://fed.brid.gy/) is a free, hosted bridge — not a plugin — that gives your site a fediverse and Bluesky presence through the Webmention support above, under an auto-generated handle on its own domain rather than a native handle on yours; it's also listed on the Connectors tab, right alongside the plugin options.
+
+= Why don't I see a Like icon on subscribed posts? =
+
+Liking a subscribed post needs a way to actually tell the original site. Daymark only shows the Like icon when one of these is set up:
+
+* The [Webmention plugin](https://wordpress.org/plugins/webmention/) is active on your site, and the subscribed site accepts Webmentions.
+* [Jetpack](https://wordpress.org/plugins/jetpack/) is active and you've linked your own WordPress.com account (Jetpack -> My Connection). This covers subscribed sites hosted on WordPress.com or connected to Jetpack.
+
+Without either one, subscribed posts show no Like icon at all, so you never send a Like nobody receives. Both plugins are listed on Settings -> Daymark -> Connectors with an Install/Activate button. A post you already liked keeps its icon so you can unlike it.
 
 = Does Daymark work with the Friends plugin? =
 

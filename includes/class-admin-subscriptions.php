@@ -2032,7 +2032,7 @@ class Daymark_Admin_Subscriptions {
 				'label'       => 'Webmention',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
-				'description' => __( "Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
+				'description' => __( "Needed for Like: without this plugin (or Jetpack with your WordPress.com account linked), subscribed posts show no Like icon at all. Sends and receives Webmentions automatically — a like or reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
 			),
 			'activitypub'     => array(
 				'label'       => 'ActivityPub',
@@ -2055,7 +2055,7 @@ class Daymark_Admin_Subscriptions {
 				'wporg_slug'  => 'jetpack',
 				'folder_slug' => 'jetpack',
 				'classes'     => array( 'Automattic\\Jetpack\\Connection\\Client' ),
-				'description' => __( "Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
+				'description' => __( "Needed for Like on WordPress.com and Jetpack-connected sites: without this (or the Webmention plugin), subscribed posts show no Like icon at all. Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
 			),
 			'bridgy_fed'      => array(
 				'label'       => 'Bridgy Fed',
