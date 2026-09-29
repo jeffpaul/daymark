@@ -378,6 +378,50 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * A cache version for the service worker that changes whenever the
+	 * plugin's cached assets do.
+	 *
+	 * The worker only re-installs (and so only re-downloads app.js, app.css,
+	 * and offline-boot.js into a fresh cache) when the bytes of /daymark/sw.js
+	 * change, and it serves those three files cache-first, ignoring their
+	 * `?ver=` query. A fixed cache name therefore meant an installed Daymark
+	 * kept the JavaScript it had on install day through every later release,
+	 * including any that fixed a client-side bug. The plugin version covers a
+	 * normal release; the assets' modification times also cover a development
+	 * checkout, where the version constant does not move.
+	 *
+	 * @return string For example `0.17.0-1a2b3c4d`.
+	 */
+	public static function service_worker_cache_version(): string {
+		$signature = '';
+
+		foreach ( array( 'app.js', 'app.css', 'offline-boot.js' ) as $file ) {
+			$path       = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
+			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
+		}
+
+		return DAYMARK_VERSION . '-' . substr( md5( $signature ), 0, 8 );
+	}
+
+	/**
+	 * The service worker script served at /daymark/sw.js: assets/daymark-sw.js
+	 * with its two placeholders filled in (the plugin assets URL and the
+	 * cache version above).
+	 *
+	 * @return string
+	 */
+	public static function build_service_worker_script(): string {
+		$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
+		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
+
+		return str_replace(
+			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__' ),
+			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version() ),
+			$sw_js
+		);
+	}
+
+	/**
 	 * Builds the app shell's bootstrap config array — the exact same shape
 	 * templates/app-shell.php inlines as `window.daymarkApp` for a normal
 	 * online load, and GET /daymark/config.json (see maybe_load_app_shell())
@@ -636,12 +680,9 @@ class Daymark_Routes {
 				// header needed. The one placeholder token gets the real
 				// plugin assets URL substituted in, since app.css/app.js live
 				// under a different directory than this URL does.
-				$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
-				$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
-				$sw_js   = str_replace( '__DAYMARK_ASSETS_URL__', DAYMARK_PLUGIN_URL . 'assets/', $sw_js );
 				header( 'Content-Type: application/javascript; charset=utf-8' );
 				header( 'Cache-Control: no-store' );
-				echo $sw_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with one URL substitution, not user input.
+				echo self::build_service_worker_script(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with two substitutions (an assets URL and a version string), not user input.
 				exit;
 			}
 

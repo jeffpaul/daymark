@@ -2,8 +2,8 @@
  * Daymark service worker (issue #126: cold-offline-load support).
  *
  * Served at /daymark/sw.js (Daymark_Routes, class-routes.php — a plain
- * templated echo of this exact file, one string substitution for
- * __DAYMARK_ASSETS_URL__) rather than as a static file under the plugin's
+ * templated echo of this exact file, string substitutions for
+ * __DAYMARK_ASSETS_URL__ and __DAYMARK_CACHE_VERSION__) rather than as a static file under the plugin's
  * own assets/ directory. That URL is what lets this worker's registration
  * scope cover every /daymark* route with NO Service-Worker-Allowed header:
  * per the Service Worker spec, a worker's maximum scope defaults to the
@@ -43,7 +43,12 @@
  *   see templates/offline-shell.php's own docblock for the full reasoning.
  */
 
-const CACHE_NAME = 'daymark-v2';
+// The version token is filled in by Daymark_Routes::build_service_worker_script()
+// and changes whenever the plugin or its cached assets do, so each release
+// re-installs this worker into a fresh cache (and the activate handler below
+// deletes the old one). Without it the bytes of this file never changed and an
+// installed app kept its install-day app.js for good.
+const CACHE_NAME = 'daymark-__DAYMARK_CACHE_VERSION__';
 
 // The substituted value is an absolute URL (scheme + host + path).
 const ASSETS_BASE_URL = '__DAYMARK_ASSETS_URL__';
@@ -137,6 +142,13 @@ async function redactAndCacheConfig(cacheKey, response) {
 	try {
 		const data = await response.clone().json();
 		delete data.nonce;
+		// currentUser.logoutUrl is built by wp_logout_url(), which carries a
+		// WordPress nonce (_wpnonce) for the log-out action. Nothing durable
+		// may hold one, so it is dropped too; the Me screen simply omits its
+		// Log out link until the page next loads online.
+		if (data.currentUser && 'object' === typeof data.currentUser) {
+			delete data.currentUser.logoutUrl;
+		}
 		const redacted = new Response(JSON.stringify(data), {
 			headers: { 'Content-Type': 'application/json' },
 		});

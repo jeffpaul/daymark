@@ -100,6 +100,45 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		set_query_var( Daymark_Routes::QUERY_VAR, '' );
 	}
 
+	/** Both placeholders in the served worker are filled, so no literal token reaches a browser. */
+	public function test_served_service_worker_has_no_unfilled_placeholders() {
+		$script = Daymark_Routes::build_service_worker_script();
+
+		$this->assertNotSame( '', $script );
+		$this->assertStringNotContainsString( '__DAYMARK_', $script );
+		$this->assertStringContainsString( DAYMARK_PLUGIN_URL . 'assets/', $script );
+	}
+
+	/**
+	 * The cache name carries a version. The worker re-installs (and so
+	 * re-downloads the cached app.js/app.css) only when its own bytes change,
+	 * so a fixed cache name kept an installed app on its install-day
+	 * JavaScript through every later release.
+	 */
+	public function test_service_worker_cache_name_carries_the_version() {
+		$version = Daymark_Routes::service_worker_cache_version();
+
+		$this->assertMatchesRegularExpression( '/^' . preg_quote( DAYMARK_VERSION, '/' ) . '-[0-9a-f]{8}$/', $version );
+		$this->assertStringContainsString( "const CACHE_NAME = 'daymark-{$version}';", Daymark_Routes::build_service_worker_script() );
+		$this->assertSame( $version, Daymark_Routes::service_worker_cache_version(), 'Stable across calls when nothing changed' );
+	}
+
+	/**
+	 * The worker's redaction drops every WordPress nonce before writing
+	 * config.json to Cache Storage: the app nonce, and the one inside the
+	 * Log out URL (`_wpnonce`), which wp_logout_url() builds.
+	 */
+	public function test_service_worker_redacts_the_logout_url_nonce_too() {
+		$config = Daymark_Routes::build_app_config();
+
+		$this->assertMatchesRegularExpression( '/_wpnonce=/', (string) $config['currentUser']['logoutUrl'], 'Precondition: the logout URL carries a nonce' );
+
+		$script = Daymark_Routes::build_service_worker_script();
+
+		$this->assertStringContainsString( 'delete data.nonce;', $script );
+		$this->assertStringContainsString( 'delete data.currentUser.logoutUrl;', $script );
+	}
+
 	/** The offline-fallback shell renders with no per-request nonce anywhere, and no inline <script> at all. */
 	public function test_offline_shell_has_no_nonce_or_inline_script() {
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );

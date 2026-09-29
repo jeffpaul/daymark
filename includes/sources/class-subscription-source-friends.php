@@ -383,10 +383,32 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		 */
 		$number = (int) apply_filters( 'daymark_subscription_friends_user_scan_limit', 500 );
 
+		/**
+		 * Filters the WordPress roles that count as a Friends-plugin
+		 * relationship when find_friend_user() matches a site URL to a user.
+		 *
+		 * Friends stores each person you follow as a WordPress user in one of
+		 * its own roles (`subscription` in current versions; older versions
+		 * also used `friend`, `acquaintance`, and the request roles). Without
+		 * this restriction any account on the site, including an Author's or
+		 * Contributor's, could set its own profile website to another site's
+		 * URL and be matched first, which shadows a real friend and leaves
+		 * that subscription empty.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param string[] $roles Role slugs.
+		 */
+		$roles = (array) apply_filters(
+			'daymark_subscription_friends_roles',
+			array( 'subscription', 'friend', 'acquaintance', 'friend_request', 'pending_friend_request' )
+		);
+
 		$users = get_users(
 			array(
-				'number' => $number,
-				'fields' => 'all',
+				'number'   => $number,
+				'fields'   => 'all',
+				'role__in' => $roles,
 			)
 		);
 

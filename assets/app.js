@@ -149,11 +149,18 @@
 
 	/**
 	 * Reduce an HTML string (e.g. comment content) to plain text.
+	 *
+	 * Parsed through an inert <template>, not a detached <div>: a <div> that
+	 * is never attached still starts a network request for every <img> in the
+	 * markup, so a federated reply carrying <img src="https://tracker/…"> told
+	 * its author when the Notifications screen was opened. A template's
+	 * contents belong to an inert document that loads nothing and runs
+	 * nothing.
 	 */
 	function toPlainText(html) {
-		const div = document.createElement('div');
-		div.innerHTML = String(html === null || html === undefined ? '' : html);
-		return (div.textContent || '').trim();
+		const template = document.createElement('template');
+		template.innerHTML = String(html === null || html === undefined ? '' : html);
+		return (template.content.textContent || '').trim();
 	}
 
 	/**
@@ -8268,7 +8275,10 @@
 			}
 			content = await loadExpandHtmlOffline(err, item.id, true);
 		}
-		return expandBodyHtml(content);
+		// Second layer behind the server's own strip: this is another site's
+		// HTML, so its styles and any daymark- class are removed on the client
+		// too, whichever path (live or cached) it arrived by.
+		return expandBodyHtml(stripUntrustedPresentation(content));
 	}
 
 	// One-shot hand-off from whichever feed-list screen (Home or Search) a
