@@ -971,7 +971,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$count = count(
 			get_posts(
 				array(
-					'post_type'      => 'post',
+					'post_type'      => Daymark_Like_Visibility::POST_TYPE,
 					'post_status'    => 'publish',
 					'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_value'     => 'https://example.com/original-post/', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value

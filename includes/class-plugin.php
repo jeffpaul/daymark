@@ -290,6 +290,12 @@ final class Daymark_Plugin {
 		// priority, so both migrations must run before that.
 		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
 		add_action( 'init', array( __CLASS__, 'migrate_content_type_pages' ), 5 );
+		// Early, at priority 5: the Webmention plugin builds its list of
+		// post types to send from (get_post_types_by_support( 'webmentions' ))
+		// on `init` at priority 10, so the Like post type must already be
+		// registered by then — rather than relying on this plugin happening
+		// to load before that one alphabetically.
+		add_action( 'init', array( $this->like_visibility, 'register_post_type' ), 5 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( DAYMARK_PLUGIN_FILE ), array( $this, 'add_action_links' ) );

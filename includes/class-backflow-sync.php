@@ -193,8 +193,19 @@ class Daymark_Backflow_Sync {
 		$imported      = 0;
 		$notifications = Daymark_Plugin::instance()->notifications;
 
+		// Jetpack likes on this site's own Marks live only on WordPress.com
+		// — pull them in on the same schedule (see
+		// Daymark_Jetpack_Engagement::sync_own_likes(); its own per-Mark
+		// cooldown keeps this cheap, and it no-ops without a connection).
+		$jetpack_site = Daymark_Jetpack_Engagement::site_connected();
+
 		foreach ( $query->posts as $post_id ) {
-			$post_id  = (int) $post_id;
+			$post_id = (int) $post_id;
+
+			if ( $jetpack_site ) {
+				Daymark_Jetpack_Engagement::sync_own_likes( $post_id );
+			}
+
 			$networks = $this->real_backflow_networks( $post_id );
 
 			if ( array() === $networks ) {

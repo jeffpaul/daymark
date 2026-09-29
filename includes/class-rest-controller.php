@@ -3259,7 +3259,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$found = get_posts(
 			array(
-				'post_type'      => 'post',
+				// Both types: a Like Mark lives on its own post type (see
+				// Daymark_Like_Visibility::POST_TYPE); a legacy one may not
+				// have been migrated off 'post' yet.
+				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
 				'post_status'    => array( 'publish', 'draft' ),
 				'author'         => get_current_user_id(),
 				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
@@ -3314,7 +3317,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
-			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
+			// Federation-plugin likes (stored as comments) plus WordPress.com
+			// likes, which Jetpack keeps off-site — see
+			// Daymark_Jetpack_Engagement::sync_own_likes().
+			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
+				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
 			// Only the federation plugins (ActivityPub/ATmosphere/Webmention)
 			// ever write a 'repost' comment_type today — see issue #41 for the
 			// cross-plugin confirmation. A polling connector's own reactions
