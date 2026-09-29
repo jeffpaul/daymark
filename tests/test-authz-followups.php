@@ -218,6 +218,46 @@ class Test_Authz_Followups extends WP_UnitTestCase {
 		$this->assertArrayHasKey( 'location', $item );
 	}
 
+	/**
+	 * A text-only share can arrive with an empty `media[]` field; that is not
+	 * an upload and must not need `upload_files`.
+	 */
+	public function test_an_empty_file_field_is_not_an_upload() {
+		$empty_single = array(
+			'media' => array(
+				'name'     => '',
+				'type'     => '',
+				'tmp_name' => '',
+				'error'    => UPLOAD_ERR_NO_FILE,
+				'size'     => 0,
+			),
+		);
+		$empty_multi  = array(
+			'media' => array(
+				'name'     => array( '' ),
+				'type'     => array( '' ),
+				'tmp_name' => array( '' ),
+				'error'    => array( UPLOAD_ERR_NO_FILE ),
+				'size'     => array( 0 ),
+			),
+		);
+
+		$this->assertFalse( Daymark_Share_Target::has_actual_upload( array() ) );
+		$this->assertFalse( Daymark_Share_Target::has_actual_upload( $empty_single ) );
+		$this->assertFalse( Daymark_Share_Target::has_actual_upload( $empty_multi ) );
+	}
+
+	/** A real file, alone or beside an empty slot, is an upload. */
+	public function test_a_real_file_is_an_upload() {
+		$single = array( 'media' => array( 'error' => UPLOAD_ERR_OK ) );
+		$multi  = array( 'media' => array( 'error' => array( UPLOAD_ERR_NO_FILE, UPLOAD_ERR_OK ) ) );
+		$failed = array( 'media' => array( 'error' => UPLOAD_ERR_INI_SIZE ) );
+
+		$this->assertTrue( Daymark_Share_Target::has_actual_upload( $single ) );
+		$this->assertTrue( Daymark_Share_Target::has_actual_upload( $multi ) );
+		$this->assertTrue( Daymark_Share_Target::has_actual_upload( $failed ), 'A rejected upload attempt still counts as one' );
+	}
+
 	/** A Contributor cannot upload through the share target. */
 	public function test_share_target_refuses_files_without_upload_files() {
 		wp_set_current_user( $this->contributor );

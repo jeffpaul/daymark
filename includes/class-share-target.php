@@ -20,6 +20,33 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Share_Target {
 
 	/**
+	 * Whether a `$_FILES`-shaped array carries at least one real upload.
+	 *
+	 * A text or link share can arrive with an empty `media[]` multipart field
+	 * (error `UPLOAD_ERR_NO_FILE`), which is not a file and must not need the
+	 * upload capability. Handles both the single-file shape (`error` is an
+	 * int) and PHP's transposed multi-file shape (`error` is an array).
+	 *
+	 * @param array<string, mixed> $files A `$_FILES`-shaped array keyed by field name.
+	 * @return bool
+	 */
+	public static function has_actual_upload( array $files ): bool {
+		foreach ( $files as $field ) {
+			if ( ! is_array( $field ) || ! isset( $field['error'] ) ) {
+				continue;
+			}
+
+			foreach ( (array) $field['error'] as $error ) {
+				if ( UPLOAD_ERR_NO_FILE !== (int) $error ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Handle a share-target request.
 	 *
 	 * A GET (someone navigating to the action URL directly, not a real
@@ -97,7 +124,7 @@ class Daymark_Share_Target {
 
 		// The REST routes require `upload_files` before any file is accepted;
 		// edit_posts alone (a Contributor) must not be a way around that.
-		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
+		if ( self::has_actual_upload( $files ) && ! current_user_can( 'upload_files' ) ) {
 			wp_die(
 				esc_html__( 'You do not have permission to upload files.', 'daymark' ),
 				esc_html__( 'Daymark', 'daymark' ),
