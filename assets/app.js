@@ -1969,7 +1969,22 @@
 	// stored type; otherwise the Home launcher's chosen type (if any);
 	// otherwise the caption-only default. The server recomputes
 	// authoritatively on save.
+	//
+	// Checkin is the one deliberate exception (issue #424): once declared —
+	// via a fresh Checkin launcher entry or a resumed Checkin draft — it
+	// never gets reclassified by attached media the way every other type
+	// does. A checkin's own point is the place; an optional photo/video
+	// showing where you are ("see it's me at the Leaning Tower of Pisa!")
+	// is real, additional content, not a competing type — the server's own
+	// detect_primary_type() already honors this same override for a
+	// checkin+media publish, so the composer's own type badge/Place field
+	// must agree throughout the session rather than silently flipping to
+	// Image/Video/Gallery the instant a file is picked.
 	function effectiveType() {
+		const declaredType = state.editing ? state.editing.type : state.pendingType;
+		if ('checkin' === declaredType) {
+			return 'checkin';
+		}
 		if (state.files.length && state.editing && state.editing.media.length) {
 			return 'mixed';
 		}
@@ -2761,20 +2776,22 @@
 		return __('this site', 'daymark');
 	}
 
-	// The site icon that sits on every Timeline item except a Draft, as its
-	// own leading-column element — not a small circular badge overlapping
-	// the thumbnail's corner. A single click is the only interaction: it
-	// filters Timeline down to just that source (applySourceFilter(), via
-	// the data-filter-site attribute onFeedListClick() reads), no popover
-	// menu and no separate "visit the site" action (a live product review
-	// asked for both simplifications — the popover read as a false circular
-	// tap target, and "visit" left the app for a use case that didn't earn
-	// its own menu). Shared by a Mark's own icon (renderMarkItem()) and a
-	// subscription post's site icon (renderSubscriptionPostCard()) so the
-	// two can never drift apart. Kept as its own sibling element in the
-	// card's flex layout (not nested inside the card's own link/button) so
-	// a future Daymark content type can render its own card differently
-	// without this icon's placement following along.
+	// The site icon that sits on every Timeline item except a Draft — the
+	// top half of the item-wrap's leading column (renderLeadColumn(), below,
+	// stacks it above its row's type icon), not a small circular badge
+	// overlapping the thumbnail's corner. A single click is the only
+	// interaction: it filters Timeline down to just that source
+	// (applySourceFilter(), via the data-filter-site attribute
+	// onFeedListClick() reads), no popover menu and no separate "visit the
+	// site" action (a live product review asked for both simplifications —
+	// the popover read as a false circular tap target, and "visit" left the
+	// app for a use case that didn't earn its own menu). Shared by a Mark's
+	// own icon (renderMarkItem()) and a subscription post's site icon
+	// (renderSubscriptionPostCard()) so the two can never drift apart. Kept
+	// as its own sibling element in the card's flex layout (not nested
+	// inside the card's own link/button) so a future Daymark content type
+	// can render its own card differently without this icon's placement
+	// following along.
 	//
 	// `title` carries the site's name and URL as a native on-hover tooltip
 	// (issue #181) — deliberately separate from `aria-label`, which
@@ -2799,6 +2816,23 @@
 					${icon}
 				</button>
 			</div>`;
+	}
+
+	// The item-wrap's leading column: the site icon (renderSiteIconButton(),
+	// omitted for a Draft — see renderMarkItem()'s own isDraft check) stacked
+	// directly above its row's type icon (renderTypeIcon()), instead of the
+	// two sitting side by side as separate columns — reclaiming the type
+	// icon's own former column width plus one item-wrap gap for the card's
+	// own content. Always rendered, even for a Draft (siteIconHtml empty),
+	// so every row's type icon lands in the identical, fixed-width column
+	// regardless of whether a site icon happens to be present — the same
+	// consistent-rail-position goal the now-removed
+	// :not(:has(.daymark-recent__siteicon)) margin-left rule (issue #403)
+	// used to solve by fixing up a lone type icon's position after the fact.
+	// Shared by renderMarkItem() and renderSubscriptionPostCard() so the two
+	// can never render this column differently.
+	function renderLeadColumn(siteIconHtml, kind) {
+		return `<div class="daymark-recent__leadcol">${siteIconHtml}${renderTypeIcon(kind)}</div>`;
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
@@ -2899,8 +2933,7 @@
 		const overflowItems = isDraft ? '' : markOverflowMenuItems(item);
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
-				${siteIcon}
-				${renderTypeIcon(kind)}
+				${renderLeadColumn(siteIcon, kind)}
 				${card}
 				${actions}
 				${renderOverflowPanel(item, overflowItems, '')}
@@ -5642,6 +5675,9 @@
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
 				)}</h1>
+				<span class="daymark-chip daymark-topbar__typechip" data-type-badge>${esc(
+					TYPE_LABELS[effectiveType()]
+				)}</span>
 			</header>
 			<section class="daymark-screen">
 				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
@@ -5667,15 +5703,36 @@
 				}
 				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				${
-					// The Home launcher's Note bubble (and, per the same
-					// reasoning, the Checkin bubble — issue #143 — which has
-					// no media picker at all) jumps straight past the picker
-					// into a focused writing flow — attaching any file would
-					// flip the type away from 'note'/'checkin' anyway
-					// (detectType() only ever returns 'note' when nothing is
-					// attached), so hiding it here loses no real capability.
-					('note' === state.pendingType || 'checkin' === state.pendingType) && !state.files.length && !editing
+					// The Home launcher's Note bubble jumps straight past the
+					// picker into a focused writing flow — attaching any file
+					// would flip the type away from 'note' anyway (detectType()
+					// only ever returns 'note' when nothing is attached), so
+					// hiding it here loses no real capability. Checkin (issue
+					// #143) used to bypass the picker the exact same way, but a
+					// Check In can now carry an optional photo/video of its own
+					// (issue #424 — see the dedicated branch below), so it no
+					// longer skips the picker at all, fresh session or resumed
+					// draft alike.
+					'note' === state.pendingType && !state.files.length && !editing
 						? ''
+						: 'checkin' === effectiveType()
+						? // Optional media for a Check In (issue #424): a place
+						  // is the whole point of a checkin — this is deliberately
+						  // the smallest, plainest affordance in the composer, on
+						  // purpose disproportionate to the Place field below it
+						  // (no icon, no dashed border box, no hint line — just a
+						  // small underlined text link, the same weight
+						  // "Choose from library instead" already carries for a
+						  // typed entry's own secondary action), never the
+						  // camera-first flow a typed Image/Video/Audio entry
+						  // gets. Image/video only (no audio — the ask this
+						  // covers is "show where you are," not a voice memo).
+						  `<div class="daymark-picker daymark-picker--minimal">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*" multiple />
+					<label for="daymark-file-input" class="daymark-btn daymark-btn--text daymark-picker__zone">${esc(
+						__('+ Add a photo or video (optional)', 'daymark')
+					)}</label>
+				</div>`
 						: ACCEPT_BY_TYPE[state.pendingType]
 						? // A typed launcher entry (Image/Video/Audio): camera-first
 						  // — the primary action opens the device's camera/mic
@@ -5711,11 +5768,6 @@
 				</div>`
 				}
 				<div class="daymark-preview" data-preview></div>
-				<p class="daymark-typebadge">${sprintf(
-					/* translators: %s: Mark type label (e.g. "Image") */
-					esc(__('Mark type: %s', 'daymark')),
-					`<span class="daymark-chip" data-type-badge>${esc(TYPE_LABELS[effectiveType()])}</span>`
-				)}</p>
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
@@ -7480,25 +7532,40 @@
 	}
 
 	// The card-media kind to actually render, once a Mark's own Featured
-	// Content (issue #401) is taken into account. `resolveCardKind()` above
-	// answers "what kind of Mark is this" — the rail icon's own question,
-	// unaffected by Featured Content — but the media slot's job is showing
-	// whatever the Mark's front-end permalink page itself would show there,
-	// and Featured Content already replaces a post's Featured Image there
-	// by default (`maybe_replace_post_thumbnail_html()`,
-	// class-featured-content.php) regardless of the Mark's own primary
-	// type. A Note/Checkin Mark that sets a video/audio Featured Content is
-	// exactly the case this exists for: its own `kind` renders no media
-	// slot at all, but Featured Content is real, chosen content worth
-	// showing. Gallery/quote/link Featured Content aren't handled yet —
-	// `item.featured_content.type` is only ever 'audio'/'video' until those
-	// later phases ship their own card treatment.
+	// Content (issue #401) and — for a Check In specifically (issue #424) —
+	// its own optional attached photo/video are taken into account.
+	// `resolveCardKind()` above answers "what kind of Mark is this" — the
+	// rail icon's own question, unaffected by either — but the media slot's
+	// job is showing whatever real media the Mark actually carries.
+	// Featured Content already replaces a post's Featured Image there by
+	// default (`maybe_replace_post_thumbnail_html()`, class-
+	// featured-content.php) regardless of the Mark's own primary type — a
+	// Note/Checkin Mark that sets a video/audio Featured Content is exactly
+	// the case this exists for. Checked first: a deliberately, explicitly
+	// chosen Featured Content value should still win over an incidentally
+	// attached photo, matching how Featured Content already overrides a
+	// post's ordinary Featured Image everywhere else. Failing that, a
+	// Checkin Mark's own `media_kind` (prepare_mark_summary(),
+	// class-rest-controller.php — set only when the Mark actually carries
+	// attached media) resolves to whatever real kind that media is
+	// (image/gallery/video/mixed), so "see it's me at the Leaning Tower of
+	// Pisa!" renders as a real photo, not an empty checkin card. Gallery/
+	// quote/link Featured Content aren't handled yet — `item.featured_
+	// content.type` is only ever 'audio'/'video' until those later phases
+	// ship their own card treatment.
 	function mediaKindForItem(item, kind) {
-		return item.featured_content && item.featured_content.type ? item.featured_content.type : kind;
+		if (item.featured_content && item.featured_content.type) {
+			return item.featured_content.type;
+		}
+		if ('checkin' === kind && item.media_kind) {
+			return item.media_kind;
+		}
+		return kind;
 	}
 
-	// The rail column every card carries between its site icon and its own
-	// body — a quiet, muted indicator of what kind of thing this is,
+	// The rail icon every card carries directly below its site icon, in the
+	// same leading column (renderLeadColumn()) — a quiet, muted indicator of
+	// what kind of thing this is,
 	// visually threaded to the item above and below by a thin connecting
 	// line (see .daymark-recent__typeicon::before in app.css) so a scan
 	// down the list reads as one continuous chronological flow, the way
@@ -7526,6 +7593,52 @@
 		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
 	}
 
+	// Which single 256x256 OpenStreetMap raster tile best previews a
+	// coordinate, and where within that one tile the coordinate itself
+	// falls (as a 0-100 percentage of the tile's own width/height, for
+	// positioning a pin overlay with plain CSS left/top) — the same
+	// slippy-map tile math every OSM-based map already uses to pick a
+	// tile for a given latitude/longitude/zoom. Mirrors
+	// Daymark_Publisher::resolve_map_tile() in class-publisher.php
+	// exactly; keep the two in sync, the same "two implementations that
+	// must agree" shape AUDIO_EXTENSIONS/DIRECT_MEDIA_EXTENSIONS already
+	// established for Featured Content (issue #401).
+	function osmTileForLocation(lat, lng, zoom) {
+		const scale = Math.pow(2, zoom);
+		const latRad = (lat * Math.PI) / 180;
+		const x = ((lng + 180) / 360) * scale;
+		const y = ((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * scale;
+		return {
+			x: Math.floor(x),
+			y: Math.floor(y),
+			zoom,
+			pinLeft: ((x - Math.floor(x)) * 100).toFixed(3),
+			pinTop: ((y - Math.floor(y)) * 100).toFixed(3),
+		};
+	}
+
+	// A Checkin Mark's own leading visual on the Timeline card — a single
+	// OpenStreetMap tile centered on its captured location (issue #143's
+	// own follow-up), with a small pin overlaid at the exact position
+	// osmTileForLocation() resolved. No API key: OSM's own public tile
+	// server, the same one build_place_block()'s "View on map" link
+	// already sends a reader to. A Checkin's own captured location is the
+	// author's explicit, chosen content (unlike another Mark type's quiet
+	// background location capture, which never reaches this function at
+	// all — see renderCardMedia()'s own 'checkin'-only branch below), so
+	// this needs no daymark_publish_location_publicly privacy check of
+	// its own; class-publisher.php's docblock for build_map_preview_block()
+	// carries the full reasoning.
+	function renderCheckinMapPreview(location) {
+		const tile = osmTileForLocation(location.lat, location.lng, 15);
+		const tileUrl = `https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`;
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--checkin">${imgWithFallback(
+			tileUrl,
+			'daymark-recent__thumb',
+			'📍'
+		)}<span class="daymark-checkin-map__pin" style="left:${tile.pinLeft}%;top:${tile.pinTop}%" aria-hidden="true"></span></span>`;
+	}
+
 	// One card's media slot: a real image — a Mark's own thumbnail, a
 	// subscription post's featured_image_url, or (only when there's no
 	// post image at all) the subscription's own site icon — when there is
@@ -7535,9 +7648,14 @@
 	// class-publisher.php — so the placeholder keeps the media slot's own
 	// visual promise instead of collapsing to nothing); or no slot at all
 	// for a kind with none (note/link). A broken image degrades to the
-	// same placeholder via imgWithFallback()'s shared error handling.
+	// same placeholder via imgWithFallback()'s shared error handling. A
+	// Checkin Mark with a captured location is handled first, on its own —
+	// see renderCheckinMapPreview() above.
 	function renderCardMedia(item, kind) {
-		if ('note' === kind || 'link' === kind || 'checkin' === kind) {
+		if ('checkin' === kind) {
+			return item.location ? renderCheckinMapPreview(item.location) : '';
+		}
+		if ('note' === kind || 'link' === kind) {
 			return '';
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
@@ -7763,18 +7881,20 @@
 		const overflowItems = subscriptionOverflowMenuItems(item);
 		return `
 				<div class="daymark-recent__item-wrap">
-					${renderSiteIconButton({
-						iconSrc: item.site_icon_url || '',
-						iconAlt: siteLabel,
-						ariaLabel: sprintf(
-							/* translators: %s: site name */
-							__('Filter Timeline to posts from %s', 'daymark'),
-							siteLabel
-						),
-						filterValue: String(item.subscription_id),
-						siteUrl: item.site_url || '',
-					})}
-					${renderTypeIcon(kind)}
+					${renderLeadColumn(
+						renderSiteIconButton({
+							iconSrc: item.site_icon_url || '',
+							iconAlt: siteLabel,
+							ariaLabel: sprintf(
+								/* translators: %s: site name */
+								__('Filter Timeline to posts from %s', 'daymark'),
+								siteLabel
+							),
+							filterValue: String(item.subscription_id),
+							siteUrl: item.site_url || '',
+						}),
+						kind
+					)}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 						kind
 					)}" data-subpost="${id}">
@@ -8991,6 +9111,9 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
+			if ('jetpack_like' === item.type) {
+				return this.renderJetpackLikeItem(item);
+			}
 
 			const text = toPlainText(item.comment_content);
 			const long = text.length > 140;
@@ -9110,6 +9233,37 @@
 						__('→ Manage subscriptions', 'daymark')
 					)}</a>
 				</div>
+			</article>`;
+		},
+
+		// A WordPress.com like on one of your own Marks. Jetpack keeps these
+		// on WordPress.com rather than as comments on your site, so the
+		// server pulls them in separately
+		// (Daymark_Jetpack_Engagement::sync_own_likes()). It carries the
+		// same post_id/source fields as a comment, so it groups into that
+		// Mark's conversation card and the source filter like any reply —
+		// just with nothing to reply to.
+		renderJetpackLikeItem(item) {
+			const name = item.author || __('Someone', 'daymark');
+			const when = item.date ? relativeTime(item.date) : '';
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip">${esc(item.source_label || __('WordPress.com', 'daymark'))}</span>
+				<p class="daymark-note-card__text">${esc(
+					sprintf(
+						/* translators: %s: name of the person who liked the Mark */
+						__('%s liked this', 'daymark'),
+						name
+					)
+				)}</p>
+				${when ? `<p class="daymark-note-card__meta">${esc(when)}</p>` : ''}
+				${
+					item.author_url
+						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+								item.author_url
+						  )}" target="_blank" rel="noopener">${esc(__('↗ View profile', 'daymark'))}</a></div>`
+						: ''
+				}
 			</article>`;
 		},
 
