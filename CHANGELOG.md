@@ -57,7 +57,7 @@ can't act on them.
 
 ### Security
 
-- Daymark now checks every redirect that a subscribed site, a link preview, a comment delivery, or a location lookup sends back, not only the first address, and refuses any that points at a private, link-local, or cloud-metadata address. WordPress 7.0.0 through 7.0.2 did not do this on their own. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- Daymark now checks every address it fetches for a subscribed site, a link or feed preview, a comment delivery, a Like, or a location lookup, including each redirect and any address a remote page points it at, and refuses any that is private, link-local, or a cloud-metadata address. WordPress 7.0.0 through 7.0.2 did not do this on their own. ([#445](https://github.com/jeffpaul/daymark/pull/445))
 - A subscribed site's inline styles are now removed from posts you open in the app, so a hostile site can't lay its own content over Daymark's controls. ([#445](https://github.com/jeffpaul/daymark/pull/445))
 - The subscription post routes now answer only for real subscription posts. Before, an Author-level user could read the title and excerpt of another user's draft or private post by ID. ([#445](https://github.com/jeffpaul/daymark/pull/445))
 
