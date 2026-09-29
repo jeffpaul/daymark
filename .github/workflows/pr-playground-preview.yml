@@ -178,7 +178,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
       - name: Post Playground preview button
-        uses: WordPress/action-wp-playground-pr-preview@5e92f5e3c80d06126f22e83e4bb21221fbbd3e7f # v3
+        uses: WordPress/action-wp-playground-pr-preview@1b15093d61b5e98cdfeb31466f34ade495762cd7 # v4.0.0
         with:
           # Comment, not append-to-description: keeps the blueprint data URI
           # out of the squash-merge commit message (see the note above).
