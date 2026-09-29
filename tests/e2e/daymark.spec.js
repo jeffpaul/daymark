@@ -470,7 +470,11 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	const subMeta = page.locator('.daymark-postview-meta');
 	await expect(subMeta.locator('.daymark-recent__sitename')).toBeVisible();
 	await expect(subMeta.locator('.daymark-recent__timestamprow time')).toBeVisible();
-	await expect(subMeta.locator('[data-like-toggle]')).toBeVisible();
+	// No Like icon here: this E2E site has neither the Webmention plugin
+	// nor a Jetpack user connection, so no Like could ever reach the
+	// origin — the icon is hidden rather than offering a Like nobody would
+	// receive (see Daymark_Like_Delivery).
+	await expect(subMeta.locator('[data-like-toggle]')).toHaveCount(0);
 	await expect(subMeta.locator('[data-comment-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-repost-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
@@ -700,6 +704,7 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -763,6 +768,7 @@ test('subscription-post card meta line omits the post author', async ({ page }) 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -814,6 +820,7 @@ test('tapping Comment sends the reader straight to the origin post when Webmenti
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -906,6 +913,7 @@ test("comment delivery failure (after the pre-check said Webmention was viable) 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 

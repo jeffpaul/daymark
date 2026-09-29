@@ -483,7 +483,9 @@ class Daymark_Jetpack_Engagement {
 	}
 
 	/**
-	 * Like a post via WordPress.com's own real Like API, as the current user.
+	 * Like a post via WordPress.com's own real Like API, as the current user:
+	 * POST `/sites/{site}/posts/{post}/likes/new` (v1.1) — confirmed against
+	 * wp-calypso's own REST client (see unlike()).
 	 *
 	 * @param int $site_id WordPress.com site ID (from resolve_origin()).
 	 * @param int $post_id WordPress.com post ID (from resolve_origin()).
@@ -494,9 +496,13 @@ class Daymark_Jetpack_Engagement {
 	}
 
 	/**
-	 * Undo a Like via WordPress.com's own API. `.../likes/mine/delete`
-	 * mirrors the equivalent, WP.com-documented "my like status"
-	 * (`.../likes/mine/`) read convention.
+	 * Undo a Like via WordPress.com's own API: a POST to
+	 * `/sites/{site}/posts/{post}/likes/mine/delete` on the v1.1 REST API.
+	 * Confirmed against WordPress.com's own first-party client, Automattic/
+	 * wp-calypso (`packages/calypso-e2e/src/rest-api-client.ts`,
+	 * `postLikeAction()`), which likes via POST `.../likes/new` and unlikes
+	 * via POST `.../likes/mine/delete`, both at apiVersion 1.1 — the same
+	 * paths like() and this method use.
 	 *
 	 * @param int $site_id WordPress.com site ID.
 	 * @param int $post_id WordPress.com post ID.
@@ -508,7 +514,10 @@ class Daymark_Jetpack_Engagement {
 
 	/**
 	 * Post a comment via WordPress.com's own real Comment API, as the
-	 * current user.
+	 * current user: POST `/sites/{site}/posts/{post}/replies/new` with a
+	 * `content` field — confirmed against Jetpack's own endpoint definition
+	 * (`json-endpoints/class.wpcom-json-api-update-comment-endpoint.php`)
+	 * and wp-calypso's REST client (`createComment()`, apiVersion 1.1).
 	 *
 	 * @param int    $site_id WordPress.com site ID.
 	 * @param int    $post_id WordPress.com post ID.
