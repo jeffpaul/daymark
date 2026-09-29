@@ -48,7 +48,7 @@ Daymark's code and its full design history are public on [GitHub](https://github
 3. Visit `https://yoursite.example/daymark` on your phone while logged in.
 4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
-To like subscribed posts, you also need the Webmention plugin or Jetpack with your WordPress.com account linked — see "Why don't I see a Like icon on subscribed posts?" below.
+To like subscribed posts, you also need the Webmention plugin, the ActivityPub plugin, or Jetpack with your WordPress.com account linked — see "Why don't I see a Like icon on subscribed posts?" below.
 
 Activation creates no public pages of its own. Timeline, Explore, Search, and Me all live inside the authenticated `/daymark` app shell.
 
@@ -74,8 +74,9 @@ Liking a subscribed post needs a way to actually tell the original site. Daymark
 
 * The [Webmention plugin](https://wordpress.org/plugins/webmention/) is active on your site, and the subscribed site accepts Webmentions.
 * [Jetpack](https://wordpress.org/plugins/jetpack/) is active and you've linked your own WordPress.com account (Jetpack -> My Connection). This covers subscribed sites hosted on WordPress.com or connected to Jetpack.
+* The [ActivityPub plugin](https://wordpress.org/plugins/activitypub/) (8.1.0 or later) is active, your own user is enabled as an ActivityPub author, and the subscribed post is a fediverse post (Mastodon, or a site running ActivityPub). Daymark sends it a real ActivityPub Like; reblogging it also sends a boost.
 
-Without either one, subscribed posts show no Like icon at all, so you never send a Like nobody receives. Both plugins are listed on Settings -> Daymark -> Connectors with an Install/Activate button. A post you already liked keeps its icon so you can unlike it.
+Without any of these, subscribed posts show no Like icon at all, so you never send a Like nobody receives. All three plugins are listed on Settings -> Daymark -> Connectors with an Install/Activate button. A post you already liked keeps its icon so you can unlike it.
 
 = Does Daymark work with the Friends plugin? =
 

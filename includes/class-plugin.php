@@ -125,6 +125,15 @@ final class Daymark_Plugin {
 	public Daymark_Jetpack_Engagement $jetpack_engagement;
 
 	/**
+	 * Real ActivityPub Like/Announce/Undo for a subscribed post whose origin
+	 * is a fediverse object, via the ActivityPub plugin's own outbox (issue
+	 * #439).
+	 *
+	 * @var Daymark_ActivityPub_Engagement
+	 */
+	public Daymark_ActivityPub_Engagement $activitypub_engagement;
+
+	/**
 	 * "Featured Content" block-editor sidebar panel (issue #401) —
 	 * audio/video/gallery/quote/link as a post's featured content, in place
 	 * of (or alongside) a Featured Image.
@@ -282,6 +291,7 @@ final class Daymark_Plugin {
 		$this->websub_subscriber            = new Daymark_Websub_Subscriber();
 		$this->websub_endpoint              = new Daymark_Websub_Endpoint();
 		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
+		$this->activitypub_engagement       = new Daymark_ActivityPub_Engagement();
 		$this->featured_content             = new Daymark_Featured_Content();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
@@ -371,6 +381,7 @@ final class Daymark_Plugin {
 		$this->admin_post_format_icon->register();
 		$this->websub_endpoint->register();
 		$this->jetpack_engagement->register();
+		$this->activitypub_engagement->register();
 		$this->featured_content->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).

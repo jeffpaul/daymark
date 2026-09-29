@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- Liking a Mastodon post, or a post from any site running the ActivityPub plugin, now sends it a real ActivityPub Like through the ActivityPub plugin (8.1.0 or later, with your user enabled as an author); unliking sends an Undo. Reblogging one also sends a boost, undone when you unreblog. The origin gets one Like, not a second one by Webmention. ([#439](https://github.com/jeffpaul/daymark/issues/439))
 - A Like or Comment you've sent on a subscribed post now says, in its icon's hover text and screen-reader label, whether it actually reached the original site — delivered, pending, or not delivered.
 - With Jetpack connected, WordPress.com likes on your own Marks now count toward each Mark's like total and show up in Notifications ("Ada liked this"). Jetpack stores these likes on WordPress.com instead of on your site, so Daymark now fetches them in the background.
 - A Checkin Mark with a resolved location now shows a small map preview — a single OpenStreetMap tile with a pin at your captured spot — leading its Timeline card and its full post view, above the place name. A Checkin published before this change doesn't gain one retroactively; only a newly published Checkin's content includes it.
@@ -29,6 +30,7 @@ can't act on them.
 
 ### Changed
 
+- The Like icon on a subscribed post now also appears when the ActivityPub plugin can deliver the Like, and the readme, README, and Connectors tab list ActivityPub as a third way to like subscribed posts, alongside Webmention and Jetpack. ([#439](https://github.com/jeffpaul/daymark/issues/439))
 - The Like icon on a subscribed post now only appears when a Like can actually reach that post's site — through your linked WordPress.com account (Jetpack), or the Webmention plugin plus a site that accepts Webmentions — instead of creating a Like nobody would ever receive. A post you've already liked keeps its icon so you can unlike it.
 - The readme, README, and the Webmention and Jetpack entries on Settings -> Daymark -> Connectors now say plainly that liking a subscribed post needs one of those two plugins; without either, subscribed posts show no Like icon.
 - A Timeline card's leading site icon and type icon are now stacked in one column instead of sitting side by side, reclaiming that horizontal space for the card's own title, excerpt, and media.

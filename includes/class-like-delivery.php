@@ -7,15 +7,20 @@
  * (Daymark_Comment_Delivery::resolve_comment_target()) but Like never did:
  * tapping it always created a local Like Mark, even on an origin nothing
  * could notify — a Like the origin's author would never see. A Like is now
- * only offered when one of two real delivery routes exists:
+ * only offered when one of three real delivery routes exists:
  *
  * 1. Jetpack-native (issue #391): the current user has linked their own
  *    WordPress.com account and the origin resolves via WordPress.com's API.
- * 2. Webmention: the local Webmention plugin is active AND the origin
+ * 2. ActivityPub (issue #439): the ActivityPub plugin (>= 8.1.0) is active,
+ *    the current user is an enabled ActivityPub author, and the origin
+ *    permalink resolves to an ActivityPub object (Daymark_ActivityPub_Engagement).
+ * 3. Webmention: the local Webmention plugin is active AND the origin
  *    advertises a Webmention endpoint.
  *
- * Both signals come from Daymark_Comment_Delivery's existing, cached
- * permalink discovery — never a second fetch of the same page.
+ * The Jetpack and Webmention signals come from Daymark_Comment_Delivery's
+ * existing, cached permalink discovery; the ActivityPub signal from
+ * Daymark_ActivityPub_Engagement's own cached resolution (a signed
+ * ActivityStreams GET, a different request from the HTML page fetch).
  *
  * Delivery state reads the Webmention plugin's own post meta (verified
  * against pfefferle/wordpress-webmention's `includes/class-sender.php`):
@@ -73,6 +78,18 @@ class Daymark_Like_Delivery {
 	 * @return bool
 	 */
 	public static function mechanisms_exist( int $user_id = 0 ): bool {
+		return self::page_mechanisms_exist( $user_id )
+			|| Daymark_ActivityPub_Engagement::available_for_user( $user_id );
+	}
+
+	/**
+	 * Whether a route that reads the origin's page signals (Jetpack,
+	 * Webmention) exists — i.e. whether fetching those signals is worth it.
+	 *
+	 * @param int $user_id User ID; 0 for the current user.
+	 * @return bool
+	 */
+	private static function page_mechanisms_exist( int $user_id = 0 ): bool {
 		return Daymark_Jetpack_Engagement::current_user_connected( $user_id )
 			|| Daymark_Plugin_Detector::is_active( 'webmention' );
 	}
@@ -83,20 +100,29 @@ class Daymark_Like_Delivery {
 	 * most, shared with the Comment action.
 	 *
 	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
-	 * @return array{available: bool, method: string, jetpack: bool, webmention: bool}
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
 	 */
 	public static function resolve( int $subscription_post_id ): array {
 		if ( ! self::mechanisms_exist() ) {
-			return self::result( false, false );
+			return self::result( false, false, false );
 		}
 
-		$signals = Daymark_Comment_Delivery::origin_signals_for_post( $subscription_post_id );
+		$activitypub = false;
+
+		if ( Daymark_ActivityPub_Engagement::available_for_user() ) {
+			$permalink   = esc_url_raw( (string) get_post_meta( $subscription_post_id, 'permalink', true ) );
+			$activitypub = '' !== $permalink && null !== Daymark_ActivityPub_Engagement::resolve_target( $permalink );
+		}
+
+		$signals = self::page_mechanisms_exist()
+			? Daymark_Comment_Delivery::origin_signals_for_post( $subscription_post_id )
+			: array();
 
 		if ( is_wp_error( $signals ) ) {
-			return self::result( false, false );
+			return self::result( false, $activitypub, false );
 		}
 
-		return self::evaluate( $signals );
+		return self::evaluate( $signals, $activitypub );
 	}
 
 	/**
@@ -112,44 +138,74 @@ class Daymark_Like_Delivery {
 			return false;
 		}
 
-		$signals = Daymark_Comment_Delivery::cached_origin_signals( $permalink );
+		$unknown = false;
 
-		if ( null === $signals ) {
-			return null;
+		if ( Daymark_ActivityPub_Engagement::available_for_user() ) {
+			$target = Daymark_ActivityPub_Engagement::cached_target( $permalink );
+
+			if ( is_array( $target ) ) {
+				return true;
+			}
+
+			$unknown = null === $target;
 		}
 
-		return self::evaluate( $signals )['available'];
+		if ( self::page_mechanisms_exist() ) {
+			$signals = Daymark_Comment_Delivery::cached_origin_signals( $permalink );
+
+			if ( null === $signals ) {
+				$unknown = true;
+			} elseif ( self::evaluate( $signals, false )['available'] ) {
+				return true;
+			}
+		}
+
+		return $unknown ? null : false;
 	}
 
 	/**
 	 * Which routes a set of origin signals supports for the current user.
 	 *
-	 * @param array<string, mixed> $signals Daymark_Comment_Delivery origin signals.
-	 * @return array{available: bool, method: string, jetpack: bool, webmention: bool}
+	 * @param array<string, mixed> $signals     Daymark_Comment_Delivery origin signals.
+	 * @param bool                 $activitypub Whether the ActivityPub route resolved.
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
 	 */
-	private static function evaluate( array $signals ): array {
+	private static function evaluate( array $signals, bool $activitypub ): array {
 		$jetpack    = (int) ( $signals['jetpack_site_id'] ?? 0 ) > 0
 			&& (int) ( $signals['jetpack_post_id'] ?? 0 ) > 0
 			&& Daymark_Jetpack_Engagement::current_user_connected();
 		$webmention = '' !== (string) ( $signals['webmention_endpoint'] ?? '' )
 			&& Daymark_Plugin_Detector::is_active( 'webmention' );
 
-		return self::result( $jetpack, $webmention );
+		return self::result( $jetpack, $activitypub, $webmention );
 	}
 
 	/**
-	 * Shape a resolve()/evaluate() result.
+	 * Shape a resolve()/evaluate() result. `method` is the route a Like
+	 * would take first: Jetpack, then ActivityPub, then Webmention.
 	 *
-	 * @param bool $jetpack    Jetpack-native route available.
-	 * @param bool $webmention Webmention route available.
-	 * @return array{available: bool, method: string, jetpack: bool, webmention: bool}
+	 * @param bool $jetpack     Jetpack-native route available.
+	 * @param bool $activitypub ActivityPub route available.
+	 * @param bool $webmention  Webmention route available.
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
 	 */
-	private static function result( bool $jetpack, bool $webmention ): array {
+	private static function result( bool $jetpack, bool $activitypub, bool $webmention ): array {
+		$method = '';
+
+		if ( $jetpack ) {
+			$method = 'jetpack';
+		} elseif ( $activitypub ) {
+			$method = 'activitypub';
+		} elseif ( $webmention ) {
+			$method = 'webmention';
+		}
+
 		return array(
-			'available'  => $jetpack || $webmention,
-			'method'     => $jetpack ? 'jetpack' : ( $webmention ? 'webmention' : '' ),
-			'jetpack'    => $jetpack,
-			'webmention' => $webmention,
+			'available'   => $jetpack || $activitypub || $webmention,
+			'method'      => $method,
+			'jetpack'     => $jetpack,
+			'activitypub' => $activitypub,
+			'webmention'  => $webmention,
 		);
 	}
 
@@ -189,6 +245,9 @@ class Daymark_Like_Delivery {
 	/**
 	 * Delivery state of the current user's Like on a subscription post.
 	 *
+	 * A Like Mark that queued an ActivityPub Like reports that activity's
+	 * state instead of its (suppressed) Webmention's.
+	 *
 	 * @param bool   $jetpack_liked Whether it was a Jetpack-native like (a successful WordPress.com call).
 	 * @param int    $mark_id       Classic Like Mark ID, or 0.
 	 * @param string $permalink     Origin permalink.
@@ -197,6 +256,12 @@ class Daymark_Like_Delivery {
 	public static function like_state( bool $jetpack_liked, int $mark_id, string $permalink ): string {
 		if ( $jetpack_liked ) {
 			return self::STATE_SENT;
+		}
+
+		$activitypub = Daymark_ActivityPub_Engagement::delivery_state( $mark_id );
+
+		if ( '' !== $activitypub ) {
+			return $activitypub;
 		}
 
 		return self::webmention_state( $mark_id, $permalink );
