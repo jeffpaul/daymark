@@ -350,7 +350,7 @@ class Daymark_Comment_Delivery {
 
 		$user = wp_get_current_user();
 
-		$response = wp_safe_remote_post(
+		$response = Daymark_Outbound_Guard::post(
 			$comments_url,
 			array(
 				'timeout'             => (int) apply_filters( 'daymark_subscription_comment_fetch_timeout', 10 ),
@@ -493,7 +493,7 @@ class Daymark_Comment_Delivery {
 			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
 		);
 
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				'timeout'             => (int) apply_filters( 'daymark_subscription_comment_fetch_timeout', 10 ),

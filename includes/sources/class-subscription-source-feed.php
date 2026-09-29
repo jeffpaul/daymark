@@ -356,7 +356,11 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 
 		// fetch_feed() itself goes through SimplePie's WP_SimplePie_File,
 		// which wraps WP's own HTTP API — never a raw remote fetch.
-		$feed = fetch_feed( $feed_url );
+		$feed = Daymark_Outbound_Guard::run(
+			static function () use ( $feed_url ) {
+				return fetch_feed( $feed_url );
+			}
+		);
 
 		remove_filter( 'http_request_args', array( $this, 'inject_feed_response_size_limit' ), 10 );
 		remove_action( 'wp_feed_options', array( $this, 'configure_feed_timeout' ), 10 );

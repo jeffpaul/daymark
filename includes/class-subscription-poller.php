@@ -600,7 +600,7 @@ class Daymark_Subscription_Poller {
 		// wp_safe_remote_get(), not wp_remote_get(): this is a stored,
 		// user-subscribed-to external URL fetched on a live user action, same
 		// SSRF-hardening reasoning as the feed source's own site-HTML fetch.
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				/**
@@ -657,13 +657,50 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = wp_kses_post( self::extract_body_html( $body ) );
+		$sanitized = self::strip_inline_styles( wp_kses_post( self::extract_body_html( $body ) ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
 
 		return true;
+	}
+
+	/**
+	 * Remove every inline `style` attribute from an HTML fragment.
+	 *
+	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS property list, but
+	 * that list still includes layout properties such as `position`,
+	 * `top`/`left`, `z-index`, and `width`/`height`), and the app shell's CSP
+	 * allows inline styles. A hostile subscribed site could therefore lay its
+	 * own content over the authenticated UI — an overlay that mimics a
+	 * button or prompt. Script execution is not possible (the CSP's
+	 * `script-src` is nonce-only), so this is UI redressing, not XSS, but a
+	 * cached subscription post has no legitimate need for a remote site's
+	 * own positioning. Stripping it entirely, instead of narrowing the
+	 * property list further, keeps this a single rule with no allowlist to
+	 * maintain; an image's real dimensions live in its width/height
+	 * attributes, not its style.
+	 *
+	 * Public and static because both the poller (at store time) and the
+	 * REST controller (at read time, for a body cached before this existed)
+	 * call it.
+	 *
+	 * @param string $html HTML fragment, already passed through wp_kses_post().
+	 * @return string The same HTML with no `style` attributes.
+	 */
+	public static function strip_inline_styles( string $html ): string {
+		if ( '' === $html || false === stripos( $html, 'style' ) ) {
+			return $html;
+		}
+
+		$processor = new WP_HTML_Tag_Processor( $html );
+
+		while ( $processor->next_tag() ) {
+			$processor->remove_attribute( 'style' );
+		}
+
+		return $processor->get_updated_html();
 	}
 
 	/**

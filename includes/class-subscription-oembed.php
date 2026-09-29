@@ -142,7 +142,11 @@ class Daymark_Subscription_Oembed {
 		add_filter( 'http_request_args', array( __CLASS__, 'inject_request_limits' ), 10, 1 );
 
 		try {
-			$html = wp_oembed_get( $url, array( 'discover' => true ) );
+			$html = Daymark_Outbound_Guard::run(
+				static function () use ( $url ) {
+					return wp_oembed_get( $url, array( 'discover' => true ) );
+				}
+			);
 		} catch ( Throwable $e ) {
 			$html = false;
 		}
