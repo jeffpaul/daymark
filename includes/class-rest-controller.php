@@ -2134,15 +2134,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * scoped narrower: a Mark has no `permalink` post meta to engage with in
 	 * the first place, so it's excluded here rather than silently no-op'd.
 	 *
-	 * @param int $post_id Post ID.
+	 * Every /subscription-posts/{id} route calls this before reading any
+	 * meta or post field off the ID: without it, an Author-level caller
+	 * could pass any post's ID (another author's draft, a private page) and
+	 * get its title and excerpt back through a route meant only for cached
+	 * subscription posts.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $code    Error code to return when the check fails; a route
+	 *                        that already had its own 404 code keeps it.
 	 * @return true|WP_Error
 	 */
-	private function assert_subscription_post( int $post_id ) {
+	private function assert_subscription_post( int $post_id, string $code = 'daymark_not_found' ) {
 		$post = get_post( $post_id );
 
 		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status || Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type ) {
 			return new WP_Error(
-				'daymark_not_found',
+				$code,
 				__( 'Post not found.', 'daymark' ),
 				array( 'status' => 404 )
 			);
@@ -2783,7 +2791,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id      = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id, 'daymark_subscription_post_not_found' );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
 		$refresh = rest_sanitize_boolean( $request->get_param( 'refresh' ) );
 
 		$content_state = get_post_meta( $id, 'content_state', true );
@@ -2802,7 +2816,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// Already wp_kses_post()-sanitized by the poller; trusted raw
 				// HTML meant to be rendered as-is by the app shell, same as
 				// post_content elsewhere in this codebase — not re-escaped here.
-				'body_content' => (string) get_post_meta( $id, 'body_content', true ),
+				// Inline `style` attributes are stripped again on the way out
+				// (not only when the poller stores it) so a body cached before
+				// that stripping existed can't still reach the app shell with
+				// a remote site's own CSS in it.
+				'body_content' => Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) ),
 			)
 		);
 
@@ -2842,7 +2860,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id       = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$link_url = (string) get_post_meta( $id, 'link_url', true );
 
 		$preview = array();
@@ -2894,7 +2917,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id     = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$text   = (string) $request->get_param( 'text' );
 		$result = Daymark_Comment_Delivery::deliver( $id, $text );
 
@@ -2956,7 +2984,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id     = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$target = Daymark_Comment_Delivery::resolve_comment_target( $id );
 
 		if ( is_wp_error( $target ) ) {

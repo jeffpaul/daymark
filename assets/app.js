@@ -8179,12 +8179,47 @@
 		return template.innerHTML;
 	}
 
+	// Removes a remote page's own presentation from cached subscription
+	// HTML: every inline style, and every class token starting with
+	// `daymark-` (a `class="daymark-sheet"` would otherwise become a fixed,
+	// full-screen layer over the app). The server already strips both from
+	// a subscription body it serves (Daymark_Subscription_Poller::
+	// strip_untrusted_presentation()), but a bookmark cached in this
+	// browser's IndexedDB before that existed is rendered offline without
+	// ever asking the server, so it is cleaned again here. Never used for a
+	// Mark's own content, whose Check In map preview legitimately uses a
+	// `daymark-` class and an inline-positioned pin. Parsed through an inert
+	// <template>, so nothing in the markup runs or loads.
+	function stripUntrustedPresentation(html) {
+		if (!html) {
+			return html;
+		}
+		const template = document.createElement('template');
+		template.innerHTML = html;
+		template.content.querySelectorAll('[style]').forEach((el) => {
+			el.removeAttribute('style');
+		});
+		template.content.querySelectorAll('[class]').forEach((el) => {
+			const kept = String(el.getAttribute('class'))
+				.split(/\s+/)
+				.filter((token) => token && !/^daymark-/i.test(token));
+			if (kept.length) {
+				el.setAttribute('class', kept.join(' '));
+			} else {
+				el.removeAttribute('class');
+			}
+		});
+		return template.innerHTML;
+	}
+
 	// A bookmarked item's cached content (see cacheBookmarkOffline()) is
 	// the fallback for both loaders below, only reached on a
 	// connectivity-shaped failure of the live fetch — an actual server
 	// error (a real HTTP response, not a network failure) is rethrown
 	// unchanged rather than silently masked by stale cached content.
-	async function loadExpandHtmlOffline(err, id) {
+	// `untrusted` is true for a subscription post (another site's HTML) and
+	// false for a Mark (this site's own).
+	async function loadExpandHtmlOffline(err, id, untrusted) {
 		if (!(err instanceof TypeError) && navigator.onLine) {
 			throw err;
 		}
@@ -8192,7 +8227,8 @@
 		if (!cached || !cached.content) {
 			throw err;
 		}
-		return rewriteContentImagesForOffline(String(cached.content), cached.images);
+		const content = untrusted ? stripUntrustedPresentation(String(cached.content)) : String(cached.content);
+		return rewriteContentImagesForOffline(content, cached.images);
 	}
 
 	// A Mark or ordinary post's own content — straight from the site's own
@@ -8230,7 +8266,7 @@
 			if (forceRefresh) {
 				throw err;
 			}
-			content = await loadExpandHtmlOffline(err, item.id);
+			content = await loadExpandHtmlOffline(err, item.id, true);
 		}
 		return expandBodyHtml(content);
 	}
