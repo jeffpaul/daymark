@@ -55,6 +55,12 @@ can't act on them.
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
 - The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
 
+### Security
+
+- A password-protected post's content is no longer shown in the app to someone who can't edit that post. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+
 ## [0.17.0] - 2026-09-17
 
 ### Added
