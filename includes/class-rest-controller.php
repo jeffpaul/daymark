@@ -2071,6 +2071,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// apply_filters( 'the_content' ) below does not enforce a post
+		// password the way a front-end template does, so without this any
+		// Author or Contributor could read the full body of a protected post
+		// (someone else's, or one the site owner deliberately locked).
+		// Whoever can edit the post can already read it, so they are exempt.
+		if ( post_password_required( $post ) && ! current_user_can( 'edit_post', $post->ID ) ) {
+			return new WP_Error(
+				'daymark_password_protected',
+				__( 'This post is password protected.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 
@@ -3485,7 +3498,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$location = json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true );
 
-		if ( is_array( $location ) && isset( $location['lat'], $location['lng'] ) && is_numeric( $location['lat'] ) && is_numeric( $location['lng'] ) ) {
+		// A Mark's quietly captured coordinates go only to someone who can
+		// edit it (the Privacy tab tells the site owner this location "stays
+		// visible only to you"); the Timeline is shared, so without this every
+		// Author saw every other user's exact position. A Check In is the
+		// exception: its location is one the author chose to share, and its
+		// map link is already part of its public content.
+		$can_see_location = current_user_can( 'edit_post', $post_id ) || 'checkin' === (string) get_post_meta( $post_id, '_daymark_primary_type', true );
+
+		if ( $can_see_location && is_array( $location ) && isset( $location['lat'], $location['lng'] ) && is_numeric( $location['lat'] ) && is_numeric( $location['lng'] ) ) {
 			$summary['location'] = array(
 				'lat' => (float) $location['lat'],
 				'lng' => (float) $location['lng'],
