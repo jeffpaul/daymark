@@ -55,6 +55,12 @@ can't act on them.
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
 - The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
 
+### Security
+
+- Daymark now checks every address it fetches for a subscribed site, a link or feed preview, a comment delivery, a Like, or a location lookup, including each redirect and any address a remote page points it at, and refuses any that is private, link-local, or a cloud-metadata address. WordPress 7.0.0 through 7.0.2 did not do this on their own. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- A subscribed site's inline styles, and any classes borrowed from Daymark's own interface, are now removed from posts you open in the app, including posts you bookmarked earlier, so a hostile site can't lay its own content over Daymark's controls. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- The subscription post routes now answer only for real subscription posts. Before, an Author-level user could read the title and excerpt of another user's draft or private post by ID. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+
 ## [0.17.0] - 2026-09-17
 
 ### Added

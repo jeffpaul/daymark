@@ -2112,7 +2112,7 @@ class Daymark_Publisher {
 			 */
 			$timeout = max( 1, (int) apply_filters( 'daymark_weather_fetch_timeout', 4 ) );
 
-			$response = wp_safe_remote_get(
+			$response = Daymark_Outbound_Guard::get(
 				$url,
 				array(
 					'timeout' => $timeout,

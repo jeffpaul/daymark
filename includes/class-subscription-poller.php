@@ -600,7 +600,7 @@ class Daymark_Subscription_Poller {
 		// wp_safe_remote_get(), not wp_remote_get(): this is a stored,
 		// user-subscribed-to external URL fetched on a live user action, same
 		// SSRF-hardening reasoning as the feed source's own site-HTML fetch.
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				/**
@@ -657,13 +657,75 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = wp_kses_post( self::extract_body_html( $body ) );
+		$sanitized = self::strip_untrusted_presentation( wp_kses_post( self::extract_body_html( $body ) ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
 
 		return true;
+	}
+
+	/**
+	 * Remove a remote page's own presentation from an HTML fragment: every
+	 * inline `style` attribute, and every class token that starts with
+	 * `daymark-`.
+	 *
+	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS
+	 * property list, but that list still includes layout properties such as
+	 * `position`, `top`/`left`, `z-index`, and `width`/`height`) and keeps
+	 * `class`, and the app shell's CSP allows inline styles and loads
+	 * app.css. A hostile subscribed site could therefore lay its own
+	 * content over the authenticated UI, either with its own inline
+	 * positioning or by borrowing Daymark's own overlay classes (a
+	 * `class="daymark-sheet"` becomes a fixed, full-screen layer). Script
+	 * execution is not possible (the CSP's `script-src` is nonce-only), so
+	 * this is UI redressing, not XSS, but a cached subscription post has no
+	 * legitimate need for either. Other classes are left alone: they carry
+	 * the source site's own semantics (an image's `alignleft`, a block's
+	 * `wp-block-*`) and match nothing in the app's stylesheet. An image's
+	 * real dimensions live in its width/height attributes, not its style.
+	 *
+	 * Public and static because both the poller (at store time) and the
+	 * REST controller (at read time, for a body cached before this existed)
+	 * call it. Marks' own content is never passed through it: a Mark's
+	 * Check In map preview legitimately uses a `daymark-` class and a
+	 * positioned pin.
+	 *
+	 * @param string $html HTML fragment, already passed through wp_kses_post().
+	 * @return string The same HTML without inline styles or `daymark-` classes.
+	 */
+	public static function strip_untrusted_presentation( string $html ): string {
+		if ( '' === $html || ( false === stripos( $html, 'style' ) && false === stripos( $html, 'daymark-' ) ) ) {
+			return $html;
+		}
+
+		$processor = new WP_HTML_Tag_Processor( $html );
+
+		while ( $processor->next_tag() ) {
+			$processor->remove_attribute( 'style' );
+
+			$class = $processor->get_attribute( 'class' );
+
+			if ( ! is_string( $class ) || false === stripos( $class, 'daymark-' ) ) {
+				continue;
+			}
+
+			$kept = array_filter(
+				preg_split( '/\s+/', trim( $class ) ),
+				static function ( $token ) {
+					return '' !== $token && 0 !== stripos( $token, 'daymark-' );
+				}
+			);
+
+			if ( $kept ) {
+				$processor->set_attribute( 'class', implode( ' ', $kept ) );
+			} else {
+				$processor->remove_attribute( 'class' );
+			}
+		}
+
+		return $processor->get_updated_html();
 	}
 
 	/**

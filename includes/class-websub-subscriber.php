@@ -142,7 +142,7 @@ class Daymark_Websub_Subscriber {
 
 		$callback_url = rest_url( 'daymark/v1/websub/' . $subscription_id );
 
-		$response = wp_safe_remote_post(
+		$response = Daymark_Outbound_Guard::post(
 			$hub_url,
 			array(
 				'timeout' => 10,
