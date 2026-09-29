@@ -28,6 +28,8 @@ can't act on them.
 
 ### Changed
 
+- A Timeline card's leading site icon and type icon are now stacked in one column instead of sitting side by side, reclaiming that horizontal space for the card's own title, excerpt, and media.
+- That leading column now top-aligns with each card instead of sitting centered against it — the site icon's top edge lines up with the card's own title/content, and the type icon still follows directly underneath, instead of drifting toward the card's vertical midpoint on a taller card (a long excerpt, a photo banner).
 - The composer's "Mark type: {Type}" line — previously its own paragraph below the media picker — is now a chip in the header, next to "New Mark"/"Edit Draft", for every Mark type.
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
 - The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.
@@ -45,6 +47,7 @@ can't act on them.
 - Scrolling past the top or bottom of the Timeline in an ordinary mobile browser tab (Safari/Chrome) no longer lets the page's native overscroll bounce slide content up past the header before snapping back — matching how the installed app already behaves, since it has no browser chrome to bounce past. Home's own pull-to-refresh gesture is unaffected; it never relied on this native bounce.
 - Saving Daymark to your phone's home screen now always uses Daymark's own icon, even when your site has its own Site Icon configured (Settings -> General) — previously the home-screen icon used your Site Icon instead, and could show a blank icon if it failed to load. Your browser tab's own favicon is unaffected and still shows your Site Icon. ([#414](https://github.com/jeffpaul/daymark/issues/414))
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
+- The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
 
 ## [0.17.0] - 2026-09-17
 
