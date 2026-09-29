@@ -16,15 +16,17 @@
  * reloading the whole page — the admin-post handler stays as that one
  * form's no-JS fallback, unchanged.
  *
- * Gated on `edit_posts`, not the wp-admin-conventional `manage_options`:
- * every existing Daymark permission check in this codebase
- * (Daymark_REST_Controller::permissions_check(), and
- * Daymark_Subscription_Post_Type's meta `auth_callback`, which explicitly
- * mirrors that same gate) already uses `edit_posts`, and
- * add_options_page()'s capability parameter accepts any capability string,
- * not only `manage_options`. Matching that existing authorization model
- * keeps one consistent gate across the whole plugin instead of introducing
- * a second one just for this screen.
+ * Gated on `manage_options`, the wp-admin convention for site settings. This
+ * screen writes site-wide state — the Privacy tab's location/weather/camera
+ * capture and public-location toggles, the poll interval, and the one
+ * shared, ownerless subscription list (subscribe, unsubscribe, rename,
+ * import, export) — so it belongs to whoever administers the site: the
+ * single operator of a one-person site, or an administrator setting Daymark
+ * up for several users. It used to be `edit_posts` (matching the rest of
+ * the plugin's per-user permission checks), which let a Contributor publish
+ * every Mark's exact coordinates or unsubscribe everyone's feeds. The REST
+ * routes that do the same jobs (create, delete, import, export) share this
+ * gate — see Daymark_REST_Controller::permissions_check_manage().
  *
  * @package Daymark
  */
@@ -43,12 +45,9 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * Capability required to view this screen and act on its forms.
 	 *
-	 * Deliberately `edit_posts` rather than the wp-admin-conventional
-	 * `manage_options` — see the class docblock.
-	 *
 	 * @var string
 	 */
-	public const CAPABILITY = 'edit_posts';
+	public const CAPABILITY = 'manage_options';
 
 	/**
 	 * Settings page slug. Shortened from the original `daymark-subscriptions`
