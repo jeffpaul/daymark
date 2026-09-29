@@ -1,12 +1,14 @@
 <?php
 /**
  * Outbound request guard: apply Daymark_Subscription_Url_Guard to every
- * redirect hop (issue #438).
+ * request Daymark makes, first URL and every redirect hop (issue #438).
  *
- * Daymark_Subscription_Url_Guard::check() vets the URL Daymark is about to
- * request. An HTTP client then follows redirects on its own, so a site we
- * were right to trust can answer with `302 Location: http://169.254.169.254/…`
- * and the second request never goes through that check.
+ * Daymark_Subscription_Url_Guard::check() vets a URL a call site already has
+ * in hand. Two kinds of request never pass through it: the redirect hops an
+ * HTTP client follows on its own (a trusted site can answer with
+ * `302 Location: http://169.254.169.254/…`), and the first request to a URL
+ * that a remote page hands a library, such as an oEmbed provider endpoint
+ * found by discovery or a feed found by SimplePie autodiscovery.
  *
  * WordPress core narrows this for wp_safe_remote_*() by re-validating each
  * hop with wp_http_validate_url(), but only for the address ranges core knows
@@ -34,6 +36,14 @@ final class Daymark_Outbound_Guard {
 	 * @var string
 	 */
 	private const HOOK = 'requests-requests.before_redirect';
+
+	/**
+	 * Core's filter that can answer a request before it is sent; a WP_Error
+	 * returned from it is the request's result.
+	 *
+	 * @var string
+	 */
+	private const PRE_REQUEST_HOOK = 'pre_http_request';
 
 	/**
 	 * How many run() calls are currently in flight, so a nested call does not
@@ -88,6 +98,10 @@ final class Daymark_Outbound_Guard {
 	public static function run( callable $request ) {
 		if ( 0 === self::$depth ) {
 			add_action( self::HOOK, array( __CLASS__, 'validate_redirect' ) );
+			// Last in line, so a test's or another plugin's canned response
+			// still wins and only a request that would really go out is
+			// checked (and so is never resolved through DNS needlessly).
+			add_filter( self::PRE_REQUEST_HOOK, array( __CLASS__, 'validate_first_request' ), PHP_INT_MAX, 3 );
 		}
 
 		++self::$depth;
@@ -99,8 +113,34 @@ final class Daymark_Outbound_Guard {
 
 			if ( 0 === self::$depth ) {
 				remove_action( self::HOOK, array( __CLASS__, 'validate_redirect' ) );
+				remove_filter( self::PRE_REQUEST_HOOK, array( __CLASS__, 'validate_first_request' ), PHP_INT_MAX );
 			}
 		}
+	}
+
+	/**
+	 * Refuse the first request to a URL that fails
+	 * Daymark_Subscription_Url_Guard, whoever chose that URL.
+	 *
+	 * Covers a URL a call site already vetted (a cheap second look), and,
+	 * more to the point, one it never saw: an oEmbed provider endpoint or a
+	 * feed that a remote page's markup pointed a library at.
+	 *
+	 * @param false|array|WP_Error $preempt Existing short-circuit value.
+	 * @param array                $args    Request arguments (unused).
+	 * @param string               $url     Request URL.
+	 * @return false|array|WP_Error The existing value, or a WP_Error when the URL is unsafe.
+	 */
+	public static function validate_first_request( $preempt, $args, $url ) {
+		unset( $args );
+
+		if ( false !== $preempt ) {
+			return $preempt;
+		}
+
+		$check = Daymark_Subscription_Url_Guard::check( (string) $url );
+
+		return is_wp_error( $check ) ? $check : $preempt;
 	}
 
 	/**

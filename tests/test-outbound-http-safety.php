@@ -205,6 +205,48 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The first request to an unsafe URL is refused too, not only redirect
+	 * hops: this is the path a discovered oEmbed endpoint or an autodiscovered
+	 * feed takes, which no call site ever vetted.
+	 *
+	 * @dataProvider unsafe_redirect_target_provider
+	 *
+	 * @param string $url Request URL.
+	 */
+	public function test_first_request_to_an_unsafe_url_is_refused( string $url ) {
+		$result = Daymark_Outbound_Guard::validate_first_request( false, array(), $url );
+
+		$this->assertInstanceOf( WP_Error::class, $result, "A first request to {$url} must be refused" );
+	}
+
+	/** An ordinary public URL passes the first-request check untouched. */
+	public function test_first_request_to_a_public_url_passes() {
+		$this->assertFalse( Daymark_Outbound_Guard::validate_first_request( false, array(), 'https://93.184.216.34/feed/' ) );
+	}
+
+	/** A response another filter already supplied is never second-guessed. */
+	public function test_an_existing_response_is_returned_unchanged() {
+		$canned = array( 'response' => array( 'code' => 200 ) );
+
+		$this->assertSame( $canned, Daymark_Outbound_Guard::validate_first_request( $canned, array(), 'http://169.254.169.254/' ) );
+	}
+
+	/** The first-request filter is attached only while a Daymark call runs. */
+	public function test_first_request_filter_is_attached_only_while_a_request_runs() {
+		$callback = array( 'Daymark_Outbound_Guard', 'validate_first_request' );
+
+		$this->assertFalse( has_filter( 'pre_http_request', $callback ) );
+
+		Daymark_Outbound_Guard::run(
+			function () use ( $callback ) {
+				$this->assertNotFalse( has_filter( 'pre_http_request', $callback ) );
+			}
+		);
+
+		$this->assertFalse( has_filter( 'pre_http_request', $callback ) );
+	}
+
+	/**
 	 * The handler exists only while a Daymark request runs, so it can never
 	 * refuse (or slow down) a redirect made by another plugin.
 	 */
@@ -271,7 +313,7 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 			'fsockopen',
 			'stream_socket_client',
 		);
-		$wrapped = array( 'fetch_feed', 'wp_oembed_get', 'download_url' );
+		$wrapped = array( 'fetch_feed', 'wp_oembed_get', 'download_url', 'get_remote_object' );
 
 		$root      = dirname( __DIR__ ) . '/includes';
 		$files     = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );

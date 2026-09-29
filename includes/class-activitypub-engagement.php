@@ -263,7 +263,14 @@ class Daymark_ActivityPub_Engagement {
 		}
 
 		try {
-			$object = \Activitypub\Http::get_remote_object( $permalink );
+			// The plugin fetches through wp_safe_remote_get() itself; running
+			// it inside the guard adds the per-redirect-hop and first-request
+			// checks that only Daymark's own calls otherwise get.
+			$object = Daymark_Outbound_Guard::run(
+				static function () use ( $permalink ) {
+					return \Activitypub\Http::get_remote_object( $permalink );
+				}
+			);
 		} catch ( \Throwable $e ) {
 			return null;
 		}
@@ -282,7 +289,9 @@ class Daymark_ActivityPub_Engagement {
 
 		$author = self::first_actor_id( $object['attributedTo'] ?? null );
 
-		if ( '' === $author ) {
+		// The actor URL comes from the remote object's own JSON, and the
+		// ActivityPub plugin later fetches it and POSTs to its inbox.
+		if ( '' === $author || true !== Daymark_Subscription_Url_Guard::check( $author ) ) {
 			return null;
 		}
 
