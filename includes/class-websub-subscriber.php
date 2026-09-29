@@ -113,6 +113,43 @@ class Daymark_Websub_Subscriber {
 	}
 
 	/**
+	 * The unguessable token carried in a subscription's callback URL.
+	 *
+	 * Derived from the subscription's own random secret (the one already
+	 * kept in `websub_secret`), so it needs no column of its own and changes
+	 * whenever the secret does (on each subscribe or renewal). The secret is
+	 * never in the URL: this is a one-way HMAC of the subscription ID keyed by
+	 * it, so the URL a hub logs reveals nothing that could forge a signed
+	 * delivery.
+	 *
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $secret          The subscription's `websub_secret`.
+	 * @return string 32 hex characters.
+	 */
+	public static function callback_token( int $subscription_id, string $secret ): string {
+		return substr( hash_hmac( 'sha256', 'daymark-websub-callback|' . $subscription_id, $secret ), 0, 32 );
+	}
+
+	/**
+	 * The callback URL sent to a hub, carrying the token above as a query
+	 * argument. Daymark_Websub_Endpoint answers a verification request only
+	 * when it presents that token, so knowing the (sequential) subscription
+	 * ID and the public feed URL is not enough to mark a pending
+	 * subscription verified.
+	 *
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $secret          The subscription's `websub_secret`.
+	 * @return string
+	 */
+	public static function callback_url( int $subscription_id, string $secret ): string {
+		return add_query_arg(
+			'daymark_token',
+			self::callback_token( $subscription_id, $secret ),
+			rest_url( 'daymark/v1/websub/' . $subscription_id )
+		);
+	}
+
+	/**
 	 * Send a `hub.mode=subscribe` request to the hub, per the WebSub spec.
 	 * A hub typically responds 202 Accepted and independently issues its own
 	 * verification GET back to the callback endpoint
@@ -140,7 +177,21 @@ class Daymark_Websub_Subscriber {
 		 */
 		$lease_seconds = max( 1, (int) apply_filters( 'daymark_websub_lease_seconds', self::DEFAULT_LEASE_SECONDS ) );
 
-		$callback_url = rest_url( 'daymark/v1/websub/' . $subscription_id );
+		$callback_url  = self::callback_url( $subscription_id, $secret );
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+
+		// Record the secret and the pending state before contacting the hub,
+		// not after: a hub may send its verification request while it is still
+		// answering this one, and the endpoint can only check the callback
+		// token against a secret that is already stored.
+		$subscriptions->update(
+			$subscription_id,
+			array(
+				'websub_hub_url' => $hub_url,
+				'websub_secret'  => $secret,
+				'websub_status'  => 'pending',
+			)
+		);
 
 		$response = Daymark_Outbound_Guard::post(
 			$hub_url,
@@ -156,8 +207,6 @@ class Daymark_Websub_Subscriber {
 			)
 		);
 
-		$subscriptions = Daymark_Plugin::instance()->subscriptions;
-
 		if ( is_wp_error( $response ) ) {
 			$subscriptions->update( $subscription_id, array( 'websub_status' => 'failed' ) );
 			return;
@@ -170,16 +219,6 @@ class Daymark_Websub_Subscriber {
 		// rather than special-casing 202 alone.
 		if ( $code < 200 || $code >= 300 ) {
 			$subscriptions->update( $subscription_id, array( 'websub_status' => 'failed' ) );
-			return;
 		}
-
-		$subscriptions->update(
-			$subscription_id,
-			array(
-				'websub_hub_url' => $hub_url,
-				'websub_secret'  => $secret,
-				'websub_status'  => 'pending',
-			)
-		);
 	}
 }
