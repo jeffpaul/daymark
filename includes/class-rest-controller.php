@@ -668,6 +668,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/like-availability',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_like_availability' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/subscription-posts/(?P<id>\d+)/like',
 			array(
 				array(
@@ -2872,12 +2889,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
+		$method  = sanitize_key( (string) ( $result['method'] ?? '' ) );
+		$mark_id = absint( $result['mark_id'] ?? 0 );
+
+		// Whether it actually reached the origin, where knowable: a Jetpack
+		// API call that returned is delivered; a Webmention-route Mark's
+		// state comes from the Webmention plugin's own meta. A native REST
+		// comment's own `status` already says so, so nothing extra here.
+		$delivery = '';
+
+		if ( 'jetpack' === $method ) {
+			$delivery = Daymark_Like_Delivery::STATE_SENT;
+		} elseif ( 'webmention' === $method && $mark_id > 0 ) {
+			$delivery = Daymark_Like_Delivery::webmention_state( $mark_id, esc_url_raw( (string) get_post_meta( $id, 'permalink', true ) ) );
+		}
+
 		return rest_ensure_response(
 			array(
-				'method'  => sanitize_key( (string) ( $result['method'] ?? '' ) ),
-				'status'  => sanitize_key( (string) ( $result['status'] ?? '' ) ),
-				'message' => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
-				'mark_id' => absint( $result['mark_id'] ?? 0 ),
+				'method'   => $method,
+				'status'   => sanitize_key( (string) ( $result['status'] ?? '' ) ),
+				'message'  => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
+				'mark_id'  => $mark_id,
+				'delivery' => $delivery,
 			)
 		);
 	}
@@ -2926,6 +2959,52 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * GET /daymark/v1/subscription-posts/{id}/like-availability — whether a
+	 * Like on this post can actually reach its origin (Jetpack-native, an
+	 * ActivityPub Like through the ActivityPub plugin, or a Webmention the
+	 * local Webmention plugin will send to an endpoint the origin
+	 * advertises). The Timeline summary only ever reports a cached
+	 * answer (`like_available`, null when unknown); the client calls this to
+	 * resolve an unknown card lazily, and hides the Like icon on `false`.
+	 *
+	 * Rate-limited only when it would make an outbound request: a cached
+	 * answer (or "no mechanism exists at all", which needs no request) is
+	 * returned free, so resolving a page of already-looked-up cards never
+	 * spends the ACTION_SUBSCRIPTION_POST_FETCH budget click-throughs and the
+	 * comment-target pre-check share.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_like_availability( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+
+		if ( null === Daymark_Like_Delivery::cached_availability( $permalink ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		$result = Daymark_Like_Delivery::resolve( $post_id );
+
+		return rest_ensure_response(
+			array(
+				'available' => (bool) $result['available'],
+				'method'    => sanitize_key( $result['method'] ),
+			)
+		);
+	}
+
+	/**
 	 * POST /daymark/v1/subscription-posts/{id}/like — like a subscription
 	 * post (issue #391). Prefers WordPress.com's own native Like API,
 	 * exactly the way the official Jetpack app does it, whenever the origin
@@ -2957,8 +3036,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $check;
 		}
 
-		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
-		$jetpack   = '' !== $permalink ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
+		$permalink    = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$availability = Daymark_Like_Delivery::resolve( $post_id );
+		$jetpack      = '' !== $permalink && $availability['jetpack'] ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
 
 		if ( null !== $jetpack ) {
 			return $jetpack;
@@ -2969,10 +3049,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		if ( $existing > 0 ) {
 			return rest_ensure_response(
 				array(
-					'method'  => 'classic',
-					'liked'   => true,
-					'mark_id' => $existing,
+					'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
+					'liked'    => true,
+					'mark_id'  => $existing,
+					'delivery' => Daymark_Like_Delivery::like_state( false, $existing, $permalink ),
 				)
+			);
+		}
+
+		// ActivityPub route (issue #439): queue a real `Like` through the
+		// ActivityPub plugin's outbox. The local Like Mark is still published
+		// below (the liked-state UI reads it), but its Webmention is
+		// suppressed so the origin receives exactly one Like. 0 when the
+		// route isn't available or the queue failed — then Webmention alone.
+		$outbox_id = '' !== $permalink && $availability['activitypub']
+			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
+			: 0;
+
+		// Never create a local Like Mark nothing can deliver: without an
+		// ActivityPub or Webmention route (and with the Jetpack route
+		// unavailable or just failed), the origin's author would never see
+		// it. The client hides the icon on this code; the check is repeated
+		// here so it never has to be trusted.
+		if ( 0 === $outbox_id && ! $availability['webmention'] ) {
+			return new WP_Error(
+				'daymark_like_undeliverable',
+				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
+				array( 'status' => 422 )
 			);
 		}
 
@@ -2994,14 +3097,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		);
 
 		if ( is_wp_error( $mark_id ) ) {
+			// Don't leave a queued Like with no local record to undo it from.
+			if ( $outbox_id > 0 ) {
+				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
+			}
+
 			return $mark_id;
+		}
+
+		if ( $outbox_id > 0 ) {
+			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
 		}
 
 		return rest_ensure_response(
 			array(
-				'method'  => 'classic',
-				'liked'   => true,
-				'mark_id' => $mark_id,
+				'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
+				'liked'    => true,
+				'mark_id'  => $mark_id,
+				'delivery' => Daymark_Like_Delivery::like_state( false, (int) $mark_id, $permalink ),
 			)
 		);
 	}
@@ -3059,6 +3172,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
 		$existing  = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
 
+		// Trashing the Mark also queues an ActivityPub `Undo` when it
+		// carried a queued Like (Daymark_ActivityPub_Engagement::maybe_undo()
+		// on `trashed_post`), so every route is undone from this one call.
 		if ( $existing > 0 ) {
 			wp_trash_post( $existing );
 		}
@@ -3105,8 +3221,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		return rest_ensure_response(
 			array(
-				'method' => 'jetpack',
-				'liked'  => true,
+				'method'   => 'jetpack',
+				'liked'    => true,
+				'delivery' => Daymark_Like_Delivery::STATE_SENT,
 			)
 		);
 	}
@@ -3161,11 +3278,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return array<string, mixed>
 	 */
 	private function prepare_subscription_post_summary( int $post_id ): array {
-		$subscription_id = absint( get_post_meta( $post_id, 'subscription_id', true ) );
-		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
-		$content_state   = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
-		$published_at    = (string) get_post_meta( $post_id, 'published_at', true );
-		$permalink       = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$subscription_id   = absint( get_post_meta( $post_id, 'subscription_id', true ) );
+		$subscription      = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+		$content_state     = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
+		$published_at      = (string) get_post_meta( $post_id, 'published_at', true );
+		$permalink         = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$user_id           = get_current_user_id();
+		$replied_mark_id   = $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink );
+		$liked_mark_id     = $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink );
+		$jetpack_liked     = Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id );
+		$jetpack_commented = Daymark_Jetpack_Engagement::is_commented( $user_id, $post_id );
 
 		return array(
 			// Discriminator field a Timeline consumer branches on, mirroring
@@ -3225,16 +3347,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// a reliable like/repost count for someone else's post), so this
 			// is the buildable fallback: Daymark's own record of the user's
 			// own engagement, not the origin site's real totals.
-			'replied_mark_id'    => $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink ),
-			'liked_mark_id'      => $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ),
+			'replied_mark_id'    => $replied_mark_id,
+			'liked_mark_id'      => $liked_mark_id,
 			'reposted_mark_id'   => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
 			// Jetpack-native equivalents of the two fields above (issue #391)
 			// — set only when the Like/Comment was delivered directly to
 			// WordPress.com's own API rather than via a local Mark, so
 			// there's no Mark ID to key off of the way the classic path's
 			// own fields do.
-			'jetpack_liked'      => Daymark_Jetpack_Engagement::is_liked( get_current_user_id(), $post_id ),
-			'jetpack_commented'  => Daymark_Jetpack_Engagement::is_commented( get_current_user_id(), $post_id ),
+			'jetpack_liked'      => $jetpack_liked,
+			'jetpack_commented'  => $jetpack_commented,
+			// Whether a Like can reach this post's origin at all (see
+			// Daymark_Like_Delivery). Cache-only, never a live fetch during
+			// a Timeline request: false when no mechanism exists, null when
+			// the origin hasn't been looked up yet (the client resolves it
+			// via GET .../like-availability), else the cached answer.
+			'like_available'     => Daymark_Like_Delivery::cached_availability( $permalink ),
+			// Whether this user's own Like/Comment actually reached the
+			// origin: pending|sent|failed|not_sent, '' when there's nothing
+			// (or, for a native REST comment, nothing recorded) to report.
+			'like_delivery'      => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
+			'comment_delivery'   => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
 		);
 	}
 
