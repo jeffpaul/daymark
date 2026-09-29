@@ -294,9 +294,13 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Every file that makes an outbound request goes through
-	 * Daymark_Outbound_Guard. Tokenized, so a mention in a comment (there are
-	 * several, explaining exactly this rule) is not a hit.
+	 * Every raw HTTP call is either a `Daymark_Outbound_Guard::get()`/`post()`
+	 * (which do the work inside the guard themselves) or, for the library
+	 * calls that fetch on their own, sits lexically inside the argument list
+	 * of a `Daymark_Outbound_Guard::run( … )` call. A second, unguarded
+	 * `fetch_feed()` beside a guarded one in the same file is a failure.
+	 * Tokenized, so a mention in a comment (there are several, explaining
+	 * exactly this rule) is not a hit.
 	 */
 	public function test_no_call_site_bypasses_the_guard() {
 		$direct  = array(
@@ -326,9 +330,10 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 
 			// A local source file, not a remote URL.
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			$source = (string) file_get_contents( $file->getPathname() );
+			$tokens = token_get_all( (string) file_get_contents( $file->getPathname() ) );
+			$ranges = $this->guarded_ranges( $tokens );
 
-			foreach ( token_get_all( $source ) as $token ) {
+			foreach ( $tokens as $index => $token ) {
 				if ( ! is_array( $token ) || T_STRING !== $token[0] ) {
 					continue;
 				}
@@ -337,12 +342,78 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 
 				if ( in_array( $name, $direct, true ) ) {
 					$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . '() — use Daymark_Outbound_Guard::get()/post()';
-				} elseif ( in_array( $name, $wrapped, true ) && false === strpos( $source, 'Daymark_Outbound_Guard::run' ) ) {
-					$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . '() — wrap it in Daymark_Outbound_Guard::run()';
+				} elseif ( in_array( $name, $wrapped, true ) && ! $this->inside_any_range( $index, $ranges ) ) {
+					$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . '() — wrap this call in Daymark_Outbound_Guard::run()';
 				}
 			}
 		}
 
 		$this->assertSame( array(), $offenders );
+	}
+
+	/**
+	 * Token-index ranges (open paren, matching close paren) of every
+	 * `Daymark_Outbound_Guard::run( … )` call in a token stream.
+	 *
+	 * @param array<int, mixed> $tokens Output of token_get_all().
+	 * @return array<int, array{0: int, 1: int}>
+	 */
+	private function guarded_ranges( array $tokens ): array {
+		$ranges = array();
+		$count  = count( $tokens );
+
+		for ( $i = 0; $i < $count - 3; $i++ ) {
+			if ( ! is_array( $tokens[ $i ] ) || 'Daymark_Outbound_Guard' !== $tokens[ $i ][1] || T_DOUBLE_COLON !== ( $tokens[ $i + 1 ][0] ?? null ) ) {
+				continue;
+			}
+
+			if ( ! is_array( $tokens[ $i + 2 ] ) || 'run' !== $tokens[ $i + 2 ][1] ) {
+				continue;
+			}
+
+			$open = $i + 3;
+
+			while ( $open < $count && is_array( $tokens[ $open ] ) && T_WHITESPACE === $tokens[ $open ][0] ) {
+				++$open;
+			}
+
+			if ( '(' !== ( $tokens[ $open ] ?? null ) ) {
+				continue;
+			}
+
+			$depth = 0;
+
+			for ( $j = $open; $j < $count; $j++ ) {
+				if ( '(' === $tokens[ $j ] ) {
+					++$depth;
+				} elseif ( ')' === $tokens[ $j ] ) {
+					--$depth;
+
+					if ( 0 === $depth ) {
+						$ranges[] = array( $open, $j );
+						break;
+					}
+				}
+			}
+		}
+
+		return $ranges;
+	}
+
+	/**
+	 * Whether a token index falls inside any of the given ranges.
+	 *
+	 * @param int                            $index  Token index.
+	 * @param array<int, array{0: int, 1: int}> $ranges Ranges from guarded_ranges().
+	 * @return bool
+	 */
+	private function inside_any_range( int $index, array $ranges ): bool {
+		foreach ( $ranges as $range ) {
+			if ( $index > $range[0] && $index < $range[1] ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

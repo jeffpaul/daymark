@@ -657,7 +657,7 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = self::strip_inline_styles( wp_kses_post( self::extract_body_html( $body ) ) );
+		$sanitized = self::strip_untrusted_presentation( wp_kses_post( self::extract_body_html( $body ) ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
@@ -667,30 +667,36 @@ class Daymark_Subscription_Poller {
 	}
 
 	/**
-	 * Remove every inline `style` attribute from an HTML fragment.
+	 * Remove a remote page's own presentation from an HTML fragment: every
+	 * inline `style` attribute, and every class token that starts with
+	 * `daymark-`.
 	 *
-	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS property list, but
-	 * that list still includes layout properties such as `position`,
-	 * `top`/`left`, `z-index`, and `width`/`height`), and the app shell's CSP
-	 * allows inline styles. A hostile subscribed site could therefore lay its
-	 * own content over the authenticated UI — an overlay that mimics a
-	 * button or prompt. Script execution is not possible (the CSP's
-	 * `script-src` is nonce-only), so this is UI redressing, not XSS, but a
-	 * cached subscription post has no legitimate need for a remote site's
-	 * own positioning. Stripping it entirely, instead of narrowing the
-	 * property list further, keeps this a single rule with no allowlist to
-	 * maintain; an image's real dimensions live in its width/height
-	 * attributes, not its style.
+	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS
+	 * property list, but that list still includes layout properties such as
+	 * `position`, `top`/`left`, `z-index`, and `width`/`height`) and keeps
+	 * `class`, and the app shell's CSP allows inline styles and loads
+	 * app.css. A hostile subscribed site could therefore lay its own
+	 * content over the authenticated UI, either with its own inline
+	 * positioning or by borrowing Daymark's own overlay classes (a
+	 * `class="daymark-sheet"` becomes a fixed, full-screen layer). Script
+	 * execution is not possible (the CSP's `script-src` is nonce-only), so
+	 * this is UI redressing, not XSS, but a cached subscription post has no
+	 * legitimate need for either. Other classes are left alone: they carry
+	 * the source site's own semantics (an image's `alignleft`, a block's
+	 * `wp-block-*`) and match nothing in the app's stylesheet. An image's
+	 * real dimensions live in its width/height attributes, not its style.
 	 *
 	 * Public and static because both the poller (at store time) and the
 	 * REST controller (at read time, for a body cached before this existed)
-	 * call it.
+	 * call it. Marks' own content is never passed through it: a Mark's
+	 * Check In map preview legitimately uses a `daymark-` class and a
+	 * positioned pin.
 	 *
 	 * @param string $html HTML fragment, already passed through wp_kses_post().
-	 * @return string The same HTML with no `style` attributes.
+	 * @return string The same HTML without inline styles or `daymark-` classes.
 	 */
-	public static function strip_inline_styles( string $html ): string {
-		if ( '' === $html || false === stripos( $html, 'style' ) ) {
+	public static function strip_untrusted_presentation( string $html ): string {
+		if ( '' === $html || ( false === stripos( $html, 'style' ) && false === stripos( $html, 'daymark-' ) ) ) {
 			return $html;
 		}
 
@@ -698,6 +704,25 @@ class Daymark_Subscription_Poller {
 
 		while ( $processor->next_tag() ) {
 			$processor->remove_attribute( 'style' );
+
+			$class = $processor->get_attribute( 'class' );
+
+			if ( ! is_string( $class ) || false === stripos( $class, 'daymark-' ) ) {
+				continue;
+			}
+
+			$kept = array_filter(
+				preg_split( '/\s+/', trim( $class ) ),
+				static function ( $token ) {
+					return '' !== $token && 0 !== stripos( $token, 'daymark-' );
+				}
+			);
+
+			if ( $kept ) {
+				$processor->set_attribute( 'class', implode( ' ', $kept ) );
+			} else {
+				$processor->remove_attribute( 'class' );
+			}
 		}
 
 		return $processor->get_updated_html();

@@ -172,22 +172,57 @@ class Test_Rest_Subscription_Post_Hardening extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'width="10"', $body, 'Real dimension attributes are kept' );
 	}
 
+	/**
+	 * A remote page borrowing Daymark's own overlay classes is neutralized in
+	 * a previously cached body too; unrelated classes survive.
+	 */
+	public function test_previously_cached_body_is_served_without_daymark_classes() {
+		$post_id = $this->create_full_subscription_post(
+			'<div class="daymark-sheet wp-block-group"><p class="Daymark-Backdrop">Spoof</p><img class="alignleft" src="https://example.com/a.jpg" width="10"></div>'
+		);
+
+		wp_set_current_user( $this->author );
+
+		$response = rest_do_request( $this->request_for( 'GET', $post_id, '' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$body = $response->get_data()['body_content'];
+		$this->assertStringNotContainsStringIgnoringCase( 'daymark-', $body );
+		$this->assertStringContainsString( 'wp-block-group', $body, 'Unrelated classes are kept' );
+		$this->assertStringContainsString( 'alignleft', $body, 'Unrelated classes are kept' );
+		$this->assertStringContainsString( 'Spoof', $body, 'The content itself is kept' );
+	}
+
+	/** Class-token edge cases for the helper. */
+	public function test_strip_untrusted_presentation_class_edge_cases() {
+		$strip = static function ( string $html ): string {
+			return (string) preg_replace( '/\s+>/', '>', Daymark_Subscription_Poller::strip_untrusted_presentation( $html ) );
+		};
+
+		$this->assertSame( '<p class="a c">x</p>', $strip( '<p class="a daymark-sheet c">x</p>' ), 'Only the daymark- token is removed' );
+		$this->assertSame( '<p>x</p>', $strip( '<p class="daymark-sheet">x</p>' ), 'A class attribute left empty is removed' );
+		$this->assertSame( '<p>x</p>', $strip( '<p class="DAYMARK-Sheet  daymark-x">x</p>' ), 'Case-insensitive, whatever the spacing' );
+		$this->assertSame( '<p class="my-daymark-x">x</p>', $strip( '<p class="my-daymark-x">x</p>' ), 'A token that only contains the word is kept' );
+		$this->assertSame( '<p class="a">x</p>', $strip( '<p class="a" style="position:fixed">x</p>' ), 'Style and classes are handled together' );
+	}
+
 	/** Direct coverage of the stripping helper's edge cases. */
-	public function test_strip_inline_styles_edge_cases() {
-		$this->assertSame( '', Daymark_Subscription_Poller::strip_inline_styles( '' ) );
+	public function test_strip_untrusted_presentation_edge_cases() {
+		$this->assertSame( '', Daymark_Subscription_Poller::strip_untrusted_presentation( '' ) );
 		$this->assertSame(
 			'<p class="x">Plain <em>text</em></p>',
-			Daymark_Subscription_Poller::strip_inline_styles( '<p class="x">Plain <em>text</em></p>' ),
+			Daymark_Subscription_Poller::strip_untrusted_presentation( '<p class="x">Plain <em>text</em></p>' ),
 			'Markup with no style attribute is returned unchanged'
 		);
 		$this->assertSame(
 			'<p>Mentions style in text only</p>',
-			Daymark_Subscription_Poller::strip_inline_styles( '<p>Mentions style in text only</p>' ),
+			Daymark_Subscription_Poller::strip_untrusted_presentation( '<p>Mentions style in text only</p>' ),
 			'The word "style" in text content is not touched'
 		);
 		// The tag processor leaves a harmless space where an attribute was; only
 		// the attributes themselves matter here.
-		$stripped = Daymark_Subscription_Poller::strip_inline_styles( '<div class="a" style="color:red"><span style=\'x:y\'>One</span><b STYLE="a:b">Two</b></div>' );
+		$stripped = Daymark_Subscription_Poller::strip_untrusted_presentation( '<div class="a" style="color:red"><span style=\'x:y\'>One</span><b STYLE="a:b">Two</b></div>' );
 		$this->assertSame(
 			'<div class="a"><span>One</span><b>Two</b></div>',
 			preg_replace( '/\s+>/', '>', $stripped ),

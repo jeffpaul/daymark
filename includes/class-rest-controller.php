@@ -2807,7 +2807,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// (not only when the poller stores it) so a body cached before
 				// that stripping existed can't still reach the app shell with
 				// a remote site's own CSS in it.
-				'body_content' => Daymark_Subscription_Poller::strip_inline_styles( (string) get_post_meta( $id, 'body_content', true ) ),
+				'body_content' => Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) ),
 			)
 		);
 
