@@ -1211,7 +1211,27 @@
 	// replayed through the exact same REST endpoints a live Publish/Save as
 	// Draft/autosave already uses the moment connectivity returns, so the
 	// server never sees a different code path for offline-originated work.
-	const OFFLINE_DB_NAME = 'daymark-offline';
+	// >>> offline-db (tests/e2e/offline-queue-scope.spec.js extracts this
+	// region up to the matching "<<<" marker and runs it in a real browser,
+	// so keep it self-contained: it may use only `config`, `document`, and
+	// what is defined inside it.)
+	//
+	// One database per user per site. IndexedDB is shared by everyone who
+	// uses the same browser origin, and this database holds two kinds of
+	// personal data: unsent Marks (drafts, captions, picked media, captured
+	// location) and cached bookmark content. Under one shared database, a
+	// second person logging in on the same browser had the first person's
+	// queued Marks replayed into *their* account at boot, and could browse
+	// the first person's cached bookmarks offline. So the database name
+	// carries the WordPress user ID and a short hash of the site's REST
+	// address (a subdirectory multisite shares one origin across sites), and
+	// logging out deliberately keeps it: unsent work is never thrown away,
+	// it simply stays with its owner until they come back.
+	const OFFLINE_DB_PREFIX = 'daymark-offline';
+	// The single, shared database this used to be. It is claimed once, by the
+	// first person to open the app after the update; see
+	// claimLegacyOfflineDB().
+	const LEGACY_OFFLINE_DB_NAME = 'daymark-offline';
 	// v2 adds BOOKMARK_STORE (see "Bookmarks" below) — the existing
 	// OFFLINE_STORE is untouched, so onupgradeneeded's own existence check
 	// (unchanged) still leaves an existing 'pending' store alone on
@@ -1220,13 +1240,36 @@
 	const OFFLINE_STORE = 'pending';
 	const BOOKMARK_STORE = 'bookmarks';
 
-	function openOfflineDB() {
+	// A short, stable, non-cryptographic hash (FNV-1a) — only ever used to
+	// tell two sites on one origin apart in a database name.
+	function shortHash(text) {
+		let hash = 0x811c9dc5;
+		for (let i = 0; i < text.length; i++) {
+			hash ^= text.charCodeAt(i);
+			hash = Math.imul(hash, 0x01000193) >>> 0;
+		}
+		return hash.toString(16).padStart(8, '0');
+	}
+
+	// The current user's own database name, or '' when there is no signed-in
+	// user to scope to — in which case nothing is opened at all rather than
+	// falling back to a shared one.
+	function offlineDbName() {
+		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
+		if (!userId) {
+			return '';
+		}
+		return OFFLINE_DB_PREFIX + '-u' + userId + '-' + shortHash(String(config.restUrl || ''));
+	}
+
+	function openScopedOfflineDB() {
 		return new Promise((resolve, reject) => {
-			if (!('indexedDB' in window)) {
-				reject(new Error('IndexedDB unavailable'));
+			const name = offlineDbName();
+			if (!('indexedDB' in window) || !name) {
+				reject(new Error('Offline storage unavailable'));
 				return;
 			}
-			const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+			const request = indexedDB.open(name, OFFLINE_DB_VERSION);
 			request.onupgradeneeded = () => {
 				const db = request.result;
 				if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
@@ -1244,6 +1287,114 @@
 			request.onsuccess = () => resolve(request.result);
 			request.onerror = () => reject(request.error);
 		});
+	}
+
+	// Opens the pre-scoping shared database only if it already exists.
+	// indexedDB.open() on a missing name would create an empty one, so the
+	// versionchange transaction is aborted the moment it reports a brand-new
+	// database (oldVersion 0), which leaves nothing behind.
+	function openLegacyOfflineDBIfPresent() {
+		return new Promise((resolve) => {
+			const request = indexedDB.open(LEGACY_OFFLINE_DB_NAME);
+			request.onupgradeneeded = (event) => {
+				if (event.oldVersion === 0) {
+					request.transaction.abort();
+				}
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => resolve(null);
+			request.onblocked = () => resolve(null);
+		});
+	}
+
+	function deleteIndexedDB(name) {
+		return new Promise((resolve) => {
+			const request = indexedDB.deleteDatabase(name);
+			request.onsuccess = () => resolve(true);
+			request.onerror = () => resolve(false);
+			// Another tab still holds a connection; the deletion completes when
+			// it lets go. Nothing here should wait on that.
+			request.onblocked = () => resolve(false);
+		});
+	}
+
+	async function copyLegacyPendingMarks() {
+		const legacy = await openLegacyOfflineDBIfPresent();
+		if (!legacy) {
+			return;
+		}
+		try {
+			let records = [];
+			if (legacy.objectStoreNames.contains(OFFLINE_STORE)) {
+				records = await idbRequest(legacy.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE).getAll());
+			}
+			if (records.length) {
+				const db = await openScopedOfflineDB();
+				try {
+					const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+					const store = tx.objectStore(OFFLINE_STORE);
+					records.forEach((record) => {
+						const copy = Object.assign({}, record);
+						// A fresh local id in the new database. And nothing is
+						// uploading any more: that request died with the page.
+						delete copy.id;
+						if (copy.status === 'uploading') {
+							copy.status = 'queued';
+						}
+						store.add(copy);
+					});
+					await new Promise((resolve, reject) => {
+						tx.oncomplete = resolve;
+						tx.onerror = () => reject(tx.error);
+						tx.onabort = () => reject(tx.error);
+					});
+				} finally {
+					db.close();
+				}
+				// Emptied before deleting, so if the delete is blocked by
+				// another open tab a later run finds nothing left to copy
+				// and never duplicates a Mark.
+				await idbRequest(legacy.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE).clear());
+			}
+		} finally {
+			legacy.close();
+		}
+		await deleteIndexedDB(LEGACY_OFFLINE_DB_NAME);
+	}
+
+	// Once per page load: hand whatever the old shared database still holds
+	// to whoever opens the app first after the update. On a one-person site
+	// that is the right person; on a shared browser it can be the wrong one,
+	// but only once, and only for work already queued at upgrade time. Cached
+	// bookmarks are not carried over: they are re-fetched for the right user
+	// by syncBookmarkCache() on the next online boot, and copying one
+	// person's into another's would reproduce the leak. Never throws and
+	// never blocks opening the user's own database; a failed migration just
+	// leaves the old database for the next attempt. A Web Lock (where the
+	// browser has them) keeps two tabs opened together from both copying.
+	let legacyClaim = null;
+	function claimLegacyOfflineDB() {
+		if (!legacyClaim) {
+			legacyClaim = (async () => {
+				if (!('indexedDB' in window) || !offlineDbName()) {
+					return;
+				}
+				try {
+					if (navigator.locks && typeof navigator.locks.request === 'function') {
+						await navigator.locks.request('daymark-offline-legacy-claim', copyLegacyPendingMarks);
+					} else {
+						await copyLegacyPendingMarks();
+					}
+				} catch (err) {
+					// Leave the old database in place for the next attempt.
+				}
+			})();
+		}
+		return legacyClaim;
+	}
+
+	function openOfflineDB() {
+		return claimLegacyOfflineDB().then(openScopedOfflineDB);
 	}
 
 	function idbRequest(request) {
@@ -1386,6 +1537,8 @@
 			// first place — either way, nothing left to remove.
 		}
 	}
+
+	// <<< offline-db
 
 	// Every <img src> an item's cached content markup references — walked
 	// via a <template> (its .content is an inert DocumentFragment, so

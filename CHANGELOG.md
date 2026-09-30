@@ -63,6 +63,7 @@ can't act on them.
 - A password-protected post's content is no longer shown in the app to someone who can't edit that post. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Marks you haven't sent yet and bookmarks saved for offline reading now stay with the person who made them on a shared browser, instead of being sent from (or shown to) whoever logs in next. Anything already waiting when you update goes to the first person who opens Daymark afterward. ([#452](https://github.com/jeffpaul/daymark/pull/452))
 
 ## [0.17.0] - 2026-09-17
 
