@@ -413,10 +413,12 @@ publishes the GitHub release (`.github/workflows/release.yml`).
    - Re-run the full [test suite](#testing) after updating.
    - Note any held-back updates (and why) in the release notes or a
      `DEPENDENCIES.md` so it is not re-litigated next release.
-2. **Open a release PR** that bumps the version in all four places — the
+2. **Open a release PR** that bumps the version in all of these places — the
    `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
-   `readme.txt`, and `package.json`. The release workflow fails the build if
-   these disagree with the tag. Also update `SECURITY.md`'s supported-versions
+   `readme.txt`, `version` in `package.json`, and both `version` fields at the
+   top of `package-lock.json` (the top-level one and the one under
+   `packages[""]`). The release workflow fails the build if any of these
+   disagree with the tag. Also update `SECURITY.md`'s supported-versions
    table to the new version — this one is not build-enforced, so it drifts
    silently if skipped (it sat at `0.6.x` for several releases before this
    note was added).
