@@ -281,7 +281,11 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    pass before merge. (Hooks Docs runs after merge — see above.) On a PR
    from a first-time contributor, GitHub holds workflow runs for maintainer
    approval before they start — if CI doesn't appear to run right away,
-   that's why; a maintainer will approve it, not ignore it.
+   that's why; a maintainer will approve it, not ignore it. A PR that
+   changes only documentation (Markdown files, `readme.txt`, `docs/`, or
+   `LICENSE`) skips the heavy Tests steps and reports the same required
+   checks within seconds; anything else runs the full suite. A newer push
+   to the same PR cancels the run still going for the previous commit.
 3. **Add or update tests** alongside behavior changes (PHPUnit for
    PHP/REST, Playwright for user-facing flows).
 4. **Write clear commit messages** with an imperative subject line
