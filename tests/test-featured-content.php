@@ -402,6 +402,199 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		return array( 'page' );
 	}
 
+	// -- oEmbed discovery is decided by the post author's unfiltered_html ---
+	//
+	// Discovery lets a remote page name its own oEmbed endpoint and so choose
+	// the markup that appears on a published post. WordPress core allows it
+	// only for a user with `unfiltered_html`; Featured Content follows that
+	// rule, decided by the post's author (the markup renders for anonymous
+	// visitors under that author's name), not the visitor.
+
+	/**
+	 * Capture the `discover` argument core passes to a URL that reaches
+	 * oEmbed, and answer with a canned iframe so the result is cached and
+	 * rendered normally.
+	 *
+	 * @param array $seen Receives each `discover` value seen.
+	 * @return callable The filter callback, to remove afterwards.
+	 */
+	private function capture_discover_arg( array &$seen ): callable {
+		$callback = static function ( $result, $url, $args ) use ( &$seen ) {
+			unset( $url );
+			$seen[] = ! empty( $args['discover'] );
+
+			return '<iframe src="https://player.example/embed/1" width="400" height="300"></iframe>';
+		};
+		add_filter( 'pre_oembed_result', $callback, 10, 3 );
+
+		return $callback;
+	}
+
+	/**
+	 * Give a post a URL-source Featured Content of the given type.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $type    'audio' or 'video'.
+	 * @param string $url     The URL.
+	 */
+	private function set_url_featured_content( int $post_id, string $type, string $url ): void {
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, $type );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					$type => array(
+						'source' => 'url',
+						'url'    => $url,
+					),
+				)
+			)
+		);
+	}
+
+	/**
+	 * A post whose author lacks `unfiltered_html` never resolves by
+	 * discovery, however the page is later viewed; one whose author has it
+	 * does.
+	 *
+	 * @dataProvider discovery_by_role_provider
+	 *
+	 * @param string $role     Role of the post's author.
+	 * @param bool   $expected Whether discovery is expected.
+	 */
+	public function test_front_end_discovery_follows_the_post_authors_unfiltered_html( string $role, bool $expected ) {
+		$author  = (int) self::factory()->user->create( array( 'role' => $role ) );
+		$post_id = (int) self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_author' => $author,
+			)
+		);
+		$this->set_url_featured_content( $post_id, 'video', 'https://media.example/' . $role . '/watch' );
+
+		// Render as an anonymous visitor, as the published page is.
+		wp_set_current_user( 0 );
+
+		$seen     = array();
+		$callback = $this->capture_discover_arg( $seen );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $post_id );
+		ob_get_clean();
+
+		remove_filter( 'pre_oembed_result', $callback, 10 );
+
+		$this->assertSame( array( $expected ), $seen, "A {$role}'s post " . ( $expected ? 'may' : 'may not' ) . ' use discovery' );
+	}
+
+	/**
+	 * Roles and whether their posts may use discovery.
+	 *
+	 * @return array<string, array{0: string, 1: bool}>
+	 */
+	public function discovery_by_role_provider(): array {
+		return array(
+			'administrator' => array( 'administrator', true ),
+			'editor'        => array( 'editor', true ),
+			'author'        => array( 'author', false ),
+			'contributor'   => array( 'contributor', false ),
+		);
+	}
+
+	/** A result found by discovery is never served to a lookup that forbade it, and vice versa. */
+	public function test_discovery_and_non_discovery_lookups_are_cached_separately() {
+		$seen     = array();
+		$callback = $this->capture_discover_arg( $seen );
+
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', true );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', false );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', true );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', false );
+
+		remove_filter( 'pre_oembed_result', $callback, 10 );
+
+		$this->assertSame( array( true, false ), $seen, 'Each mode was fetched once and then served from its own cache entry' );
+	}
+
+	/** The discovery decision is filterable, for a site that wants a different policy. */
+	public function test_discovery_decision_is_filterable() {
+		$author = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+
+		$this->assertFalse( Daymark_Featured_Content::oembed_discovery_allowed( $author ) );
+
+		add_filter( 'daymark_featured_content_oembed_discovery', '__return_true' );
+		$allowed = Daymark_Featured_Content::oembed_discovery_allowed( $author );
+		remove_filter( 'daymark_featured_content_oembed_discovery', '__return_true' );
+
+		$this->assertTrue( $allowed );
+		$this->assertFalse( Daymark_Featured_Content::oembed_discovery_allowed( 0 ), 'No author means no discovery' );
+	}
+
+	/**
+	 * The editor preview uses the post author's rights when the caller can
+	 * edit that post (an Editor previewing an Author's post sees what will
+	 * render), and the caller's own otherwise.
+	 */
+	public function test_rest_oembed_preview_follows_the_posts_author() {
+		$author_id = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$editor_id = (int) self::factory()->user->create( array( 'role' => 'editor' ) );
+		$post_id   = (int) self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_author' => $author_id,
+			)
+		);
+
+		$call = function ( int $user_id, array $params ) {
+			wp_set_current_user( $user_id );
+
+			$seen     = array();
+			$callback = $this->capture_discover_arg( $seen );
+
+			$request = new WP_REST_Request( 'GET', '/daymark/v1/featured-content/oembed' );
+			$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+			foreach ( $params as $key => $value ) {
+				$request->set_param( $key, $value );
+			}
+
+			rest_do_request( $request );
+			remove_filter( 'pre_oembed_result', $callback, 10 );
+
+			return $seen;
+		};
+
+		$this->assertSame(
+			array( false ),
+			$call(
+				$editor_id,
+				array(
+					'url'     => 'https://prev.example/a',
+					'post_id' => $post_id,
+				)
+			),
+			"An editor previewing an Author's post sees the Author's rules"
+		);
+		$this->assertSame( array( true ), $call( $editor_id, array( 'url' => 'https://prev.example/b' ) ), "With no post, the editor's own rights apply" );
+		$this->assertSame( array( false ), $call( $author_id, array( 'url' => 'https://prev.example/c' ) ), "An Author's own preview has no discovery" );
+
+		// A post the caller cannot edit is ignored, not trusted.
+		$other_author = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+
+		$this->assertSame(
+			array( false ),
+			$call(
+				$other_author,
+				array(
+					'url'     => 'https://prev.example/d',
+					'post_id' => $post_id,
+				)
+			),
+			"Someone else's post is not used to gain discovery"
+		);
+	}
+
 	// -- REST: GET /featured-content/oembed --------------------------------
 
 	public function test_rest_oembed_route_returns_null_embed_for_unresolvable_url() {
