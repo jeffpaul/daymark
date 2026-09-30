@@ -149,11 +149,18 @@
 
 	/**
 	 * Reduce an HTML string (e.g. comment content) to plain text.
+	 *
+	 * Parsed through an inert <template>, not a detached <div>: a <div> that
+	 * is never attached still starts a network request for every <img> in the
+	 * markup, so a federated reply carrying <img src="https://tracker/…"> told
+	 * its author when the Notifications screen was opened. A template's
+	 * contents belong to an inert document that loads nothing and runs
+	 * nothing.
 	 */
 	function toPlainText(html) {
-		const div = document.createElement('div');
-		div.innerHTML = String(html === null || html === undefined ? '' : html);
-		return (div.textContent || '').trim();
+		const template = document.createElement('template');
+		template.innerHTML = String(html === null || html === undefined ? '' : html);
+		return (template.content.textContent || '').trim();
 	}
 
 	/**
@@ -631,6 +638,25 @@
 		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
+	// The Timeline's empty state. "Subscribe to a site" points at
+	// Settings -> Daymark, which only someone who can manage it can open, so
+	// for everyone else the sentence is just the publish half.
+	function emptyTimelineHtml() {
+		if (!config.adminSubscriptionsUrl) {
+			return `<p class="daymark-empty">${sprintf(
+				/* translators: %s: "Publish a Mark" link */
+				__('Nothing here yet. %s to fill your timeline.', 'daymark'),
+				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
+			)}</p>`;
+		}
+		return `<p class="daymark-empty">${sprintf(
+			/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+			__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
+			'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
+			`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('subscribe to a site', 'daymark'))}</a>`
+		)}</p>`;
+	}
+
 	// Unsubscribe (issue #326) — the ⋯ overflow menu's one destructive
 	// entry, gated on the item actually being a subscription post (never
 	// rendered for a Mark, which has no subscription of its own). Opens the
@@ -640,7 +666,9 @@
 	// removing a whole followed site is bigger and less easily undone than
 	// a single Like/Bookmark tap.
 	function renderUnsubscribeToggle(item) {
-		if (!item.subscription_id) {
+		// DELETE /subscriptions/{id} needs the same capability as
+		// Settings -> Daymark, so anyone without it never sees the entry.
+		if (!item.subscription_id || !config.canManageSubscriptions) {
 			return '';
 		}
 		const id = esc(String(item.subscription_id));
@@ -4667,14 +4695,7 @@
 			if (more) {
 				more.hidden = true;
 			}
-			list.innerHTML = `<p class="daymark-empty">${sprintf(
-				/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
-				__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
-				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-				`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-					__('subscribe to a site', 'daymark')
-				)}</a>`
-			)}</p>`;
+			list.innerHTML = emptyTimelineHtml();
 		}
 	}
 
@@ -5013,14 +5034,7 @@
 				this._lastGroupKey = null;
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
-					list.innerHTML = `<p class="daymark-empty">${sprintf(
-						/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
-						__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
-						'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-						`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-							__('subscribe to a site', 'daymark')
-						)}</a>`
-					)}</p>`;
+					list.innerHTML = emptyTimelineHtml();
 					this.recentDone = true;
 					if (sentinel) {
 						sentinel.hidden = true;
@@ -5702,13 +5716,13 @@
 				return;
 			}
 			if (!subscriptions.length) {
-				list.innerHTML = `<p class="daymark-empty">${sprintf(
-					/* translators: %s: "Subscribe to one" link */
-					__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
-					`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-						__('Subscribe to one', 'daymark')
-					)}</a>`
-				)}</p>`;
+				list.innerHTML = config.adminSubscriptionsUrl
+					? `<p class="daymark-empty">${sprintf(
+							/* translators: %s: "Subscribe to one" link */
+							__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
+							`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('Subscribe to one', 'daymark'))}</a>`
+					  )}</p>`
+					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
 				return;
 			}
 			const subscriptionLabel = (sub) =>
@@ -8268,7 +8282,10 @@
 			}
 			content = await loadExpandHtmlOffline(err, item.id, true);
 		}
-		return expandBodyHtml(content);
+		// Second layer behind the server's own strip: this is another site's
+		// HTML, so its styles and any daymark- class are removed on the client
+		// too, whichever path (live or cached) it arrived by.
+		return expandBodyHtml(stripUntrustedPresentation(content));
 	}
 
 	// One-shot hand-off from whichever feed-list screen (Home or Search) a
@@ -9470,11 +9487,15 @@
 				)}</span>
 				<p class="daymark-note-card__text">${esc(siteLabel)}</p>
 				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				<div class="daymark-note-card__links">
-					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-						__('→ Manage subscriptions', 'daymark')
-					)}</a>
-				</div>
+				${
+					config.adminSubscriptionsUrl
+						? `<div class="daymark-note-card__links">
+					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl)}">${esc(
+								__('→ Manage subscriptions', 'daymark')
+						  )}</a>
+				</div>`
+						: ''
+				}
 			</article>`;
 		},
 

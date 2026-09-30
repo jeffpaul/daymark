@@ -510,7 +510,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_subscription' ),
-					'permission_callback' => array( $this, 'permissions_check' ),
+					'permission_callback' => array( $this, 'permissions_check_manage' ),
 					'args'                => array(
 						'site_url' => array(
 							'type'              => 'string',
@@ -533,7 +533,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::DELETABLE,
 				'callback'            => array( $this, 'delete_subscription' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 				'args'                => array(
 					'id' => array(
 						'type'              => 'integer',
@@ -567,7 +567,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'export_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -577,7 +577,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'import_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -877,6 +877,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		if ( ! current_user_can( 'edit_posts' ) ) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'Insufficient permissions.', 'daymark' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Permission check for the routes that change site-wide subscription
+	 * settings: the same nonce and `edit_posts` gate as permissions_check(),
+	 * plus the capability Settings -> Daymark itself requires
+	 * (Daymark_Admin_Subscriptions::CAPABILITY), so a REST call can never do
+	 * what that screen would refuse.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return true|WP_Error
+	 */
+	public function permissions_check_manage( WP_REST_Request $request ) {
+		$allowed = $this->permissions_check( $request );
+
+		if ( is_wp_error( $allowed ) ) {
+			return $allowed;
+		}
+
+		if ( ! current_user_can( Daymark_Admin_Subscriptions::CAPABILITY ) ) {
 			return new WP_Error(
 				'rest_forbidden',
 				__( 'Insufficient permissions.', 'daymark' ),
@@ -2106,9 +2134,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 
+		// A Mark's content is written by whichever user published it, and
+		// wp_kses_post() keeps `class`, so an Author could otherwise give a
+		// post `class="daymark-sheet"` and have it render as a fixed,
+		// full-screen layer over an Editor's app. Any `daymark-` class is
+		// dropped except the two the Check In map preview legitimately emits
+		// (Daymark_Publisher::build_map_preview_block()); inline styles stay,
+		// since that map's pin is positioned with one and block-editor
+		// content uses them for ordinary spacing and color.
+		$content = Daymark_Subscription_Poller::strip_untrusted_presentation(
+			wp_kses_post( $content ),
+			false,
+			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
+		);
+
 		return rest_ensure_response(
 			array(
-				'content' => wp_kses_post( $content ),
+				'content' => $content,
 			)
 		);
 	}

@@ -205,6 +205,21 @@ class Test_Rest_Subscription_Post_Hardening extends WP_UnitTestCase {
 		$this->assertSame( '<p>x</p>', $strip( '<p class="DAYMARK-Sheet  daymark-x">x</p>' ), 'Case-insensitive, whatever the spacing' );
 		$this->assertSame( '<p class="my-daymark-x">x</p>', $strip( '<p class="my-daymark-x">x</p>' ), 'A token that only contains the word is kept' );
 		$this->assertSame( '<p class="a">x</p>', $strip( '<p class="a" style="position:fixed">x</p>' ), 'Style and classes are handled together' );
+		$this->assertSame( '<p>x</p>', $strip( '<p class="daymark&#45;sheet">x</p>' ), 'An entity-encoded hyphen is decoded before the check' );
+		$this->assertSame( '<p class="a">x</p>', $strip( '<p class="a DAYMARK&#x2d;sheet">x</p>' ), 'A hex entity and mixed case are handled too' );
+	}
+
+	/** The optional flags a Mark's own content uses: keep styles, and keep only allowlisted daymark- classes. */
+	public function test_strip_untrusted_presentation_can_keep_styles_and_allowlisted_classes() {
+		$html = '<div class="daymark-sheet daymark-checkin-map__pin Other" style="left:1%">x</div>';
+
+		$out = (string) preg_replace( '/\s+>/', '>', Daymark_Subscription_Poller::strip_untrusted_presentation( $html, false, array( 'daymark-checkin-map__pin' ) ) );
+
+		$this->assertSame( '<div class="daymark-checkin-map__pin Other" style="left:1%">x</div>', $out );
+
+		$out = (string) preg_replace( '/\s+>/', '>', Daymark_Subscription_Poller::strip_untrusted_presentation( '<p class="DAYMARK-Checkin-Map">x</p>', false, array( 'daymark-checkin-map' ) ) );
+
+		$this->assertSame( '<p class="DAYMARK-Checkin-Map">x</p>', $out, 'The allowlist compares case-insensitively' );
 	}
 
 	/** Direct coverage of the stripping helper's edge cases. */
