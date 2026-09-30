@@ -116,7 +116,8 @@ class Daymark_Websub_Endpoint {
 			&& in_array( $mode, array( 'subscribe', 'unsubscribe' ), true )
 			&& '' !== $challenge
 			&& 'pending' === (string) ( $subscription['websub_status'] ?? '' )
-			&& (string) ( $subscription['feed_url'] ?? '' ) === $topic;
+			&& (string) ( $subscription['feed_url'] ?? '' ) === $topic
+			&& $this->has_valid_callback_token( $subscription_id, $subscription, $request );
 
 		if ( ! $is_valid ) {
 			return new WP_REST_Response( null, 404 );
@@ -152,6 +153,31 @@ class Daymark_Websub_Endpoint {
 		$response->header( 'Content-Type', 'text/plain; charset=utf-8' );
 
 		return $response;
+	}
+
+	/**
+	 * Whether a verification request carries the token Daymark put in this
+	 * subscription's callback URL (Daymark_Websub_Subscriber::callback_url()).
+	 *
+	 * Subscription IDs are sequential and the feed URL (the "topic") is
+	 * public, so without this anyone could answer a pending subscription's
+	 * challenge and set its status and lease. A pending row with no stored
+	 * secret has nothing to check a token against and never verifies.
+	 *
+	 * @param int                  $subscription_id Subscription ID.
+	 * @param array<string, mixed> $subscription    Subscription row.
+	 * @param WP_REST_Request      $request         Request.
+	 * @return bool
+	 */
+	private function has_valid_callback_token( int $subscription_id, array $subscription, WP_REST_Request $request ): bool {
+		$secret = (string) ( $subscription['websub_secret'] ?? '' );
+		$token  = (string) $request->get_param( 'daymark_token' );
+
+		if ( '' === $secret || '' === $token ) {
+			return false;
+		}
+
+		return hash_equals( Daymark_Websub_Subscriber::callback_token( $subscription_id, $secret ), $token );
 	}
 
 	/**
