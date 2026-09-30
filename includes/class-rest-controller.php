@@ -2115,9 +2115,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 
+		// A Mark's content is written by whichever user published it, and
+		// wp_kses_post() keeps `class`, so an Author could otherwise give a
+		// post `class="daymark-sheet"` and have it render as a fixed,
+		// full-screen layer over an Editor's app. Any `daymark-` class is
+		// dropped except the two the Check In map preview legitimately emits
+		// (Daymark_Publisher::build_map_preview_block()); inline styles stay,
+		// since that map's pin is positioned with one and block-editor
+		// content uses them for ordinary spacing and color.
+		$content = Daymark_Subscription_Poller::strip_untrusted_presentation(
+			wp_kses_post( $content ),
+			false,
+			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
+		);
+
 		return rest_ensure_response(
 			array(
-				'content' => wp_kses_post( $content ),
+				'content' => $content,
 			)
 		);
 	}
