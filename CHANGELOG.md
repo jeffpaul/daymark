@@ -63,6 +63,7 @@ can't act on them.
 - A password-protected post's content is no longer shown in the app to someone who can't edit that post. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
 
 ## [0.17.0] - 2026-09-17
 
