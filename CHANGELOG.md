@@ -66,6 +66,10 @@ can't act on them.
 - Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - A WebSub hub's verification request now has to present a token Daymark put in the callback address, so no one else can answer a subscription's pending verification. ([#448](https://github.com/jeffpaul/daymark/pull/448))
 
+### Developer
+
+- Continuous integration is faster and cheaper to run: a pull request that changes only documentation now skips the heavy test steps, a new push to a pull request cancels the run still going for the previous commit, and the test jobs use the runner's own MySQL instead of starting a container, which removes about half a minute from each job. ([#453](https://github.com/jeffpaul/daymark/pull/453))
+
 ## [0.17.0] - 2026-09-17
 
 ### Added
