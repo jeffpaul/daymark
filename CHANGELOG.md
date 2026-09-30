@@ -43,6 +43,7 @@ can't act on them.
 - The Reblog screen's top-left "Cancel" is now the same Daymark-icon-plus-arrow back link every other screen (Notifications, the full-screen post view) already uses, instead of plain text — the accessible name ("Cancel") is unchanged, only its visual presentation.
 - The Success screen's footer no longer repeats a second "View Timeline" link below "Create Another" — the same link already appears right above it, next to the confirmation message.
 - A Checkin Mark's title now always says where you checked in (e.g. "Checked in at Wildcat Stadium"), even when you also typed a comment — a typed comment used to become the title instead, pushing the place name down into the body text. The comment itself still publishes in full as body text either way.
+- Settings → Daymark now needs the Administrator role (`manage_options`) instead of any role that can edit posts, because it changes site-wide settings and the shared subscription list; Authors, Contributors and Editors no longer see it or the in-app Unsubscribe, and the app no longer links to it for them. ([#447](https://github.com/jeffpaul/daymark/pull/447))
 
 ### Fixed
 
@@ -64,6 +65,7 @@ can't act on them.
 - A password-protected post's content is no longer shown in the app to someone who can't edit that post. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- A WebSub hub's verification request now has to present a token Daymark put in the callback address, so no one else can answer a subscription's pending verification. ([#448](https://github.com/jeffpaul/daymark/pull/448))
 - Opening Notifications no longer loads images embedded in a federated reply, which told the reply's author when you viewed it. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - Other Authors' posts can no longer carry Daymark's own interface classes into the app to cover it with a fake screen, and the Friends source no longer matches an ordinary user account that sets its website to a friend's address. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - The offline copy of the app's settings no longer includes the Log out link's one-time code. ([#449](https://github.com/jeffpaul/daymark/pull/449))
