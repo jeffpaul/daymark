@@ -65,6 +65,40 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Another Author's post cannot carry Daymark's own overlay classes into an
+	 * Editor's app (a `daymark-sheet` is a fixed, full-screen layer through
+	 * app.css). Unrelated classes and the Check In map preview's own classes
+	 * and pin style are kept.
+	 */
+	public function test_mark_content_strips_daymark_classes_but_keeps_the_checkin_map() {
+		$content = '<div class="daymark-sheet wp-block-group">Spoof</div>'
+			. '<figure class="daymark-checkin-map"><img src="https://tile.openstreetmap.org/1/1/1.png" width="256" height="256" alt="" />'
+			. '<span class="daymark-checkin-map__pin" style="left:50%;top:50%" aria-hidden="true"></span></figure>';
+
+		$post_id = (int) self::factory()->post->create(
+			array(
+				'post_author'  => $this->author_a,
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+
+		wp_set_current_user( $this->author_b );
+
+		$response = rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$html = $response->get_data()['content'];
+
+		$this->assertStringNotContainsString( 'daymark-sheet', $html, 'An overlay class from another author is removed' );
+		$this->assertStringContainsString( 'wp-block-group', $html, 'Unrelated classes are kept' );
+		$this->assertStringContainsString( 'daymark-checkin-map', $html, "The Check In map's own class is kept" );
+		$this->assertStringContainsString( 'daymark-checkin-map__pin', $html, "The map pin's class is kept" );
+		$this->assertStringContainsString( 'left:50%;top:50%', $html, "The map pin's positioning style is kept" );
+	}
+
+	/**
 	 * Not gated on _daymark_is_mark: an ordinary post published straight
 	 * through the block editor is fair game too, same as GET /timeline's
 	 * own inclusive query.

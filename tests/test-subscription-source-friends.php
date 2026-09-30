@@ -48,9 +48,14 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 
 		$this->source = new Daymark_Subscription_Source_Friends();
 
+		// The Friends plugin keeps each person you follow as a user in its own
+		// `subscription` role; the plugin is not active in this suite, so the
+		// role is registered here the way it would be.
+		add_role( 'subscription', 'Subscription' );
+
 		$this->friend_id = self::factory()->user->create(
 			array(
-				'role'         => 'subscriber',
+				'role'         => 'subscription',
 				'display_name' => 'Jane Doe',
 				'user_url'     => 'https://jane.example/',
 			)
@@ -65,6 +70,86 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/', $result[0]['url'] );
 		$this->assertSame( 'Jane Doe', $result[0]['title'] );
 		$this->assertSame( 'friends', $result[0]['type'] );
+	}
+
+	/**
+	 * Any account can edit its own profile website. One that points at a
+	 * friend's URL must not be matched as that friend (which would shadow
+	 * the real one and leave the subscription empty), whatever its role.
+	 *
+	 * @dataProvider non_friend_role_provider
+	 *
+	 * @param string $role Role of the account claiming the URL.
+	 */
+	public function test_discover_ignores_a_non_friend_account_claiming_a_url( string $role ) {
+		self::factory()->user->create(
+			array(
+				'role'         => $role,
+				'display_name' => 'Impostor',
+				'user_url'     => 'https://claimed.example/',
+			)
+		);
+
+		$this->assertSame( array(), $this->source->discover( 'https://claimed.example/' ) );
+	}
+
+	/**
+	 * Roles that hold a profile website but are not Friends relationships.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function non_friend_role_provider(): array {
+		return array(
+			'subscriber'  => array( 'subscriber' ),
+			'contributor' => array( 'contributor' ),
+			'author'      => array( 'author' ),
+			'editor'      => array( 'editor' ),
+			'admin'       => array( 'administrator' ),
+		);
+	}
+
+	/** When an impostor and a real friend claim the same URL, the friend is the one found. */
+	public function test_discover_prefers_the_real_friend_over_an_impostor() {
+		self::factory()->user->create(
+			array(
+				'role'         => 'author',
+				'display_name' => 'Impostor',
+				'user_url'     => 'https://jane.example/',
+			)
+		);
+
+		$result = $this->source->discover( 'https://jane.example/' );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'Jane Doe', $result[0]['title'] );
+	}
+
+	/** The role list is filterable, for a Friends install that uses a role of its own. */
+	public function test_the_friend_role_list_is_filterable() {
+		add_role( 'custom_friend', 'Custom friend' );
+		self::factory()->user->create(
+			array(
+				'role'         => 'custom_friend',
+				'display_name' => 'Custom Friend',
+				'user_url'     => 'https://custom.example/',
+			)
+		);
+
+		$this->assertSame( array(), $this->source->discover( 'https://custom.example/' ) );
+
+		$add = static function ( $roles ) {
+			$roles[] = 'custom_friend';
+
+			return $roles;
+		};
+		add_filter( 'daymark_subscription_friends_roles', $add );
+
+		$result = $this->source->discover( 'https://custom.example/' );
+
+		remove_filter( 'daymark_subscription_friends_roles', $add );
+
+		$this->assertCount( 1, $result );
+		$this->assertSame( 'Custom Friend', $result[0]['title'] );
 	}
 
 	/** discover() finds nothing for a site nobody has added as a friend. */

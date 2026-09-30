@@ -223,6 +223,38 @@ class Test_Rest_Subscription_Post_Detail extends WP_UnitTestCase {
 		$this->assertSame( 1, $this->http_call_counts['https://example.com/full-post/'] ?? 0 );
 	}
 
+	/**
+	 * A class written with an HTML entity (`daymark&#45;sheet`) survives
+	 * wp_kses_post() and decodes to `daymark-sheet` in the browser, where
+	 * app.css makes it a fixed, full-screen layer. It must not get through the
+	 * fetch, sanitize, and serve path just because the raw text never
+	 * contains the literal "daymark-".
+	 */
+	public function test_entity_encoded_daymark_class_in_a_fetched_page_is_stripped() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_subscription_post( $subscription_id, 'https://example.com/spoof/', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/spoof/',
+			'<html><body><article><div class="daymark&#45;sheet keep-me"><h2>Session expired</h2>'
+			. '<a href="https://evil.example/login">Sign in again</a></div>'
+			. '<div class="DAYMARK&#x2d;launcher__scrim">x</div></article></body></html>'
+		);
+
+		$response = rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$body    = $response->get_data()['body_content'];
+		$decoded = html_entity_decode( $body, ENT_QUOTES | ENT_HTML5 );
+
+		$this->assertStringNotContainsStringIgnoringCase( 'daymark-', $decoded, 'No daymark- class survives once entities are decoded' );
+		$this->assertStringContainsString( 'keep-me', $decoded, 'Unrelated classes are kept' );
+		$this->assertStringContainsString( 'Session expired', $decoded, 'The content itself is kept' );
+	}
+
 	/** A post already content_state=full is served from cache; no HTTP request is made. */
 	public function test_already_full_post_does_not_trigger_a_second_fetch() {
 		wp_set_current_user( $this->author_a );

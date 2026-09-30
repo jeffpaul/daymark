@@ -70,13 +70,19 @@ class Daymark_Subscription_Oembed {
 	 * enough to re-emit) resolves to an empty array, exactly like "no
 	 * preview available" rather than an error the caller has to branch on.
 	 *
-	 * @param string $url Candidate link URL (e.g. a subscription post's own `link_url` meta).
+	 * @param string $url      Candidate link URL (e.g. a subscription post's own `link_url` meta).
+	 * @param bool   $discover Whether an unrecognized URL may be probed for its own oEmbed
+	 *                         endpoint (`<link rel="alternate">` discovery). True for a
+	 *                         link a reader is looking at. False for content that gets
+	 *                         published under someone's byline, where a remote page must
+	 *                         not choose what markup appears: only the providers
+	 *                         WordPress already trusts (YouTube, Vimeo, and so on) resolve.
 	 * @return array{type: string, html: string} 'type' is 'iframe' or
 	 *                                             'photo'; empty array when
 	 *                                             no safely-embeddable
 	 *                                             preview was found.
 	 */
-	public static function resolve( string $url ): array {
+	public static function resolve( string $url, bool $discover = true ): array {
 		$url = esc_url_raw( trim( $url ) );
 
 		if ( '' === $url ) {
@@ -95,14 +101,17 @@ class Daymark_Subscription_Oembed {
 			return array();
 		}
 
-		$cache_key = 'daymark_oembed_' . md5( $url );
+		// A result found by discovery must never answer a lookup that forbade
+		// it, so the two get separate cache entries. The discovering key is
+		// unchanged, so existing cached entries stay valid.
+		$cache_key = ( $discover ? 'daymark_oembed_' : 'daymark_oembed_nd_' ) . md5( $url );
 		$cached    = get_transient( $cache_key );
 
 		if ( is_array( $cached ) ) {
 			return $cached;
 		}
 
-		$result = self::fetch_and_extract( $url );
+		$result = self::fetch_and_extract( $url, $discover );
 
 		set_transient(
 			$cache_key,
@@ -126,10 +135,11 @@ class Daymark_Subscription_Oembed {
 	 * instance's own oEmbed endpoint — is the common case for a subscribed
 	 * link) and reduce whatever it returns to a safely re-emittable preview.
 	 *
-	 * @param string $url Already URL-guard-checked, http(s) URL.
+	 * @param string $url      Already URL-guard-checked, http(s) URL.
+	 * @param bool   $discover Whether discovery is allowed; see resolve().
 	 * @return array{type: string, html: string} See resolve()'s own return contract.
 	 */
-	private static function fetch_and_extract( string $url ): array {
+	private static function fetch_and_extract( string $url, bool $discover = true ): array {
 		if ( ! function_exists( 'wp_oembed_get' ) ) {
 			return array();
 		}
@@ -143,8 +153,8 @@ class Daymark_Subscription_Oembed {
 
 		try {
 			$html = Daymark_Outbound_Guard::run(
-				static function () use ( $url ) {
-					return wp_oembed_get( $url, array( 'discover' => true ) );
+				static function () use ( $url, $discover ) {
+					return wp_oembed_get( $url, array( 'discover' => $discover ) );
 				}
 			);
 		} catch ( Throwable $e ) {
