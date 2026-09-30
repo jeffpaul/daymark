@@ -69,6 +69,7 @@ can't act on them.
 - Opening Notifications no longer loads images embedded in a federated reply, which told the reply's author when you viewed it. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - Other Authors' posts can no longer carry Daymark's own interface classes into the app to cover it with a fake screen, and the Friends source no longer matches an ordinary user account that sets its website to a friend's address. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - The offline copy of the app's settings no longer includes the Log out link's one-time code. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
 
 ## [0.17.0] - 2026-09-17
 

@@ -355,10 +355,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'featured_content_oembed' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'url' => array(
+					'url'     => array(
 						'type'              => 'string',
 						'required'          => true,
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'post_id' => array(
+						'type'              => 'integer',
+						'required'          => false,
+						'sanitize_callback' => 'absint',
 					),
 				),
 			)
@@ -1673,7 +1678,21 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response( array( 'embed' => null ) );
 		}
 
-		$embed = Daymark_Subscription_Oembed::resolve( $url );
+		// Preview under the same rule the front end will render by: discovery
+		// depends on the post's author, so an Editor previewing an Author's
+		// post must see what that post will really show. With no post given
+		// (or one the caller cannot edit), the caller's own rights apply.
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		$post    = $post_id ? get_post( $post_id ) : null;
+
+		if ( $post instanceof WP_Post && current_user_can( 'edit_post', $post->ID ) ) {
+			$user_id = (int) $post->post_author;
+		} else {
+			$post    = null;
+			$user_id = get_current_user_id();
+		}
+
+		$embed = Daymark_Subscription_Oembed::resolve( $url, Daymark_Featured_Content::oembed_discovery_allowed( $user_id, $post ) );
 
 		return rest_ensure_response(
 			array(
