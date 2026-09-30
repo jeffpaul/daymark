@@ -73,6 +73,10 @@ can't act on them.
 - Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
 - Marks you haven't sent yet and bookmarks saved for offline reading now stay with the person who made them on a shared browser, instead of being sent from (or shown to) whoever logs in next. Anything already waiting when you update goes to the first person who opens Daymark afterward. ([#452](https://github.com/jeffpaul/daymark/pull/452))
 
+### Developer
+
+- Continuous integration is faster and cheaper to run: a pull request that changes only documentation now skips the heavy test steps, a new push to a pull request cancels the run still going for the previous commit, and the test jobs use the runner's own MySQL instead of starting a container, which removes about half a minute from each job. ([#453](https://github.com/jeffpaul/daymark/pull/453))
+
 ## [0.17.0] - 2026-09-17
 
 ### Added
