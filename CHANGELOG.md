@@ -44,6 +44,7 @@ can't act on them.
 - The Success screen's footer no longer repeats a second "View Timeline" link below "Create Another" — the same link already appears right above it, next to the confirmation message.
 - A Checkin Mark's title now always says where you checked in (e.g. "Checked in at Wildcat Stadium"), even when you also typed a comment — a typed comment used to become the title instead, pushing the place name down into the body text. The comment itself still publishes in full as body text either way.
 - Settings → Daymark now needs the Administrator role (`manage_options`) instead of any role that can edit posts, because it changes site-wide settings and the shared subscription list; Authors, Contributors and Editors no longer see it or the in-app Unsubscribe, and the app no longer links to it for them. ([#447](https://github.com/jeffpaul/daymark/pull/447))
+- The plugin's readme now lists every outside service Daymark can contact, what each one receives and when, and where to read its terms, including the map images Check In posts load for your visitors and the limits on Open-Meteo's free weather service. ([#451](https://github.com/jeffpaul/daymark/pull/451))
 
 ### Fixed
 
@@ -55,6 +56,7 @@ can't act on them.
 - Saving Daymark to your phone's home screen now always uses Daymark's own icon, even when your site has its own Site Icon configured (Settings -> General) — previously the home-screen icon used your Site Icon instead, and could show a blank icon if it failed to load. Your browser tab's own favicon is unaffected and still shows your Site Icon. ([#414](https://github.com/jeffpaul/daymark/issues/414))
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
 - The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
+- An installed Daymark now picks up new versions of its own scripts and styles after a plugin update instead of keeping the ones it first installed with. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 
 ### Security
 
@@ -65,6 +67,10 @@ can't act on them.
 - Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
 - A WebSub hub's verification request now has to present a token Daymark put in the callback address, so no one else can answer a subscription's pending verification. ([#448](https://github.com/jeffpaul/daymark/pull/448))
+- Opening Notifications no longer loads images embedded in a federated reply, which told the reply's author when you viewed it. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- Other Authors' posts can no longer carry Daymark's own interface classes into the app to cover it with a fake screen, and the Friends source no longer matches an ordinary user account that sets its website to a friend's address. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- The offline copy of the app's settings no longer includes the Log out link's one-time code. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
 
 ### Developer
 

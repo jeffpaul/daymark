@@ -176,6 +176,13 @@ stubbed AT Protocol API — see the setup notes at the top of
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content
   (not the extension), and no unauthenticated publishing endpoints.
+- **Send outside data through the outbound guard, and list it.** Every request
+  Daymark makes to another server goes through `Daymark_Outbound_Guard`
+  (`get()`, `post()`, or `run()`), which checks the address and every
+  redirect; a test fails on any call that doesn't. A new outbound call, or new
+  data sent on an existing one, also needs an entry under "External services"
+  in `readme.txt` saying what is sent, when, and where its terms and privacy
+  policy are.
 - **Rate-limit expensive endpoints.** AI calls, publish, autosave, and manual
   sync actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the
   REST controller); a new expensive endpoint should, too. Composer autosave

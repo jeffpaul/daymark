@@ -355,10 +355,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'featured_content_oembed' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'url' => array(
+					'url'     => array(
 						'type'              => 'string',
 						'required'          => true,
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'post_id' => array(
+						'type'              => 'integer',
+						'required'          => false,
+						'sanitize_callback' => 'absint',
 					),
 				),
 			)
@@ -1673,7 +1678,21 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response( array( 'embed' => null ) );
 		}
 
-		$embed = Daymark_Subscription_Oembed::resolve( $url );
+		// Preview under the same rule the front end will render by: discovery
+		// depends on the post's author, so an Editor previewing an Author's
+		// post must see what that post will really show. With no post given
+		// (or one the caller cannot edit), the caller's own rights apply.
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		$post    = $post_id ? get_post( $post_id ) : null;
+
+		if ( $post instanceof WP_Post && current_user_can( 'edit_post', $post->ID ) ) {
+			$user_id = (int) $post->post_author;
+		} else {
+			$post    = null;
+			$user_id = get_current_user_id();
+		}
+
+		$embed = Daymark_Subscription_Oembed::resolve( $url, Daymark_Featured_Content::oembed_discovery_allowed( $user_id, $post ) );
 
 		return rest_ensure_response(
 			array(
@@ -2115,9 +2134,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 
+		// A Mark's content is written by whichever user published it, and
+		// wp_kses_post() keeps `class`, so an Author could otherwise give a
+		// post `class="daymark-sheet"` and have it render as a fixed,
+		// full-screen layer over an Editor's app. Any `daymark-` class is
+		// dropped except the two the Check In map preview legitimately emits
+		// (Daymark_Publisher::build_map_preview_block()); inline styles stay,
+		// since that map's pin is positioned with one and block-editor
+		// content uses them for ordinary spacing and color.
+		$content = Daymark_Subscription_Poller::strip_untrusted_presentation(
+			wp_kses_post( $content ),
+			false,
+			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
+		);
+
 		return rest_ensure_response(
 			array(
-				'content' => wp_kses_post( $content ),
+				'content' => $content,
 			)
 		);
 	}
