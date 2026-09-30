@@ -72,6 +72,7 @@ can't act on them.
 - Other Authors' posts can no longer carry Daymark's own interface classes into the app to cover it with a fake screen, and the Friends source no longer matches an ordinary user account that sets its website to a friend's address. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - The offline copy of the app's settings no longer includes the Log out link's one-time code. ([#449](https://github.com/jeffpaul/daymark/pull/449))
 - Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
+- Marks you haven't sent yet and bookmarks saved for offline reading now stay with the person who made them on a shared browser, instead of being sent from (or shown to) whoever logs in next. Anything already waiting when you update goes to the first person who opens Daymark afterward. ([#452](https://github.com/jeffpaul/daymark/pull/452))
 
 ## [0.17.0] - 2026-09-17
 
