@@ -505,7 +505,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_subscription' ),
-					'permission_callback' => array( $this, 'permissions_check' ),
+					'permission_callback' => array( $this, 'permissions_check_manage' ),
 					'args'                => array(
 						'site_url' => array(
 							'type'              => 'string',
@@ -528,7 +528,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::DELETABLE,
 				'callback'            => array( $this, 'delete_subscription' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 				'args'                => array(
 					'id' => array(
 						'type'              => 'integer',
@@ -562,7 +562,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'export_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -572,7 +572,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'import_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -872,6 +872,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		if ( ! current_user_can( 'edit_posts' ) ) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'Insufficient permissions.', 'daymark' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Permission check for the routes that change site-wide subscription
+	 * settings: the same nonce and `edit_posts` gate as permissions_check(),
+	 * plus the capability Settings -> Daymark itself requires
+	 * (Daymark_Admin_Subscriptions::CAPABILITY), so a REST call can never do
+	 * what that screen would refuse.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return true|WP_Error
+	 */
+	public function permissions_check_manage( WP_REST_Request $request ) {
+		$allowed = $this->permissions_check( $request );
+
+		if ( is_wp_error( $allowed ) ) {
+			return $allowed;
+		}
+
+		if ( ! current_user_can( Daymark_Admin_Subscriptions::CAPABILITY ) ) {
 			return new WP_Error(
 				'rest_forbidden',
 				__( 'Insufficient permissions.', 'daymark' ),
