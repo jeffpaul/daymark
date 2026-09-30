@@ -87,10 +87,13 @@ jobs:
           target = nxt if rc_available else stable
           reason = 'release candidate available' if rc_available else 'stable release'
 
-          readme = open('README.md').read()
-          match = re.search(r'\*\*Tested up to:\*\* (\d+\.\d+)', readme)
+          # readme.txt is the source of truth: it is the wordpress.org header
+          # block and always carries both values. README.md is a mirror and
+          # may or may not repeat them, so it is only edited where present.
+          readme_txt = open('readme.txt').read()
+          match = re.search(r'^Tested up to:\s*(\d+\.\d+)', readme_txt, re.M)
           if not match:
-              raise SystemExit('Could not find "Tested up to" in README.md')
+              raise SystemExit('Could not find "Tested up to" in readme.txt')
           tested = match.group(1)
 
           if parse(tested) >= parse(target):
@@ -102,26 +105,28 @@ jobs:
           # One release earlier; the release before X.0 is (X-1).9.
           minimum = f'{t_major - 1}.9' if t_minor == 0 else f'{t_major}.{t_minor - 1}'
 
-          old_match = re.search(r'\*\*Requires at least:\*\* (\d+\.\d+)', readme)
+          old_match = re.search(r'^Requires at least:\s*(\d+\.\d+)', readme_txt, re.M)
           if not old_match:
-              raise SystemExit('Could not find "Requires at least" in README.md')
+              raise SystemExit('Could not find "Requires at least" in readme.txt')
           old_minimum = old_match.group(1)
 
-          # README.md — header line + Requirements bullet.
+          # readme.txt — wordpress.org header block. Alignment padding is kept.
+          readme_txt = re.sub(
+              r'^(Tested up to:\s*)\d+\.\d+', lambda m: m.group(1) + target, readme_txt, count=1, flags=re.M
+          )
+          readme_txt = re.sub(
+              r'^(Requires at least:\s*)\d+\.\d+', lambda m: m.group(1) + minimum, readme_txt, count=1, flags=re.M
+          )
+          open('readme.txt', 'w').write(readme_txt)
+
+          # README.md — header lines and the Requirements bullet, if present.
+          readme = open('README.md').read()
           readme = readme.replace(f'**Tested up to:** {tested}', f'**Tested up to:** {target}')
           readme = readme.replace(
               f'**Requires at least:** {old_minimum}', f'**Requires at least:** {minimum}'
           )
           readme = readme.replace(f'- WordPress {old_minimum}+', f'- WordPress {minimum}+')
           open('README.md', 'w').write(readme)
-
-          # readme.txt — wordpress.org header block.
-          readme_txt = open('readme.txt').read()
-          readme_txt = readme_txt.replace(f'Tested up to: {tested}', f'Tested up to: {target}')
-          readme_txt = readme_txt.replace(
-              f'Requires at least: {old_minimum}', f'Requires at least: {minimum}'
-          )
-          open('readme.txt', 'w').write(readme_txt)
 
           # daymark.php — plugin header.
           plugin = open('daymark.php').read()
