@@ -46,6 +46,8 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+// Per-subscription WebSub retry checks carry an argument, so clear every one.
+wp_unschedule_hook( 'daymark_websub_verify_timeout' );
 
 // Backflow transients: the freshen marker plus per-post sync cooldowns.
 delete_transient( 'daymark_backflow_freshened' );
@@ -61,6 +63,20 @@ $daymark_cooldowns = $wpdb->get_col(
 );
 
 foreach ( $daymark_cooldowns as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
+}
+
+// WebSub pending-verification markers and attempt counts.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_websub_transients = $wpdb->get_col(
+	$wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+		$wpdb->esc_like( '_transient_daymark_websub_pending_' ) . '%',
+		$wpdb->esc_like( '_transient_daymark_websub_attempts_' ) . '%'
+	)
+);
+
+foreach ( $daymark_websub_transients as $daymark_option_name ) {
 	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 

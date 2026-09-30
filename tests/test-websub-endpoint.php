@@ -124,6 +124,22 @@ XML;
 		$this->assertNotNull( $subscription['websub_lease_expires_at'] );
 	}
 
+	/** Verification ends the retry chain: no marker, no attempt count, and no scheduled check. */
+	public function test_verification_clears_the_pending_retry_state() {
+		$id = $this->create_pending_subscription();
+
+		set_transient( 'daymark_websub_pending_' . $id, 1, HOUR_IN_SECONDS );
+		set_transient( 'daymark_websub_attempts_' . $id, 2, DAY_IN_SECONDS );
+		wp_schedule_single_event( time() + HOUR_IN_SECONDS, Daymark_Websub_Subscriber::VERIFY_TIMEOUT_HOOK, array( $id ) );
+
+		$response = rest_do_request( $this->verification_request( $id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertFalse( get_transient( 'daymark_websub_pending_' . $id ) );
+		$this->assertFalse( get_transient( 'daymark_websub_attempts_' . $id ) );
+		$this->assertFalse( wp_next_scheduled( Daymark_Websub_Subscriber::VERIFY_TIMEOUT_HOOK, array( $id ) ) );
+	}
+
 	public function test_get_challenge_rejected_for_a_topic_mismatch() {
 		$id = $this->create_pending_subscription();
 
