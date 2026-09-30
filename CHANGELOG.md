@@ -57,6 +57,7 @@ can't act on them.
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
 - The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
 - An installed Daymark now picks up new versions of its own scripts and styles after a plugin update instead of keeping the ones it first installed with. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- A site's push-update subscription (WebSub) that its hub never confirmed is now retried after ten minutes, up to three tries, instead of staying stuck until it was replaced; posts still arrive by polling in the meantime. ([#454](https://github.com/jeffpaul/daymark/pull/454))
 
 ### Security
 

@@ -380,6 +380,7 @@ final class Daymark_Plugin {
 		$this->admin_bar->register();
 		$this->admin_post_format_icon->register();
 		$this->websub_endpoint->register();
+		$this->websub_subscriber->register();
 		$this->jetpack_engagement->register();
 		$this->activitypub_engagement->register();
 		$this->featured_content->register();

@@ -142,6 +142,9 @@ class Daymark_Websub_Endpoint {
 					'websub_lease_expires_at' => gmdate( 'Y-m-d H:i:s', time() + $lease_seconds ),
 				)
 			);
+
+			// Verified: no retry check is needed any more.
+			Daymark_Websub_Subscriber::clear_pending_state( $subscription_id );
 		} else {
 			$subscriptions->update( $subscription_id, array( 'websub_status' => 'none' ) );
 		}
