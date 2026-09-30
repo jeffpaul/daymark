@@ -2393,12 +2393,21 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 					if (!navigator.serviceWorker.controller) {
 						return false;
 					}
-					const cache = await caches.open('daymark-v2');
-					const [config, offline] = await Promise.all([
-						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
-						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
-					]);
-					return Boolean(config && offline);
+					// The cache name carries a version (see
+					// Daymark_Routes::service_worker_cache_version()), so find it by
+					// prefix instead of by a fixed name.
+					const names = (await caches.keys()).filter((name) => name.startsWith('daymark-'));
+					for (const name of names) {
+						const cache = await caches.open(name);
+						const [config, offline] = await Promise.all([
+							cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
+							cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+						]);
+						if (config && offline) {
+							return true;
+						}
+					}
+					return false;
 				}),
 			// Generous on purpose: this waits out several sequential live
 			// requests (sw.js, the four precached resources, then the

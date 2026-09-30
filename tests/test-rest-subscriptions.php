@@ -32,6 +32,9 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 	/** @var int */
 	private $author_a;
 
+	/** @var int */
+	private $admin_user;
+
 	/**
 	 * URL => canned wp_remote_get()-shaped response, consulted by
 	 * intercept_http_request().
@@ -46,6 +49,7 @@ class Test_Rest_Subscriptions extends WP_UnitTestCase {
 		Daymark_Subscriptions::install();
 
 		$this->author_a       = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$this->admin_user     = (int) self::factory()->user->create( array( 'role' => 'administrator' ) );
 		$this->http_responses = array();
 
 		// Daymark_Subscription_Html_Cache is a static, request-scoped cache
@@ -158,7 +162,7 @@ XML;
 
 	/** Happy path: subscribing creates a row and returns it. */
 	public function test_subscribe_creates_row_and_returns_it() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
 
@@ -190,7 +194,7 @@ XML;
 	 * codes/shape are unaffected either way.
 	 */
 	public function test_subscribe_ingests_posts_immediately() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
 		$this->mock_response(
@@ -219,7 +223,7 @@ XML;
 
 	/** Subscribing to an already-subscribed feed propagates the duplicate error as-is. */
 	public function test_subscribe_duplicate_feed_returns_existing_error() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
 
@@ -234,7 +238,7 @@ XML;
 
 	/** A URL with no discoverable feed fails clearly, not with a fatal. */
 	public function test_subscribe_no_feed_found_returns_clear_error() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$this->mock_response( 'https://no-feed.example/', $this->html_without_feed() );
 
@@ -250,7 +254,7 @@ XML;
 
 	/** A non-http(s) site_url is rejected before any discovery is attempted. */
 	public function test_subscribe_rejects_invalid_url() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$response = rest_do_request( $this->build_subscribe_request( 'ftp://example.com/' ) );
 
@@ -279,7 +283,7 @@ XML;
 
 	/** Unsubscribing deletes the row and trashes its cached subscription posts. */
 	public function test_unsubscribe_deletes_row_and_trashes_subscription_posts() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$subscriptions   = new Daymark_Subscriptions();
 		$subscription_id = $subscriptions->create(
@@ -327,12 +331,45 @@ XML;
 
 	/** Unsubscribing from a nonexistent subscription is a 404. */
 	public function test_unsubscribe_missing_id_is_404() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$response = rest_do_request( $this->request( 'DELETE', '/daymark/v1/subscriptions/999999' ) );
 
 		$this->assertSame( 404, $response->get_status() );
 		$this->assertSame( 'daymark_subscription_not_found', $response->get_data()['code'] );
+	}
+
+	/**
+	 * The routes that change site-wide subscription settings (subscribe,
+	 * unsubscribe, OPML export and import) share Settings -> Daymark's
+	 * capability, so an Author with a valid nonce gets a 403 from each.
+	 */
+	public function test_settings_like_routes_require_manage_options() {
+		wp_set_current_user( $this->author_a );
+
+		$requests = array(
+			$this->build_subscribe_request( 'https://example.org/' ),
+			$this->request( 'DELETE', '/daymark/v1/subscriptions/1' ),
+			$this->request( 'GET', '/daymark/v1/subscriptions/export' ),
+			$this->request( 'POST', '/daymark/v1/subscriptions/import' ),
+		);
+
+		foreach ( $requests as $request ) {
+			$response = rest_do_request( $request );
+
+			$this->assertSame( 403, $response->get_status(), $request->get_method() . ' ' . $request->get_route() );
+			$this->assertSame( 'rest_forbidden', $response->get_data()['code'] );
+		}
+	}
+
+	/** The two routes the app shell itself relies on stay available to anyone who can edit posts. */
+	public function test_list_and_refresh_remain_available_to_authors() {
+		wp_set_current_user( $this->author_a );
+
+		$this->assertSame( 200, rest_do_request( $this->request( 'GET', '/daymark/v1/subscriptions' ) )->get_status() );
+
+		$refresh = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/999999/refresh' ) );
+		$this->assertNotSame( 403, $refresh->get_status(), 'Refresh is permitted; a missing ID is a 404, not a permission error' );
 	}
 
 	/** All three routes reject an unauthenticated (logged-out) request with 401. */
@@ -447,7 +484,7 @@ XML;
 	 * HTTP output.
 	 */
 	public function test_export_returns_opml_with_download_headers() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$subscriptions = new Daymark_Subscriptions();
 		$subscriptions->create(
@@ -475,7 +512,7 @@ XML;
 
 	/** POST /subscriptions/import creates rows and reports per-entry results, matching Daymark_Subscription_OPML::import()'s own contract. */
 	public function test_import_creates_subscriptions_and_reports_results() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$opml = '<?xml version="1.0"?><opml version="2.0"><body>'
 			. '<outline text="Imported Feed" xmlUrl="https://imported.example/feed" htmlUrl="https://imported.example/" />'
@@ -509,7 +546,7 @@ XML;
 
 	/** A missing file is a clean 400, not a fatal. */
 	public function test_import_requires_a_file() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$response = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/import' ) );
 
@@ -519,7 +556,7 @@ XML;
 
 	/** A file with a disallowed extension is rejected before it is ever parsed. */
 	public function test_import_rejects_disallowed_extension() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
 		$request->set_file_params(
@@ -542,7 +579,7 @@ XML;
 
 	/** A file over the configured upload-size cap is rejected before it is ever read/parsed. */
 	public function test_import_rejects_oversized_upload() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		add_filter(
 			'daymark_subscription_opml_max_upload_bytes',
@@ -578,7 +615,7 @@ XML;
 
 	/** A malformed (non-OPML) file's parse failure surfaces as a clean 400, not a fatal. */
 	public function test_import_rejects_malformed_file() {
-		wp_set_current_user( $this->author_a );
+		wp_set_current_user( $this->admin_user );
 
 		$request = $this->request( 'POST', '/daymark/v1/subscriptions/import' );
 		$request->set_file_params(

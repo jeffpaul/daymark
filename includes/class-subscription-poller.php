@@ -692,18 +692,35 @@ class Daymark_Subscription_Poller {
 	 * Check In map preview legitimately uses a `daymark-` class and a
 	 * positioned pin.
 	 *
-	 * @param string $html HTML fragment, already passed through wp_kses_post().
-	 * @return string The same HTML without inline styles or `daymark-` classes.
+	 * `$strip_styles` and `$keep_classes` exist for a Mark's own content (see
+	 * Daymark_REST_Controller::get_mark_content()): it keeps its inline styles
+	 * and the Check In map's own classes, and only loses any other `daymark-`
+	 * class, which an Author could otherwise use to overlay the app.
+	 *
+	 * @param string   $html         HTML fragment, already passed through wp_kses_post().
+	 * @param bool     $strip_styles Whether to remove inline `style` attributes.
+	 * @param string[] $keep_classes `daymark-` class tokens to leave alone (compared case-insensitively).
+	 * @return string The same HTML without inline styles (when asked) or `daymark-` classes.
 	 */
-	public static function strip_untrusted_presentation( string $html ): string {
-		if ( '' === $html || ( false === stripos( $html, 'style' ) && false === stripos( $html, 'daymark-' ) ) ) {
+	public static function strip_untrusted_presentation( string $html, bool $strip_styles = true, array $keep_classes = array() ): string {
+		// No shortcut on the raw text: a class can be written with an HTML
+		// entity (`daymark&#45;sheet`), which never contains the literal
+		// "daymark-" but decodes to it in the browser. The tag processor
+		// decodes attribute values, so it must always look. The wp_kses_post()
+		// sanitizer already decodes numeric entities in a class value today,
+		// so this is defense in depth against that changing, or against a body
+		// that skipped it.
+		if ( '' === $html ) {
 			return $html;
 		}
 
+		$keep      = array_map( 'strtolower', $keep_classes );
 		$processor = new WP_HTML_Tag_Processor( $html );
 
 		while ( $processor->next_tag() ) {
-			$processor->remove_attribute( 'style' );
+			if ( $strip_styles ) {
+				$processor->remove_attribute( 'style' );
+			}
 
 			$class = $processor->get_attribute( 'class' );
 
@@ -713,8 +730,8 @@ class Daymark_Subscription_Poller {
 
 			$kept = array_filter(
 				preg_split( '/\s+/', trim( $class ) ),
-				static function ( $token ) {
-					return '' !== $token && 0 !== stripos( $token, 'daymark-' );
+				static function ( $token ) use ( $keep ) {
+					return '' !== $token && ( 0 !== stripos( $token, 'daymark-' ) || in_array( strtolower( $token ), $keep, true ) );
 				}
 			);
 

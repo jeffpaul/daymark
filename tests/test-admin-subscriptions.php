@@ -53,7 +53,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->subscriptions       = new Daymark_Subscriptions();
 		$this->admin_subscriptions = new Daymark_Admin_Subscriptions();
 
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
 		// wp_scripts() is a persistent global PHPUnit does not reset between
 		// tests, so an earlier test's enqueue_assets() call would otherwise
@@ -93,6 +93,87 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 */
 	public function block_http_request( $preempt, $parsed_args, $url ) {
 		return new WP_Error( 'daymark_test_http_blocked', 'Unmocked HTTP request blocked in test: ' . $url );
+	}
+
+	/**
+	 * Make the current user someone who manages options but cannot install or
+	 * activate plugins (a multisite administrator, or a locked-down install),
+	 * so the Connectors tab falls back to a plain wp.org link.
+	 *
+	 * @return callable The filter callback, to remove afterwards.
+	 */
+	private function without_plugin_caps(): callable {
+		$filter = static function ( $allcaps ) {
+			$allcaps['install_plugins']  = false;
+			$allcaps['activate_plugins'] = false;
+
+			return $allcaps;
+		};
+		add_filter( 'user_has_cap', $filter );
+
+		return $filter;
+	}
+
+	/** The screen's capability is the wp-admin convention for site settings. */
+	public function test_capability_is_manage_options(): void {
+		$this->assertSame( 'manage_options', Daymark_Admin_Subscriptions::CAPABILITY );
+	}
+
+	/** The Settings submenu entry is registered with that capability, so it is hidden from everyone else. */
+	public function test_settings_page_is_registered_with_manage_options(): void {
+		global $submenu;
+
+		$this->admin_subscriptions->add_settings_page();
+
+		$capability = null;
+
+		foreach ( (array) ( $submenu['options-general.php'] ?? array() ) as $entry ) {
+			if ( Daymark_Admin_Subscriptions::PAGE_SLUG === $entry[2] ) {
+				$capability = $entry[1];
+			}
+		}
+
+		$this->assertSame( 'manage_options', $capability );
+	}
+
+	/**
+	 * Roles below administrator can no longer open the screen or submit any
+	 * of its forms, including the ones that write site-wide options.
+	 *
+	 * @dataProvider non_admin_role_provider
+	 *
+	 * @param string $role Role to test as.
+	 */
+	public function test_screen_and_handlers_refuse_a_role_without_manage_options( string $role ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+
+		foreach ( array( 'render_page', 'handle_privacy_save', 'handle_poll_interval_save', 'handle_unsubscribe' ) as $method ) {
+			$died = false;
+
+			try {
+				ob_start();
+				$this->admin_subscriptions->$method();
+			} catch ( WPDieException $e ) {
+				$died = true;
+			} finally {
+				ob_end_clean();
+			}
+
+			$this->assertTrue( $died, "{$method}() must refuse a {$role}" );
+		}
+	}
+
+	/**
+	 * Roles that hold edit_posts but not manage_options.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function non_admin_role_provider(): array {
+		return array(
+			'contributor' => array( 'contributor' ),
+			'author'      => array( 'author' ),
+			'editor'      => array( 'editor' ),
+		);
 	}
 
 	/**
@@ -1978,9 +2059,13 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * an action this user can't actually take.
 	 */
 	public function test_connectors_tab_shows_wporg_link_only_when_user_cannot_install(): void {
+		$filter = $this->without_plugin_caps();
+
 		$_GET['tab'] = 'connectors';
 		$output      = $this->render();
 		unset( $_GET['tab'] );
+
+		remove_filter( 'user_has_cap', $filter );
 
 		$this->assertStringContainsString( 'Get it from WordPress.org', $output );
 		$this->assertStringNotContainsString( 'Install Now', $output );
@@ -2009,12 +2094,14 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 			return $value;
 		};
 		add_filter( 'option_active_plugins', $filter );
+		$caps_filter = $this->without_plugin_caps();
 
 		$_GET['tab'] = 'connectors';
 		$output      = $this->render();
 		unset( $_GET['tab'] );
 
 		remove_filter( 'option_active_plugins', $filter );
+		remove_filter( 'user_has_cap', $caps_filter );
 		$this->remove_fake_plugin( 'webmention' );
 
 		$this->assertStringContainsString( 'Active', $output );

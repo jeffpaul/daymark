@@ -103,13 +103,67 @@ class Test_Websub_Subscriber extends WP_UnitTestCase {
 		$this->assertSame( 'https://hub.example.com/', $this->sent_requests[0]['url'] );
 		$this->assertSame( 'subscribe', $this->sent_requests[0]['body']['hub.mode'] );
 		$this->assertSame( 'https://example.com/feed/', $this->sent_requests[0]['body']['hub.topic'] );
-		$this->assertStringContainsString( '/daymark/v1/websub/' . $id, $this->sent_requests[0]['body']['hub.callback'] );
+		// Decoded, since plain permalinks carry the route in an encoded rest_route query argument.
+		$this->assertStringContainsString( '/daymark/v1/websub/' . $id, rawurldecode( $this->sent_requests[0]['body']['hub.callback'] ) );
 		$this->assertNotEmpty( $this->sent_requests[0]['body']['hub.secret'] );
+
+		// The callback URL carries a token that checks out against the
+		// secret Daymark stored (and never contains the secret itself).
+		$callback = $this->sent_requests[0]['body']['hub.callback'];
+		$secret   = $this->sent_requests[0]['body']['hub.secret'];
+		parse_str( (string) wp_parse_url( $callback, PHP_URL_QUERY ), $query );
+
+		$this->assertSame( Daymark_Websub_Subscriber::callback_token( $id, $secret ), $query['daymark_token'] ?? '' );
+		$this->assertSame( $secret, $this->subscriptions->get( $id )['websub_secret'] );
+		$this->assertStringNotContainsString( $secret, $callback );
 
 		$subscription = $this->subscriptions->get( $id );
 		$this->assertSame( 'pending', $subscription['websub_status'] );
 		$this->assertSame( 'https://hub.example.com/', $subscription['websub_hub_url'] );
 		$this->assertNotSame( '', $subscription['websub_secret'] );
+	}
+
+	/**
+	 * A hub may verify while it is still answering the subscribe request, and
+	 * the endpoint can only check the token against a secret that is already
+	 * stored, so the secret and the pending state exist before the hub is
+	 * contacted, not only after.
+	 */
+	public function test_secret_and_pending_state_are_stored_before_the_hub_is_contacted() {
+		$id       = $this->create_subscription();
+		$observed = array();
+
+		$probe = function ( $preempt, $args, $url ) use ( $id, &$observed ) {
+			unset( $args, $url );
+			$row      = $this->subscriptions->get( $id );
+			$observed = array(
+				'status' => $row['websub_status'],
+				'secret' => $row['websub_secret'],
+			);
+
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $probe, 5, 3 );
+
+		$this->subscriber->maybe_subscribe( $id, 'https://example.com/feed/', 'https://hub.example.com/' );
+
+		remove_filter( 'pre_http_request', $probe, 5 );
+
+		$this->assertSame( 'pending', $observed['status'] ?? null );
+		$this->assertNotEmpty( $observed['secret'] ?? '' );
+	}
+
+	/** Each subscribe (or renewal) gets a new secret, so its callback token changes too. */
+	public function test_the_callback_token_changes_with_the_secret() {
+		$this->assertNotSame(
+			Daymark_Websub_Subscriber::callback_token( 7, 'secret-one' ),
+			Daymark_Websub_Subscriber::callback_token( 7, 'secret-two' )
+		);
+		$this->assertNotSame(
+			Daymark_Websub_Subscriber::callback_token( 7, 'secret-one' ),
+			Daymark_Websub_Subscriber::callback_token( 8, 'secret-one' )
+		);
+		$this->assertSame( 32, strlen( Daymark_Websub_Subscriber::callback_token( 7, 'secret-one' ) ) );
 	}
 
 	public function test_noop_without_a_hub_url() {
