@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-30
+
 ### Added
 
 - Liking a Mastodon post, or a post from any site running the ActivityPub plugin, now sends it a real ActivityPub Like through the ActivityPub plugin (8.1.0 or later, with your user enabled as an author); unliking sends an Undo. Reblogging one also sends a boost, undone when you unreblog. The origin gets one Like, not a second one by Webmention. ([#439](https://github.com/jeffpaul/daymark/issues/439))
@@ -605,6 +607,7 @@ can't act on them.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
 [unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[0.18.0]: https://github.com/jeffpaul/daymark/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/jeffpaul/daymark/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/jeffpaul/daymark/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/jeffpaul/daymark/compare/0.14.0...0.15.0
