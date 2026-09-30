@@ -414,6 +414,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 - [ ] No unauthenticated publishing endpoints
 - [ ] Expensive endpoints rate limited via `Daymark_Rate_Limiter` (AI / publish / autosave / sync actions; filter `daymark_rate_limits`)
 - [ ] Uploads checked per file **and** per request total (`Daymark_Publisher::validate_file_list()`, `MAX_TOTAL_FILE_BYTES`; filter `daymark_upload_total_max_bytes`)
+- [ ] Any outbound request goes through `Daymark_Outbound_Guard`, and a new one (or new data on an existing one) is listed under "External services" in `readme.txt`
 
 ## Sub-agent directory
 

@@ -43,6 +43,7 @@ can't act on them.
 - The Reblog screen's top-left "Cancel" is now the same Daymark-icon-plus-arrow back link every other screen (Notifications, the full-screen post view) already uses, instead of plain text — the accessible name ("Cancel") is unchanged, only its visual presentation.
 - The Success screen's footer no longer repeats a second "View Timeline" link below "Create Another" — the same link already appears right above it, next to the confirmation message.
 - A Checkin Mark's title now always says where you checked in (e.g. "Checked in at Wildcat Stadium"), even when you also typed a comment — a typed comment used to become the title instead, pushing the place name down into the body text. The comment itself still publishes in full as body text either way.
+- The plugin's readme now lists every outside service Daymark can contact, what each one receives and when, and where to read its terms, including the map images Check In posts load for your visitors and the limits on Open-Meteo's free weather service. ([#451](https://github.com/jeffpaul/daymark/pull/451))
 
 ### Fixed
 
