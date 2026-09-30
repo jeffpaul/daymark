@@ -33,9 +33,31 @@ Daymark never asks you to choose between "easy" and "yours." Your own site is al
 
 = A note on privacy and external services =
 
-Daymark is built to talk to as few outside services as possible, and never without a clear reason tied to something you did. Sharing to other networks happens only through publishing plugins you choose to install yourself — Daymark doesn't talk to any social network directly. Optional AI suggestions go through WordPress's own AI tools and whichever provider you've configured — Daymark never sees or stores an API key of its own.
+Daymark sends nothing to its authors: no analytics, no tracking, and no account to create. Everything you publish is stored on your own site. It contacts outside services only for something you did, or because a visitor's browser needs to draw a page, and every one of them is listed under "External services" below with what it receives and when.
 
-The one exception: if you allow location access while composing a post, Daymark makes a single, free, no-account-needed weather lookup for that location (via [Open-Meteo](https://open-meteo.com/)) so a future version can show it alongside your post. You're always in control — see "What does Daymark quietly capture, and can I turn it off?" below to see exactly what's captured and to turn any of it off.
+Sharing to other networks happens only through the publishing plugins you choose to install yourself (such as ActivityPub or Webmention). Daymark doesn't post to any social network directly. Optional AI suggestions go through WordPress's own AI tools and whichever provider you've configured, and Daymark never sees or stores an API key of its own.
+
+You're in control of the location-related services: see "What does Daymark quietly capture, and can I turn it off?" below to see exactly what's captured and to turn any of it off in Settings -> Daymark -> Privacy.
+
+= External services =
+
+**Sites you follow.** When you subscribe to a site, and afterward on the schedule you choose in Settings -> Daymark, your site requests that site's feed, home page, or public REST API, and the full page of a post when someone opens it. These requests carry your site's address in the User-Agent (`Daymark/<version>; https://yoursite.example/`), as WordPress's own requests do. If a feed advertises a WebSub hub, your site also sends that hub a subscription request containing the feed address, a callback address on your site, and a one-time secret, so the hub can push new posts. Each site or hub you choose to follow has its own terms and privacy policy.
+
+**Link previews and embeds.** When a post you're reading links to another page, Daymark may fetch that page (for its Open Graph title, description, and image) or ask the link's oEmbed provider, such as YouTube or Vimeo, for an embed. Only the link's address is sent. A video or audio link you paste into Featured Content in the block editor works the same way; for a post whose author can't publish unfiltered HTML (an Author or Contributor), only the providers WordPress already trusts are used. The provider's own terms and privacy policy apply.
+
+**Comments and likes on posts you follow.** What is sent depends on what the other site supports.
+
+* If you use the Webmention or ActivityPub plugins, they send your reply or like themselves. Daymark doesn't.
+* Otherwise Daymark posts your comment to the other WordPress site's public comments endpoint, sending the comment text, your display name, your account email address, and your site's address, the same details WordPress's own comment form collects.
+* If you have linked a WordPress.com account through Jetpack, likes and comments on WordPress.com sites go through WordPress.com using that connection (the post and your comment text), and Daymark reads the likes your own posts have received there. See the [WordPress.com Terms of Service](https://wordpress.com/tos/) and the [Automattic Privacy Policy](https://automattic.com/privacy/).
+
+**OpenStreetMap Nominatim (Check In place names).** When you compose a Check In, your site asks Nominatim for a place name: it sends your captured coordinates to name where you are, and whatever you type into the Place field to search for a place. The request comes from your site's server, and its User-Agent identifies your site, as Nominatim's policy requires. Nothing is sent if you don't allow location access and don't use the Place search. See the [Nominatim usage policy](https://operations.osmfoundation.org/policies/nominatim/) and the [OpenStreetMap Foundation privacy policy](https://osmfoundation.org/wiki/Privacy_Policy).
+
+**OpenStreetMap map images (Check In posts).** A Check In post that has a location shows a small map image loaded directly from tile.openstreetmap.org by the reader's own browser, both on your site's post page and inside Daymark. The request tells OpenStreetMap which map square is being shown (roughly a kilometre across) and the reader's IP address, so this happens for your visitors, not only for you. See the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and the [privacy policy](https://osmfoundation.org/wiki/Privacy_Policy). Location capture can be switched off in Settings -> Daymark -> Privacy.
+
+**Open-Meteo (weather).** After you publish a post with a captured location, your site makes one request to api.open-meteo.com with the latitude and longitude, and stores the current temperature and conditions with the post. It isn't displayed anywhere yet. Open-Meteo's free service is for non-commercial use (sites without advertising or subscriptions) under a CC BY 4.0 license, so if your site is commercial, turn weather capture off in Settings -> Daymark -> Privacy. See the [terms and privacy policy](https://open-meteo.com/en/terms).
+
+**Your AI provider (only if you've configured one).** If you've set up an AI provider in WordPress, Daymark sends it text and files through WordPress's own AI Client: your caption, the post type, and an excerpt of any transcript to suggest titles, captions, and tags; the images you pick, to suggest alt text; and audio, only when you ask for a transcript. Tag suggestions run automatically a moment after you type a caption, and alt-text suggestions run when you pick an image, so you may want to leave AI unconfigured on a site where drafts must stay private. Nothing is sent when no provider is configured. Your provider's own terms and privacy policy apply.
 
 = Openly built =
 
