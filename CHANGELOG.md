@@ -25,6 +25,10 @@ can't act on them.
 - The Search screen gained a **Date** dropdown beside the existing keyword/type/source filters, reusing the same buckets the Timeline itself groups its items into (Today / This Week / Last Week / This Month / Last Month) so a label means the same thing in both places. It combines with the other filters and covers both your Marks and subscription posts, backed by the same merged `GET /timeline` endpoint. ([#413](https://github.com/jeffpaul/daymark/pull/413))
 - Explore's Timeline gained an **On this day** section showing the Marks you published on this calendar date in past years — last year's memory, the year before's, and so on, newest first — sitting between Bookmarks and Following. Backed by the same merged `GET /timeline` endpoint the rest of Explore and Timeline already use, filtered to your own Marks from prior years (nothing from today itself), so the section shares every card behavior the others already have: open the full post view, bookmark, like, comment, share. Marks you publish today won't appear here until next year. ([#294](https://github.com/jeffpaul/daymark/issues/294), [#413](https://github.com/jeffpaul/daymark/pull/413))
 
+### Fixed
+
+- When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
+
 ## [0.18.0] - 2026-09-30
 
 ### Added
