@@ -15,6 +15,9 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	/** @var int */
 	private $author_a;
 
+	/** @var int A second author with a distinct login/display name (issue #293 author filter). */
+	private $author_b;
+
 	/** @var Daymark_Subscriptions */
 	private $subscriptions;
 
@@ -24,6 +27,14 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		Daymark_Subscriptions::install();
 
 		$this->author_a      = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$this->author_b      = (int) self::factory()->user->create(
+			array(
+				'role'         => 'author',
+				'user_login'   => 'alice',
+				'user_email'   => 'alice@example.test',
+				'display_name' => 'Alice Appleseed',
+			)
+		);
 		$this->subscriptions = new Daymark_Subscriptions();
 	}
 
@@ -587,5 +598,217 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$ids     = array_column( rest_do_request( $request )->get_data(), 'id' );
 
 		$this->assertSame( array( $ordinary_mark_id ), $ids );
+	}
+
+	/** Issue #293 — `after` is an inclusive floor (the boundary-day Mark is kept). */
+	public function test_after_filters_marks_inclusively() {
+		wp_set_current_user( $this->author_a );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'Older' );
+		$boundary = $this->create_mark( '2024-01-02 00:00:00', 'Boundary' );
+		$newer    = $this->create_mark( '2024-01-03 00:00:00', 'Newer' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$this->assertSame(
+			array( $newer, $boundary ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — `before` is an inclusive ceiling. */
+	public function test_before_filters_marks_inclusively() {
+		wp_set_current_user( $this->author_a );
+
+		$oldest   = $this->create_mark( '2024-01-01 00:00:00', 'Older' );
+		$boundary = $this->create_mark( '2024-01-02 00:00:00', 'Boundary' );
+		$this->create_mark( '2024-01-03 00:00:00', 'Newer' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'before', '2024-01-02 00:00:00' );
+		$this->assertSame(
+			array( $boundary, $oldest ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — `after` + `before` together bracket a window. */
+	public function test_bracket_returns_marks_within_the_window() {
+		wp_set_current_user( $this->author_a );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'Outside Low' );
+		$low  = $this->create_mark( '2024-01-02 00:00:00', 'Low Boundary' );
+		$high = $this->create_mark( '2024-01-03 00:00:00', 'High Boundary' );
+		$this->create_mark( '2024-01-10 00:00:00', 'Outside High' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$request->set_param( 'before', '2024-01-03 00:00:00' );
+		$this->assertSame(
+			array( $high, $low ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — the same window applies to subscription posts via their own `published_at` meta. */
+	public function test_date_window_applies_to_subscription_posts_via_published_at() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$this->create_subscription_post( $subscription_id, '2024-01-01 00:00:00', 'Too Old' );
+		$boundary = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'On The After Bound' );
+		$newest   = $this->create_subscription_post( $subscription_id, '2024-01-03 00:00:00', 'Within Window' );
+		$this->create_subscription_post( $subscription_id, '2024-01-10 00:00:00', 'Too New' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$request->set_param( 'before', '2024-01-03 00:00:00' );
+		$this->assertSame(
+			array( $newest, $boundary ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — the route's `format => 'date-time'` arg validation rejects a malformed window bound before it reaches the query. */
+	public function test_invalid_date_time_is_rejected_by_arg_validation() {
+		wp_set_current_user( $this->author_a );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', 'not-a-date' );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		// WP aggregates the per-arg date-time format failure under the
+		// generic rest_invalid_param envelope with a `rest_invalid_date`
+		// detail.
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertArrayHasKey( 'after', $response->get_data()['data']['details'] );
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` returns exactly the Marks published on
+	 * today's calendar date in a prior year: the one-year-ago and
+	 * two-years-ago same-date Marks match (date-desc, the newer first),
+	 * this-year's own same-date Mark is excluded by the exclusive
+	 * `before` bound, and a different-day prior-year Mark never matches.
+	 * uses the same wp_date() today the implementation itself resolves,
+	 * so the two can never disagree about which day is "today".
+	 */
+	public function test_on_this_day_returns_prior_year_same_date_marks_only() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$last_year     = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'Last year, this day'
+		);
+		$two_years_ago = $this->create_mark(
+			sprintf( '%d-%s-%s 08:00:00', $year - 2, $mon, $day ),
+			'Two years ago, this day'
+		);
+
+		// A different day last year — must not match, whatever "this day"
+		// happens to be (01 flopped to 02 when today IS the 1st).
+		$different_day = '01' === $day ? '02' : '01';
+		$this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $different_day ),
+			'Last year, different day'
+		);
+
+		// Published on the same calendar date but this year — excluded by
+		// the exclusive `before` bound at local midnight today.
+		$this->create_mark( wp_date( 'Y-m-d' ) . ' 10:00:00', 'Today' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame(
+			array( $last_year, $two_years_ago ),
+			$ids,
+			'Only prior-year same-date Marks return, newest first'
+		);
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` is Marks-only by construction, exactly
+	 * like `mine`: a subscription post published on the very same date
+	 * is skipped entirely, not merely filtered out of a merged result.
+	 */
+	public function test_on_this_day_excludes_subscription_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$match_mark      = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'Matching Mark'
+		);
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$this->create_subscription_post(
+			$subscription_id,
+			sprintf( '%d-%s-%s 09:00:00', $year - 1, $mon, $day ),
+			'Same-date subscription post'
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $match_mark ), $ids );
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` ANDs with an explicit `after`/`before`
+	 * window (both are date_query clauses on the same post_date column), so
+	 * an on-this-day Mark outside the window is still excluded.
+	 */
+	public function test_on_this_day_combines_with_an_explicit_date_window() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$last_year     = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'One year ago'
+		);
+		$two_years_ago = $this->create_mark(
+			sprintf( '%d-%s-%s 08:00:00', $year - 2, $mon, $day ),
+			'Two years ago'
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$request->set_param( 'after', sprintf( '%d-%s-%s 00:00:00', $year - 1, $mon, $day ) );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame(
+			array( $last_year ),
+			$ids,
+			'The window ANDed with on-this-day keeps only the one-year-ago Mark'
+		);
+	}
+
+	/** Issue #294 — `on_this_day` present-but-false is a no-op, exactly like the other boolean params. */
+	public function test_on_this_day_set_to_false_is_a_no_op() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00', 'A Mark' );
+		$sub_post_id     = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'A Subscription Post' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '0' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertEqualsCanonicalizing( array( $mark_id, $sub_post_id ), $ids );
 	}
 }

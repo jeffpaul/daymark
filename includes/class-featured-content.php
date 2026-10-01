@@ -447,10 +447,12 @@ class Daymark_Featured_Content {
 
 		$html = '';
 
+		$discover = self::oembed_discovery_allowed( (int) $post->post_author, $post );
+
 		if ( 'audio' === $fc['type'] ) {
-			$html = self::render_audio( $fc['data'] );
+			$html = self::render_audio( $fc['data'], $discover );
 		} elseif ( 'video' === $fc['type'] ) {
-			$html = self::render_video( $fc['data'] );
+			$html = self::render_video( $fc['data'], $discover );
 		} elseif ( 'gallery' === $fc['type'] ) {
 			$html = self::render_gallery( $fc['data'] );
 		}
@@ -506,6 +508,40 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Whether a user's Featured Content URL may be resolved by oEmbed
+	 * discovery, where a remote page names its own oEmbed endpoint and so
+	 * chooses the markup that appears on the published post.
+	 *
+	 * WordPress core enables discovery only for a user with `unfiltered_html`
+	 * (an Administrator or Editor on a single site) and keeps it off for an
+	 * Author or Contributor, for exactly that reason; this follows the same
+	 * rule. It is decided by the post's author, not the current visitor,
+	 * because the markup is rendered for anonymous visitors under that
+	 * author's name. On a one-person site the author is the administrator, so
+	 * nothing changes; on a multi-user site an Author's Featured Content still
+	 * works for every provider WordPress trusts and for a direct media file
+	 * link. Sites that define `DISALLOW_UNFILTERED_HTML` turn discovery off for
+	 * everyone, as WordPress does.
+	 *
+	 * @param int          $user_id The post's author (or, for an editor preview, whose rights apply).
+	 * @param WP_Post|null $post    The post, when known.
+	 * @return bool
+	 */
+	public static function oembed_discovery_allowed( int $user_id, ?WP_Post $post = null ): bool {
+		$allowed = $user_id > 0 && user_can( $user_id, 'unfiltered_html' );
+
+		/**
+		 * Filters whether Featured Content may use oEmbed discovery for a post.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param bool         $allowed Whether the post author has `unfiltered_html`.
+		 * @param WP_Post|null $post    The post, when known.
+		 */
+		return (bool) apply_filters( 'daymark_featured_content_oembed_discovery', $allowed, $post );
+	}
+
+	/**
 	 * Render an audio-type Featured Content: an attachment via core's own
 	 * `wp_audio_shortcode()`, or a URL via a resolved oEmbed preview
 	 * (Daymark_Subscription_Oembed::resolve() — already fully generic, no
@@ -516,10 +552,11 @@ class Daymark_Featured_Content {
 	 * a provider page URL, which that native fallback can't play either
 	 * way (see is_direct_media_url()).
 	 *
-	 * @param array{source: string, attachment_id?: int, url?: string} $data Sanitized audio data.
+	 * @param array{source: string, attachment_id?: int, url?: string} $data     Sanitized audio data.
+	 * @param bool                                                     $discover Whether oEmbed discovery is allowed for this post's author.
 	 * @return string
 	 */
-	private static function render_audio( array $data ): string {
+	private static function render_audio( array $data, bool $discover = false ): string {
 		if ( 'library' === ( $data['source'] ?? '' ) && ! empty( $data['attachment_id'] ) ) {
 			return (string) wp_audio_shortcode( array( 'src' => wp_get_attachment_url( (int) $data['attachment_id'] ) ) );
 		}
@@ -530,7 +567,7 @@ class Daymark_Featured_Content {
 			return '';
 		}
 
-		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url ) : array();
+		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url, $discover ) : array();
 
 		if ( ! empty( $embed['html'] ) ) {
 			return (string) $embed['html'];
@@ -543,10 +580,11 @@ class Daymark_Featured_Content {
 	 * Render a video-type Featured Content — same source/oEmbed/fallback
 	 * order as render_audio(), via `wp_video_shortcode()` instead.
 	 *
-	 * @param array{source: string, attachment_id?: int, url?: string} $data Sanitized video data.
+	 * @param array{source: string, attachment_id?: int, url?: string} $data     Sanitized video data.
+	 * @param bool                                                     $discover Whether oEmbed discovery is allowed for this post's author.
 	 * @return string
 	 */
-	private static function render_video( array $data ): string {
+	private static function render_video( array $data, bool $discover = false ): string {
 		if ( 'library' === ( $data['source'] ?? '' ) && ! empty( $data['attachment_id'] ) ) {
 			return (string) wp_video_shortcode( array( 'src' => wp_get_attachment_url( (int) $data['attachment_id'] ) ) );
 		}
@@ -557,7 +595,7 @@ class Daymark_Featured_Content {
 			return '';
 		}
 
-		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url ) : array();
+		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url, $discover ) : array();
 
 		if ( ! empty( $embed['html'] ) ) {
 			return (string) $embed['html'];

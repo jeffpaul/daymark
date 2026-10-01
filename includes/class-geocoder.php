@@ -168,7 +168,7 @@ class Daymark_Geocoder {
 
 			$timeout = max( 1, (int) apply_filters( 'daymark_geocode_fetch_timeout', 4 ) );
 
-			$response = wp_safe_remote_get(
+			$response = Daymark_Outbound_Guard::get(
 				$url,
 				array(
 					'timeout' => $timeout,
@@ -250,7 +250,7 @@ class Daymark_Geocoder {
 			 */
 			$timeout = max( 1, (int) apply_filters( 'daymark_geocode_fetch_timeout', 4 ) );
 
-			$response = wp_safe_remote_get(
+			$response = Daymark_Outbound_Guard::get(
 				$url,
 				array(
 					'timeout' => $timeout,

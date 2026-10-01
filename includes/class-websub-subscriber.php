@@ -39,6 +39,178 @@ class Daymark_Websub_Subscriber {
 	private const RENEWAL_WINDOW_SECONDS = DAY_IN_SECONDS;
 
 	/**
+	 * Cron hook that checks, once a verification window has passed, whether
+	 * a subscription is still waiting for its hub to verify it. The single
+	 * argument is the subscription ID.
+	 *
+	 * @var string
+	 */
+	public const VERIFY_TIMEOUT_HOOK = 'daymark_websub_verify_timeout';
+
+	/**
+	 * How long to wait for a hub's verification request before treating the
+	 * subscribe request as lost. A hub normally verifies within seconds.
+	 * Filterable via `daymark_websub_verification_timeout`.
+	 *
+	 * @var int
+	 */
+	private const VERIFY_TIMEOUT_SECONDS = 10 * MINUTE_IN_SECONDS;
+
+	/**
+	 * Total subscribe requests (the first plus retries) a cron-driven retry
+	 * chain will send before giving up and marking the subscription
+	 * `failed`. Filterable via `daymark_websub_max_attempts`.
+	 *
+	 * @var int
+	 */
+	private const MAX_ATTEMPTS = 3;
+
+	/**
+	 * How long the attempt count is remembered, so a hub that never verifies
+	 * cannot be retried on every poll forever.
+	 *
+	 * @var int
+	 */
+	private const ATTEMPTS_TTL = DAY_IN_SECONDS;
+
+	/**
+	 * Hook the verification-timeout check into WP-Cron.
+	 *
+	 * @return void
+	 */
+	public function register(): void {
+		add_action( self::VERIFY_TIMEOUT_HOOK, array( $this, 'check_pending' ) );
+	}
+
+	/**
+	 * Transient that marks a subscribe request as recent enough that its
+	 * hub may still verify it.
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return string
+	 */
+	private static function pending_marker_key( int $subscription_id ): string {
+		return 'daymark_websub_pending_' . $subscription_id;
+	}
+
+	/**
+	 * Transient that counts the subscribe requests sent for a subscription.
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return string
+	 */
+	private static function attempts_key( int $subscription_id ): string {
+		return 'daymark_websub_attempts_' . $subscription_id;
+	}
+
+	/**
+	 * The verification window, in seconds.
+	 *
+	 * @return int
+	 */
+	private static function verification_timeout(): int {
+		/**
+		 * Filters how long Daymark waits for a WebSub hub to verify a
+		 * subscription before treating the request as lost and retrying.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param int $seconds Defaults to 10 minutes.
+		 */
+		return max( 60, (int) apply_filters( 'daymark_websub_verification_timeout', self::VERIFY_TIMEOUT_SECONDS ) );
+	}
+
+	/**
+	 * Forget everything about a subscription's pending verification: the
+	 * marker, the attempt count, and the scheduled check. Called once the hub
+	 * verifies it (Daymark_Websub_Endpoint) and on uninstall.
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return void
+	 */
+	public static function clear_pending_state( int $subscription_id ): void {
+		delete_transient( self::pending_marker_key( $subscription_id ) );
+		delete_transient( self::attempts_key( $subscription_id ) );
+		wp_clear_scheduled_hook( self::VERIFY_TIMEOUT_HOOK, array( $subscription_id ) );
+	}
+
+	/**
+	 * Record that a subscribe request was accepted and is now waiting on the
+	 * hub's verification: set the "recent" marker, count the attempt, and
+	 * schedule one check for just after the window ends, so a lost
+	 * verification is noticed in minutes instead of at the next poll (which
+	 * can be a day away).
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return void
+	 */
+	private function note_pending( int $subscription_id ): void {
+		// A hub may verify while it is still answering the subscribe request
+		// (the row is already pending by then), in which case there is
+		// nothing left to wait for.
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+
+		if ( null === $subscription || 'pending' !== (string) ( $subscription['websub_status'] ?? '' ) ) {
+			return;
+		}
+
+		$timeout = self::verification_timeout();
+
+		set_transient( self::pending_marker_key( $subscription_id ), 1, $timeout );
+		set_transient( self::attempts_key( $subscription_id ), (int) get_transient( self::attempts_key( $subscription_id ) ) + 1, self::ATTEMPTS_TTL );
+
+		wp_clear_scheduled_hook( self::VERIFY_TIMEOUT_HOOK, array( $subscription_id ) );
+		wp_schedule_single_event( time() + $timeout + MINUTE_IN_SECONDS, self::VERIFY_TIMEOUT_HOOK, array( $subscription_id ) );
+	}
+
+	/**
+	 * Cron callback: a verification window has passed. If the subscription
+	 * is still `pending`, its hub never verified it, so send the subscribe
+	 * request again (a fresh secret and callback token each time) until the
+	 * attempt limit, then mark it `failed`; the next poll starts over from
+	 * there. Polling delivers the feed's posts throughout, so nothing is
+	 * lost while this runs.
+	 *
+	 * @param int $subscription_id Subscription ID.
+	 * @return void
+	 */
+	public function check_pending( $subscription_id ): void {
+		$subscription_id = absint( $subscription_id );
+		$subscriptions   = Daymark_Plugin::instance()->subscriptions;
+		$subscription    = $subscriptions->get( $subscription_id );
+
+		if ( null === $subscription || 'pending' !== (string) ( $subscription['websub_status'] ?? '' ) ) {
+			return; // Verified, unsubscribed, or already handled.
+		}
+
+		// A newer subscribe request (say, sent by a poll) is still inside its
+		// own window, and has its own check scheduled.
+		if ( false !== get_transient( self::pending_marker_key( $subscription_id ) ) ) {
+			return;
+		}
+
+		$feed_url = (string) ( $subscription['feed_url'] ?? '' );
+		$hub_url  = (string) ( $subscription['websub_hub_url'] ?? '' );
+
+		/**
+		 * Filters how many subscribe requests a WebSub subscription gets (the
+		 * first plus retries) before it is marked failed.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param int $attempts Defaults to 3.
+		 */
+		$max = max( 1, (int) apply_filters( 'daymark_websub_max_attempts', self::MAX_ATTEMPTS ) );
+
+		if ( '' === $feed_url || '' === $hub_url || (int) get_transient( self::attempts_key( $subscription_id ) ) >= $max ) {
+			$subscriptions->update( $subscription_id, array( 'websub_status' => 'failed' ) );
+			return;
+		}
+
+		$this->send_subscribe_request( $subscription_id, $hub_url, $feed_url );
+	}
+
+	/**
 	 * After a successful poll, subscribe to the feed's advertised hub (if
 	 * any) when not already pending/verified, or renew a verified
 	 * subscription nearing lease expiry.
@@ -64,8 +236,12 @@ class Daymark_Websub_Subscriber {
 
 		$status = (string) ( $subscription['websub_status'] ?? 'none' );
 
-		if ( 'pending' === $status ) {
-			return; // Already waiting on the hub's own verification GET.
+		// Already waiting on the hub's own verification GET, but only while the
+		// request is recent. A pending row with no marker is stale (the hub
+		// never verified it, the cron check never ran, or the row predates
+		// this check) and is subscribed again below.
+		if ( 'pending' === $status && false !== get_transient( self::pending_marker_key( $subscription_id ) ) ) {
+			return;
 		}
 
 		if ( 'verified' === $status ) {
@@ -113,6 +289,43 @@ class Daymark_Websub_Subscriber {
 	}
 
 	/**
+	 * The unguessable token carried in a subscription's callback URL.
+	 *
+	 * Derived from the subscription's own random secret (the one already
+	 * kept in `websub_secret`), so it needs no column of its own and changes
+	 * whenever the secret does (on each subscribe or renewal). The secret is
+	 * never in the URL: this is a one-way HMAC of the subscription ID keyed by
+	 * it, so the URL a hub logs reveals nothing that could forge a signed
+	 * delivery.
+	 *
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $secret          The subscription's `websub_secret`.
+	 * @return string 32 hex characters.
+	 */
+	public static function callback_token( int $subscription_id, string $secret ): string {
+		return substr( hash_hmac( 'sha256', 'daymark-websub-callback|' . $subscription_id, $secret ), 0, 32 );
+	}
+
+	/**
+	 * The callback URL sent to a hub, carrying the token above as a query
+	 * argument. Daymark_Websub_Endpoint answers a verification request only
+	 * when it presents that token, so knowing the (sequential) subscription
+	 * ID and the public feed URL is not enough to mark a pending
+	 * subscription verified.
+	 *
+	 * @param int    $subscription_id Subscription ID.
+	 * @param string $secret          The subscription's `websub_secret`.
+	 * @return string
+	 */
+	public static function callback_url( int $subscription_id, string $secret ): string {
+		return add_query_arg(
+			'daymark_token',
+			self::callback_token( $subscription_id, $secret ),
+			rest_url( 'daymark/v1/websub/' . $subscription_id )
+		);
+	}
+
+	/**
 	 * Send a `hub.mode=subscribe` request to the hub, per the WebSub spec.
 	 * A hub typically responds 202 Accepted and independently issues its own
 	 * verification GET back to the callback endpoint
@@ -140,9 +353,23 @@ class Daymark_Websub_Subscriber {
 		 */
 		$lease_seconds = max( 1, (int) apply_filters( 'daymark_websub_lease_seconds', self::DEFAULT_LEASE_SECONDS ) );
 
-		$callback_url = rest_url( 'daymark/v1/websub/' . $subscription_id );
+		$callback_url  = self::callback_url( $subscription_id, $secret );
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 
-		$response = wp_safe_remote_post(
+		// Record the secret and the pending state before contacting the hub,
+		// not after: a hub may send its verification request while it is still
+		// answering this one, and the endpoint can only check the callback
+		// token against a secret that is already stored.
+		$subscriptions->update(
+			$subscription_id,
+			array(
+				'websub_hub_url' => $hub_url,
+				'websub_secret'  => $secret,
+				'websub_status'  => 'pending',
+			)
+		);
+
+		$response = Daymark_Outbound_Guard::post(
 			$hub_url,
 			array(
 				'timeout' => 10,
@@ -155,8 +382,6 @@ class Daymark_Websub_Subscriber {
 				),
 			)
 		);
-
-		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 
 		if ( is_wp_error( $response ) ) {
 			$subscriptions->update( $subscription_id, array( 'websub_status' => 'failed' ) );
@@ -173,13 +398,6 @@ class Daymark_Websub_Subscriber {
 			return;
 		}
 
-		$subscriptions->update(
-			$subscription_id,
-			array(
-				'websub_hub_url' => $hub_url,
-				'websub_secret'  => $secret,
-				'websub_status'  => 'pending',
-			)
-		);
+		$this->note_pending( $subscription_id );
 	}
 }

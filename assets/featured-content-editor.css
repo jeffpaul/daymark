@@ -200,6 +200,30 @@
 }
 
 /*
+ * With nothing to overlay (the "No preview available" message has no image
+ * behind it), the frosted hover-only buttons are nearly invisible. Show
+ * them as normal, always-visible buttons in a row below the message
+ * instead.
+ */
+.daymark-fc-preview-wrap:has(.daymark-fc-preview-unavailable) .daymark-fc-actions {
+	position: static;
+	padding: 8px 0 0;
+	opacity: 1;
+}
+
+.daymark-fc-preview-wrap:has(.daymark-fc-preview-unavailable) .daymark-fc-action {
+	border: 1px solid #949494;
+	background: #fff;
+	backdrop-filter: none;
+}
+
+.daymark-fc-preview-wrap:has(.daymark-fc-preview-unavailable) .daymark-fc-action:hover {
+	border-color: var( --wp-admin-theme-color, #007cba );
+	background: #fff;
+	color: var( --wp-admin-theme-color, #007cba );
+}
+
+/*
  * The "Add by URL" tab's content — a small, fully self-built view (no
  * longer wp.media.view.Embed; see the JS file's own docblock for why),
  * so every element here is plain block markup this stylesheet fully

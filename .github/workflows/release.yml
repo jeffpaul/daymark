@@ -8,8 +8,9 @@ name: Release
 # exact tree that would be committed to the wordpress.org SVN trunk.
 #
 # Guard: the tag must match the plugin's declared version everywhere —
-# daymark.php header, DAYMARK_VERSION, and readme.txt Stable tag — or the
-# release fails before anything is published.
+# daymark.php header, DAYMARK_VERSION, readme.txt Stable tag, package.json, and
+# both version fields in package-lock.json — or the release fails before
+# anything is published.
 
 on:
   push:
@@ -39,8 +40,11 @@ jobs:
           header=$(sed -n 's/^ \* Version: //p' daymark.php | tr -d '[:space:]')
           constant=$(sed -n "s/^define( 'DAYMARK_VERSION', '\(.*\)' );$/\1/p" daymark.php | tr -d '[:space:]')
           stable=$(sed -n 's/^Stable tag: //p' readme.txt | tr -d '[:space:]')
-          echo "tag=$tag_version header=$header constant=$constant stable=$stable"
-          for v in "$header" "$constant" "$stable"; do
+          package=$(jq -r '.version' package.json | tr -d '[:space:]')
+          lock=$(jq -r '.version' package-lock.json | tr -d '[:space:]')
+          lock_root=$(jq -r '.packages[""].version' package-lock.json | tr -d '[:space:]')
+          echo "tag=$tag_version header=$header constant=$constant stable=$stable package=$package lock=$lock lock_root=$lock_root"
+          for v in "$header" "$constant" "$stable" "$package" "$lock" "$lock_root"; do
             if [ "$v" != "$tag_version" ]; then
               echo "::error::Version mismatch: tag v$tag_version vs declared '$v'"
               exit 1

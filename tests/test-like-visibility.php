@@ -237,4 +237,111 @@ class Test_Like_Visibility extends WP_UnitTestCase {
 
 		$this->assertSame( '1', get_post_meta( $post_id, '_wpas_done_all', true ) );
 	}
+
+	/**
+	 * Publish through the real publisher as a user who can publish.
+	 *
+	 * @param array<string, mixed> $data Publish data.
+	 * @return int
+	 */
+	private function publish_as_editor( array $data ): int {
+		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		return (int) ( new Daymark_Publisher() )->publish( $data );
+	}
+
+	/** A Like published through the publisher lives on its own post type, never `post`. */
+	public function test_published_like_uses_its_own_post_type() {
+		$like_id = $this->publish_as_editor(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( Daymark_Like_Visibility::POST_TYPE, get_post_type( $like_id ) );
+		$this->assertEmpty( wp_get_post_categories( $like_id ) );
+		$this->assertFalse( get_post_format( $like_id ) );
+	}
+
+	/**
+	 * A Reblog stays an ordinary post — only Likes move.
+	 */
+	public function test_published_repost_stays_a_post() {
+		$repost_id = $this->publish_as_editor(
+			array(
+				'caption'      => 'Reblogged',
+				'primary_type' => 'note',
+				'repost_of'    => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->assertSame( 'post', get_post_type( $repost_id ) );
+	}
+
+	/**
+	 * The reported gap: a secondary query (a block theme's Query Loop, a
+	 * Recent Posts widget) never sees a Like, not just the main query.
+	 */
+	public function test_published_like_absent_from_secondary_post_query() {
+		$like_id = $this->publish_as_editor(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$ids = get_posts(
+			array(
+				'post_type'      => 'post',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+
+		$this->assertNotContains( $like_id, $ids );
+	}
+
+	/** Its own permalink still resolves for Webmention verification. */
+	public function test_published_like_permalink_still_reachable() {
+		$like_id = $this->publish_as_editor(
+			array(
+				'caption'      => 'Liked "A post somewhere"',
+				'primary_type' => 'note',
+				'like_of'      => 'https://example.com/original-post/',
+			)
+		);
+
+		$this->go_to( get_permalink( $like_id ) );
+
+		$this->assertTrue( is_singular() );
+		$this->assertSame( $like_id, get_the_ID() );
+	}
+
+	/** A legacy `post`-typed Like Mark is moved onto the new post type. */
+	public function test_migration_moves_legacy_like_marks() {
+		$legacy_id = $this->create_mark( array( '_daymark_like_of' => 'https://example.com/post/' ) );
+		$ordinary  = $this->create_mark();
+		$category  = (int) self::factory()->category->create();
+		wp_set_post_categories( $legacy_id, array( $category ) );
+
+		delete_option( Daymark_Like_Visibility::MIGRATED_OPTION );
+		$this->visibility->maybe_migrate_legacy_likes();
+
+		$this->assertSame( Daymark_Like_Visibility::POST_TYPE, get_post_type( $legacy_id ) );
+		$this->assertSame( 'post', get_post_type( $ordinary ) );
+		$this->assertEmpty( wp_get_object_terms( $legacy_id, 'category', array( 'fields' => 'ids' ) ) );
+		$this->assertNotEmpty( get_option( Daymark_Like_Visibility::MIGRATED_OPTION ) );
+	}
+
+	/** Jetpack Sync is told to withhold a Like, and only a Like. */
+	public function test_jetpack_sync_prevented_for_like_post_type_only() {
+		$like_id  = (int) self::factory()->post->create( array( 'post_type' => Daymark_Like_Visibility::POST_TYPE ) );
+		$ordinary = $this->create_mark();
+
+		$this->assertTrue( $this->visibility->prevent_jetpack_sync( false, get_post( $like_id ) ) );
+		$this->assertFalse( $this->visibility->prevent_jetpack_sync( false, get_post( $ordinary ) ) );
+	}
 }

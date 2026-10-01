@@ -171,6 +171,32 @@
 	}
 
 	/**
+	 * The preview request URL: the pasted link, plus the post being edited.
+	 *
+	 * The server decides whether a link may be resolved by oEmbed discovery
+	 * from the post's author (Daymark_Featured_Content::oembed_discovery_allowed()),
+	 * so an Editor previewing an Author's post has to see what that post will
+	 * actually render. The endpoint can already carry a query string (plain
+	 * permalinks put the route in `?rest_route=`), so the separator is chosen
+	 * rather than assumed.
+	 *
+	 * @param {string} endpoint The preview route's URL.
+	 * @param {string} url      The link to preview.
+	 * @return {string}
+	 */
+	function oembedPreviewUrl( endpoint, url ) {
+		var editor = wp.data && wp.data.select ? wp.data.select( 'core/editor' ) : null;
+		var postId = editor && editor.getCurrentPostId ? editor.getCurrentPostId() : 0;
+		var query = 'url=' + encodeURIComponent( url );
+
+		if ( postId ) {
+			query += '&post_id=' + encodeURIComponent( postId );
+		}
+
+		return endpoint + ( -1 === endpoint.indexOf( '?' ) ? '?' : '&' ) + query;
+	}
+
+	/**
 	 * Read the currently-saved Featured Content type + that type's own data
 	 * sub-object out of post meta — mirrors
 	 * Daymark_Featured_Content::get_featured_content()'s own tolerance for
@@ -337,7 +363,7 @@
 
 					var self = this;
 
-					wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( url ) } )
+					wp.apiFetch( { url: oembedPreviewUrl( endpoint, url ) } )
 						.then( function ( response ) {
 							self.renderPreview( response && response.embed ? response.embed : null );
 						} )
@@ -847,7 +873,7 @@
 
 				var cancelled = false;
 
-				wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( data.url ) } )
+				wp.apiFetch( { url: oembedPreviewUrl( endpoint, data.url ) } )
 					.then( function ( response ) {
 						if ( ! cancelled ) {
 							setEmbed( response && response.embed ? response.embed : false );

@@ -107,6 +107,13 @@
 		return `<div class="daymark-recent__siteicon"><button type="button" class="daymark-recent__siteiconbtn" aria-label="Filter"><span class="daymark-recent__siteiconimg daymark-recent__siteiconimg--glyph" aria-hidden="true">${esc(letter)}</span></button></div>`;
 	}
 
+	// The item-wrap's leading column: the site icon stacked directly above
+	// its row's type icon (see .daymark-recent__leadcol in app.css), instead
+	// of the two sitting side by side as separate columns.
+	function leadCol(letter, kind) {
+		return `<div class="daymark-recent__leadcol">${siteIcon(letter)}${typeIcon(kind)}</div>`;
+	}
+
 	function badge(kind, glyph) {
 		const fill = glyph ? 'currentColor' : 'none';
 		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph || TYPE_ICONS[kind]}</svg></span>`;
@@ -148,8 +155,7 @@
 		image: {
 			label: 'Single image',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('image')}
+				${leadCol('J', 'image')}
 				<a class="daymark-recent__item daymark-recent__item--image" href="#">
 					<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media">
 						<img class="daymark-recent__thumb" src="${swatch('%23c93a06')}" alt="" />
@@ -164,8 +170,7 @@
 		gallery: {
 			label: 'Gallery',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('gallery')}
+				${leadCol('J', 'gallery')}
 				<a class="daymark-recent__item daymark-recent__item--gallery" href="#">
 					<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media">
 						<img class="daymark-recent__thumb" src="${swatch('%239e2a02')}" alt="" />
@@ -181,8 +186,7 @@
 		video: {
 			label: 'Video',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('video')}
+				${leadCol('J', 'video')}
 				<a class="daymark-recent__item daymark-recent__item--video" href="#">
 					<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media">
 						<img class="daymark-recent__thumb" src="${swatch('%23111111')}" alt="" />
@@ -198,8 +202,7 @@
 		video_noposter: {
 			label: 'Video — no poster frame (common for a Mark: see fixture header)',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('video')}
+				${leadCol('J', 'video')}
 				<a class="daymark-recent__item daymark-recent__item--video" href="#">
 					<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumb--placeholder" aria-hidden="true">
 						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${TYPE_ICONS.video}</svg>
@@ -214,8 +217,7 @@
 		audio: {
 			label: 'Audio / podcast',
 			html: (title, meta, excerpt) => `
-				${siteIcon('T')}
-				${typeIcon('audio')}
+				${leadCol('T', 'audio')}
 				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--audio">
 					<span class="daymark-recent__thumbwrap">
 						<img class="daymark-recent__thumb" src="${swatch('%23ffd9a8')}" alt="" />
@@ -232,8 +234,7 @@
 		note: {
 			label: 'Short note (typography-first)',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('note')}
+				${leadCol('J', 'note')}
 				<a class="daymark-recent__item daymark-recent__item--note" href="#">
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
@@ -245,8 +246,7 @@
 		article: {
 			label: 'Article (subscription, standard format, long excerpt)',
 			html: (title, meta, excerpt) => `
-				${siteIcon('N')}
-				${typeIcon('article')}
+				${leadCol('N', 'article')}
 				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--article">
 					<span class="daymark-recent__thumbwrap">
 						<img class="daymark-recent__thumb" src="${swatch('%23666666')}" alt="" />
@@ -262,8 +262,7 @@
 		link: {
 			label: 'Link (subscription, standard format, short excerpt, no image)',
 			html: (title, meta, excerpt) => `
-				${siteIcon('L')}
-				${typeIcon('link')}
+				${leadCol('L', 'link')}
 				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--link">
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
@@ -276,8 +275,7 @@
 		mixed: {
 			label: 'Mixed media (Mark only)',
 			html: (title, meta) => `
-				${siteIcon('J')}
-				${typeIcon('mixed')}
+				${leadCol('J', 'mixed')}
 				<a class="daymark-recent__item daymark-recent__item--mixed" href="#">
 					<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media">
 						<img class="daymark-recent__thumb" src="${swatch('%23b42318')}" alt="" />
