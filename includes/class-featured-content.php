@@ -366,7 +366,7 @@ class Daymark_Featured_Content {
 		}
 
 		if ( isset( $raw['citation_url'] ) ) {
-			$citation_url = esc_url_raw( trim( (string) $raw['citation_url'] ) );
+			$citation_url = esc_url_raw( trim( (string) $raw['citation_url'] ), array( 'http', 'https' ) );
 
 			if ( '' !== $citation_url ) {
 				$clean['citation_url'] = $citation_url;
@@ -386,7 +386,7 @@ class Daymark_Featured_Content {
 	 * @return array<string, mixed> Sanitized sub-array; empty when unusable.
 	 */
 	private static function sanitize_link_shape( array $raw ): array {
-		$url = isset( $raw['url'] ) ? esc_url_raw( trim( (string) $raw['url'] ) ) : '';
+		$url = isset( $raw['url'] ) ? esc_url_raw( trim( (string) $raw['url'] ), array( 'http', 'https' ) ) : '';
 
 		return '' === $url ? array() : array( 'url' => $url );
 	}

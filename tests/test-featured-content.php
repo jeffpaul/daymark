@@ -241,6 +241,62 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'link', $clean );
 	}
 
+	/** Only http(s) links are kept: a mailto:, ftp:, or tel: URL is a valid URL but not a link out to a page. */
+	public function test_sanitize_data_keeps_only_http_and_https_links() {
+		foreach ( array( 'mailto:someone@example.com', 'ftp://example.com/file', 'tel:+15551234567' ) as $url ) {
+			$clean = json_decode(
+				Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'link' => array( 'url' => $url ) ) ) ),
+				true
+			);
+
+			$this->assertArrayNotHasKey( 'link', $clean, $url );
+		}
+	}
+
+	/** A quote's citation URL gets the same http(s)-only rule, and is dropped (not the whole quote) when it fails. */
+	public function test_sanitize_data_drops_a_non_http_citation_url_but_keeps_the_quote() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array(
+							'text'         => 'A line worth quoting.',
+							'citation_url' => 'mailto:someone@example.com',
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( 'text' => 'A line worth quoting.' ), $clean['quote'] );
+	}
+
+	/** A key that belongs to another kind is dropped from a shape that doesn't use it. */
+	public function test_sanitize_data_drops_stray_keys_from_quote_and_link_shapes() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array(
+							'text' => 'A line worth quoting.',
+							'url'  => 'https://example.com/not-a-quote-field',
+						),
+						'link'  => array(
+							'url'          => 'https://example.com/article',
+							'citation_url' => 'https://example.com/not-a-link-field',
+							'author'       => 'Nobody',
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( 'text' => 'A line worth quoting.' ), $clean['quote'] );
+		$this->assertSame( array( 'url' => 'https://example.com/article' ), $clean['link'] );
+	}
+
 	/** A link-type Featured Content is read-gated to empty without the `link` post format — the same "real, link-format-only" rule render() itself depends on. */
 	public function test_get_featured_content_is_empty_for_a_link_type_without_the_link_format() {
 		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
