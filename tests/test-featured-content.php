@@ -1,12 +1,15 @@
 <?php
 /**
  * Daymark_Featured_Content tests (issue #401, Phase 1: audio/video, Phase 2
- * #406: gallery): meta sanitization,
+ * #406: gallery, Phase 3 #407: quote/link): meta sanitization (including the
+ * quote/link shapes, whose empty results are dropped whole), the link
+ * post-format read gate in get_featured_content(),
  * get_featured_content()/has_featured_content(), the post_thumbnail_html
  * substitution (and its opt-out filter), the theme-facing
  * daymark_*_featured_content() template tags, render_audio()/render_video()'s
  * is_direct_media_url()-gated native-tag fallback, render_gallery()'s
  * slider-shell markup (controls only when there's more than one image),
+ * render_quote()/render_link() markup,
  * and the GET /daymark/v1/featured-content/oembed REST route.
  *
  * @package Daymark
@@ -60,11 +63,11 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertSame( 'audio', Daymark_Featured_Content::sanitize_type( 'audio' ) );
 		$this->assertSame( 'video', Daymark_Featured_Content::sanitize_type( 'video' ) );
 		$this->assertSame( 'gallery', Daymark_Featured_Content::sanitize_type( 'gallery' ) );
+		$this->assertSame( 'quote', Daymark_Featured_Content::sanitize_type( 'quote' ) );
+		$this->assertSame( 'link', Daymark_Featured_Content::sanitize_type( 'link' ) );
 	}
 
 	public function test_sanitize_type_rejects_unsupported_or_garbage_values() {
-		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'quote' ) );
-		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'link' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '<script>' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '' ) );
 	}
@@ -168,14 +171,14 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		);
 	}
 
-	/** A quote/link sub-key isn't implemented yet (their phases haven't landed) — silently dropped, not stored unsanitized. */
+	/** A sub-key this class doesn't implement is silently dropped, not stored unsanitized. */
 	public function test_sanitize_data_drops_unrecognized_sub_keys() {
 		$clean = json_decode(
 			Daymark_Featured_Content::sanitize_data(
 				wp_json_encode(
 					array(
-						'quote' => array( 'text' => 'Something someone said' ),
-						'link'  => array( 'url' => 'https://example.com' ),
+						'poem'     => array( 'text' => 'Something someone said' ),
+						'carousel' => array( 'url' => 'https://example.com' ),
 					)
 				)
 			),
@@ -183,6 +186,175 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		);
 
 		$this->assertSame( array(), $clean );
+	}
+
+	public function test_sanitize_data_keeps_a_valid_quote_shape() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array(
+							'text'         => 'An insightful line worth quoting.',
+							'author'       => 'Some Author',
+							'citation_url' => 'https://example.com/source',
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame(
+			array(
+				'text'         => 'An insightful line worth quoting.',
+				'author'       => 'Some Author',
+				'citation_url' => 'https://example.com/source',
+			),
+			$clean['quote']
+		);
+	}
+
+	public function test_sanitize_data_drops_a_textless_quote_shape() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'quote' => array( 'text' => '   ' ) ) ) ),
+			true
+		);
+
+		$this->assertArrayNotHasKey( 'quote', $clean );
+	}
+
+	public function test_sanitize_data_keeps_a_valid_link_shape() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) ),
+			true
+		);
+
+		$this->assertSame( array( 'url' => 'https://example.com/article' ), $clean['link'] );
+	}
+
+	public function test_sanitize_data_drops_a_javascript_url_link_shape() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'link' => array( 'url' => 'javascript:alert(1)' ) ) ) ),
+			true
+		);
+
+		$this->assertArrayNotHasKey( 'link', $clean );
+	}
+
+	/** Only http(s) links are kept: a mailto:, ftp:, or tel: URL is a valid URL but not a link out to a page. */
+	public function test_sanitize_data_keeps_only_http_and_https_links() {
+		foreach ( array( 'mailto:someone@example.com', 'ftp://example.com/file', 'tel:+15551234567' ) as $url ) {
+			$clean = json_decode(
+				Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'link' => array( 'url' => $url ) ) ) ),
+				true
+			);
+
+			$this->assertArrayNotHasKey( 'link', $clean, $url );
+		}
+	}
+
+	/** A quote's citation URL gets the same http(s)-only rule, and is dropped (not the whole quote) when it fails. */
+	public function test_sanitize_data_drops_a_non_http_citation_url_but_keeps_the_quote() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array(
+							'text'         => 'A line worth quoting.',
+							'citation_url' => 'mailto:someone@example.com',
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( 'text' => 'A line worth quoting.' ), $clean['quote'] );
+	}
+
+	/** A key that belongs to another kind is dropped from a shape that doesn't use it. */
+	public function test_sanitize_data_drops_stray_keys_from_quote_and_link_shapes() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'quote' => array(
+							'text' => 'A line worth quoting.',
+							'url'  => 'https://example.com/not-a-quote-field',
+						),
+						'link'  => array(
+							'url'          => 'https://example.com/article',
+							'citation_url' => 'https://example.com/not-a-link-field',
+							'author'       => 'Nobody',
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( 'text' => 'A line worth quoting.' ), $clean['quote'] );
+		$this->assertSame( array( 'url' => 'https://example.com/article' ), $clean['link'] );
+	}
+
+	/** A link-type Featured Content is read-gated to empty without the `link` post format — the same "real, link-format-only" rule render() itself depends on. */
+	public function test_get_featured_content_is_empty_for_a_link_type_without_the_link_format() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+
+		$this->assertSame( array(), Daymark_Featured_Content::get_featured_content( $this->post_id ) );
+	}
+
+	public function test_get_featured_content_resolves_a_link_type_on_a_link_format_post() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+
+		$featured_content = Daymark_Featured_Content::get_featured_content( $this->post_id );
+
+		$this->assertSame( 'link', $featured_content['type'] );
+		$this->assertSame( 'https://example.com/article', $featured_content['data']['url'] );
+	}
+
+	public function test_the_featured_content_renders_a_quote() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'quote' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'quote' => array(
+						'text'         => 'An insightful line worth quoting.',
+						'author'       => 'Some Author',
+						'citation_url' => 'https://example.com/source',
+					),
+				)
+			)
+		);
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'daymark-featured-content--quote', $output );
+		$this->assertStringContainsString( '<blockquote class="daymark-featured-quote">', $output );
+		$this->assertStringContainsString( '<p>An insightful line worth quoting.</p>', $output );
+		$this->assertStringContainsString( '<footer>', $output );
+		$this->assertStringContainsString( 'Some Author — ', $output );
+		$this->assertStringContainsString( 'https://example.com/source', $output );
+	}
+
+	public function test_the_featured_content_renders_a_link() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'daymark-featured-content--link', $output );
+		$this->assertStringContainsString( '<a class="daymark-featured-link" href="https://example.com/article" target="_blank" rel="noopener">example.com</a>', $output );
 	}
 
 	public function test_sanitize_data_keeps_a_valid_gallery_shape() {

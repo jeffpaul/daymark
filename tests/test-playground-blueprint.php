@@ -116,7 +116,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 		$this->assertCount( 1, $by_type['image'] ?? array(), 'one single-photo Mark' );
 		$this->assertCount( 1, $by_type['gallery'] ?? array(), 'one gallery Mark' );
 		$this->assertCount( 2, $by_type['checkin'] ?? array(), 'a Check In with and without a photo' );
-		$this->assertCount( 2, $by_type['note'] ?? array(), 'two Featured Content notes' );
+		$this->assertCount( 4, $by_type['note'] ?? array(), 'four Featured Content notes' );
 
 		$with_photo = array_filter(
 			$by_type['checkin'],
@@ -132,11 +132,14 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 			$featured[ (string) get_post_meta( $id, '_daymark_featured_content_type', true ) ] = $id;
 		}
 
-		$this->assertEqualsCanonicalizing( array( 'gallery', 'video' ), array_keys( $featured ) );
+		$this->assertEqualsCanonicalizing( array( 'gallery', 'quote', 'link', 'video' ), array_keys( $featured ) );
 
 		$gallery = Daymark_Featured_Content::get_featured_content( $featured['gallery'] );
 		$this->assertGreaterThanOrEqual( 4, count( $gallery['data']['attachment_ids'] ?? array() ) );
 
+		$this->assertSame( 'link', get_post_format( $featured['link'] ) );
+		$this->assertSame( 'link', Daymark_Featured_Content::get_featured_content( $featured['link'] )['type'] );
+		$this->assertSame( 'quote', Daymark_Featured_Content::get_featured_content( $featured['quote'] )['type'] );
 		$this->assertSame( 'video', Daymark_Featured_Content::get_featured_content( $featured['video'] )['type'] );
 	}
 

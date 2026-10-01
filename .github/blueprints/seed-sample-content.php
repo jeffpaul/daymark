@@ -171,6 +171,37 @@ if ( is_array( $daymark_sample_gallery_media ) && ! empty( $daymark_sample_galle
 	);
 }
 
+// Featured Content: a quote with an author and a source.
+$daymark_sample_featured(
+	$daymark_sample_publish(
+		array(
+			'title'        => 'Featured Content: quote',
+			'caption'      => 'This Mark sets a quote as its Featured Content.',
+			'primary_type' => 'note',
+		)
+	),
+	'quote',
+	array(
+		'text'         => 'The best way to predict the future is to invent it.',
+		'author'       => 'Alan Kay',
+		'citation_url' => 'https://en.wikipedia.org/wiki/Alan_Kay',
+	)
+);
+
+// Featured Content: a link. Only offered for the Link post format.
+$daymark_sample_link_id = $daymark_sample_publish(
+	array(
+		'title'        => 'Featured Content: link',
+		'caption'      => 'This Mark uses the Link post format, so it can set a link as its Featured Content.',
+		'primary_type' => 'note',
+	)
+);
+
+if ( $daymark_sample_link_id > 0 ) {
+	set_post_format( $daymark_sample_link_id, 'link' );
+	$daymark_sample_featured( $daymark_sample_link_id, 'link', array( 'url' => 'https://wordpress.org/news/' ) );
+}
+
 // Featured Content: a YouTube video.
 $daymark_sample_featured(
 	$daymark_sample_publish(
