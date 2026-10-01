@@ -5579,16 +5579,8 @@
 				)}" autocomplete="off" />
 				<div class="daymark-searchfilters" data-search-filters>
 					<div class="daymark-filterchips" role="group" aria-label="${esc(
-						__('Filter by type', 'daymark')
-					)}" data-filter-chips>${filterChips}</div>
-					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
-						__('Filter by source', 'daymark')
-					)}</label>
-					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
-						this._subscriptions
-					)}</select>
-				</div>
-				<div class="daymark-searchfilters daymark-searchfilters--extras">
+						__('Search filters', 'daymark')
+					)}" data-filter-chips>${filterChips}
 					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
 						__('Filter by date', 'daymark')
 					)}</label>
@@ -5596,6 +5588,13 @@
 						(filter) =>
 							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
 					).join('')}</select>
+					</div>
+					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
+						__('Filter by source', 'daymark')
+					)}</label>
+					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
+						this._subscriptions
+					)}</select>
 				</div>
 			</div>
 			<section class="daymark-screen">
