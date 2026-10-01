@@ -110,7 +110,10 @@ how that works from a user's side.
   with your own WordPress.com account linked (for WordPress.com and
   Jetpack-connected sites), or the [ActivityPub](https://wordpress.org/plugins/activitypub/)
   plugin 8.1.0+ with your user enabled as an author (for Mastodon and other
-  fediverse posts). Without any of these, subscribed posts show no Like icon.
+  fediverse posts). A site bridged with [Bridgy Fed](https://fed.brid.gy/)
+  can instead like fediverse and Bluesky posts through the Webmention plugin
+  (check "This site is bridged with Bridgy Fed" on the Connectors tab).
+  Without any of these, subscribed posts show no Like icon.
   All three are listed on Settings -> Daymark -> Connectors.
 
 ### Extending Daymark

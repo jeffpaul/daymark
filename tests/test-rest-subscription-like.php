@@ -77,10 +77,11 @@ class Test_Rest_Subscription_Like extends WP_UnitTestCase {
 	/**
 	 * Seed Daymark_Comment_Delivery's cached origin signals for $this->permalink.
 	 *
-	 * @param string $endpoint Webmention endpoint the origin advertises ('' for none).
+	 * @param string $endpoint           Webmention endpoint the origin advertises ('' for none).
+	 * @param bool   $activitypub_object Whether the origin is a fediverse post.
 	 * @return void
 	 */
-	private function seed_origin_signals( string $endpoint ): void {
+	private function seed_origin_signals( string $endpoint, bool $activitypub_object = false ): void {
 		set_transient(
 			'daymark_comment_sig_' . md5( $this->permalink ),
 			array(
@@ -89,6 +90,8 @@ class Test_Rest_Subscription_Like extends WP_UnitTestCase {
 				'post_id'             => 0,
 				'jetpack_site_id'     => 0,
 				'jetpack_post_id'     => 0,
+				'activitypub_object'  => $activitypub_object,
+				'bluesky'             => false,
 			),
 			HOUR_IN_SECONDS
 		);
@@ -336,6 +339,91 @@ class Test_Rest_Subscription_Like extends WP_UnitTestCase {
 		$item = $this->timeline_item( $post_id );
 		$this->assertSame( 'sent', $item['like_delivery'] );
 		$this->assertSame( '', $item['comment_delivery'] );
+	}
+
+	/**
+	 * Make the Bridgy Fed route deliverable: a bridged site with the
+	 * Webmention plugin, liking a fediverse post that takes no Webmentions.
+	 *
+	 * @return void
+	 */
+	private function enable_bridgy_fed_route(): void {
+		update_option( Daymark_Bridgy_Fed::OPTION, '1' );
+		$this->activate_fake_webmention_plugin();
+		$this->seed_origin_signals( '', true );
+	}
+
+	/** On a bridged site, a Like of a fediverse post goes through Bridgy Fed (issue #441). */
+	public function test_post_like_goes_through_bridgy_fed_for_a_fediverse_origin() {
+		wp_set_current_user( $this->author_a );
+		$this->enable_bridgy_fed_route();
+		$post_id = $this->create_subscription_post();
+
+		$availability = rest_do_request( $this->request( 'GET', '/daymark/v1/subscription-posts/' . $post_id . '/like-availability' ) )->get_data();
+		$this->assertTrue( $availability['available'] );
+		$this->assertSame( 'bridgy_fed', $availability['method'] );
+
+		$mark_id = (int) rest_do_request( $this->request( 'POST', '/daymark/v1/subscription-posts/' . $post_id . '/like' ) )->get_data()['mark_id'];
+
+		$this->assertGreaterThan( 0, $mark_id );
+		$this->assertSame( '1', get_post_meta( $mark_id, Daymark_Bridgy_Fed::META, true ) );
+		$this->assertStringContainsString( '<a class="u-bridgy-fed" href="https://fed.brid.gy/" hidden="from-humans"></a>', Daymark_Bridgy_Fed::markup( $mark_id ) );
+
+		$targets = ( new Daymark_Microformats() )->add_webmention_targets( array(), $mark_id );
+		$this->assertContains( Daymark_Bridgy_Fed::TARGET, $targets );
+		$this->assertContains( $this->permalink, $targets );
+	}
+
+	/** Delivery state for a Bridgy Fed Like reads Bridgy Fed's own target. */
+	public function test_bridgy_fed_like_delivery_state_reads_bridgy_feds_target() {
+		wp_set_current_user( $this->author_a );
+		$this->enable_bridgy_fed_route();
+		$post_id = $this->create_subscription_post();
+		$mark_id = (int) rest_do_request( $this->request( 'POST', '/daymark/v1/subscription-posts/' . $post_id . '/like' ) )->get_data()['mark_id'];
+
+		update_post_meta( $mark_id, '_webmentioned', array( Daymark_Bridgy_Fed::TARGET ) );
+		update_post_meta( $mark_id, '_webmention_content_hash', 'abc' );
+
+		$this->assertSame( Daymark_Like_Delivery::STATE_SENT, Daymark_Like_Delivery::like_state( false, $mark_id, $this->permalink ) );
+	}
+
+	/** A site that isn't bridged never pings Bridgy Fed, so the same Like is refused. */
+	public function test_post_like_of_a_fediverse_origin_is_refused_when_not_bridged() {
+		wp_set_current_user( $this->author_a );
+		$this->activate_fake_webmention_plugin();
+		$this->seed_origin_signals( '', true );
+		$post_id = $this->create_subscription_post();
+
+		$response = rest_do_request( $this->request( 'POST', '/daymark/v1/subscription-posts/' . $post_id . '/like' ) );
+
+		$this->assertSame( 422, $response->get_status() );
+	}
+
+	/** A fediverse origin that also takes Webmentions gets the Like directly, not through Bridgy Fed too. */
+	public function test_fediverse_origin_with_webmention_is_not_sent_through_bridgy_fed() {
+		wp_set_current_user( $this->author_a );
+		update_option( Daymark_Bridgy_Fed::OPTION, '1' );
+		$this->activate_fake_webmention_plugin();
+		$this->seed_origin_signals( 'https://example.com/webmention', true );
+		$post_id = $this->create_subscription_post();
+
+		$mark_id = (int) rest_do_request( $this->request( 'POST', '/daymark/v1/subscription-posts/' . $post_id . '/like' ) )->get_data()['mark_id'];
+
+		$this->assertSame( '', get_post_meta( $mark_id, Daymark_Bridgy_Fed::META, true ) );
+		$this->assertSame( '', Daymark_Bridgy_Fed::markup( $mark_id ) );
+		$this->assertNotContains( Daymark_Bridgy_Fed::TARGET, ( new Daymark_Microformats() )->add_webmention_targets( array(), $mark_id ) );
+	}
+
+	/** Unchecking "bridged" later stops the link and the ping on existing Marks too. */
+	public function test_unbridging_stops_the_bridgy_fed_link() {
+		wp_set_current_user( $this->author_a );
+		$this->enable_bridgy_fed_route();
+		$post_id = $this->create_subscription_post();
+		$mark_id = (int) rest_do_request( $this->request( 'POST', '/daymark/v1/subscription-posts/' . $post_id . '/like' ) )->get_data()['mark_id'];
+
+		update_option( Daymark_Bridgy_Fed::OPTION, '' );
+
+		$this->assertSame( '', Daymark_Bridgy_Fed::markup( $mark_id ) );
 	}
 
 	/**

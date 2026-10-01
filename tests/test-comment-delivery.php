@@ -493,4 +493,36 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 		$this->assertSame( 'webmention', $first['method'] );
 		$this->assertSame( $first, $second );
 	}
+
+	/**
+	 * A fediverse post's page advertises its ActivityStreams object; the
+	 * signals record that (issue #441), and a Bluesky URL is recognized by
+	 * its host.
+	 */
+	public function test_origin_signals_detect_a_fediverse_object_and_bluesky(): void {
+		$permalink = 'https://social.example/@someone/112233';
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="alternate" type="application/activity+json" href="https://social.example/users/someone/statuses/112233"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$signals = Daymark_Comment_Delivery::origin_signals_for_url( $permalink );
+
+		$this->assertTrue( $signals['activitypub_object'] );
+		$this->assertFalse( $signals['bluesky'] );
+		$this->assertSame( '', $signals['webmention_endpoint'] );
+
+		$bluesky = 'https://bsky.app/profile/someone.example/post/3kabc';
+		$this->mock_response( $bluesky, '<html><head></head><body></body></html>', 200, array( 'content-type' => 'text/html' ) );
+
+		$this->assertTrue( Daymark_Comment_Delivery::origin_signals_for_url( $bluesky )['bluesky'] );
+	}
+
+	/** An unsafe or non-http(s) URL is refused before any fetch. */
+	public function test_origin_signals_for_url_refuses_an_unsafe_url(): void {
+		$this->assertWPError( Daymark_Comment_Delivery::origin_signals_for_url( 'ftp://origin.example/file' ) );
+		$this->assertWPError( Daymark_Comment_Delivery::origin_signals_for_url( 'http://127.0.0.1/admin' ) );
+	}
 }

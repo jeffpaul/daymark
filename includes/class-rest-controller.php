@@ -3307,11 +3307,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			: 0;
 
 		// Never create a local Like Mark nothing can deliver: without an
-		// ActivityPub or Webmention route (and with the Jetpack route
-		// unavailable or just failed), the origin's author would never see
-		// it. The client hides the icon on this code; the check is repeated
-		// here so it never has to be trusted.
-		if ( 0 === $outbox_id && ! $availability['webmention'] ) {
+		// ActivityPub, Webmention, or Bridgy Fed route (and with the Jetpack
+		// route unavailable or just failed), the origin's author would never
+		// see it. The client hides the icon on this code; the check is
+		// repeated here so it never has to be trusted. A Bridgy Fed Like is
+		// an ordinary Like Mark; Daymark_Bridgy_Fed marks it for Bridgy Fed
+		// when it's published.
+		if ( 0 === $outbox_id && ! $availability['webmention'] && ! $availability['bridgy_fed'] ) {
 			return new WP_Error(
 				'daymark_like_undeliverable',
 				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
