@@ -2956,8 +2956,18 @@ h2[tabindex='-1']:focus {
 	padding-left: calc(var(--daymark-tap-min) / 2 - 14px);
 }
 
-.daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish {
+.daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish--end,
+.daymark-screen:has(.daymark-recent__typeicon) > .daymark-timeline-flourish--start {
 	display: block;
+}
+
+/* The sunrise is a direct child of .daymark-screen (above Pending/Drafts
+   when those show), so the rail starts above the first section and the
+   Drafts/Pending lists' lines run on through the screen's section gap into
+   the Timeline's own, instead of breaking there. */
+.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-pending-list]:has(.daymark-recent__typeicon)::before,
+.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-drafts-list]:has(.daymark-recent__typeicon)::before {
+	bottom: calc(-1 * var(--daymark-spacing-lg));
 }
 
 /* Cancels .daymark-recent's own flex `gap` between each flourish and the
@@ -2975,7 +2985,9 @@ h2[tabindex='-1']:focus {
 	   contributor that fix didn't reach (this flourish sits above the
 	   pull-to-refresh indicator issue #213 already trimmed, not after it). */
 	margin-top: calc(-1 * var(--daymark-spacing-xs));
-	margin-bottom: calc(-1 * var(--daymark-spacing-sm));
+	/* Cancels .daymark-screen's section gap instead (this now sits directly
+	   in the screen, not in a .daymark-recent section). */
+	margin-bottom: calc(-1 * var(--daymark-spacing-lg) + var(--daymark-spacing-xs));
 }
 
 .daymark-timeline-flourish--end {
