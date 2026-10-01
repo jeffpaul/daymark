@@ -9829,7 +9829,10 @@
 					${
 						item.source_url
 							? `<a class="daymark-note-card__link" href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(
-									__('↗ View on network', 'daymark')
+									// A quote post is the quoter's own post, not a reply on a network.
+									'quote' === item.comment_kind
+										? __('↗ View their post', 'daymark')
+										: __('↗ View on network', 'daymark')
 							  )}</a>`
 							: ''
 					}

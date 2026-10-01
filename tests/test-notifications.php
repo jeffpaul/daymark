@@ -363,6 +363,101 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertNotContains( (int) $comment_id, $returned_ids, 'Normal post comment must not appear' );
 	}
 
+	/**
+	 * A quote post (a reblog with commentary, stored by the ActivityPub
+	 * plugin as a `quote` comment) appears as a conversation item labeled as
+	 * a quote, while plain likes and reposts stay out (issue #396 follow-up).
+	 */
+	public function test_quote_post_appears_labeled_as_a_quote() {
+		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $owner_id );
+
+		$post_id = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
+		update_post_meta( $post_id, '_daymark_primary_type', 'note' );
+
+		$quote_id = self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_type'     => 'quote',
+				'comment_content'  => 'This is exactly right.',
+				'comment_approved' => 1,
+			)
+		);
+		update_comment_meta( $quote_id, 'protocol', 'activitypub' );
+		update_comment_meta( $quote_id, 'source_url', 'https://social.example/@someone/1' );
+
+		$reply_id = self::factory()->comment->create( array( 'comment_post_ID' => $post_id ) );
+
+		foreach ( array( 'repost', 'like' ) as $type ) {
+			self::factory()->comment->create(
+				array(
+					'comment_post_ID' => $post_id,
+					'comment_type'    => $type,
+				)
+			);
+		}
+
+		$items = ( new Daymark_Notifications() )->get_notifications();
+		$by_id = array_column( $items, null, 'comment_ID' );
+
+		$this->assertCount( 2, $items, 'The quote and the reply; the repost and like stay out' );
+		$this->assertSame( 'comment', $by_id[ $quote_id ]['type'] );
+		$this->assertSame( 'quote', $by_id[ $quote_id ]['comment_kind'] );
+		$this->assertSame( 'fediverse', $by_id[ $quote_id ]['source'] );
+		$this->assertSame( 'Quoted your Mark on the Fediverse', $by_id[ $quote_id ]['source_label'] );
+		$this->assertSame( 'https://social.example/@someone/1', $by_id[ $quote_id ]['source_url'] );
+		$this->assertSame( 'reply', $by_id[ $reply_id ]['comment_kind'] );
+	}
+
+	/** A new quote post sets the unread flag, like a new reply. */
+	public function test_quote_post_counts_as_unread() {
+		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $owner_id );
+
+		$post_id = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
+		update_post_meta( $post_id, '_daymark_primary_type', 'note' );
+
+		$notifications = new Daymark_Notifications();
+		$this->assertFalse( $notifications->has_unread() );
+
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_type'     => 'quote',
+				'comment_approved' => 1,
+			)
+		);
+
+		$this->assertTrue( $notifications->has_unread() );
+	}
+
+	/** The Notifications screen's Reply works on a quote post, as on any reply. */
+	public function test_reply_to_a_quote_post_is_accepted() {
+		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $owner_id );
+
+		$post_id = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $post_id, '_daymark_is_mark', '1' );
+		update_post_meta( $post_id, '_daymark_primary_type', 'note' );
+		$quote_id = self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_type'     => 'quote',
+				'comment_approved' => 1,
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/notifications/' . $quote_id . '/reply' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'content', 'Thanks for sharing it.' );
+		$response = rest_do_request( $request );
+
+		$this->assertLessThan( 300, $response->get_status() );
+		$this->assertSame( 1, count( get_comments( array( 'parent' => $quote_id ) ) ) );
+	}
+
 	/** Scenario 7: mocked sync imports labeled comments and dedupes on repeat. */
 	public function test_import_responses_labels_and_dedupes() {
 		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );

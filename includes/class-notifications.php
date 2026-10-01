@@ -344,10 +344,12 @@ class Daymark_Notifications {
 			array(
 				'post__in' => $post_ids,
 				'status'   => 'approve',
-				// Replies only: federation plugins (ATmosphere, Webmention)
-				// also store likes/reposts as comments with their own
-				// comment types — reactions are not notification items.
-				'type'     => 'comment',
+				// Replies, plus quote posts (issue #396 follow-up): a reblog
+				// with commentary, which the ActivityPub plugin stores as a
+				// `quote` comment holding the quoter's own words. Plain
+				// likes and reposts carry no text, so they stay out — they
+				// show only as counts on the Mark.
+				'type'     => array( 'comment', 'quote' ),
 				'number'   => $limit,
 				'orderby'  => 'comment_date_gmt',
 				'order'    => 'DESC',
@@ -392,6 +394,17 @@ class Daymark_Notifications {
 			}
 		}
 
+		// A quote post reads like a reply but isn't one: label it as what
+		// it is, keeping the network the federation detection found.
+		$is_quote = 'quote' === $comment->comment_type;
+
+		if ( $is_quote ) {
+			$source_label = 'fediverse' === $source
+				? __( 'Quoted your Mark on the Fediverse', 'daymark' )
+				: __( 'Quoted your Mark', 'daymark' );
+			$is_imported  = true;
+		}
+
 		$author = $is_imported && '' !== $external_author
 			? $external_author
 			: $comment->comment_author;
@@ -417,6 +430,10 @@ class Daymark_Notifications {
 			'comment_date_relative' => $relative,
 			'comment_author'        => sanitize_text_field( $author ),
 			'is_imported'           => $is_imported,
+			// 'quote' for a quote post (a reblog with commentary), else
+			// 'reply'. The item stays type 'comment' so it groups, filters,
+			// and takes a Reply exactly like any other conversation item.
+			'comment_kind'          => $is_quote ? 'quote' : 'reply',
 			'source'                => $source,
 			'source_label'          => $is_imported && '' !== $source_label
 				? sanitize_text_field( $source_label )

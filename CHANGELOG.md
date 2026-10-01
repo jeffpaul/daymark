@@ -33,6 +33,7 @@ can't act on them.
 ### Changed
 
 - The Reblog screen now asks for your own words first: it opens with the cursor in "Your thoughts", says why a line of commentary helps, and if you leave it empty asks once before reblogging anyway. ([#396](https://github.com/jeffpaul/daymark/issues/396))
+- Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words and a Reply button. ([#396](https://github.com/jeffpaul/daymark/issues/396))
 
 ### Fixed
 
