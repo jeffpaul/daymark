@@ -293,6 +293,10 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    isn't obvious.
 5. **Update docs** (`README.md`, `readme.txt`, and this file) when you
    change user-facing behavior or the development workflow.
+   If you add a new Mark type or Featured Content kind, also add a sample
+   of it to `.github/blueprints/seed-sample-content.php` so reviewers can
+   try it in the pull request's Playground preview (sample photos live in
+   `.github/blueprints/sample-images/`).
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
    permanent git history. Say what changed and why, and delete the
