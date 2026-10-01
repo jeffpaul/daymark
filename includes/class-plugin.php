@@ -143,6 +143,14 @@ final class Daymark_Plugin {
 	public Daymark_Featured_Content $featured_content;
 
 	/**
+	 * Featured Content share image/description for oEmbed and Open Graph
+	 * (issue #408).
+	 *
+	 * @var Daymark_Featured_Content_Social
+	 */
+	public Daymark_Featured_Content_Social $featured_content_social;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -293,6 +301,7 @@ final class Daymark_Plugin {
 		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
 		$this->activitypub_engagement       = new Daymark_ActivityPub_Engagement();
 		$this->featured_content             = new Daymark_Featured_Content();
+		$this->featured_content_social      = new Daymark_Featured_Content_Social();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -384,6 +393,7 @@ final class Daymark_Plugin {
 		$this->jetpack_engagement->register();
 		$this->activitypub_engagement->register();
 		$this->featured_content->register();
+		$this->featured_content_social->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
