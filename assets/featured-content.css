@@ -31,6 +31,20 @@
 	outline-offset: 2px;
 }
 
+/* Once enhanced, a horizontal swipe or click-drag changes slides: leave
+   vertical panning to the browser (touch-action) and stop the browser's own
+   image drag-and-drop ghost and text selection from fighting the drag. */
+.daymark-fc-gallery.is-enhanced {
+	touch-action: pan-y;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.daymark-fc-gallery.is-enhanced .daymark-fc-gallery__img {
+	-webkit-user-drag: none;
+	cursor: grab;
+}
+
 .daymark-fc-gallery__img {
 	display: block;
 	width: 100%;

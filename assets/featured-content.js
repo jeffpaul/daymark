@@ -87,39 +87,64 @@
 			}
 		} );
 
+		// Swipe or click-drag, through pointer events so a finger, a pen, and
+		// a mouse all share one path. The prev/next/dot buttons keep their
+		// own click handling, so a press that starts on one is ignored here.
+		// A mouse drag that moves far enough to count as a swipe also eats
+		// the click that follows it, so letting go over a link or button
+		// never activates it.
+		var swallowClick = false;
+
+		root.addEventListener( 'pointerdown', function ( event ) {
+			if ( ( 'mouse' === event.pointerType && 0 !== event.button ) || ( event.target.closest && event.target.closest( 'button' ) ) ) {
+				return;
+			}
+
+			startX = event.clientX;
+			startY = event.clientY;
+			swallowClick = false;
+
+			// Keep receiving the drag's pointerup even if the pointer is
+			// released outside the gallery.
+			try {
+				root.setPointerCapture( event.pointerId );
+			} catch ( err ) {
+				// Unsupported: the drag just ends when it leaves the gallery.
+			}
+		} );
+
+		function endDrag( event ) {
+			if ( null === startX ) {
+				return;
+			}
+
+			var dx = event.clientX - startX;
+			var dy = event.clientY - startY;
+
+			startX = null;
+			startY = null;
+
+			if ( 'pointercancel' === event.type || Math.abs( dx ) < SWIPE_MIN || Math.abs( dx ) < Math.abs( dy ) ) {
+				return;
+			}
+
+			swallowClick = true;
+			show( dx < 0 ? index + 1 : index - 1 );
+		}
+
+		root.addEventListener( 'pointerup', endDrag );
+		root.addEventListener( 'pointercancel', endDrag );
+
 		root.addEventListener(
-			'touchstart',
+			'click',
 			function ( event ) {
-				if ( ! event.changedTouches || ! event.changedTouches[ 0 ] ) {
-					return;
+				if ( swallowClick ) {
+					swallowClick = false;
+					event.preventDefault();
+					event.stopPropagation();
 				}
-
-				startX = event.changedTouches[ 0 ].clientX;
-				startY = event.changedTouches[ 0 ].clientY;
 			},
-			{ passive: true }
-		);
-
-		root.addEventListener(
-			'touchend',
-			function ( event ) {
-				if ( null === startX || ! event.changedTouches || ! event.changedTouches[ 0 ] ) {
-					return;
-				}
-
-				var dx = event.changedTouches[ 0 ].clientX - startX;
-				var dy = event.changedTouches[ 0 ].clientY - startY;
-
-				startX = null;
-				startY = null;
-
-				if ( Math.abs( dx ) < SWIPE_MIN || Math.abs( dx ) < Math.abs( dy ) ) {
-					return;
-				}
-
-				show( dx < 0 ? index + 1 : index - 1 );
-			},
-			{ passive: true }
+			true
 		);
 	}
 
