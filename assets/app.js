@@ -5064,6 +5064,7 @@
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
 					<span class="daymark-spinner" aria-hidden="true"></span>
 				</div>
+				${timelineStartFlourish()}
 				<section class="daymark-recent" data-pending-section hidden aria-labelledby="daymark-pending-heading">
 					<h2 id="daymark-pending-heading" class="daymark-section-heading">${esc(__('Pending', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-pending-list></div>
@@ -5075,7 +5076,6 @@
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
-					${timelineStartFlourish()}
 					<div class="daymark-recent__list" data-recent-list aria-live="polite">
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading your timeline', 'daymark'))}</span>
