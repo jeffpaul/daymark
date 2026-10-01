@@ -8084,6 +8084,10 @@
 			: 'article';
 	}
 
+	// The Featured Content kinds that carry media of their own and so replace a
+	// card's media slot (see mediaKindForItem()).
+	const FEATURED_MEDIA_KINDS = ['audio', 'video', 'gallery'];
+
 	// The card-media kind to actually render, once a Mark's own Featured
 	// Content (issue #401) and — for a Check In specifically (issue #424) —
 	// its own optional attached photo/video are taken into account.
@@ -8105,10 +8109,13 @@
 	// Pisa!" renders as a real photo, not an empty checkin card. A gallery
 	// Featured Content passes through as the 'gallery' kind and renders as a
 	// small image grid (renderFeaturedGalleryGrid()); quote/link Featured
-	// Content aren't handled yet — they get their own card treatment when
-	// those later phases ship.
+	// Content don't change the media slot at all — the Mark keeps its own
+	// card kind (see FEATURED_MEDIA_KINDS).
 	function mediaKindForItem(item, kind) {
-		if (item.featured_content && item.featured_content.type) {
+		// Only the media kinds replace the card's own kind: a quote or link
+		// Featured Content has no media of its own, and letting it override
+		// would strip an image Mark's photo banner down to a small thumbnail.
+		if (item.featured_content && FEATURED_MEDIA_KINDS.includes(item.featured_content.type)) {
 			return item.featured_content.type;
 		}
 		if ('checkin' === kind && item.media_kind) {
