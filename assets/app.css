@@ -2913,7 +2913,7 @@ h2[tabindex='-1']:focus {
 .daymark-recent__groupheader {
 	position: relative;
 	margin: var(--daymark-spacing-md) 0 0;
-	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 28px + var(--daymark-spacing-sm));
+	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 	background: var(--daymark-bg);
 }
 
@@ -2926,7 +2926,7 @@ h2[tabindex='-1']:focus {
 	   headers only ever render on Home's own Timeline (renderFeedItemsWithGroups()),
 	   which always has a leading site icon (see the flourish's own comment
 	   below), so this never needs the Drafts-style no-site-icon offset. */
-	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
+	left: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 }
@@ -2950,9 +2950,10 @@ h2[tabindex='-1']:focus {
    row (a Mark's own, or a subscribed site's), so — unlike the rail
    itself — there's no Drafts-style "no site icon column" case to also
    account for here. */
+/* 28px-wide SVG, centered on the rail at half the leading column's width. */
 .daymark-timeline-flourish {
 	display: none;
-	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
+	padding-left: calc(var(--daymark-tap-min) / 2 - 14px);
 }
 
 .daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish {

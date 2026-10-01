@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon.
+
 ## [0.18.0] - 2026-09-30
 
 ### Added
