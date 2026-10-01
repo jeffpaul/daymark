@@ -68,6 +68,7 @@ class Daymark_Microformats {
 		add_filter( 'post_class', array( $this, 'h_entry_class' ), 10, 3 );
 		add_filter( 'the_title', array( $this, 'wrap_title' ), 10, 2 );
 		add_filter( 'the_content', array( $this, 'append_entry_markup' ), 8 );
+		add_filter( 'webmention_links', array( $this, 'add_webmention_targets' ), 10, 2 );
 
 		add_action( 'show_user_profile', array( $this, 'render_rel_me_field' ) );
 		add_action( 'edit_user_profile', array( $this, 'render_rel_me_field' ) );
@@ -323,6 +324,66 @@ class Daymark_Microformats {
 	 */
 	public function like_markup( int $post_id ): string {
 		return $this->target_url_markup( $post_id, '_daymark_like_of', 'u-like-of' );
+	}
+
+	/**
+	 * Make the Webmention plugin actually notify a Mark's reply/repost/like
+	 * target.
+	 *
+	 * The plugin's sender only pings URLs it extracts from the post's raw
+	 * `post_content`, plus whatever the `webmention_links` filter adds
+	 * (confirmed against pfefferle/wordpress-webmention's
+	 * `Sender::send_webmentions()`). The target link this class renders as
+	 * `u-in-reply-to`/`u-repost-of`/`u-like-of` is appended at display time
+	 * (append_entry_markup()), never saved into `post_content` — and a Like
+	 * Mark's content is just `Liked "Title"`, a Comment Mark's is just the
+	 * comment text — so without this, the plugin found nothing to ping and
+	 * no like or reply ever reached the origin.
+	 *
+	 * The one exception: a like/repost target an ActivityPub `Like`/
+	 * `Announce` was already queued for (issue #439,
+	 * Daymark_ActivityPub_Engagement::suppressed_webmention_target()) is not
+	 * added, and is removed if the plugin extracted it from the content
+	 * itself (a Reblog Mark's quote links the reposted post) — so an origin
+	 * running both ActivityPub and Webmention receives one Like, not two.
+	 * The filter's return value is the full target list the sender pings, so
+	 * removing a URL here is enough to stop that one Webmention; any other
+	 * link in the Mark still gets its own.
+	 *
+	 * @param string[] $urls    URLs the plugin already extracted.
+	 * @param int      $post_id Post being sent.
+	 * @return string[]
+	 */
+	public function add_webmention_targets( $urls, $post_id ): array {
+		$urls    = is_array( $urls ) ? $urls : array();
+		$post_id = (int) $post_id;
+
+		if ( '1' !== (string) get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+			return $urls;
+		}
+
+		$suppressed = untrailingslashit( Daymark_ActivityPub_Engagement::suppressed_webmention_target( $post_id ) );
+
+		foreach ( array( '_daymark_in_reply_to', '_daymark_repost_of', '_daymark_like_of' ) as $meta_key ) {
+			$target = esc_url_raw( (string) get_post_meta( $post_id, $meta_key, true ) );
+
+			if ( '' !== $target && ! in_array( $target, $urls, true ) ) {
+				$urls[] = $target;
+			}
+		}
+
+		if ( '' === $suppressed ) {
+			return $urls;
+		}
+
+		return array_values(
+			array_filter(
+				$urls,
+				static function ( $url ) use ( $suppressed ) {
+					return untrailingslashit( (string) $url ) !== $suppressed;
+				}
+			)
+		);
 	}
 
 	/**

@@ -203,6 +203,31 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
+					// Issue #293 Search date filter — `after`/`before` are purely
+					// additive to the params above (omitted means "no bound").
+					'after'           => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: omitting the param entirely skips
+						// the date-time validation against '' which would
+						// fail on every request.  get_timeline() treats a
+						// missing/empty value as "no lower bound".
+					),
+					'before'          => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: see 'after' note above.
+					),
+					// "On this day" (Memories, issue #294): restrictions
+					// replicate `mine` (Marks only, subscription posts
+					// skipped entirely) and narrow the Marks query to the
+					// same calendar month and day as today in any prior
+					// year — see get_timeline()'s own docblock.
+					'on_this_day'     => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -355,10 +380,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'featured_content_oembed' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'url' => array(
+					'url'     => array(
 						'type'              => 'string',
 						'required'          => true,
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					'post_id' => array(
+						'type'              => 'integer',
+						'required'          => false,
+						'sanitize_callback' => 'absint',
 					),
 				),
 			)
@@ -505,7 +535,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				array(
 					'methods'             => WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_subscription' ),
-					'permission_callback' => array( $this, 'permissions_check' ),
+					'permission_callback' => array( $this, 'permissions_check_manage' ),
 					'args'                => array(
 						'site_url' => array(
 							'type'              => 'string',
@@ -528,7 +558,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::DELETABLE,
 				'callback'            => array( $this, 'delete_subscription' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 				'args'                => array(
 					'id' => array(
 						'type'              => 'integer',
@@ -562,7 +592,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'export_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -572,7 +602,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'import_subscriptions_opml' ),
-				'permission_callback' => array( $this, 'permissions_check' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
 			)
 		);
 
@@ -655,6 +685,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_subscription_post_comment_target' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/like-availability',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_like_availability' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
 					'id' => array(
@@ -855,6 +902,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		if ( ! current_user_can( 'edit_posts' ) ) {
+			return new WP_Error(
+				'rest_forbidden',
+				__( 'Insufficient permissions.', 'daymark' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Permission check for the routes that change site-wide subscription
+	 * settings: the same nonce and `edit_posts` gate as permissions_check(),
+	 * plus the capability Settings -> Daymark itself requires
+	 * (Daymark_Admin_Subscriptions::CAPABILITY), so a REST call can never do
+	 * what that screen would refuse.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return true|WP_Error
+	 */
+	public function permissions_check_manage( WP_REST_Request $request ) {
+		$allowed = $this->permissions_check( $request );
+
+		if ( is_wp_error( $allowed ) ) {
+			return $allowed;
+		}
+
+		if ( ! current_user_can( Daymark_Admin_Subscriptions::CAPABILITY ) ) {
 			return new WP_Error(
 				'rest_forbidden',
 				__( 'Insufficient permissions.', 'daymark' ),
@@ -1192,6 +1267,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * own bookmarked filter). If both `mine` and `subscription_id` are set,
 	 * `mine` wins and `subscription_id` is ignored.
 	 *
+	 * Two more optional filter params, the Search date filter (issue #293):
+	 * `after`/`before` (an inclusive publication datetime window, REST format
+	 * 'date-time' — over post_date for Marks, over the subscription post's own
+	 * `published_at` meta otherwise). An omitted bound means "no bound"; core
+	 * validates the datetime shape itself, via the 'date-time' format.
+	 *
+	 * One more optional param, "On this day" (issue #294): `on_this_day`
+	 * (boolean). Marks only and subscription posts skipped entirely,
+	 * exactly like `mine`; the Marks query narrows to the same calendar
+	 * month and day as today in any prior year via a date_query clause
+	 * over post_date (`month`/`day` with an exclusive `before` bound at
+	 * local midnight today, all from wp_date() so the comparison stays in
+	 * the site's own timezone). Today's own Marks are excluded by that
+	 * bound; a leap-day query degrades to empty on non-leap prior years.
+	 * Purely additive to every filter above — combining it with an
+	 * explicit `after`/`before` window ANDs both date clauses.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -1207,6 +1299,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
 		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
+
+		// Issue #293 Search date filter:
+		// after / before — an inclusive publication datetime window
+		// (REST format 'date-time', so core validates the shape
+		// before this method runs). Normalized to MySQL
+		// 'Y-m-d H:i:s' for both branches: the Marks side uses
+		// a real WP date_query over post_date, the
+		// subscription-posts side a meta range over its own
+		// `published_at` (that source's real publication time,
+		// per the existing sort below).
+		$after  = (string) $request->get_param( 'after' );
+		$before = (string) $request->get_param( 'before' );
+
+		// "On this day" (Memories, issue #294): true restricts the whole
+		// Timeline to Marks published on today's calendar date in a prior
+		// year. Forces the Marks-only skip below exactly like `mine`, and
+		// adds a date_query clause over post_date — see the marks-query
+		// section further down.
+		$on_this_day = rest_sanitize_boolean( $request->get_param( 'on_this_day' ) );
+
+		// datetime-window bounds normalized once so both branches compare
+		// the same values against their own date source. REST core has
+		// already validated the date-time shape, so strtotime() can be
+		// trusted to parse (a genuinely unparseable value would have been
+		// rejected at the arg-validation layer).
+		$after_mysql  = '' !== $after ? gmdate( 'Y-m-d H:i:s', strtotime( $after ) ) : '';
+		$before_mysql = '' !== $before ? gmdate( 'Y-m-d H:i:s', strtotime( $before ) ) : '';
 
 		// Bookmarks live in user meta, not post meta, so there's no
 		// meta_query to add — resolve the current user's bookmarked IDs
@@ -1227,8 +1346,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// `mine` takes precedence over `subscription_id` when both are set:
 		// Marks only, subscription posts skipped entirely either way.
-		$include_marks              = $mine || 0 === $subscription_id;
-		$include_subscription_posts = ! $mine;
+		// `on_this_day` (a prior-year post has no subscription-post equivalent, so "On this day" is Marks-only by
+		// construction) force the same skip — structurally, a subscription
+		// post can never match it, so querying that side would only ever
+		// return noise.
+		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
+		$include_subscription_posts = ! $mine && ! $on_this_day;
 
 		$items = array();
 
@@ -1294,6 +1417,39 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$marks_args['post__in'] = $bookmarked_post_in;
 			}
 
+			// Inclusive single-column window over post_date: "after This
+			// Week" should keep a Mark published exactly at the window's
+			// boundary, matching how the calendar reads in the app shell.
+			$marks_window = array( 'inclusive' => true );
+			if ( '' !== $after_mysql ) {
+				$marks_window['after'] = $after_mysql;
+			}
+			if ( '' !== $before_mysql ) {
+				$marks_window['before'] = $before_mysql;
+			}
+
+			// "On this day" (Memories, issue #294): the same calendar month
+			// and day as today in any prior year. The clause uses `month`/
+			// `day` with no `year` and an exclusive `before` bound at local
+			// midnight today, so only strictly-earlier same-date Marks match
+			// (today's own are excluded). `post_date` is stored in the
+			// site's own configured timezone, so wp_date() — which applies
+			// that same timezone — supplies the month/day and the bound,
+			// keeping "this day" aligned with what the author sees on their
+			// own calendar. A leap-day query (Feb 29) degrades naturally to
+			// empty on non-leap prior years, since no row ever matches.
+			if ( $on_this_day ) {
+				$marks_window['month']  = (int) wp_date( 'n' );
+				$marks_window['day']    = (int) wp_date( 'j' );
+				$marks_window['before'] = wp_date( 'Y-m-d 00:00:00' );
+			}
+
+			// With both an explicit after/before window and `on_this_day`
+			// set, both clauses AND together on the same post_date column.
+			if ( count( $marks_window ) > 1 ) {
+				$marks_args['date_query'] = array( $marks_window );
+			}
+
 			$marks_query = new WP_Query( $marks_args );
 
 			foreach ( $marks_query->posts as $post ) {
@@ -1345,6 +1501,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$subscription_meta_conditions[] = array(
 					'key'   => 'post_format',
 					'value' => $type,
+				);
+			}
+
+			// published_at range: a single bound is a >= / <= comparison, a
+			// bracket is a BETWEEN; either way the DATETIME cast makes the
+			// string comparison safe. The bounds were already normalized to
+			// the meta value's own 'Y-m-d H:i:s' GMT shape above.
+			if ( '' !== $after_mysql && '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => array( $after_mysql, $before_mysql ),
+					'compare' => 'BETWEEN',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $after_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $after_mysql,
+					'compare' => '>=',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $before_mysql,
+					'compare' => '<=',
+					'type'    => 'DATETIME',
 				);
 			}
 
@@ -1628,7 +1811,21 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response( array( 'embed' => null ) );
 		}
 
-		$embed = Daymark_Subscription_Oembed::resolve( $url );
+		// Preview under the same rule the front end will render by: discovery
+		// depends on the post's author, so an Editor previewing an Author's
+		// post must see what that post will really show. With no post given
+		// (or one the caller cannot edit), the caller's own rights apply.
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		$post    = $post_id ? get_post( $post_id ) : null;
+
+		if ( $post instanceof WP_Post && current_user_can( 'edit_post', $post->ID ) ) {
+			$user_id = (int) $post->post_author;
+		} else {
+			$post    = null;
+			$user_id = get_current_user_id();
+		}
+
+		$embed = Daymark_Subscription_Oembed::resolve( $url, Daymark_Featured_Content::oembed_discovery_allowed( $user_id, $post ) );
 
 		return rest_ensure_response(
 			array(
@@ -2054,12 +2251,39 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// apply_filters( 'the_content' ) below does not enforce a post
+		// password the way a front-end template does, so without this any
+		// Author or Contributor could read the full body of a protected post
+		// (someone else's, or one the site owner deliberately locked).
+		// Whoever can edit the post can already read it, so they are exempt.
+		if ( post_password_required( $post ) && ! current_user_can( 'edit_post', $post->ID ) ) {
+			return new WP_Error(
+				'daymark_password_protected',
+				__( 'This post is password protected.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 
+		// A Mark's content is written by whichever user published it, and
+		// wp_kses_post() keeps `class`, so an Author could otherwise give a
+		// post `class="daymark-sheet"` and have it render as a fixed,
+		// full-screen layer over an Editor's app. Any `daymark-` class is
+		// dropped except the two the Check In map preview legitimately emits
+		// (Daymark_Publisher::build_map_preview_block()); inline styles stay,
+		// since that map's pin is positioned with one and block-editor
+		// content uses them for ordinary spacing and color.
+		$content = Daymark_Subscription_Poller::strip_untrusted_presentation(
+			wp_kses_post( $content ),
+			false,
+			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
+		);
+
 		return rest_ensure_response(
 			array(
-				'content' => wp_kses_post( $content ),
+				'content' => $content,
 			)
 		);
 	}
@@ -2104,15 +2328,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * scoped narrower: a Mark has no `permalink` post meta to engage with in
 	 * the first place, so it's excluded here rather than silently no-op'd.
 	 *
-	 * @param int $post_id Post ID.
+	 * Every /subscription-posts/{id} route calls this before reading any
+	 * meta or post field off the ID: without it, an Author-level caller
+	 * could pass any post's ID (another author's draft, a private page) and
+	 * get its title and excerpt back through a route meant only for cached
+	 * subscription posts.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $code    Error code to return when the check fails; a route
+	 *                        that already had its own 404 code keeps it.
 	 * @return true|WP_Error
 	 */
-	private function assert_subscription_post( int $post_id ) {
+	private function assert_subscription_post( int $post_id, string $code = 'daymark_not_found' ) {
 		$post = get_post( $post_id );
 
 		if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status || Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type ) {
 			return new WP_Error(
-				'daymark_not_found',
+				$code,
 				__( 'Post not found.', 'daymark' ),
 				array( 'status' => 404 )
 			);
@@ -2753,7 +2985,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id      = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id, 'daymark_subscription_post_not_found' );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
 		$refresh = rest_sanitize_boolean( $request->get_param( 'refresh' ) );
 
 		$content_state = get_post_meta( $id, 'content_state', true );
@@ -2772,7 +3010,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// Already wp_kses_post()-sanitized by the poller; trusted raw
 				// HTML meant to be rendered as-is by the app shell, same as
 				// post_content elsewhere in this codebase — not re-escaped here.
-				'body_content' => (string) get_post_meta( $id, 'body_content', true ),
+				// Inline `style` attributes are stripped again on the way out
+				// (not only when the poller stores it) so a body cached before
+				// that stripping existed can't still reach the app shell with
+				// a remote site's own CSS in it.
+				'body_content' => Daymark_Subscription_Poller::strip_untrusted_presentation( (string) get_post_meta( $id, 'body_content', true ) ),
 			)
 		);
 
@@ -2812,7 +3054,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id       = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$link_url = (string) get_post_meta( $id, 'link_url', true );
 
 		$preview = array();
@@ -2864,7 +3111,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id     = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$text   = (string) $request->get_param( 'text' );
 		$result = Daymark_Comment_Delivery::deliver( $id, $text );
 
@@ -2872,12 +3124,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
+		$method  = sanitize_key( (string) ( $result['method'] ?? '' ) );
+		$mark_id = absint( $result['mark_id'] ?? 0 );
+
+		// Whether it actually reached the origin, where knowable: a Jetpack
+		// API call that returned is delivered; a Webmention-route Mark's
+		// state comes from the Webmention plugin's own meta. A native REST
+		// comment's own `status` already says so, so nothing extra here.
+		$delivery = '';
+
+		if ( 'jetpack' === $method ) {
+			$delivery = Daymark_Like_Delivery::STATE_SENT;
+		} elseif ( 'webmention' === $method && $mark_id > 0 ) {
+			$delivery = Daymark_Like_Delivery::webmention_state( $mark_id, esc_url_raw( (string) get_post_meta( $id, 'permalink', true ) ) );
+		}
+
 		return rest_ensure_response(
 			array(
-				'method'  => sanitize_key( (string) ( $result['method'] ?? '' ) ),
-				'status'  => sanitize_key( (string) ( $result['status'] ?? '' ) ),
-				'message' => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
-				'mark_id' => absint( $result['mark_id'] ?? 0 ),
+				'method'   => $method,
+				'status'   => sanitize_key( (string) ( $result['status'] ?? '' ) ),
+				'message'  => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
+				'mark_id'  => $mark_id,
+				'delivery' => $delivery,
 			)
 		);
 	}
@@ -2910,7 +3178,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$id     = absint( $request->get_param( 'id' ) );
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
 		$target = Daymark_Comment_Delivery::resolve_comment_target( $id );
 
 		if ( is_wp_error( $target ) ) {
@@ -2921,6 +3194,52 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'method' => sanitize_key( (string) ( $target['method'] ?? '' ) ),
 				'url'    => esc_url_raw( (string) ( $target['url'] ?? '' ) ),
+			)
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/like-availability — whether a
+	 * Like on this post can actually reach its origin (Jetpack-native, an
+	 * ActivityPub Like through the ActivityPub plugin, or a Webmention the
+	 * local Webmention plugin will send to an endpoint the origin
+	 * advertises). The Timeline summary only ever reports a cached
+	 * answer (`like_available`, null when unknown); the client calls this to
+	 * resolve an unknown card lazily, and hides the Like icon on `false`.
+	 *
+	 * Rate-limited only when it would make an outbound request: a cached
+	 * answer (or "no mechanism exists at all", which needs no request) is
+	 * returned free, so resolving a page of already-looked-up cards never
+	 * spends the ACTION_SUBSCRIPTION_POST_FETCH budget click-throughs and the
+	 * comment-target pre-check share.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_like_availability( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+
+		if ( null === Daymark_Like_Delivery::cached_availability( $permalink ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		$result = Daymark_Like_Delivery::resolve( $post_id );
+
+		return rest_ensure_response(
+			array(
+				'available' => (bool) $result['available'],
+				'method'    => sanitize_key( $result['method'] ),
 			)
 		);
 	}
@@ -2957,8 +3276,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $check;
 		}
 
-		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
-		$jetpack   = '' !== $permalink ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
+		$permalink    = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$availability = Daymark_Like_Delivery::resolve( $post_id );
+		$jetpack      = '' !== $permalink && $availability['jetpack'] ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
 
 		if ( null !== $jetpack ) {
 			return $jetpack;
@@ -2969,10 +3289,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		if ( $existing > 0 ) {
 			return rest_ensure_response(
 				array(
-					'method'  => 'classic',
-					'liked'   => true,
-					'mark_id' => $existing,
+					'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
+					'liked'    => true,
+					'mark_id'  => $existing,
+					'delivery' => Daymark_Like_Delivery::like_state( false, $existing, $permalink ),
 				)
+			);
+		}
+
+		// ActivityPub route (issue #439): queue a real `Like` through the
+		// ActivityPub plugin's outbox. The local Like Mark is still published
+		// below (the liked-state UI reads it), but its Webmention is
+		// suppressed so the origin receives exactly one Like. 0 when the
+		// route isn't available or the queue failed — then Webmention alone.
+		$outbox_id = '' !== $permalink && $availability['activitypub']
+			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
+			: 0;
+
+		// Never create a local Like Mark nothing can deliver: without an
+		// ActivityPub or Webmention route (and with the Jetpack route
+		// unavailable or just failed), the origin's author would never see
+		// it. The client hides the icon on this code; the check is repeated
+		// here so it never has to be trusted.
+		if ( 0 === $outbox_id && ! $availability['webmention'] ) {
+			return new WP_Error(
+				'daymark_like_undeliverable',
+				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
+				array( 'status' => 422 )
 			);
 		}
 
@@ -2994,14 +3337,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		);
 
 		if ( is_wp_error( $mark_id ) ) {
+			// Don't leave a queued Like with no local record to undo it from.
+			if ( $outbox_id > 0 ) {
+				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
+			}
+
 			return $mark_id;
+		}
+
+		if ( $outbox_id > 0 ) {
+			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
 		}
 
 		return rest_ensure_response(
 			array(
-				'method'  => 'classic',
-				'liked'   => true,
-				'mark_id' => $mark_id,
+				'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
+				'liked'    => true,
+				'mark_id'  => $mark_id,
+				'delivery' => Daymark_Like_Delivery::like_state( false, (int) $mark_id, $permalink ),
 			)
 		);
 	}
@@ -3059,6 +3412,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
 		$existing  = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
 
+		// Trashing the Mark also queues an ActivityPub `Undo` when it
+		// carried a queued Like (Daymark_ActivityPub_Engagement::maybe_undo()
+		// on `trashed_post`), so every route is undone from this one call.
 		if ( $existing > 0 ) {
 			wp_trash_post( $existing );
 		}
@@ -3105,8 +3461,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		return rest_ensure_response(
 			array(
-				'method' => 'jetpack',
-				'liked'  => true,
+				'method'   => 'jetpack',
+				'liked'    => true,
+				'delivery' => Daymark_Like_Delivery::STATE_SENT,
 			)
 		);
 	}
@@ -3161,11 +3518,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return array<string, mixed>
 	 */
 	private function prepare_subscription_post_summary( int $post_id ): array {
-		$subscription_id = absint( get_post_meta( $post_id, 'subscription_id', true ) );
-		$subscription    = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
-		$content_state   = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
-		$published_at    = (string) get_post_meta( $post_id, 'published_at', true );
-		$permalink       = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$subscription_id   = absint( get_post_meta( $post_id, 'subscription_id', true ) );
+		$subscription      = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
+		$content_state     = sanitize_key( (string) get_post_meta( $post_id, 'content_state', true ) );
+		$published_at      = (string) get_post_meta( $post_id, 'published_at', true );
+		$permalink         = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$user_id           = get_current_user_id();
+		$replied_mark_id   = $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink );
+		$liked_mark_id     = $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink );
+		$jetpack_liked     = Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id );
+		$jetpack_commented = Daymark_Jetpack_Engagement::is_commented( $user_id, $post_id );
 
 		return array(
 			// Discriminator field a Timeline consumer branches on, mirroring
@@ -3225,16 +3587,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// a reliable like/repost count for someone else's post), so this
 			// is the buildable fallback: Daymark's own record of the user's
 			// own engagement, not the origin site's real totals.
-			'replied_mark_id'    => $this->find_own_mark_id_by_target_url( '_daymark_in_reply_to', $permalink ),
-			'liked_mark_id'      => $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ),
+			'replied_mark_id'    => $replied_mark_id,
+			'liked_mark_id'      => $liked_mark_id,
 			'reposted_mark_id'   => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
 			// Jetpack-native equivalents of the two fields above (issue #391)
 			// — set only when the Like/Comment was delivered directly to
 			// WordPress.com's own API rather than via a local Mark, so
 			// there's no Mark ID to key off of the way the classic path's
 			// own fields do.
-			'jetpack_liked'      => Daymark_Jetpack_Engagement::is_liked( get_current_user_id(), $post_id ),
-			'jetpack_commented'  => Daymark_Jetpack_Engagement::is_commented( get_current_user_id(), $post_id ),
+			'jetpack_liked'      => $jetpack_liked,
+			'jetpack_commented'  => $jetpack_commented,
+			// Whether a Like can reach this post's origin at all (see
+			// Daymark_Like_Delivery). Cache-only, never a live fetch during
+			// a Timeline request: false when no mechanism exists, null when
+			// the origin hasn't been looked up yet (the client resolves it
+			// via GET .../like-availability), else the cached answer.
+			'like_available'     => Daymark_Like_Delivery::cached_availability( $permalink ),
+			// Whether this user's own Like/Comment actually reached the
+			// origin: pending|sent|failed|not_sent, '' when there's nothing
+			// (or, for a native REST comment, nothing recorded) to report.
+			'like_delivery'      => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
+			'comment_delivery'   => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
 		);
 	}
 
@@ -3259,7 +3632,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$found = get_posts(
 			array(
-				'post_type'      => 'post',
+				// Both types: a Like Mark lives on its own post type (see
+				// Daymark_Like_Visibility::POST_TYPE); a legacy one may not
+				// have been migrated off 'post' yet.
+				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
 				'post_status'    => array( 'publish', 'draft' ),
 				'author'         => get_current_user_id(),
 				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
@@ -3314,7 +3690,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
-			'like_count'         => $this->count_comments_of_type( $post_id, 'like' ),
+			// Federation-plugin likes (stored as comments) plus WordPress.com
+			// likes, which Jetpack keeps off-site — see
+			// Daymark_Jetpack_Engagement::sync_own_likes().
+			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
+				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
 			// Only the federation plugins (ActivityPub/ATmosphere/Webmention)
 			// ever write a 'repost' comment_type today — see issue #41 for the
 			// cross-plugin confirmation. A polling connector's own reactions
@@ -3345,7 +3725,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		$location = json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true );
 
-		if ( is_array( $location ) && isset( $location['lat'], $location['lng'] ) && is_numeric( $location['lat'] ) && is_numeric( $location['lng'] ) ) {
+		// A Mark's quietly captured coordinates go only to someone who can
+		// edit it (the Privacy tab tells the site owner this location "stays
+		// visible only to you"); the Timeline is shared, so without this every
+		// Author saw every other user's exact position. A Check In is the
+		// exception: its location is one the author chose to share, and its
+		// map link is already part of its public content.
+		$can_see_location = current_user_can( 'edit_post', $post_id ) || 'checkin' === (string) get_post_meta( $post_id, '_daymark_primary_type', true );
+
+		if ( $can_see_location && is_array( $location ) && isset( $location['lat'], $location['lng'] ) && is_numeric( $location['lat'] ) && is_numeric( $location['lng'] ) ) {
 			$summary['location'] = array(
 				'lat' => (float) $location['lat'],
 				'lng' => (float) $location['lng'],
@@ -3360,22 +3748,57 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['place_name'] = $place_name;
 		}
 
+		// A Check In's own optional attached photo/video (issue #424): its
+		// `type` above always stays 'checkin' (an explicit primary_type
+		// override wins in Daymark_Publisher::detect_primary_type() itself —
+		// a checkin's own point is the place, so media never reclassifies
+		// it), so the Timeline card needs a second signal to know what real
+		// media, if any, is actually attached. Omitted (not a null/empty
+		// value) whenever there's nothing attached, so mediaKindForItem()
+		// (assets/app.js) can use a plain presence check the same way
+		// captured_at/reading_time_minutes/location/place_name above do.
+		if ( 'checkin' === $summary['type'] ) {
+			$raw_media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+			$media_ids     = is_array( $raw_media_ids ) ? array_map( 'absint', $raw_media_ids ) : array();
+
+			if ( ! empty( $media_ids ) ) {
+				$summary['media_kind'] = Daymark_Plugin::instance()->publisher->detect_media_kind( $media_ids );
+			}
+		}
+
 		// Featured Content (issue #401) — any post type, not Mark-specific,
 		// but a Timeline card is exactly the kind of "where a Featured Image
 		// would show" slot that feature already replaces by default on the
 		// front end (see maybe_replace_post_thumbnail_html()), so the app
-		// shell's own card follows the same rule. Only the type is exposed
-		// here — resolveCardKind()/renderCardMedia() (assets/app.js) already
-		// have a full placeholder/play-button treatment for 'audio'/'video'
-		// that needs no real thumbnail to look intentional; a richer preview
-		// (an actual thumbnail image) is a follow-up, not required for the
-		// card to correctly reflect that Featured Content is set at all.
+		// shell's own card follows the same rule. The type is always
+		// exposed — resolveCardKind()/renderCardMedia() (assets/app.js)
+		// already have a full placeholder/play-button treatment for
+		// 'audio'/'video' that needs no real thumbnail to look intentional.
+		// A gallery additionally carries its first four image URLs and total
+		// image count, for the card's 2x2 thumbnail grid.
 		$featured_content = Daymark_Featured_Content::get_featured_content( $post_id );
 
 		if ( ! empty( $featured_content ) ) {
 			$summary['featured_content'] = array(
 				'type' => $featured_content['type'],
 			);
+
+			// A gallery's card shows its first four images as a small grid
+			// (issue #406), so those thumbnail URLs travel with the summary.
+			if ( 'gallery' === $featured_content['type'] ) {
+				$images = array();
+
+				foreach ( array_slice( (array) ( $featured_content['data']['attachment_ids'] ?? array() ), 0, 4 ) as $attachment_id ) {
+					$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium' );
+
+					if ( $url ) {
+						$images[] = esc_url_raw( $url );
+					}
+				}
+
+				$summary['featured_content']['images'] = $images;
+				$summary['featured_content']['count']  = count( (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
+			}
 		}
 
 		return $summary;

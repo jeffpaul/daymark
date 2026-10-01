@@ -1,12 +1,16 @@
 <?php
 /**
- * Daymark_Featured_Content tests (issue #401, Phase 3: audio/video + quote/link):
- * meta sanitization (including the quote/link shapes, whose empty results are
- * dropped whole), the link post-format read gate in get_featured_content(),
- * the post_thumbnail_html substitution (and its opt-out filter), the theme-facing
+ * Daymark_Featured_Content tests (issue #401, Phase 1: audio/video, Phase 2
+ * #406: gallery, Phase 3 #407: quote/link): meta sanitization (including the
+ * quote/link shapes, whose empty results are dropped whole), the link
+ * post-format read gate in get_featured_content(),
+ * get_featured_content()/has_featured_content(), the post_thumbnail_html
+ * substitution (and its opt-out filter), the theme-facing
  * daymark_*_featured_content() template tags, render_audio()/render_video()'s
- * is_direct_media_url()-gated native-tag fallback, render_quote()/render_link()'s
- * markup, and the GET /daymark/v1/featured-content/oembed REST route.
+ * is_direct_media_url()-gated native-tag fallback, render_gallery()'s
+ * slider-shell markup (controls only when there's more than one image),
+ * render_quote()/render_link() markup,
+ * and the GET /daymark/v1/featured-content/oembed REST route.
  *
  * @package Daymark
  */
@@ -58,12 +62,12 @@ class Test_Featured_Content extends WP_UnitTestCase {
 	public function test_sanitize_type_accepts_allowed_values() {
 		$this->assertSame( 'audio', Daymark_Featured_Content::sanitize_type( 'audio' ) );
 		$this->assertSame( 'video', Daymark_Featured_Content::sanitize_type( 'video' ) );
+		$this->assertSame( 'gallery', Daymark_Featured_Content::sanitize_type( 'gallery' ) );
 		$this->assertSame( 'quote', Daymark_Featured_Content::sanitize_type( 'quote' ) );
 		$this->assertSame( 'link', Daymark_Featured_Content::sanitize_type( 'link' ) );
 	}
 
 	public function test_sanitize_type_rejects_unsupported_or_garbage_values() {
-		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( 'gallery' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '<script>' ) );
 		$this->assertSame( '', Daymark_Featured_Content::sanitize_type( '' ) );
 	}
@@ -167,6 +171,23 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		);
 	}
 
+	/** A sub-key this class doesn't implement is silently dropped, not stored unsanitized. */
+	public function test_sanitize_data_drops_unrecognized_sub_keys() {
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'poem'     => array( 'text' => 'Something someone said' ),
+						'carousel' => array( 'url' => 'https://example.com' ),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array(), $clean );
+	}
+
 	public function test_sanitize_data_keeps_a_valid_quote_shape() {
 		$clean = json_decode(
 			Daymark_Featured_Content::sanitize_data(
@@ -220,14 +241,187 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'link', $clean );
 	}
 
-	/** A gallery sub-key isn't implemented yet (issue #406) — silently dropped, not stored unsanitized. */
-	public function test_sanitize_data_drops_unrecognized_sub_keys() {
+	/** A link-type Featured Content is read-gated to empty without the `link` post format — the same "real, link-format-only" rule render() itself depends on. */
+	public function test_get_featured_content_is_empty_for_a_link_type_without_the_link_format() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+
+		$this->assertSame( array(), Daymark_Featured_Content::get_featured_content( $this->post_id ) );
+	}
+
+	public function test_get_featured_content_resolves_a_link_type_on_a_link_format_post() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+
+		$featured_content = Daymark_Featured_Content::get_featured_content( $this->post_id );
+
+		$this->assertSame( 'link', $featured_content['type'] );
+		$this->assertSame( 'https://example.com/article', $featured_content['data']['url'] );
+	}
+
+	public function test_the_featured_content_renders_a_quote() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'quote' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'quote' => array(
+						'text'         => 'An insightful line worth quoting.',
+						'author'       => 'Some Author',
+						'citation_url' => 'https://example.com/source',
+					),
+				)
+			)
+		);
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'daymark-featured-content--quote', $output );
+		$this->assertStringContainsString( '<blockquote class="daymark-featured-quote">', $output );
+		$this->assertStringContainsString( '<p>An insightful line worth quoting.</p>', $output );
+		$this->assertStringContainsString( '<footer>', $output );
+		$this->assertStringContainsString( 'Some Author — ', $output );
+		$this->assertStringContainsString( 'https://example.com/source', $output );
+	}
+
+	public function test_the_featured_content_renders_a_link() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'daymark-featured-content--link', $output );
+		$this->assertStringContainsString( '<a class="daymark-featured-link" href="https://example.com/article" target="_blank" rel="noopener">example.com</a>', $output );
+	}
+
+	public function test_sanitize_data_keeps_a_valid_gallery_shape() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
 		$clean = json_decode(
-			Daymark_Featured_Content::sanitize_data( wp_json_encode( array( 'gallery' => array( 'attachment_ids' => array( 1, 2 ) ) ) ) ),
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => $ids ),
+					)
+				)
+			),
 			true
 		);
 
-		$this->assertSame( array(), $clean );
+		$this->assertSame( $ids, $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery's ID order is preserved and duplicates are collapsed, not re-sorted. */
+	public function test_sanitize_data_preserves_gallery_order_and_deduplicates() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array(
+							'attachment_ids' => array( $ids[2], $ids[0], $ids[2], $ids[1], $ids[1] ),
+						),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( $ids[2], $ids[0], $ids[1] ), $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery's attachment IDs are gated against `wp_attachment_is_image()`, like audio/video's own MIME gates. */
+	public function test_sanitize_data_drops_non_image_attachment_ids_from_a_gallery() {
+		$image_id = $this->create_attachment( 'image/png' );
+		$audio_id = $this->create_attachment( 'audio/mpeg' );
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array( $image_id, $audio_id ) ),
+					)
+				)
+			),
+			true
+		);
+
+		$this->assertSame( array( $image_id ), $clean['gallery']['attachment_ids'] );
+	}
+
+	/** A gallery whose every ID is invalid (or missing entirely) resolves to "no gallery stored", not a half-empty one. */
+	public function test_sanitize_data_drops_a_fully_invalid_gallery() {
+		$from_bad_ids = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array( 0, 'garbage', -3 ) ),
+					)
+				)
+			),
+			true
+		);
+		$this->assertArrayNotHasKey( 'gallery', $from_bad_ids );
+
+		$from_empty = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => array() ),
+					)
+				)
+			),
+			true
+		);
+		$this->assertArrayNotHasKey( 'gallery', $from_empty );
+	}
+
+	/** The gallery's per-gallery cap is filterable, not a hardcoded constant. */
+	public function test_sanitize_data_applies_the_filterable_gallery_cap() {
+		$ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+
+		add_filter( 'daymark_featured_content_gallery_max', array( $this, 'return_two_gallery_max' ) );
+
+		$clean = json_decode(
+			Daymark_Featured_Content::sanitize_data(
+				wp_json_encode(
+					array(
+						'gallery' => array( 'attachment_ids' => $ids ),
+					)
+				)
+			),
+			true
+		);
+
+		remove_filter( 'daymark_featured_content_gallery_max', array( $this, 'return_two_gallery_max' ) );
+
+		$this->assertSame( array_slice( $ids, 0, 2 ), $clean['gallery']['attachment_ids'] );
+	}
+
+	public function return_two_gallery_max() {
+		return 2;
 	}
 
 	public function test_sanitize_data_handles_malformed_json() {
@@ -269,25 +463,6 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'video' );
 
 		$this->assertSame( array(), Daymark_Featured_Content::get_featured_content( $this->post_id ) );
-	}
-
-	/** A link-type Featured Content is read-gated to empty without the `link` post format — the same "real, link-format-only" rule render() itself depends on. */
-	public function test_get_featured_content_is_empty_for_a_link_type_without_the_link_format() {
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
-
-		$this->assertSame( array(), Daymark_Featured_Content::get_featured_content( $this->post_id ) );
-	}
-
-	public function test_get_featured_content_resolves_a_link_type_on_a_link_format_post() {
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
-		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
-
-		$featured_content = Daymark_Featured_Content::get_featured_content( $this->post_id );
-
-		$this->assertSame( 'link', $featured_content['type'] );
-		$this->assertSame( 'https://example.com/article', $featured_content['data']['url'] );
 	}
 
 	// -- theme-facing daymark_*_featured_content() template tags ----------
@@ -376,6 +551,94 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		remove_filter( 'daymark_featured_content_replaces_featured_image', '__return_false' );
 	}
 
+	public function test_post_thumbnail_html_is_replaced_with_a_gallery_when_set() {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'gallery' => array(
+						'attachment_ids' => $attachment_ids,
+					),
+				)
+			)
+		);
+
+		$featured_content = new Daymark_Featured_Content();
+		$replaced         = $featured_content->maybe_replace_post_thumbnail_html( '<img src="fallback.jpg">', $this->post_id, 0, 'thumbnail', '' );
+
+		$this->assertStringContainsString( 'daymark-featured-content', $replaced );
+		$this->assertStringContainsString( 'daymark-featured-content--gallery', $replaced );
+	}
+
+	/**
+	 * Store a three-image gallery on the test post.
+	 *
+	 * @return int[] The attachment IDs.
+	 */
+	private function set_three_image_gallery(): array {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $attachment_ids ) ) )
+		);
+
+		return $attachment_ids;
+	}
+
+	/**
+	 * Outside a single post (the home page, an archive, search) the slider's
+	 * assets are not loaded, so a gallery renders only its first image, with
+	 * no controls — never every image stacked and unstyled in a listing.
+	 */
+	public function test_gallery_renders_only_its_first_image_outside_a_single_post() {
+		$this->set_three_image_gallery();
+		$this->go_to( home_url( '/' ) );
+
+		$this->assertFalse( is_singular() );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__slide"' ) );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-next', $output );
+	}
+
+	/**
+	 * On a single post the gallery renders every slide with its controls, and
+	 * the render itself enqueues the slider script and stylesheet — so a
+	 * gallery shown inside another single post's page still works.
+	 */
+	public function test_gallery_renders_full_slider_and_enqueues_assets_on_a_single_post() {
+		$this->set_three_image_gallery();
+		wp_dequeue_script( 'daymark-featured-content' );
+		wp_dequeue_style( 'daymark-featured-content' );
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		$this->assertTrue( is_singular() );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__slide"' ) );
+		$this->assertStringContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertTrue( wp_script_is( 'daymark-featured-content', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'daymark-featured-content', 'enqueued' ) );
+	}
+
 	// -- render_audio()/render_video() direct-media-URL fallback gating ---
 	//
 	// A provider *page* URL (a Vimeo/YouTube watch page, a podcast episode
@@ -444,17 +707,76 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'episode.mp3', $output );
 	}
 
-	public function test_the_featured_content_renders_a_quote() {
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'quote' );
+	// -- render_gallery() -------------------------------------------------
+
+	public function test_render_gallery_renders_all_slides_and_controls() {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
 		update_post_meta(
 			$this->post_id,
 			Daymark_Featured_Content::META_DATA,
 			wp_json_encode(
 				array(
-					'quote' => array(
-						'text'         => 'An insightful line worth quoting.',
-						'author'       => 'Some Author',
-						'citation_url' => 'https://example.com/source',
+					'gallery' => array(
+						'attachment_ids' => $attachment_ids,
+					),
+				)
+			)
+		);
+
+		// The full slider only renders on a single post (see
+		// test_gallery_renders_only_its_first_image_outside_a_single_post).
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		// Wrapper + carousel shell.
+		$this->assertStringContainsString( 'daymark-featured-content', $output );
+		$this->assertStringContainsString( 'daymark-featured-content--gallery', $output );
+		$this->assertStringContainsString( 'daymark-fc-gallery', $output );
+		$this->assertStringContainsString( 'data-daymark-gallery', $output );
+		$this->assertStringContainsString( 'role="region"', $output );
+		$this->assertStringContainsString( 'aria-roledescription="carousel"', $output );
+		$this->assertStringContainsString( 'aria-label="Featured gallery"', $output );
+		$this->assertStringContainsString( 'daymark-fc-gallery__track', $output );
+
+		// Slides + images.
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'aria-label="Slide 1 of 3"', $output );
+		$this->assertStringContainsString( 'aria-label="Slide 3 of 3"', $output );
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__img' ) );
+
+		// Controls + dots.
+		$this->assertStringContainsString( 'data-daymark-gallery-prev', $output );
+		$this->assertStringContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertSame( 3, substr_count( $output, 'data-daymark-gallery-dot' ) );
+		$this->assertStringContainsString( 'data-index="0"', $output );
+		$this->assertStringContainsString( 'data-index="2"', $output );
+		$this->assertStringContainsString( 'aria-label="Show slide 1"', $output );
+		$this->assertStringContainsString( 'aria-label="Show slide 3"', $output );
+
+		// Live region + announce template.
+		$this->assertStringContainsString( 'data-daymark-gallery-live', $output );
+		$this->assertStringContainsString( 'aria-live="polite"', $output );
+		$this->assertStringContainsString( 'data-template="Slide %1$d of %2$d"', $output );
+	}
+
+	public function test_render_gallery_single_image_has_no_carousel_controls() {
+		$attachment_id = $this->create_attachment( 'image/png' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					'gallery' => array(
+						'attachment_ids' => array( $attachment_id ),
 					),
 				)
 			)
@@ -464,25 +786,12 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		Daymark_Featured_Content::the_featured_content( $this->post_id );
 		$output = ob_get_clean();
 
-		$this->assertStringContainsString( 'daymark-featured-content--quote', $output );
-		$this->assertStringContainsString( '<blockquote class="daymark-featured-quote">', $output );
-		$this->assertStringContainsString( '<p>An insightful line worth quoting.</p>', $output );
-		$this->assertStringContainsString( '<footer>', $output );
-		$this->assertStringContainsString( 'Some Author — ', $output );
-		$this->assertStringContainsString( 'https://example.com/source', $output );
-	}
-
-	public function test_the_featured_content_renders_a_link() {
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
-		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
-		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
-
-		ob_start();
-		Daymark_Featured_Content::the_featured_content( $this->post_id );
-		$output = ob_get_clean();
-
-		$this->assertStringContainsString( 'daymark-featured-content--link', $output );
-		$this->assertStringContainsString( '<a class="daymark-featured-link" href="https://example.com/article" target="_blank" rel="noopener">example.com</a>', $output );
+		$this->assertStringContainsString( 'daymark-fc-gallery', $output );
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-prev', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-dot', $output );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-live', $output );
 	}
 
 	// wp-admin's own callers of this same core filter (is_admin()) are left
@@ -515,6 +824,199 @@ class Test_Featured_Content extends WP_UnitTestCase {
 	 */
 	public function filter_supported_post_types(): array {
 		return array( 'page' );
+	}
+
+	// -- oEmbed discovery is decided by the post author's unfiltered_html ---
+	//
+	// Discovery lets a remote page name its own oEmbed endpoint and so choose
+	// the markup that appears on a published post. WordPress core allows it
+	// only for a user with `unfiltered_html`; Featured Content follows that
+	// rule, decided by the post's author (the markup renders for anonymous
+	// visitors under that author's name), not the visitor.
+
+	/**
+	 * Capture the `discover` argument core passes to a URL that reaches
+	 * oEmbed, and answer with a canned iframe so the result is cached and
+	 * rendered normally.
+	 *
+	 * @param array $seen Receives each `discover` value seen.
+	 * @return callable The filter callback, to remove afterwards.
+	 */
+	private function capture_discover_arg( array &$seen ): callable {
+		$callback = static function ( $result, $url, $args ) use ( &$seen ) {
+			unset( $url );
+			$seen[] = ! empty( $args['discover'] );
+
+			return '<iframe src="https://player.example/embed/1" width="400" height="300"></iframe>';
+		};
+		add_filter( 'pre_oembed_result', $callback, 10, 3 );
+
+		return $callback;
+	}
+
+	/**
+	 * Give a post a URL-source Featured Content of the given type.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $type    'audio' or 'video'.
+	 * @param string $url     The URL.
+	 */
+	private function set_url_featured_content( int $post_id, string $type, string $url ): void {
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, $type );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode(
+				array(
+					$type => array(
+						'source' => 'url',
+						'url'    => $url,
+					),
+				)
+			)
+		);
+	}
+
+	/**
+	 * A post whose author lacks `unfiltered_html` never resolves by
+	 * discovery, however the page is later viewed; one whose author has it
+	 * does.
+	 *
+	 * @dataProvider discovery_by_role_provider
+	 *
+	 * @param string $role     Role of the post's author.
+	 * @param bool   $expected Whether discovery is expected.
+	 */
+	public function test_front_end_discovery_follows_the_post_authors_unfiltered_html( string $role, bool $expected ) {
+		$author  = (int) self::factory()->user->create( array( 'role' => $role ) );
+		$post_id = (int) self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_author' => $author,
+			)
+		);
+		$this->set_url_featured_content( $post_id, 'video', 'https://media.example/' . $role . '/watch' );
+
+		// Render as an anonymous visitor, as the published page is.
+		wp_set_current_user( 0 );
+
+		$seen     = array();
+		$callback = $this->capture_discover_arg( $seen );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $post_id );
+		ob_get_clean();
+
+		remove_filter( 'pre_oembed_result', $callback, 10 );
+
+		$this->assertSame( array( $expected ), $seen, "A {$role}'s post " . ( $expected ? 'may' : 'may not' ) . ' use discovery' );
+	}
+
+	/**
+	 * Roles and whether their posts may use discovery.
+	 *
+	 * @return array<string, array{0: string, 1: bool}>
+	 */
+	public function discovery_by_role_provider(): array {
+		return array(
+			'administrator' => array( 'administrator', true ),
+			'editor'        => array( 'editor', true ),
+			'author'        => array( 'author', false ),
+			'contributor'   => array( 'contributor', false ),
+		);
+	}
+
+	/** A result found by discovery is never served to a lookup that forbade it, and vice versa. */
+	public function test_discovery_and_non_discovery_lookups_are_cached_separately() {
+		$seen     = array();
+		$callback = $this->capture_discover_arg( $seen );
+
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', true );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', false );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', true );
+		Daymark_Subscription_Oembed::resolve( 'https://cache.example/one', false );
+
+		remove_filter( 'pre_oembed_result', $callback, 10 );
+
+		$this->assertSame( array( true, false ), $seen, 'Each mode was fetched once and then served from its own cache entry' );
+	}
+
+	/** The discovery decision is filterable, for a site that wants a different policy. */
+	public function test_discovery_decision_is_filterable() {
+		$author = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+
+		$this->assertFalse( Daymark_Featured_Content::oembed_discovery_allowed( $author ) );
+
+		add_filter( 'daymark_featured_content_oembed_discovery', '__return_true' );
+		$allowed = Daymark_Featured_Content::oembed_discovery_allowed( $author );
+		remove_filter( 'daymark_featured_content_oembed_discovery', '__return_true' );
+
+		$this->assertTrue( $allowed );
+		$this->assertFalse( Daymark_Featured_Content::oembed_discovery_allowed( 0 ), 'No author means no discovery' );
+	}
+
+	/**
+	 * The editor preview uses the post author's rights when the caller can
+	 * edit that post (an Editor previewing an Author's post sees what will
+	 * render), and the caller's own otherwise.
+	 */
+	public function test_rest_oembed_preview_follows_the_posts_author() {
+		$author_id = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$editor_id = (int) self::factory()->user->create( array( 'role' => 'editor' ) );
+		$post_id   = (int) self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_author' => $author_id,
+			)
+		);
+
+		$call = function ( int $user_id, array $params ) {
+			wp_set_current_user( $user_id );
+
+			$seen     = array();
+			$callback = $this->capture_discover_arg( $seen );
+
+			$request = new WP_REST_Request( 'GET', '/daymark/v1/featured-content/oembed' );
+			$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+			foreach ( $params as $key => $value ) {
+				$request->set_param( $key, $value );
+			}
+
+			rest_do_request( $request );
+			remove_filter( 'pre_oembed_result', $callback, 10 );
+
+			return $seen;
+		};
+
+		$this->assertSame(
+			array( false ),
+			$call(
+				$editor_id,
+				array(
+					'url'     => 'https://prev.example/a',
+					'post_id' => $post_id,
+				)
+			),
+			"An editor previewing an Author's post sees the Author's rules"
+		);
+		$this->assertSame( array( true ), $call( $editor_id, array( 'url' => 'https://prev.example/b' ) ), "With no post, the editor's own rights apply" );
+		$this->assertSame( array( false ), $call( $author_id, array( 'url' => 'https://prev.example/c' ) ), "An Author's own preview has no discovery" );
+
+		// A post the caller cannot edit is ignored, not trusted.
+		$other_author = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+
+		$this->assertSame(
+			array( false ),
+			$call(
+				$other_author,
+				array(
+					'url'     => 'https://prev.example/d',
+					'post_id' => $post_id,
+				)
+			),
+			"Someone else's post is not used to gain discovery"
+		);
 	}
 
 	// -- REST: GET /featured-content/oembed --------------------------------

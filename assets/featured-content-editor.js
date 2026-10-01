@@ -93,6 +93,10 @@
 ( function ( wp ) {
 	'use strict';
 
+	// Library types the Featured Content picker offers: audio and video for
+	// a single file, images for a gallery (issue #406).
+	var PICKER_MEDIA_TYPES = [ 'audio', 'video', 'image' ];
+
 	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.data || ! wp.i18n ) {
 		return;
 	}
@@ -168,6 +172,32 @@
 		var ext = match ? match[ 1 ].toLowerCase() : '';
 
 		return -1 !== AUDIO_EXTENSIONS.indexOf( ext ) || -1 !== VIDEO_EXTENSIONS.indexOf( ext );
+	}
+
+	/**
+	 * The preview request URL: the pasted link, plus the post being edited.
+	 *
+	 * The server decides whether a link may be resolved by oEmbed discovery
+	 * from the post's author (Daymark_Featured_Content::oembed_discovery_allowed()),
+	 * so an Editor previewing an Author's post has to see what that post will
+	 * actually render. The endpoint can already carry a query string (plain
+	 * permalinks put the route in `?rest_route=`), so the separator is chosen
+	 * rather than assumed.
+	 *
+	 * @param {string} endpoint The preview route's URL.
+	 * @param {string} url      The link to preview.
+	 * @return {string}
+	 */
+	function oembedPreviewUrl( endpoint, url ) {
+		var editor = wp.data && wp.data.select ? wp.data.select( 'core/editor' ) : null;
+		var postId = editor && editor.getCurrentPostId ? editor.getCurrentPostId() : 0;
+		var query = 'url=' + encodeURIComponent( url );
+
+		if ( postId ) {
+			query += '&post_id=' + encodeURIComponent( postId );
+		}
+
+		return endpoint + ( -1 === endpoint.indexOf( '?' ) ? '?' : '&' ) + query;
 	}
 
 	/**
@@ -337,7 +367,7 @@
 
 					var self = this;
 
-					wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( url ) } )
+					wp.apiFetch( { url: oembedPreviewUrl( endpoint, url ) } )
 						.then( function ( response ) {
 							self.renderPreview( response && response.embed ? response.embed : null );
 						} )
@@ -456,12 +486,11 @@
 	 * has to match reality once the toolbar is actually on screen,
 	 * regardless of which internal mechanism produced it.
 	 *
-	 * Deliberately Video/Audio only, no Image option: `openMediaPicker()`'s
-	 * own `library: { type: [ 'audio', 'video' ] }` restriction already
-	 * excludes every other mime type from the underlying query before this
-	 * filter ever runs, so an Image option would only ever show zero results
-	 * — this filter narrows *within* that existing restriction, it doesn't
-	 * loosen it.
+	 * Video, Audio, and Images (images make a gallery — issue #406):
+	 * `openMediaPicker()`'s own `library: { type: PICKER_MEDIA_TYPES }`
+	 * restriction excludes every other mime type from the underlying query
+	 * before this filter ever runs — this filter narrows *within* that
+	 * existing restriction, it doesn't loosen it.
 	 *
 	 * Feature-detected and wrapped defensively, matching this file's
 	 * established posture toward every other wp.media internal it touches: a
@@ -620,6 +649,9 @@
 						'<option value="audio">' +
 						__( 'Audio', 'daymark' ) +
 						'</option>' +
+						'<option value="image">' +
+						__( 'Images', 'daymark' ) +
+						'</option>' +
 						'</select>' +
 						'</div>'
 				);
@@ -627,7 +659,7 @@
 				$wrap.find( 'select' ).on( 'change', function () {
 					var value = $jq( this ).val();
 
-					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
+					library.props.set( 'type', value ? value : PICKER_MEDIA_TYPES );
 				} );
 
 				if ( $toolbar.length ) {
@@ -686,16 +718,20 @@
 	 * @param {Function} onLibrarySelect Called with the picked attachment's REST-shaped object.
 	 * @param {Function} onUrlSelect     Called with a pasted URL string.
 	 */
-	function openMediaPicker( onLibrarySelect, onUrlSelect ) {
+	function openMediaPicker( onLibrarySelect, onUrlSelect, onGallerySelect, preselectIds ) {
 		if ( ! wp.media ) {
 			return;
 		}
 
 		var options = {
 			title: __( 'Featured content', 'daymark' ),
-			library: { type: [ 'audio', 'video' ] },
-			multiple: false,
-			button: { text: __( 'Use this file', 'daymark' ) },
+			library: { type: PICKER_MEDIA_TYPES },
+			// 'add' lets a tap toggle each item into the selection, with no
+			// modifier key — what a phone or trackpad needs to build a
+			// gallery. A single audio/video pick still works exactly as it
+			// did with a one-item selection.
+			multiple: 'add',
+			button: { text: __( 'Use selection', 'daymark' ) },
 		};
 
 		var FrameClass = getFeaturedContentFrameClass();
@@ -715,11 +751,61 @@
 
 		bindLibraryTypeFilter( frame );
 
-		frame.on( 'select', function () {
-			var selection = frame.state().get( 'selection' ).first();
+		// Replace on an existing gallery reopens with its images already
+		// selected, so adding or dropping one image doesn't mean picking all
+		// of them again. Best-effort: a missing shape just opens empty.
+		if ( Array.isArray( preselectIds ) && preselectIds.length ) {
+			frame.on( 'open', function () {
+				try {
+					var selection = frame.state().get( 'selection' );
 
-			if ( selection ) {
-				onLibrarySelect( selection.toJSON() );
+					preselectIds.forEach( function ( id ) {
+						var attachment = wp.media.attachment( id );
+
+						attachment.fetch();
+						selection.add( attachment );
+					} );
+				} catch ( err ) {
+					// Opens with nothing preselected.
+				}
+			} );
+		}
+
+		frame.on( 'select', function () {
+			var selection = frame.state().get( 'selection' );
+			var items = [];
+
+			if ( ! selection ) {
+				return;
+			}
+
+			selection.each( function ( model ) {
+				var json = model.toJSON();
+
+				if ( json && json.id ) {
+					items.push( json );
+				}
+			} );
+
+			var isImage = function ( item ) {
+				return 0 === ( item.mime || '' ).indexOf( 'image/' );
+			};
+			var images = items.filter( isImage );
+			var media = items.filter( function ( item ) {
+				return ! isImage( item );
+			} );
+
+			// Only images: a gallery. Otherwise the first audio/video wins
+			// (a mixed pick is ambiguous, and one file is what those kinds
+			// store).
+			if ( images.length && ! media.length ) {
+				onGallerySelect(
+					images.map( function ( item ) {
+						return item.id;
+					} )
+				);
+			} else if ( media.length ) {
+				onLibrarySelect( media[ 0 ] );
 			}
 		} );
 
@@ -1023,14 +1109,31 @@
 	 */
 	function FeaturedContentPreview( props ) {
 		var type = props.type;
-		var data = props.data;
-		var isUrl = 'url' === data.source;
+		var data = props.data || {};
+		var isGallery = 'gallery' === type;
+		var isUrl = ! isGallery && 'url' === data.source;
+		var galleryIds = isGallery && Array.isArray( data.attachment_ids ) ? data.attachment_ids : [];
 
 		var attachment = useSelect(
 			function ( select ) {
-				return isUrl ? null : select( 'core' ).getMedia( data.attachment_id );
+				return isUrl || isGallery ? null : select( 'core' ).getMedia( data.attachment_id );
 			},
-			[ isUrl, data.attachment_id ]
+			[ isUrl, isGallery, data.attachment_id ]
+		);
+
+		var galleryMedia = useSelect(
+			function ( select ) {
+				if ( ! isGallery ) {
+					return [];
+				}
+
+				return galleryIds.map( function ( id ) {
+					return select( 'core' ).getMedia( id );
+				} ).filter( function ( item ) {
+					return item && item.source_url;
+				} );
+			},
+			[ isGallery, galleryIds.join( ',' ) ]
 		);
 
 		var embedState = useState( null );
@@ -1052,7 +1155,7 @@
 
 				var cancelled = false;
 
-				wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( data.url ) } )
+				wp.apiFetch( { url: oembedPreviewUrl( endpoint, data.url ) } )
 					.then( function ( response ) {
 						if ( ! cancelled ) {
 							setEmbed( response && response.embed ? response.embed : false );
@@ -1070,6 +1173,24 @@
 			},
 			[ isUrl, data.url ]
 		);
+
+		if ( isGallery ) {
+			if ( ! galleryMedia.length ) {
+				return null;
+			}
+
+			return el(
+				'div',
+				{ className: 'daymark-fc-preview daymark-fc-preview--gallery' },
+				galleryMedia.slice( 0, 4 ).map( function ( item ) {
+					return el( 'img', {
+						key: item.id,
+						src: item.source_url,
+						alt: item.alt_text || '',
+					} );
+				} )
+			);
+		}
 
 		if ( ! isUrl ) {
 			if ( ! attachment || ! attachment.source_url ) {
@@ -1129,28 +1250,31 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Three states: unset (a single toggle button opening the media modal,
-	 * with quick "add" links for quote/link when those kinds are allowed —
-	 * quote always, link only when the post's own format is already Link,
+	 * Three states: unset (a single "Set featured content" button opening the
+	 * media picker — pick one audio/video file, several images for a
+	 * gallery, or paste a link on its "Add by URL" tab — with quick "add"
+	 * links beside it for quote/link when those kinds are allowed: quote
+	 * always, link only when the post's own format is already Link,
 	 * mirroring the server-side `get_featured_content()` read-time gate);
-	 * already set with an audio/video value (a preview with Replace/Remove
-	 * overlaid at its bottom edge on hover/focus, matching core's own
-	 * Featured Image thumbnail treatment — `.editor-post-featured-image__
-	 * actions`, confirmed directly against Gutenberg's own
-	 * `post-featured-image/index.jsx`/`style.scss` — where Replace reopens
-	 * the same media modal); or already set with a quote/link value (a plain
-	 * static preview mirroring the front end's own render, where Replace
-	 * re-opens that kind's compose form pre-filled rather than the modal —
-	 * a quote is typed, not picked). A third, transient compose state shows
-	 * the quote or link form itself in place of the summary; save writes it
-	 * and returns to the preview, cancel discards the draft and returns to
+	 * already set with an audio/video/gallery value (a preview with
+	 * Replace/Remove overlaid at its bottom edge on hover/focus, matching
+	 * core's own Featured Image thumbnail treatment —
+	 * `.editor-post-featured-image__actions`, confirmed directly against
+	 * Gutenberg's own `post-featured-image/index.jsx`/`style.scss` — where
+	 * Replace reopens the same picker, with a gallery's images already
+	 * selected); or already set with a quote/link value (a plain static
+	 * preview mirroring the front end's own render, where Replace re-opens
+	 * that kind's compose form pre-filled rather than the picker — a quote
+	 * is typed, not picked). A third, transient compose state shows the
+	 * quote or link form itself in place of the summary; save writes it and
+	 * returns to the preview, cancel discards the draft and returns to
 	 * whatever the control showed before. No standalone "Featured content:
 	 * Audio/Video" label: the preview itself (a native player, an oEmbed
-	 * embed, a link, or a styled quote) already denotes the type, the same
-	 * reasoning core's own thumbnail needs no "Featured image: JPEG"
-	 * caption either. A small note appears under the preview when a link
-	 * kind is set but the post isn't on the Link format, since that's the
-	 * only case where it won't render on the front end.
+	 * embed, a gallery strip, a link, or a styled quote) already denotes
+	 * the type, the same reasoning core's own thumbnail needs no "Featured
+	 * image: JPEG" caption either. A small note appears under the preview
+	 * when a link kind is set but the post isn't on the Link format, since
+	 * that's the only case where it won't render on the front end.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -1206,8 +1330,18 @@
 			setCompose( null );
 		}
 
+		function handleGallerySelect( ids ) {
+			if ( ids && ids.length ) {
+				saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
+			}
+		}
+
 		function openPicker() {
-			openMediaPicker( handleLibrarySelect, handleUrlSelect );
+			var preselect = 'gallery' === current.type && current.data && Array.isArray( current.data.attachment_ids )
+				? current.data.attachment_ids
+				: [];
+
+			openMediaPicker( handleLibrarySelect, handleUrlSelect, handleGallerySelect, preselect );
 		}
 
 		if ( compose ) {

@@ -70,16 +70,51 @@ class Test_Websub_Endpoint extends WP_UnitTestCase {
 XML;
 	}
 
-	public function test_get_challenge_echoed_for_a_genuinely_pending_subscription() {
-		$id = $this->create_subscription( array( 'websub_status' => 'pending' ) );
-
+	/**
+	 * Build the verification GET a hub sends, carrying (by default) the
+	 * token Daymark put in the callback URL for this secret.
+	 *
+	 * @param int         $id     Subscription ID.
+	 * @param string|null $token  Token to send; null derives the correct one from $secret.
+	 * @param string      $secret Secret the token is derived from.
+	 * @param string      $topic  hub.topic value.
+	 * @return WP_REST_Request
+	 */
+	private function verification_request( int $id, ?string $token = null, string $secret = 'a-stored-secret', string $topic = 'https://example.com/feed/' ): WP_REST_Request {
 		$request = new WP_REST_Request( 'GET', '/daymark/v1/websub/' . $id );
 		$request->set_param( 'hub_mode', 'subscribe' );
-		$request->set_param( 'hub_topic', 'https://example.com/feed/' );
+		$request->set_param( 'hub_topic', $topic );
 		$request->set_param( 'hub_challenge', 'a-random-challenge' );
 		$request->set_param( 'hub_lease_seconds', '86400' );
 
-		$response = rest_do_request( $request );
+		$send = null === $token ? Daymark_Websub_Subscriber::callback_token( $id, $secret ) : $token;
+
+		if ( '' !== $send ) {
+			$request->set_param( 'daymark_token', $send );
+		}
+
+		return $request;
+	}
+
+	/**
+	 * Create a pending subscription that has a stored secret, as a real
+	 * subscribe request leaves it.
+	 *
+	 * @return int
+	 */
+	private function create_pending_subscription(): int {
+		return $this->create_subscription(
+			array(
+				'websub_status' => 'pending',
+				'websub_secret' => 'a-stored-secret',
+			)
+		);
+	}
+
+	public function test_get_challenge_echoed_for_a_genuinely_pending_subscription() {
+		$id = $this->create_pending_subscription();
+
+		$response = rest_do_request( $this->verification_request( $id ) );
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'a-random-challenge', $response->get_data() );
@@ -89,17 +124,72 @@ XML;
 		$this->assertNotNull( $subscription['websub_lease_expires_at'] );
 	}
 
+	/** Verification ends the retry chain: no marker, no attempt count, and no scheduled check. */
+	public function test_verification_clears_the_pending_retry_state() {
+		$id = $this->create_pending_subscription();
+
+		set_transient( 'daymark_websub_pending_' . $id, 1, HOUR_IN_SECONDS );
+		set_transient( 'daymark_websub_attempts_' . $id, 2, DAY_IN_SECONDS );
+		wp_schedule_single_event( time() + HOUR_IN_SECONDS, Daymark_Websub_Subscriber::VERIFY_TIMEOUT_HOOK, array( $id ) );
+
+		$response = rest_do_request( $this->verification_request( $id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertFalse( get_transient( 'daymark_websub_pending_' . $id ) );
+		$this->assertFalse( get_transient( 'daymark_websub_attempts_' . $id ) );
+		$this->assertFalse( wp_next_scheduled( Daymark_Websub_Subscriber::VERIFY_TIMEOUT_HOOK, array( $id ) ) );
+	}
+
 	public function test_get_challenge_rejected_for_a_topic_mismatch() {
-		$id = $this->create_subscription( array( 'websub_status' => 'pending' ) );
+		$id = $this->create_pending_subscription();
 
-		$request = new WP_REST_Request( 'GET', '/daymark/v1/websub/' . $id );
-		$request->set_param( 'hub_mode', 'subscribe' );
-		$request->set_param( 'hub_topic', 'https://not-the-right-feed.example.com/' );
-		$request->set_param( 'hub_challenge', 'a-random-challenge' );
-
-		$response = rest_do_request( $request );
+		$response = rest_do_request( $this->verification_request( $id, null, 'a-stored-secret', 'https://not-the-right-feed.example.com/' ) );
 
 		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'pending', $this->subscriptions->get( $id )['websub_status'] );
+	}
+
+	/**
+	 * Subscription IDs are sequential and the feed URL is public, so a
+	 * verification request without the callback token must not verify.
+	 */
+	public function test_get_challenge_rejected_without_the_callback_token() {
+		$id = $this->create_pending_subscription();
+
+		$response = rest_do_request( $this->verification_request( $id, '' ) );
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'pending', $this->subscriptions->get( $id )['websub_status'], 'Status is unchanged' );
+		$this->assertNull( $this->subscriptions->get( $id )['websub_lease_expires_at'] ?? null, 'No lease was granted' );
+	}
+
+	public function test_get_challenge_rejected_with_a_wrong_token() {
+		$id = $this->create_pending_subscription();
+
+		$response = rest_do_request( $this->verification_request( $id, str_repeat( '0', 32 ) ) );
+
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'pending', $this->subscriptions->get( $id )['websub_status'] );
+	}
+
+	/** A token issued for another subscription (or another secret) is worthless here. */
+	public function test_get_challenge_rejected_with_a_token_for_another_subscription() {
+		$id    = $this->create_pending_subscription();
+		$other = Daymark_Websub_Subscriber::callback_token( $id + 1, 'a-stored-secret' );
+
+		$this->assertSame( 404, rest_do_request( $this->verification_request( $id, $other ) )->get_status() );
+
+		$stale = Daymark_Websub_Subscriber::callback_token( $id, 'an-earlier-secret' );
+
+		$this->assertSame( 404, rest_do_request( $this->verification_request( $id, $stale ) )->get_status() );
+		$this->assertSame( 'pending', $this->subscriptions->get( $id )['websub_status'] );
+	}
+
+	/** A pending row with no stored secret has nothing to check a token against. */
+	public function test_get_challenge_rejected_when_no_secret_is_stored() {
+		$id = $this->create_subscription( array( 'websub_status' => 'pending' ) );
+
+		$this->assertSame( 404, rest_do_request( $this->verification_request( $id, null, '' ) )->get_status() );
 		$this->assertSame( 'pending', $this->subscriptions->get( $id )['websub_status'] );
 	}
 

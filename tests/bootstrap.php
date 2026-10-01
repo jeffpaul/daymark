@@ -74,3 +74,7 @@ require_once __DIR__ . '/class-plugin-detector-stub.php';
 // constant, once defined, can never be undefined for the rest of the
 // PHPUnit run) would otherwise cause.
 require_once __DIR__ . '/class-plugin-overlap-fake.php';
+
+// See tests/activitypub-stub/load.php's own docblock — an inert-by-default
+// stand-in for the ActivityPub plugin's outbox API (issue #439).
+require_once __DIR__ . '/activitypub-stub/load.php';
