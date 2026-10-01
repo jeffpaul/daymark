@@ -8102,10 +8102,11 @@
 	// class-rest-controller.php — set only when the Mark actually carries
 	// attached media) resolves to whatever real kind that media is
 	// (image/gallery/video/mixed), so "see it's me at the Leaning Tower of
-	// Pisa!" renders as a real photo, not an empty checkin card. Gallery/
-	// quote/link Featured Content aren't handled yet — `item.featured_
-	// content.type` is only ever 'audio'/'video' until those later phases
-	// ship their own card treatment.
+	// Pisa!" renders as a real photo, not an empty checkin card. A gallery
+	// Featured Content passes through as the 'gallery' kind and renders as a
+	// small image grid (renderFeaturedGalleryGrid()); quote/link Featured
+	// Content aren't handled yet — they get their own card treatment when
+	// those later phases ship.
 	function mediaKindForItem(item, kind) {
 		if (item.featured_content && item.featured_content.type) {
 			return item.featured_content.type;
@@ -8204,12 +8205,49 @@
 	// same placeholder via imgWithFallback()'s shared error handling. A
 	// Checkin Mark with a captured location is handled first, on its own —
 	// see renderCheckinMapPreview() above.
+	// A Mark whose Featured Content is a gallery (issue #406) shows its first
+	// four images as a small grid in the card's media slot — a lighter
+	// treatment than a single-image Mark's tall banner, since a handful of
+	// photos reads better as a cluster than as one cropped frame. Three or
+	// fewer images fill the same box (one image whole, two as columns, three
+	// with the first tall); more than four add a "+N" on the last cell. The
+	// images are decorative (the card's title and excerpt carry the meaning),
+	// so they get empty alt text, like every other card thumbnail.
+	function renderFeaturedGalleryGrid(item, kind) {
+		const fc = item.featured_content;
+		if ('gallery' !== kind || !fc || 'gallery' !== fc.type || !Array.isArray(fc.images) || !fc.images.length) {
+			return '';
+		}
+		const images = fc.images.slice(0, 4);
+		const extra = Math.max(0, (parseInt(fc.count, 10) || images.length) - images.length);
+		const cells = images
+			.map((src, index) => {
+				const more =
+					extra > 0 && index === images.length - 1
+						? `<span class="daymark-recent__gridmore" aria-hidden="true">+${esc(String(extra))}</span>`
+						: '';
+				return `<span class="daymark-recent__gridcell">${imgWithFallback(
+					src,
+					'daymark-recent__thumb daymark-recent__thumb--cell',
+					'G'
+				)}${more}</span>`;
+			})
+			.join('');
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}${cardKindBadge(
+			kind
+		)}</span>`;
+	}
+
 	function renderCardMedia(item, kind) {
 		if ('checkin' === kind) {
 			return item.location ? renderCheckinMapPreview(item.location) : '';
 		}
 		if ('note' === kind || 'link' === kind) {
 			return '';
+		}
+		const gridMarkup = renderFeaturedGalleryGrid(item, kind);
+		if (gridMarkup) {
+			return gridMarkup;
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
 		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;

@@ -460,6 +460,69 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'daymark-featured-content--gallery', $replaced );
 	}
 
+	/**
+	 * Store a three-image gallery on the test post.
+	 *
+	 * @return int[] The attachment IDs.
+	 */
+	private function set_three_image_gallery(): array {
+		$attachment_ids = array(
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+			$this->create_attachment( 'image/png' ),
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $attachment_ids ) ) )
+		);
+
+		return $attachment_ids;
+	}
+
+	/**
+	 * Outside a single post (the home page, an archive, search) the slider's
+	 * assets are not loaded, so a gallery renders only its first image, with
+	 * no controls — never every image stacked and unstyled in a listing.
+	 */
+	public function test_gallery_renders_only_its_first_image_outside_a_single_post() {
+		$this->set_three_image_gallery();
+		$this->go_to( home_url( '/' ) );
+
+		$this->assertFalse( is_singular() );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__slide"' ) );
+		$this->assertStringNotContainsString( 'data-daymark-gallery-next', $output );
+	}
+
+	/**
+	 * On a single post the gallery renders every slide with its controls, and
+	 * the render itself enqueues the slider script and stylesheet — so a
+	 * gallery shown inside another single post's page still works.
+	 */
+	public function test_gallery_renders_full_slider_and_enqueues_assets_on_a_single_post() {
+		$this->set_three_image_gallery();
+		wp_dequeue_script( 'daymark-featured-content' );
+		wp_dequeue_style( 'daymark-featured-content' );
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		$this->assertTrue( is_singular() );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 3, substr_count( $output, 'daymark-fc-gallery__slide"' ) );
+		$this->assertStringContainsString( 'data-daymark-gallery-next', $output );
+		$this->assertTrue( wp_script_is( 'daymark-featured-content', 'enqueued' ) );
+		$this->assertTrue( wp_style_is( 'daymark-featured-content', 'enqueued' ) );
+	}
+
 	// -- render_audio()/render_video() direct-media-URL fallback gating ---
 	//
 	// A provider *page* URL (a Vimeo/YouTube watch page, a podcast episode
@@ -548,6 +611,10 @@ class Test_Featured_Content extends WP_UnitTestCase {
 				)
 			)
 		);
+
+		// The full slider only renders on a single post (see
+		// test_gallery_renders_only_its_first_image_outside_a_single_post).
+		$this->go_to( get_permalink( $this->post_id ) );
 
 		ob_start();
 		Daymark_Featured_Content::the_featured_content( $this->post_id );

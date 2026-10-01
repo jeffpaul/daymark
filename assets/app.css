@@ -844,6 +844,58 @@ h2[tabindex='-1']:focus {
 	border-radius: 0;
 }
 
+/* A gallery Featured Content's card media (renderFeaturedGalleryGrid() in
+   app.js): up to four thumbnails in a 2x2 grid inside a modest banner, well
+   shorter than a single-image Mark's 320px one. Fewer images fill the same
+   box — one whole, two as tall columns, three with the first spanning both
+   rows. Declared after the gallery-kind banner height above so it wins at
+   equal specificity. */
+.daymark-recent__item--gallery .daymark-recent__thumbwrap--grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	grid-template-rows: 1fr 1fr;
+	gap: 2px;
+	height: 176px;
+	overflow: hidden;
+}
+
+.daymark-recent__gridcell {
+	position: relative;
+	display: block;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.daymark-recent__thumbwrap--grid .daymark-recent__thumb--cell {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.daymark-recent__thumbwrap--grid-1 .daymark-recent__gridcell {
+	grid-column: 1 / -1;
+	grid-row: 1 / -1;
+}
+
+.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell,
+.daymark-recent__thumbwrap--grid-3 .daymark-recent__gridcell:first-child {
+	grid-row: 1 / -1;
+}
+
+.daymark-recent__gridmore {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+	font-size: 20px;
+	font-weight: 700;
+}
+
 .daymark-recent__thumbwrap--media .daymark-recent__thumb--siteicon {
 	/* A site-icon-as-banner would otherwise stretch a small favicon across
 	   176px of width — cap it to something recognizable instead, centered

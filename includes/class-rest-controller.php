@@ -3770,18 +3770,35 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// but a Timeline card is exactly the kind of "where a Featured Image
 		// would show" slot that feature already replaces by default on the
 		// front end (see maybe_replace_post_thumbnail_html()), so the app
-		// shell's own card follows the same rule. Only the type is exposed
-		// here — resolveCardKind()/renderCardMedia() (assets/app.js) already
-		// have a full placeholder/play-button treatment for 'audio'/'video'
-		// that needs no real thumbnail to look intentional; a richer preview
-		// (an actual thumbnail image) is a follow-up, not required for the
-		// card to correctly reflect that Featured Content is set at all.
+		// shell's own card follows the same rule. The type is always
+		// exposed — resolveCardKind()/renderCardMedia() (assets/app.js)
+		// already have a full placeholder/play-button treatment for
+		// 'audio'/'video' that needs no real thumbnail to look intentional.
+		// A gallery additionally carries its first four image URLs and total
+		// image count, for the card's 2x2 thumbnail grid.
 		$featured_content = Daymark_Featured_Content::get_featured_content( $post_id );
 
 		if ( ! empty( $featured_content ) ) {
 			$summary['featured_content'] = array(
 				'type' => $featured_content['type'],
 			);
+
+			// A gallery's card shows its first four images as a small grid
+			// (issue #406), so those thumbnail URLs travel with the summary.
+			if ( 'gallery' === $featured_content['type'] ) {
+				$images = array();
+
+				foreach ( array_slice( (array) ( $featured_content['data']['attachment_ids'] ?? array() ), 0, 4 ) as $attachment_id ) {
+					$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium' );
+
+					if ( $url ) {
+						$images[] = esc_url_raw( $url );
+					}
+				}
+
+				$summary['featured_content']['images'] = $images;
+				$summary['featured_content']['count']  = count( (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
+			}
 		}
 
 		return $summary;

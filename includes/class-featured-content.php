@@ -609,6 +609,8 @@ class Daymark_Featured_Content {
 	 * the markup (a no-JS visitor sees them stacked; assets/featured-content.js
 	 * adds `is-enhanced` and shows one at a time). Controls, dots, and the
 	 * live region are omitted for a single image — there is nothing to slide.
+	 * Outside a single post only the first image is rendered, since the
+	 * slider's assets are not loaded there.
 	 *
 	 * @param array{attachment_ids?: int[]} $data Sanitized gallery data.
 	 * @return string
@@ -644,6 +646,20 @@ class Daymark_Featured_Content {
 
 		if ( 0 === $count ) {
 			return '';
+		}
+
+		// Outside a single post — the home page, an archive, search, a feed —
+		// a theme calls the_post_thumbnail() once per listed post, and the
+		// slider's stylesheet and script are not loaded there. Showing up to
+		// 20 stacked, unstyled images in every listing would be far worse
+		// than the featured image it replaces, so show only the first image.
+		if ( $count > 1 && ! is_singular() ) {
+			$images = array_slice( $images, 0, 1 );
+			$count  = 1;
+		}
+
+		if ( $count > 1 ) {
+			self::enqueue_frontend_assets( true );
 		}
 
 		$slides = array();
@@ -767,6 +783,19 @@ class Daymark_Featured_Content {
 			return;
 		}
 
+		self::enqueue_frontend_assets( 'gallery' === ( self::get_featured_content( $post_id )['type'] ?? '' ) );
+	}
+
+	/**
+	 * Enqueue the frontend stylesheet and, for a gallery, its slider script.
+	 * Called both for the queried post (head) and from render_gallery()
+	 * itself, so a gallery shown inside another single post's page (a
+	 * related-posts block, say) still gets its styles and behavior.
+	 *
+	 * @param bool $with_script Whether to enqueue the gallery slider script too.
+	 * @return void
+	 */
+	private static function enqueue_frontend_assets( bool $with_script ): void {
 		wp_enqueue_style(
 			'daymark-featured-content',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content.css',
@@ -774,9 +803,7 @@ class Daymark_Featured_Content {
 			DAYMARK_VERSION
 		);
 
-		$fc = self::get_featured_content( $post_id );
-
-		if ( isset( $fc['type'] ) && 'gallery' === $fc['type'] ) {
+		if ( $with_script ) {
 			wp_enqueue_script(
 				'daymark-featured-content',
 				DAYMARK_PLUGIN_URL . 'assets/featured-content.js',

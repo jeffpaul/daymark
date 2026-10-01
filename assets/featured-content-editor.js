@@ -93,6 +93,10 @@
 ( function ( wp ) {
 	'use strict';
 
+	// Library types the Featured Content picker offers: audio and video for
+	// a single file, images for a gallery (issue #406).
+	var PICKER_MEDIA_TYPES = [ 'audio', 'video', 'image' ];
+
 	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.data || ! wp.i18n ) {
 		return;
 	}
@@ -482,12 +486,11 @@
 	 * has to match reality once the toolbar is actually on screen,
 	 * regardless of which internal mechanism produced it.
 	 *
-	 * Deliberately Video/Audio only, no Image option: `openMediaPicker()`'s
-	 * own `library: { type: [ 'audio', 'video' ] }` restriction already
-	 * excludes every other mime type from the underlying query before this
-	 * filter ever runs, so an Image option would only ever show zero results
-	 * — this filter narrows *within* that existing restriction, it doesn't
-	 * loosen it.
+	 * Video, Audio, and Images (images make a gallery — issue #406):
+	 * `openMediaPicker()`'s own `library: { type: PICKER_MEDIA_TYPES }`
+	 * restriction excludes every other mime type from the underlying query
+	 * before this filter ever runs — this filter narrows *within* that
+	 * existing restriction, it doesn't loosen it.
 	 *
 	 * Feature-detected and wrapped defensively, matching this file's
 	 * established posture toward every other wp.media internal it touches: a
@@ -646,6 +649,9 @@
 						'<option value="audio">' +
 						__( 'Audio', 'daymark' ) +
 						'</option>' +
+						'<option value="image">' +
+						__( 'Images', 'daymark' ) +
+						'</option>' +
 						'</select>' +
 						'</div>'
 				);
@@ -653,7 +659,7 @@
 				$wrap.find( 'select' ).on( 'change', function () {
 					var value = $jq( this ).val();
 
-					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
+					library.props.set( 'type', value ? value : PICKER_MEDIA_TYPES );
 				} );
 
 				if ( $toolbar.length ) {
@@ -712,16 +718,20 @@
 	 * @param {Function} onLibrarySelect Called with the picked attachment's REST-shaped object.
 	 * @param {Function} onUrlSelect     Called with a pasted URL string.
 	 */
-	function openMediaPicker( onLibrarySelect, onUrlSelect ) {
+	function openMediaPicker( onLibrarySelect, onUrlSelect, onGallerySelect, preselectIds ) {
 		if ( ! wp.media ) {
 			return;
 		}
 
 		var options = {
 			title: __( 'Featured content', 'daymark' ),
-			library: { type: [ 'audio', 'video' ] },
-			multiple: false,
-			button: { text: __( 'Use this file', 'daymark' ) },
+			library: { type: PICKER_MEDIA_TYPES },
+			// 'add' lets a tap toggle each item into the selection, with no
+			// modifier key — what a phone or trackpad needs to build a
+			// gallery. A single audio/video pick still works exactly as it
+			// did with a one-item selection.
+			multiple: 'add',
+			button: { text: __( 'Use selection', 'daymark' ) },
 		};
 
 		var FrameClass = getFeaturedContentFrameClass();
@@ -741,42 +751,29 @@
 
 		bindLibraryTypeFilter( frame );
 
-		frame.on( 'select', function () {
-			var selection = frame.state().get( 'selection' ).first();
+		// Replace on an existing gallery reopens with its images already
+		// selected, so adding or dropping one image doesn't mean picking all
+		// of them again. Best-effort: a missing shape just opens empty.
+		if ( Array.isArray( preselectIds ) && preselectIds.length ) {
+			frame.on( 'open', function () {
+				try {
+					var selection = frame.state().get( 'selection' );
 
-			if ( selection ) {
-				onLibrarySelect( selection.toJSON() );
-			}
-		} );
+					preselectIds.forEach( function ( id ) {
+						var attachment = wp.media.attachment( id );
 
-		frame.on( 'daymark:url-selected', function ( url ) {
-			onUrlSelect( url );
-		} );
-
-		frame.open();
-	}
-
-	/**
-	 * Multi-select image picker for gallery Featured Content. Library images
-	 * only — a gallery has no URL shape (issue #406).
-	 *
-	 * @param {Function} onSelect Called with an array of attachment IDs.
-	 */
-	function openGalleryPicker( onSelect ) {
-		if ( ! wp.media ) {
-			return;
+						attachment.fetch();
+						selection.add( attachment );
+					} );
+				} catch ( err ) {
+					// Opens with nothing preselected.
+				}
+			} );
 		}
-
-		var frame = wp.media( {
-			title: __( 'Photo gallery', 'daymark' ),
-			library: { type: 'image' },
-			multiple: true,
-			button: { text: __( 'Use these images', 'daymark' ) },
-		} );
 
 		frame.on( 'select', function () {
 			var selection = frame.state().get( 'selection' );
-			var ids = [];
+			var items = [];
 
 			if ( ! selection ) {
 				return;
@@ -786,13 +783,34 @@
 				var json = model.toJSON();
 
 				if ( json && json.id ) {
-					ids.push( json.id );
+					items.push( json );
 				}
 			} );
 
-			if ( ids.length ) {
-				onSelect( ids );
+			var isImage = function ( item ) {
+				return 0 === ( item.mime || '' ).indexOf( 'image/' );
+			};
+			var images = items.filter( isImage );
+			var media = items.filter( function ( item ) {
+				return ! isImage( item );
+			} );
+
+			// Only images: a gallery. Otherwise the first audio/video wins
+			// (a mixed pick is ambiguous, and one file is what those kinds
+			// store).
+			if ( images.length && ! media.length ) {
+				onGallerySelect(
+					images.map( function ( item ) {
+						return item.id;
+					} )
+				);
+			} else if ( media.length ) {
+				onLibrarySelect( media[ 0 ] );
 			}
+		} );
+
+		frame.on( 'daymark:url-selected', function ( url ) {
+			onUrlSelect( url );
 		} );
 
 		frame.open();
@@ -968,19 +986,19 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Two states: unset (a single "Set featured content" toggle opening a
-	 * small popover menu of supported kinds — Audio or video, Photo
-	 * gallery; quote/link arrive in later phases — each item opening its
-	 * own picker) or already set — a preview with Replace/Remove overlaid
-	 * at its bottom edge on hover/focus, matching core's own Featured Image
-	 * thumbnail treatment (`.editor-post-featured-image__actions`,
-	 * confirmed directly against Gutenberg's own
-	 * `post-featured-image/index.jsx`/`style.scss` rather than a separate
-	 * text row below the preview) — Replace reopens the active kind's own
-	 * picker. No standalone "Featured content: Audio/Video" label: the
-	 * preview itself (a native player, an oEmbed embed, or a gallery strip)
-	 * already denotes the type, the same reasoning core's own thumbnail
-	 * needs no "Featured image: JPEG" caption either.
+	 * Two states: unset (a single "Set featured content" button opening the
+	 * media picker — pick one audio/video file, several images for a
+	 * gallery, or paste a link on its "Add by URL" tab) or already set — a
+	 * preview with Replace/Remove overlaid at its bottom edge on
+	 * hover/focus, matching core's own Featured Image thumbnail treatment
+	 * (`.editor-post-featured-image__actions`, confirmed directly against
+	 * Gutenberg's own `post-featured-image/index.jsx`/`style.scss` rather
+	 * than a separate text row below the preview) — Replace reopens the
+	 * same picker, with a gallery's images already selected. No standalone
+	 * "Featured content: Audio/Video" label: the preview itself (a native
+	 * player, an oEmbed embed, or a gallery strip) already denotes the
+	 * type, the same reasoning core's own thumbnail needs no "Featured
+	 * image: JPEG" caption either.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -991,9 +1009,6 @@
 
 		var editPost = useDispatch( 'core/editor' ).editPost;
 		var current = readFeaturedContent( meta );
-		var menuState = useState( false );
-		var menuOpen = menuState[ 0 ];
-		var setMenuOpen = menuState[ 1 ];
 
 		function handleLibrarySelect( attachment ) {
 			var mime = attachment.mime || '';
@@ -1014,30 +1029,18 @@
 			saveFeaturedContent( editPost, guessUrlKind( url ), { source: 'url', url: url } );
 		}
 
-		function openPicker() {
-			setMenuOpen( false );
-
-			if ( 'gallery' === current.type ) {
-				openGalleryPicker( function ( ids ) {
-					saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
-				} );
-				return;
+		function handleGallerySelect( ids ) {
+			if ( ids && ids.length ) {
+				saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
 			}
-
-			openMediaPicker( handleLibrarySelect, handleUrlSelect );
 		}
 
-		function openKind( kind ) {
-			setMenuOpen( false );
+		function openPicker() {
+			var preselect = 'gallery' === current.type && current.data && Array.isArray( current.data.attachment_ids )
+				? current.data.attachment_ids
+				: [];
 
-			if ( 'gallery' === kind ) {
-				openGalleryPicker( function ( ids ) {
-					saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
-				} );
-				return;
-			}
-
-			openMediaPicker( handleLibrarySelect, handleUrlSelect );
+			openMediaPicker( handleLibrarySelect, handleUrlSelect, handleGallerySelect, preselect );
 		}
 
 		if ( current.type ) {
@@ -1073,51 +1076,9 @@
 		}
 
 		return el(
-			'div',
-			{ className: 'daymark-fc-chooser' },
-			el(
-				'button',
-				{
-					type: 'button',
-					className: 'daymark-fc-toggle',
-					'aria-expanded': menuOpen ? 'true' : 'false',
-					'aria-haspopup': 'menu',
-					onClick: function () {
-						setMenuOpen( ! menuOpen );
-					},
-				},
-				__( 'Set featured content', 'daymark' )
-			),
-			menuOpen
-				? el(
-					'div',
-					{ className: 'daymark-fc-menu', role: 'menu' },
-					el(
-						'button',
-						{
-							type: 'button',
-							className: 'daymark-fc-menu__item',
-							role: 'menuitem',
-							onClick: function () {
-								openKind( 'media' );
-							},
-						},
-						__( 'Audio or video', 'daymark' )
-					),
-					el(
-						'button',
-						{
-							type: 'button',
-							className: 'daymark-fc-menu__item',
-							role: 'menuitem',
-							onClick: function () {
-								openKind( 'gallery' );
-							},
-						},
-						__( 'Photo gallery', 'daymark' )
-					)
-				)
-				: null
+			'button',
+			{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
+			__( 'Set featured content', 'daymark' )
 		);
 	}
 
