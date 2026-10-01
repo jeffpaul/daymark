@@ -199,6 +199,7 @@ class Daymark_Microformats {
 		$html .= $this->reply_markup( $post_id );
 		$html .= $this->repost_markup( $post_id );
 		$html .= $this->like_markup( $post_id );
+		$html .= Daymark_Bridgy_Fed::markup( $post_id );
 
 		/**
 		 * Whether a Mark's quietly-captured location (see the "quiet Mark
@@ -346,6 +347,8 @@ class Daymark_Microformats {
 	 * added, and is removed if the plugin extracted it from the content
 	 * itself (a Reblog Mark's quote links the reposted post) — so an origin
 	 * running both ActivityPub and Webmention receives one Like, not two.
+	 * A Like/Reblog Mark routed through Bridgy Fed (issue #441) also gets
+	 * Bridgy Fed's own target added.
 	 * The filter's return value is the full target list the sender pings, so
 	 * removing a URL here is enough to stop that one Webmention; any other
 	 * link in the Mark still gets its own.
@@ -370,6 +373,14 @@ class Daymark_Microformats {
 			if ( '' !== $target && ! in_array( $target, $urls, true ) ) {
 				$urls[] = $target;
 			}
+		}
+
+		// A Like/Reblog of a fediverse or Bluesky post on a bridged site
+		// (issue #441): Bridgy Fed delivers it once it receives this
+		// Webmention and fetches the Mark (which carries the matching
+		// hidden u-bridgy-fed link, see Daymark_Bridgy_Fed::markup()).
+		if ( Daymark_Bridgy_Fed::routes_mark( $post_id ) && ! in_array( Daymark_Bridgy_Fed::TARGET, $urls, true ) ) {
+			$urls[] = Daymark_Bridgy_Fed::TARGET;
 		}
 
 		if ( '' === $suppressed ) {

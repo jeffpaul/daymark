@@ -48,6 +48,7 @@ You're in control of the location-related services: see "What does Daymark quiet
 **Comments and likes on posts you follow.** What is sent depends on what the other site supports.
 
 * If you use the Webmention or ActivityPub plugins, they send your reply or like themselves. Daymark doesn't.
+* If you've marked your site as bridged with Bridgy Fed (Settings -> Daymark -> Connectors), a like or reblog of a fediverse or Bluesky post goes to fed.brid.gy as a Webmention, sent by the Webmention plugin with your like's own address. Bridgy Fed then reads that page and delivers the like. See https://fed.brid.gy/docs for its terms and privacy policy.
 * Otherwise Daymark posts your comment to the other WordPress site's public comments endpoint, sending the comment text, your display name, your account email address, and your site's address, the same details WordPress's own comment form collects.
 * If you have linked a WordPress.com account through Jetpack, likes and comments on WordPress.com sites go through WordPress.com using that connection (the post and your comment text), and Daymark reads the likes your own posts have received there. See the [WordPress.com Terms of Service](https://wordpress.com/tos/) and the [Automattic Privacy Policy](https://automattic.com/privacy/).
 
@@ -97,6 +98,7 @@ Liking a subscribed post needs a way to actually tell the original site. Daymark
 * The [Webmention plugin](https://wordpress.org/plugins/webmention/) is active on your site, and the subscribed site accepts Webmentions.
 * [Jetpack](https://wordpress.org/plugins/jetpack/) is active and you've linked your own WordPress.com account (Jetpack -> My Connection). This covers subscribed sites hosted on WordPress.com or connected to Jetpack.
 * The [ActivityPub plugin](https://wordpress.org/plugins/activitypub/) (8.1.0 or later) is active, your own user is enabled as an ActivityPub author, and the subscribed post is a fediverse post (Mastodon, or a site running ActivityPub). Daymark sends it a real ActivityPub Like; reblogging it also sends a boost.
+* Your site is bridged with [Bridgy Fed](https://fed.brid.gy/) (check "This site is bridged with Bridgy Fed" on Settings -> Daymark -> Connectors), the Webmention plugin is active, and the subscribed post is a fediverse or Bluesky post that doesn't accept Webmentions. The Like or Reblog goes through Bridgy Fed.
 
 Without any of these, subscribed posts show no Like icon at all, so you never send a Like nobody receives. All three plugins are listed on Settings -> Daymark -> Connectors with an Install/Activate button. A post you already liked keeps its icon so you can unlike it.
 

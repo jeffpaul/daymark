@@ -171,6 +171,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
+		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
@@ -543,6 +544,7 @@ class Daymark_Admin_Subscriptions {
 			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
 			'title_updated'       => __( 'Site name updated.', 'daymark' ),
 			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
+			'bridgy_fed_saved'    => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
 			'feeds_unchanged'     => __( 'No changes made to this site\'s feeds.', 'daymark' ),
 		);
@@ -2202,6 +2204,9 @@ class Daymark_Admin_Subscriptions {
 						<p>
 							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get started', 'daymark' ); ?></a>
 						</p>
+						<?php if ( 'https://fed.brid.gy/' === $connector['url'] ) : ?>
+							<?php $this->render_bridgy_fed_form(); ?>
+						<?php endif; ?>
 					<?php else : ?>
 						<?php
 						$status  = $this->connector_status( $connector );
@@ -2399,6 +2404,58 @@ class Daymark_Admin_Subscriptions {
 			<?php submit_button( __( 'Save privacy settings', 'daymark' ) ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * The "this site is bridged" checkbox on the Bridgy Fed card (issue
+	 * #441). Bridgy Fed has no stable API Daymark could ask, so the site
+	 * owner says so here once they've set it up.
+	 *
+	 * @return void
+	 */
+	private function render_bridgy_fed_form(): void {
+		$webmention = Daymark_Plugin_Detector::is_active( 'webmention' );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_bridgy_fed_save" />
+			<?php wp_nonce_field( 'daymark_bridgy_fed_save', 'daymark_bridgy_fed_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Bridgy_Fed::OPTION ); ?>" value="1" <?php checked( '1', (string) get_option( Daymark_Bridgy_Fed::OPTION, '' ) ); ?> />
+					<?php esc_html_e( 'This site is bridged with Bridgy Fed', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'When checked, liking or reblogging a fediverse or Bluesky post you follow sends it through Bridgy Fed. Posts on sites that accept Webmentions still get them directly.', 'daymark' ); ?>
+				<?php if ( ! $webmention ) : ?>
+					<?php esc_html_e( 'Needs the Webmention plugin above to be active.', 'daymark' ); ?>
+				<?php endif; ?>
+			</p>
+			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Bridgy Fed checkbox (admin_post_daymark_bridgy_fed_save).
+	 *
+	 * @return void
+	 */
+	public function handle_bridgy_fed_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_bridgy_fed_save', 'daymark_bridgy_fed_save_nonce' );
+
+		update_option( Daymark_Bridgy_Fed::OPTION, isset( $_POST[ Daymark_Bridgy_Fed::OPTION ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect(
+			array(
+				'tab'                  => 'connectors',
+				self::NOTICE_QUERY_VAR => 'bridgy_fed_saved',
+			)
+		);
 	}
 
 	/**

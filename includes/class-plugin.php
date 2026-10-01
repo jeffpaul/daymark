@@ -143,6 +143,14 @@ final class Daymark_Plugin {
 	public Daymark_Featured_Content $featured_content;
 
 	/**
+	 * Bridgy Fed routing for Like/Reblog Marks of fediverse and Bluesky
+	 * posts (issue #441).
+	 *
+	 * @var Daymark_Bridgy_Fed
+	 */
+	public Daymark_Bridgy_Fed $bridgy_fed;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -293,6 +301,7 @@ final class Daymark_Plugin {
 		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
 		$this->activitypub_engagement       = new Daymark_ActivityPub_Engagement();
 		$this->featured_content             = new Daymark_Featured_Content();
+		$this->bridgy_fed                   = new Daymark_Bridgy_Fed();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -384,6 +393,7 @@ final class Daymark_Plugin {
 		$this->jetpack_engagement->register();
 		$this->activitypub_engagement->register();
 		$this->featured_content->register();
+		$this->bridgy_fed->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

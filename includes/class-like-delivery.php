@@ -16,6 +16,9 @@
  *    permalink resolves to an ActivityPub object (Daymark_ActivityPub_Engagement).
  * 3. Webmention: the local Webmention plugin is active AND the origin
  *    advertises a Webmention endpoint.
+ * 4. Bridgy Fed (issue #441): this site is bridged (Daymark_Bridgy_Fed), the
+ *    Webmention plugin is active, and the origin is a fediverse or Bluesky
+ *    post that doesn't take Webmentions itself.
  *
  * The Jetpack and Webmention signals come from Daymark_Comment_Delivery's
  * existing, cached permalink discovery; the ActivityPub signal from
@@ -100,11 +103,11 @@ class Daymark_Like_Delivery {
 	 * most, shared with the Comment action.
 	 *
 	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
-	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool, bridgy_fed: bool}
 	 */
 	public static function resolve( int $subscription_post_id ): array {
 		if ( ! self::mechanisms_exist() ) {
-			return self::result( false, false, false );
+			return self::result( false, false, false, false );
 		}
 
 		$activitypub = false;
@@ -119,7 +122,7 @@ class Daymark_Like_Delivery {
 			: array();
 
 		if ( is_wp_error( $signals ) ) {
-			return self::result( false, $activitypub, false );
+			return self::result( false, $activitypub, false, false );
 		}
 
 		return self::evaluate( $signals, $activitypub );
@@ -168,7 +171,7 @@ class Daymark_Like_Delivery {
 	 *
 	 * @param array<string, mixed> $signals     Daymark_Comment_Delivery origin signals.
 	 * @param bool                 $activitypub Whether the ActivityPub route resolved.
-	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool, bridgy_fed: bool}
 	 */
 	private static function evaluate( array $signals, bool $activitypub ): array {
 		$jetpack    = (int) ( $signals['jetpack_site_id'] ?? 0 ) > 0
@@ -176,20 +179,23 @@ class Daymark_Like_Delivery {
 			&& Daymark_Jetpack_Engagement::current_user_connected();
 		$webmention = '' !== (string) ( $signals['webmention_endpoint'] ?? '' )
 			&& Daymark_Plugin_Detector::is_active( 'webmention' );
+		$bridgy_fed = Daymark_Bridgy_Fed::available() && Daymark_Bridgy_Fed::target_needs_bridge( $signals );
 
-		return self::result( $jetpack, $activitypub, $webmention );
+		return self::result( $jetpack, $activitypub, $webmention, $bridgy_fed );
 	}
 
 	/**
 	 * Shape a resolve()/evaluate() result. `method` is the route a Like
-	 * would take first: Jetpack, then ActivityPub, then Webmention.
+	 * would take first: Jetpack, then ActivityPub, then Webmention, then
+	 * Bridgy Fed.
 	 *
 	 * @param bool $jetpack     Jetpack-native route available.
 	 * @param bool $activitypub ActivityPub route available.
 	 * @param bool $webmention  Webmention route available.
-	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool}
+	 * @param bool $bridgy_fed  Bridgy Fed route available.
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool, bridgy_fed: bool}
 	 */
-	private static function result( bool $jetpack, bool $activitypub, bool $webmention ): array {
+	private static function result( bool $jetpack, bool $activitypub, bool $webmention, bool $bridgy_fed ): array {
 		$method = '';
 
 		if ( $jetpack ) {
@@ -198,14 +204,17 @@ class Daymark_Like_Delivery {
 			$method = 'activitypub';
 		} elseif ( $webmention ) {
 			$method = 'webmention';
+		} elseif ( $bridgy_fed ) {
+			$method = 'bridgy_fed';
 		}
 
 		return array(
-			'available'   => $jetpack || $activitypub || $webmention,
+			'available'   => $jetpack || $activitypub || $webmention || $bridgy_fed,
 			'method'      => $method,
 			'jetpack'     => $jetpack,
 			'activitypub' => $activitypub,
 			'webmention'  => $webmention,
+			'bridgy_fed'  => $bridgy_fed,
 		);
 	}
 
@@ -262,6 +271,12 @@ class Daymark_Like_Delivery {
 
 		if ( '' !== $activitypub ) {
 			return $activitypub;
+		}
+
+		// Through Bridgy Fed, the Webmention goes to Bridgy Fed, not the
+		// origin, so that's the target whose delivery to report.
+		if ( Daymark_Bridgy_Fed::routes_mark( $mark_id ) ) {
+			return self::webmention_state( $mark_id, Daymark_Bridgy_Fed::TARGET );
 		}
 
 		return self::webmention_state( $mark_id, $permalink );
