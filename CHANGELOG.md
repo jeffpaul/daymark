@@ -27,6 +27,7 @@ can't act on them.
 
 ### Fixed
 
+- The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
 - When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
 
 ## [0.18.0] - 2026-09-30
