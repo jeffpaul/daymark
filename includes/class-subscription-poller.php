@@ -600,7 +600,7 @@ class Daymark_Subscription_Poller {
 		// wp_safe_remote_get(), not wp_remote_get(): this is a stored,
 		// user-subscribed-to external URL fetched on a live user action, same
 		// SSRF-hardening reasoning as the feed source's own site-HTML fetch.
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				/**
@@ -657,13 +657,92 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = wp_kses_post( self::extract_body_html( $body ) );
+		$sanitized = self::strip_untrusted_presentation( wp_kses_post( self::extract_body_html( $body ) ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
 
 		return true;
+	}
+
+	/**
+	 * Remove a remote page's own presentation from an HTML fragment: every
+	 * inline `style` attribute, and every class token that starts with
+	 * `daymark-`.
+	 *
+	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS
+	 * property list, but that list still includes layout properties such as
+	 * `position`, `top`/`left`, `z-index`, and `width`/`height`) and keeps
+	 * `class`, and the app shell's CSP allows inline styles and loads
+	 * app.css. A hostile subscribed site could therefore lay its own
+	 * content over the authenticated UI, either with its own inline
+	 * positioning or by borrowing Daymark's own overlay classes (a
+	 * `class="daymark-sheet"` becomes a fixed, full-screen layer). Script
+	 * execution is not possible (the CSP's `script-src` is nonce-only), so
+	 * this is UI redressing, not XSS, but a cached subscription post has no
+	 * legitimate need for either. Other classes are left alone: they carry
+	 * the source site's own semantics (an image's `alignleft`, a block's
+	 * `wp-block-*`) and match nothing in the app's stylesheet. An image's
+	 * real dimensions live in its width/height attributes, not its style.
+	 *
+	 * Public and static because both the poller (at store time) and the
+	 * REST controller (at read time, for a body cached before this existed)
+	 * call it. Marks' own content is never passed through it: a Mark's
+	 * Check In map preview legitimately uses a `daymark-` class and a
+	 * positioned pin.
+	 *
+	 * `$strip_styles` and `$keep_classes` exist for a Mark's own content (see
+	 * Daymark_REST_Controller::get_mark_content()): it keeps its inline styles
+	 * and the Check In map's own classes, and only loses any other `daymark-`
+	 * class, which an Author could otherwise use to overlay the app.
+	 *
+	 * @param string   $html         HTML fragment, already passed through wp_kses_post().
+	 * @param bool     $strip_styles Whether to remove inline `style` attributes.
+	 * @param string[] $keep_classes `daymark-` class tokens to leave alone (compared case-insensitively).
+	 * @return string The same HTML without inline styles (when asked) or `daymark-` classes.
+	 */
+	public static function strip_untrusted_presentation( string $html, bool $strip_styles = true, array $keep_classes = array() ): string {
+		// No shortcut on the raw text: a class can be written with an HTML
+		// entity (`daymark&#45;sheet`), which never contains the literal
+		// "daymark-" but decodes to it in the browser. The tag processor
+		// decodes attribute values, so it must always look. The wp_kses_post()
+		// sanitizer already decodes numeric entities in a class value today,
+		// so this is defense in depth against that changing, or against a body
+		// that skipped it.
+		if ( '' === $html ) {
+			return $html;
+		}
+
+		$keep      = array_map( 'strtolower', $keep_classes );
+		$processor = new WP_HTML_Tag_Processor( $html );
+
+		while ( $processor->next_tag() ) {
+			if ( $strip_styles ) {
+				$processor->remove_attribute( 'style' );
+			}
+
+			$class = $processor->get_attribute( 'class' );
+
+			if ( ! is_string( $class ) || false === stripos( $class, 'daymark-' ) ) {
+				continue;
+			}
+
+			$kept = array_filter(
+				preg_split( '/\s+/', trim( $class ) ),
+				static function ( $token ) use ( $keep ) {
+					return '' !== $token && ( 0 !== stripos( $token, 'daymark-' ) || in_array( strtolower( $token ), $keep, true ) );
+				}
+			);
+
+			if ( $kept ) {
+				$processor->set_attribute( 'class', implode( ' ', $kept ) );
+			} else {
+				$processor->remove_attribute( 'class' );
+			}
+		}
+
+		return $processor->get_updated_html();
 	}
 
 	/**

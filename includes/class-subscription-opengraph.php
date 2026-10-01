@@ -143,7 +143,7 @@ class Daymark_Subscription_Opengraph {
 	 *               See resolve()'s own return contract.
 	 */
 	private static function fetch_and_extract( string $url ): array {
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$url,
 			array(
 				/**

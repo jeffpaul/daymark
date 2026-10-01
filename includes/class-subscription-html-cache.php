@@ -102,7 +102,7 @@ class Daymark_Subscription_Html_Cache {
 		 */
 		$max_bytes = (int) apply_filters( 'daymark_subscription_max_html_bytes', self::MAX_HTML_BYTES );
 
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$url,
 			array(
 				/**

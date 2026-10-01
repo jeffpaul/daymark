@@ -22,22 +22,74 @@ can't act on them.
 
 ### Added
 
+- The Search screen gained a **Date** dropdown beside the existing keyword/type/source filters, reusing the same buckets the Timeline itself groups its items into (Today / This Week / Last Week / This Month / Last Month) so a label means the same thing in both places. It combines with the other filters and covers both your Marks and subscription posts, backed by the same merged `GET /timeline` endpoint. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- Explore's Timeline gained an **On this day** section showing the Marks you published on this calendar date in past years — last year's memory, the year before's, and so on, newest first — sitting between Bookmarks and Following. Backed by the same merged `GET /timeline` endpoint the rest of Explore and Timeline already use, filtered to your own Marks from prior years (nothing from today itself), so the section shares every card behavior the others already have: open the full post view, bookmark, like, comment, share. Marks you publish today won't appear here until next year. ([#294](https://github.com/jeffpaul/daymark/issues/294), [#413](https://github.com/jeffpaul/daymark/pull/413))
 - Publishing a Mark with a captured location and weather while the Simple Location plugin is active now also bridges the temperature and a human-readable condition text into Simple Location's own post-meta at publish time, so that plugin's weather display extends to the Mark for free — no duplicate weather fetch or storage inside Daymark. The weather code itself is deliberately not bridged, since Simple Location's icon/code vocabulary is OpenWeatherMap-derived and can't map Daymark's Open-Meteo codes; a bridged-but-wrong code would render worse than no code at all. ([#397](https://github.com/jeffpaul/daymark/issues/397))
+
+### Fixed
+
+- The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
+- When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
+
+## [0.18.0] - 2026-09-30
+
+### Added
+
+- Liking a Mastodon post, or a post from any site running the ActivityPub plugin, now sends it a real ActivityPub Like through the ActivityPub plugin (8.1.0 or later, with your user enabled as an author); unliking sends an Undo. Reblogging one also sends a boost, undone when you unreblog. The origin gets one Like, not a second one by Webmention. ([#439](https://github.com/jeffpaul/daymark/issues/439))
+- A Like or Comment you've sent on a subscribed post now says, in its icon's hover text and screen-reader label, whether it actually reached the original site — delivered, pending, or not delivered.
+- With Jetpack connected, WordPress.com likes on your own Marks now count toward each Mark's like total and show up in Notifications ("Ada liked this"). Jetpack stores these likes on WordPress.com instead of on your site, so Daymark now fetches them in the background.
+- A Checkin Mark with a resolved location now shows a small map preview — a single OpenStreetMap tile with a pin at your captured spot — leading its Timeline card and its full post view, above the place name. A Checkin published before this change doesn't gain one retroactively; only a newly published Checkin's content includes it.
+- A Check In can now carry an optional photo or video ("see it's me at the Leaning Tower of Pisa!") — the composer's picker, previously hidden for Check In entirely, now shows a small, plain "+ Add a photo or video" text link, deliberately understated next to the Place field; attaching one never reclassifies the Mark away from Check In, and its Timeline card now shows the attached media instead of no media slot at all. ([#424](https://github.com/jeffpaul/daymark/issues/424))
 
 ### Changed
 
+- The Like icon on a subscribed post now also appears when the ActivityPub plugin can deliver the Like, and the readme, README, and Connectors tab list ActivityPub as a third way to like subscribed posts, alongside Webmention and Jetpack. ([#439](https://github.com/jeffpaul/daymark/issues/439))
+- The Like icon on a subscribed post now only appears when a Like can actually reach that post's site — through your linked WordPress.com account (Jetpack), or the Webmention plugin plus a site that accepts Webmentions — instead of creating a Like nobody would ever receive. A post you've already liked keeps its icon so you can unlike it.
+- The readme, README, and the Webmention and Jetpack entries on Settings -> Daymark -> Connectors now say plainly that liking a subscribed post needs one of those two plugins; without either, subscribed posts show no Like icon.
+- A Timeline card's leading site icon and type icon are now stacked in one column instead of sitting side by side, reclaiming that horizontal space for the card's own title, excerpt, and media.
+- That leading column now top-aligns with each card instead of sitting centered against it — the site icon's top edge lines up with the card's own title/content, and the type icon still follows directly underneath, instead of drifting toward the card's vertical midpoint on a taller card (a long excerpt, a photo banner).
+- The composer's "Mark type: {Type}" line — previously its own paragraph below the media picker — is now a chip in the header, next to "New Mark"/"Edit Draft", for every Mark type.
 - Explore's Following list is now sorted alphabetically by site name instead of subscribe order.
 - The Me screen's "Your Marks" link is now labeled "My Marks", matching the same wording Search's own Source filter already uses for the identical scope.
 - Search's Source filter dropdown default option is now labeled "All sites" instead of "All", to distinguish it from the type-filter chips' own "All" option just above it. ([#420](https://github.com/jeffpaul/daymark/issues/420))
 - The Timeline's Reblog icon now says "Reblog"/"Undo reblog" on hover and to screen readers, instead of "Repost"/"Undo repost" — matching the name this action has used everywhere else (the dedicated Reblog screen, its "Reblog: {title}" published title) since it gained its own preview step. Every other user-facing "Repost" string (the stat row's screen-reader count, a subscribed post's fallback title for someone else's own repost-type entry, and the plugin-overlap notification) was updated to match. Internal names — the `_daymark_repost_of` post meta key, the `repost_of` REST field, and the microformats2 `u-repost-of` markup (an IndieWeb spec-mandated property name) — are unchanged.
 - The Reblog screen's top-left "Cancel" is now the same Daymark-icon-plus-arrow back link every other screen (Notifications, the full-screen post view) already uses, instead of plain text — the accessible name ("Cancel") is unchanged, only its visual presentation.
 - The Success screen's footer no longer repeats a second "View Timeline" link below "Create Another" — the same link already appears right above it, next to the confirmation message.
+- A Checkin Mark's title now always says where you checked in (e.g. "Checked in at Wildcat Stadium"), even when you also typed a comment — a typed comment used to become the title instead, pushing the place name down into the body text. The comment itself still publishes in full as body text either way.
+- Settings → Daymark now needs the Administrator role (`manage_options`) instead of any role that can edit posts, because it changes site-wide settings and the shared subscription list; Authors, Contributors and Editors no longer see it or the in-app Unsubscribe, and the app no longer links to it for them. ([#447](https://github.com/jeffpaul/daymark/pull/447))
+- The plugin's readme now lists every outside service Daymark can contact, what each one receives and when, and where to read its terms, including the map images Check In posts load for your visitors and the limits on Open-Meteo's free weather service. ([#451](https://github.com/jeffpaul/daymark/pull/451))
 
 ### Fixed
 
+- Likes and comments on subscribed posts now actually reach the original post. The Webmention plugin never saw the liked or replied-to link (it only reads a post's saved content), so nothing was sent; and the WordPress.com (Jetpack) like and comment route was calling the wrong API address, so it silently fell back to a local Like.
+- Liking or commenting through WordPress.com (Jetpack) no longer falls back to the slower path just because the post's own site refused Daymark's page fetch.
+- Likes no longer show up as ordinary posts — in wp-admin's Posts list, on your site's home page and archives (including block-theme Query Loops), in its RSS feed, the REST API, or anywhere a social-sharing plugin picks up new posts. A Like now lives on its own hidden post type whose only public presence is its own permalink (kept so Webmention likes still verify); existing Likes are moved over automatically, and their old URLs redirect.
+- The composer's empty existing-media and preview slots no longer reserve a full row of blank vertical space when nothing is attached — most noticeable around Check In's own small "+ Add a photo or video" text link, which previously sat with a disproportionate amount of whitespace above and below it.
 - Scrolling past the top or bottom of the Timeline in an ordinary mobile browser tab (Safari/Chrome) no longer lets the page's native overscroll bounce slide content up past the header before snapping back — matching how the installed app already behaves, since it has no browser chrome to bounce past. Home's own pull-to-refresh gesture is unaffected; it never relied on this native bounce.
 - Saving Daymark to your phone's home screen now always uses Daymark's own icon, even when your site has its own Site Icon configured (Settings -> General) — previously the home-screen icon used your Site Icon instead, and could show a blank icon if it failed to load. Your browser tab's own favicon is unaffected and still shows your Site Icon. ([#414](https://github.com/jeffpaul/daymark/issues/414))
 - A Timeline card's title or excerpt containing a long unbroken run of characters — most commonly a bare URL pulled in verbatim from a subscribed post — no longer overflows past the card's own edge; it now wraps like the rest of the card's text. ([#417](https://github.com/jeffpaul/daymark/issues/417))
+- The Check In composer's Place field search results are now height-capped and independently scrollable, and each result's address line is clipped to one line instead of wrapping across two or three — on iOS, with the on-screen keyboard covering the bottom half of the screen, more than one search result could previously render entirely behind the keyboard with no way to scroll down and pick it.
+- An installed Daymark now picks up new versions of its own scripts and styles after a plugin update instead of keeping the ones it first installed with. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- A site's push-update subscription (WebSub) that its hub never confirmed is now retried after ten minutes, up to three tries, instead of staying stuck until it was replaced; posts still arrive by polling in the meantime. ([#454](https://github.com/jeffpaul/daymark/pull/454))
+
+### Security
+
+- Daymark now checks every address it fetches for a subscribed site, a link or feed preview, a comment delivery, a Like, or a location lookup, including each redirect and any address a remote page points it at, and refuses any that is private, link-local, or a cloud-metadata address. WordPress 7.0.0 through 7.0.2 did not do this on their own. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- A subscribed site's inline styles, and any classes borrowed from Daymark's own interface, are now removed from posts you open in the app, including posts you bookmarked earlier, so a hostile site can't lay its own content over Daymark's controls. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- The subscription post routes now answer only for real subscription posts. Before, an Author-level user could read the title and excerpt of another user's draft or private post by ID. ([#445](https://github.com/jeffpaul/daymark/pull/445))
+- A password-protected post's content is no longer shown in the app to someone who can't edit that post. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Another user's exact captured location is no longer sent to every Author; only someone who can edit a Mark receives it, apart from a Check In's chosen place. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- Sharing files to Daymark from your phone's share sheet now needs the same upload permission as adding them in the app, so a Contributor can't add media that way. ([#446](https://github.com/jeffpaul/daymark/pull/446))
+- A WebSub hub's verification request now has to present a token Daymark put in the callback address, so no one else can answer a subscription's pending verification. ([#448](https://github.com/jeffpaul/daymark/pull/448))
+- Opening Notifications no longer loads images embedded in a federated reply, which told the reply's author when you viewed it. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- Other Authors' posts can no longer carry Daymark's own interface classes into the app to cover it with a fake screen, and the Friends source no longer matches an ordinary user account that sets its website to a friend's address. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- The offline copy of the app's settings no longer includes the Log out link's one-time code. ([#449](https://github.com/jeffpaul/daymark/pull/449))
+- Featured Content links from Authors and Contributors now use only the video and audio providers WordPress already trusts, so a remote page can no longer choose the player shown on a published post. Nothing changes on a one-person site. ([#450](https://github.com/jeffpaul/daymark/pull/450))
+- Marks you haven't sent yet and bookmarks saved for offline reading now stay with the person who made them on a shared browser, instead of being sent from (or shown to) whoever logs in next. Anything already waiting when you update goes to the first person who opens Daymark afterward. ([#452](https://github.com/jeffpaul/daymark/pull/452))
+
+### Developer
+
+- Continuous integration is faster and cheaper to run: a pull request that changes only documentation now skips the heavy test steps, a new push to a pull request cancels the run still going for the previous commit, and the test jobs use the runner's own MySQL instead of starting a container, which removes about half a minute from each job. ([#453](https://github.com/jeffpaul/daymark/pull/453))
 
 ## [0.17.0] - 2026-09-17
 
@@ -566,6 +618,7 @@ can't act on them.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
 [unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[0.18.0]: https://github.com/jeffpaul/daymark/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/jeffpaul/daymark/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/jeffpaul/daymark/compare/0.15.0...0.16.0
 [0.15.0]: https://github.com/jeffpaul/daymark/compare/0.14.0...0.15.0

@@ -446,7 +446,9 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
+			$title = 'checkin' === $type
+				? $this->generate_title( '', $place_name )
+				: $this->generate_title( $caption );
 		}
 
 		// An explicitly requested draft always wins; a requested (or
@@ -488,7 +490,12 @@ class Daymark_Publisher {
 		}
 
 		$post_data = array(
-			'post_type'    => 'post', // NEVER a custom post type — the Daymark is a standard post.
+			// NEVER a custom post type for real content — a Mark is a
+			// standard post. The one exception is a Like Mark: a pure
+			// engagement signal, not content, so it lives on its own
+			// non-listed post type and never appears anywhere a post does
+			// (see Daymark_Like_Visibility::POST_TYPE).
+			'post_type'    => $is_like_of ? Daymark_Like_Visibility::POST_TYPE : 'post',
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
@@ -530,13 +537,14 @@ class Daymark_Publisher {
 		if ( $category_provided ) {
 			$this->remember_category_prefs( $type, $categories );
 		}
-		if ( $category_provided || ! empty( $categories ) ) {
+		// A Like Mark's own post type has no categories/tags at all.
+		if ( ! $is_like_of && ( $category_provided || ! empty( $categories ) ) ) {
 			wp_set_post_categories( $post_id, $categories, false );
 		}
 
 		// Apply AI-Assist-accepted tags and alt text when provided.
 		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
-		if ( $tags ) {
+		if ( $tags && ! $is_like_of ) {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
@@ -799,7 +807,9 @@ class Daymark_Publisher {
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
 
 		if ( '' === $title ) {
-			$title = $this->generate_title( $caption, 'checkin' === $type ? $place_name : null );
+			$title = 'checkin' === $type
+				? $this->generate_title( '', $place_name )
+				: $this->generate_title( $caption );
 		}
 
 		$new_status = $post->post_status;
@@ -936,6 +946,7 @@ class Daymark_Publisher {
 
 		if ( null !== $like_of ) {
 			update_post_meta( $post_id, '_daymark_like_of', $like_of );
+			Daymark_Like_Visibility::convert_to_like_post_type( $post_id );
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
@@ -1251,6 +1262,27 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * The media-derived kind for a set of already-attached media, with no
+	 * explicit-type override — i.e. exactly what detect_primary_type()
+	 * would resolve to from media alone, ignoring whatever the Mark's own
+	 * stored primary type actually is.
+	 *
+	 * Used by the REST controller (issue #424) to give a Check In Mark's
+	 * Timeline card the right media-slot kind (image/gallery/video/mixed)
+	 * once it carries an optional attached photo/video — the Mark's own
+	 * `_daymark_primary_type` stays 'checkin' throughout (that's the whole
+	 * point: an explicit override always wins in detect_primary_type()
+	 * itself), so the REST layer needs this separate, override-free read
+	 * of the same media to know what's actually attached.
+	 *
+	 * @param int[] $media_ids Attachment IDs.
+	 * @return string One of PRIMARY_TYPES's media-derived values ('note' when $media_ids is empty).
+	 */
+	public function detect_media_kind( array $media_ids ): string {
+		return $this->detect_primary_type( $media_ids );
+	}
+
+	/**
 	 * Group attachment IDs by media kind.
 	 *
 	 * @param int[] $media_ids Attachment IDs.
@@ -1297,6 +1329,9 @@ class Daymark_Publisher {
 		$blocks = array();
 
 		if ( $checkin ) {
+			if ( null !== $checkin['location'] ) {
+				$blocks[] = $this->build_map_preview_block( $checkin['location'] );
+			}
 			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'] );
 		}
 
@@ -1390,6 +1425,86 @@ class Daymark_Publisher {
 			"<!-- wp:paragraph -->\n<p><strong class=\"p-location\">📍 %s</strong>%s</p>\n<!-- /wp:paragraph -->",
 			esc_html( $place ),
 			$map_link
+		);
+	}
+
+	/**
+	 * Zoom level for a Checkin Mark's own map preview tile — close enough to
+	 * pinpoint a specific venue (a stadium, a cafe) without the single-tile
+	 * preview covering so little ground the surrounding context is lost.
+	 *
+	 * @var int
+	 */
+	private const MAP_PREVIEW_ZOOM = 15;
+
+	/**
+	 * Resolves the single OpenStreetMap raster tile that best previews a
+	 * coordinate, plus where within that one 256x256 tile the coordinate
+	 * itself falls — the same slippy-map tile math every OSM-based map
+	 * already uses to pick which tile image to load for a given
+	 * latitude/longitude/zoom, reused here for a static one-tile preview
+	 * instead of an interactive map. Kept in sync with its JS mirror,
+	 * osmTileForLocation() in assets/app.js, the same "two implementations
+	 * that must agree" shape DIRECT_MEDIA_EXTENSIONS/AUDIO_EXTENSIONS
+	 * already established for Featured Content (issue #401).
+	 *
+	 * @param float $lat  Latitude.
+	 * @param float $lng  Longitude.
+	 * @param int   $zoom Zoom level.
+	 * @return array{x: int, y: int, zoom: int, pixel_x: float, pixel_y: float}
+	 */
+	private function resolve_map_tile( float $lat, float $lng, int $zoom ): array {
+		$scale   = 2 ** $zoom;
+		$lat_rad = deg2rad( $lat );
+		$x       = ( $lng + 180 ) / 360 * $scale;
+		$y       = ( 1 - asinh( tan( $lat_rad ) ) / M_PI ) / 2 * $scale;
+
+		return array(
+			'x'       => (int) floor( $x ),
+			'y'       => (int) floor( $y ),
+			'zoom'    => $zoom,
+			'pixel_x' => ( $x - floor( $x ) ) * 256,
+			'pixel_y' => ( $y - floor( $y ) ) * 256,
+		);
+	}
+
+	/**
+	 * Build the map-preview image block a Checkin Mark leads with, ahead of
+	 * its place-name paragraph, when a location was actually captured
+	 * alongside the chosen place name — a single OpenStreetMap tile (no API
+	 * key; OSM's own public tile server, the same one the place block's own
+	 * "View on map" link already sends a reader to) with a small pin
+	 * overlaid at the coordinate's exact pixel position within that tile.
+	 * Uses `wp:html` rather than `core/image`: the pin overlay's nested
+	 * `<span>` wouldn't match `core/image`'s own strict save-markup
+	 * validation if this post were later opened in the block editor,
+	 * whereas an `wp:html` block accepts arbitrary markup by design.
+	 *
+	 * A Checkin's own captured location is the author's own explicit,
+	 * chosen content (the same reasoning build_place_block()'s own docblock
+	 * gives for its unconditional map link) — unlike the quiet-captured
+	 * background location any other Mark type may also carry, which stays
+	 * gated behind the `daymark_publish_location_publicly` privacy option
+	 * (Daymark_Microformats::location_markup()). This block is never shown
+	 * for any type but Checkin, so that gate is never bypassed by it.
+	 *
+	 * @since 0.18.0
+	 *
+	 * @param array{lat: float, lng: float} $location Resolved coordinates.
+	 * @return string Block markup.
+	 */
+	private function build_map_preview_block( array $location ): string {
+		$tile     = $this->resolve_map_tile( $location['lat'], $location['lng'], self::MAP_PREVIEW_ZOOM );
+		$tile_url = sprintf( 'https://tile.openstreetmap.org/%1$d/%2$d/%3$d.png', $tile['zoom'], $tile['x'], $tile['y'] );
+
+		return sprintf(
+			"<!-- wp:html -->\n" .
+			'<figure class="daymark-checkin-map"><img src="%1$s" width="256" height="256" alt="" loading="lazy" />' .
+			'<span class="daymark-checkin-map__pin" style="left:%2$s%%;top:%3$s%%" aria-hidden="true"></span></figure>' . "\n" .
+			'<!-- /wp:html -->',
+			esc_url( $tile_url ),
+			esc_attr( (string) round( $tile['pixel_x'] / 256 * 100, 3 ) ),
+			esc_attr( (string) round( $tile['pixel_y'] / 256 * 100, 3 ) )
 		);
 	}
 
@@ -1911,7 +2026,9 @@ class Daymark_Publisher {
 	private function find_published_mark_by_target_url( string $meta_key, string $url ): int {
 		$found = get_posts(
 			array(
-				'post_type'      => 'post',
+				// Both types: a legacy Like Mark created before the move to
+				// its own post type may not have been migrated yet.
+				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
 				'post_status'    => 'publish',
 				'author'         => get_current_user_id(),
 				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
@@ -1996,7 +2113,7 @@ class Daymark_Publisher {
 			 */
 			$timeout = max( 1, (int) apply_filters( 'daymark_weather_fetch_timeout', 4 ) );
 
-			$response = wp_safe_remote_get(
+			$response = Daymark_Outbound_Guard::get(
 				$url,
 				array(
 					'timeout' => $timeout,
@@ -2134,6 +2251,10 @@ class Daymark_Publisher {
 	 * human-readable condition while `weather_temperature` feeds any
 	 * measurement-configured display.
 	 *
+	 * Simple Location's helper deletes any property whose value is empty,
+	 * so an exact 0 °C reading is not stored on its side (it also reads as
+	 * absent there); there is no clean way around that from this end.
+	 *
 	 * Deliberately not a live sync: this runs once, at publish time, only
 	 * when fetch_weather() succeeded — an edit to an existing Mark never
 	 * re-fetches weather (see publish()'s other comment) and therefore
@@ -2224,6 +2345,11 @@ class Daymark_Publisher {
 	 * @return void
 	 */
 	private function apply_post_format( int $post_id, string $type ): void {
+		// A Like Mark's own post type doesn't support post formats.
+		if ( Daymark_Like_Visibility::POST_TYPE === get_post_type( $post_id ) ) {
+			return;
+		}
+
 		$format = self::TYPE_POST_FORMATS[ $type ] ?? 'standard';
 
 		// 'standard' clears the format term (set_post_format( , false )).
@@ -2233,11 +2359,19 @@ class Daymark_Publisher {
 	/**
 	 * Generate a post title from the caption (first ~8 words, with a
 	 * character-count backstop for a space-less caption — see
-	 * MAX_TITLE_CHARS), a "Checked in at {place}" fallback for a Checkin
-	 * Mark with a resolved place but no caption, or a timestamp fallback
-	 * like "Mark — March 3, 2026 4:12 pm" when neither is available.
+	 * MAX_TITLE_CHARS), a "Checked in at {place}" fallback when there's a
+	 * resolved place but no caption to use, or a timestamp fallback like
+	 * "Mark — March 3, 2026 4:12 pm" when neither is available.
 	 *
-	 * @param string      $caption Caption text.
+	 * A Checkin Mark's own title always comes from its place, never its
+	 * caption — both call sites (publish()/update()) pass an empty
+	 * `$caption` here for a Checkin regardless of whether the author typed
+	 * a comment, so a typed comment stays body text only ("Go 'Cats!"
+	 * belongs in the post, not standing in for the venue as its title).
+	 * This is a deliberate, Checkin-only departure from every other Mark
+	 * type, where the caption is the title's own primary source.
+	 *
+	 * @param string      $caption Caption text — always '' for a Checkin Mark; see this method's own docblock above.
 	 * @param string|null $place   Resolved place name (see resolve_place_name()), or null.
 	 * @return string Title.
 	 */

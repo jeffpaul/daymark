@@ -434,7 +434,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- every call site passes a literal 'daymark_subscription_*' filter name; this helper is shared by three call sites so the name itself is a parameter, not user input.
 		$max_bytes = (int) apply_filters( $size_filter, $default_max_bytes );
 
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$url,
 			array(
 				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- same as above.
