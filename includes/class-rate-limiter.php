@@ -131,6 +131,15 @@ class Daymark_Rate_Limiter {
 	public const ACTION_FEATURED_CONTENT_OEMBED = 'featured_content_oembed';
 
 	/**
+	 * Save an off-site image of a bookmarked post for offline reading
+	 * (GET /bookmarks/{id}/image, issue #455). One request per image, so a
+	 * roomier budget than the one-per-action buckets above.
+	 *
+	 * @var string
+	 */
+	public const ACTION_BOOKMARK_IMAGE = 'bookmark_image';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -178,6 +187,10 @@ class Daymark_Rate_Limiter {
 		),
 		self::ACTION_FEATURED_CONTENT_OEMBED => array(
 			'limit'  => 20,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_BOOKMARK_IMAGE          => array(
+			'limit'  => 60,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 	);

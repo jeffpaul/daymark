@@ -781,6 +781,32 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/bookmarks/(?P<id>\d+)/image',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_bookmark_image' ),
+				// The handler itself requires the post to be bookmarked by
+				// the current user and the URL to appear in its content.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id'  => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+					// Validated (and matched against the post's content) by
+					// Daymark_Bookmark_Images::fetch(); no 'uri' format here,
+					// since sanitizing it first could stop it matching.
+					'url' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -2377,6 +2403,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'bookmarked' => true,
 			)
 		);
+	}
+
+	/**
+	 * GET /bookmarks/{id}/image?url= — one off-site image of a bookmarked
+	 * post, fetched by this site so the app can save it for offline reading
+	 * (issue #455). The app's CSP and most sites' missing CORS headers stop
+	 * the app from downloading it directly. See Daymark_Bookmark_Images.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error `{ mime, data }`, data base64.
+	 */
+	public function get_bookmark_image( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_BOOKMARK_IMAGE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$result = Daymark_Bookmark_Images::fetch( absint( $request->get_param( 'id' ) ), (string) $request->get_param( 'url' ) );
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
 	/**
