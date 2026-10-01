@@ -33,6 +33,10 @@ can't act on them.
 - The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
 - When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
 
+### Developer
+
+- The WordPress Playground previews (the public "Try Daymark" link and each pull request's preview button) now open with sample Marks for each type and Featured Content kind: a single photo, a photo gallery, two Check Ins (one with a photo), and Featured Content notes using a gallery, a quote, a link, and a YouTube video. The sample photos are small images checked into the repository, so nothing is downloaded or generated while the preview loads.
+
 ## [0.18.0] - 2026-09-30
 
 ### Added
