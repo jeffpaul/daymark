@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
+
 ## [0.18.0] - 2026-09-30
 
 ### Added
