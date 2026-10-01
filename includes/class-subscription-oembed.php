@@ -130,6 +130,101 @@ class Daymark_Subscription_Oembed {
 	}
 
 	/**
+	 * Resolve a URL's oEmbed thumbnail (the provider's own `thumbnail_url`),
+	 * cached by URL for CACHE_TTL like resolve(). Used by Featured Content's
+	 * social sharing (issue #408) to give a post with a YouTube/Vimeo/podcast
+	 * Featured Content a real image for its own oEmbed response and Open
+	 * Graph tags.
+	 *
+	 * Same safety rules as resolve(): http(s) only, the URL guard first, the
+	 * fetch inside Daymark_Outbound_Guard with the same size cap and timeout.
+	 * The thumbnail itself must be https — it is published as the post's
+	 * share image and loaded by other sites, so a plain-http image would be
+	 * blocked as mixed content on most of them. Never throws: any failure,
+	 * or a provider that reports no thumbnail, is an empty array.
+	 *
+	 * @param string $url      Candidate media URL.
+	 * @param bool   $discover Whether an unrecognized URL may be probed for its own
+	 *                         oEmbed endpoint; see resolve().
+	 * @return array{url: string, width: int, height: int}|array{}
+	 */
+	public static function resolve_thumbnail( string $url, bool $discover = true ): array {
+		$url = esc_url_raw( trim( $url ) );
+
+		if ( '' === $url ) {
+			return array();
+		}
+
+		$scheme = strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) );
+
+		if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+			return array();
+		}
+
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $url ) ) ) {
+			return array();
+		}
+
+		$cache_key = ( $discover ? 'daymark_oembed_thumb_' : 'daymark_oembed_thumb_nd_' ) . md5( $url );
+		$cached    = get_transient( $cache_key );
+
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$result = self::fetch_thumbnail( $url, $discover );
+
+		/** This filter is documented in includes/class-subscription-oembed.php */
+		set_transient( $cache_key, $result, (int) apply_filters( 'daymark_subscription_oembed_cache_ttl', self::CACHE_TTL ) );
+
+		return $result;
+	}
+
+	/**
+	 * Ask the provider for its oEmbed data and keep only a usable https
+	 * thumbnail.
+	 *
+	 * @param string $url      Already URL-guard-checked, http(s) URL.
+	 * @param bool   $discover Whether discovery is allowed; see resolve().
+	 * @return array{url: string, width: int, height: int}|array{}
+	 */
+	private static function fetch_thumbnail( string $url, bool $discover ): array {
+		if ( ! function_exists( '_wp_oembed_get_object' ) ) {
+			return array();
+		}
+
+		add_filter( 'http_request_args', array( __CLASS__, 'inject_request_limits' ), 10, 1 );
+
+		try {
+			$data = Daymark_Outbound_Guard::run(
+				static function () use ( $url, $discover ) {
+					return _wp_oembed_get_object()->get_data( $url, array( 'discover' => $discover ) );
+				}
+			);
+		} catch ( Throwable $e ) {
+			$data = false;
+		}
+
+		remove_filter( 'http_request_args', array( __CLASS__, 'inject_request_limits' ), 10 );
+
+		if ( ! is_object( $data ) || empty( $data->thumbnail_url ) ) {
+			return array();
+		}
+
+		$thumbnail = esc_url_raw( (string) $data->thumbnail_url );
+
+		if ( 'https' !== strtolower( (string) ( wp_parse_url( $thumbnail, PHP_URL_SCHEME ) ?? '' ) ) ) {
+			return array();
+		}
+
+		return array(
+			'url'    => $thumbnail,
+			'width'  => absint( $data->thumbnail_width ?? 0 ),
+			'height' => absint( $data->thumbnail_height ?? 0 ),
+		);
+	}
+
+	/**
 	 * Call WP core's own `wp_oembed_get()` (with discovery enabled, since a
 	 * provider outside core's own fixed whitelist — e.g. a Mastodon
 	 * instance's own oEmbed endpoint — is the common case for a subscribed

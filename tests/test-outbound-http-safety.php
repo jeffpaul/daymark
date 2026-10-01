@@ -317,7 +317,7 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 			'fsockopen',
 			'stream_socket_client',
 		);
-		$wrapped = array( 'fetch_feed', 'wp_oembed_get', 'download_url', 'get_remote_object' );
+		$wrapped = array( 'fetch_feed', 'wp_oembed_get', '_wp_oembed_get_object', 'download_url', 'get_remote_object' );
 
 		$root      = dirname( __DIR__ ) . '/includes';
 		$files     = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );

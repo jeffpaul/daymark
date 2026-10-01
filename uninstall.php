@@ -49,6 +49,13 @@ wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
 // Per-subscription WebSub retry checks carry an argument, so clear every one.
 wp_unschedule_hook( 'daymark_websub_verify_timeout' );
+// Pending Featured Content share-image lookups (one per post, with an argument).
+wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
+
+// The share image Daymark resolved for a post's remote Featured Content
+// (issue #408) is a cache derived from that content, not content itself,
+// so it goes; the Featured Content meta it came from stays with the post.
+delete_post_meta_by_key( '_daymark_featured_content_image' );
 
 // Backflow transients: the freshen marker plus per-post sync cooldowns.
 delete_transient( 'daymark_backflow_freshened' );
