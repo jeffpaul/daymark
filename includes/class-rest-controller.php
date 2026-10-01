@@ -203,6 +203,31 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
+					// Issue #293 Search date filter — `after`/`before` are purely
+					// additive to the params above (omitted means "no bound").
+					'after'           => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: omitting the param entirely skips
+						// the date-time validation against '' which would
+						// fail on every request.  get_timeline() treats a
+						// missing/empty value as "no lower bound".
+					),
+					'before'          => array(
+						'type'   => 'string',
+						'format' => 'date-time',
+						// No default: see 'after' note above.
+					),
+					// "On this day" (Memories, issue #294): restrictions
+					// replicate `mine` (Marks only, subscription posts
+					// skipped entirely) and narrow the Marks query to the
+					// same calendar month and day as today in any prior
+					// year — see get_timeline()'s own docblock.
+					'on_this_day'     => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -1242,6 +1267,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * own bookmarked filter). If both `mine` and `subscription_id` are set,
 	 * `mine` wins and `subscription_id` is ignored.
 	 *
+	 * Two more optional filter params, the Search date filter (issue #293):
+	 * `after`/`before` (an inclusive publication datetime window, REST format
+	 * 'date-time' — over post_date for Marks, over the subscription post's own
+	 * `published_at` meta otherwise). An omitted bound means "no bound"; core
+	 * validates the datetime shape itself, via the 'date-time' format.
+	 *
+	 * One more optional param, "On this day" (issue #294): `on_this_day`
+	 * (boolean). Marks only and subscription posts skipped entirely,
+	 * exactly like `mine`; the Marks query narrows to the same calendar
+	 * month and day as today in any prior year via a date_query clause
+	 * over post_date (`month`/`day` with an exclusive `before` bound at
+	 * local midnight today, all from wp_date() so the comparison stays in
+	 * the site's own timezone). Today's own Marks are excluded by that
+	 * bound; a leap-day query degrades to empty on non-leap prior years.
+	 * Purely additive to every filter above — combining it with an
+	 * explicit `after`/`before` window ANDs both date clauses.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -1257,6 +1299,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$mine            = rest_sanitize_boolean( $request->get_param( 'mine' ) );
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
 		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
+
+		// Issue #293 Search date filter:
+		// after / before — an inclusive publication datetime window
+		// (REST format 'date-time', so core validates the shape
+		// before this method runs). Normalized to MySQL
+		// 'Y-m-d H:i:s' for both branches: the Marks side uses
+		// a real WP date_query over post_date, the
+		// subscription-posts side a meta range over its own
+		// `published_at` (that source's real publication time,
+		// per the existing sort below).
+		$after  = (string) $request->get_param( 'after' );
+		$before = (string) $request->get_param( 'before' );
+
+		// "On this day" (Memories, issue #294): true restricts the whole
+		// Timeline to Marks published on today's calendar date in a prior
+		// year. Forces the Marks-only skip below exactly like `mine`, and
+		// adds a date_query clause over post_date — see the marks-query
+		// section further down.
+		$on_this_day = rest_sanitize_boolean( $request->get_param( 'on_this_day' ) );
+
+		// datetime-window bounds normalized once so both branches compare
+		// the same values against their own date source. REST core has
+		// already validated the date-time shape, so strtotime() can be
+		// trusted to parse (a genuinely unparseable value would have been
+		// rejected at the arg-validation layer).
+		$after_mysql  = '' !== $after ? gmdate( 'Y-m-d H:i:s', strtotime( $after ) ) : '';
+		$before_mysql = '' !== $before ? gmdate( 'Y-m-d H:i:s', strtotime( $before ) ) : '';
 
 		// Bookmarks live in user meta, not post meta, so there's no
 		// meta_query to add — resolve the current user's bookmarked IDs
@@ -1277,8 +1346,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// `mine` takes precedence over `subscription_id` when both are set:
 		// Marks only, subscription posts skipped entirely either way.
-		$include_marks              = $mine || 0 === $subscription_id;
-		$include_subscription_posts = ! $mine;
+		// `on_this_day` (a prior-year post has no subscription-post equivalent, so "On this day" is Marks-only by
+		// construction) force the same skip — structurally, a subscription
+		// post can never match it, so querying that side would only ever
+		// return noise.
+		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
+		$include_subscription_posts = ! $mine && ! $on_this_day;
 
 		$items = array();
 
@@ -1344,6 +1417,39 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$marks_args['post__in'] = $bookmarked_post_in;
 			}
 
+			// Inclusive single-column window over post_date: "after This
+			// Week" should keep a Mark published exactly at the window's
+			// boundary, matching how the calendar reads in the app shell.
+			$marks_window = array( 'inclusive' => true );
+			if ( '' !== $after_mysql ) {
+				$marks_window['after'] = $after_mysql;
+			}
+			if ( '' !== $before_mysql ) {
+				$marks_window['before'] = $before_mysql;
+			}
+
+			// "On this day" (Memories, issue #294): the same calendar month
+			// and day as today in any prior year. The clause uses `month`/
+			// `day` with no `year` and an exclusive `before` bound at local
+			// midnight today, so only strictly-earlier same-date Marks match
+			// (today's own are excluded). `post_date` is stored in the
+			// site's own configured timezone, so wp_date() — which applies
+			// that same timezone — supplies the month/day and the bound,
+			// keeping "this day" aligned with what the author sees on their
+			// own calendar. A leap-day query (Feb 29) degrades naturally to
+			// empty on non-leap prior years, since no row ever matches.
+			if ( $on_this_day ) {
+				$marks_window['month']  = (int) wp_date( 'n' );
+				$marks_window['day']    = (int) wp_date( 'j' );
+				$marks_window['before'] = wp_date( 'Y-m-d 00:00:00' );
+			}
+
+			// With both an explicit after/before window and `on_this_day`
+			// set, both clauses AND together on the same post_date column.
+			if ( count( $marks_window ) > 1 ) {
+				$marks_args['date_query'] = array( $marks_window );
+			}
+
 			$marks_query = new WP_Query( $marks_args );
 
 			foreach ( $marks_query->posts as $post ) {
@@ -1395,6 +1501,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$subscription_meta_conditions[] = array(
 					'key'   => 'post_format',
 					'value' => $type,
+				);
+			}
+
+			// published_at range: a single bound is a >= / <= comparison, a
+			// bracket is a BETWEEN; either way the DATETIME cast makes the
+			// string comparison safe. The bounds were already normalized to
+			// the meta value's own 'Y-m-d H:i:s' GMT shape above.
+			if ( '' !== $after_mysql && '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => array( $after_mysql, $before_mysql ),
+					'compare' => 'BETWEEN',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $after_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $after_mysql,
+					'compare' => '>=',
+					'type'    => 'DATETIME',
+				);
+			} elseif ( '' !== $before_mysql ) {
+				$subscription_meta_conditions[] = array(
+					'key'     => 'published_at',
+					'value'   => $before_mysql,
+					'compare' => '<=',
+					'type'    => 'DATETIME',
 				);
 			}
 

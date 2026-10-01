@@ -69,11 +69,13 @@ jobs:
           // so a reviewer lands in a Timeline that already has content to
           // scroll, search, and click into — not an empty "subscribe to
           // your first site" state.
-          const presetSites = [
-            'https://jeffpaul.com',
-            'https://jondesrosiers.com',
-            'https://aaron.jorb.in',
-          ];
+          // Site URL => display name to store as the subscription's title
+          // (an empty name keeps the title discovery found).
+          const presetSites = {
+            'https://jeffpaul.com': 'Jeffrey Paul',
+            'https://jondesrosiers.com': '',
+            'https://aaron.jorb.in': 'Aaron Jorbin',
+          };
 
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
           // first, same as Playground's own documented examples. By this
@@ -94,9 +96,13 @@ jobs:
             '',
             '$plugin = Daymark_Plugin::instance();',
             '',
-            `foreach ( ${JSON.stringify(presetSites)} as $site_url ) {`,
+            `$preset_sites = json_decode( ${JSON.stringify(JSON.stringify(presetSites))}, true );`,
+            'foreach ( $preset_sites as $site_url => $site_name ) {',
             '\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );',
             '\tif ( ! is_wp_error( $result ) ) {',
+            "\t\tif ( '' !== $site_name ) {",
+            "\t\t\t$plugin->subscriptions->update( (int) $result, array( 'site_title' => $site_name ) );",
+            '\t\t}',
             '\t\t$plugin->subscription_poller->poll_subscription( (int) $result );',
             '\t}',
             '}',

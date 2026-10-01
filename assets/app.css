@@ -2754,6 +2754,10 @@ h2[tabindex='-1']:focus {
 	outline-offset: 2px;
 }
 
+/* The Date dropdown (issue #293) is the last item in the type-chip row, so
+   it wraps in line with the chips (right after Check-ins) instead of
+   taking a row of its own. It reuses the source filter's pill styling. */
+
 /* --- Recent item: per-item ⋯ actions menu --- */
 /* A flex row: the leading column (.daymark-recent__leadcol, below — the
    site icon stacked above the type icon) sits first, then the card's own

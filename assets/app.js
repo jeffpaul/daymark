@@ -454,6 +454,62 @@
 		{ type: 'checkin', label: __('Check-ins', 'daymark') },
 	];
 
+	// Search's date-preset filter, mapped to an inclusive after/before
+	// window on GET /timeline (issue #293). Deliberately a preset list —
+	// not a free-form date range — reusing the exact same vocabulary the
+	// Timeline's relative-period group headers already show (timelinePeriod,
+	// below), so a person reads the same buckets in both places: "This
+	// Week" in a group header and "This Week" in this dropdown mean the
+	// same span of dates. `''` is "any time", no date constraint at all.
+	const SEARCH_DATE_FILTERS = [
+		{ key: '', label: __('Any time', 'daymark') },
+		{ key: 'today', label: __('Today', 'daymark') },
+		{ key: 'this_week', label: __('This Week', 'daymark') },
+		{ key: 'last_week', label: __('Last Week', 'daymark') },
+		{ key: 'this_month', label: __('This Month', 'daymark') },
+		{ key: 'last_month', label: __('Last Month', 'daymark') },
+	];
+
+	// Resolves a SEARCH_DATE_FILTERS key into its inclusive [after, before]
+	// bound(s), as RFC 3339 (the format GET /timeline's own args validate).
+	// Matching timelinePeriod()'s calendar semantics: weeks start Sunday
+	// (Date#getDay()'s 0-based convention), "This Month" means the 1st.
+	// `before` is exclusive of the *next* bucket's start so an item exactly
+	// at a boundary never matches two adjacent presets; the backend treats
+	// both as inclusive, so given `after`/`before` here are the last
+	// committed instant on each side.
+	function dateFilterBounds(key) {
+		const now = new Date();
+		const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const startOfWeek = (d) => {
+			const s = startOfDay(d);
+			s.setDate(s.getDate() - s.getDay());
+			return s;
+		};
+		const toIso = (d) => d.toISOString();
+		switch (key) {
+			case 'today':
+				return { after: toIso(startOfDay(now)) };
+			case 'this_week':
+				return { after: toIso(startOfWeek(now)) };
+			case 'last_week': {
+				const end = startOfWeek(now);
+				const start = new Date(end);
+				start.setDate(start.getDate() - 7);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			case 'this_month':
+				return { after: toIso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+			case 'last_month': {
+				const end = new Date(now.getFullYear(), now.getMonth(), 1);
+				const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			default:
+				return null;
+		}
+	}
+
 	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
 	// nav, matching the app's other inline icons. Text stays as the
 	// accessible name and hover title — see NAV_TABS/navFooterMarkup().
@@ -5523,8 +5579,16 @@
 				)}" autocomplete="off" />
 				<div class="daymark-searchfilters" data-search-filters>
 					<div class="daymark-filterchips" role="group" aria-label="${esc(
-						__('Filter by type', 'daymark')
-					)}" data-filter-chips>${filterChips}</div>
+						__('Search filters', 'daymark')
+					)}" data-filter-chips>${filterChips}
+					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
+						__('Filter by date', 'daymark')
+					)}</label>
+					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${SEARCH_DATE_FILTERS.map(
+						(filter) =>
+							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
+					).join('')}</select>
+					</div>
 					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
 						__('Filter by source', 'daymark')
 					)}</label>
@@ -5573,6 +5637,14 @@
 				});
 			}
 
+			const dateFilter = root.querySelector('[data-date-filter]');
+			if (dateFilter) {
+				dateFilter.addEventListener('change', () => {
+					this.searchDate = dateFilter.value;
+					this.runSearch();
+				});
+			}
+
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
@@ -5599,6 +5671,7 @@
 			this.searchType = '';
 			this.searchSource = '';
 			this.searchBookmarked = false;
+			this.searchDate = '';
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
@@ -5617,6 +5690,7 @@
 
 			this.syncFilterChips();
 			this.syncBookmarksBanner();
+			this.syncSearchExtras();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
@@ -5644,6 +5718,17 @@
 			const banner = root.querySelector('[data-search-bookmarks-banner]');
 			if (banner) {
 				banner.hidden = !this.searchBookmarked;
+			}
+		},
+
+		// Reflects the current date filter value back onto its control —
+		// called at boot so a fresh render shows any state searchPreset may
+		// have been carrying. Explore hands over type/source only today, so
+		// this is effectively a no-op until a future preset carries a date.
+		syncSearchExtras() {
+			const date = root.querySelector('[data-date-filter]');
+			if (date && date.value !== this.searchDate) {
+				date.value = this.searchDate;
 			}
 		},
 
@@ -5691,6 +5776,17 @@
 			if (this.searchBookmarked) {
 				params.set('bookmarked', '1');
 			}
+			if (this.searchDate) {
+				const bounds = dateFilterBounds(this.searchDate);
+				if (bounds) {
+					if (bounds.after) {
+						params.set('after', bounds.after);
+					}
+					if (bounds.before) {
+						params.set('before', bounds.before);
+					}
+				}
+			}
 			try {
 				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
@@ -5737,9 +5833,10 @@
 		// Offline fallback for the Bookmarks-filtered view: renders from
 		// BOOKMARK_STORE's own cached item summaries instead of a live
 		// GET /timeline. Applies the type/keyword filters client-side,
-		// best-effort — the Source filter (mine/a specific subscription)
-		// is skipped here, since the cache has no reliable per-source
-		// membership to filter by offline.
+		// best-effort — the Source filter (mine/a specific subscription) and
+		// the date filter (issue #293) is skipped
+		// here, since the cache has no reliable per-source membership or
+		// per-item meta to filter by offline.
 		async renderCachedBookmarks(list, seq) {
 			const cached = await getAllCachedBookmarks();
 			if (seq !== this._searchSeq || !list.isConnected) {
@@ -5777,11 +5874,15 @@
 	// A first, deliberately non-chronological browsing destination — never
 	// a second Timeline. Every section here is real, built entirely on
 	// data the plugin already exposes (Mark type filtering, bookmark
-	// state, active subscriptions): "Browse by type", "Bookmarks", and
-	// "Following" all hand a preset off to Search rather than duplicating
-	// its results rendering. Memories, highlights, collections, favorites,
-	// and suggested content are future sections on this same screen, not
-	// implied by anything rendered here.
+	// state, prior-year same-date Marks, active subscriptions): "Browse by
+	// type", "Bookmarks", "On this day", and "Following". The preset
+	// sections hand results off to Search rather than duplicating its
+	// rendering; "On this day" (issue #294) and "Following" render their
+	// own card lists in place, with "On this day" reusing the shared
+	// feed-item pipeline (renderFeedItem()/rememberItem()/onFeedListClick)
+	// exactly like Search's own results list. Highlights, collections,
+	// favorites, and suggested content are future sections on this same
+	// screen, not implied by anything rendered here.
 
 	const ExploreScreen = {
 		render() {
@@ -5812,6 +5913,15 @@
 						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
 							BOOKMARK_GLYPH
 						)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
+					</div>
+				</section>
+				<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
+					<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
+						__('On this day', 'daymark')
+					)}</h2>
+					<div class="daymark-recent__list" data-explore-memories>
+						${skeletonRows(2)}
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
@@ -5855,11 +5965,38 @@
 				});
 			}
 
-			bindDismissible(this, [navFooterDismissEntry(this)]);
+			// "On this day" renders real feed cards (renderFeedItem), so it
+			// gets the exact same delegated click/keydown handlers Search
+			// binds on its own results list — card taps open the post view,
+			// and the stat-row toggles work identically here.
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				memories.addEventListener('click', (event) => onFeedListClick(this, event));
+				memories.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
+
+			// Like Search's results list, the memories list renders cards
+			// whose ⋯/routing/overflow menus need the shared dismissal
+			// entry, not just the bottom-nav one.
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
 
 		async init() {
+			// "On this day" renders real feed cards, so it needs the same
+			// per-item Maps Search keeps — card taps hand openPostView() the
+			// item via these (onFeedListClick()'s data-expand-post branch).
+			this._bySubId = new Map();
+			this._byMarkId = new Map();
+
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				// Deliberately kicked off and left running, not awaited:
+				// memories and Following load independently, and one failing
+				// never blocks the other.
+				this.loadMemories(memories);
+			}
+
 			const list = root.querySelector('[data-explore-following]');
 			if (!list) {
 				return;
@@ -5897,6 +6034,51 @@
 					)}</span></span></button>`;
 				})
 				.join('');
+		},
+
+		// Fills the "On this day" list: GET /timeline?on_this_day=1 (Marks
+		// published on today's calendar date in a prior year, per issue
+		// #294), rendered through the same shared feed-item pipeline Search
+		// uses — renderFeedItem() for the cards, rememberItem() so taps can
+		// hand openPostView() the item, no group headers (the section has
+		// its own heading; a single "this day" bucket would add nothing).
+		// A genuinely empty result keeps the section visible with a
+		// friendly note rather than removing it; a fetch failure shows an
+		// inline error, same shape as the Following list's own loading
+		// states.
+		async loadMemories(list) {
+			let items;
+			try {
+				items = await apiGet('timeline?on_this_day=1&per_page=50');
+			} catch (err) {
+				if (list.isConnected) {
+					list.innerHTML =
+						'<p class="daymark-error" role="alert">' +
+						esc(__("Couldn't load your memories. Try again in a moment.", 'daymark')) +
+						'</p>';
+				}
+				return;
+			}
+			if (!list.isConnected) {
+				return;
+			}
+			const arr = Array.isArray(items) ? items : [];
+			this._bySubId.clear();
+			this._byMarkId.clear();
+			arr.forEach((item) => rememberItem(this, item));
+			if (!arr.length) {
+				list.innerHTML =
+					'<p class="daymark-empty">' +
+					esc(
+						__(
+							'No memories from this day yet. Marks you publish today will appear here next year.',
+							'daymark'
+						)
+					) +
+					'</p>';
+				return;
+			}
+			list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 		},
 	};
 
