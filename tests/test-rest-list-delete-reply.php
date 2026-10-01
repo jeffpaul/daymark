@@ -190,6 +190,71 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 		$this->assertSame( 1, $mark['repost_count'], 'Only the 1 approved repost is counted' );
 	}
 
+	/**
+	 * The reblog count includes a reblog with commentary (issue #396): an
+	 * ActivityPub quote post (`quote`) as well as a plain `repost`.
+	 */
+	public function test_repost_count_includes_quote_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$post_id = $this->create_mark( $this->author_a, 'note', 'publish', 'Quoted' );
+
+		foreach ( array( 'repost', 'quote', 'quote' ) as $type ) {
+			self::factory()->comment->create(
+				array(
+					'comment_post_ID'  => $post_id,
+					'comment_approved' => 1,
+					'comment_type'     => $type,
+				)
+			);
+		}
+
+		$this->assertSame( 3, $this->mark_from_list( $post_id )['repost_count'] );
+	}
+
+	/**
+	 * A Reblog Mark published on this same site counts toward the reblogged
+	 * Mark, once, even when the Webmention plugin also recorded it as a
+	 * `repost` comment.
+	 */
+	public function test_repost_count_includes_local_reblog_marks_once() {
+		wp_set_current_user( $this->author_a );
+
+		$post_id   = $this->create_mark( $this->author_a, 'image', 'publish', 'Original' );
+		$permalink = get_permalink( $post_id );
+
+		$with_comment = $this->create_mark( $this->author_a, 'note', 'publish', 'Reblog: Original' );
+		update_post_meta( $with_comment, '_daymark_repost_of', $permalink );
+		$plain = $this->create_mark( $this->author_a, 'note', 'publish', 'Reblog: Original, again' );
+		update_post_meta( $plain, '_daymark_repost_of', untrailingslashit( $permalink ) );
+		$draft = $this->create_mark( $this->author_a, 'note', 'draft', 'Unpublished reblog' );
+		update_post_meta( $draft, '_daymark_repost_of', $permalink );
+
+		// The Webmention plugin's own record of $with_comment.
+		$comment_id = self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_approved' => 1,
+				'comment_type'     => 'repost',
+			)
+		);
+		update_comment_meta( $comment_id, 'webmention_source_url', get_permalink( $with_comment ) );
+
+		$this->assertSame( 2, $this->mark_from_list( $post_id )['repost_count'], 'Two published reblogs, the Webmention copy not counted twice, the draft not counted' );
+	}
+
+	/**
+	 * One Mark's entry from GET /marks.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array<string, mixed>
+	 */
+	private function mark_from_list( int $post_id ): array {
+		$marks = rest_do_request( $this->request( 'GET', '/daymark/v1/marks' ) )->get_data();
+
+		return current( array_filter( $marks, static fn( $m ) => $m['id'] === $post_id ) );
+	}
+
 	/** A temporary PNG file for attachment tests that don't care about its content. */
 	private function temp_png(): string {
 		$file = wp_tempnam( 'daymark-thumb-' ) . '.png';

@@ -7806,7 +7806,7 @@
 			glyph: REPOST_GLYPH,
 			title: __('Reblog', 'daymark'),
 			body: __(
-				'Tap here to share this post on your own site. You can add your own thoughts first, or skip that.',
+				'Tap here to share this post on your own site, with a line about why you think it\'s worth reading.',
 				'daymark'
 			),
 		},
@@ -8935,15 +8935,9 @@
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Reblog', 'daymark'))}</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1">${esc(__('Reblog', 'daymark'))}</h1>
 			</header>
 			<section class="daymark-screen">
-				<div class="daymark-field">
-					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
-					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
-						defaultTitle
-					)}" />
-				</div>
 				<div class="daymark-field">
 					<div class="daymark-field__label">${esc(__('Reblogged post', 'daymark'))}</div>
 					<blockquote class="daymark-reblog-quote">
@@ -8955,9 +8949,21 @@
 				</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-reblog-comment">${esc(__('Your thoughts', 'daymark'))}</label>
+					<p class="daymark-field__help" id="daymark-reblog-comment-help">${esc(
+						__(
+							"Say why you're sharing this. A reblog with your own words reads better and gives people something to reply to.",
+							'daymark'
+						)
+					)}</p>
 					<textarea id="daymark-reblog-comment" class="daymark-textarea" rows="4" placeholder="${esc(
-						__('Add your own thoughts (optional)…', 'daymark')
-					)}" data-reblog-comment></textarea>
+						__('What do you think of it?', 'daymark')
+					)}" aria-describedby="daymark-reblog-comment-help" data-reblog-comment data-daymark-focus></textarea>
+				</div>
+				<div class="daymark-field">
+					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
+					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
+						defaultTitle
+					)}" />
 				</div>
 			</section>
 			<footer class="daymark-actionbar">
@@ -8970,6 +8976,19 @@
 
 		bindEvents() {
 			root.querySelector('[data-action="reblog-publish"]').addEventListener('click', () => this.submit());
+			// Typing anything takes the screen back out of the "no thoughts
+			// yet" second-tap state (see submit()).
+			root.querySelector('[data-reblog-comment]').addEventListener('input', () => this.resetNudge());
+		},
+
+		// Back to the ordinary Publish button after the nudge was shown.
+		resetNudge() {
+			if (!this.nudged) {
+				return;
+			}
+			this.nudged = false;
+			root.querySelector('[data-reblog-status]').textContent = '';
+			root.querySelector('[data-action="reblog-publish"]').textContent = __('Publish', 'daymark');
 		},
 
 		// showScreen()'s own guard already redirects a direct/refreshed
@@ -8979,6 +8998,7 @@
 			const hand = pendingReblog;
 			this.item = hand ? hand.item : {};
 			this.returnTo = hand ? hand.returnTo : '#home';
+			this.nudged = false;
 			pendingReblog = null;
 		},
 
@@ -8986,7 +9006,21 @@
 			const button = root.querySelector('[data-action="reblog-publish"]');
 			const status = root.querySelector('[data-reblog-status]');
 			const title = root.querySelector('[data-reblog-title]').value.trim();
-			const comment = root.querySelector('[data-reblog-comment]').value.trim();
+			const commentField = root.querySelector('[data-reblog-comment]');
+			const comment = commentField.value.trim();
+
+			// Encouraged, not required: with nothing written, the first tap
+			// asks once and the second tap reblogs anyway.
+			if ('' === comment && !this.nudged) {
+				this.nudged = true;
+				status.textContent = __(
+					'Add a line about why you are sharing this? Or tap again to reblog without one.',
+					'daymark'
+				);
+				button.textContent = __('Reblog without comment', 'daymark');
+				commentField.focus();
+				return;
+			}
 
 			button.disabled = true;
 			button.textContent = __('Publishing…', 'daymark');
@@ -9009,6 +9043,7 @@
 				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
 				button.disabled = false;
 				button.textContent = __('Publish', 'daymark');
+				this.nudged = false;
 			}
 		},
 	};
@@ -9794,7 +9829,10 @@
 					${
 						item.source_url
 							? `<a class="daymark-note-card__link" href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(
-									__('↗ View on network', 'daymark')
+									// A quote post is the quoter's own post, not a reply on a network.
+									'quote' === item.comment_kind
+										? __('↗ View their post', 'daymark')
+										: __('↗ View on network', 'daymark')
 							  )}</a>`
 							: ''
 					}
