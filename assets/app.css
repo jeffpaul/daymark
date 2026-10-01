@@ -2016,6 +2016,14 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
+/* A short line under a field's label explaining what the field is for
+   (e.g. the Reblog screen's "Your thoughts"). */
+.daymark-field__help {
+	margin: 0 0 var(--daymark-spacing-xs);
+	font-size: 14px;
+	color: var(--daymark-text-secondary);
+}
+
 /* Optional Title field (audio/video by policy): label row with an ⓘ toggle
  * and a tap-to-reveal hint. */
 .daymark-titlefield__labelrow {
