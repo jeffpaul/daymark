@@ -247,6 +247,30 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertSame( array( 'type' => 'video' ), $items[0]['featured_content'] );
 	}
 
+	/** A gallery Featured Content reports its first four image URLs and the total count, for the card's grid. */
+	public function test_mark_with_gallery_featured_content_reports_first_four_images_and_count() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Gallery demo', 'note' );
+		$ids     = array();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'gallery' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $ids ) ) )
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( 'gallery', $items[0]['featured_content']['type'] );
+		$this->assertSame( 5, $items[0]['featured_content']['count'] );
+		$this->assertCount( 4, $items[0]['featured_content']['images'] );
+		$this->assertStringStartsWith( 'http', $items[0]['featured_content']['images'][0] );
+	}
+
 	/** A Mark with no Featured Content set omits the field entirely, rather than reporting a null/empty value. */
 	public function test_mark_without_featured_content_omits_the_field() {
 		wp_set_current_user( $this->author_a );

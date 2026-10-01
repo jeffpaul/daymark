@@ -57,6 +57,17 @@
 	color: var( --wp-admin-theme-color, #007cba );
 }
 
+.daymark-fc-preview--gallery {
+	display: flex;
+	gap: 4px;
+}
+
+.daymark-fc-preview--gallery img {
+	width: 25%;
+	height: 64px;
+	object-fit: cover;
+}
+
 .daymark-fc-summary {
 	margin-top: 8px;
 }
