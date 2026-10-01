@@ -29,11 +29,11 @@ can't act on them.
 - The Featured Content sidebar control (block editor) now supports two more kinds alongside audio, video, and gallery: a **quote** (text with an optional author and an http(s) source link, shown as a real `<blockquote>` with attribution in place of your featured image) and a **link** (a readable link out to a web page, available only when the post's own Format is set to Link). Add them with the "Add a quote" and "Add a link" links beside "Set featured content". ([#407](https://github.com/jeffpaul/daymark/issues/407))
 - A post whose Featured Content is a gallery, a video or audio, a quote, or a link now shares well: its image (the gallery's first photo, the video's thumbnail or cover art, or the linked page's image) becomes the post's oEmbed thumbnail and its Open Graph and Twitter Card image, and a quote becomes the share description. With Yoast SEO, Rank Math, All in One SEO, or Jetpack's sharing tags active, Daymark hands the image to that plugin instead of printing its own tags. ([#408](https://github.com/jeffpaul/daymark/issues/408))
 - If your site reaches the fediverse through Bridgy Fed instead of the ActivityPub plugin, you can now like and reblog fediverse and Bluesky posts you follow. Check "This site is bridged with Bridgy Fed" on Settings -> Daymark -> Connectors; Daymark then sends those Likes and Reblogs through Bridgy Fed with the Webmention plugin. Posts on sites that accept Webmentions still get them directly. ([#441](https://github.com/jeffpaul/daymark/issues/441))
+- Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words, a link to their post, and a Reply button, and it marks Notifications as unread. ([#396](https://github.com/jeffpaul/daymark/issues/396))
 
 ### Changed
 
 - The Reblog screen now asks for your own words first: it opens with the cursor in "Your thoughts", says why a line of commentary helps, and if you leave it empty asks once before reblogging anyway. ([#396](https://github.com/jeffpaul/daymark/issues/396))
-- Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words and a Reply button. ([#396](https://github.com/jeffpaul/daymark/issues/396))
 
 ### Fixed
 
