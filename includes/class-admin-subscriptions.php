@@ -2067,7 +2067,7 @@ class Daymark_Admin_Subscriptions {
 				'wporg_slug'  => 'simple-location',
 				'folder_slug' => 'simple-location',
 				'classes'     => array( 'Geo_Data' ),
-				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself.', 'daymark' ),
+				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself. A captured temperature and short condition description (such as "Mostly clear") are bridged the same way.', 'daymark' ),
 			),
 		);
 	}
