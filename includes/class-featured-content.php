@@ -919,10 +919,13 @@ class Daymark_Featured_Content {
 		// classic editor/media-library screens call for the same reason.
 		wp_enqueue_media();
 
+		// jquery-touch-punch (core-bundled) lets core's gallery editor's
+		// jQuery UI sortable list be reordered by touch as well as mouse —
+		// media-views depends on jquery-ui-sortable but not on it (issue #461).
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models', 'jquery-touch-punch' ),
 			DAYMARK_VERSION,
 			true
 		);
