@@ -11,11 +11,25 @@ name: PR Playground Preview
 # base64-ish blueprint data URI into permanent git history. A comment
 # keeps the button on the PR and out of the commit message.
 #
+# Runs as `pull_request_target` so it has a write token on fork PRs, which
+# is how community contributions arrive: a plain `pull_request` run from a
+# fork gets a read-only token and cannot post the comment. It never checks
+# out or executes PR code — the only PR-controlled values it touches are the
+# head repo URL and branch name, read from the event payload, passed through
+# `env:` (never interpolated into a shell command) and serialized with
+# JSON.stringify into a blueprint that Playground, not this runner, acts on
+# — which makes this a safe use of the trigger, same as
+# credit-contributors.yml and pr-review-checklist.yml. Because the workflow
+# file is always read from the base branch, a change to this file only takes
+# effect once it is merged.
+#
 # NOTE: Playground fetches the branch from the browser, unauthenticated,
-# so the button only works while the repository is PUBLIC. On a private
-# repo the button appears but the instance cannot load the plugin.
+# so the button only works while the head repository (this one, or a
+# contributor's fork) is PUBLIC and the branch still exists. On a private
+# repo, or once a fork's branch is deleted, the instance cannot load the
+# plugin.
 on:
-  pull_request:
+  pull_request_target:
     # `synchronize` is included even though the blueprint's own content
     # never changes across pushes (it points at the PR's branch name, not a
     # commit SHA) — the underlying action manages a single comment rather
@@ -23,11 +37,9 @@ on:
     # (or creates) that same comment instead of duplicating it. That matters
     # because a PR opened via the GitHub API (rather than a person pushing
     # through the web UI) does not reliably deliver a plain `pull_request`
-    # `opened` event — only `pull_request_target`-based workflows (like
-    # credit-contributors.yml) are guaranteed to see it — so an
-    # `opened`-only trigger can silently never run for such a PR. The first
-    # real push after that (a `synchronize`) is this workflow's fallback
-    # chance to still post the button.
+    # `opened` event, so an `opened`-only trigger can silently never run for
+    # such a PR. The first real push after that (a `synchronize`) is this
+    # workflow's fallback chance to still post the button.
     types: [opened, synchronize, reopened]
 
 # Disable permissions for all available scopes by default.
@@ -38,9 +50,6 @@ jobs:
   playground-preview:
     name: Add Playground preview button to the PR
     runs-on: ubuntu-latest
-    # Fork PRs get a read-only GITHUB_TOKEN and cannot comment on the PR;
-    # skip rather than fail.
-    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: write
@@ -178,7 +187,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
       - name: Post Playground preview button
-        uses: WordPress/action-wp-playground-pr-preview@5e92f5e3c80d06126f22e83e4bb21221fbbd3e7f # v3
+        uses: WordPress/action-wp-playground-pr-preview@1b15093d61b5e98cdfeb31466f34ade495762cd7 # v4.0.0
         with:
           # Comment, not append-to-description: keeps the blueprint data URI
           # out of the squash-merge commit message (see the note above).

@@ -400,4 +400,45 @@ class Test_Microformats extends WP_UnitTestCase {
 
 		$this->assertStringNotContainsString( 'p-geo', $markup );
 	}
+
+	/**
+	 * The Webmention plugin only pings links in post_content or ones added
+	 * via webmention_links — a Mark's like/reply/repost target is neither,
+	 * so add_webmention_targets() must add it.
+	 */
+	public function test_webmention_links_adds_like_reply_and_repost_targets() {
+		update_post_meta( $this->daymark_id, '_daymark_like_of', 'https://example.com/liked/' );
+		update_post_meta( $this->daymark_id, '_daymark_in_reply_to', 'https://example.com/replied/' );
+		update_post_meta( $this->daymark_id, '_daymark_repost_of', 'https://example.com/reblogged/' );
+
+		$urls = apply_filters( 'webmention_links', array( 'https://example.com/in-content/' ), $this->daymark_id );
+
+		$this->assertContains( 'https://example.com/in-content/', $urls );
+		$this->assertContains( 'https://example.com/liked/', $urls );
+		$this->assertContains( 'https://example.com/replied/', $urls );
+		$this->assertContains( 'https://example.com/reblogged/', $urls );
+	}
+
+	/** A target already linked in the content isn't added twice. */
+	public function test_webmention_links_does_not_duplicate_a_target() {
+		update_post_meta( $this->daymark_id, '_daymark_repost_of', 'https://example.com/reblogged/' );
+
+		$urls = $this->microformats->add_webmention_targets( array( 'https://example.com/reblogged/' ), $this->daymark_id );
+
+		$this->assertSame( array( 'https://example.com/reblogged/' ), $urls );
+	}
+
+	/** A non-Mark post is left exactly as the Webmention plugin found it. */
+	public function test_webmention_links_untouched_for_non_mark_post() {
+		$post_id = (int) self::factory()->post->create();
+		update_post_meta( $post_id, '_daymark_like_of', 'https://example.com/liked/' );
+
+		$this->assertSame( array(), $this->microformats->add_webmention_targets( array(), $post_id ) );
+	}
+
+	/** The Like post type is registered by init priority 5, ahead of the Webmention plugin. */
+	public function test_like_post_type_supports_webmentions() {
+		$this->assertTrue( post_type_exists( Daymark_Like_Visibility::POST_TYPE ) );
+		$this->assertTrue( post_type_supports( Daymark_Like_Visibility::POST_TYPE, 'webmentions' ) );
+	}
 }

@@ -971,7 +971,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$count = count(
 			get_posts(
 				array(
-					'post_type'      => 'post',
+					'post_type'      => Daymark_Like_Visibility::POST_TYPE,
 					'post_status'    => 'publish',
 					'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
 					'meta_value'     => 'https://example.com/original-post/', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
@@ -1676,6 +1676,33 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'openstreetmap.org', $post->post_content );
 		$this->assertEquals( 'status', get_post_format( $post_id ) );
+		// The map-preview tile (build_map_preview_block()) leads the place
+		// block itself, ahead of the p-location paragraph.
+		$this->assertStringContainsString( 'daymark-checkin-map', $post->post_content );
+		$this->assertStringContainsString( 'https://tile.openstreetmap.org/15/5241/12665.png', $post->post_content );
+		$this->assertLessThan(
+			strpos( $post->post_content, 'p-location' ),
+			strpos( $post->post_content, 'daymark-checkin-map' )
+		);
+	}
+
+	/**
+	 * A checkin with a place name but no resolved location has no
+	 * coordinates to preview — the map-preview tile is skipped entirely
+	 * (build_block_markup()'s own `null !== $checkin['location']` guard),
+	 * same as the existing map link in the place block itself.
+	 */
+	public function test_checkin_with_no_location_has_no_map_preview() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Somewhere unresolved',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringNotContainsString( 'daymark-checkin-map', $post->post_content );
 	}
 
 	/**
@@ -1683,7 +1710,7 @@ class Test_Publisher extends WP_UnitTestCase {
 	 * every other type — the place-name title fallback only applies when
 	 * there's no caption to generate a title from.
 	 */
-	public function test_checkin_with_caption_uses_caption_title() {
+	public function test_checkin_with_caption_uses_place_name_title() {
 		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
@@ -1694,7 +1721,10 @@ class Test_Publisher extends WP_UnitTestCase {
 		);
 
 		$post = get_post( $post_id );
-		$this->assertEquals( 'Great coffee this morning', $post->post_title );
+		// A Checkin's own title always comes from its place, never its
+		// caption — unlike every other Mark type, where the caption is the
+		// title's own primary source (generate_title()'s own docblock).
+		$this->assertEquals( 'Checked in at Blue Bottle Coffee', $post->post_title );
 		$this->assertStringContainsString( 'Blue Bottle Coffee', $post->post_content );
 		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 		// The place block always leads, ahead of the reader's own paragraph.
@@ -1702,6 +1732,27 @@ class Test_Publisher extends WP_UnitTestCase {
 			strpos( $post->post_content, 'Great coffee this morning' ),
 			strpos( $post->post_content, 'Blue Bottle Coffee' )
 		);
+	}
+
+	/**
+	 * A Checkin's title stays place-derived even with no place name at
+	 * all — it never falls back to using the caption as generate_title()
+	 * would for every other type, since that's exactly the behavior this
+	 * decision replaces. It falls through to the same timestamp fallback
+	 * an ordinary caption-less, place-less Mark already gets.
+	 */
+	public function test_checkin_with_caption_and_no_place_name_uses_timestamp_title() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'caption'      => 'Great coffee this morning',
+				'primary_type' => 'checkin',
+			)
+		);
+
+		$post = get_post( $post_id );
+		$this->assertStringStartsWith( 'Mark — ', $post->post_title );
+		$this->assertStringContainsString( 'Great coffee this morning', $post->post_content );
 	}
 
 	/** A checkin with no place name and no caption/media is still rejected as empty. */
@@ -1730,6 +1781,37 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The full-screen post view (PostScreen) loads a Mark's content via
+	 * GET /marks/{id}/content, not the raw post — unlike
+	 * test_checkin_with_place_name_and_no_caption_publishes()'s own direct
+	 * assertions against $post->post_content, this exercises the exact
+	 * pipeline that endpoint applies (`the_content` then wp_kses_post()),
+	 * confirming the map-preview block's `<figure>`/`<img>`/pin `<span>`
+	 * (including its inline `style="left:...;top:..."`) all survive that
+	 * extra sanitization pass rather than only the stored post_content.
+	 */
+	public function test_checkin_map_preview_survives_rest_content_endpoint() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}/content" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertStringContainsString( 'daymark-checkin-map', $data['content'] );
+		$this->assertStringContainsString( 'tile.openstreetmap.org/15/5241/12665.png', $data['content'] );
+		$this->assertStringContainsString( 'daymark-checkin-map__pin', $data['content'] );
+		$this->assertStringContainsString( 'style=', $data['content'] );
+	}
+
+	/**
 	 * Simple Location's own post-meta convention (issue #345) is bridged
 	 * to only when that plugin is genuinely active — its defining
 	 * `Geo_Data` class isn't loaded in this test environment, so the
@@ -1752,5 +1834,139 @@ class Test_Publisher extends WP_UnitTestCase {
 
 		$this->assertIsInt( $post_id );
 		$this->assertNotEmpty( get_post_meta( $post_id, '_daymark_location', true ) );
+	}
+
+	/**
+	 * A Check In Mark with an attached photo (issue #424) stays a genuine
+	 * Checkin — an explicit primary_type override always wins over media
+	 * detection in detect_primary_type() — and its content leads with the
+	 * place block, the photo appearing after it, not instead of it.
+	 */
+	public function test_checkin_with_attached_photo_keeps_checkin_type() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-checkin-photo-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Leaning Tower of Pisa',
+			),
+			array(
+				'files' => array(
+					'name'     => 'pisa.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$this->assertIsInt( $post_id );
+		$this->assertEquals( 'checkin', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertEquals( 'Leaning Tower of Pisa', get_post_meta( $post_id, '_daymark_place_name', true ) );
+
+		$media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+		$this->assertCount( 1, $media_ids );
+
+		$post_content = get_post( $post_id )->post_content;
+		$this->assertStringContainsString( 'p-location', $post_content );
+		$this->assertStringContainsString( 'wp:image', $post_content );
+		$this->assertLessThan(
+			strpos( $post_content, 'wp:image' ),
+			strpos( $post_content, 'p-location' ),
+			'The place block should lead, ahead of the attached photo.'
+		);
+	}
+
+	/**
+	 * The REST summary (prepare_mark_summary) exposes media_kind for a
+	 * Checkin Mark that actually carries attached media, resolved from the
+	 * media itself via Daymark_Publisher::detect_media_kind() — the Mark's
+	 * own `type` stays 'checkin' throughout.
+	 */
+	public function test_checkin_media_kind_exposed_on_rest_summary_when_media_attached() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-checkin-photo-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Leaning Tower of Pisa',
+			),
+			array(
+				'files' => array(
+					'name'     => 'pisa.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertSame( 'checkin', $data['type'] );
+		$this->assertSame( 'image', $data['media_kind'] );
+	}
+
+	/**
+	 * A Checkin Mark with no attached media omits media_kind entirely
+	 * (a presence check, not a null/empty value) — the same convention
+	 * captured_at/reading_time_minutes/location/place_name already use.
+	 */
+	public function test_checkin_media_kind_omitted_when_no_media_attached() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertArrayNotHasKey( 'media_kind', $data );
+	}
+
+	/**
+	 * Daymark_Publisher::detect_media_kind() reads a set of attachment IDs
+	 * with no explicit-type override — the same media-detection rules
+	 * detect_primary_type() itself uses, just never overridable, since its
+	 * one caller (the REST controller) always wants to know what the media
+	 * itself actually is, regardless of the Mark's own stored type.
+	 */
+	public function test_detect_media_kind_reflects_attached_media_with_no_override() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-media-kind-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array( 'primary_type' => 'checkin' ),
+			array(
+				'files' => array(
+					'name'     => 'photo.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$media_ids = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+
+		$this->assertSame( 'image', $publisher->detect_media_kind( $media_ids ) );
+		$this->assertSame( 'note', $publisher->detect_media_kind( array() ) );
 	}
 }

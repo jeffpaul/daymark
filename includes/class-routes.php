@@ -264,8 +264,12 @@ class Daymark_Routes {
 			'background_color' => '#ffffff',
 			'theme_color'      => '#c93a06',
 			// PNG icons only — iOS chokes on an SVG "any" entry and then
-			// shows no home-screen icon at all. The site's own Site Icon is
-			// preferred when set, so the installed app matches the site.
+			// shows no home-screen icon at all. Always Daymark's own icon,
+			// never the site's Site Icon (issue #414) — a home-screen
+			// install is an install of the Daymark app, not of the site
+			// itself, matching the same "our own chrome, not the site's"
+			// reasoning icon_url()'s own header-chrome carve-out already
+			// established (see daymark_icon_url()'s docblock).
 			'icons'            => array(
 				self::icon_descriptor( 192 ),
 				self::icon_descriptor( 512 ),
@@ -309,8 +313,12 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * A home-screen/app icon URL at (approximately) the given size: the
-	 * site's own Site Icon when one is set, else Daymark's bundled icon.
+	 * An icon URL at (approximately) the given size: the site's own Site
+	 * Icon when one is set, else Daymark's bundled icon. Used by the
+	 * browser-tab favicon and a Timeline card's own-Mark leading icon — both
+	 * represent this site's own identity. NOT used for the home-screen/PWA
+	 * icon (apple-touch-icon, manifest icons) — see daymark_icon_url()'s own
+	 * docblock for why those are scoped differently (issue #414).
 	 *
 	 * @param int $size Desired square size in px.
 	 * @return string
@@ -329,10 +337,13 @@ class Daymark_Routes {
 	/**
 	 * Daymark's own bundled icon URL at (approximately) the given size —
 	 * never the site's own Site Icon, even when one is configured. Used for
-	 * the app shell's own header/nav chrome, which is Daymark's brand
-	 * identity, not the site's — see icon_url() for the Site-Icon-first
-	 * resolution used everywhere else (Timeline card site icons, browser
-	 * favicon, PWA manifest icons).
+	 * the app shell's own header/nav chrome (Daymark's brand identity, not
+	 * the site's) and, since issue #414, for every home-screen/PWA icon
+	 * (apple-touch-icon, the manifest's own icons/shortcuts) — a home-screen
+	 * install is an install of the Daymark app, not of the site itself, so
+	 * it should always look like Daymark regardless of the site's own Site
+	 * Icon. See icon_url() for the Site-Icon-first resolution still used for
+	 * the browser-tab favicon and a Timeline card's own-Mark leading icon.
 	 *
 	 * @param int $size Desired square size in px.
 	 * @return string
@@ -349,24 +360,65 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * A manifest icon descriptor at the given size.
+	 * A manifest icon descriptor at the given size — always Daymark's own
+	 * bundled icon (see build_manifest()'s own comment for why).
 	 *
 	 * @param int $size Square size in px.
 	 * @return array<string, string>
 	 */
 	private static function icon_descriptor( int $size ): array {
-		$url        = self::icon_url( $size );
+		$url        = self::daymark_icon_url( $size );
 		$descriptor = array(
 			'src'   => $url,
 			'sizes' => $size . 'x' . $size,
+			'type'  => 'image/png',
 		);
 
-		// Only claim a type we're sure of (bundled PNGs, or a .png Site Icon).
-		if ( str_ends_with( strtok( $url, '?' ), '.png' ) ) {
-			$descriptor['type'] = 'image/png';
+		return $descriptor;
+	}
+
+	/**
+	 * A cache version for the service worker that changes whenever the
+	 * plugin's cached assets do.
+	 *
+	 * The worker only re-installs (and so only re-downloads app.js, app.css,
+	 * and offline-boot.js into a fresh cache) when the bytes of /daymark/sw.js
+	 * change, and it serves those three files cache-first, ignoring their
+	 * `?ver=` query. A fixed cache name therefore meant an installed Daymark
+	 * kept the JavaScript it had on install day through every later release,
+	 * including any that fixed a client-side bug. The plugin version covers a
+	 * normal release; the assets' modification times also cover a development
+	 * checkout, where the version constant does not move.
+	 *
+	 * @return string For example `0.17.0-1a2b3c4d`.
+	 */
+	public static function service_worker_cache_version(): string {
+		$signature = '';
+
+		foreach ( array( 'app.js', 'app.css', 'offline-boot.js' ) as $file ) {
+			$path       = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
+			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
 		}
 
-		return $descriptor;
+		return DAYMARK_VERSION . '-' . substr( md5( $signature ), 0, 8 );
+	}
+
+	/**
+	 * The service worker script served at /daymark/sw.js: assets/daymark-sw.js
+	 * with its two placeholders filled in (the plugin assets URL and the
+	 * cache version above).
+	 *
+	 * @return string
+	 */
+	public static function build_service_worker_script(): string {
+		$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
+		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
+
+		return str_replace(
+			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__' ),
+			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version() ),
+			$sw_js
+		);
 	}
 
 	/**
@@ -389,7 +441,8 @@ class Daymark_Routes {
 	 * @return array<string, mixed>
 	 */
 	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0 ): array {
-		$user = wp_get_current_user();
+		$user                     = wp_get_current_user();
+		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
 
 		/*
 		 * Connector list and per-type destination defaults, from the
@@ -484,57 +537,61 @@ class Daymark_Routes {
 		);
 
 		return array(
-			'restUrl'               => esc_url_raw( rest_url( 'daymark/v1/' ) ),
-			'assetsUrl'             => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
+			'restUrl'                => esc_url_raw( rest_url( 'daymark/v1/' ) ),
+			'assetsUrl'              => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 			// Trailing-slash directory URL for the app's own base
 			// (/daymark/, or /daymark-app/) — the service worker
 			// registration scope (issue #126) needs a directory-shaped
 			// URL, not app_url()'s own bare (no trailing slash) form.
-			'appUrl'                => esc_url_raw( self::app_url() . '/' ),
-			'nonce'                 => wp_create_nonce( 'wp_rest' ),
-			'siteUrl'               => esc_url_raw( home_url( '/' ) ),
-			'siteTitle'             => sanitize_text_field( get_bloginfo( 'name' ) ),
+			'appUrl'                 => esc_url_raw( self::app_url() . '/' ),
+			'nonce'                  => wp_create_nonce( 'wp_rest' ),
+			'siteUrl'                => esc_url_raw( home_url( '/' ) ),
+			'siteTitle'              => sanitize_text_field( get_bloginfo( 'name' ) ),
 			// A raw PHP date() format string (Settings -> General -> Date
 			// Format) — assets/app.js's formatDateWithPhpFormat() maps it
 			// token-by-token onto a Timeline card's own absolute-date
 			// display, so a card reads dates the same way the rest of
 			// wp-admin already does rather than the browser's own locale
 			// default.
-			'dateFormat'            => sanitize_text_field( get_option( 'date_format' ) ),
+			'dateFormat'             => sanitize_text_field( get_option( 'date_format' ) ),
 			// Site Icon first, Daymark's own bundled icon otherwise — same
 			// resolution icon_url() already uses for the browser favicon
 			// and PWA manifest icons.
-			'siteIconUrl'           => esc_url_raw( self::icon_url( 96 ) ),
+			'siteIconUrl'            => esc_url_raw( self::icon_url( 96 ) ),
 			// Always Daymark's own bundled icon, never the site's Site Icon
 			// — used for the app shell's own header/nav chrome.
-			'daymarkIconUrl'        => esc_url_raw( self::daymark_icon_url( 96 ) ),
-			'screen'                => $screen,
-			'connectors'            => $connectors,
-			'defaults'              => $type_defaults,
-			'categories'            => $categories,
-			'categoryDefaults'      => $category_defaults,
-			'titlePolicy'           => $title_policy,
-			'defaultCategory'       => (int) get_option( 'default_category' ),
-			'ai'                    => array(
+			'daymarkIconUrl'         => esc_url_raw( self::daymark_icon_url( 96 ) ),
+			'screen'                 => $screen,
+			'connectors'             => $connectors,
+			'defaults'               => $type_defaults,
+			'categories'             => $categories,
+			'categoryDefaults'       => $category_defaults,
+			'titlePolicy'            => $title_policy,
+			'defaultCategory'        => (int) get_option( 'default_category' ),
+			'ai'                     => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),
 			),
-			'notifications'         => array(
+			'notifications'          => array(
 				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
 			),
-			'controllableHelpers'   => $controllable_helpers,
-			'publishHelpers'        => $awareness_helpers,
-			'currentUser'           => array(
+			'controllableHelpers'    => $controllable_helpers,
+			'publishHelpers'         => $awareness_helpers,
+			'currentUser'            => array(
 				'id'             => (int) $user->ID,
 				'displayName'    => $user->display_name,
 				'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $user->ID, array( 'size' => 96 ) ) ),
 				'profileEditUrl' => esc_url_raw( get_edit_profile_url( $user->ID ) ),
 				'logoutUrl'      => esc_url_raw( wp_logout_url( self::app_url( 'me' ) ) ),
 			),
-			'adminSubscriptionsUrl' => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
-			'pluginsUrl'            => esc_url_raw( admin_url( 'plugins.php' ) ),
-			'pendingDraftId'        => $pending_draft_id,
-			'pendingType'           => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
+			// Settings -> Daymark needs Daymark_Admin_Subscriptions::CAPABILITY, so
+			// anyone without it gets no link (an empty string) rather than one
+			// that lands on a permission error, and no in-app Unsubscribe.
+			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::page_url() ) : '',
+			'canManageSubscriptions' => $can_manage_subscriptions,
+			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
+			'pendingDraftId'         => $pending_draft_id,
+			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
 	}
 
@@ -628,12 +685,9 @@ class Daymark_Routes {
 				// header needed. The one placeholder token gets the real
 				// plugin assets URL substituted in, since app.css/app.js live
 				// under a different directory than this URL does.
-				$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
-				$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
-				$sw_js   = str_replace( '__DAYMARK_ASSETS_URL__', DAYMARK_PLUGIN_URL . 'assets/', $sw_js );
 				header( 'Content-Type: application/javascript; charset=utf-8' );
 				header( 'Cache-Control: no-store' );
-				echo $sw_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with one URL substitution, not user input.
+				echo self::build_service_worker_script(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with two substitutions (an assets URL and a version string), not user input.
 				exit;
 			}
 

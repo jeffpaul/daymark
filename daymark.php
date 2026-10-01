@@ -3,7 +3,7 @@
  * Plugin Name:       Daymark
  * Plugin URI:        https://github.com/jeffpaul/daymark
  * Description:       Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
- * Version:           0.17.0
+ * Version:           0.18.0
  * Requires at least: 7.0
  * Requires PHP:      8.2
  * Author:            Jeffrey Paul
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DAYMARK_VERSION', '0.17.0' );
+define( 'DAYMARK_VERSION', '0.18.0' );
 define( 'DAYMARK_PLUGIN_FILE', __FILE__ );
 define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -52,6 +52,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin-overlap.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin-detector.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-url-guard.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-outbound-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-html-cache.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-content-sniffer.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';
@@ -67,7 +68,9 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opengraph.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-delivery.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-activitypub-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';

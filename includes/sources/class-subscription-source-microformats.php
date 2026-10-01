@@ -721,7 +721,7 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		$labels = array(
 			'rsvp'     => __( 'RSVP', 'daymark' ),
 			'reply'    => __( 'Reply', 'daymark' ),
-			'repost'   => __( 'Repost', 'daymark' ),
+			'repost'   => __( 'Reblog', 'daymark' ),
 			'like'     => __( 'Like', 'daymark' ),
 			'bookmark' => __( 'Bookmark', 'daymark' ),
 		);

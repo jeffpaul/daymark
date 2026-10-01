@@ -11,12 +11,12 @@
  */
 class Test_App_Shell extends WP_UnitTestCase {
 
-	private function render_shell(): string {
+	private function render_shell( string $role = 'author' ): string {
 		// Fresh script/style registries: WP_Scripts marks handles as done
 		// after printing, which would blank a second render in-process.
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
 
-		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		$user_id = self::factory()->user->create( array( 'role' => $role ) );
 		wp_set_current_user( $user_id );
 
 		$this->go_to( '/' );
@@ -46,9 +46,9 @@ class Test_App_Shell extends WP_UnitTestCase {
 		);
 	}
 
-	/** The bootstrap config carries the current user's identity and the wp-admin Subscriptions link, for the Me/Explore screens. */
+	/** An administrator's bootstrap config carries their identity and the Settings -> Daymark link. */
 	public function test_config_carries_me_and_subscriptions_links() {
-		$html = $this->render_shell();
+		$html = $this->render_shell( 'administrator' );
 
 		$this->assertStringContainsString( '"currentUser":', $html );
 		$this->assertStringContainsString( '"adminSubscriptionsUrl":', $html );
@@ -56,6 +56,23 @@ class Test_App_Shell extends WP_UnitTestCase {
 			str_replace( '/', '\/', Daymark_Admin_Subscriptions::page_url() ),
 			$html,
 			'Config must carry the wp-admin Subscriptions screen URL'
+		);
+		$this->assertStringContainsString( '"canManageSubscriptions":true', $html );
+	}
+
+	/**
+	 * Someone who cannot open Settings -> Daymark gets no link to it and no
+	 * in-app Unsubscribe, rather than a link that lands on a permission error.
+	 */
+	public function test_config_omits_the_settings_link_for_a_user_who_cannot_manage_it() {
+		$html = $this->render_shell( 'author' );
+
+		$this->assertStringContainsString( '"currentUser":', $html );
+		$this->assertStringContainsString( '"adminSubscriptionsUrl":""', $html );
+		$this->assertStringContainsString( '"canManageSubscriptions":false', $html );
+		$this->assertStringNotContainsString(
+			str_replace( '/', '\/', Daymark_Admin_Subscriptions::page_url() ),
+			$html
 		);
 	}
 
@@ -195,6 +212,40 @@ class Test_App_Shell extends WP_UnitTestCase {
 			'nonce="' . $nonce_matches[1] . '"',
 			$html,
 			'The inline bootstrap script must carry the exact nonce the CSP header allows'
+		);
+	}
+
+	/**
+	 * The home-screen icon (apple-touch-icon) always uses Daymark's own
+	 * bundled icon, even when the site has its own Site Icon configured — a
+	 * home-screen install is an install of Daymark, not of the site
+	 * (issue #414). The browser-tab favicon is unaffected, and still
+	 * prefers the Site Icon.
+	 */
+	public function test_apple_touch_icon_never_uses_site_icon() {
+		$filter = static function () {
+			return 'https://example.test/site-icon.png';
+		};
+		add_filter( 'get_site_icon_url', $filter );
+
+		$html = $this->render_shell();
+
+		remove_filter( 'get_site_icon_url', $filter );
+
+		$this->assertStringNotContainsString(
+			'rel="apple-touch-icon" href="https://example.test/site-icon.png"',
+			$html,
+			'apple-touch-icon must never use the Site Icon'
+		);
+		$this->assertStringContainsString(
+			str_replace( '/', '\/', Daymark_Routes::daymark_icon_url( 180 ) ),
+			$html,
+			'apple-touch-icon must use Daymark\'s own bundled icon'
+		);
+		$this->assertStringContainsString(
+			'rel="icon" href="https://example.test/site-icon.png"',
+			$html,
+			'The browser-tab favicon must still prefer the Site Icon'
 		);
 	}
 }

@@ -314,12 +314,13 @@ decision rows for the full technical record.
   narrows the Marks query to today's month/day in prior years; subscription
   posts are skipped, exactly like `mine`), rendering the same real feed
   cards as Search's own results list. Delivered in the same
-  PR as Search's extended filters. ([#413](https://github.com/jeffpaul/daymark/pull/413))
-- [x] **Search extended filters**: Author (any part of a name or username),
-  Date presets reusing the Timeline's own buckets, the site's most-used
-  Tags, and a With-location toggle — all four backed by the existing merged
-  `GET /timeline` endpoint (new params) rather than a parallel query path,
-  combining with each other and with keyword/type/source. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+  PR as Search's date filter. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- [x] **Search date filter**: a Date dropdown reusing the Timeline's own
+  buckets, backed by the existing merged `GET /timeline` endpoint (new
+  `after`/`before` params) rather than a parallel query path, combining with
+  keyword/type/source. Author, tag, and with-location filters were dropped in
+  review: they duplicated the Source dropdown, the keyword search, and the
+  Check-ins type chip. ([#413](https://github.com/jeffpaul/daymark/pull/413))
 - [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
   a view-only Drafts list, and links out to Notifications, wp-admin
   Subscriptions, and WordPress's own profile/logout.
@@ -770,7 +771,7 @@ that loop without new destinations or a new social network.
   check), so it's the concrete next step before any further native
   ActivityPub-reading work.
 - **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
-  navigation rework" above. Search's extended filters and Explore's
+  navigation rework" above. Search's date filter and Explore's
   memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
   the still-open halves of Explore and Me
   ([#294](https://github.com/jeffpaul/daymark/issues/294),

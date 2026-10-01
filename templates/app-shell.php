@@ -167,8 +167,8 @@ wp_enqueue_script( 'daymark-app' );
 	<title><?php esc_html_e( 'Daymark', 'daymark' ); ?></title>
 	<?php /* Dynamic manifest: start_url/scope track the resolved app base. */ ?>
 	<link rel="manifest" href="<?php echo esc_url( Daymark_Routes::app_url( 'manifest.json' ) ); ?>" />
-	<?php /* Home-screen icon: the site's Site Icon when set, else Daymark's (opaque PNG; iOS ignores SVG here). */ ?>
-	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 180 ) ); ?>" />
+	<?php /* Home-screen icon (issue #414): always Daymark's own icon, never the site's Site Icon — a home-screen install is an install of Daymark, not of the site. Browser-tab favicon still prefers the Site Icon so an open tab matches the site. */ ?>
+	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
 	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
 </head>

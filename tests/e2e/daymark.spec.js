@@ -470,7 +470,11 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	const subMeta = page.locator('.daymark-postview-meta');
 	await expect(subMeta.locator('.daymark-recent__sitename')).toBeVisible();
 	await expect(subMeta.locator('.daymark-recent__timestamprow time')).toBeVisible();
-	await expect(subMeta.locator('[data-like-toggle]')).toBeVisible();
+	// No Like icon here: this E2E site has neither the Webmention plugin
+	// nor a Jetpack user connection, so no Like could ever reach the
+	// origin — the icon is hidden rather than offering a Like nobody would
+	// receive (see Daymark_Like_Delivery).
+	await expect(subMeta.locator('[data-like-toggle]')).toHaveCount(0);
 	await expect(subMeta.locator('[data-comment-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-repost-toggle]')).toBeVisible();
 	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
@@ -700,6 +704,7 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -763,6 +768,7 @@ test('subscription-post card meta line omits the post author', async ({ page }) 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -814,6 +820,7 @@ test('tapping Comment sends the reader straight to the origin post when Webmenti
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -906,6 +913,7 @@ test("comment delivery failure (after the pre-check said Webmention was viable) 
 		bookmarked: false,
 		replied_mark_id: 0,
 		liked_mark_id: 0,
+		like_available: true,
 		reposted_mark_id: 0,
 	};
 
@@ -1033,11 +1041,12 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
-// A Checkin Mark (issue #143) has no media picker at all — a manually
-// typed Place (geolocation is neither granted nor mocked in this test
-// context, so the field starts blank rather than reverse-geocoded) is
-// itself real, sufficient content: publishing succeeds with no caption,
-// and the auto-generated title reads "Checked in at {place}".
+// A Checkin Mark's own optional photo/video (issue #424) is a genuinely
+// optional media picker, not a required one — a manually typed Place
+// (geolocation is neither granted nor mocked in this test context, so the
+// field starts blank rather than reverse-geocoded) is itself real,
+// sufficient content: publishing succeeds with no caption and no media at
+// all, and the auto-generated title reads "Checked in at {place}".
 test('Checkin Mark publishes from just a Place, with no caption or media', async ({ page }) => {
 	const place = `E2E Coffee Shop ${RUN_ID}`;
 
@@ -1046,7 +1055,9 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await openComposer(page, 'checkin');
 
 	const composer = page.locator('.daymark-screen').first();
-	await expect(composer.locator('#daymark-file-input')).toHaveCount(0);
+	// The picker is present (see the next test) but never blocks publishing
+	// on its own — skipping it entirely still succeeds.
+	await expect(composer.locator('#daymark-file-input')).toHaveCount(1);
 	await composer.locator('[data-checkin-place]').fill(place);
 	await page.locator('[data-action="next"]').click();
 
@@ -1056,6 +1067,46 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="checkin"]').click();
 	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
+});
+
+// Attaching a photo to a Check In (issue #424 — "see it's me at the
+// Leaning Tower of Pisa!") keeps the Mark a genuine Checkin throughout the
+// composer session: the type badge never flips to "Image," the Place field
+// stays visible and required content still isn't, and the published Mark's
+// Timeline card renders the attached photo in its media slot (via the
+// server's own media_kind signal) while its rail icon still reads "Check
+// In."
+test('Checkin Mark keeps its type and Place field once a photo is attached', async ({ page }) => {
+	const place = `E2E Landmark ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'checkin');
+
+	const composer = page.locator('.daymark-screen').first();
+	await composer.locator('[data-checkin-place]').fill(place);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+
+	// Still a Check In, not reclassified to Image by the attached photo.
+	// The type chip now lives in the header, a sibling of .daymark-screen —
+	// not scoped under `composer` — matching every other type-badge
+	// assertion in this file (e.g. line ~1255).
+	await expect(page.locator('[data-type-badge]')).toHaveText('Check In');
+	await expect(composer.locator('[data-checkin-place]')).toBeVisible();
+
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="checkin"]').click();
+	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: `Checked in at ${place}` });
+	await expect(card).toBeVisible();
+	// The rail icon still identifies this as a Check In...
+	await expect(card.locator('.daymark-recent__typeicon')).toHaveAttribute('title', 'Check In');
+	// ...while the media slot shows the attached photo, not an empty/no-media
+	// card the way a Checkin with nothing attached renders.
+	await expect(card.locator('.daymark-recent__thumb')).toBeVisible();
 });
 
 // The Checkin Place field's own search-as-you-type: typing 3+ characters
@@ -2342,12 +2393,21 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 					if (!navigator.serviceWorker.controller) {
 						return false;
 					}
-					const cache = await caches.open('daymark-v2');
-					const [config, offline] = await Promise.all([
-						cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
-						cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
-					]);
-					return Boolean(config && offline);
+					// The cache name carries a version (see
+					// Daymark_Routes::service_worker_cache_version()), so find it by
+					// prefix instead of by a fixed name.
+					const names = (await caches.keys()).filter((name) => name.startsWith('daymark-'));
+					for (const name of names) {
+						const cache = await caches.open(name);
+						const [config, offline] = await Promise.all([
+							cache.match(new URL('config.json', navigator.serviceWorker.controller.scriptURL)),
+							cache.match(new URL('offline.html', navigator.serviceWorker.controller.scriptURL)),
+						]);
+						if (config && offline) {
+							return true;
+						}
+					}
+					return false;
 				}),
 			// Generous on purpose: this waits out several sequential live
 			// requests (sw.js, the four precached resources, then the
