@@ -1656,21 +1656,64 @@
 	// media. Best-effort per image: a failed fetch just leaves that one
 	// image pointing at its original, still-offline-broken URL — never
 	// blocks caching the rest of the item.
-	async function cacheContentImages(html) {
+	//
+	// An image on another site can't be fetched from here: the app's CSP
+	// allows fetch() only to this site, and most sites don't send CORS
+	// headers anyway. Those go through this site instead
+	// (GET /bookmarks/{id}/image, issue #455), which returns the image
+	// base64-encoded. That route only answers for a post this user has
+	// bookmarked, so the bookmark must be saved before this runs (it is:
+	// see toggleBookmark() and syncBookmarkCache()). A few at a time, and
+	// at most BOOKMARK_IMAGE_LIMIT per bookmark, to stay well inside the
+	// route's rate limit.
+	const BOOKMARK_IMAGE_LIMIT = 20;
+
+	async function cacheContentImages(html, bookmarkId) {
 		const urls = extractImageUrls(html);
 		const images = {};
-		await Promise.all(
-			urls.map(async (url) => {
-				try {
-					const response = await fetch(url);
+		let offSite = 0;
+
+		const saveOne = async (url) => {
+			let absolute;
+			try {
+				absolute = new URL(url, window.location.href);
+			} catch (err) {
+				return;
+			}
+			if ('http:' !== absolute.protocol && 'https:' !== absolute.protocol) {
+				return;
+			}
+			try {
+				if (absolute.origin === window.location.origin) {
+					const response = await fetch(absolute.href);
 					if (response.ok) {
 						images[url] = await response.blob();
 					}
-				} catch (err) {
-					// Best-effort — see this function's own docblock.
+					return;
 				}
-			})
-		);
+				if (!bookmarkId || offSite >= BOOKMARK_IMAGE_LIMIT) {
+					return;
+				}
+				offSite += 1;
+				const result = await apiGet(
+					'bookmarks/' + bookmarkId + '/image?url=' + encodeURIComponent(absolute.href)
+				);
+				if (result && result.data && result.mime) {
+					const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+					images[url] = new Blob([bytes], { type: result.mime });
+				}
+			} catch (err) {
+				// Best-effort — see this function's own docblock.
+			}
+		};
+
+		const queue = urls.slice();
+		const worker = async () => {
+			while (queue.length) {
+				await saveOne(queue.shift());
+			}
+		};
+		await Promise.all([worker(), worker(), worker()]);
 		return images;
 	}
 
@@ -1695,7 +1738,7 @@
 				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
 			);
 			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
-			const images = await cacheContentImages(content);
+			const images = await cacheContentImages(content, id);
 			await putCachedBookmark({
 				id: Number(id),
 				kind,
