@@ -844,18 +844,23 @@ h2[tabindex='-1']:focus {
 	border-radius: 0;
 }
 
-/* A gallery Featured Content's card media (renderFeaturedGalleryGrid() in
-   app.js): up to four thumbnails in a 2x2 grid inside a modest banner, well
-   shorter than a single-image Mark's 320px one. Fewer images fill the same
-   box — one whole, two as tall columns, three with the first spanning both
-   rows. Declared after the gallery-kind banner height above so it wins at
-   equal specificity. */
-.daymark-recent__item--gallery .daymark-recent__thumbwrap--grid {
+/* A gallery card's media (renderGalleryGrid() in app.js): up to four
+   photos as a 2x2 grid of equal, rounded tiles with a small gap between
+   them, like a social app's multi-photo post. Each tile is roughly 3:2,
+   so the whole grid is 3:2 and grows with the card's width rather than
+   being cropped to a fixed strip. Fewer images fill the same box — one
+   whole, two as tall columns, three as two across the top and the third
+   under the first, leaving the bottom-right tile empty.
+   Declared after the gallery-kind banner height above so it wins at
+   equal specificity. Not tied to the card's own kind class, so the grid
+   lays out the same on any card that renders one. */
+.daymark-recent__thumbwrap.daymark-recent__thumbwrap--grid {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	grid-template-rows: 1fr 1fr;
-	gap: 2px;
-	height: 176px;
+	gap: 4px;
+	height: auto;
+	aspect-ratio: 3 / 2;
 	overflow: hidden;
 }
 
@@ -865,6 +870,7 @@ h2[tabindex='-1']:focus {
 	min-width: 0;
 	min-height: 0;
 	overflow: hidden;
+	border-radius: var(--daymark-radius-sm);
 }
 
 .daymark-recent__thumbwrap--grid .daymark-recent__thumb--cell {
@@ -879,8 +885,7 @@ h2[tabindex='-1']:focus {
 	grid-row: 1 / -1;
 }
 
-.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell,
-.daymark-recent__thumbwrap--grid-3 .daymark-recent__gridcell:first-child {
+.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell {
 	grid-row: 1 / -1;
 }
 
@@ -3363,6 +3368,50 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-md);
+}
+
+/* What the full post view shows above a post's body: its Featured Content
+   (a video, audio, gallery, quote, or link, styled by the app shell's copy
+   of assets/featured-content.css) or else its featured image. These rules
+   keep media inside the screen's width, including a gallery that is still
+   stacked because the slider script isn't loaded (the offline shell). */
+.daymark-postview-featured img,
+.daymark-postview-featured video,
+.daymark-postview-featured iframe {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-postview-featured iframe {
+	width: 100%;
+	aspect-ratio: 16 / 9;
+}
+
+.daymark-postview-featured audio {
+	width: 100%;
+}
+
+.daymark-postview-featured__img {
+	width: 100%;
+}
+
+/* The gallery slider's live region uses WordPress's screen-reader-text
+   class, which a theme normally defines but the app shell has no theme.
+   The slider appears in the featured block and, for a gallery block in
+   the post itself, in the body. */
+.daymark-postview-featured .screen-reader-text,
+.daymark-expand-content .screen-reader-text {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
 }
 
 /* A post's full body, rendered on the full-screen post-view screen

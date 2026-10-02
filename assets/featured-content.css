@@ -80,6 +80,16 @@
 	height: auto;
 }
 
+/* A slide's caption, under its photo: the image block's own caption in a
+   post's gallery, or the photo's caption in a Featured Content gallery. */
+.daymark-fc-gallery .daymark-fc-gallery__caption {
+	margin: 0.5em 0 0;
+	font-size: 0.875em;
+	line-height: 1.4;
+	text-align: center;
+	opacity: 0.8;
+}
+
 .daymark-fc-gallery.is-enhanced .daymark-fc-gallery__slide[hidden] {
 	display: none;
 }

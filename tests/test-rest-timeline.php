@@ -271,6 +271,72 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertStringStartsWith( 'http', $items[0]['featured_content']['images'][0] );
 	}
 
+	/** Issue #461: the card's grid follows the saved attachment_ids order, not attachment-ID order. */
+	public function test_gallery_featured_content_images_follow_the_saved_order() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Reordered gallery', 'note' );
+		$ids     = array();
+		for ( $i = 0; $i < 3; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		$saved = array_reverse( $ids );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'gallery' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $saved ) ) )
+		);
+
+		$items    = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+		$expected = array_map(
+			static function ( $id ) {
+				return esc_url_raw( wp_get_attachment_image_url( $id, 'medium_large' ) );
+			},
+			$saved
+		);
+
+		$this->assertSame( $expected, $items[0]['featured_content']['images'] );
+	}
+
+	/** A gallery Mark sends its first four photos, in order, and its photo count for the card's 2x2 grid. */
+	public function test_gallery_mark_reports_its_own_photos_for_the_grid() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Photo gallery', 'gallery' );
+		$ids     = array();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		update_post_meta( $mark_id, '_daymark_media_ids', wp_json_encode( $ids ) );
+
+		$item = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0];
+
+		$this->assertSame( 5, $item['gallery']['count'] );
+		$this->assertSame(
+			array_map(
+				static function ( $id ) {
+					return esc_url_raw( wp_get_attachment_image_url( $id, 'medium_large' ) );
+				},
+				array_slice( $ids, 0, 4 )
+			),
+			$item['gallery']['images']
+		);
+	}
+
+	/** A Mark with a single photo gets no grid. */
+	public function test_single_photo_mark_has_no_gallery_field() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'One photo', 'gallery' );
+		$id      = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		update_post_meta( $mark_id, '_daymark_media_ids', wp_json_encode( array( $id ) ) );
+
+		$item = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0];
+
+		$this->assertArrayNotHasKey( 'gallery', $item );
+	}
+
 	/** A Mark with no Featured Content set omits the field entirely, rather than reporting a null/empty value. */
 	public function test_mark_without_featured_content_omits_the_field() {
 		wp_set_current_user( $this->author_a );

@@ -39,6 +39,13 @@ if ( ! headers_sent() ) {
 }
 
 wp_register_style( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.css', array(), DAYMARK_VERSION );
+// Featured Content's styles and gallery slider, so a bookmarked post's
+// Featured Content gallery works offline the same as online (the service
+// worker precaches both files).
+wp_register_style( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/featured-content.css', array(), DAYMARK_VERSION );
+// No dependencies and no inline script, so it prints as one plain external
+// <script>, which this page's nonce-free script-src 'self' allows.
+wp_register_script( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/featured-content.js', array(), DAYMARK_VERSION, false );
 wp_enqueue_style( 'daymark-app' );
 ?>
 <!DOCTYPE html>
@@ -57,7 +64,7 @@ wp_enqueue_style( 'daymark-app' );
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, matching the online app shell's own tag — see its comment for why. */ ?>
 	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
+	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </head>
 <body class="daymark-app daymark-app--home">
 	<div id="daymark-app" class="daymark-shell">
@@ -76,6 +83,7 @@ wp_enqueue_style( 'daymark-app' );
 	 * it was first generated.
 	 */
 	?>
+	<?php wp_print_scripts( array( 'daymark-featured-content' ) ); ?>
 	<script
 		src="<?php echo esc_url( DAYMARK_PLUGIN_URL . 'assets/offline-boot.js' ); ?>"
 		data-config-url="<?php echo esc_url( Daymark_Routes::app_url( 'config.json' ) ); ?>"

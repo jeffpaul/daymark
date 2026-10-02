@@ -382,8 +382,9 @@ class Daymark_Routes {
 	 * plugin's cached assets do.
 	 *
 	 * The worker only re-installs (and so only re-downloads app.js, app.css,
-	 * and offline-boot.js into a fresh cache) when the bytes of /daymark/sw.js
-	 * change, and it serves those three files cache-first, ignoring their
+	 * offline-boot.js, and the Featured Content slider's two files into a
+	 * fresh cache) when the bytes of /daymark/sw.js
+	 * change, and it serves those files cache-first, ignoring their
 	 * `?ver=` query. A fixed cache name therefore meant an installed Daymark
 	 * kept the JavaScript it had on install day through every later release,
 	 * including any that fixed a client-side bug. The plugin version covers a
@@ -395,7 +396,7 @@ class Daymark_Routes {
 	public static function service_worker_cache_version(): string {
 		$signature = '';
 
-		foreach ( array( 'app.js', 'app.css', 'offline-boot.js' ) as $file ) {
+		foreach ( array( 'app.js', 'app.css', 'offline-boot.js', 'featured-content.js', 'featured-content.css' ) as $file ) {
 			$path       = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
 			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
 		}
