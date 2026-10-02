@@ -2309,9 +2309,76 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		return rest_ensure_response(
 			array(
-				'content' => $content,
+				'content'  => $content,
+				'featured' => $this->postview_featured_markup( $post, $content ),
 			)
 		);
+	}
+
+	/**
+	 * What the app's full post view shows above a post's content: its
+	 * Featured Content when set, otherwise its featured image. The featured
+	 * image is left out when the content already shows it, which is the
+	 * normal case for an image Mark, since the publisher makes a Mark's
+	 * first photo its featured image.
+	 *
+	 * Featured Content markup is built by Daymark_Featured_Content from
+	 * sanitized meta, so it is not run through the class-stripping above:
+	 * its own `daymark-fc-*` classes are what the gallery slider needs.
+	 *
+	 * @param WP_Post $post    The post.
+	 * @param string  $content The post's rendered content.
+	 * @return string Markup, or '' when there is nothing to show.
+	 */
+	private function postview_featured_markup( WP_Post $post, string $content ): string {
+		$featured_content = Daymark_Featured_Content::render_for_app( $post );
+
+		if ( '' !== $featured_content ) {
+			return $featured_content;
+		}
+
+		$thumbnail_id = (int) get_post_thumbnail_id( $post );
+
+		if ( $thumbnail_id <= 0 || self::content_shows_attachment( $content, $thumbnail_id ) ) {
+			return '';
+		}
+
+		return (string) wp_get_attachment_image( $thumbnail_id, 'large' );
+	}
+
+	/**
+	 * Whether rendered content already shows an image attachment: by the
+	 * `wp-image-{id}` class core's image and gallery blocks add, or by the
+	 * file's path with its extension and WordPress's `-scaled` suffix
+	 * removed, followed by "." or "-", which also matches any resized copy
+	 * (`photo-1024x768.jpg`).
+	 *
+	 * @param string $content       Rendered content.
+	 * @param int    $attachment_id Attachment ID.
+	 * @return bool
+	 */
+	private static function content_shows_attachment( string $content, int $attachment_id ): bool {
+		if ( '' === $content ) {
+			return false;
+		}
+
+		if ( preg_match( '/\bwp-image-' . $attachment_id . '\b/', $content ) ) {
+			return true;
+		}
+
+		$url = (string) wp_get_attachment_url( $attachment_id );
+
+		if ( '' === $url ) {
+			return false;
+		}
+
+		$stem = preg_replace( array( '/\.[a-z0-9]+$/i', '/-scaled$/i' ), '', (string) wp_parse_url( $url, PHP_URL_PATH ) );
+
+		if ( '' === (string) $stem ) {
+			return false;
+		}
+
+		return false !== strpos( $content, $stem . '.' ) || false !== strpos( $content, $stem . '-' );
 	}
 
 	/**
@@ -3830,25 +3897,59 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'type' => $featured_content['type'],
 			);
 
-			// A gallery's card shows its first four images as a small grid
+			// A gallery's card shows its first four images as a 2x2 grid
 			// (issue #406), so those thumbnail URLs travel with the summary.
 			if ( 'gallery' === $featured_content['type'] ) {
-				$images = array();
+				$ids = array_map( 'absint', (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
 
-				foreach ( array_slice( (array) ( $featured_content['data']['attachment_ids'] ?? array() ), 0, 4 ) as $attachment_id ) {
-					$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium' );
+				$summary['featured_content']['images'] = self::card_grid_image_urls( $ids );
+				$summary['featured_content']['count']  = count( $ids );
+			}
+		}
 
-					if ( $url ) {
-						$images[] = esc_url_raw( $url );
-					}
-				}
+		// A Mark with several photos (a gallery Mark, or a Check In with
+		// more than one photo) shows them as the same 2x2 grid, so its first
+		// four photos and its photo count travel with the summary too.
+		if ( in_array( $summary['type'], array( 'gallery', 'checkin' ), true ) ) {
+			$raw_ids   = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+			$image_ids = array_values(
+				array_filter(
+					is_array( $raw_ids ) ? array_map( 'absint', $raw_ids ) : array(),
+					'wp_attachment_is_image'
+				)
+			);
 
-				$summary['featured_content']['images'] = $images;
-				$summary['featured_content']['count']  = count( (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
+			if ( count( $image_ids ) > 1 ) {
+				$summary['gallery'] = array(
+					'images' => self::card_grid_image_urls( $image_ids ),
+					'count'  => count( $image_ids ),
+				);
 			}
 		}
 
 		return $summary;
+	}
+
+	/**
+	 * The first four images' URLs for a Timeline card's 2x2 grid, in the
+	 * order given. `medium_large` (768px wide) stays sharp in a half-width
+	 * cell on a high-density phone screen.
+	 *
+	 * @param int[] $attachment_ids Image attachment IDs, in display order.
+	 * @return string[]
+	 */
+	private static function card_grid_image_urls( array $attachment_ids ): array {
+		$images = array();
+
+		foreach ( array_slice( $attachment_ids, 0, 4 ) as $attachment_id ) {
+			$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium_large' );
+
+			if ( $url ) {
+				$images[] = esc_url_raw( $url );
+			}
+		}
+
+		return $images;
 	}
 
 	/**

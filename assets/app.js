@@ -1738,12 +1738,19 @@
 				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
 			);
 			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
-			const images = await cacheContentImages(content, id);
+			// The full post view's featured block (see postviewFeaturedHtml())
+			// is cached too, so it shows offline along with its images.
+			const featured = isSubscriptionPost ? '' : response.featured || '';
+			const featuredImage = isSubscriptionPost && item && item.featured_image_url
+				? `<img src="${esc(String(item.featured_image_url))}" alt="" />`
+				: '';
+			const images = await cacheContentImages(featured + featuredImage + content, id);
 			await putCachedBookmark({
 				id: Number(id),
 				kind,
 				item,
 				content,
+				featured,
 				images,
 				cachedAt: Date.now(),
 			});
@@ -3235,12 +3242,13 @@
 						</div>
 					</div>
 				</div>`;
+		const layoutKind = cardLayoutKind(item, kind);
 		const card = isDraft
 			? `<a class="daymark-recent__item daymark-recent__item--${esc(
-					kind
+					layoutKind
 			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
 			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
-					kind
+					layoutKind
 			  )}" data-expand-post="${id}">${renderMarkCore(item)}</button>`;
 		// The routing popover's own panel — a sibling of the card button, not
 		// nested inside it: a target's own link can't validly live inside
@@ -6238,7 +6246,7 @@
 					.map(
 						(item) =>
 							`<a class="daymark-recent__item daymark-recent__item--${esc(
-								resolveCardKind(item)
+								cardLayoutKind(item, resolveCardKind(item))
 							)}" href="#create" data-edit-draft="${esc(
 								String(item.id)
 							)}">${renderMarkCore(item)}</a>`
@@ -8151,9 +8159,18 @@
 	// (image/gallery/video/mixed), so "see it's me at the Leaning Tower of
 	// Pisa!" renders as a real photo, not an empty checkin card. A gallery
 	// Featured Content passes through as the 'gallery' kind and renders as a
-	// small image grid (renderFeaturedGalleryGrid()); quote/link Featured
+	// 2x2 image grid (renderGalleryGrid()); quote/link Featured
 	// Content don't change the media slot at all — the Mark keeps its own
 	// card kind (see FEATURED_MEDIA_KINDS).
+	// The kind a Mark card's own class (daymark-recent__item--{kind}) uses.
+	// A card whose media slot shows a gallery grid (a gallery Featured
+	// Content, or a Check In with several photos) takes the gallery card's
+	// layout, so it looks the same as a gallery Mark's card. The rail icon
+	// still shows the Mark's own type.
+	function cardLayoutKind(item, kind) {
+		return 'gallery' === mediaKindForItem(item, kind) ? 'gallery' : kind;
+	}
+
 	function mediaKindForItem(item, kind) {
 		// Only the media kinds replace the card's own kind: a quote or link
 		// Featured Content has no media of its own, and letting it override
@@ -8255,21 +8272,28 @@
 	// same placeholder via imgWithFallback()'s shared error handling. A
 	// Checkin Mark with a captured location is handled first, on its own —
 	// see renderCheckinMapPreview() above.
-	// A Mark whose Featured Content is a gallery (issue #406) shows its first
-	// four images as a small grid in the card's media slot — a lighter
-	// treatment than a single-image Mark's tall banner, since a handful of
-	// photos reads better as a cluster than as one cropped frame. Three or
-	// fewer images fill the same box (one image whole, two as columns, three
-	// with the first tall); more than four add a "+N" on the last cell. The
-	// images are decorative (the card's title and excerpt carry the meaning),
-	// so they get empty alt text, like every other card thumbnail.
-	function renderFeaturedGalleryGrid(item, kind) {
-		const fc = item.featured_content;
-		if ('gallery' !== kind || !fc || 'gallery' !== fc.type || !Array.isArray(fc.images) || !fc.images.length) {
+	// A gallery card shows its first four images as a 2x2 grid of equal,
+	// rounded tiles in the card's media slot, since a handful of photos
+	// reads better side by side than as one cropped frame. That covers a
+	// Mark whose Featured Content is a gallery (issue #406) and a Mark with
+	// several photos of its own (a gallery Mark, or a Check In with more
+	// than one photo), whose `gallery` summary field carries the same
+	// images/count shape. Fewer than four images fill the same box (one
+	// image whole, two as columns, three with the first tall); more than
+	// four add a "+N" on the last tile. The images are decorative (the
+	// card's title and excerpt carry the meaning), so they get empty alt
+	// text, like every other card thumbnail.
+	function renderGalleryGrid(item, kind) {
+		if ('gallery' !== kind) {
 			return '';
 		}
-		const images = fc.images.slice(0, 4);
-		const extra = Math.max(0, (parseInt(fc.count, 10) || images.length) - images.length);
+		const fc = item.featured_content;
+		const source = fc && 'gallery' === fc.type ? fc : item.gallery;
+		if (!source || !Array.isArray(source.images) || !source.images.length) {
+			return '';
+		}
+		const images = source.images.slice(0, 4);
+		const extra = Math.max(0, (parseInt(source.count, 10) || images.length) - images.length);
 		const cells = images
 			.map((src, index) => {
 				const more =
@@ -8283,9 +8307,9 @@
 				)}${more}</span>`;
 			})
 			.join('');
-		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}${cardKindBadge(
-			kind
-		)}</span>`;
+		// No kind badge: the tiles themselves show it's several photos, and
+		// the badge's corner offset would be clipped by the grid's edge.
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}</span>`;
 	}
 
 	function renderCardMedia(item, kind) {
@@ -8295,7 +8319,7 @@
 		if ('note' === kind || 'link' === kind) {
 			return '';
 		}
-		const gridMarkup = renderFeaturedGalleryGrid(item, kind);
+		const gridMarkup = renderGalleryGrid(item, kind);
 		if (gridMarkup) {
 			return gridMarkup;
 		}
@@ -8654,9 +8678,12 @@
 	// connectivity-shaped failure of the live fetch — an actual server
 	// error (a real HTTP response, not a network failure) is rethrown
 	// unchanged rather than silently masked by stale cached content.
-	// `untrusted` is true for a subscription post (another site's HTML) and
-	// false for a Mark (this site's own).
-	async function loadExpandHtmlOffline(err, id, untrusted) {
+	//
+	// Returns the post view's whole HTML, built by `compose` from the cached
+	// content and the cached record (a subscription post's compose strips
+	// the other site's styles and classes itself), with every cached image swapped for its
+	// offline copy (the featured block's images included).
+	async function loadExpandHtmlOffline(err, id, compose) {
 		if (!(err instanceof TypeError) && navigator.onLine) {
 			throw err;
 		}
@@ -8664,8 +8691,48 @@
 		if (!cached || !cached.content) {
 			throw err;
 		}
-		const content = untrusted ? stripUntrustedPresentation(String(cached.content)) : String(cached.content);
-		return rewriteContentImagesForOffline(content, cached.images);
+		return rewriteContentImagesForOffline(compose(String(cached.content), cached), cached.images);
+	}
+
+	// What the full post view shows above a post's body: its Featured
+	// Content, or else its featured image. For a Mark or ordinary post the
+	// server builds it (GET /marks/{id}/content's `featured`); for a
+	// subscription post it's the feed's own featured image, left out when
+	// the body already shows that image.
+	function postviewFeaturedHtml(html) {
+		return html ? `<div class="daymark-postview-featured">${html}</div>` : '';
+	}
+
+	// Whether `html` already shows the image at `url`. Compares the file
+	// path with its extension and WordPress's "-scaled" and "-1024x768"
+	// suffixes removed, followed by "." or "-", so any resized copy of the
+	// same upload counts (including one served through a CDN host).
+	function contentShowsImage(html, url) {
+		if (!html || !url) {
+			return false;
+		}
+		let path;
+		try {
+			path = new URL(url, window.location.href).pathname;
+		} catch (err) {
+			return html.indexOf(url) !== -1;
+		}
+		const stem = path
+			.replace(/\.[a-z0-9]+$/i, '')
+			.replace(/-scaled$/i, '')
+			.replace(/-\d+x\d+$/, '');
+		if (stem.length < 2) {
+			return false;
+		}
+		return html.indexOf(stem + '.') !== -1 || html.indexOf(stem + '-') !== -1;
+	}
+
+	function subscriptionFeaturedHtml(item, content) {
+		const url = item && item.featured_image_url ? String(item.featured_image_url) : '';
+		if (!url || contentShowsImage(content, url)) {
+			return '';
+		}
+		return postviewFeaturedHtml(`<img class="daymark-postview-featured__img" src="${esc(url)}" alt="" />`);
 	}
 
 	// A Mark or ordinary post's own content — straight from the site's own
@@ -8673,14 +8740,14 @@
 	// down in the first place (unlike a subscription post's external
 	// click-through fetch, below): no comments, no theme chrome, ever.
 	async function loadMarkExpandHtml(item) {
-		let content;
+		const compose = (content, full) =>
+			postviewFeaturedHtml(full && full.featured ? String(full.featured) : '') + expandBodyHtml(content);
 		try {
 			const full = await apiGet('marks/' + item.id + '/content');
-			content = full && full.content ? String(full.content) : '';
+			return compose(full && full.content ? String(full.content) : '', full);
 		} catch (err) {
-			content = await loadExpandHtmlOffline(err, item.id);
+			return loadExpandHtmlOffline(err, item.id, compose);
 		}
-		return expandBodyHtml(content);
 	}
 
 	// Shared by the normal load and a forced refresh (the "Refresh content"
@@ -8694,21 +8761,23 @@
 	// PostScreen's own interaction row now (renderRefreshContentToggle()),
 	// not baked into the loaded content string.
 	async function fetchSubscriptionExpandBody(item, forceRefresh) {
-		let content;
+		// Second layer behind the server's own strip: this is another site's
+		// HTML, so its styles and any daymark- class are removed on the client
+		// too, whichever path (live or cached) it arrived by.
+		const compose = (content) => {
+			const body = stripUntrustedPresentation(content);
+			return subscriptionFeaturedHtml(item, body) + expandBodyHtml(body);
+		};
 		try {
 			const path = 'subscription-posts/' + item.id + (forceRefresh ? '?refresh=1' : '');
 			const full = await apiGet(path);
-			content = full && full.body_content ? String(full.body_content) : '';
+			return compose(full && full.body_content ? String(full.body_content) : '');
 		} catch (err) {
 			if (forceRefresh) {
 				throw err;
 			}
-			content = await loadExpandHtmlOffline(err, item.id, true);
+			return loadExpandHtmlOffline(err, item.id, compose);
 		}
-		// Second layer behind the server's own strip: this is another site's
-		// HTML, so its styles and any daymark- class are removed on the client
-		// too, whichever path (live or cached) it arrived by.
-		return expandBodyHtml(stripUntrustedPresentation(content));
 	}
 
 	// One-shot hand-off from whichever feed-list screen (Home or Search) a
@@ -8856,6 +8925,13 @@
 						: await loadMarkExpandHtml(item);
 				if (body.isConnected) {
 					body.innerHTML = html || expandErrorHtml();
+					// A Featured Content gallery's slider (assets/featured-content.js,
+					// loaded by the app shell) only scans the page once, at load.
+					if (window.daymarkFeaturedGallery) {
+						body.querySelectorAll('[data-daymark-gallery]').forEach((gallery) =>
+							window.daymarkFeaturedGallery.init(gallery)
+						);
+					}
 					this.maybeLoadOembedPreview(kind, item, body);
 				}
 			} catch (err) {

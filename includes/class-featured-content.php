@@ -516,6 +516,20 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * A post's Featured Content markup for the app's full post view
+	 * (GET /daymark/v1/marks/{id}/content). The same markup the front end
+	 * renders, except a gallery always includes every image: that request
+	 * is never singular, and the app shell loads the slider script and
+	 * stylesheet itself.
+	 *
+	 * @param int|WP_Post $post Post ID or object.
+	 * @return string Markup, or '' when the post has no Featured Content.
+	 */
+	public static function render_for_app( $post ): string {
+		return self::render( $post, array( 'full_gallery' => true ) );
+	}
+
+	/**
 	 * Build a post's Featured Content markup.
 	 *
 	 * @param int|WP_Post|null     $post Post ID/object, or null for the current post.
@@ -539,7 +553,7 @@ class Daymark_Featured_Content {
 		} elseif ( 'video' === $fc['type'] ) {
 			$html = self::render_video( $fc['data'], $discover );
 		} elseif ( 'gallery' === $fc['type'] ) {
-			$html = self::render_gallery( $fc['data'] );
+			$html = self::render_gallery( $fc['data'], ! empty( $args['full_gallery'] ) );
 		} elseif ( 'quote' === $fc['type'] ) {
 			$html = self::render_quote( $fc['data'] );
 		} elseif ( 'link' === $fc['type'] ) {
@@ -775,9 +789,10 @@ class Daymark_Featured_Content {
 	 * slider's assets are not loaded there.
 	 *
 	 * @param array{attachment_ids?: int[]} $data Sanitized gallery data.
+	 * @param bool                          $full Render every image even outside a single post — for the app's full post view, which loads the slider itself.
 	 * @return string
 	 */
-	private static function render_gallery( array $data ): string {
+	private static function render_gallery( array $data, bool $full = false ): string {
 		$ids    = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
 		$images = array();
 
@@ -815,12 +830,12 @@ class Daymark_Featured_Content {
 		// slider's stylesheet and script are not loaded there. Showing up to
 		// 20 stacked, unstyled images in every listing would be far worse
 		// than the featured image it replaces, so show only the first image.
-		if ( $count > 1 && ! is_singular() ) {
+		if ( $count > 1 && ! is_singular() && ! $full ) {
 			$images = array_slice( $images, 0, 1 );
 			$count  = 1;
 		}
 
-		if ( $count > 1 ) {
+		if ( $count > 1 && ! $full ) {
 			self::enqueue_frontend_assets( true );
 		}
 

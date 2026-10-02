@@ -43,6 +43,129 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		return $request;
 	}
 
+	/**
+	 * Publish a post with the given content as author A, logged in as A.
+	 *
+	 * @param string $content Post content.
+	 * @return int Post ID.
+	 */
+	private function published_post( string $content = '<p>Body.</p>' ): int {
+		wp_set_current_user( $this->author_a );
+
+		return (int) self::factory()->post->create(
+			array(
+				'post_author'  => $this->author_a,
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+	}
+
+	/**
+	 * An uploaded image attachment (a real file, so its URL and sizes resolve).
+	 *
+	 * @param int $post_id Parent post ID.
+	 * @return int Attachment ID.
+	 */
+	private function image( int $post_id ): int {
+		return (int) self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $post_id );
+	}
+
+	/** A post with no Featured Content and no featured image has nothing to show above its body. */
+	public function test_featured_is_empty_with_nothing_set() {
+		$data = rest_do_request( $this->request_for( $this->published_post() ) )->get_data();
+
+		$this->assertSame( '', $data['featured'] );
+	}
+
+	/** A featured image the content doesn't show is returned for the top of the post view. */
+	public function test_featured_image_not_in_content_is_returned() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertStringContainsString( '<img', $featured );
+		$this->assertStringContainsString( wp_basename( (string) get_attached_file( $image_id ), '.png' ), $featured );
+	}
+
+	/**
+	 * An image Mark's first photo is both its featured image and in its
+	 * content (the publisher does that), so it is not shown twice.
+	 */
+	public function test_featured_image_already_in_content_is_not_repeated() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => sprintf(
+					'<!-- wp:image {"id":%1$d} --><figure class="wp-block-image"><img src="%2$s" class="wp-image-%1$d" alt="" /></figure><!-- /wp:image -->',
+					$image_id,
+					esc_url( (string) wp_get_attachment_url( $image_id ) )
+				),
+			)
+		);
+
+		$this->assertSame( '', rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'] );
+	}
+
+	/** A resized copy of the featured image in the content (no wp-image class) also counts as shown. */
+	public function test_resized_copy_of_featured_image_in_content_is_not_repeated() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+		$resized = preg_replace( '/\.png$/', '-300x200.png', (string) wp_get_attachment_url( $image_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => '<p><img src="' . esc_url( $resized ) . '" alt="" /></p>',
+			)
+		);
+
+		$this->assertSame( '', rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'] );
+	}
+
+	/** Featured Content wins over a featured image. */
+	public function test_featured_content_is_returned_instead_of_the_featured_image() {
+		$post_id = $this->published_post();
+		set_post_thumbnail( $post_id, $this->image( $post_id ) );
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, 'quote' );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'quote' => array( 'text' => 'Seize the day.' ) ) )
+		);
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertStringContainsString( 'daymark-featured-quote', $featured );
+		$this->assertStringContainsString( 'Seize the day.', $featured );
+		$this->assertStringNotContainsString( '<img', $featured );
+	}
+
+	/**
+	 * A gallery returns every image, even though a REST request is never a
+	 * single-post view (where the front end shows only the first image).
+	 */
+	public function test_featured_gallery_returns_every_slide() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ), $this->image( $post_id ) );
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $ids ) ) )
+		);
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertSame( 3, substr_count( $featured, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'data-daymark-gallery', $featured );
+	}
+
 	/** A true Mark's own content is returned, rendered — not the raw block markup. */
 	public function test_mark_content_is_rendered() {
 		wp_set_current_user( $this->author_a );
