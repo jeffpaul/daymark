@@ -6122,9 +6122,24 @@
 			// item via these (onFeedListClick()'s data-expand-post branch).
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
+			// The "On this day" cards currently shown — what
+			// saveFeedSnapshot() captures when one is opened.
+			this._items = [];
 
 			const memories = root.querySelector('[data-explore-memories]');
-			if (memories) {
+			const snapshot = takeFeedSnapshot('#explore');
+			if (memories && snapshot) {
+				// Coming back from a memory opened here: show the same
+				// cards and put the opened one back in place instead of
+				// fetching again and landing at the top (see feedSnapshot).
+				// Following loads below it, so it can't shift the card.
+				this._items = snapshot.items.slice();
+				this._items.forEach((item) => rememberItem(this, item));
+				memories.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+				// showScreen() focuses the header right after init()
+				// starts, which scrolls to the top. Position the card after.
+				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+			} else if (memories) {
 				// Deliberately kicked off and left running, not awaited:
 				// memories and Following load independently, and one failing
 				// never blocks the other.
@@ -6199,6 +6214,7 @@
 			const arr = Array.isArray(items) ? items : [];
 			this._bySubId.clear();
 			this._byMarkId.clear();
+			this._items = arr.slice();
 			arr.forEach((item) => rememberItem(this, item));
 			if (!arr.length) {
 				list.innerHTML =
@@ -8841,8 +8857,8 @@
 	// first page and land at the top. Holds the screen's hash, every item
 	// it had rendered (on Home, all infinite-scroll pages, in order), that
 	// screen's own state (Home's paging, Search's filters), and where the
-	// tapped card sat on screen. HomeScreen.init()/SearchScreen.init()
-	// consume it when `hash` matches. Kept in memory only: a reload or a
+	// tapped card sat on screen. HomeScreen.init(), SearchScreen.init(),
+	// and ExploreScreen.init() (its "On this day" cards) consume it when `hash` matches. Kept in memory only: a reload or a
 	// cold start begins at the top as before. showScreen() discards it
 	// once the reader goes anywhere other than #post/#reblog or back.
 	let feedSnapshot = null;
@@ -8853,6 +8869,8 @@
 		if (screen === HomeScreen) {
 			hash = '#home';
 			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
+		} else if (screen === ExploreScreen) {
+			hash = '#explore';
 		} else if (screen === SearchScreen) {
 			hash = '#search';
 			extra = {
