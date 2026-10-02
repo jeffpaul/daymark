@@ -2676,6 +2676,10 @@
 			target = '#home';
 		}
 
+		if (feedSnapshot && target !== '#post' && target !== '#reblog' && target !== feedSnapshot.hash) {
+			feedSnapshot = null;
+		}
+
 		AIAssistSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
@@ -3828,6 +3832,7 @@
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
+				saveFeedSnapshot(screen, subTrigger);
 				openPostView('sub', item);
 			}
 			return;
@@ -3839,6 +3844,7 @@
 		if (markTrigger) {
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
+				saveFeedSnapshot(screen, markTrigger);
 				openPostView('mark', item);
 			}
 			return;
@@ -4336,6 +4342,7 @@
 			setEngagementToggleState(trigger, 'repost', false, 0, item);
 			try {
 				await apiDelete('marks/' + existingMarkId);
+				discardFeedSnapshot();
 				maybeShowInteractionHint('repost', trigger);
 			} catch (err) {
 				setEngagementToggleState(trigger, 'repost', true, existingMarkId, item);
@@ -4462,6 +4469,10 @@
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		try {
 			const result = await apiPost('subscription-posts/' + id + '/comment', { text });
+			if ('webmention' === result.method && result.mark_id) {
+				// A Webmention comment is published as a new Mark of your own.
+				discardFeedSnapshot();
+			}
 			if ('webmention' === result.method && result.mark_id && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.replied_mark_id = result.mark_id;
@@ -4897,6 +4908,7 @@
 		}
 		try {
 			await apiDelete('subscriptions/' + subscriptionId);
+			discardFeedSnapshot();
 			if (wrap) {
 				const parentList = wrap.parentElement;
 				wrap.remove();
@@ -5225,6 +5237,14 @@
 			// loadMorePage() so an appended page continues the same run of
 			// headers instead of repeating one.
 			this._lastGroupKey = null;
+			// Every Timeline item rendered so far, in order, across all
+			// pages — what saveFeedSnapshot() captures when a card opens.
+			this._items = [];
+
+			const snapshot = takeFeedSnapshot('#home');
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+			}
 
 			await refreshPendingSection();
 
@@ -5246,7 +5266,43 @@
 				// A drafts failure never blocks the recent list below.
 			}
 
+			if (snapshot) {
+				// Pending and Drafts just loaded above the Timeline and may
+				// have pushed it down; put the opened card back in place.
+				scrollFeedToAnchor(snapshot, true);
+				return;
+			}
 			await this.loadRecent();
+		},
+
+		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
+		// instead of fetching page 1 again. Items are re-rendered rather
+		// than restored as saved HTML, so a Like or Bookmark changed on
+		// the post view (which mutates these same item objects) shows up.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-recent-list]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list) {
+				return;
+			}
+			this.recentPage = snapshot.recentPage;
+			this.recentDone = snapshot.recentDone;
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = renderFeedItemsWithGroups(this, this._items);
+			observeRehydrateCandidates(this, list);
+			observeOembedPreviewCandidates(this, list);
+			observeLikeAvailability(this, list);
+			if (this.recentDone) {
+				if (sentinel) {
+					sentinel.hidden = true;
+				}
+			} else {
+				this.setupObserver();
+			}
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, false));
 		},
 
 		// (Re)load the first page of recent Marks and arm infinite scroll.
@@ -5284,6 +5340,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML = emptyTimelineHtml();
@@ -5358,6 +5415,7 @@
 				const arr = Array.isArray(items) ? items : [];
 				if (arr.length && list.isConnected) {
 					this.recentPage = nextPage;
+					this._items = (this._items || []).concat(arr);
 					arr.forEach((item) => rememberItem(this, item));
 					// Deliberately not resetting this._lastGroupKey first —
 					// continuing from wherever loadRecent()'s own page (or a
@@ -5718,6 +5776,22 @@
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
+			// The results currently shown — what saveFeedSnapshot()
+			// captures when a card opens.
+			this._items = [];
+
+			// Coming back from a post opened here: restore the same
+			// filters and results, and the card's place, instead of
+			// searching again from the top (see feedSnapshot).
+			const snapshot = takeFeedSnapshot('#search');
+			if (snapshot) {
+				searchPreset = null;
+				this.searchQuery = snapshot.query || '';
+				this.searchType = snapshot.type || '';
+				this.searchSource = snapshot.source || '';
+				this.searchBookmarked = !!snapshot.bookmarked;
+				this.searchDate = snapshot.date || '';
+			}
 
 			// A preset handed from Explore/Me ("browse by type", "your
 			// Marks", "Following", "Bookmarks") right before navigate('#search')
@@ -5740,7 +5814,28 @@
 			}
 
 			this.loadSubscriptionsForFilter();
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+				return;
+			}
 			await this.runSearch();
+		},
+
+		// Re-render the saved results rather than searching again, so the
+		// list (and any Like or Bookmark changed on the post view, which
+		// mutates these same item objects) matches what the reader left.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-search-results]');
+			if (!list) {
+				return;
+			}
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+			observeLikeAvailability(this, list);
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
 		},
 
 		syncFilterChips() {
@@ -5839,6 +5934,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				teardownLikeAvailabilityObserver(this);
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -5900,6 +5996,7 @@
 			}
 			this._bySubId.clear();
 			this._byMarkId.clear();
+			this._items = items.slice();
 			items.forEach((item) => rememberItem(this, item));
 			if (!items.length) {
 				list.innerHTML =
@@ -6031,9 +6128,24 @@
 			// item via these (onFeedListClick()'s data-expand-post branch).
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
+			// The "On this day" cards currently shown — what
+			// saveFeedSnapshot() captures when one is opened.
+			this._items = [];
 
 			const memories = root.querySelector('[data-explore-memories]');
-			if (memories) {
+			const snapshot = takeFeedSnapshot('#explore');
+			if (memories && snapshot) {
+				// Coming back from a memory opened here: show the same
+				// cards and put the opened one back in place instead of
+				// fetching again and landing at the top (see feedSnapshot).
+				// Following loads below it, so it can't shift the card.
+				this._items = snapshot.items.slice();
+				this._items.forEach((item) => rememberItem(this, item));
+				memories.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+				// showScreen() focuses the header right after init()
+				// starts, which scrolls to the top. Position the card after.
+				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+			} else if (memories) {
 				// Deliberately kicked off and left running, not awaited:
 				// memories and Following load independently, and one failing
 				// never blocks the other.
@@ -6108,6 +6220,7 @@
 			const arr = Array.isArray(items) ? items : [];
 			this._bySubId.clear();
 			this._byMarkId.clear();
+			this._items = arr.slice();
 			arr.forEach((item) => rememberItem(this, item));
 			if (!arr.length) {
 				list.innerHTML =
@@ -8744,6 +8857,89 @@
 	// Create/Publish do.
 	let pendingPostView = null;
 
+	// What a feed list looked like when one of its cards was opened, so
+	// Back returns the reader to that card instead of the top. Going back
+	// re-renders the screen from scratch, which used to reload only the
+	// first page and land at the top. Holds the screen's hash, every item
+	// it had rendered (on Home, all infinite-scroll pages, in order), that
+	// screen's own state (Home's paging, Search's filters), and where the
+	// tapped card sat on screen. HomeScreen.init(), SearchScreen.init(),
+	// and ExploreScreen.init() (its "On this day" cards) consume it when `hash` matches. Kept in memory only: a reload or a
+	// cold start begins at the top as before. showScreen() discards it
+	// once the reader goes anywhere other than #post/#reblog or back.
+	let feedSnapshot = null;
+
+	function saveFeedSnapshot(screen, trigger) {
+		let hash = '';
+		let extra = null;
+		if (screen === HomeScreen) {
+			hash = '#home';
+			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
+		} else if (screen === ExploreScreen) {
+			hash = '#explore';
+		} else if (screen === SearchScreen) {
+			hash = '#search';
+			extra = {
+				query: screen.searchQuery,
+				type: screen.searchType,
+				source: screen.searchSource,
+				bookmarked: screen.searchBookmarked,
+				date: screen.searchDate,
+			};
+		}
+		if (!hash || !Array.isArray(screen._items) || !screen._items.length) {
+			feedSnapshot = null;
+			return;
+		}
+		const card = trigger.closest('.daymark-recent__item-wrap') || trigger;
+		feedSnapshot = Object.assign(
+			{
+				hash,
+				items: screen._items.slice(),
+				anchorSelector: trigger.hasAttribute('data-subpost')
+					? '[data-subpost="' + CSS.escape(trigger.getAttribute('data-subpost')) + '"]'
+					: '[data-expand-post="' + CSS.escape(trigger.getAttribute('data-expand-post')) + '"]',
+				anchorTop: card.getBoundingClientRect().top,
+				scrollY: window.scrollY,
+			},
+			extra
+		);
+	}
+
+	// Drop the saved snapshot after an action that changes what the list
+	// should show: unsubscribing from a site (its posts must leave the
+	// list), or publishing or removing one of your own Marks from the post
+	// view (a reblog, a Webmention comment, undoing a reblog). The screen
+	// then reloads on Back, as it did before snapshots existed.
+	function discardFeedSnapshot() {
+		feedSnapshot = null;
+	}
+
+	// Hand a screen its saved snapshot, once, if it was saved for it.
+	function takeFeedSnapshot(hash) {
+		const snapshot = feedSnapshot && feedSnapshot.hash === hash ? feedSnapshot : null;
+		feedSnapshot = null;
+		return snapshot;
+	}
+
+	// Scroll so the opened card sits where it was when it was tapped,
+	// falling back to the saved scroll offset if it can't be found.
+	// `focusCard` moves keyboard focus back to that card, matching where
+	// a screen-reader or keyboard user left off.
+	function scrollFeedToAnchor(snapshot, focusCard) {
+		const card = root.querySelector(snapshot.anchorSelector);
+		if (!card || !card.isConnected) {
+			window.scrollTo(0, snapshot.scrollY);
+			return;
+		}
+		const wrap = card.closest('.daymark-recent__item-wrap') || card;
+		const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
+		window.scrollTo(0, Math.max(0, top));
+		if (focusCard) {
+			card.focus({ preventScroll: true });
+		}
+	}
+
 	function openPostView(kind, item) {
 		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };
 		navigate('#post');
@@ -9104,6 +9300,7 @@
 			try {
 				const mark = await apiUpload('marks', formData);
 				this.item.reposted_mark_id = mark.id;
+				discardFeedSnapshot();
 				navigate(this.returnTo);
 			} catch (err) {
 				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
