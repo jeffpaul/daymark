@@ -26,23 +26,20 @@ if ( ! class_exists( 'Daymark_Plugin' ) ) {
 	return;
 }
 
-// wp_tempnam() lives in an admin include that a Playground runPHP step never
-// loads (PHPUnit does, which is why the seed test passed while previews
-// failed). The publisher loads it too, but only after this file needs it.
+// wp_tempnam() lives in wp-admin's file.php, which a Playground runPHP step
+// (plain wp-load.php, no admin bootstrap) never loads. PHPUnit already has it
+// loaded, which is why the blueprint test alone didn't catch its absence.
 require_once ABSPATH . 'wp-admin/includes/file.php';
 
-// A Playground runPHP step has no logged-in user, and the publisher saves a
-// Mark as a draft when the current user can't publish. Act as the site's
-// first administrator for the samples, then restore whoever was set before.
-$daymark_sample_previous_user = get_current_user_id();
-
+// A runPHP step has no logged-in user, and the publisher only publishes for a
+// user who can publish_posts (anyone else gets a draft). Act as the site's
+// first administrator so the samples land on the Timeline, not in Drafts.
 if ( ! current_user_can( 'publish_posts' ) ) {
 	$daymark_sample_admins = get_users(
 		array(
 			'role'    => 'administrator',
 			'number'  => 1,
 			'orderby' => 'ID',
-			'order'   => 'ASC',
 			'fields'  => 'ID',
 		)
 	);
@@ -243,5 +240,3 @@ $daymark_sample_featured(
 		'url'    => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ',
 	)
 );
-
-wp_set_current_user( $daymark_sample_previous_user );

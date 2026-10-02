@@ -40,9 +40,12 @@ can't act on them.
 
 ### Fixed
 
+- The Playground preview and the public "Try Daymark" demo no longer stop with a critical error while adding sample content, and the sample Marks are now published to the Timeline instead of saved as drafts.
+- A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.
 - The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
 - When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
 - A Mark's reblog count now includes reblogs that add commentary (quote posts from the fediverse) and reblogs by other authors on your own site, not only plain boosts. ([#396](https://github.com/jeffpaul/daymark/issues/396))
+- The app's security policy no longer blocks the small script WordPress adds to set up the language's text direction. The browser console no longer shows a Content Security Policy error when the app loads. ([#470](https://github.com/jeffpaul/daymark/pull/470))
 - Bookmarked posts now keep their images offline even when the images are hosted on another site, which is most posts from sites you follow. Before, only images on your own site were saved and the rest showed as broken offline. ([#455](https://github.com/jeffpaul/daymark/issues/455))
 
 ### Developer
