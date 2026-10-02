@@ -1585,6 +1585,15 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 	});
 	await page.goto('/daymark');
 
+	// Home opens anchored on the newest post this user has seen (the
+	// Timeline last-seen marker), and the ten Marks seeded above are newer
+	// than it — so this load may scroll itself down to the marker. Wait
+	// for the Timeline to finish loading (cards render only once that
+	// decision is made), then return to the top: everything below assumes
+	// it starts there, and a late jump would land mid-calibration.
+	await page.waitForSelector('[data-recent-list] .daymark-recent__item-wrap');
+	await page.evaluate(() => window.scrollTo(0, 0));
+
 	// Real, live subscription-post images (this suite never cleans up its
 	// own real content — see openComposer()'s own docblock above) can
 	// still be loading in the background right after this goto. Each one
