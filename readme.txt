@@ -4,7 +4,7 @@ Tags:              publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
-Stable tag:        0.18.0
+Stable tag:        0.19.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -161,7 +161,50 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.19.0 - 2026-10-02 =
+**Added**
+
+* The Timeline now remembers the newest post you've seen, on your account, so it follows you across devices. When you come back, it opens at that post instead of the top, with newer posts above it. A "new posts" button shows how many there are and jumps to the newest one.
+* The Search screen gained a **Date** dropdown beside the existing keyword/type/source filters, reusing the same buckets the Timeline itself groups its items into (Today / This Week / Last Week / This Month / Last Month) so a label means the same thing in both places. It combines with the other filters and covers both your Marks and subscription posts, backed by the same merged `GET /timeline` endpoint.
+* Explore's Timeline gained an **On this day** section showing the Marks you published on this calendar date in past years — last year's memory, the year before's, and so on, newest first — sitting between Bookmarks and Following. Backed by the same merged `GET /timeline` endpoint the rest of Explore and Timeline already use, filtered to your own Marks from prior years (nothing from today itself), so the section shares every card behavior the others already have: open the full post view, bookmark, like, comment, share. Marks you publish today won't appear here until next year.
+* Publishing a Mark with a captured location and weather while the Simple Location plugin is active now also bridges the temperature and a human-readable condition text into Simple Location's own post-meta at publish time, so that plugin's weather display extends to the Mark for free — no duplicate weather fetch or storage inside Daymark. The weather code itself is deliberately not bridged, since Simple Location's icon/code vocabulary is OpenWeatherMap-derived and can't map Daymark's Open-Meteo codes; a bridged-but-wrong code would render worse than no code at all.
+* Featured Content now supports a Gallery type: choose "Set featured content", pick several images in the media picker (tap each to select), and they show as an accessible carousel (swipe or click-drag, arrow keys, dots) in place of the featured image on the post's page. On the home page, archives, and search a gallery shows only its first image, and a Timeline card shows the first four as a small 2x2 grid.
+* The Featured Content sidebar control (block editor) now supports two more kinds alongside audio, video, and gallery: a **quote** (text with an optional author and an http(s) source link, shown as a real `<blockquote>` with attribution in place of your featured image) and a **link** (a readable link out to a web page, available only when the post's own Format is set to Link). Add them with the "Add a quote" and "Add a link" links beside "Set featured content".
+* A post whose Featured Content is a gallery, a video or audio, a quote, or a link now shares well: its image (the gallery's first photo, the video's thumbnail or cover art, or the linked page's image) becomes the post's oEmbed thumbnail and its Open Graph and Twitter Card image, and a quote becomes the share description. With Yoast SEO, Rank Math, All in One SEO, or Jetpack's sharing tags active, Daymark hands the image to that plugin instead of printing its own tags.
+* You can now put a Featured Content gallery's images in the order you want. After you pick images, WordPress's own gallery editor opens, where you drag them into order (mouse or touch), remove or caption one, or add more. Replace on a gallery opens that editor with its images in their saved order. The post's carousel, its Timeline card, and the sidebar preview all follow that order.
+* Opening a post from the Timeline now shows its Featured Content (a video, audio, gallery, quote, or link) or its featured image at the top of the full post view. A photo that's already in the post isn't shown twice. Posts from sites you follow show their featured image the same way. A gallery in the post itself, such as a Mark with several photos, also shows as a slider there instead of stacked photos. Gallery sliders show each photo's caption under it. A bookmarked post's gallery works as a slider offline too.
+* Gallery cards on the Timeline now show up to four photos as a 2x2 grid of rounded tiles, with "+N" when there are more. This covers gallery Marks, Check Ins with several photos, posts whose Featured Content is a gallery, and gallery posts from sites you follow, which previously showed a single photo or a short strip.
+* A post with a featured image, from a site you follow or an ordinary post on your own site, now shows it as a full-width photo at the top of its Timeline card, the same way your own photo Marks do, instead of a small thumbnail beside the text. The excerpt still shows below it.
+* If your site reaches the fediverse through Bridgy Fed instead of the ActivityPub plugin, you can now like and reblog fediverse and Bluesky posts you follow. Check "This site is bridged with Bridgy Fed" on Settings -> Daymark -> Connectors; Daymark then sends those Likes and Reblogs through Bridgy Fed with the Webmention plugin. Posts on sites that accept Webmentions still get them directly.
+* Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words, a link to their post, and a Reply button, and it marks Notifications as unread.
+* A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened.
+* A post whose Featured Content is a video or audio now shows the video's real thumbnail (or the file's cover art) on its Timeline card, with a play button, instead of a placeholder. A thumbnail that was never fetched is looked up the first time the card is shown.
+* A post whose Featured Content is a link now shows a preview of the linked page, with its image, title, and site, on its Timeline card and at the top of the full post view, instead of a bare link. In the post view the preview opens the page.
+* A post whose Featured Content is a link now shows a preview of the linked page on its own page too, not just in the Daymark app: the page's image, title, description, and site, as one link. The preview is saved when the Featured Content is saved, so a visitor never causes a fetch of the linked page.
+
+**Changed**
+
+* The Reblog screen now asks for your own words first: it opens with the cursor in "Your thoughts", says why a line of commentary helps, and if you leave it empty asks once before reblogging anyway.
+
+**Fixed**
+
+* The Timeline no longer jumps to the last post you saw if you have already started scrolling while it loads.
+* Going back from a post you opened on the Timeline, in Search, or from Explore's "On this day" now returns you to that post's place in the list instead of the top. The Timeline keeps every page you had scrolled through, and Search keeps your search text, filters, and results. If you unsubscribe, reblog, or comment from the post view, the list reloads instead so it shows the change.
+* The Playground preview and the public "Try Daymark" demo no longer stop with a critical error while adding sample content, and the sample Marks are now published to the Timeline instead of saved as drafts.
+* A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.
+* The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
+* When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
+* A Mark's reblog count now includes reblogs that add commentary (quote posts from the fediverse) and reblogs by other authors on your own site, not only plain boosts.
+* The app's security policy no longer blocks the small script WordPress adds to set up the language's text direction. The browser console no longer shows a Content Security Policy error when the app loads.
+* Bookmarked posts now keep their images offline even when the images are hosted on another site, which is most posts from sites you follow. Before, only images on your own site were saved and the rest showed as broken offline.
+
+**Developer**
+
+* The WordPress Playground previews (the public "Try Daymark" link and each pull request's preview button) now open with sample Marks for each type and Featured Content kind: a single photo, a photo gallery, two Check Ins (one with a photo), and Featured Content notes using a gallery, a quote, a link, and a YouTube video. The sample photos are small images checked into the repository, so nothing is downloaded or generated while the preview loads.
+* CI's smoke and browser test jobs now install WP-CLI with their own script (`bin/install-wp-cli.sh`: retries, then a SHA-512 check) instead of `setup-php`'s `tools: wp-cli`, whose download failed intermittently and stopped those jobs before any test ran.
+
 = 0.18.0 - 2026-09-30 =
+
 **Added**
 
 * Liking a Mastodon post, or a post from any site running the ActivityPub plugin, now sends it a real ActivityPub Like through the ActivityPub plugin (8.1.0 or later, with your user enabled as an author); unliking sends an Undo. Reblogging one also sends a boost, undone when you unreblog. The origin gets one Like, not a second one by Webmention.
@@ -318,34 +361,12 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * A Mark's own like/comment/repost counts on its Timeline card no longer show Daymark's orange "active" accent color just because the count is 1 or more — that color is reserved for your own action (a genuine Like/Repost/Comment/Bookmark toggle); these three are always other people's engagement with your Mark, so they now stay a plain, muted count regardless of how high it is.
 * A Timeline card's trailing whitespace below its own site-name/date row — before the next card begins — is now identical across every Mark type and post format. Media-dominant cards (image, gallery, video, mixed media) previously had roughly double the trailing space of every other kind (audio, note, article, link, standard), a real inconsistency visible scrolling down a mixed Timeline.
 
-= 0.14.0 - 2026-09-09 =
-
-**Added**
-
-* Settings -> Daymark now has a Privacy section with a checkbox each for location, weather, and camera-metadata capture, plus whether a Mark's location is published publicly — previously these were only reachable by adding a filter in code. A filter still overrides its matching checkbox, so nothing already using one changes behavior.
-* Settings -> Daymark's Subscriptions section now has a "Check for new posts" dropdown (Hourly / Every 6 hours / Every 12 hours / Daily, the previous default) controlling how often Daymark checks your subscriptions for new content — previously only changeable via a filter in code. A filter still overrides it.
-* Settings -> Daymark's subscriptions table now has a search box that filters the list by site name, site URL, or feed URL — useful once you have more than a handful of subscriptions.
-* Settings -> Daymark has a new Connectors tab recommending IndieWeb plugins that pair well with Daymark — Webmention, ActivityPub, and ATmosphere — each with a plain-language description of what it adds, a link to its WordPress.org page, and an inline Install/Activate button reflecting whether it's already installed or active. None of these is required.
-* The Connectors tab also lists [Bridgy Fed](https://fed.brid.gy/), a free hosted bridge (not a plugin) that gives your site a fediverse and Bluesky presence through the Webmention support above, with no ActivityPub or AT Protocol plugin needed — an alternative to the ActivityPub plugin above, not an addition to it, since it bridges you in under an auto-generated handle rather than your own domain's native identity.
-
-**Changed**
-
-* **Breaking (for anything targeting the old URL directly): Settings -> Daymark's page slug got shorter and the page was reorganized into tabs.** It's now at `/wp-admin/options-general.php?page=daymark` (was `options-general.php?page=daymark-subscriptions`), split into Subscriptions, Connectors, Import/Export, and Privacy tabs instead of one long page. A plain visit to the old URL redirects automatically, so a browser bookmark still works — but the page's hook suffix changed too, from `settings_page_daymark-subscriptions` to `settings_page_daymark`, along with the matching `settings_page_daymark-subscriptions` admin body class WordPress adds automatically. Anything keyed to either of those directly (a custom `admin_enqueue_scripts`/`admin_head` hook, hand-written CSS/JS targeting the old body class) needs updating to the new slug — the redirect only covers a plain page load.
-* Settings -> Daymark's subscriptions table now defaults to A-to-Z order by site name (falling back to the site URL only when there's no name) instead of raw subscribe order — the Site, Status, and Last fetched column headers remain independently sortable as before.
-* A subscription post's Timeline card no longer shows its author's name directly under the title — for most single-author sites that read the same as, or very close to, the site name already shown on the card's bottom row, so it was dropped as redundant.
-* Search's Source filter dropdown now lists subscribed sites alphabetically by name, with "All" and "My Marks" pinned first — previously they appeared in subscribe order.
-* A "link"-format Timeline card no longer stands out with its own orange-tinted background — it now reads like a plain Note/Article card, matching the rest of the Timeline. Its full-screen post view also shows a best-effort oEmbed preview of the post's own detected outbound link (e.g. an embedded Mastodon post, a video player) when one is available.
-* A microformats2-subscribed site's reply or RSVP posts now render as Notes on the Timeline instead of plain, undifferentiated articles — matching how status/chat-format posts already do. Reposts, likes, and bookmarks are unchanged for now.
-
-**Fixed**
-
-* A bookmark on a Mark or subscription post no longer outlives it — unsubscribing from a site, deleting a Mark, or WordPress's own trash-retention eventually purging either one now also clears any bookmark pointing at it, instead of leaving a permanently orphaned entry behind.
-* The full-screen post view lost the site title, date, and interaction icons (Like through Share) a Timeline card already shows once opened — they're now kept visible below the post's own content.
-* Explore/Search/Me's header Daymark icon and title still sat farther right than Home's own icon and wordmark, even after a prior pass matched their icon-to-title gap — the tap target's own leading overhang (44px box, 26px icon) was shifting the icon itself, not just the gap.
-
 [View the full changelog history](https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 0.19.0 =
+Featured Content grows into a full set: galleries (reorderable in WordPress's own gallery editor), quotes, and links join audio and video, and each shows on the Timeline card, at the top of the full post view, and in a post's link previews when shared. A link becomes a preview of the linked page on the post's own page too. Gallery cards show a 2x2 photo grid, and followed and ordinary posts show their featured image full width. The Timeline remembers where you left off, Search gains a Date filter, Explore adds "On this day", and Back from a post returns to your place in the list.
 
 = 0.18.0 =
 Likes and comments you send on subscribed posts now actually reach the original site, and Likes to Mastodon and other ActivityPub sites are delivered through the ActivityPub plugin. The Like icon only appears when a Like can be delivered. Check In gains an optional photo or video and a map preview. Likes no longer appear as ordinary posts on your site. Settings -> Daymark now needs the Administrator role, and this release includes a set of security hardening fixes, including checks on every redirect Daymark follows, so update when you can.

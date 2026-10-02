@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-02
+
 ### Added
 
 - The Timeline now remembers the newest post you've seen, on your account, so it follows you across devices. When you come back, it opens at that post instead of the top, with newer posts above it. A "new posts" button shows how many there are and jumps to the newest one. ([#472](https://github.com/jeffpaul/daymark/pull/472))
@@ -38,8 +40,8 @@ can't act on them.
 - A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 - A post whose Featured Content is a video or audio now shows the video's real thumbnail (or the file's cover art) on its Timeline card, with a play button, instead of a placeholder. A thumbnail that was never fetched is looked up the first time the card is shown. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 - A post whose Featured Content is a link now shows a preview of the linked page, with its image, title, and site, on its Timeline card and at the top of the full post view, instead of a bare link. In the post view the preview opens the page. ([#473](https://github.com/jeffpaul/daymark/pull/473))
-
 - A post whose Featured Content is a link now shows a preview of the linked page on its own page too, not just in the Daymark app: the page's image, title, description, and site, as one link. The preview is saved when the Featured Content is saved, so a visitor never causes a fetch of the linked page. ([#475](https://github.com/jeffpaul/daymark/pull/475))
+
 ### Changed
 
 - The Reblog screen now asks for your own words first: it opens with the cursor in "Your thoughts", says why a line of commentary helps, and if you leave it empty asks once before reblogging anyway. ([#396](https://github.com/jeffpaul/daymark/issues/396))
@@ -648,6 +650,7 @@ can't act on them.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
 [unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[0.19.0]: https://github.com/jeffpaul/daymark/compare/0.18.0...0.19.0
 [0.18.0]: https://github.com/jeffpaul/daymark/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/jeffpaul/daymark/compare/0.16.0...0.17.0
 [0.16.0]: https://github.com/jeffpaul/daymark/compare/0.15.0...0.16.0
