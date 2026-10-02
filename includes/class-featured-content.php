@@ -980,7 +980,7 @@ class Daymark_Featured_Content {
 	 * @param string $url URL to derive a label from.
 	 * @return string
 	 */
-	private static function url_host_label( string $url ): string {
+	public static function url_host_label( string $url ): string {
 		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
 		$host = preg_replace( '/^www\./', '', $host );
 

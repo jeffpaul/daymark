@@ -36,6 +36,7 @@ can't act on them.
 - Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words, a link to their post, and a Reply button, and it marks Notifications as unread. ([#396](https://github.com/jeffpaul/daymark/issues/396))
 - A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 - A post whose Featured Content is a video or audio now shows the video's real thumbnail (or the file's cover art) on its Timeline card, with a play button, instead of a placeholder. A thumbnail that was never fetched is looked up the first time the card is shown. ([#473](https://github.com/jeffpaul/daymark/pull/473))
+- A post whose Featured Content is a link now shows a preview of the linked page, with its image, title, and site, on its Timeline card and at the top of the full post view, instead of a bare link. In the post view the preview opens the page. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 
 ### Changed
 

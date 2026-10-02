@@ -80,6 +80,26 @@ class Daymark_Subscription_Opengraph {
 	private const DESCRIPTION_WORDS = 40;
 
 	/**
+	 * A URL's cached Open Graph preview, without fetching anything: the same
+	 * array resolve() returns (empty when an earlier lookup found nothing),
+	 * or null when the URL hasn't been looked up yet.
+	 *
+	 * @param string $url Page URL.
+	 * @return array<string, string>|null
+	 */
+	public static function cached( string $url ): ?array {
+		$url = esc_url_raw( trim( $url ) );
+
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$cached = get_transient( 'daymark_og_' . md5( $url ) );
+
+		return is_array( $cached ) ? $cached : null;
+	}
+
+	/**
 	 * Resolve an Open Graph link preview for a URL, cached by URL for
 	 * CACHE_TTL.
 	 *

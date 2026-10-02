@@ -3582,6 +3582,7 @@
 						  )}</p>`
 						: ''
 				}
+				${result.site ? `<p class="daymark-oembed-preview__site">${esc(result.site)}</p>` : ''}
 			</div>`;
 	}
 
@@ -4235,8 +4236,9 @@
 	// been looked up (a Timeline response never makes that fetch itself).
 	// A video or audio Featured Content card whose thumbnail the server
 	// hasn't resolved yet (Featured Content saved before that resolution
-	// existed, or a site with WP-Cron off) asks for it as it nears the
-	// viewport, then swaps its placeholder for the real preview. Same
+	// existed, or a site with WP-Cron off), or a link card whose page
+	// preview isn't cached yet, asks for it as it nears the viewport, then
+	// swaps its media slot for the real preview. Same
 	// lookahead, single-in-flight queue, and 429 backoff as
 	// observeOembedPreviewCandidates(). The server stores what it finds, so
 	// later Timeline loads carry it without asking.
@@ -4268,12 +4270,24 @@
 		container.querySelectorAll('[data-expand-post]').forEach((el) => {
 			const id = el.getAttribute('data-expand-post');
 			const item = id ? screen._byMarkId.get(id) : null;
-			const fc = item && item.featured_content;
-			if (!fc || !['video', 'audio'].includes(fc.type) || fc.image || screen._fcImageAttempted.has(id)) {
+			if (!item || !featuredPreviewPending(item) || screen._fcImageAttempted.has(id)) {
 				return;
 			}
 			screen._fcImageObserver.observe(el);
 		});
+	}
+
+	// Whether a Mark card's Featured Content still has a preview to fetch:
+	// a video/audio thumbnail, or a link's page preview.
+	function featuredPreviewPending(item) {
+		const fc = item.featured_content;
+		if (!fc) {
+			return false;
+		}
+		if ('link' === fc.type) {
+			return !!fc.url && null === fc.preview;
+		}
+		return ['video', 'audio'].includes(fc.type) && !fc.image;
 	}
 
 	function teardownFeaturedImages(screen) {
@@ -4297,12 +4311,20 @@
 		}
 		screen._fcImageInFlight = true;
 		try {
-			const result = await apiGet('marks/' + id + '/featured-content-image');
-			screen._fcImageAttempted.add(id);
 			const item = screen._byMarkId.get(id);
-			if (item && item.featured_content && result && result.url) {
-				item.featured_content.image = result.url;
+			const fc = item && item.featured_content;
+			if (fc && 'link' === fc.type) {
+				const result = await apiGet('marks/' + id + '/featured-content-link');
+				screen._fcImageAttempted.add(id);
+				fc.preview = (result && result.preview) || { title: '', description: '', image: '' };
 				refreshCardMedia(id, item);
+			} else if (fc) {
+				const result = await apiGet('marks/' + id + '/featured-content-image');
+				screen._fcImageAttempted.add(id);
+				if (result && result.url) {
+					fc.image = result.url;
+					refreshCardMedia(id, item);
+				}
 			}
 		} catch (err) {
 			if (err && 429 === err.status) {
@@ -8389,7 +8411,7 @@
 	// icon still shows the item's own type.
 	function cardLayoutKind(item, kind) {
 		const mediaKind = mediaKindForItem(item, kind);
-		return 'gallery' === mediaKind || 'quote' === mediaKind || ('article' === kind && 'image' === mediaKind)
+		return ['gallery', 'quote', 'linkpreview'].includes(mediaKind) || ('article' === kind && 'image' === mediaKind)
 			? mediaKind
 			: kind;
 	}
@@ -8398,13 +8420,16 @@
 		// The media kinds replace the card's own kind. A quote does too: it
 		// shows in the banner slot where a featured image would go
 		// (renderQuoteBanner()), the way Featured Content replaces the
-		// featured image on the post's own page. A link Featured Content
-		// has nothing to show there, so it leaves the card alone.
+		// featured image on the post's own page. So does a link: a preview
+		// of the linked page (renderLinkBanner()).
 		if (item.featured_content && FEATURED_MEDIA_KINDS.includes(item.featured_content.type)) {
 			return item.featured_content.type;
 		}
 		if (item.featured_content && 'quote' === item.featured_content.type && item.featured_content.text) {
 			return 'quote';
+		}
+		if (item.featured_content && 'link' === item.featured_content.type && item.featured_content.url) {
+			return 'linkpreview';
 		}
 		if ('checkin' === kind && item.media_kind) {
 			return item.media_kind;
@@ -8561,9 +8586,30 @@
 		)}</span>${credit}</span>`;
 	}
 
+	// A link Featured Content, shown in a card's banner slot in place of a
+	// featured image: the linked page's own image full-width when it has
+	// one, then its site and title, like a link preview in a social feed.
+	// Before the preview is known (preview: null, filled in by
+	// observeFeaturedImages()) or when the page has none, it shows the site
+	// alone. Plain spans, since the whole card is a button.
+	function renderLinkBanner(item) {
+		const fc = item.featured_content || {};
+		const preview = fc.preview || {};
+		const image = preview.image
+			? imgWithFallback(preview.image, 'daymark-recent__linkimage', (fc.host || 'L').charAt(0).toUpperCase())
+			: '';
+		const title = preview.title ? `<span class="daymark-recent__linktitle">${esc(preview.title)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--link">${image}<span class="daymark-recent__linkmeta"><span class="daymark-recent__linkhost">${esc(
+			fc.host || ''
+		)}</span>${title}</span></span>`;
+	}
+
 	function renderCardMedia(item, kind) {
 		if ('quote' === kind) {
 			return renderQuoteBanner(item);
+		}
+		if ('linkpreview' === kind) {
+			return renderLinkBanner(item);
 		}
 		if ('checkin' === kind) {
 			return item.location ? renderCheckinMapPreview(item.location) : '';
@@ -8631,7 +8677,7 @@
 	function renderCardTitle(title, mediaKind, mediaHtml) {
 		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
 		const leads =
-			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind;
+			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind && 'linkpreview' !== mediaKind;
 		return leads
 			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
 			: ['', markup];
@@ -9305,6 +9351,7 @@
 						);
 					}
 					this.maybeLoadOembedPreview(kind, item, body);
+					this.maybeShowFeaturedLinkPreview(kind, item, body);
 				}
 			} catch (err) {
 				if (body.isConnected) {
@@ -9324,6 +9371,40 @@
 		// result, a network error, or the view having already navigated
 		// away by the time the fetch resolves) — there is no error state
 		// worth surfacing for an optional enhancement like this one.
+		// A link Featured Content arrives as a bare link to the page's site
+		// (Daymark_Featured_Content::render_link()). Here it becomes a
+		// preview card of the linked page (image, title, description, site),
+		// the same clickable card a followed post's link gets, using the
+		// preview the Timeline data already carried or fetching it once. A
+		// page with no Open Graph title keeps the bare link.
+		async maybeShowFeaturedLinkPreview(kind, item, body) {
+			const fc = item.featured_content;
+			const slot = body.querySelector('.daymark-postview-featured');
+			if ('mark' !== kind || !fc || 'link' !== fc.type || !fc.url || !slot) {
+				return;
+			}
+			let preview = fc.preview;
+			if (!preview) {
+				try {
+					const result = await apiGet('marks/' + item.id + '/featured-content-link');
+					preview = result && result.preview;
+					if (preview) {
+						fc.preview = preview;
+					}
+				} catch (err) {
+					return;
+				}
+			}
+			if (!preview || !preview.title || !slot.isConnected) {
+				return;
+			}
+			slot.innerHTML = `<a class="daymark-oembed-preview daymark-oembed-preview--link" href="${esc(
+				fc.url
+			)}" target="_blank" rel="noopener noreferrer">${oembedLinkPreviewInnerHtml(
+				Object.assign({}, preview, { site: fc.host || '' })
+			)}</a>`;
+		},
+
 		maybeLoadOembedPreview(kind, item, body) {
 			if ('sub' !== kind || !item.link_url || 'link' !== resolveCardKind(item)) {
 				return;

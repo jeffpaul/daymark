@@ -471,6 +471,101 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertSame( 404, rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) )->get_status() );
 	}
 
+	/**
+	 * A link Featured Content Mark (the Link post format, which the link kind requires).
+	 *
+	 * @param string $url Link URL.
+	 * @return int Mark ID.
+	 */
+	private function create_link_mark( string $url ): int {
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Link demo', 'note' );
+		set_post_format( $mark_id, 'link' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'link' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'link' => array( 'url' => $url ) ) ) );
+
+		return $mark_id;
+	}
+
+	/** A link sends its URL and site, and `preview: null` until its page has been looked up; never fetching. */
+	public function test_link_featured_content_reports_url_host_and_no_preview_until_looked_up() {
+		wp_set_current_user( $this->author_a );
+		$this->create_link_mark( 'https://www.example.org/news/' );
+
+		$fetched = false;
+		$watch   = static function ( $preempt ) use ( &$fetched ) {
+			$fetched = true;
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $watch );
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		remove_filter( 'pre_http_request', $watch );
+
+		$this->assertSame( 'link', $fc['type'] );
+		$this->assertSame( 'https://www.example.org/news/', $fc['url'] );
+		$this->assertSame( 'example.org', $fc['host'] );
+		$this->assertNull( $fc['preview'] );
+		$this->assertFalse( $fetched, 'The Timeline never fetches the linked page' );
+	}
+
+	/** GET /marks/{id}/featured-content-link looks the page up once; the Timeline then carries the cached preview. */
+	public function test_featured_content_link_endpoint_resolves_and_caches_the_preview() {
+		wp_set_current_user( $this->author_a );
+		$mark_id = $this->create_link_mark( 'https://www.example.org/news/' );
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'text/html; charset=UTF-8' ),
+				'body'     => '<html><head><meta property="og:title" content="WordPress News" /><meta property="og:description" content="The latest from WordPress." /><meta property="og:image" content="https://example.org/og.jpg" /></head><body></body></html>',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		$response = rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$expected = array(
+			'title'       => 'WordPress News',
+			'description' => 'The latest from WordPress.',
+			'image'       => 'https://example.org/og.jpg',
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $expected, $response->get_data()['preview'] );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( $expected, $fc['preview'] );
+	}
+
+	/** The link endpoint answers `preview: null` for other kinds and 404s for an unpublished post. */
+	public function test_featured_content_link_endpoint_ignores_other_kinds_and_drafts() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote post', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'quote' => array( 'text' => 'Hi.' ) ) ) );
+
+		$this->assertNull( rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) )->get_data()['preview'] );
+
+		wp_update_post(
+			array(
+				'ID'          => $mark_id,
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->assertSame( 404, rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) )->get_status() );
+	}
+
 	/** A quote Featured Content sends its text and credit, for the card's quote banner. */
 	public function test_quote_featured_content_reports_text_and_credit() {
 		wp_set_current_user( $this->author_a );
