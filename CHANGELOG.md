@@ -34,7 +34,7 @@ can't act on them.
 - A post with a featured image, from a site you follow or an ordinary post on your own site, now shows it as a full-width photo at the top of its Timeline card, the same way your own photo Marks do, instead of a small thumbnail beside the text. The excerpt still shows below it.
 - If your site reaches the fediverse through Bridgy Fed instead of the ActivityPub plugin, you can now like and reblog fediverse and Bluesky posts you follow. Check "This site is bridged with Bridgy Fed" on Settings -> Daymark -> Connectors; Daymark then sends those Likes and Reblogs through Bridgy Fed with the Webmention plugin. Posts on sites that accept Webmentions still get them directly. ([#441](https://github.com/jeffpaul/daymark/issues/441))
 - Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words, a link to their post, and a Reply button, and it marks Notifications as unread. ([#396](https://github.com/jeffpaul/daymark/issues/396))
-- A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened.
+- A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 
 ### Changed
 
