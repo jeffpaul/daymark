@@ -26,6 +26,32 @@ if ( ! class_exists( 'Daymark_Plugin' ) ) {
 	return;
 }
 
+// wp_tempnam() lives in an admin include that a Playground runPHP step never
+// loads (PHPUnit does, which is why the seed test passed while previews
+// failed). The publisher loads it too, but only after this file needs it.
+require_once ABSPATH . 'wp-admin/includes/file.php';
+
+// A Playground runPHP step has no logged-in user, and the publisher saves a
+// Mark as a draft when the current user can't publish. Act as the site's
+// first administrator for the samples, then restore whoever was set before.
+$daymark_sample_previous_user = get_current_user_id();
+
+if ( ! current_user_can( 'publish_posts' ) ) {
+	$daymark_sample_admins = get_users(
+		array(
+			'role'    => 'administrator',
+			'number'  => 1,
+			'orderby' => 'ID',
+			'order'   => 'ASC',
+			'fields'  => 'ID',
+		)
+	);
+
+	if ( ! empty( $daymark_sample_admins ) ) {
+		wp_set_current_user( (int) $daymark_sample_admins[0] );
+	}
+}
+
 $daymark_sample_plugin = Daymark_Plugin::instance();
 $daymark_sample_dir    = __DIR__ . '/sample-images/';
 $daymark_sample_start  = time();
@@ -217,3 +243,5 @@ $daymark_sample_featured(
 		'url'    => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ',
 	)
 );
+
+wp_set_current_user( $daymark_sample_previous_user );

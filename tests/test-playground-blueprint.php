@@ -77,6 +77,23 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 		$this->assertFileExists( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php' );
 	}
 
+	/**
+	 * The seed script loads wp-admin/includes/file.php itself before its
+	 * first wp_tempnam() call. A Playground runPHP step loads only
+	 * wp-load.php, so without this every preview failed with a fatal
+	 * "undefined function wp_tempnam()" error. This test suite always has
+	 * that file loaded, so running the script here can't catch it.
+	 */
+	public function test_seed_script_loads_file_helpers_before_using_them(): void {
+		$source  = (string) file_get_contents( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local plugin file.
+		$require = strpos( $source, "require_once ABSPATH . 'wp-admin/includes/file.php';" );
+		$first   = strpos( $source, "wp_tempnam( '" );
+
+		$this->assertNotFalse( $require );
+		$this->assertNotFalse( $first );
+		$this->assertLessThan( $first, $require );
+	}
+
 	/** Every sample photo the seed script names is committed. */
 	public function test_sample_photos_are_committed(): void {
 		$dir = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/sample-images/';
@@ -93,7 +110,11 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 	 * weather and place lookups are blocked here).
 	 */
 	public function test_seed_script_creates_each_sample_mark(): void {
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		// Like a Playground runPHP step: an administrator exists, but nobody
+		// is logged in. Without the script switching to that administrator,
+		// every sample Mark was saved as a draft.
+		self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( 0 );
 		add_filter( 'pre_http_request', array( $this, 'block_http' ) );
 
 		include dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php';
@@ -111,7 +132,11 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 			)
 		) as $post ) {
 			$by_type[ (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ][] = $post->ID;
+			$this->assertSame( 'publish', $post->post_status, "Sample Mark {$post->ID} should be published." );
+			$this->assertTrue( user_can( (int) $post->post_author, 'manage_options' ), 'authored by an administrator' );
 		}
+
+		$this->assertSame( 0, get_current_user_id(), 'the script restores the previous user' );
 
 		$this->assertCount( 1, $by_type['image'] ?? array(), 'one single-photo Mark' );
 		$this->assertCount( 1, $by_type['gallery'] ?? array(), 'one gallery Mark' );
