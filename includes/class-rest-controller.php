@@ -3645,7 +3645,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$jetpack_liked     = Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id );
 		$jetpack_commented = Daymark_Jetpack_Engagement::is_commented( $user_id, $post_id );
 
-		return array(
+		$summary = array(
 			// Discriminator field a Timeline consumer branches on, mirroring
 			// Daymark_Notifications' item `type`. Deliberately not named
 			// `type` here: prepare_mark_summary()'s existing `type` key
@@ -3725,6 +3725,22 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'like_delivery'      => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
 			'comment_delivery'   => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
 		);
+
+		// A gallery post's first four photos and photo count, for its card's
+		// 2x2 grid — the same `gallery` shape a Mark's own summary carries.
+		// Omitted when fewer than two photos are known.
+		if ( 'gallery' === $summary['post_format'] ) {
+			$images = Daymark_Subscription_Poller::gallery_images_for( $post_id );
+
+			if ( count( $images ) > 1 ) {
+				$summary['gallery'] = array(
+					'images' => array_map( 'esc_url_raw', array_slice( $images, 0, 4 ) ),
+					'count'  => count( $images ),
+				);
+			}
+		}
+
+		return $summary;
 	}
 
 	/**

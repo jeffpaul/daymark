@@ -79,6 +79,111 @@ class Daymark_Subscription_Content_Sniffer {
 	}
 
 	/**
+	 * The most gallery image URLs kept for one subscription post. A
+	 * Timeline card shows four, plus "+N" for the rest.
+	 */
+	public const GALLERY_MAX_IMAGES = 20;
+
+	/**
+	 * A gallery post's distinct image URLs, for its Timeline card's 2x2 grid.
+	 *
+	 * `$known` (images a source already found in structured data, such as
+	 * feed enclosures or microformats2 `u-photo` properties) come first,
+	 * then every image in `$html`, in document order. An author-bio avatar
+	 * is skipped, as in sniff(). Copies of the same photo are dropped by
+	 * image_key(): a site often prints one photo twice (a lazy-loaded tag
+	 * plus a `<noscript>` copy, or a WebP version next to the JPEG).
+	 *
+	 * @param string   $html  Content HTML, or '' to use only `$known`.
+	 * @param string[] $known Image URLs already known for the post, in order.
+	 * @return string[] Up to GALLERY_MAX_IMAGES http(s) URLs.
+	 */
+	public static function gallery_images( string $html, array $known = array() ): array {
+		$candidates = array_map( 'strval', $known );
+
+		if ( '' !== trim( $html ) && class_exists( 'WP_HTML_Tag_Processor' ) ) {
+			try {
+				$processor = new WP_HTML_Tag_Processor( $html );
+
+				while ( $processor->next_tag() ) {
+					$class        = (string) ( $processor->get_attribute( 'class' ) ?? '' );
+					$is_mf2_photo = false !== stripos( $class, 'u-photo' );
+
+					if ( 'IMG' !== $processor->get_tag() && ! $is_mf2_photo ) {
+						continue;
+					}
+
+					if ( ! $is_mf2_photo && self::has_class_token( $class, 'avatar' ) ) {
+						continue;
+					}
+
+					$src = 'IMG' === $processor->get_tag()
+						? self::resolve_image_src( $processor )
+						: (string) ( $processor->get_attribute( 'href' ) ?? '' );
+
+					if ( '' !== $src ) {
+						$candidates[] = $src;
+					}
+				}
+			} catch ( Throwable $e ) {
+				// Keep whatever was collected before the markup failed to parse.
+				$candidates = array_values( $candidates );
+			}
+		}
+
+		$images = array();
+		$seen   = array();
+
+		foreach ( $candidates as $url ) {
+			$url    = html_entity_decode( trim( $url ), ENT_QUOTES );
+			$scheme = strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) );
+
+			if ( ! in_array( $scheme, array( 'http', 'https' ), true ) ) {
+				continue;
+			}
+
+			$key = self::image_key( $url );
+
+			if ( '' === $key || isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$images[]     = esc_url_raw( $url );
+
+			if ( count( $images ) >= self::GALLERY_MAX_IMAGES ) {
+				break;
+			}
+		}
+
+		return $images;
+	}
+
+	/**
+	 * A key that is the same for every copy of one uploaded photo: the URL's
+	 * path, lowercased, with its extension and WordPress's own suffixes
+	 * removed (`-1024x768` sizes, `-scaled`, and the `-jpeg`/`-png` a WebP
+	 * conversion appends). The host is ignored, so a CDN copy
+	 * (`i0.wp.com/example.com/...`) matches the original.
+	 *
+	 * @param string $url Image URL.
+	 * @return string
+	 */
+	private static function image_key( string $url ): string {
+		$path = strtolower( (string) ( wp_parse_url( $url, PHP_URL_PATH ) ?? '' ) );
+		$path = (string) preg_replace( '/\.[a-z0-9]+$/', '', $path );
+		$path = (string) preg_replace( '/-(jpe?g|png|gif|webp)$/', '', $path );
+		$path = (string) preg_replace( '/-\d+x\d+$/', '', $path );
+		$path = (string) preg_replace( '/-scaled$/', '', $path );
+
+		// A CDN path embeds the origin host and path; keep only the part
+		// from wp-content/ on, when there is one, so both copies compare equal.
+		$uploads = strpos( $path, '/wp-content/' );
+
+		return false !== $uploads ? substr( $path, $uploads ) : $path;
+	}
+
+	/**
 	 * Whether a space-separated class list contains a given class token —
 	 * a plain, exact token match (not a substring match), matching how a
 	 * browser's own `classList`/`hasClass` semantics work and avoiding a

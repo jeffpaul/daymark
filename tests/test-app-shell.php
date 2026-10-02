@@ -28,6 +28,14 @@ class Test_App_Shell extends WP_UnitTestCase {
 		return (string) ob_get_clean();
 	}
 
+	/** The app shell loads the Featured Content slider and styles, for galleries in the full post view. */
+	public function test_app_shell_loads_the_featured_content_slider() {
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( 'assets/featured-content.js', $html );
+		$this->assertStringContainsString( 'assets/featured-content.css', $html );
+	}
+
 	/** Assets are emitted by the enqueue API, deferred, with inline config. */
 	public function test_assets_are_enqueued_via_api() {
 		$html = $this->render_shell();

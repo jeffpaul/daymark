@@ -358,7 +358,15 @@ class Daymark_Subscription_Poller {
 			return 0;
 		}
 
-		if ( $this->post_exists_for_permalink( $subscription_id, $permalink ) ) {
+		$existing_id = $this->existing_post_id_for_permalink( $subscription_id, $permalink );
+
+		if ( $existing_id > 0 ) {
+			// A gallery post ingested before galleries kept their photo list
+			// gets it on its next poll, so its Timeline card can show the grid.
+			if ( 'gallery' === get_post_meta( $existing_id, 'post_format', true ) && empty( self::gallery_images_for( $existing_id ) ) ) {
+				self::store_gallery_images( $existing_id, (array) ( $normalized['gallery_images'] ?? array() ) );
+			}
+
 			return 0;
 		}
 
@@ -406,6 +414,9 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'featured_image_url', $image );
 		update_post_meta( $post_id, 'embed_data', $embed_data );
 		update_post_meta( $post_id, 'link_url', $link_url );
+		if ( 'gallery' === $format ) {
+			self::store_gallery_images( $post_id, (array) ( $normalized['gallery_images'] ?? array() ) );
+		}
 		// Every format starts excerpt_only: rich-media formats get their
 		// embed data pre-resolved above, but none of them (nor standard/
 		// note/quote/link) fetch a full body at ingest time.
@@ -422,9 +433,9 @@ class Daymark_Subscription_Poller {
 	 *
 	 * @param int    $subscription_id Subscription ID.
 	 * @param string $permalink       Source permalink (already sanitized).
-	 * @return bool
+	 * @return int The existing post's ID, or 0 when there is none.
 	 */
-	private function post_exists_for_permalink( int $subscription_id, string $permalink ): bool {
+	private function existing_post_id_for_permalink( int $subscription_id, string $permalink ): int {
 		$query = new WP_Query(
 			array(
 				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
@@ -449,7 +460,38 @@ class Daymark_Subscription_Poller {
 			)
 		);
 
-		return ! empty( $query->posts );
+		return empty( $query->posts ) ? 0 : (int) $query->posts[0];
+	}
+
+	/**
+	 * Store a gallery post's photo URLs (`gallery_images` meta, a JSON list)
+	 * for its Timeline card's 2x2 grid. Each URL is re-checked here, since
+	 * it came from another site's markup.
+	 *
+	 * @param int      $post_id Subscription post ID.
+	 * @param string[] $urls    Image URLs, in display order.
+	 * @return void
+	 */
+	public static function store_gallery_images( int $post_id, array $urls ): void {
+		$clean = Daymark_Subscription_Content_Sniffer::gallery_images( '', $urls );
+
+		if ( empty( $clean ) ) {
+			return;
+		}
+
+		update_post_meta( $post_id, 'gallery_images', wp_slash( (string) wp_json_encode( $clean ) ) );
+	}
+
+	/**
+	 * A gallery post's stored photo URLs, in display order.
+	 *
+	 * @param int $post_id Subscription post ID.
+	 * @return string[]
+	 */
+	public static function gallery_images_for( int $post_id ): array {
+		$decoded = json_decode( (string) get_post_meta( $post_id, 'gallery_images', true ), true );
+
+		return is_array( $decoded ) ? array_values( array_filter( array_map( 'strval', $decoded ) ) ) : array();
 	}
 
 	/**
@@ -662,6 +704,16 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
+
+		// The full page usually lists every photo of a gallery, where a feed
+		// may carry only some, so prefer it when it finds more.
+		if ( 'gallery' === get_post_meta( $post_id, 'post_format', true ) ) {
+			$from_body = Daymark_Subscription_Content_Sniffer::gallery_images( $sanitized );
+
+			if ( count( $from_body ) > count( self::gallery_images_for( $post_id ) ) ) {
+				self::store_gallery_images( $post_id, $from_body );
+			}
+		}
 
 		return true;
 	}

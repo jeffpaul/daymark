@@ -330,6 +330,19 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			}
 		}
 
+		// A gallery's own photos, in order, for its Timeline card's 2x2 grid.
+		// The featured image is only a fallback: it is usually one of the
+		// gallery's photos, and putting it first would change their order.
+		$gallery_images = array();
+
+		if ( 'gallery' === $format ) {
+			$gallery_images = Daymark_Subscription_Content_Sniffer::gallery_images( (string) ( $raw_item['content']['rendered'] ?? '' ) );
+
+			if ( empty( $gallery_images ) && '' !== $featured_image_url ) {
+				$gallery_images = array( $featured_image_url );
+			}
+		}
+
 		return array(
 			'title'              => $title,
 			'excerpt'            => $excerpt,
@@ -339,6 +352,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			'post_format'        => $format,
 			'featured_image_url' => $featured_image_url,
 			'raw_media'          => '' !== $featured_image_url ? array( $featured_image_url ) : array(),
+			'gallery_images'     => $gallery_images,
 			// See Daymark_Subscription_Content_Sniffer::sniff()'s own
 			// docblock — only ever set for a 'standard'-format post with no
 			// confirmed media, matching the feed source's own treatment.

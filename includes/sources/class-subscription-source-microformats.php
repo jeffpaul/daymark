@@ -362,6 +362,8 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			'post_format'        => $post_format,
 			'featured_image_url' => $photos[0] ?? '',
 			'raw_media'          => array_values( array_merge( $photos, $videos, $audios ) ),
+			// A gallery's own photos, in order, for its Timeline card's 2x2 grid.
+			'gallery_images'     => 'gallery' === $post_format ? Daymark_Subscription_Content_Sniffer::gallery_images( '', $photos ) : array(),
 		);
 	}
 
