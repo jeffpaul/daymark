@@ -4143,7 +4143,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return '';
 		}
 
-		$url = wp_get_attachment_image_url( $attachment_id, 'medium' );
+		// medium_large (768px wide): the thumbnail is also a card's
+		// full-width banner, which a 300px `medium` image would blur on a
+		// high-density phone screen.
+		$url = wp_get_attachment_image_url( $attachment_id, 'medium_large' );
 
 		return $url ? esc_url_raw( $url ) : '';
 	}

@@ -8165,10 +8165,12 @@
 	// The kind a Mark card's own class (daymark-recent__item--{kind}) uses.
 	// A card whose media slot shows a gallery grid (a gallery Featured
 	// Content, or a Check In with several photos) takes the gallery card's
-	// layout, so it looks the same as a gallery Mark's card. The rail icon
-	// still shows the Mark's own type.
+	// layout, so it looks the same as a gallery Mark's card, and an ordinary
+	// post with a featured image takes the image card's layout. The rail
+	// icon still shows the item's own type.
 	function cardLayoutKind(item, kind) {
-		return 'gallery' === mediaKindForItem(item, kind) ? 'gallery' : kind;
+		const mediaKind = mediaKindForItem(item, kind);
+		return 'gallery' === mediaKind || ('article' === kind && 'image' === mediaKind) ? mediaKind : kind;
 	}
 
 	function mediaKindForItem(item, kind) {
@@ -8180,6 +8182,13 @@
 		}
 		if ('checkin' === kind && item.media_kind) {
 			return item.media_kind;
+		}
+		// An ordinary post (not a Mark) with a featured image shows it as
+		// the full-width banner an image Mark has, the same as a followed
+		// site's article (see renderSubscriptionPostCard()). Its excerpt
+		// still shows and its rail icon still says Article.
+		if ('article' === kind && item.thumbnail) {
+			return 'image';
 		}
 		return kind;
 	}
