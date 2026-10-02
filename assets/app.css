@@ -1111,6 +1111,15 @@ h2[tabindex='-1']:focus {
 	overflow-wrap: anywhere;
 }
 
+/* A title placed above a small thumbnail (renderCardTitle(), app.js) takes
+   its own full line in .daymark-recent__item's wrapped flex row, the same
+   flex-basis: 100% trick .daymark-recent__footer uses, so it starts at the
+   card's left padding instead of after the thumbnail. */
+.daymark-recent__title--lead {
+	flex-basis: 100%;
+	min-width: 0;
+}
+
 .daymark-recent__meta {
 	font-size: 13px;
 	color: var(--daymark-text-muted);
