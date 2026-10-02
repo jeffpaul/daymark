@@ -2290,8 +2290,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// Core's gallery block needs a theme stylesheet the app shell doesn't
+		// have, so it would show as stacked images. Each one is swapped for a
+		// placeholder while the content renders, then for the same slider a
+		// gallery Featured Content uses once the content is sanitized (the
+		// slider's own daymark-fc-* classes would not survive the strip).
+		$gallery_slots = array();
+		$slot_token    = 'DAYMARKGALLERYSLOT' . wp_generate_password( 12, false );
+		$swap_gallery  = static function ( $block_content, $block ) use ( &$gallery_slots, $slot_token ) {
+			$slider = Daymark_Featured_Content::render_gallery_for_app( self::gallery_block_image_ids( (array) $block ) );
+
+			if ( '' === $slider || substr_count( $slider, 'daymark-fc-gallery__slide' ) < 2 ) {
+				return $block_content;
+			}
+
+			$gallery_slots[] = $slider;
+
+			return '<p>' . $slot_token . ( count( $gallery_slots ) - 1 ) . '</p>';
+		};
+
+		add_filter( 'render_block_core/gallery', $swap_gallery, 10, 2 );
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
+		remove_filter( 'render_block_core/gallery', $swap_gallery, 10 );
 
 		// A Mark's content is written by whichever user published it, and
 		// wp_kses_post() keeps `class`, so an Author could otherwise give a
@@ -2307,12 +2328,46 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
 		);
 
+		if ( ! empty( $gallery_slots ) ) {
+			$content = (string) preg_replace_callback(
+				'#<p>\s*' . preg_quote( $slot_token, '#' ) . '(\d+)\s*</p>#',
+				static function ( $found ) use ( $gallery_slots ) {
+					return $gallery_slots[ (int) $found[1] ] ?? '';
+				},
+				$content
+			);
+		}
+
 		return rest_ensure_response(
 			array(
 				'content'  => $content,
 				'featured' => $this->postview_featured_markup( $post, $content ),
 			)
 		);
+	}
+
+	/**
+	 * A core/gallery block's image attachment IDs, in display order: its
+	 * inner core/image blocks' `id` (WordPress 5.9 and later), or the older
+	 * `ids` attribute.
+	 *
+	 * @param array<string, mixed> $block Parsed block.
+	 * @return int[]
+	 */
+	private static function gallery_block_image_ids( array $block ): array {
+		$ids = array();
+
+		foreach ( (array) ( $block['innerBlocks'] ?? array() ) as $inner ) {
+			if ( 'core/image' === ( $inner['blockName'] ?? '' ) && ! empty( $inner['attrs']['id'] ) ) {
+				$ids[] = absint( $inner['attrs']['id'] );
+			}
+		}
+
+		if ( empty( $ids ) && ! empty( $block['attrs']['ids'] ) && is_array( $block['attrs']['ids'] ) ) {
+			$ids = array_map( 'absint', $block['attrs']['ids'] );
+		}
+
+		return array_values( array_filter( $ids ) );
 	}
 
 	/**

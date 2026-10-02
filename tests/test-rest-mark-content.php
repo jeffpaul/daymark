@@ -166,6 +166,86 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'data-daymark-gallery', $featured );
 	}
 
+	/**
+	 * Gallery block markup in the shape Daymark_Publisher writes.
+	 *
+	 * @param int[] $ids Image attachment IDs.
+	 * @return string
+	 */
+	private function gallery_block( array $ids ): string {
+		$inner = array();
+		foreach ( $ids as $id ) {
+			$inner[] = sprintf(
+				'<!-- wp:image {"id":%1$d,"sizeSlug":"large","linkDestination":"none"} --><figure class="wp-block-image size-large"><img src="%2$s" alt="" class="wp-image-%1$d"/></figure><!-- /wp:image -->',
+				$id,
+				esc_url( (string) wp_get_attachment_url( $id ) )
+			);
+		}
+
+		return '<!-- wp:paragraph --><p>Before.</p><!-- /wp:paragraph -->'
+			. '<!-- wp:gallery {"linkTo":"none"} --><figure class="wp-block-gallery has-nested-images columns-default is-cropped">' . implode( '', $inner ) . '</figure><!-- /wp:gallery -->'
+			. '<!-- wp:paragraph --><p>After.</p><!-- /wp:paragraph -->';
+	}
+
+	/** A gallery block in the post shows as the app's slider, in place, keeping its photo order. */
+	public function test_gallery_block_renders_as_a_slider_in_the_post_view() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( array( $ids[2], $ids[0], $ids[1] ) ),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertStringContainsString( 'data-daymark-gallery', $content );
+		$this->assertSame( 3, substr_count( $content, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'aria-label="Gallery"', $content );
+		$this->assertStringNotContainsString( 'wp-block-gallery', $content );
+		$this->assertStringNotContainsString( 'DAYMARKGALLERYSLOT', $content );
+		$this->assertLessThan( strpos( $content, 'data-daymark-gallery' ), strpos( $content, 'Before.' ) );
+		$this->assertLessThan( strpos( $content, 'After.' ), strpos( $content, 'data-daymark-gallery' ) );
+
+		$first  = strpos( $content, wp_basename( (string) get_attached_file( $ids[2] ), '.png' ) );
+		$second = strpos( $content, wp_basename( (string) get_attached_file( $ids[0] ), '.png' ) );
+		$this->assertNotFalse( $first );
+		$this->assertLessThan( $second, $first, 'Slides follow the gallery block order' );
+	}
+
+	/** A one-photo gallery block is left as core renders it: there is nothing to slide. */
+	public function test_single_image_gallery_block_is_left_alone() {
+		$post_id = $this->published_post();
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( array( $this->image( $post_id ) ) ),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertStringContainsString( 'wp-block-gallery', $content );
+		$this->assertStringNotContainsString( 'data-daymark-gallery', $content );
+	}
+
+	/** The swap is scoped to this request: a gallery rendered elsewhere afterwards is untouched. */
+	public function test_gallery_swap_does_not_leak_past_the_request() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( $ids ),
+			)
+		);
+
+		rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertStringContainsString( 'wp-block-gallery', do_blocks( $this->gallery_block( $ids ) ) );
+	}
+
 	/** A true Mark's own content is returned, rendered — not the raw block markup. */
 	public function test_mark_content_is_rendered() {
 		wp_set_current_user( $this->author_a );

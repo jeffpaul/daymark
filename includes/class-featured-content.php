@@ -530,6 +530,19 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * A gallery block's images as the same slider a gallery Featured Content
+	 * uses, for the app's full post view (GET /daymark/v1/marks/{id}/content),
+	 * where core's gallery block would otherwise show as stacked images: the
+	 * app shell has no theme stylesheet to lay it out.
+	 *
+	 * @param int[] $attachment_ids Image attachment IDs, in display order.
+	 * @return string Slider markup, or '' when no image is usable.
+	 */
+	public static function render_gallery_for_app( array $attachment_ids ): string {
+		return self::render_gallery( array( 'attachment_ids' => $attachment_ids ), true, __( 'Gallery', 'daymark' ) );
+	}
+
+	/**
 	 * Build a post's Featured Content markup.
 	 *
 	 * @param int|WP_Post|null     $post Post ID/object, or null for the current post.
@@ -788,11 +801,12 @@ class Daymark_Featured_Content {
 	 * Outside a single post only the first image is rendered, since the
 	 * slider's assets are not loaded there.
 	 *
-	 * @param array{attachment_ids?: int[]} $data Sanitized gallery data.
-	 * @param bool                          $full Render every image even outside a single post — for the app's full post view, which loads the slider itself.
+	 * @param array{attachment_ids?: int[]} $data  Sanitized gallery data.
+	 * @param bool                          $full  Render every image even outside a single post — for the app's full post view, which loads the slider itself.
+	 * @param string                        $label The carousel's accessible name; '' for "Featured gallery".
 	 * @return string
 	 */
-	private static function render_gallery( array $data, bool $full = false ): string {
+	private static function render_gallery( array $data, bool $full = false, string $label = '' ): string {
 		$ids    = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
 		$images = array();
 
@@ -891,7 +905,7 @@ class Daymark_Featured_Content {
 		return sprintf(
 			'<div class="daymark-fc-gallery" data-daymark-gallery tabindex="0" role="region" aria-roledescription="%1$s" aria-label="%2$s"><div class="daymark-fc-gallery__track">%3$s</div>%4$s</div>',
 			esc_attr__( 'carousel', 'daymark' ),
-			esc_attr__( 'Featured gallery', 'daymark' ),
+			'' !== $label ? esc_attr( $label ) : esc_attr__( 'Featured gallery', 'daymark' ),
 			implode( '', $slides ),
 			$controls
 		);

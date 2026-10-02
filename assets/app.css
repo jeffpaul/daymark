@@ -3398,8 +3398,11 @@ h2[tabindex='-1']:focus {
 }
 
 /* The gallery slider's live region uses WordPress's screen-reader-text
-   class, which a theme normally defines but the app shell has no theme. */
-.daymark-postview-featured .screen-reader-text {
+   class, which a theme normally defines but the app shell has no theme.
+   The slider appears in the featured block and, for a gallery block in
+   the post itself, in the body. */
+.daymark-postview-featured .screen-reader-text,
+.daymark-expand-content .screen-reader-text {
 	position: absolute;
 	width: 1px;
 	height: 1px;
