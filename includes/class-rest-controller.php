@@ -807,6 +807,26 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/timeline/last-seen',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'mark_timeline_seen' ),
+				// A pure local write (per-user meta, no outbound request),
+				// debounced client-side, same posture as dismissing a
+				// plugin-overlap notice — no rate-limit bucket.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -2585,6 +2605,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'bookmarked' => false,
 			)
 		);
+	}
+
+	/**
+	 * POST /daymark/v1/timeline/last-seen — record that the current user has
+	 * seen a Timeline item on Home. The stored marker only moves to a newer
+	 * item (see Daymark_Timeline_Position::mark_seen()); the response is
+	 * the marker after the update, so the app can keep its copy in step.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function mark_timeline_seen( WP_REST_Request $request ) {
+		$marker = Daymark_Timeline_Position::mark_seen(
+			get_current_user_id(),
+			absint( $request->get_param( 'id' ) )
+		);
+
+		if ( is_wp_error( $marker ) ) {
+			return $marker;
+		}
+
+		return rest_ensure_response( array( 'last_seen' => $marker ) );
 	}
 
 	/**
