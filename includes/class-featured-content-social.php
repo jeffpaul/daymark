@@ -59,6 +59,14 @@ class Daymark_Featured_Content_Social {
 	public const META_IMAGE = '_daymark_featured_content_image';
 
 	/**
+	 * Post meta holding a link Featured Content's page preview (its Open
+	 * Graph title, description, and image), saved with the same source hash
+	 * as META_IMAGE. The post's own page and the app's Timeline read it, so a
+	 * visitor never causes a fetch of the linked page.
+	 */
+	public const META_LINK_PREVIEW = '_daymark_featured_content_link_preview';
+
+	/**
 	 * Cron hook that resolves a post's remote share image.
 	 *
 	 * @var string
@@ -253,6 +261,72 @@ class Daymark_Featured_Content_Social {
 	}
 
 	/**
+	 * A link Featured Content's saved page preview, when it was resolved
+	 * from the post's current link. Reads post meta only, never fetches.
+	 *
+	 * @param int|WP_Post|null $post Post ID/object, or null for the current post.
+	 * @return array{title: string, description: string, image: string}|null Null when no preview is saved for this link.
+	 */
+	public static function link_preview( $post = null ): ?array {
+		$post = get_post( $post );
+		$fc   = $post ? Daymark_Featured_Content::get_featured_content( $post ) : array();
+
+		if ( empty( $fc ) || 'link' !== $fc['type'] ) {
+			return null;
+		}
+
+		$stored = json_decode( (string) get_post_meta( $post->ID, self::META_LINK_PREVIEW, true ), true );
+
+		if ( ! is_array( $stored ) || self::source_hash( $fc ) !== ( $stored['source'] ?? '' ) ) {
+			return null;
+		}
+
+		return self::clean_link_preview( $stored );
+	}
+
+	/**
+	 * Save a link Featured Content's page preview from an Open Graph lookup
+	 * result. An empty result is saved too (as empty fields), so a page with
+	 * no preview isn't looked up again for the same link.
+	 *
+	 * @param int                                             $post_id Post ID.
+	 * @param array{type: string, data: array<string, mixed>} $fc      The post's Featured Content.
+	 * @param array<string, mixed>                            $og      Daymark_Subscription_Opengraph result.
+	 * @return array{title: string, description: string, image: string}
+	 */
+	public static function store_link_preview( int $post_id, array $fc, array $og ): array {
+		$preview          = self::clean_link_preview( $og );
+		$stored           = $preview;
+		$stored['source'] = self::source_hash( $fc );
+
+		update_post_meta( $post_id, self::META_LINK_PREVIEW, wp_slash( (string) wp_json_encode( $stored ) ) );
+
+		return $preview;
+	}
+
+	/**
+	 * A link preview's fields, sanitized: plain-text title and description,
+	 * and an https-only image URL (it renders as an <img> in a visitor's
+	 * browser, so an http image would be mixed content).
+	 *
+	 * @param array<string, mixed> $raw Open Graph result or stored preview.
+	 * @return array{title: string, description: string, image: string}
+	 */
+	private static function clean_link_preview( array $raw ): array {
+		$image = esc_url_raw( (string) ( $raw['image'] ?? '' ) );
+
+		if ( 'https' !== strtolower( (string) wp_parse_url( $image, PHP_URL_SCHEME ) ) ) {
+			$image = '';
+		}
+
+		return array(
+			'title'       => sanitize_text_field( (string) ( $raw['title'] ?? '' ) ),
+			'description' => sanitize_text_field( (string) ( $raw['description'] ?? '' ) ),
+			'image'       => $image,
+		);
+	}
+
+	/**
 	 * The stored remote share image, when it was resolved from the post's
 	 * current Featured Content.
 	 *
@@ -315,6 +389,7 @@ class Daymark_Featured_Content_Social {
 		if ( empty( $fc ) || ! self::is_remote_kind( $fc ) ) {
 			if ( $post ) {
 				delete_post_meta( $post->ID, self::META_IMAGE );
+				delete_post_meta( $post->ID, self::META_LINK_PREVIEW );
 			}
 			return;
 		}
@@ -324,6 +399,7 @@ class Daymark_Featured_Content_Social {
 
 		if ( 'link' === $fc['type'] ) {
 			$og = Daymark_Subscription_Opengraph::resolve( $url );
+			self::store_link_preview( $post->ID, $fc, $og );
 
 			if ( ! empty( $og['image'] ) && 'https' === strtolower( (string) wp_parse_url( $og['image'], PHP_URL_SCHEME ) ) ) {
 				$image = array(

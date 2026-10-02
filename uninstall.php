@@ -57,6 +57,7 @@ wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
 // (issue #408) is a cache derived from that content, not content itself,
 // so it goes; the Featured Content meta it came from stays with the post.
 delete_post_meta_by_key( '_daymark_featured_content_image' );
+delete_post_meta_by_key( '_daymark_featured_content_link_preview' );
 
 // Backflow transients: the freshen marker plus per-post sync cooldowns.
 delete_transient( 'daymark_backflow_freshened' );

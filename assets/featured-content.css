@@ -46,6 +46,58 @@
 	text-decoration: underline;
 }
 
+/* A link Featured Content with a saved preview of the linked page: the
+   page's image across the top at the 1.91:1 shape Open Graph images are
+   made for, then its title, description, and site. The whole card is the
+   link. Colors come from the theme (currentColor), so it fits light and
+   dark themes alike. */
+.daymark-featured-link-card {
+	display: block;
+	overflow: hidden;
+	border: 1px solid rgba(127, 127, 127, 0.35);
+	border-radius: 8px;
+	color: inherit;
+	text-decoration: none;
+}
+
+.daymark-featured-link-card:hover .daymark-featured-link-card__title,
+.daymark-featured-link-card:focus-visible .daymark-featured-link-card__title {
+	text-decoration: underline;
+}
+
+.daymark-featured-link-card__image {
+	display: block;
+	width: 100%;
+	height: auto;
+	aspect-ratio: 1.91 / 1;
+	object-fit: cover;
+	margin: 0;
+}
+
+.daymark-featured-link-card__text {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	padding: 0.75em 1em;
+}
+
+.daymark-featured-link-card__title {
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.daymark-featured-link-card__description {
+	font-size: 0.9em;
+	line-height: 1.4;
+	opacity: 0.8;
+}
+
+.daymark-featured-link-card__site {
+	font-size: 0.8em;
+	opacity: 0.7;
+	overflow-wrap: anywhere;
+}
+
 /*
  * Gallery slider (issue #406). Without JS every slide stacks. Once
  * featured-content.js adds .is-enhanced, only the active slide shows and

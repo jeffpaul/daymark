@@ -1916,6 +1916,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response( array( 'preview' => null ) );
 		}
 
+		$saved = Daymark_Featured_Content_Social::link_preview( $post );
+
+		if ( null !== $saved ) {
+			return rest_ensure_response( array( 'preview' => $saved ) );
+		}
+
 		$url = (string) ( $fc['data']['url'] ?? '' );
 		$og  = Daymark_Subscription_Opengraph::cached( $url );
 
@@ -1929,7 +1935,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$og = Daymark_Subscription_Opengraph::resolve( $url );
 		}
 
-		return rest_ensure_response( array( 'preview' => self::link_preview_fields( (array) $og ) ) );
+		// Saved on the post, so its own page shows the preview from now on
+		// (a Link Featured Content set before previews were saved gets one
+		// the first time a signed-in user sees its card in the app).
+		return rest_ensure_response( array( 'preview' => Daymark_Featured_Content_Social::store_link_preview( $post->ID, $fc, (array) $og ) ) );
 	}
 
 	/**
@@ -4201,11 +4210,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// GET /marks/{id}/featured-content-link for it.
 			if ( 'link' === $featured_content['type'] ) {
 				$link_url = (string) ( $featured_content['data']['url'] ?? '' );
-				$cached   = Daymark_Subscription_Opengraph::cached( $link_url );
+				$saved    = Daymark_Featured_Content_Social::link_preview( $post_id );
+				$cached   = null === $saved ? Daymark_Subscription_Opengraph::cached( $link_url ) : null;
 
 				$summary['featured_content']['url']     = esc_url_raw( $link_url );
 				$summary['featured_content']['host']    = Daymark_Featured_Content::url_host_label( $link_url );
-				$summary['featured_content']['preview'] = null === $cached ? null : self::link_preview_fields( $cached );
+				$summary['featured_content']['preview'] = null !== $saved ? $saved : ( null === $cached ? null : self::link_preview_fields( $cached ) );
 			}
 
 			// A quote's card shows the quote itself where a featured image
