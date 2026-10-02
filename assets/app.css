@@ -3662,3 +3662,37 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-accent-deep);
 	background: var(--daymark-accent-wash);
 }
+
+/* --- Timeline "new posts" button ---
+   Shown when Home opens anchored on the last post seen, with newer posts
+   above it (HomeScreen.showNewPosts()). Pinned under the header so it stays
+   reachable while the reader scrolls; tapping it jumps to the newest post. */
+.daymark-newposts {
+	position: fixed;
+	top: calc(var(--daymark-tap-min) + var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 6;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
+	border: 0;
+	border-radius: 999px;
+	background: var(--daymark-accent);
+	color: #fff;
+	font: inherit;
+	font-weight: 600;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+	cursor: pointer;
+}
+
+.daymark-newposts[hidden] {
+	display: none;
+}
+
+.daymark-newposts:focus-visible {
+	outline: 2px solid var(--daymark-accent-deep, #9e2a02);
+	outline-offset: 2px;
+}
