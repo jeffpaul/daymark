@@ -800,6 +800,30 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * A quote's credit line as plain text, for a Timeline card (which can't
+	 * hold a link, since the whole card is a button): "Author — host" with
+	 * both, or whichever one is set — the same wording render_quote() shows.
+	 *
+	 * @param array{text?: string, author?: string, citation_url?: string} $data Sanitized quote data.
+	 * @return string '' when the quote has no credit.
+	 */
+	public static function quote_credit( array $data ): string {
+		$author       = (string) ( $data['author'] ?? '' );
+		$citation_url = (string) ( $data['citation_url'] ?? '' );
+		$parts        = array();
+
+		if ( '' !== $author ) {
+			$parts[] = $author;
+		}
+
+		if ( '' !== $citation_url ) {
+			$parts[] = self::url_host_label( $citation_url );
+		}
+
+		return implode( ' — ', $parts );
+	}
+
+	/**
 	 * Render a link-type Featured Content: a single, self-contained anchor
 	 * labelled with the link's own host — the visual language of a "link"
 	 * card, not a media embed. Only ever reached for a post that genuinely
@@ -956,7 +980,7 @@ class Daymark_Featured_Content {
 	 * @param string $url URL to derive a label from.
 	 * @return string
 	 */
-	private static function url_host_label( string $url ): string {
+	public static function url_host_label( string $url ): string {
 		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
 		$host = preg_replace( '/^www\./', '', $host );
 

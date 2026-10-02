@@ -46,6 +46,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const MAX_TIMELINE_QUERY_ITEMS = 500;
 
 	/**
+	 * Longest quote, in characters, a Timeline card shows for a quote
+	 * Featured Content. A longer quote is cut with an ellipsis; the full
+	 * quote is in the post view.
+	 *
+	 * @var int
+	 */
+	private const CARD_QUOTE_MAX_CHARS = 280;
+
+	/**
 	 * Register REST routes. Hooked to rest_api_init.
 	 *
 	 * @return void
@@ -490,6 +499,43 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// see get_timeline()'s own docblock. Expanding one in place
 				// discloses nothing that item's own Timeline summary
 				// (title/excerpt/thumbnail) didn't already.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/marks/(?P<id>\d+)/featured-content-link',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_featured_content_link' ),
+				// Same visibility rule as GET /marks/{id}/content.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/marks/(?P<id>\d+)/featured-content-image',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_featured_content_image' ),
+				// Same visibility rule as GET /marks/{id}/content: the card
+				// this fills in is already on the caller's Timeline.
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
 					'id' => array(
@@ -1824,6 +1870,115 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'results' => Daymark_Geocoder::search( $query ),
 			)
 		);
+	}
+
+	/**
+	 * The fields a link preview shows, from an Open Graph lookup result:
+	 * title, description, and image, each '' when missing.
+	 *
+	 * @param array<string, mixed> $og Daymark_Subscription_Opengraph result.
+	 * @return array{title: string, description: string, image: string}
+	 */
+	private static function link_preview_fields( array $og ): array {
+		return array(
+			'title'       => sanitize_text_field( (string) ( $og['title'] ?? '' ) ),
+			'description' => sanitize_text_field( (string) ( $og['description'] ?? '' ) ),
+			'image'       => esc_url_raw( (string) ( $og['image'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id}/featured-content-link — the preview of a
+	 * post's link Featured Content (the linked page's title, description,
+	 * and image), for its Timeline card and full post view. Returns the
+	 * cached Open Graph lookup when there is one; otherwise looks the page
+	 * up once through Daymark_Subscription_Opengraph::resolve() (guarded,
+	 * size-capped, and cached, failures included). Only that lookup costs a
+	 * rate-limit slot.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_featured_content_link( WP_REST_Request $request ) {
+		$post = get_post( absint( $request->get_param( 'id' ) ) );
+
+		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$fc = Daymark_Featured_Content::get_featured_content( $post );
+
+		if ( empty( $fc ) || 'link' !== $fc['type'] ) {
+			return rest_ensure_response( array( 'preview' => null ) );
+		}
+
+		$url = (string) ( $fc['data']['url'] ?? '' );
+		$og  = Daymark_Subscription_Opengraph::cached( $url );
+
+		if ( null === $og ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_FEATURED_CONTENT_OEMBED );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+
+			$og = Daymark_Subscription_Opengraph::resolve( $url );
+		}
+
+		return rest_ensure_response( array( 'preview' => self::link_preview_fields( (array) $og ) ) );
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id}/featured-content-image — the thumbnail a
+	 * Timeline card shows for a post's video or audio Featured Content.
+	 *
+	 * Normally Daymark_Featured_Content_Social resolves it in the background
+	 * when the Featured Content is saved, and the Timeline summary already
+	 * carries it. This fills the gap when that never happened: Featured
+	 * Content saved before the background resolution existed, or a site
+	 * with WP-Cron turned off. It returns the stored image when there is
+	 * one; otherwise it resolves it once, through the same guarded,
+	 * cached path, and stores it, so the next Timeline load has it too.
+	 * Only resolving costs a rate-limit slot.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_featured_content_image( WP_REST_Request $request ) {
+		$post = get_post( absint( $request->get_param( 'id' ) ) );
+
+		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$fc = Daymark_Featured_Content::get_featured_content( $post );
+
+		if ( empty( $fc ) || ! in_array( $fc['type'], array( 'video', 'audio' ), true ) ) {
+			return rest_ensure_response( array( 'url' => '' ) );
+		}
+
+		$image = Daymark_Featured_Content_Social::image( $post );
+
+		if ( empty( $image['url'] ) && 'url' === ( $fc['data']['source'] ?? '' ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_FEATURED_CONTENT_OEMBED );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+
+			( new Daymark_Featured_Content_Social() )->resolve_remote_image( $post->ID );
+			$image = Daymark_Featured_Content_Social::image( $post );
+		}
+
+		return rest_ensure_response( array( 'url' => empty( $image['url'] ) ? '' : esc_url_raw( $image['url'] ) ) );
 	}
 
 	/**
@@ -4024,6 +4179,48 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['featured_content'] = array(
 				'type' => $featured_content['type'],
 			);
+
+			// A video or audio card shows the video's own thumbnail (or the
+			// file's cover art) with a play button, like the post view's
+			// preview, instead of a placeholder. This is the share image
+			// Daymark_Featured_Content_Social resolves when the Featured
+			// Content is saved; reading it never fetches anything, so a
+			// thumbnail not resolved yet just leaves the placeholder.
+			if ( in_array( $featured_content['type'], array( 'video', 'audio' ), true ) ) {
+				$image = Daymark_Featured_Content_Social::image( $post_id );
+
+				if ( ! empty( $image['url'] ) ) {
+					$summary['featured_content']['image'] = esc_url_raw( $image['url'] );
+				}
+			}
+
+			// A link's card shows a preview of the linked page (its image,
+			// title, and site) where a featured image would go. Only an
+			// already-cached Open Graph lookup is read here; a link not looked
+			// up yet carries `preview: null`, and the app asks
+			// GET /marks/{id}/featured-content-link for it.
+			if ( 'link' === $featured_content['type'] ) {
+				$link_url = (string) ( $featured_content['data']['url'] ?? '' );
+				$cached   = Daymark_Subscription_Opengraph::cached( $link_url );
+
+				$summary['featured_content']['url']     = esc_url_raw( $link_url );
+				$summary['featured_content']['host']    = Daymark_Featured_Content::url_host_label( $link_url );
+				$summary['featured_content']['preview'] = null === $cached ? null : self::link_preview_fields( $cached );
+			}
+
+			// A quote's card shows the quote itself where a featured image
+			// would go, so its text and credit travel with the summary. Plain
+			// text, cut to a card-sized length; the full quote is in the post.
+			if ( 'quote' === $featured_content['type'] ) {
+				$text = (string) ( $featured_content['data']['text'] ?? '' );
+
+				if ( mb_strlen( $text ) > self::CARD_QUOTE_MAX_CHARS ) {
+					$text = rtrim( mb_substr( $text, 0, self::CARD_QUOTE_MAX_CHARS - 1 ) ) . '…';
+				}
+
+				$summary['featured_content']['text']   = $text;
+				$summary['featured_content']['credit'] = Daymark_Featured_Content::quote_credit( (array) $featured_content['data'] );
+			}
 
 			// A gallery's card shows its first four images as a 2x2 grid
 			// (issue #406), so those thumbnail URLs travel with the summary.

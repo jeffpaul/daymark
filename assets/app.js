@@ -3582,6 +3582,7 @@
 						  )}</p>`
 						: ''
 				}
+				${result.site ? `<p class="daymark-oembed-preview__site">${esc(result.site)}</p>` : ''}
 			</div>`;
 	}
 
@@ -4233,6 +4234,126 @@
 	//
 	// A subscription post's `like_available` is null until its origin has
 	// been looked up (a Timeline response never makes that fetch itself).
+	// A video or audio Featured Content card whose thumbnail the server
+	// hasn't resolved yet (Featured Content saved before that resolution
+	// existed, or a site with WP-Cron off), or a link card whose page
+	// preview isn't cached yet, asks for it as it nears the viewport, then
+	// swaps its media slot for the real preview. Same
+	// lookahead, single-in-flight queue, and 429 backoff as
+	// observeOembedPreviewCandidates(). The server stores what it finds, so
+	// later Timeline loads carry it without asking.
+	function observeFeaturedImages(screen, container) {
+		if (!('IntersectionObserver' in window) || !container || !screen._byMarkId) {
+			return;
+		}
+		if (!screen._fcImageQueue) {
+			teardownFeaturedImages(screen);
+		}
+		if (!screen._fcImageObserver) {
+			screen._fcImageObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._fcImageObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-expand-post');
+						if (id && !screen._fcImageAttempted.has(id) && !screen._fcImageQueue.includes(id)) {
+							screen._fcImageQueue.push(id);
+							drainFeaturedImageQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: OEMBED_PREVIEW_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-expand-post]').forEach((el) => {
+			const id = el.getAttribute('data-expand-post');
+			const item = id ? screen._byMarkId.get(id) : null;
+			if (!item || !featuredPreviewPending(item) || screen._fcImageAttempted.has(id)) {
+				return;
+			}
+			screen._fcImageObserver.observe(el);
+		});
+	}
+
+	// Whether a Mark card's Featured Content still has a preview to fetch:
+	// a video/audio thumbnail, or a link's page preview.
+	function featuredPreviewPending(item) {
+		const fc = item.featured_content;
+		if (!fc) {
+			return false;
+		}
+		if ('link' === fc.type) {
+			return !!fc.url && null === fc.preview;
+		}
+		return ['video', 'audio'].includes(fc.type) && !fc.image;
+	}
+
+	function teardownFeaturedImages(screen) {
+		if (screen._fcImageObserver) {
+			screen._fcImageObserver.disconnect();
+			screen._fcImageObserver = null;
+		}
+		screen._fcImageAttempted = new Set();
+		screen._fcImageQueue = [];
+		screen._fcImageInFlight = false;
+		screen._fcImageBackoffUntil = 0;
+	}
+
+	async function drainFeaturedImageQueue(screen) {
+		if (screen._fcImageInFlight || Date.now() < screen._fcImageBackoffUntil) {
+			return;
+		}
+		const id = screen._fcImageQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._fcImageInFlight = true;
+		try {
+			const item = screen._byMarkId.get(id);
+			const fc = item && item.featured_content;
+			if (fc && 'link' === fc.type) {
+				const result = await apiGet('marks/' + id + '/featured-content-link');
+				screen._fcImageAttempted.add(id);
+				fc.preview = (result && result.preview) || { title: '', description: '', image: '' };
+				refreshCardMedia(id, item);
+			} else if (fc) {
+				const result = await apiGet('marks/' + id + '/featured-content-image');
+				screen._fcImageAttempted.add(id);
+				if (result && result.url) {
+					fc.image = result.url;
+					refreshCardMedia(id, item);
+				}
+			}
+		} catch (err) {
+			if (err && 429 === err.status) {
+				screen._fcImageBackoffUntil = Date.now() + (Number(err.retryAfter) || 60) * 1000;
+			} else {
+				screen._fcImageAttempted.add(id);
+			}
+		} finally {
+			screen._fcImageInFlight = false;
+			drainFeaturedImageQueue(screen);
+		}
+	}
+
+	// Re-render one Mark card's media slot in place. A placeholder renders
+	// its play button beside it rather than inside it, so both go.
+	function refreshCardMedia(id, item) {
+		document.querySelectorAll(`[data-expand-post="${CSS.escape(String(id))}"]`).forEach((card) => {
+			const old = card.querySelector('.daymark-recent__thumbwrap');
+			if (!old) {
+				return;
+			}
+			const next = old.nextElementSibling;
+			if (next && next.classList.contains('daymark-recent__thumbplay')) {
+				next.remove();
+			}
+			old.outerHTML = renderCardMedia(item, mediaKindForItem(item, resolveCardKind(item)));
+		});
+	}
+
 	// Mirrors observeOembedPreviewCandidates()/drainOembedPreviewQueue():
 	// an IntersectionObserver with the same lookahead, a single-in-flight
 	// queue, and the same 429 backoff. A card that resolves to false loses
@@ -5392,6 +5513,7 @@
 			observeRehydrateCandidates(this, list);
 			observeOembedPreviewCandidates(this, list);
 			observeLikeAvailability(this, list);
+			observeFeaturedImages(this, list);
 			if (this.recentDone) {
 				if (sentinel) {
 					sentinel.hidden = true;
@@ -5425,6 +5547,7 @@
 			teardownRehydrateObserver(this);
 			teardownOembedPreviewObserver(this);
 			teardownLikeAvailabilityObserver(this);
+			teardownFeaturedImages(this);
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -5485,6 +5608,7 @@
 				observeRehydrateCandidates(this, list);
 				observeOembedPreviewCandidates(this, list);
 				observeLikeAvailability(this, list);
+				observeFeaturedImages(this, list);
 				// Position before tracking what's seen: otherwise the newest
 				// cards, briefly on screen at the top, would count as seen.
 				// Skipped once the reader has started scrolling on their own:
@@ -5566,6 +5690,7 @@
 					observeRehydrateCandidates(this, list);
 					observeOembedPreviewCandidates(this, list);
 					observeLikeAvailability(this, list);
+					observeFeaturedImages(this, list);
 					this.observeSeen();
 				}
 				if (arr.length < RECENT_PER_PAGE) {
@@ -6131,6 +6256,7 @@
 			this._items.forEach((item) => rememberItem(this, item));
 			list.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
 			observeLikeAvailability(this, list);
+			observeFeaturedImages(this, list);
 			// showScreen() focuses the header right after init() starts,
 			// which scrolls to the top. Position the card after that.
 			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
@@ -6232,6 +6358,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				teardownLikeAvailabilityObserver(this);
+				teardownFeaturedImages(this);
 				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
@@ -6243,6 +6370,7 @@
 				}
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 				observeLikeAvailability(this, list);
+				observeFeaturedImages(this, list);
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
@@ -8573,15 +8701,25 @@
 	// icon still shows the item's own type.
 	function cardLayoutKind(item, kind) {
 		const mediaKind = mediaKindForItem(item, kind);
-		return 'gallery' === mediaKind || ('article' === kind && 'image' === mediaKind) ? mediaKind : kind;
+		return ['gallery', 'quote', 'linkpreview'].includes(mediaKind) || ('article' === kind && 'image' === mediaKind)
+			? mediaKind
+			: kind;
 	}
 
 	function mediaKindForItem(item, kind) {
-		// Only the media kinds replace the card's own kind: a quote or link
-		// Featured Content has no media of its own, and letting it override
-		// would strip an image Mark's photo banner down to a small thumbnail.
+		// The media kinds replace the card's own kind. A quote does too: it
+		// shows in the banner slot where a featured image would go
+		// (renderQuoteBanner()), the way Featured Content replaces the
+		// featured image on the post's own page. So does a link: a preview
+		// of the linked page (renderLinkBanner()).
 		if (item.featured_content && FEATURED_MEDIA_KINDS.includes(item.featured_content.type)) {
 			return item.featured_content.type;
+		}
+		if (item.featured_content && 'quote' === item.featured_content.type && item.featured_content.text) {
+			return 'quote';
+		}
+		if (item.featured_content && 'link' === item.featured_content.type && item.featured_content.url) {
+			return 'linkpreview';
 		}
 		if ('checkin' === kind && item.media_kind) {
 			return item.media_kind;
@@ -8725,7 +8863,44 @@
 		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}</span>`;
 	}
 
+	// A quote Featured Content, shown in a card's banner slot in place of a
+	// featured image: the quote text, then its credit ("Author — host").
+	// Plain spans, since the whole card is a button and can't hold a link;
+	// the post view shows the credit's link. The server cuts a long quote
+	// to a card-sized length.
+	function renderQuoteBanner(item) {
+		const fc = item.featured_content || {};
+		const credit = fc.credit ? `<span class="daymark-recent__quotecredit">${esc(fc.credit)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--quote"><span class="daymark-recent__quotetext">${esc(
+			fc.text
+		)}</span>${credit}</span>`;
+	}
+
+	// A link Featured Content, shown in a card's banner slot in place of a
+	// featured image: the linked page's own image full-width when it has
+	// one, then its site and title, like a link preview in a social feed.
+	// Before the preview is known (preview: null, filled in by
+	// observeFeaturedImages()) or when the page has none, it shows the site
+	// alone. Plain spans, since the whole card is a button.
+	function renderLinkBanner(item) {
+		const fc = item.featured_content || {};
+		const preview = fc.preview || {};
+		const image = preview.image
+			? imgWithFallback(preview.image, 'daymark-recent__linkimage', (fc.host || 'L').charAt(0).toUpperCase())
+			: '';
+		const title = preview.title ? `<span class="daymark-recent__linktitle">${esc(preview.title)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--link">${image}<span class="daymark-recent__linkmeta"><span class="daymark-recent__linkhost">${esc(
+			fc.host || ''
+		)}</span>${title}</span></span>`;
+	}
+
 	function renderCardMedia(item, kind) {
+		if ('quote' === kind) {
+			return renderQuoteBanner(item);
+		}
+		if ('linkpreview' === kind) {
+			return renderLinkBanner(item);
+		}
 		if ('checkin' === kind) {
 			return item.location ? renderCheckinMapPreview(item.location) : '';
 		}
@@ -8737,7 +8912,14 @@
 			return gridMarkup;
 		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
-		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;
+		// A video or audio Featured Content's own thumbnail (the video's
+		// preview image, or the file's cover art) wins when it's what this
+		// card's media slot is showing.
+		const featuredImage =
+			item.featured_content && kind === item.featured_content.type && item.featured_content.image
+				? item.featured_content.image
+				: '';
+		const src = featuredImage || item.thumbnail || item.featured_image_url || item.site_icon_url;
 		// A manufactured placeholder glyph only earns its keep for a kind
 		// where it stands in for media the reader would otherwise expect —
 		// the media-dominant kinds (image/video/gallery/mixed) plus audio,
@@ -8761,7 +8943,7 @@
 		if (src) {
 			const thumbClass =
 				'daymark-recent__thumb' +
-				(item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
+				(featuredImage || item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
 			return `<span class="${wrapClass}">${imgWithFallback(
 				src,
 				thumbClass,
@@ -8784,7 +8966,8 @@
 	// exactly one is non-empty.
 	function renderCardTitle(title, mediaKind, mediaHtml) {
 		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
-		const leads = '' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind;
+		const leads =
+			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind && 'linkpreview' !== mediaKind;
 		return leads
 			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
 			: ['', markup];
@@ -9458,6 +9641,7 @@
 						);
 					}
 					this.maybeLoadOembedPreview(kind, item, body);
+					this.maybeShowFeaturedLinkPreview(kind, item, body);
 				}
 			} catch (err) {
 				if (body.isConnected) {
@@ -9477,6 +9661,40 @@
 		// result, a network error, or the view having already navigated
 		// away by the time the fetch resolves) — there is no error state
 		// worth surfacing for an optional enhancement like this one.
+		// A link Featured Content arrives as a bare link to the page's site
+		// (Daymark_Featured_Content::render_link()). Here it becomes a
+		// preview card of the linked page (image, title, description, site),
+		// the same clickable card a followed post's link gets, using the
+		// preview the Timeline data already carried or fetching it once. A
+		// page with no Open Graph title keeps the bare link.
+		async maybeShowFeaturedLinkPreview(kind, item, body) {
+			const fc = item.featured_content;
+			const slot = body.querySelector('.daymark-postview-featured');
+			if ('mark' !== kind || !fc || 'link' !== fc.type || !fc.url || !slot) {
+				return;
+			}
+			let preview = fc.preview;
+			if (!preview) {
+				try {
+					const result = await apiGet('marks/' + item.id + '/featured-content-link');
+					preview = result && result.preview;
+					if (preview) {
+						fc.preview = preview;
+					}
+				} catch (err) {
+					return;
+				}
+			}
+			if (!preview || !preview.title || !slot.isConnected) {
+				return;
+			}
+			slot.innerHTML = `<a class="daymark-oembed-preview daymark-oembed-preview--link" href="${esc(
+				fc.url
+			)}" target="_blank" rel="noopener noreferrer">${oembedLinkPreviewInnerHtml(
+				Object.assign({}, preview, { site: fc.host || '' })
+			)}</a>`;
+		},
+
 		maybeLoadOembedPreview(kind, item, body) {
 			if ('sub' !== kind || !item.link_url || 'link' !== resolveCardKind(item)) {
 				return;

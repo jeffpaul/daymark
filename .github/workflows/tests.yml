@@ -217,14 +217,19 @@ jobs:
           sudo systemctl start mysql.service
           mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wp_smoke'
 
-      - name: Set up PHP + WP-CLI
+      - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mysqli, gd
           coverage: none
-          tools: wp-cli
+
+      # Installed by our own script (retries + checksum), not setup-php's
+      # `tools: wp-cli`, whose download failed intermittently.
+      - name: Install WP-CLI
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/install-wp-cli.sh
 
       - name: Install scratch WordPress (${{ matrix.config.label }})
         if: needs.changes.outputs.code == 'true'
@@ -272,14 +277,19 @@ jobs:
           sudo systemctl start mysql.service
           mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wp_e2e'
 
-      - name: Set up PHP + WP-CLI
+      - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mysqli, gd
           coverage: none
-          tools: wp-cli
+
+      # Installed by our own script (retries + checksum), not setup-php's
+      # `tools: wp-cli`, whose download failed intermittently.
+      - name: Install WP-CLI
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/install-wp-cli.sh
 
       - name: Install scratch WordPress (${{ matrix.config.label }})
         if: needs.changes.outputs.code == 'true'
