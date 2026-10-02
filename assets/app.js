@@ -2676,6 +2676,10 @@
 			target = '#home';
 		}
 
+		if (homeSnapshot && target !== '#post' && target !== '#reblog' && target !== '#home') {
+			homeSnapshot = null;
+		}
+
 		AIAssistSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
@@ -3828,6 +3832,7 @@
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
+				saveHomeSnapshot(screen, subTrigger);
 				openPostView('sub', item);
 			}
 			return;
@@ -3839,6 +3844,7 @@
 		if (markTrigger) {
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
+				saveHomeSnapshot(screen, markTrigger);
 				openPostView('mark', item);
 			}
 			return;
@@ -5225,6 +5231,15 @@
 			// loadMorePage() so an appended page continues the same run of
 			// headers instead of repeating one.
 			this._lastGroupKey = null;
+			// Every Timeline item rendered so far, in order, across all
+			// pages — what saveHomeSnapshot() captures when a card opens.
+			this._items = [];
+
+			const snapshot = homeSnapshot;
+			homeSnapshot = null;
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+			}
 
 			await refreshPendingSection();
 
@@ -5246,7 +5261,61 @@
 				// A drafts failure never blocks the recent list below.
 			}
 
+			if (snapshot) {
+				// Pending and Drafts just loaded above the Timeline and may
+				// have pushed it down; put the opened card back in place.
+				this.scrollToAnchor(snapshot, true);
+				return;
+			}
 			await this.loadRecent();
+		},
+
+		// Rebuild the Timeline from a saved snapshot (see homeSnapshot)
+		// instead of fetching page 1 again. Items are re-rendered rather
+		// than restored as saved HTML, so a Like or Bookmark changed on
+		// the post view (which mutates these same item objects) shows up.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-recent-list]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list) {
+				return;
+			}
+			this.recentPage = snapshot.recentPage;
+			this.recentDone = snapshot.recentDone;
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = renderFeedItemsWithGroups(this, this._items);
+			observeRehydrateCandidates(this, list);
+			observeOembedPreviewCandidates(this, list);
+			observeLikeAvailability(this, list);
+			if (this.recentDone) {
+				if (sentinel) {
+					sentinel.hidden = true;
+				}
+			} else {
+				this.setupObserver();
+			}
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => this.scrollToAnchor(snapshot, false));
+		},
+
+		// Scroll so the opened card sits where it was when it was tapped,
+		// falling back to the saved scroll offset if it can't be found.
+		// `focusCard` moves keyboard focus back to that card, matching
+		// where a screen-reader or keyboard user left off.
+		scrollToAnchor(snapshot, focusCard) {
+			const card = root.querySelector(snapshot.anchorSelector);
+			if (!card || !card.isConnected) {
+				window.scrollTo(0, snapshot.scrollY);
+				return;
+			}
+			const wrap = card.closest('.daymark-recent__item-wrap') || card;
+			const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
+			window.scrollTo(0, Math.max(0, top));
+			if (focusCard) {
+				card.focus({ preventScroll: true });
+			}
 		},
 
 		// (Re)load the first page of recent Marks and arm infinite scroll.
@@ -5284,6 +5353,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML = emptyTimelineHtml();
@@ -5358,6 +5428,7 @@
 				const arr = Array.isArray(items) ? items : [];
 				if (arr.length && list.isConnected) {
 					this.recentPage = nextPage;
+					this._items = (this._items || []).concat(arr);
 					arr.forEach((item) => rememberItem(this, item));
 					// Deliberately not resetting this._lastGroupKey first —
 					// continuing from wherever loadRecent()'s own page (or a
@@ -8743,6 +8814,33 @@
 	// since #post has no fixed back destination the way Notifications/
 	// Create/Publish do.
 	let pendingPostView = null;
+
+	// What Home's Timeline looked like when one of its cards was opened:
+	// every item loaded so far (all infinite-scroll pages, in order), the
+	// paging state, and where the tapped card sat on screen. Going back
+	// re-renders Home from scratch, which used to reload only page 1 and
+	// land at the top. HomeScreen.init() consumes this instead, so the
+	// reader returns to the card they opened. Kept in memory only: a
+	// reload or a cold start begins at the top as before. showScreen()
+	// discards it once the reader goes anywhere other than #post/#reblog.
+	let homeSnapshot = null;
+
+	function saveHomeSnapshot(screen, trigger) {
+		if (screen !== HomeScreen || !Array.isArray(screen._items) || !screen._items.length) {
+			return;
+		}
+		const card = trigger.closest('.daymark-recent__item-wrap') || trigger;
+		homeSnapshot = {
+			items: screen._items.slice(),
+			recentPage: screen.recentPage,
+			recentDone: screen.recentDone,
+			anchorSelector: trigger.hasAttribute('data-subpost')
+				? '[data-subpost="' + CSS.escape(trigger.getAttribute('data-subpost')) + '"]'
+				: '[data-expand-post="' + CSS.escape(trigger.getAttribute('data-expand-post')) + '"]',
+			anchorTop: card.getBoundingClientRect().top,
+			scrollY: window.scrollY,
+		};
+	}
 
 	function openPostView(kind, item) {
 		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };

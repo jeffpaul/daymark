@@ -37,6 +37,7 @@ can't act on them.
 
 ### Fixed
 
+- Going back from a post you opened on the Timeline now returns you to that post's place in the Timeline, with every page you had scrolled through still loaded, instead of the top.
 - The Playground preview and the public "Try Daymark" demo no longer stop with a critical error while adding sample content, and the sample Marks are now published to the Timeline instead of saved as drafts.
 - A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.
 - The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
