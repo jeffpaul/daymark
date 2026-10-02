@@ -512,6 +512,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/marks/(?P<id>\d+)/featured-content-image',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_featured_content_image' ),
+				// Same visibility rule as GET /marks/{id}/content: the card
+				// this fills in is already on the caller's Timeline.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/marks/(?P<id>\d+)/sync-responses',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1813,6 +1832,55 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'results' => Daymark_Geocoder::search( $query ),
 			)
 		);
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id}/featured-content-image — the thumbnail a
+	 * Timeline card shows for a post's video or audio Featured Content.
+	 *
+	 * Normally Daymark_Featured_Content_Social resolves it in the background
+	 * when the Featured Content is saved, and the Timeline summary already
+	 * carries it. This fills the gap when that never happened: Featured
+	 * Content saved before the background resolution existed, or a site
+	 * with WP-Cron turned off. It returns the stored image when there is
+	 * one; otherwise it resolves it once, through the same guarded,
+	 * cached path, and stores it, so the next Timeline load has it too.
+	 * Only resolving costs a rate-limit slot.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_featured_content_image( WP_REST_Request $request ) {
+		$post = get_post( absint( $request->get_param( 'id' ) ) );
+
+		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		$fc = Daymark_Featured_Content::get_featured_content( $post );
+
+		if ( empty( $fc ) || ! in_array( $fc['type'], array( 'video', 'audio' ), true ) ) {
+			return rest_ensure_response( array( 'url' => '' ) );
+		}
+
+		$image = Daymark_Featured_Content_Social::image( $post );
+
+		if ( empty( $image['url'] ) && 'url' === ( $fc['data']['source'] ?? '' ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_FEATURED_CONTENT_OEMBED );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+
+			( new Daymark_Featured_Content_Social() )->resolve_remote_image( $post->ID );
+			$image = Daymark_Featured_Content_Social::image( $post );
+		}
+
+		return rest_ensure_response( array( 'url' => empty( $image['url'] ) ? '' : esc_url_raw( $image['url'] ) ) );
 	}
 
 	/**
@@ -3991,6 +4059,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['featured_content'] = array(
 				'type' => $featured_content['type'],
 			);
+
+			// A video or audio card shows the video's own thumbnail (or the
+			// file's cover art) with a play button, like the post view's
+			// preview, instead of a placeholder. This is the share image
+			// Daymark_Featured_Content_Social resolves when the Featured
+			// Content is saved; reading it never fetches anything, so a
+			// thumbnail not resolved yet just leaves the placeholder.
+			if ( in_array( $featured_content['type'], array( 'video', 'audio' ), true ) ) {
+				$image = Daymark_Featured_Content_Social::image( $post_id );
+
+				if ( ! empty( $image['url'] ) ) {
+					$summary['featured_content']['image'] = esc_url_raw( $image['url'] );
+				}
+			}
 
 			// A quote's card shows the quote itself where a featured image
 			// would go, so its text and credit travel with the summary. Plain

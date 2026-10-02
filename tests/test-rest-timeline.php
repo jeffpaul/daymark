@@ -337,6 +337,140 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'gallery', $item );
 	}
 
+	/**
+	 * A video Featured Content sends its resolved thumbnail for the card's
+	 * preview, and nothing before it is resolved (reading never fetches).
+	 */
+	public function test_video_featured_content_reports_its_resolved_thumbnail() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Video demo', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'video' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ',
+					),
+				)
+			)
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertArrayNotHasKey( 'image', $fc, 'Not resolved yet: the card keeps its placeholder' );
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode(
+					array(
+						'type'          => 'video',
+						'version'       => '1.0',
+						'html'          => '<iframe src="https://www.youtube.com/embed/BZtL1NVlxgQ"></iframe>',
+						'thumbnail_url' => 'https://i.ytimg.com/vi/BZtL1NVlxgQ/hqdefault.jpg',
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		( new Daymark_Featured_Content_Social() )->resolve_remote_image( $mark_id );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( 'https://i.ytimg.com/vi/BZtL1NVlxgQ/hqdefault.jpg', $fc['image'] );
+	}
+
+	/**
+	 * GET /marks/{id}/featured-content-image resolves a missing video
+	 * thumbnail once and stores it, so the next Timeline load carries it.
+	 */
+	public function test_featured_content_image_endpoint_resolves_and_stores_a_missing_thumbnail() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Video to resolve', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'video' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://www.youtube.com/watch?v=abc123',
+					),
+				)
+			)
+		);
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode(
+					array(
+						'type'          => 'video',
+						'version'       => '1.0',
+						'html'          => '<iframe src="https://www.youtube.com/embed/abc123"></iframe>',
+						'thumbnail_url' => 'https://i.ytimg.com/vi/abc123/hqdefault.jpg',
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		$response = rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'https://i.ytimg.com/vi/abc123/hqdefault.jpg', $response->get_data()['url'] );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( 'https://i.ytimg.com/vi/abc123/hqdefault.jpg', $fc['image'], 'Stored for the next Timeline load' );
+	}
+
+	/** The endpoint answers with an empty URL for non-video Featured Content, and 404s for an unpublished post. */
+	public function test_featured_content_image_endpoint_ignores_other_kinds_and_drafts() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote post', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'quote' => array( 'text' => 'Hi.' ) ) ) );
+
+		$this->assertSame( '', rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) )->get_data()['url'] );
+
+		wp_update_post(
+			array(
+				'ID'          => $mark_id,
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->assertSame( 404, rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) )->get_status() );
+	}
+
 	/** A quote Featured Content sends its text and credit, for the card's quote banner. */
 	public function test_quote_featured_content_reports_text_and_credit() {
 		wp_set_current_user( $this->author_a );

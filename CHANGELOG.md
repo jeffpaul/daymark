@@ -35,6 +35,7 @@ can't act on them.
 - If your site reaches the fediverse through Bridgy Fed instead of the ActivityPub plugin, you can now like and reblog fediverse and Bluesky posts you follow. Check "This site is bridged with Bridgy Fed" on Settings -> Daymark -> Connectors; Daymark then sends those Likes and Reblogs through Bridgy Fed with the Webmention plugin. Posts on sites that accept Webmentions still get them directly. ([#441](https://github.com/jeffpaul/daymark/issues/441))
 - Notifications now show quote posts: when someone on the fediverse reblogs one of your Marks with their own comment, it appears in that Mark's conversation as "Quoted your Mark on the Fediverse", with their words, a link to their post, and a Reply button, and it marks Notifications as unread. ([#396](https://github.com/jeffpaul/daymark/issues/396))
 - A post whose Featured Content is a quote now shows the quote on its Timeline card, where a featured image would go, with its credit below it. Before, the quote only appeared once the post was opened. ([#473](https://github.com/jeffpaul/daymark/pull/473))
+- A post whose Featured Content is a video or audio now shows the video's real thumbnail (or the file's cover art) on its Timeline card, with a play button, instead of a placeholder. A thumbnail that was never fetched is looked up the first time the card is shown. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 
 ### Changed
 
