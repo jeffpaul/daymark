@@ -45,6 +45,8 @@ You're in control of the location-related services: see "What does Daymark quiet
 
 **Link previews and embeds.** When a post you're reading links to another page, Daymark may fetch that page (for its Open Graph title, description, and image) or ask the link's oEmbed provider, such as YouTube or Vimeo, for an embed. Only the link's address is sent. A video or audio link you paste into Featured Content in the block editor works the same way; for a post whose author can't publish unfiltered HTML (an Author or Contributor), only the providers WordPress already trusts are used. To give such a post a share image, your site also asks that provider for the video's thumbnail, or fetches a Featured Content link's page for its Open Graph image, once each time the Featured Content changes; visitors to your site never trigger these requests. The provider's own terms and privacy policy apply.
 
+**Bookmarked posts' images.** When you bookmark a post for offline reading and it has images hosted on another site, your site downloads those images (only the ones in that post) and hands them to the app to save on your device. The request carries your site's address in the User-Agent, as WordPress's own requests do. The image host's own terms and privacy policy apply.
+
 **Comments and likes on posts you follow.** What is sent depends on what the other site supports.
 
 * If you use the Webmention or ActivityPub plugins, they send your reply or like themselves. Daymark doesn't.

@@ -781,6 +781,32 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/bookmarks/(?P<id>\d+)/image',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_bookmark_image' ),
+				// The handler itself requires the post to be bookmarked by
+				// the current user and the URL to appear in its content.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id'  => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+					// Validated (and matched against the post's content) by
+					// Daymark_Bookmark_Images::fetch(); no 'uri' format here,
+					// since sanitizing it first could stop it matching.
+					'url' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -2380,6 +2406,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * GET /bookmarks/{id}/image?url= — one off-site image of a bookmarked
+	 * post, fetched by this site so the app can save it for offline reading
+	 * (issue #455). The app's CSP and most sites' missing CORS headers stop
+	 * the app from downloading it directly. See Daymark_Bookmark_Images.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error `{ mime, data }`, data base64.
+	 */
+	public function get_bookmark_image( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_BOOKMARK_IMAGE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$result = Daymark_Bookmark_Images::fetch( absint( $request->get_param( 'id' ) ), (string) $request->get_param( 'url' ) );
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
 	 * DELETE /daymark/v1/bookmarks/{id} — remove a bookmark.
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -3697,14 +3744,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Daymark_Jetpack_Engagement::sync_own_likes().
 			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
 				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
-			// Only the federation plugins (ActivityPub/ATmosphere/Webmention)
-			// ever write a 'repost' comment_type today — see issue #41 for the
-			// cross-plugin confirmation. A polling connector's own reactions
-			// aren't pulled in at all (backflow only imports replies), so this
-			// is 0 there regardless of the real network's count; extending
-			// backflow to also sync reaction counts is tracked as a separate,
-			// larger question on that same issue, not done here.
-			'repost_count'       => $this->count_comments_of_type( $post_id, 'repost' ),
+			// Every reblog, with or without the reblogger's own words — see
+			// count_reblogs(). A polling connector's own reactions aren't
+			// pulled in at all (backflow only imports replies), so they
+			// aren't counted; extending backflow to sync reaction counts is
+			// tracked separately on issue #41.
+			'repost_count'       => $this->count_reblogs( $post_id ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 		);
@@ -3828,6 +3873,76 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'count'   => true,
 			)
 		);
+	}
+
+	/**
+	 * How many times a Mark has been reblogged, with or without the
+	 * reblogger's own words (issue #396).
+	 *
+	 * - `repost` comments: a plain reblog or boost, as the ActivityPub,
+	 *   ATmosphere, and Webmention plugins store it (issue #41). A Webmention
+	 *   reblog with commentary is still a `repost`, since the Webmention
+	 *   plugin types by `u-repost-of` and ignores any text alongside it.
+	 * - `quote` comments: a quote post (a reblog with commentary) from the
+	 *   fediverse, which the ActivityPub plugin stores under its own `quote`
+	 *   type (`Activitypub\Comment::register_comment_types()`).
+	 * - Reblog Marks published on this same site (another author here
+	 *   reblogging it), which no plugin turns into a comment. One that the
+	 *   Webmention plugin already recorded as a comment (by its source URL)
+	 *   is not counted twice.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return int
+	 */
+	private function count_reblogs( int $post_id ): int {
+		$comments = get_comments(
+			array(
+				'post_id'  => $post_id,
+				'type__in' => array( 'repost', 'quote' ),
+				'status'   => 'approve',
+				'fields'   => 'ids',
+			)
+		);
+
+		$counted_sources = array();
+
+		foreach ( $comments as $comment_id ) {
+			$source = (string) get_comment_meta( (int) $comment_id, 'webmention_source_url', true );
+
+			if ( '' !== $source ) {
+				$counted_sources[ untrailingslashit( $source ) ] = true;
+			}
+		}
+
+		$permalink = (string) get_permalink( $post_id );
+		$targets   = array_values( array_unique( array_filter( array( $permalink, untrailingslashit( $permalink ), trailingslashit( $permalink ) ) ) ) );
+		$local     = empty( $targets ) ? array() : get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+				'post__not_in'   => array( $post_id ),
+				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Exact-match lookup, one per Mark card, at personal-site scale (same posture as find_own_mark_id_by_target_url()).
+					array(
+						'key'     => '_daymark_repost_of',
+						'value'   => $targets,
+						'compare' => 'IN',
+					),
+				),
+			)
+		);
+
+		$local_uncounted = 0;
+
+		foreach ( $local as $reblog_id ) {
+			if ( ! isset( $counted_sources[ untrailingslashit( (string) get_permalink( (int) $reblog_id ) ) ] ) ) {
+				++$local_uncounted;
+			}
+		}
+
+		return count( $comments ) + $local_uncounted;
 	}
 
 	/**
