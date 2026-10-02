@@ -5282,6 +5282,85 @@
 
 	// --- Screen: Home (Timeline) ---
 
+	// --- Timeline "last seen" marker ---
+	//
+	// The newest Timeline item this user has seen on Home, stored on the
+	// server (Daymark_Timeline_Position) so it follows them across devices.
+	// A fresh Home load opens anchored on it, with any newer posts above it
+	// and a "new posts" button to jump up to them — the way a chat app
+	// keeps your place at the last message you read. The server only ever
+	// moves the marker to a newer item.
+	let timelineLastSeen = config.timelineLastSeen || null;
+
+	// How far back a fresh load looks for the marker: one request this size
+	// (GET /timeline caps per_page at 50). A multiple of RECENT_PER_PAGE, so
+	// infinite scroll carries on from the next page exactly. A marker older
+	// than this many items just opens at the top, as before.
+	const LAST_SEEN_SEARCH_LIMIT = 50;
+
+	// Debounced save of the newest card seen, so a scroll through many
+	// cards sends one request, not one per card.
+	const LAST_SEEN_SAVE_DELAY = 1500;
+	let lastSeenSaveTimer = null;
+	let lastSeenPendingId = 0;
+
+	function timelineItemIndex(items, ref) {
+		if (!ref || !Array.isArray(items)) {
+			return -1;
+		}
+		const wantSub = 'subscription_post' === ref.item_type;
+		return items.findIndex(
+			(item) =>
+				String(item.id) === String(ref.id) &&
+				('subscription_post' === item.item_type) === wantSub
+		);
+	}
+
+	function timelineCardSelector(item) {
+		return 'subscription_post' === item.item_type
+			? '[data-subpost="' + CSS.escape(String(item.id)) + '"]'
+			: '[data-expand-post="' + CSS.escape(String(item.id)) + '"]';
+	}
+
+	function queueLastSeenSave(id) {
+		lastSeenPendingId = id;
+		if (lastSeenSaveTimer) {
+			clearTimeout(lastSeenSaveTimer);
+		}
+		lastSeenSaveTimer = setTimeout(() => flushLastSeenSave(false), LAST_SEEN_SAVE_DELAY);
+	}
+
+	// `leaving` uses a keepalive request, which the browser finishes even
+	// as the page is hidden or closed.
+	function flushLastSeenSave(leaving) {
+		if (lastSeenSaveTimer) {
+			clearTimeout(lastSeenSaveTimer);
+			lastSeenSaveTimer = null;
+		}
+		const id = lastSeenPendingId;
+		lastSeenPendingId = 0;
+		if (!id || !config.nonce) {
+			return;
+		}
+		fetch(config.restUrl + 'timeline/last-seen', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ id }),
+			keepalive: !!leaving,
+		})
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				if (data && 'last_seen' in data) {
+					timelineLastSeen = data.last_seen;
+				}
+			})
+			.catch(() => {
+				// Best effort: a lost save only means the next visit opens
+				// a little further down than it could have.
+			});
+	}
+
 	const HomeScreen = {
 		render() {
 			// Home itself is the merged Marks + subscriptions feed now, so
@@ -5313,6 +5392,10 @@
 					<h2 id="daymark-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-drafts-list></div>
 				</section>
+				<button type="button" class="daymark-newposts" data-new-posts hidden>
+					<span aria-hidden="true">&uarr;</span>
+					<span data-new-posts-label></span>
+				</button>
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
@@ -5343,11 +5426,18 @@
 			// nothing to return).
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 
+			const newPosts = root.querySelector('[data-new-posts]');
+			if (newPosts) {
+				newPosts.addEventListener('click', () => this.jumpToNewest());
+			}
+
 			bindLauncher(this);
 			bindChromeAutoHide(this);
 		},
 
 		async init() {
+			this.teardownSeenObserver();
+			this.watchForUserScroll();
 			this._searchSeq = 0;
 			this._hasDrafts = false;
 			this.recentPage = 1;
@@ -5399,9 +5489,10 @@
 				// Pending and Drafts just loaded above the Timeline and may
 				// have pushed it down; put the opened card back in place.
 				scrollFeedToAnchor(snapshot, true);
+				this.observeSeen();
 				return;
 			}
-			await this.loadRecent();
+			await this.loadRecent({ anchor: true });
 		},
 
 		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
@@ -5436,7 +5527,10 @@
 		},
 
 		// (Re)load the first page of recent Marks and arm infinite scroll.
-		async loadRecent() {
+		// `anchor` (a fresh Home load only — never pull-to-refresh, which
+		// asks for the newest posts) opens on the last-seen marker when it
+		// is in the most recent LAST_SEEN_SEARCH_LIMIT items.
+		async loadRecent({ anchor = false } = {}) {
 			const list = root.querySelector('[data-recent-list]');
 			const more = root.querySelector('[data-recent-more]');
 			const sentinel = root.querySelector('[data-recent-sentinel]');
@@ -5448,6 +5542,8 @@
 				heading.textContent = __('Timeline', 'daymark');
 			}
 			this.teardownObserver();
+			this.teardownSeenObserver();
+			this.hideNewPosts();
 			teardownRehydrateObserver(this);
 			teardownOembedPreviewObserver(this);
 			teardownLikeAvailabilityObserver(this);
@@ -5467,7 +5563,34 @@
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
-				const arr = Array.isArray(items) ? items : [];
+				let arr = Array.isArray(items) ? items : [];
+				// How many items this first load fetched; infinite scroll
+				// resumes from the page after it.
+				let loaded = RECENT_PER_PAGE;
+				let anchorIndex = anchor ? timelineItemIndex(arr, timelineLastSeen) : -1;
+				if (anchor && timelineLastSeen && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
+					// Not at the very top: load further back in one request,
+					// both to find the marker when it is past the first page
+					// and so there is enough below it to scroll it to the
+					// top (a short list would leave the newer cards above it
+					// on screen, and they would count as seen).
+					try {
+						const wide = await apiGet('timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=1');
+						if (seq !== this._searchSeq || !list.isConnected) {
+							return;
+						}
+						const wideArr = Array.isArray(wide) ? wide : [];
+						const wideIndex = timelineItemIndex(wideArr, timelineLastSeen);
+						if (wideIndex >= 0) {
+							arr = wideArr;
+							loaded = LAST_SEEN_SEARCH_LIMIT;
+							anchorIndex = wideIndex;
+						}
+					} catch (err) {
+						// Fall through to an ordinary top-of-Timeline load.
+					}
+				}
+				this.recentPage = loaded / RECENT_PER_PAGE;
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
@@ -5486,8 +5609,18 @@
 				observeOembedPreviewCandidates(this, list);
 				observeLikeAvailability(this, list);
 				observeFeaturedImages(this, list);
+				// Position before tracking what's seen: otherwise the newest
+				// cards, briefly on screen at the top, would count as seen.
+				// Skipped once the reader has started scrolling on their own:
+				// the load can finish seconds later, and jumping then would
+				// move the page out from under them.
+				if (anchorIndex > 0 && !this._userScrolled) {
+					this.scrollToItem(arr[anchorIndex]);
+					this.showNewPosts(anchorIndex);
+				}
+				this.observeSeen();
 
-				if (arr.length < RECENT_PER_PAGE) {
+				if (arr.length < loaded) {
 					// A short first page means there is nothing more to load.
 					this.recentDone = true;
 					if (sentinel) {
@@ -5556,8 +5689,9 @@
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
 					observeRehydrateCandidates(this, list);
 					observeOembedPreviewCandidates(this, list);
-				observeLikeAvailability(this, list);
-				observeFeaturedImages(this, list);
+					observeLikeAvailability(this, list);
+					observeFeaturedImages(this, list);
+					this.observeSeen();
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
@@ -5601,6 +5735,162 @@
 			if (this.observer) {
 				this.observer.disconnect();
 				this.observer = null;
+			}
+		},
+
+		// Note when the reader scrolls (wheel, touch, or a scrolling key)
+		// before the Timeline has loaded, so loadRecent() doesn't then jump
+		// them to the last-seen post. Re-armed on every init(); the
+		// previous listener is removed first so they don't pile up.
+		watchForUserScroll() {
+			this._userScrolled = false;
+			if (this._onUserScroll) {
+				['wheel', 'touchmove', 'keydown'].forEach((type) =>
+					window.removeEventListener(type, this._onUserScroll)
+				);
+			}
+			this._onUserScroll = (event) => {
+				if (
+					'keydown' === event.type &&
+					!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)
+				) {
+					return;
+				}
+				this._userScrolled = true;
+			};
+			['wheel', 'touchmove', 'keydown'].forEach((type) =>
+				window.addEventListener(type, this._onUserScroll, { passive: true })
+			);
+		},
+
+		// Scroll so a Timeline item sits just below the header, with its
+		// date heading when it is the first card under one.
+		scrollToItem(item) {
+			const card = root.querySelector('[data-recent-list] ' + timelineCardSelector(item));
+			if (!card) {
+				return;
+			}
+			const wrap = card.closest('.daymark-recent__item-wrap') || card;
+			const prev = wrap.previousElementSibling;
+			const target = prev && prev.classList.contains('daymark-recent__groupheader') ? prev : wrap;
+			const header = root.querySelector('.daymark-topbar');
+			const offset = header ? header.offsetHeight : 0;
+			window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - offset));
+		},
+
+		// Watch Timeline cards and record the newest one seen. Re-callable
+		// after each render: cards already watched are skipped.
+		observeSeen() {
+			if (!('IntersectionObserver' in window)) {
+				return;
+			}
+			const list = root.querySelector('[data-recent-list]');
+			if (!list) {
+				return;
+			}
+			if (!this._seenObserver) {
+				this._newestSeenIndex = Infinity;
+				this._seenObserver = new IntersectionObserver(
+					(entries) => {
+						entries.forEach((entry) => {
+							if (entry.isIntersecting) {
+								this.noteSeen(entry.target);
+							}
+						});
+					},
+					{ threshold: 0.6 }
+				);
+			}
+			list.querySelectorAll('.daymark-recent__item-wrap:not([data-seen-watched])').forEach((wrap) => {
+				wrap.setAttribute('data-seen-watched', '');
+				this._seenObserver.observe(wrap);
+			});
+		},
+
+		teardownSeenObserver() {
+			if (this._seenObserver) {
+				this._seenObserver.disconnect();
+				this._seenObserver = null;
+			}
+		},
+
+		noteSeen(wrap) {
+			const trigger = wrap.querySelector('[data-subpost], [data-expand-post]');
+			if (!trigger) {
+				return;
+			}
+			const ref = trigger.hasAttribute('data-subpost')
+				? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
+				: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
+			const index = timelineItemIndex(this._items, ref);
+			if (index < 0 || index >= this._newestSeenIndex) {
+				return;
+			}
+			this._newestSeenIndex = index;
+			this.updateNewPosts(index);
+			// Nothing to save for a card at or below the stored marker; the
+			// server ignores an older item anyway, this just skips the call.
+			const markerIndex = timelineItemIndex(this._items, timelineLastSeen);
+			if (markerIndex >= 0 && index >= markerIndex) {
+				return;
+			}
+			queueLastSeenSave(Number(ref.id));
+		},
+
+		// The "new posts" button: how many newer posts sit above the card
+		// the Timeline opened on. Counts down as they come into view and
+		// disappears once the newest has been seen.
+		showNewPosts(count) {
+			this._newPostsCount = count;
+			this.updateNewPosts(count);
+		},
+
+		updateNewPosts(newestSeenIndex) {
+			const button = root.querySelector('[data-new-posts]');
+			if (!button || !this._newPostsCount) {
+				return;
+			}
+			const count = Math.min(this._newPostsCount, newestSeenIndex);
+			if (count <= 0) {
+				this.hideNewPosts();
+				return;
+			}
+			const label = sprintf(
+				/* translators: %d: number of newer posts above the current one */
+				_n('%d new post', '%d new posts', count, 'daymark'),
+				count
+			);
+			const text = button.querySelector('[data-new-posts-label]');
+			if (text) {
+				text.textContent = label;
+			}
+			button.setAttribute(
+				'aria-label',
+				sprintf(
+					/* translators: %s: e.g. "3 new posts" */
+					__('%s. Jump to the newest post.', 'daymark'),
+					label
+				)
+			);
+			button.hidden = false;
+		},
+
+		hideNewPosts() {
+			this._newPostsCount = 0;
+			const button = root.querySelector('[data-new-posts]');
+			if (button) {
+				button.hidden = true;
+			}
+		},
+
+		jumpToNewest() {
+			const reduce =
+				window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+			this.hideNewPosts();
+			const first = root.querySelector('[data-recent-list] [data-subpost], [data-recent-list] [data-expand-post]');
+			if (first) {
+				first.focus({ preventScroll: true });
 			}
 		},
 
@@ -10816,6 +11106,14 @@
 	// /daymark navigation any other cold load gets. Nothing already queued
 	// is lost: IndexedDB survives the reload and flushes again on the very
 	// next boot, same as this listener already does below.
+	// Save the newest Timeline card seen before the app is hidden or
+	// closed, rather than losing the last debounced save.
+	document.addEventListener('visibilitychange', () => {
+		if ('hidden' === document.visibilityState) {
+			flushLastSeenSave(true);
+		}
+	});
+
 	window.addEventListener('online', () => {
 		if (config.offlineShell) {
 			window.location.reload();

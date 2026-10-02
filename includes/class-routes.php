@@ -591,6 +591,10 @@ class Daymark_Routes {
 			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::page_url() ) : '',
 			'canManageSubscriptions' => $can_manage_subscriptions,
 			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
+			// The newest Timeline item this user has seen (or null), so
+			// Home can open anchored on it with newer posts above — see
+			// Daymark_Timeline_Position.
+			'timelineLastSeen'       => Daymark_Timeline_Position::get( (int) $user->ID ),
 			'pendingDraftId'         => $pending_draft_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);

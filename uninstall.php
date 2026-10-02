@@ -40,6 +40,7 @@ delete_metadata( 'user', 0, 'daymark_destination_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_category_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_notifications_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
+delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 
 // Scheduled backflow sync events (recurring + pending one-off freshen) and

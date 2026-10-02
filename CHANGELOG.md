@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- The Timeline now remembers the newest post you've seen, on your account, so it follows you across devices. When you come back, it opens at that post instead of the top, with newer posts above it. A "new posts" button shows how many there are and jumps to the newest one. ([#472](https://github.com/jeffpaul/daymark/pull/472))
 - The Search screen gained a **Date** dropdown beside the existing keyword/type/source filters, reusing the same buckets the Timeline itself groups its items into (Today / This Week / Last Week / This Month / Last Month) so a label means the same thing in both places. It combines with the other filters and covers both your Marks and subscription posts, backed by the same merged `GET /timeline` endpoint. ([#413](https://github.com/jeffpaul/daymark/pull/413))
 - Explore's Timeline gained an **On this day** section showing the Marks you published on this calendar date in past years — last year's memory, the year before's, and so on, newest first — sitting between Bookmarks and Following. Backed by the same merged `GET /timeline` endpoint the rest of Explore and Timeline already use, filtered to your own Marks from prior years (nothing from today itself), so the section shares every card behavior the others already have: open the full post view, bookmark, like, comment, share. Marks you publish today won't appear here until next year. ([#294](https://github.com/jeffpaul/daymark/issues/294), [#413](https://github.com/jeffpaul/daymark/pull/413))
 - Publishing a Mark with a captured location and weather while the Simple Location plugin is active now also bridges the temperature and a human-readable condition text into Simple Location's own post-meta at publish time, so that plugin's weather display extends to the Mark for free — no duplicate weather fetch or storage inside Daymark. The weather code itself is deliberately not bridged, since Simple Location's icon/code vocabulary is OpenWeatherMap-derived and can't map Daymark's Open-Meteo codes; a bridged-but-wrong code would render worse than no code at all. ([#397](https://github.com/jeffpaul/daymark/issues/397))
@@ -44,6 +45,7 @@ can't act on them.
 
 ### Fixed
 
+- The Timeline no longer jumps to the last post you saw if you have already started scrolling while it loads.
 - Going back from a post you opened on the Timeline, in Search, or from Explore's "On this day" now returns you to that post's place in the list instead of the top. The Timeline keeps every page you had scrolled through, and Search keeps your search text, filters, and results. If you unsubscribe, reblog, or comment from the post view, the list reloads instead so it shows the change. ([#471](https://github.com/jeffpaul/daymark/pull/471))
 - The Playground preview and the public "Try Daymark" demo no longer stop with a critical error while adding sample content, and the sample Marks are now published to the Timeline instead of saved as drafts.
 - A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.
