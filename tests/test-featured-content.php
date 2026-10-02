@@ -884,6 +884,33 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertContains( 'jquery-touch-punch', $script->deps );
 	}
 
+	/** A Featured Content gallery's slides show each photo's own attachment caption. */
+	public function test_render_gallery_shows_attachment_captions() {
+		$with    = $this->create_attachment( 'image/png' );
+		$without = $this->create_attachment( 'image/png' );
+		wp_update_post(
+			array(
+				'ID'           => $with,
+				'post_excerpt' => 'Morning on the dunes',
+			)
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => array( $with, $without ) ) ) )
+		);
+
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__caption' ) );
+		$this->assertStringContainsString( '>Morning on the dunes</p>', $output );
+	}
+
 	public function test_render_gallery_single_image_has_no_carousel_controls() {
 		$attachment_id = $this->create_attachment( 'image/png' );
 		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );

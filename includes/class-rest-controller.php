@@ -2298,7 +2298,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$gallery_slots = array();
 		$slot_token    = 'DAYMARKGALLERYSLOT' . wp_generate_password( 12, false );
 		$swap_gallery  = static function ( $block_content, $block ) use ( &$gallery_slots, $slot_token ) {
-			$slider = Daymark_Featured_Content::render_gallery_for_app( self::gallery_block_image_ids( (array) $block ) );
+			$captions = self::gallery_block_captions( (array) $block );
+			$slider   = Daymark_Featured_Content::render_gallery_for_app( array_keys( $captions ), $captions );
 
 			if ( '' === $slider || substr_count( $slider, 'daymark-fc-gallery__slide' ) < 2 ) {
 				return $block_content;
@@ -2347,27 +2348,41 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
-	 * A core/gallery block's image attachment IDs, in display order: its
-	 * inner core/image blocks' `id` (WordPress 5.9 and later), or the older
-	 * `ids` attribute.
+	 * A core/gallery block's images and their captions, in display order:
+	 * attachment ID => the caption written in that image's own block (its
+	 * `<figcaption>`), or '' when it has none. Reads the inner core/image
+	 * blocks (WordPress 5.9 and later), or the older `ids` attribute, which
+	 * has no per-image captions.
 	 *
 	 * @param array<string, mixed> $block Parsed block.
-	 * @return int[]
+	 * @return array<int, string>
 	 */
-	private static function gallery_block_image_ids( array $block ): array {
-		$ids = array();
+	private static function gallery_block_captions( array $block ): array {
+		$captions = array();
 
 		foreach ( (array) ( $block['innerBlocks'] ?? array() ) as $inner ) {
-			if ( 'core/image' === ( $inner['blockName'] ?? '' ) && ! empty( $inner['attrs']['id'] ) ) {
-				$ids[] = absint( $inner['attrs']['id'] );
+			$id = absint( $inner['attrs']['id'] ?? 0 );
+
+			if ( 'core/image' !== ( $inner['blockName'] ?? '' ) || $id <= 0 || isset( $captions[ $id ] ) ) {
+				continue;
+			}
+
+			$caption = '';
+
+			if ( preg_match( '#<figcaption[^>]*>(.*?)</figcaption>#is', (string) ( $inner['innerHTML'] ?? '' ), $found ) ) {
+				$caption = $found[1];
+			}
+
+			$captions[ $id ] = $caption;
+		}
+
+		if ( empty( $captions ) && ! empty( $block['attrs']['ids'] ) && is_array( $block['attrs']['ids'] ) ) {
+			foreach ( array_filter( array_map( 'absint', $block['attrs']['ids'] ) ) as $id ) {
+				$captions[ $id ] = '';
 			}
 		}
 
-		if ( empty( $ids ) && ! empty( $block['attrs']['ids'] ) && is_array( $block['attrs']['ids'] ) ) {
-			$ids = array_map( 'absint', $block['attrs']['ids'] );
-		}
-
-		return array_values( array_filter( $ids ) );
+		return $captions;
 	}
 
 	/**

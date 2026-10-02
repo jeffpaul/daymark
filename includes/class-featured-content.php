@@ -535,11 +535,41 @@ class Daymark_Featured_Content {
 	 * where core's gallery block would otherwise show as stacked images: the
 	 * app shell has no theme stylesheet to lay it out.
 	 *
-	 * @param int[] $attachment_ids Image attachment IDs, in display order.
+	 * @param int[]                   $attachment_ids Image attachment IDs, in display order.
+	 * @param array<int, string>|null $captions       Captions keyed by attachment ID (a gallery block's own), or null to use each image's attachment caption.
 	 * @return string Slider markup, or '' when no image is usable.
 	 */
-	public static function render_gallery_for_app( array $attachment_ids ): string {
-		return self::render_gallery( array( 'attachment_ids' => $attachment_ids ), true, __( 'Gallery', 'daymark' ) );
+	public static function render_gallery_for_app( array $attachment_ids, ?array $captions = null ): string {
+		return self::render_gallery( array( 'attachment_ids' => $attachment_ids ), true, __( 'Gallery', 'daymark' ), $captions );
+	}
+
+	/**
+	 * A slide's caption markup, or '' when there is no caption. Keeps only
+	 * simple inline formatting and links: no class or style attributes, so
+	 * a caption can't take on the app's own styles.
+	 *
+	 * @param string $caption Caption text or HTML.
+	 * @return string
+	 */
+	private static function gallery_caption_html( string $caption ): string {
+		$caption = trim(
+			wp_kses(
+				$caption,
+				array(
+					'a'      => array(
+						'href'   => true,
+						'rel'    => true,
+						'target' => true,
+					),
+					'em'     => array(),
+					'strong' => array(),
+					'code'   => array(),
+					'br'     => array(),
+				)
+			)
+		);
+
+		return '' === $caption ? '' : '<p class="daymark-fc-gallery__caption">' . $caption . '</p>';
 	}
 
 	/**
@@ -804,11 +834,13 @@ class Daymark_Featured_Content {
 	 * @param array{attachment_ids?: int[]} $data  Sanitized gallery data.
 	 * @param bool                          $full  Render every image even outside a single post — for the app's full post view, which loads the slider itself.
 	 * @param string                        $label The carousel's accessible name; '' for "Featured gallery".
+	 * @param array<int, string>|null       $captions Captions keyed by attachment ID, or null to use each image's own attachment caption.
 	 * @return string
 	 */
-	private static function render_gallery( array $data, bool $full = false, string $label = '' ): string {
-		$ids    = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
-		$images = array();
+	private static function render_gallery( array $data, bool $full = false, string $label = '', ?array $captions = null ): string {
+		$ids          = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
+		$images       = array();
+		$slide_labels = array();
 
 		foreach ( $ids as $id ) {
 			$id = absint( $id );
@@ -830,7 +862,10 @@ class Daymark_Featured_Content {
 				continue;
 			}
 
-			$images[] = $img;
+			$images[]       = $img;
+			$slide_labels[] = self::gallery_caption_html(
+				null === $captions ? (string) wp_get_attachment_caption( $id ) : (string) ( $captions[ $id ] ?? '' )
+			);
 		}
 
 		$count = count( $images );
@@ -845,8 +880,9 @@ class Daymark_Featured_Content {
 		// 20 stacked, unstyled images in every listing would be far worse
 		// than the featured image it replaces, so show only the first image.
 		if ( $count > 1 && ! is_singular() && ! $full ) {
-			$images = array_slice( $images, 0, 1 );
-			$count  = 1;
+			$images       = array_slice( $images, 0, 1 );
+			$slide_labels = array_slice( $slide_labels, 0, 1 );
+			$count        = 1;
 		}
 
 		if ( $count > 1 && ! $full ) {
@@ -867,7 +903,7 @@ class Daymark_Featured_Content {
 						$count
 					)
 				),
-				$img
+				$img . $slide_labels[ $index ]
 			);
 		}
 

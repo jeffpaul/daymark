@@ -214,6 +214,28 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		$this->assertLessThan( $second, $first, 'Slides follow the gallery block order' );
 	}
 
+	/** Each slide shows the caption written in its image block; an image with none gets no caption. */
+	public function test_gallery_slider_shows_each_image_blocks_caption() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => str_replace(
+					'class="wp-image-' . $ids[0] . '"/></figure>',
+					'class="wp-image-' . $ids[0] . '"/><figcaption class="wp-element-caption">Sunset at the <em>pier</em><span class="daymark-sheet">x</span></figcaption></figure>',
+					$this->gallery_block( $ids )
+				),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertSame( 1, substr_count( $content, 'daymark-fc-gallery__caption' ) );
+		$this->assertStringContainsString( '<p class="daymark-fc-gallery__caption">Sunset at the <em>pier</em>x</p>', $content, 'Formatting kept; classes and other tags dropped' );
+		$this->assertStringNotContainsString( 'daymark-sheet', $content );
+	}
+
 	/** A one-photo gallery block is left as core renders it: there is nothing to slide. */
 	public function test_single_image_gallery_block_is_left_alone() {
 		$post_id = $this->published_post();
