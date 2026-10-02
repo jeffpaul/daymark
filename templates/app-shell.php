@@ -133,17 +133,39 @@ wp_add_inline_script(
 	'before'
 );
 
-// Matches the script-src nonce above onto specific inline scripts only
-// (id format per WP_Scripts::get_inline_script_tag(): "{handle}-js-{position}") —
-// every other inline script on the page, if any, is untouched. Covers both
-// the bootstrap config above and the "daymark-app-js-translations" block
-// wp_set_script_translations() (see above) prints through the same
-// mechanism — without this, our own strict script-src (no 'unsafe-inline')
-// would silently block the translation data from ever reaching wp.i18n.
+// Puts the script-src nonce above on every inline script WordPress prints
+// for the app script and its dependencies. WP_Scripts::get_inline_script_tag()
+// gives each one the id "{handle}-js-{position}", where position is "before",
+// "after", or "translations". This covers the bootstrap config above, the
+// translations block from wp_set_script_translations(), and the inline
+// scripts core attaches to dependencies. One example is wp-i18n's
+// "wp-i18n-js-after", which sets the locale's text direction. Without the
+// nonce, the strict script-src (no 'unsafe-inline') blocks each of them.
+// Inline scripts for any other handle stay untouched.
+$daymark_csp_handles = array();
+$daymark_csp_queue   = array( 'daymark-app' );
+while ( $daymark_csp_queue ) {
+	$daymark_csp_handle = array_shift( $daymark_csp_queue );
+	if ( isset( $daymark_csp_handles[ $daymark_csp_handle ] ) ) {
+		continue;
+	}
+	$daymark_csp_handles[ $daymark_csp_handle ] = true;
+	$daymark_csp_script                         = wp_scripts()->query( $daymark_csp_handle, 'registered' );
+	if ( $daymark_csp_script ) {
+		$daymark_csp_queue = array_merge( $daymark_csp_queue, $daymark_csp_script->deps );
+	}
+}
+$daymark_csp_inline_ids = array();
+foreach ( array_keys( $daymark_csp_handles ) as $daymark_csp_handle ) {
+	foreach ( array( 'before', 'after', 'translations' ) as $daymark_csp_position ) {
+		$daymark_csp_inline_ids[ "{$daymark_csp_handle}-js-{$daymark_csp_position}" ] = true;
+	}
+}
+
 add_filter(
 	'wp_inline_script_attributes',
-	static function ( array $attributes ) use ( $daymark_csp_nonce ): array {
-		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'daymark-app-js-before', 'daymark-app-js-translations' ), true ) ) {
+	static function ( array $attributes ) use ( $daymark_csp_nonce, $daymark_csp_inline_ids ): array {
+		if ( isset( $attributes['id'] ) && isset( $daymark_csp_inline_ids[ $attributes['id'] ] ) ) {
 			$attributes['nonce'] = $daymark_csp_nonce;
 		}
 

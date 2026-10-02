@@ -216,6 +216,42 @@ class Test_App_Shell extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Core dependencies print their own inline scripts. One is wp-i18n's
+	 * "wp-i18n-js-after", which sets the locale's text direction. Every
+	 * inline script in the shell needs the nonce, or the browser blocks it.
+	 */
+	public function test_every_inline_script_carries_the_csp_nonce() {
+		$captured = null;
+		$capture  = static function ( $policy ) use ( &$captured ) {
+			$captured = $policy;
+
+			return $policy;
+		};
+		add_filter( 'daymark_app_content_security_policy', $capture );
+
+		$html = $this->render_shell();
+		remove_filter( 'daymark_app_content_security_policy', $capture );
+
+		preg_match( '/nonce-([A-Za-z0-9+\/=]+)/', (string) $captured, $nonce_matches );
+		$this->assertNotEmpty( $nonce_matches, 'script-src must carry a nonce' );
+
+		$this->assertStringContainsString( 'id="wp-i18n-js-after"', $html, 'The wp-i18n locale setup script must be printed' );
+
+		preg_match_all( '/<script\b[^>]*>/i', $html, $tags );
+		$inline_tags = array_filter(
+			$tags[0],
+			static function ( string $tag ): bool {
+				return ! preg_match( '/\ssrc=/i', $tag );
+			}
+		);
+
+		$this->assertNotEmpty( $inline_tags, 'The shell must print inline scripts' );
+		foreach ( $inline_tags as $tag ) {
+			$this->assertStringContainsString( 'nonce="' . $nonce_matches[1] . '"', $tag, "Inline script without the CSP nonce: {$tag}" );
+		}
+	}
+
+	/**
 	 * The home-screen icon (apple-touch-icon) always uses Daymark's own
 	 * bundled icon, even when the site has its own Site Icon configured — a
 	 * home-screen install is an install of Daymark, not of the site
