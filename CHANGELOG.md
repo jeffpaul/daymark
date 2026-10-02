@@ -42,6 +42,7 @@ can't act on them.
 
 ### Fixed
 
+- The Timeline no longer jumps to the last post you saw if you have already started scrolling while it loads.
 - Going back from a post you opened on the Timeline, in Search, or from Explore's "On this day" now returns you to that post's place in the list instead of the top. The Timeline keeps every page you had scrolled through, and Search keeps your search text, filters, and results. If you unsubscribe, reblog, or comment from the post view, the list reloads instead so it shows the change. ([#471](https://github.com/jeffpaul/daymark/pull/471))
 - The Playground preview and the public "Try Daymark" demo no longer stop with a critical error while adding sample content, and the sample Marks are now published to the Timeline instead of saved as drafts.
 - A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.

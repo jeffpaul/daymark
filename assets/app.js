@@ -5316,6 +5316,7 @@
 
 		async init() {
 			this.teardownSeenObserver();
+			this.watchForUserScroll();
 			this._searchSeq = 0;
 			this._hasDrafts = false;
 			this.recentPage = 1;
@@ -5486,7 +5487,10 @@
 				observeLikeAvailability(this, list);
 				// Position before tracking what's seen: otherwise the newest
 				// cards, briefly on screen at the top, would count as seen.
-				if (anchorIndex > 0) {
+				// Skipped once the reader has started scrolling on their own:
+				// the load can finish seconds later, and jumping then would
+				// move the page out from under them.
+				if (anchorIndex > 0 && !this._userScrolled) {
 					this.scrollToItem(arr[anchorIndex]);
 					this.showNewPosts(anchorIndex);
 				}
@@ -5607,6 +5611,31 @@
 				this.observer.disconnect();
 				this.observer = null;
 			}
+		},
+
+		// Note when the reader scrolls (wheel, touch, or a scrolling key)
+		// before the Timeline has loaded, so loadRecent() doesn't then jump
+		// them to the last-seen post. Re-armed on every init(); the
+		// previous listener is removed first so they don't pile up.
+		watchForUserScroll() {
+			this._userScrolled = false;
+			if (this._onUserScroll) {
+				['wheel', 'touchmove', 'keydown'].forEach((type) =>
+					window.removeEventListener(type, this._onUserScroll)
+				);
+			}
+			this._onUserScroll = (event) => {
+				if (
+					'keydown' === event.type &&
+					!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)
+				) {
+					return;
+				}
+				this._userScrolled = true;
+			};
+			['wheel', 'touchmove', 'keydown'].forEach((type) =>
+				window.addEventListener(type, this._onUserScroll, { passive: true })
+			);
 		},
 
 		// Scroll so a Timeline item sits just below the header, with its
