@@ -257,6 +257,50 @@ class Test_Featured_Content_Social extends WP_UnitTestCase {
 		$this->assertSame( 'https://example.com/cover.jpg', Daymark_Featured_Content_Social::image( $this->post_id )['url'] );
 	}
 
+	/** The background lookup also saves the linked page's preview for the post's own page. */
+	public function test_link_resolution_saves_the_page_preview() {
+		set_post_format( $this->post_id, 'link' );
+		$this->set_featured( 'link', array( 'url' => 'https://example.com/article' ) );
+		$this->mock_http(
+			'<html><head><meta property="og:title" content="An article"><meta property="og:description" content="What it says."><meta property="og:image" content="https://example.com/cover.jpg"></head><body></body></html>',
+			'text/html'
+		);
+
+		$this->assertNull( Daymark_Featured_Content_Social::link_preview( $this->post_id ), 'nothing saved before resolution' );
+
+		$this->social->resolve_remote_image( $this->post_id );
+
+		$this->assertSame(
+			array(
+				'title'       => 'An article',
+				'description' => 'What it says.',
+				'image'       => 'https://example.com/cover.jpg',
+			),
+			Daymark_Featured_Content_Social::link_preview( $this->post_id )
+		);
+	}
+
+	/** A preview saved for an earlier link is never shown for a new one, and an http image is dropped. */
+	public function test_saved_link_preview_follows_the_current_link_and_requires_https_images() {
+		set_post_format( $this->post_id, 'link' );
+		$this->set_featured( 'link', array( 'url' => 'https://example.com/old' ) );
+		$fc = Daymark_Featured_Content::get_featured_content( $this->post_id );
+
+		$saved = Daymark_Featured_Content_Social::store_link_preview(
+			$this->post_id,
+			$fc,
+			array(
+				'title' => 'Old page',
+				'image' => 'http://example.com/insecure.jpg',
+			)
+		);
+		$this->assertSame( '', $saved['image'] );
+		$this->assertSame( 'Old page', Daymark_Featured_Content_Social::link_preview( $this->post_id )['title'] );
+
+		$this->set_featured( 'link', array( 'url' => 'https://example.com/new' ) );
+		$this->assertNull( Daymark_Featured_Content_Social::link_preview( $this->post_id ) );
+	}
+
 	public function test_changing_featured_content_schedules_a_resolution() {
 		wp_clear_scheduled_hook( Daymark_Featured_Content_Social::CRON_HOOK, array( $this->post_id ) );
 		Daymark_Plugin::instance()->featured_content_social->register();

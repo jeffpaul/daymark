@@ -357,6 +357,61 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertStringContainsString( '<a class="daymark-featured-link" href="https://example.com/article" target="_blank" rel="noopener">example.com</a>', $output );
 	}
 
+	/**
+	 * With a saved preview of the linked page, the post's own page shows a
+	 * preview card (image, title, description, site) as one link, and
+	 * rendering it never fetches the linked page.
+	 */
+	public function test_the_featured_content_renders_a_link_preview_card_from_the_saved_preview() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://www.example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+		Daymark_Featured_Content_Social::store_link_preview(
+			$this->post_id,
+			Daymark_Featured_Content::get_featured_content( $this->post_id ),
+			array(
+				'title'       => 'An <b>article</b> worth reading',
+				'description' => 'What it says.',
+				'image'       => 'https://example.com/cover.jpg',
+			)
+		);
+
+		$fetched = false;
+		$watch   = static function ( $preempt ) use ( &$fetched ) {
+			$fetched = true;
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $watch );
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+		remove_filter( 'pre_http_request', $watch );
+
+		$this->assertFalse( $fetched, 'Rendering never fetches the linked page' );
+		$this->assertStringContainsString( '<a class="daymark-featured-link-card" href="https://www.example.com/article" target="_blank" rel="noopener">', $output );
+		$this->assertStringContainsString( 'src="https://example.com/cover.jpg"', $output );
+		$this->assertStringContainsString( '<span class="daymark-featured-link-card__title">An article worth reading</span>', $output );
+		$this->assertStringContainsString( '<span class="daymark-featured-link-card__description">What it says.</span>', $output );
+		$this->assertStringContainsString( '<span class="daymark-featured-link-card__site">example.com</span>', $output );
+		$this->assertStringNotContainsString( '<b>', $output );
+		$this->assertTrue( wp_style_is( 'daymark-featured-content', 'enqueued' ), 'The card brings its own stylesheet' );
+	}
+
+	/** A saved preview with no title (the page had no Open Graph data) keeps the plain link. */
+	public function test_link_with_an_empty_saved_preview_keeps_the_plain_link() {
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'link' );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_DATA, wp_json_encode( array( 'link' => array( 'url' => 'https://example.com/article' ) ) ) );
+		wp_set_object_terms( $this->post_id, 'post-format-link', 'post_format' );
+		Daymark_Featured_Content_Social::store_link_preview( $this->post_id, Daymark_Featured_Content::get_featured_content( $this->post_id ), array() );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( '<a class="daymark-featured-link" href="https://example.com/article"', $output );
+		$this->assertStringNotContainsString( 'daymark-featured-link-card', $output );
+	}
+
 	public function test_sanitize_data_keeps_a_valid_gallery_shape() {
 		$ids = array(
 			$this->create_attachment( 'image/png' ),

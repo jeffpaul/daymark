@@ -600,7 +600,7 @@ class Daymark_Featured_Content {
 		} elseif ( 'quote' === $fc['type'] ) {
 			$html = self::render_quote( $fc['data'] );
 		} elseif ( 'link' === $fc['type'] ) {
-			$html = self::render_link( $fc['data'] );
+			$html = self::render_link( $fc['data'], $post );
 		}
 
 		/**
@@ -824,26 +824,57 @@ class Daymark_Featured_Content {
 	}
 
 	/**
-	 * Render a link-type Featured Content: a single, self-contained anchor
-	 * labelled with the link's own host — the visual language of a "link"
-	 * card, not a media embed. Only ever reached for a post that genuinely
-	 * carries the `link` post format (the read-time gate in
+	 * Render a link-type Featured Content. With a saved preview of the
+	 * linked page (Daymark_Featured_Content_Social::link_preview(), resolved
+	 * when the Featured Content was saved), it's a preview card: the page's
+	 * image, title, description, and site, the whole card one link. Without
+	 * one (not resolved yet, or the page has no Open Graph title), it's a
+	 * plain anchor labelled with the link's host. Never fetches the page:
+	 * a visitor must not be able to trigger an outbound request. Only ever
+	 * reached for a post with the `link` post format (the read-time gate in
 	 * get_featured_content()), so there's no format check here.
 	 *
 	 * @param array{url: string} $data Sanitized link data.
+	 * @param WP_Post|null       $post The post, for its saved preview.
 	 * @return string
 	 */
-	private static function render_link( array $data ): string {
+	private static function render_link( array $data, ?WP_Post $post = null ): string {
 		$url = (string) ( $data['url'] ?? '' );
 
 		if ( '' === $url ) {
 			return '';
 		}
 
+		$host    = self::url_host_label( $url );
+		$preview = $post ? Daymark_Featured_Content_Social::link_preview( $post ) : null;
+
+		if ( empty( $preview['title'] ) ) {
+			return sprintf(
+				'<a class="daymark-featured-link" href="%1$s" target="_blank" rel="noopener">%2$s</a>',
+				esc_url( $url ),
+				esc_html( $host )
+			);
+		}
+
+		// Outside a single post the stylesheet isn't loaded in the head; a
+		// late enqueue prints it in the footer, like the gallery slider's.
+		self::enqueue_frontend_assets( false );
+
+		$image = '' !== $preview['image']
+			? sprintf( '<img class="daymark-featured-link-card__image" src="%s" alt="" loading="lazy" decoding="async" />', esc_url( $preview['image'] ) )
+			: '';
+
+		$description = '' !== $preview['description']
+			? sprintf( '<span class="daymark-featured-link-card__description">%s</span>', esc_html( $preview['description'] ) )
+			: '';
+
 		return sprintf(
-			'<a class="daymark-featured-link" href="%1$s" target="_blank" rel="noopener">%2$s</a>',
+			'<a class="daymark-featured-link-card" href="%1$s" target="_blank" rel="noopener">%2$s<span class="daymark-featured-link-card__text"><span class="daymark-featured-link-card__title">%3$s</span>%4$s<span class="daymark-featured-link-card__site">%5$s</span></span></a>',
 			esc_url( $url ),
-			esc_html( self::url_host_label( $url ) )
+			$image,
+			esc_html( $preview['title'] ),
+			$description,
+			esc_html( $host )
 		);
 	}
 
