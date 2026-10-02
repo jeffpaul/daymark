@@ -58,6 +58,7 @@ can't act on them.
 ### Developer
 
 - The WordPress Playground previews (the public "Try Daymark" link and each pull request's preview button) now open with sample Marks for each type and Featured Content kind: a single photo, a photo gallery, two Check Ins (one with a photo), and Featured Content notes using a gallery, a quote, a link, and a YouTube video. The sample photos are small images checked into the repository, so nothing is downloaded or generated while the preview loads.
+- CI's smoke and browser test jobs now install WP-CLI with their own script (`bin/install-wp-cli.sh`: retries, then a SHA-512 check) instead of `setup-php`'s `tools: wp-cli`, whose download failed intermittently and stopped those jobs before any test ran. ([#473](https://github.com/jeffpaul/daymark/pull/473))
 
 ## [0.18.0] - 2026-09-30
 
