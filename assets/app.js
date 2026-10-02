@@ -8337,6 +8337,22 @@
 		}</svg></span>${playButton}`;
 	}
 
+	// A card's title, placed by what its media slot holds. Beside a small
+	// thumbnail (an article's featured image, audio artwork, a site-icon
+	// fallback) the title gets its own full-width line above the thumbnail
+	// row, so it starts at the card's left padding like a thumbnail-less
+	// card's title instead of indented past the thumbnail. A banner kind
+	// (image/gallery/video/mixed, a Checkin map) keeps the title below its
+	// banner, inside .daymark-recent__body. Returns [leadTitle, bodyTitle];
+	// exactly one is non-empty.
+	function renderCardTitle(title, mediaKind, mediaHtml) {
+		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
+		const leads = '' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind;
+		return leads
+			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
+			: ['', markup];
+	}
+
 	// The meta line every card kind shares: only when the server resolved
 	// one (prepare_mark_summary(), class-rest-controller.php) — a
 	// reading-time estimate. (A Draft's card used to lead this line with a
@@ -8475,10 +8491,14 @@
 		// thumbnail-less card's stats (flush with the card's own padding). See
 		// .daymark-recent__footer in app.css for how this wraps onto its own
 		// full-width line regardless of kind.
+		const mediaKind = mediaKindForItem(item, kind);
+		const media = renderCardMedia(item, mediaKind);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media);
 		return `
-					${renderCardMedia(item, mediaKindForItem(item, kind))}
+					${leadTitle}
+					${media}
 					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
+						${bodyTitle}
 						<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
@@ -8520,6 +8540,8 @@
 		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
 		const overflowItems = subscriptionOverflowMenuItems(item);
+		const media = renderCardMedia(item, kind);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, kind, media);
 		return `
 				<div class="daymark-recent__item-wrap">
 					${renderLeadColumn(
@@ -8539,9 +8561,10 @@
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 						kind
 					)}" data-subpost="${id}">
-						${renderCardMedia(item, kind)}
+						${leadTitle}
+						${media}
 						<span class="daymark-recent__body">
-							<span class="daymark-recent__title">${esc(title)}</span>
+							${bodyTitle}
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
