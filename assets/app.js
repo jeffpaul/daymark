@@ -8279,7 +8279,8 @@
 	// several photos of its own (a gallery Mark, or a Check In with more
 	// than one photo), whose `gallery` summary field carries the same
 	// images/count shape. Fewer than four images fill the same box (one
-	// image whole, two as columns, three with the first tall); more than
+	// image whole, two as columns, three as two on top and the third under
+	// the first, with the bottom-right tile left empty); more than
 	// four add a "+N" on the last tile. The images are decorative (the
 	// card's title and excerpt carry the meaning), so they get empty alt
 	// text, like every other card thumbnail.

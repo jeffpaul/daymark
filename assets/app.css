@@ -849,7 +849,8 @@ h2[tabindex='-1']:focus {
    them, like a social app's multi-photo post. Each tile is roughly 3:2,
    so the whole grid is 3:2 and grows with the card's width rather than
    being cropped to a fixed strip. Fewer images fill the same box — one
-   whole, two as tall columns, three with the first spanning both rows.
+   whole, two as tall columns, three as two across the top and the third
+   under the first, leaving the bottom-right tile empty.
    Declared after the gallery-kind banner height above so it wins at
    equal specificity. Not tied to the card's own kind class, so the grid
    lays out the same on any card that renders one. */
@@ -884,8 +885,7 @@ h2[tabindex='-1']:focus {
 	grid-row: 1 / -1;
 }
 
-.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell,
-.daymark-recent__thumbwrap--grid-3 .daymark-recent__gridcell:first-child {
+.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell {
 	grid-row: 1 / -1;
 }
 
