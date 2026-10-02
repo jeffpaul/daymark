@@ -1564,6 +1564,30 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 // keyboard focus reaches one of its own controls. The header does the
 // opposite — hides on scroll-up, reappears on scroll-down — so the two
 // chrome bars never both cost their height back at once.
+// Sets the current user's Timeline last-seen marker to the newest
+// Timeline item, so the next Home load opens at the top, not anchored
+// further down (see Daymark_Timeline_Position). For a test that seeds new
+// Marks and then needs Home's plain first-page layout.
+async function markNewestTimelineItemSeen(page) {
+	await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}timeline?per_page=1&page=1`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const items = await res.json();
+		if (!Array.isArray(items) || !items.length) {
+			return;
+		}
+		await fetch(`${config.restUrl}timeline/last-seen`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ id: items[0].id }),
+		});
+	});
+}
+
 test('home header/footer auto-hide in opposite directions and return on scroll or focus', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
@@ -1583,16 +1607,14 @@ test('home header/footer auto-hide in opposite directions and return on scroll o
 			});
 		}
 	});
+	// The ten Marks just seeded are newer than this user's stored Timeline
+	// last-seen marker, so the reload below would open anchored on that
+	// marker: 50 cards and a scroll down. Their link previews and other
+	// content keep loading for seconds afterward, and the layout shifts
+	// fire scroll events that flip the bars mid-test. Marking the newest
+	// item seen keeps this a plain top-of-Timeline load.
+	await markNewestTimelineItemSeen(page);
 	await page.goto('/daymark');
-
-	// Home opens anchored on the newest post this user has seen (the
-	// Timeline last-seen marker), and the ten Marks seeded above are newer
-	// than it — so this load may scroll itself down to the marker. Wait
-	// for the Timeline to finish loading (cards render only once that
-	// decision is made), then return to the top: everything below assumes
-	// it starts there, and a late jump would land mid-calibration.
-	await page.waitForSelector('[data-recent-list] .daymark-recent__item-wrap');
-	await page.evaluate(() => window.scrollTo(0, 0));
 
 	// Real, live subscription-post images (this suite never cleans up its
 	// own real content — see openComposer()'s own docblock above) can
