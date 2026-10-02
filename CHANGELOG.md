@@ -37,6 +37,7 @@ can't act on them.
 
 ### Fixed
 
+- A Timeline card with a small thumbnail (most subscribed posts, plus article and audio Marks) now shows its title on its own line above the thumbnail, so it lines up with the title of a card that has no thumbnail.
 - The Timeline's sunrise and sunset marks and the line through each date heading now sit on the same vertical line as the rest of the rail, after the type icons moved under the site icon. With drafts showing, the sunrise now sits above them and the line runs on through to the Timeline.
 - When Featured Content has no preview, Replace and Remove now show as always-visible buttons below the message instead of faint hover-only ones.
 - A Mark's reblog count now includes reblogs that add commentary (quote posts from the fediverse) and reblogs by other authors on your own site, not only plain boosts. ([#396](https://github.com/jeffpaul/daymark/issues/396))
