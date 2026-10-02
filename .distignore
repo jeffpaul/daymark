@@ -20,6 +20,7 @@ CHANGELOG.md
 CLAUDE.md
 CODE_OF_CONDUCT.md
 CONTRIBUTING.md
+DEPENDENCIES.md
 SECURITY.md
 composer.json
 composer.lock
