@@ -8565,8 +8565,14 @@
 		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
 		const overflowItems = subscriptionOverflowMenuItems(item);
-		const media = renderCardMedia(item, kind);
-		const [leadTitle, bodyTitle] = renderCardTitle(title, kind, media);
+		// An article with a real featured image shows it as the same
+		// full-width banner an image Mark has, not a small thumbnail beside
+		// the text, so a followed post's photo gets as much room as your
+		// own. Its excerpt still shows (showExcerpt above reads the real
+		// kind), and the rail icon still says "Article".
+		const layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		const media = renderCardMedia(item, layoutKind);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media);
 		return `
 				<div class="daymark-recent__item-wrap">
 					${renderLeadColumn(
@@ -8584,7 +8590,7 @@
 						kind
 					)}
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
-						kind
+						layoutKind
 					)}" data-subpost="${id}">
 						${leadTitle}
 						${media}
