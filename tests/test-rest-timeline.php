@@ -337,6 +337,52 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( 'gallery', $item );
 	}
 
+	/** A quote Featured Content sends its text and credit, for the card's quote banner. */
+	public function test_quote_featured_content_reports_text_and_credit() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote demo', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'quote' => array(
+						'text'         => 'The best way to predict the future is to invent it.',
+						'author'       => 'Alan Kay',
+						'citation_url' => 'https://www.example.org/wiki/Alan_Kay',
+					),
+				)
+			)
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+
+		$this->assertSame( 'quote', $fc['type'] );
+		$this->assertSame( 'The best way to predict the future is to invent it.', $fc['text'] );
+		$this->assertSame( 'Alan Kay — example.org', $fc['credit'] );
+	}
+
+	/** A long quote is cut to a card-sized length with an ellipsis; a quote with no credit sends an empty one. */
+	public function test_long_quote_is_cut_for_the_card() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Long quote', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'quote' => array( 'text' => str_repeat( 'word ', 100 ) ) ) )
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+
+		$this->assertLessThanOrEqual( 280, mb_strlen( $fc['text'] ) );
+		$this->assertStringEndsWith( '…', $fc['text'] );
+		$this->assertSame( '', $fc['credit'] );
+	}
+
 	/** A Mark with no Featured Content set omits the field entirely, rather than reporting a null/empty value. */
 	public function test_mark_without_featured_content_omits_the_field() {
 		wp_set_current_user( $this->author_a );

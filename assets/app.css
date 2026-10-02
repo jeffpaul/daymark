@@ -784,7 +784,8 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image,
 .daymark-recent__item--gallery,
 .daymark-recent__item--video,
-.daymark-recent__item--mixed {
+.daymark-recent__item--mixed,
+.daymark-recent__item--quote {
 	flex-direction: column;
 	align-items: stretch;
 	gap: 0;
@@ -795,7 +796,8 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image .daymark-recent__body,
 .daymark-recent__item--gallery .daymark-recent__body,
 .daymark-recent__item--video .daymark-recent__body,
-.daymark-recent__item--mixed .daymark-recent__body {
+.daymark-recent__item--mixed .daymark-recent__body,
+.daymark-recent__item--quote .daymark-recent__body {
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) 0;
 }
 
@@ -815,7 +817,8 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image .daymark-recent__footer,
 .daymark-recent__item--gallery .daymark-recent__footer,
 .daymark-recent__item--video .daymark-recent__footer,
-.daymark-recent__item--mixed .daymark-recent__footer {
+.daymark-recent__item--mixed .daymark-recent__footer,
+.daymark-recent__item--quote .daymark-recent__footer {
 	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md) var(--daymark-spacing-sm);
 }
 
@@ -842,6 +845,41 @@ h2[tabindex='-1']:focus {
 	width: 100%;
 	height: 100%;
 	border-radius: 0;
+}
+
+/* A quote Featured Content in a card's banner slot (renderQuoteBanner() in
+   app.js), where a featured image would go: the quote large, with a bar
+   down its left edge like the quote in the post view, then its credit.
+   A long quote is clamped to six lines; the server also cuts it to a
+   card-sized length. */
+.daymark-recent__thumbwrap--quote {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-xs);
+	width: 100%;
+	padding: var(--daymark-spacing-md);
+	background: var(--daymark-accent-wash);
+	border-left: 4px solid var(--daymark-accent);
+	box-sizing: border-box;
+	text-align: left;
+}
+
+.daymark-recent__quotetext {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 6;
+	overflow: hidden;
+	font-size: 19px;
+	line-height: 1.4;
+	font-weight: 500;
+	color: var(--daymark-text-primary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.daymark-recent__quotecredit {
+	font-size: 14px;
+	color: var(--daymark-text-secondary);
 }
 
 /* A gallery card's media (renderGalleryGrid() in app.js): up to four

@@ -46,6 +46,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const MAX_TIMELINE_QUERY_ITEMS = 500;
 
 	/**
+	 * Longest quote, in characters, a Timeline card shows for a quote
+	 * Featured Content. A longer quote is cut with an ellipsis; the full
+	 * quote is in the post view.
+	 *
+	 * @var int
+	 */
+	private const CARD_QUOTE_MAX_CHARS = 280;
+
+	/**
 	 * Register REST routes. Hooked to rest_api_init.
 	 *
 	 * @return void
@@ -3982,6 +3991,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['featured_content'] = array(
 				'type' => $featured_content['type'],
 			);
+
+			// A quote's card shows the quote itself where a featured image
+			// would go, so its text and credit travel with the summary. Plain
+			// text, cut to a card-sized length; the full quote is in the post.
+			if ( 'quote' === $featured_content['type'] ) {
+				$text = (string) ( $featured_content['data']['text'] ?? '' );
+
+				if ( mb_strlen( $text ) > self::CARD_QUOTE_MAX_CHARS ) {
+					$text = rtrim( mb_substr( $text, 0, self::CARD_QUOTE_MAX_CHARS - 1 ) ) . '…';
+				}
+
+				$summary['featured_content']['text']   = $text;
+				$summary['featured_content']['credit'] = Daymark_Featured_Content::quote_credit( (array) $featured_content['data'] );
+			}
 
 			// A gallery's card shows its first four images as a 2x2 grid
 			// (issue #406), so those thumbnail URLs travel with the summary.

@@ -8283,15 +8283,22 @@
 	// icon still shows the item's own type.
 	function cardLayoutKind(item, kind) {
 		const mediaKind = mediaKindForItem(item, kind);
-		return 'gallery' === mediaKind || ('article' === kind && 'image' === mediaKind) ? mediaKind : kind;
+		return 'gallery' === mediaKind || 'quote' === mediaKind || ('article' === kind && 'image' === mediaKind)
+			? mediaKind
+			: kind;
 	}
 
 	function mediaKindForItem(item, kind) {
-		// Only the media kinds replace the card's own kind: a quote or link
-		// Featured Content has no media of its own, and letting it override
-		// would strip an image Mark's photo banner down to a small thumbnail.
+		// The media kinds replace the card's own kind. A quote does too: it
+		// shows in the banner slot where a featured image would go
+		// (renderQuoteBanner()), the way Featured Content replaces the
+		// featured image on the post's own page. A link Featured Content
+		// has nothing to show there, so it leaves the card alone.
 		if (item.featured_content && FEATURED_MEDIA_KINDS.includes(item.featured_content.type)) {
 			return item.featured_content.type;
+		}
+		if (item.featured_content && 'quote' === item.featured_content.type && item.featured_content.text) {
+			return 'quote';
 		}
 		if ('checkin' === kind && item.media_kind) {
 			return item.media_kind;
@@ -8435,7 +8442,23 @@
 		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}</span>`;
 	}
 
+	// A quote Featured Content, shown in a card's banner slot in place of a
+	// featured image: the quote text, then its credit ("Author — host").
+	// Plain spans, since the whole card is a button and can't hold a link;
+	// the post view shows the credit's link. The server cuts a long quote
+	// to a card-sized length.
+	function renderQuoteBanner(item) {
+		const fc = item.featured_content || {};
+		const credit = fc.credit ? `<span class="daymark-recent__quotecredit">${esc(fc.credit)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--quote"><span class="daymark-recent__quotetext">${esc(
+			fc.text
+		)}</span>${credit}</span>`;
+	}
+
 	function renderCardMedia(item, kind) {
+		if ('quote' === kind) {
+			return renderQuoteBanner(item);
+		}
 		if ('checkin' === kind) {
 			return item.location ? renderCheckinMapPreview(item.location) : '';
 		}
@@ -8494,7 +8517,8 @@
 	// exactly one is non-empty.
 	function renderCardTitle(title, mediaKind, mediaHtml) {
 		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
-		const leads = '' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind;
+		const leads =
+			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind;
 		return leads
 			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
 			: ['', markup];
