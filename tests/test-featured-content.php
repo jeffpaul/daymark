@@ -823,6 +823,94 @@ class Test_Featured_Content extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'data-template="Slide %1$d of %2$d"', $output );
 	}
 
+	/**
+	 * Issue #461: the slider shows images in the saved attachment_ids order
+	 * (the order core's gallery editor ends with), not attachment-ID order.
+	 */
+	public function test_render_gallery_follows_the_saved_order_not_id_order() {
+		$ids = array();
+		foreach ( array( 'first', 'second', 'third' ) as $name ) {
+			$ids[ $name ] = (int) self::factory()->attachment->create_object(
+				array(
+					'file'           => "order-{$name}.png",
+					'post_parent'    => 0,
+					'post_mime_type' => 'image/png',
+					'post_type'      => 'attachment',
+				)
+			);
+		}
+
+		// Saved order: third, first, second.
+		$saved = array( $ids['third'], $ids['first'], $ids['second'] );
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $saved ) ) )
+		);
+
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$third  = strpos( $output, 'order-third.png' );
+		$first  = strpos( $output, 'order-first.png' );
+		$second = strpos( $output, 'order-second.png' );
+
+		$this->assertNotFalse( $third );
+		$this->assertNotFalse( $first );
+		$this->assertNotFalse( $second );
+		$this->assertLessThan( $first, $third );
+		$this->assertLessThan( $second, $first );
+	}
+
+	/**
+	 * Issue #461: the editor script depends on core's jquery-touch-punch, so
+	 * the gallery editor's sortable list can be reordered by touch.
+	 */
+	public function test_editor_script_loads_touch_support_for_the_gallery_editor() {
+		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		set_current_screen( 'post' );
+
+		( new Daymark_Featured_Content() )->enqueue_editor_assets();
+
+		$script = wp_scripts()->registered['daymark-featured-content-editor'] ?? null;
+
+		set_current_screen( 'front' );
+
+		$this->assertNotNull( $script );
+		$this->assertContains( 'jquery-touch-punch', $script->deps );
+	}
+
+	/** A Featured Content gallery's slides show each photo's own attachment caption. */
+	public function test_render_gallery_shows_attachment_captions() {
+		$with    = $this->create_attachment( 'image/png' );
+		$without = $this->create_attachment( 'image/png' );
+		wp_update_post(
+			array(
+				'ID'           => $with,
+				'post_excerpt' => 'Morning on the dunes',
+			)
+		);
+		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$this->post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => array( $with, $without ) ) ) )
+		);
+
+		$this->go_to( get_permalink( $this->post_id ) );
+
+		ob_start();
+		Daymark_Featured_Content::the_featured_content( $this->post_id );
+		$output = ob_get_clean();
+
+		$this->assertSame( 1, substr_count( $output, 'daymark-fc-gallery__caption' ) );
+		$this->assertStringContainsString( '>Morning on the dunes</p>', $output );
+	}
+
 	public function test_render_gallery_single_image_has_no_carousel_controls() {
 		$attachment_id = $this->create_attachment( 'image/png' );
 		update_post_meta( $this->post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );

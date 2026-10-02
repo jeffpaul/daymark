@@ -2310,8 +2310,30 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// Core's gallery block needs a theme stylesheet the app shell doesn't
+		// have, so it would show as stacked images. Each one is swapped for a
+		// placeholder while the content renders, then for the same slider a
+		// gallery Featured Content uses once the content is sanitized (the
+		// slider's own daymark-fc-* classes would not survive the strip).
+		$gallery_slots = array();
+		$slot_token    = 'DAYMARKGALLERYSLOT' . wp_generate_password( 12, false );
+		$swap_gallery  = static function ( $block_content, $block ) use ( &$gallery_slots, $slot_token ) {
+			$captions = self::gallery_block_captions( (array) $block );
+			$slider   = Daymark_Featured_Content::render_gallery_for_app( array_keys( $captions ), $captions );
+
+			if ( '' === $slider || substr_count( $slider, 'daymark-fc-gallery__slide' ) < 2 ) {
+				return $block_content;
+			}
+
+			$gallery_slots[] = $slider;
+
+			return '<p>' . $slot_token . ( count( $gallery_slots ) - 1 ) . '</p>';
+		};
+
+		add_filter( 'render_block_core/gallery', $swap_gallery, 10, 2 );
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
+		remove_filter( 'render_block_core/gallery', $swap_gallery, 10 );
 
 		// A Mark's content is written by whichever user published it, and
 		// wp_kses_post() keeps `class`, so an Author could otherwise give a
@@ -2327,11 +2349,126 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array( 'daymark-checkin-map', 'daymark-checkin-map__pin' )
 		);
 
+		if ( ! empty( $gallery_slots ) ) {
+			$content = (string) preg_replace_callback(
+				'#<p>\s*' . preg_quote( $slot_token, '#' ) . '(\d+)\s*</p>#',
+				static function ( $found ) use ( $gallery_slots ) {
+					return $gallery_slots[ (int) $found[1] ] ?? '';
+				},
+				$content
+			);
+		}
+
 		return rest_ensure_response(
 			array(
-				'content' => $content,
+				'content'  => $content,
+				'featured' => $this->postview_featured_markup( $post, $content ),
 			)
 		);
+	}
+
+	/**
+	 * A core/gallery block's images and their captions, in display order:
+	 * attachment ID => the caption written in that image's own block (its
+	 * `<figcaption>`), or '' when it has none. Reads the inner core/image
+	 * blocks (WordPress 5.9 and later), or the older `ids` attribute, which
+	 * has no per-image captions.
+	 *
+	 * @param array<string, mixed> $block Parsed block.
+	 * @return array<int, string>
+	 */
+	private static function gallery_block_captions( array $block ): array {
+		$captions = array();
+
+		foreach ( (array) ( $block['innerBlocks'] ?? array() ) as $inner ) {
+			$id = absint( $inner['attrs']['id'] ?? 0 );
+
+			if ( 'core/image' !== ( $inner['blockName'] ?? '' ) || $id <= 0 || isset( $captions[ $id ] ) ) {
+				continue;
+			}
+
+			$caption = '';
+
+			if ( preg_match( '#<figcaption[^>]*>(.*?)</figcaption>#is', (string) ( $inner['innerHTML'] ?? '' ), $found ) ) {
+				$caption = $found[1];
+			}
+
+			$captions[ $id ] = $caption;
+		}
+
+		if ( empty( $captions ) && ! empty( $block['attrs']['ids'] ) && is_array( $block['attrs']['ids'] ) ) {
+			foreach ( array_filter( array_map( 'absint', $block['attrs']['ids'] ) ) as $id ) {
+				$captions[ $id ] = '';
+			}
+		}
+
+		return $captions;
+	}
+
+	/**
+	 * What the app's full post view shows above a post's content: its
+	 * Featured Content when set, otherwise its featured image. The featured
+	 * image is left out when the content already shows it, which is the
+	 * normal case for an image Mark, since the publisher makes a Mark's
+	 * first photo its featured image.
+	 *
+	 * Featured Content markup is built by Daymark_Featured_Content from
+	 * sanitized meta, so it is not run through the class-stripping above:
+	 * its own `daymark-fc-*` classes are what the gallery slider needs.
+	 *
+	 * @param WP_Post $post    The post.
+	 * @param string  $content The post's rendered content.
+	 * @return string Markup, or '' when there is nothing to show.
+	 */
+	private function postview_featured_markup( WP_Post $post, string $content ): string {
+		$featured_content = Daymark_Featured_Content::render_for_app( $post );
+
+		if ( '' !== $featured_content ) {
+			return $featured_content;
+		}
+
+		$thumbnail_id = (int) get_post_thumbnail_id( $post );
+
+		if ( $thumbnail_id <= 0 || self::content_shows_attachment( $content, $thumbnail_id ) ) {
+			return '';
+		}
+
+		return (string) wp_get_attachment_image( $thumbnail_id, 'large' );
+	}
+
+	/**
+	 * Whether rendered content already shows an image attachment: by the
+	 * `wp-image-{id}` class core's image and gallery blocks add, or by the
+	 * file's path with its extension and WordPress's `-scaled` suffix
+	 * removed, followed by "." or "-", which also matches any resized copy
+	 * (`photo-1024x768.jpg`).
+	 *
+	 * @param string $content       Rendered content.
+	 * @param int    $attachment_id Attachment ID.
+	 * @return bool
+	 */
+	private static function content_shows_attachment( string $content, int $attachment_id ): bool {
+		if ( '' === $content ) {
+			return false;
+		}
+
+		if ( preg_match( '/\bwp-image-' . $attachment_id . '\b/', $content ) ) {
+			return true;
+		}
+
+		$url = (string) wp_get_attachment_url( $attachment_id );
+
+		if ( '' === $url ) {
+			return false;
+		}
+
+		$stem = preg_replace( array( '/\.[a-z0-9]+$/i', '/-scaled$/i' ), '', (string) wp_parse_url( $url, PHP_URL_PATH ) );
+
+		if ( '' === (string) $stem ) {
+			return false;
+		}
+
+		return false !== strpos( $content, $stem . '.' ) || false !== strpos( $content, $stem . '-' );
 	}
 
 	/**
@@ -3620,7 +3757,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$jetpack_liked     = Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id );
 		$jetpack_commented = Daymark_Jetpack_Engagement::is_commented( $user_id, $post_id );
 
-		return array(
+		$summary = array(
 			// Discriminator field a Timeline consumer branches on, mirroring
 			// Daymark_Notifications' item `type`. Deliberately not named
 			// `type` here: prepare_mark_summary()'s existing `type` key
@@ -3700,6 +3837,22 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'like_delivery'      => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
 			'comment_delivery'   => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
 		);
+
+		// A gallery post's first four photos and photo count, for its card's
+		// 2x2 grid — the same `gallery` shape a Mark's own summary carries.
+		// Omitted when fewer than two photos are known.
+		if ( 'gallery' === $summary['post_format'] ) {
+			$images = Daymark_Subscription_Poller::gallery_images_for( $post_id );
+
+			if ( count( $images ) > 1 ) {
+				$summary['gallery'] = array(
+					'images' => array_map( 'esc_url_raw', array_slice( $images, 0, 4 ) ),
+					'count'  => count( $images ),
+				);
+			}
+		}
+
+		return $summary;
 	}
 
 	/**
@@ -3872,25 +4025,59 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'type' => $featured_content['type'],
 			);
 
-			// A gallery's card shows its first four images as a small grid
+			// A gallery's card shows its first four images as a 2x2 grid
 			// (issue #406), so those thumbnail URLs travel with the summary.
 			if ( 'gallery' === $featured_content['type'] ) {
-				$images = array();
+				$ids = array_map( 'absint', (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
 
-				foreach ( array_slice( (array) ( $featured_content['data']['attachment_ids'] ?? array() ), 0, 4 ) as $attachment_id ) {
-					$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium' );
+				$summary['featured_content']['images'] = self::card_grid_image_urls( $ids );
+				$summary['featured_content']['count']  = count( $ids );
+			}
+		}
 
-					if ( $url ) {
-						$images[] = esc_url_raw( $url );
-					}
-				}
+		// A Mark with several photos (a gallery Mark, or a Check In with
+		// more than one photo) shows them as the same 2x2 grid, so its first
+		// four photos and its photo count travel with the summary too.
+		if ( in_array( $summary['type'], array( 'gallery', 'checkin' ), true ) ) {
+			$raw_ids   = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+			$image_ids = array_values(
+				array_filter(
+					is_array( $raw_ids ) ? array_map( 'absint', $raw_ids ) : array(),
+					'wp_attachment_is_image'
+				)
+			);
 
-				$summary['featured_content']['images'] = $images;
-				$summary['featured_content']['count']  = count( (array) ( $featured_content['data']['attachment_ids'] ?? array() ) );
+			if ( count( $image_ids ) > 1 ) {
+				$summary['gallery'] = array(
+					'images' => self::card_grid_image_urls( $image_ids ),
+					'count'  => count( $image_ids ),
+				);
 			}
 		}
 
 		return $summary;
+	}
+
+	/**
+	 * The first four images' URLs for a Timeline card's 2x2 grid, in the
+	 * order given. `medium_large` (768px wide) stays sharp in a half-width
+	 * cell on a high-density phone screen.
+	 *
+	 * @param int[] $attachment_ids Image attachment IDs, in display order.
+	 * @return string[]
+	 */
+	private static function card_grid_image_urls( array $attachment_ids ): array {
+		$images = array();
+
+		foreach ( array_slice( $attachment_ids, 0, 4 ) as $attachment_id ) {
+			$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium_large' );
+
+			if ( $url ) {
+				$images[] = esc_url_raw( $url );
+			}
+		}
+
+		return $images;
 	}
 
 	/**
@@ -4013,7 +4200,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return '';
 		}
 
-		$url = wp_get_attachment_image_url( $attachment_id, 'medium' );
+		// medium_large (768px wide): the thumbnail is also a card's
+		// full-width banner, which a 300px `medium` image would blur on a
+		// high-density phone screen.
+		$url = wp_get_attachment_image_url( $attachment_id, 'medium_large' );
 
 		return $url ? esc_url_raw( $url ) : '';
 	}

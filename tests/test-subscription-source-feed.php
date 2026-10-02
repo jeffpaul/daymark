@@ -400,6 +400,7 @@ XML;
 				'featured_image_url',
 				'raw_media',
 				'link_url',
+				'gallery_images',
 			),
 			array_keys( $normalized )
 		);
@@ -420,6 +421,7 @@ XML;
 		$this->assertStringStartsWith( 'https://example.com/image1.jpg', $normalized['featured_image_url'] );
 		$this->assertCount( 2, $normalized['raw_media'] );
 		$this->assertSame( 'https://example.com/image2.png', $normalized['raw_media'][1] );
+		$this->assertSame( array( $normalized['featured_image_url'], 'https://example.com/image2.png' ), $normalized['gallery_images'], 'A gallery keeps its enclosure images, in order, for the card grid.' );
 	}
 
 	/** normalize() treats a <description> that's just a leftover placeholder word (never replaced before publishing) the same as an empty one, falling back to the item's own content instead. */

@@ -550,6 +550,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 		$enclosures = is_array( $raw_item['enclosures'] ?? null ) ? $raw_item['enclosures'] : array();
 
 		$raw_media          = array();
+		$enclosure_images   = array();
 		$featured_image_url = '';
 		$has_video          = false;
 		$has_audio          = false;
@@ -573,6 +574,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 				$has_audio = true;
 			} elseif ( 'image' === $medium || str_starts_with( $type, 'image/' ) ) {
 				++$image_count;
+				$enclosure_images[] = $url;
 
 				if ( '' === $featured_image_url ) {
 					$featured_image_url = $url;
@@ -642,6 +644,20 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			$post_format = 'standard';
 		}
 
+		// A gallery's own photos, in order, for its Timeline card's 2x2 grid:
+		// image enclosures first, then any images in the item's content.
+		$gallery_images = array();
+
+		if ( 'gallery' === $post_format ) {
+			$gallery_html = (string) ( $raw_item['content'] ?? '' );
+
+			if ( '' === trim( wp_strip_all_tags( $gallery_html, true ) ) && false === stripos( $gallery_html, '<img' ) ) {
+				$gallery_html = (string) ( $raw_item['description'] ?? '' );
+			}
+
+			$gallery_images = Daymark_Subscription_Content_Sniffer::gallery_images( $gallery_html, $enclosure_images );
+		}
+
 		return array(
 			'title'              => $title,
 			'excerpt'            => $excerpt,
@@ -657,6 +673,7 @@ class Daymark_Subscription_Source_Feed implements Daymark_Subscription_Source {
 			// docblock. '' for a rich-media item (never sniffed for a link)
 			// or a standard/article-length item with no qualifying anchor.
 			'link_url'           => $link_url,
+			'gallery_images'     => $gallery_images,
 		);
 	}
 

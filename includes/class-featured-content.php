@@ -516,6 +516,63 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * A post's Featured Content markup for the app's full post view
+	 * (GET /daymark/v1/marks/{id}/content). The same markup the front end
+	 * renders, except a gallery always includes every image: that request
+	 * is never singular, and the app shell loads the slider script and
+	 * stylesheet itself.
+	 *
+	 * @param int|WP_Post $post Post ID or object.
+	 * @return string Markup, or '' when the post has no Featured Content.
+	 */
+	public static function render_for_app( $post ): string {
+		return self::render( $post, array( 'full_gallery' => true ) );
+	}
+
+	/**
+	 * A gallery block's images as the same slider a gallery Featured Content
+	 * uses, for the app's full post view (GET /daymark/v1/marks/{id}/content),
+	 * where core's gallery block would otherwise show as stacked images: the
+	 * app shell has no theme stylesheet to lay it out.
+	 *
+	 * @param int[]                   $attachment_ids Image attachment IDs, in display order.
+	 * @param array<int, string>|null $captions       Captions keyed by attachment ID (a gallery block's own), or null to use each image's attachment caption.
+	 * @return string Slider markup, or '' when no image is usable.
+	 */
+	public static function render_gallery_for_app( array $attachment_ids, ?array $captions = null ): string {
+		return self::render_gallery( array( 'attachment_ids' => $attachment_ids ), true, __( 'Gallery', 'daymark' ), $captions );
+	}
+
+	/**
+	 * A slide's caption markup, or '' when there is no caption. Keeps only
+	 * simple inline formatting and links: no class or style attributes, so
+	 * a caption can't take on the app's own styles.
+	 *
+	 * @param string $caption Caption text or HTML.
+	 * @return string
+	 */
+	private static function gallery_caption_html( string $caption ): string {
+		$caption = trim(
+			wp_kses(
+				$caption,
+				array(
+					'a'      => array(
+						'href'   => true,
+						'rel'    => true,
+						'target' => true,
+					),
+					'em'     => array(),
+					'strong' => array(),
+					'code'   => array(),
+					'br'     => array(),
+				)
+			)
+		);
+
+		return '' === $caption ? '' : '<p class="daymark-fc-gallery__caption">' . $caption . '</p>';
+	}
+
+	/**
 	 * Build a post's Featured Content markup.
 	 *
 	 * @param int|WP_Post|null     $post Post ID/object, or null for the current post.
@@ -539,7 +596,7 @@ class Daymark_Featured_Content {
 		} elseif ( 'video' === $fc['type'] ) {
 			$html = self::render_video( $fc['data'], $discover );
 		} elseif ( 'gallery' === $fc['type'] ) {
-			$html = self::render_gallery( $fc['data'] );
+			$html = self::render_gallery( $fc['data'], ! empty( $args['full_gallery'] ) );
 		} elseif ( 'quote' === $fc['type'] ) {
 			$html = self::render_quote( $fc['data'] );
 		} elseif ( 'link' === $fc['type'] ) {
@@ -774,12 +831,16 @@ class Daymark_Featured_Content {
 	 * Outside a single post only the first image is rendered, since the
 	 * slider's assets are not loaded there.
 	 *
-	 * @param array{attachment_ids?: int[]} $data Sanitized gallery data.
+	 * @param array{attachment_ids?: int[]} $data  Sanitized gallery data.
+	 * @param bool                          $full  Render every image even outside a single post — for the app's full post view, which loads the slider itself.
+	 * @param string                        $label The carousel's accessible name; '' for "Featured gallery".
+	 * @param array<int, string>|null       $captions Captions keyed by attachment ID, or null to use each image's own attachment caption.
 	 * @return string
 	 */
-	private static function render_gallery( array $data ): string {
-		$ids    = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
-		$images = array();
+	private static function render_gallery( array $data, bool $full = false, string $label = '', ?array $captions = null ): string {
+		$ids          = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
+		$images       = array();
+		$slide_labels = array();
 
 		foreach ( $ids as $id ) {
 			$id = absint( $id );
@@ -801,7 +862,10 @@ class Daymark_Featured_Content {
 				continue;
 			}
 
-			$images[] = $img;
+			$images[]       = $img;
+			$slide_labels[] = self::gallery_caption_html(
+				null === $captions ? (string) wp_get_attachment_caption( $id ) : (string) ( $captions[ $id ] ?? '' )
+			);
 		}
 
 		$count = count( $images );
@@ -815,12 +879,13 @@ class Daymark_Featured_Content {
 		// slider's stylesheet and script are not loaded there. Showing up to
 		// 20 stacked, unstyled images in every listing would be far worse
 		// than the featured image it replaces, so show only the first image.
-		if ( $count > 1 && ! is_singular() ) {
-			$images = array_slice( $images, 0, 1 );
-			$count  = 1;
+		if ( $count > 1 && ! is_singular() && ! $full ) {
+			$images       = array_slice( $images, 0, 1 );
+			$slide_labels = array_slice( $slide_labels, 0, 1 );
+			$count        = 1;
 		}
 
-		if ( $count > 1 ) {
+		if ( $count > 1 && ! $full ) {
 			self::enqueue_frontend_assets( true );
 		}
 
@@ -838,7 +903,7 @@ class Daymark_Featured_Content {
 						$count
 					)
 				),
-				$img
+				$img . $slide_labels[ $index ]
 			);
 		}
 
@@ -876,7 +941,7 @@ class Daymark_Featured_Content {
 		return sprintf(
 			'<div class="daymark-fc-gallery" data-daymark-gallery tabindex="0" role="region" aria-roledescription="%1$s" aria-label="%2$s"><div class="daymark-fc-gallery__track">%3$s</div>%4$s</div>',
 			esc_attr__( 'carousel', 'daymark' ),
-			esc_attr__( 'Featured gallery', 'daymark' ),
+			'' !== $label ? esc_attr( $label ) : esc_attr__( 'Featured gallery', 'daymark' ),
 			implode( '', $slides ),
 			$controls
 		);
@@ -919,10 +984,13 @@ class Daymark_Featured_Content {
 		// classic editor/media-library screens call for the same reason.
 		wp_enqueue_media();
 
+		// jquery-touch-punch (core-bundled) lets core's gallery editor's
+		// jQuery UI sortable list be reordered by touch as well as mouse —
+		// media-views depends on jquery-ui-sortable but not on it (issue #461).
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models', 'jquery-touch-punch' ),
 			DAYMARK_VERSION,
 			true
 		);

@@ -2,7 +2,8 @@
  * Featured Content gallery slider (issue #406).
  *
  * Enqueued only on a singular post whose Featured Content type is gallery
- * (Daymark_Featured_Content::maybe_enqueue_frontend_style()). Plain ES2020,
+ * (Daymark_Featured_Content::maybe_enqueue_frontend_style()), and in the
+ * Daymark app shell for its full post view. Plain ES2020,
  * no dependencies, no build step. Without this script the server markup
  * stacks every slide; once it runs, one slide shows at a time.
  */
@@ -24,7 +25,7 @@
 	function init( root ) {
 		var slides = Array.prototype.slice.call( root.querySelectorAll( '.daymark-fc-gallery__slide' ) );
 
-		if ( slides.length < 2 ) {
+		if ( slides.length < 2 || root.classList.contains( 'is-enhanced' ) ) {
 			return;
 		}
 
@@ -151,6 +152,10 @@
 	function boot() {
 		document.querySelectorAll( '[data-daymark-gallery]' ).forEach( init );
 	}
+
+	// The Daymark app inserts a gallery after this script has run, when a
+	// post opens in its full post view, so it calls init() itself.
+	window.daymarkFeaturedGallery = { init: init };
 
 	if ( 'loading' === document.readyState ) {
 		document.addEventListener( 'DOMContentLoaded', boot );

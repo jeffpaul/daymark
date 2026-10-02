@@ -65,6 +65,8 @@ self.addEventListener('install', (event) => {
 					ASSETS_BASE_URL + 'app.css',
 					ASSETS_BASE_URL + 'app.js',
 					ASSETS_BASE_URL + 'offline-boot.js',
+					ASSETS_BASE_URL + 'featured-content.css',
+					ASSETS_BASE_URL + 'featured-content.js',
 					scopePath + 'offline.html',
 				])
 			)
@@ -176,10 +178,15 @@ self.addEventListener('fetch', (event) => {
 	// see this file's own docblock on why it has to be precached the same
 	// way). ignoreSearch so a ?ver= cache-busting param still hits the
 	// precached entry.
-	const isStaticAsset =
-		url.pathname === ASSETS_BASE_PATH + 'app.css' ||
-		url.pathname === ASSETS_BASE_PATH + 'app.js' ||
-		url.pathname === ASSETS_BASE_PATH + 'offline-boot.js';
+	// featured-content.css/.js (a Featured Content gallery's slider) are
+	// cached the same way, so a bookmarked gallery is a slider offline too.
+	const isStaticAsset = [
+		'app.css',
+		'app.js',
+		'offline-boot.js',
+		'featured-content.css',
+		'featured-content.js',
+	].some((file) => url.pathname === ASSETS_BASE_PATH + file);
 	if (isStaticAsset) {
 		event.respondWith(
 			caches.match(event.request, { ignoreSearch: true }).then((cached) => {

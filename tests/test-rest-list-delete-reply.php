@@ -122,7 +122,7 @@ class Test_Rest_List_Delete_Reply extends WP_UnitTestCase {
 		$marks   = rest_do_request( $request )->get_data();
 		$mark    = current( array_filter( $marks, static fn( $m ) => $m['id'] === $post_id ) );
 
-		$this->assertSame( wp_get_attachment_image_url( $featured_id, 'medium' ), $mark['thumbnail'] );
+		$this->assertSame( wp_get_attachment_image_url( $featured_id, 'medium_large' ), $mark['thumbnail'] );
 	}
 
 	/**

@@ -105,6 +105,20 @@ $daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_re
  * shell free of theme and admin chrome.
  */
 wp_register_style( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.css', array(), DAYMARK_VERSION );
+// Featured Content's own front-end styles and gallery slider, so a post's
+// Featured Content looks and behaves the same at the top of the full post
+// view as on the post's own page.
+wp_register_style( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/featured-content.css', array(), DAYMARK_VERSION );
+wp_register_script(
+	'daymark-featured-content',
+	DAYMARK_PLUGIN_URL . 'assets/featured-content.js',
+	array(),
+	DAYMARK_VERSION,
+	array(
+		'in_footer' => true,
+		'strategy'  => 'defer',
+	)
+);
 wp_register_script(
 	'daymark-app',
 	DAYMARK_PLUGIN_URL . 'assets/app.js',
@@ -192,7 +206,7 @@ wp_enqueue_script( 'daymark-app' );
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, never the site's Site Icon — a home-screen install is an install of Daymark, not of the site. Browser-tab favicon still prefers the Site Icon so an open tab matches the site. */ ?>
 	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
+	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </head>
 <body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?>">
 	<div id="daymark-app" class="daymark-shell">
@@ -201,6 +215,6 @@ wp_enqueue_script( 'daymark-app' );
 	<noscript>
 		<p class="daymark-noscript"><?php esc_html_e( 'Daymark needs JavaScript. Please enable it and reload.', 'daymark' ); ?></p>
 	</noscript>
-	<?php wp_print_scripts( array( 'daymark-app' ) ); ?>
+	<?php wp_print_scripts( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </body>
 </html>

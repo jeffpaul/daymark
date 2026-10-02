@@ -182,6 +182,27 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'data-app-js-url="' . esc_url( DAYMARK_PLUGIN_URL . 'assets/app.js' ), $html );
 	}
 
+	/**
+	 * The offline shell loads the Featured Content gallery slider and its
+	 * styles, and the worker precaches and serves both, so a bookmarked
+	 * gallery is a slider offline too, not stacked photos.
+	 */
+	public function test_offline_shell_loads_and_worker_caches_the_gallery_slider() {
+		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
+		ob_start();
+		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'assets/featured-content.js', $html );
+		$this->assertStringContainsString( 'assets/featured-content.css', $html );
+		$this->assertLessThan( strpos( $html, 'offline-boot.js' ), strpos( $html, 'featured-content.js' ), 'The slider loads before app.js is injected' );
+
+		$script = Daymark_Routes::build_service_worker_script();
+
+		$this->assertStringContainsString( "ASSETS_BASE_URL + 'featured-content.js'", $script );
+		$this->assertStringContainsString( "ASSETS_BASE_URL + 'featured-content.css'", $script );
+	}
+
 	/** The offline shell's own body/container markup matches the real app shell's, so app.js renders into the same structure either way. */
 	public function test_offline_shell_matches_real_shell_container_markup() {
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );

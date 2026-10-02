@@ -704,6 +704,116 @@
 	}
 
 	/**
+	 * Open WordPress core's own gallery editor (issue #461) — the "Edit
+	 * Gallery" screen the classic editor's "Create Gallery" button and
+	 * wp.media.gallery.edit() use: the images in a drag-sortable list, each
+	 * removable and captionable, with "Add to Gallery" for more. Built the
+	 * same way wp.media.gallery.edit() builds it (media-editor.js): a `post`
+	 * frame opened straight into its `gallery-edit` state with a Selection as
+	 * that state's library. The sortable list is core's jQuery UI sortable
+	 * (touch works through the core-bundled jquery-touch-punch script this
+	 * file depends on).
+	 *
+	 * A second frame, not more states on getFeaturedContentFrameClass()'s
+	 * frame: MediaFrame.Post is the only frame class that wires the gallery
+	 * menu ("Cancel Gallery"/"Add to Gallery") and toolbars ("Insert
+	 * gallery"/"Update gallery", "Add to gallery") to these states, and
+	 * reproducing that wiring on a Select frame would mean copying core's
+	 * internals rather than using them.
+	 *
+	 * Core's gallery shortcode settings (columns, link, size, random order)
+	 * are turned off with the state's own `displaySettings` attribute: they
+	 * set [gallery] shortcode attributes, and Featured Content has no
+	 * shortcode for them to apply to.
+	 *
+	 * @param {Object}   options
+	 * @param {Object[]} [options.models] Attachment models, in order (a new pick).
+	 * @param {number[]} [options.ids]    Saved attachment IDs, in order (Replace).
+	 * @param {Function} onSave           Called with the final ordered ID list.
+	 * @return {boolean} False when core's gallery editor isn't available, so
+	 *                   the caller can save the pick as-is instead.
+	 */
+	function openGalleryEditor( options, onSave ) {
+		var Selection = wp.media && wp.media.model && wp.media.model.Selection;
+
+		if ( ! Selection || ! wp.media.controller || ! wp.media.controller.GalleryEdit ) {
+			return false;
+		}
+
+		var frame;
+		var editState;
+
+		try {
+			var selection;
+
+			if ( options.ids && options.ids.length ) {
+				// The same query wp.media.gallery.edit() runs for an existing
+				// [gallery ids="..."]: one request, in the saved order. Once
+				// fetched, the selection drops its ties to the query so the
+				// sortable list is free to reorder it.
+				var attachments = wp.media.query( {
+					post__in: options.ids,
+					orderby: 'post__in',
+					order: 'ASC',
+					type: 'image',
+					perPage: -1,
+				} );
+
+				selection = new Selection( attachments.models, {
+					props: attachments.props.toJSON(),
+					multiple: true,
+				} );
+
+				selection.more().done( function () {
+					selection.props.set( { query: false } );
+					selection.unmirror();
+					selection.props.unset( 'orderby' );
+				} );
+			} else {
+				selection = new Selection( options.models || [], { multiple: true } );
+			}
+
+			frame = wp.media( {
+				frame: 'post',
+				state: 'gallery-edit',
+				editing: !! ( options.ids && options.ids.length ),
+				multiple: true,
+				selection: selection,
+			} );
+
+			editState = frame.state( 'gallery-edit' );
+		} catch ( err ) {
+			return false;
+		}
+
+		if ( ! editState ) {
+			return false;
+		}
+
+		editState.set( 'displaySettings', false );
+
+		// Fired by core's "Insert gallery"/"Update gallery" button with the
+		// state's library, which the sortable list keeps in display order.
+		editState.on( 'update', function ( library ) {
+			var ids = [];
+
+			library.each( function ( model ) {
+				if ( model.id ) {
+					ids.push( model.id );
+				}
+			} );
+
+			if ( ids.length ) {
+				onSave( ids );
+			}
+		} );
+
+		frame.open();
+
+		return true;
+	}
+
+	/**
 	 * Open the media picker for Featured Content — the same modal overlay
 	 * "Set featured image" opens, titled "Featured content", scoped to
 	 * audio/video. Uses the custom frame above when available (adding the
@@ -717,8 +827,9 @@
 	 *
 	 * @param {Function} onLibrarySelect Called with the picked attachment's REST-shaped object.
 	 * @param {Function} onUrlSelect     Called with a pasted URL string.
+	 * @param {Function} onGallerySelect Called with an ordered list of image attachment IDs.
 	 */
-	function openMediaPicker( onLibrarySelect, onUrlSelect, onGallerySelect, preselectIds ) {
+	function openMediaPicker( onLibrarySelect, onUrlSelect, onGallerySelect ) {
 		if ( ! wp.media ) {
 			return;
 		}
@@ -751,59 +862,52 @@
 
 		bindLibraryTypeFilter( frame );
 
-		// Replace on an existing gallery reopens with its images already
-		// selected, so adding or dropping one image doesn't mean picking all
-		// of them again. Best-effort: a missing shape just opens empty.
-		if ( Array.isArray( preselectIds ) && preselectIds.length ) {
-			frame.on( 'open', function () {
-				try {
-					var selection = frame.state().get( 'selection' );
-
-					preselectIds.forEach( function ( id ) {
-						var attachment = wp.media.attachment( id );
-
-						attachment.fetch();
-						selection.add( attachment );
-					} );
-				} catch ( err ) {
-					// Opens with nothing preselected.
-				}
-			} );
-		}
-
 		frame.on( 'select', function () {
 			var selection = frame.state().get( 'selection' );
 			var items = [];
+			var isImage = function ( item ) {
+				return 0 === ( item.mime || '' ).indexOf( 'image/' );
+			};
 
 			if ( ! selection ) {
 				return;
 			}
+
+			var imageModels = [];
 
 			selection.each( function ( model ) {
 				var json = model.toJSON();
 
 				if ( json && json.id ) {
 					items.push( json );
+
+					if ( isImage( json ) ) {
+						imageModels.push( model );
+					}
 				}
 			} );
 
-			var isImage = function ( item ) {
-				return 0 === ( item.mime || '' ).indexOf( 'image/' );
-			};
 			var images = items.filter( isImage );
 			var media = items.filter( function ( item ) {
 				return ! isImage( item );
 			} );
 
-			// Only images: a gallery. Otherwise the first audio/video wins
-			// (a mixed pick is ambiguous, and one file is what those kinds
-			// store).
+			// Only images: a gallery, reviewed in core's gallery editor so
+			// the author can reorder or drop images before it's saved
+			// (issue #461). If that editor can't open, the pick is saved in
+			// selection order, as before. Otherwise the first audio/video
+			// wins (a mixed pick is ambiguous, and one file is what those
+			// kinds store).
 			if ( images.length && ! media.length ) {
-				onGallerySelect(
-					images.map( function ( item ) {
-						return item.id;
-					} )
-				);
+				var opened = openGalleryEditor( { models: imageModels }, onGallerySelect );
+
+				if ( ! opened ) {
+					onGallerySelect(
+						images.map( function ( item ) {
+							return item.id;
+						} )
+					);
+				}
 			} else if ( media.length ) {
 				onLibrarySelect( media[ 0 ] );
 			}
@@ -1261,8 +1365,8 @@
 	 * core's own Featured Image thumbnail treatment —
 	 * `.editor-post-featured-image__actions`, confirmed directly against
 	 * Gutenberg's own `post-featured-image/index.jsx`/`style.scss` — where
-	 * Replace reopens the same picker, with a gallery's images already
-	 * selected); or already set with a quote/link value (a plain static
+	 * Replace reopens the picker for audio/video, and core's gallery
+	 * editor with the saved images in order for a gallery); or already set with a quote/link value (a plain static
 	 * preview mirroring the front end's own render, where Replace re-opens
 	 * that kind's compose form pre-filled rather than the picker — a quote
 	 * is typed, not picked). A third, transient compose state shows the
@@ -1337,11 +1441,19 @@
 		}
 
 		function openPicker() {
-			var preselect = 'gallery' === current.type && current.data && Array.isArray( current.data.attachment_ids )
+			var savedIds = 'gallery' === current.type && current.data && Array.isArray( current.data.attachment_ids )
 				? current.data.attachment_ids
 				: [];
 
-			openMediaPicker( handleLibrarySelect, handleUrlSelect, handleGallerySelect, preselect );
+			// Replace on a gallery goes straight to core's gallery editor
+			// with the saved images in their saved order (issue #461). To
+			// switch a gallery to audio or video, Remove it and set new
+			// Featured Content.
+			if ( savedIds.length && openGalleryEditor( { ids: savedIds }, handleGallerySelect ) ) {
+				return;
+			}
+
+			openMediaPicker( handleLibrarySelect, handleUrlSelect, handleGallerySelect );
 		}
 
 		if ( compose ) {

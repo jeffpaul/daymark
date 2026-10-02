@@ -77,6 +77,23 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 		$this->assertFileExists( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php' );
 	}
 
+	/**
+	 * The seed script loads wp-admin/includes/file.php itself before its
+	 * first wp_tempnam() call. A Playground runPHP step loads only
+	 * wp-load.php, so without this every preview failed with a fatal
+	 * "undefined function wp_tempnam()" error. This test suite always has
+	 * that file loaded, so running the script here can't catch it.
+	 */
+	public function test_seed_script_loads_file_helpers_before_using_them(): void {
+		$source  = (string) file_get_contents( dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local plugin file.
+		$require = strpos( $source, "require_once ABSPATH . 'wp-admin/includes/file.php';" );
+		$first   = strpos( $source, "wp_tempnam( '" );
+
+		$this->assertNotFalse( $require );
+		$this->assertNotFalse( $first );
+		$this->assertLessThan( $first, $require );
+	}
+
 	/** Every sample photo the seed script names is committed. */
 	public function test_sample_photos_are_committed(): void {
 		$dir = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/sample-images/';
@@ -115,6 +132,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 		) as $post ) {
 			$this->assertSame( 'publish', $post->post_status, "Sample \"{$post->post_title}\" should be published." );
 			$by_type[ (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ][] = $post->ID;
+			$this->assertTrue( user_can( (int) $post->post_author, 'manage_options' ), 'authored by an administrator' );
 		}
 
 		$this->assertCount( 1, $by_type['image'] ?? array(), 'one single-photo Mark' );
