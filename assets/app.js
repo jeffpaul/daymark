@@ -4342,6 +4342,7 @@
 			setEngagementToggleState(trigger, 'repost', false, 0, item);
 			try {
 				await apiDelete('marks/' + existingMarkId);
+				discardFeedSnapshot();
 				maybeShowInteractionHint('repost', trigger);
 			} catch (err) {
 				setEngagementToggleState(trigger, 'repost', true, existingMarkId, item);
@@ -4468,6 +4469,10 @@
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		try {
 			const result = await apiPost('subscription-posts/' + id + '/comment', { text });
+			if ('webmention' === result.method && result.mark_id) {
+				// A Webmention comment is published as a new Mark of your own.
+				discardFeedSnapshot();
+			}
 			if ('webmention' === result.method && result.mark_id && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.replied_mark_id = result.mark_id;
@@ -4903,6 +4908,7 @@
 		}
 		try {
 			await apiDelete('subscriptions/' + subscriptionId);
+			discardFeedSnapshot();
 			if (wrap) {
 				const parentList = wrap.parentElement;
 				wrap.remove();
@@ -8900,6 +8906,15 @@
 		);
 	}
 
+	// Drop the saved snapshot after an action that changes what the list
+	// should show: unsubscribing from a site (its posts must leave the
+	// list), or publishing or removing one of your own Marks from the post
+	// view (a reblog, a Webmention comment, undoing a reblog). The screen
+	// then reloads on Back, as it did before snapshots existed.
+	function discardFeedSnapshot() {
+		feedSnapshot = null;
+	}
+
 	// Hand a screen its saved snapshot, once, if it was saved for it.
 	function takeFeedSnapshot(hash) {
 		const snapshot = feedSnapshot && feedSnapshot.hash === hash ? feedSnapshot : null;
@@ -9285,6 +9300,7 @@
 			try {
 				const mark = await apiUpload('marks', formData);
 				this.item.reposted_mark_id = mark.id;
+				discardFeedSnapshot();
 				navigate(this.returnTo);
 			} catch (err) {
 				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
