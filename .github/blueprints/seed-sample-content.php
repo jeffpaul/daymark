@@ -26,6 +26,29 @@ if ( ! class_exists( 'Daymark_Plugin' ) ) {
 	return;
 }
 
+// wp_tempnam() lives in wp-admin's file.php, which a Playground runPHP step
+// (plain wp-load.php, no admin bootstrap) never loads. PHPUnit already has it
+// loaded, which is why the blueprint test alone didn't catch its absence.
+require_once ABSPATH . 'wp-admin/includes/file.php';
+
+// A runPHP step has no logged-in user, and the publisher only publishes for a
+// user who can publish_posts (anyone else gets a draft). Act as the site's
+// first administrator so the samples land on the Timeline, not in Drafts.
+if ( ! current_user_can( 'publish_posts' ) ) {
+	$daymark_sample_admins = get_users(
+		array(
+			'role'    => 'administrator',
+			'number'  => 1,
+			'orderby' => 'ID',
+			'fields'  => 'ID',
+		)
+	);
+
+	if ( ! empty( $daymark_sample_admins ) ) {
+		wp_set_current_user( (int) $daymark_sample_admins[0] );
+	}
+}
+
 $daymark_sample_plugin = Daymark_Plugin::instance();
 $daymark_sample_dir    = __DIR__ . '/sample-images/';
 $daymark_sample_start  = time();

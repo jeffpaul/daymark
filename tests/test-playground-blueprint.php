@@ -90,10 +90,13 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 	/**
 	 * Running the seed script creates one Mark for each type and Featured
 	 * Content kind it promises, with no outbound request succeeding (the
-	 * weather and place lookups are blocked here).
+	 * weather and place lookups are blocked here). Runs with no logged-in
+	 * user, as Playground's runPHP step does: the script must sign in as the
+	 * site's administrator itself, or every sample is saved as a draft.
 	 */
 	public function test_seed_script_creates_each_sample_mark(): void {
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( 0 );
 		add_filter( 'pre_http_request', array( $this, 'block_http' ) );
 
 		include dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php';
@@ -110,6 +113,7 @@ class Test_Playground_Blueprint extends WP_UnitTestCase {
 				'meta_key'       => '_daymark_is_mark', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Small test fixture set.
 			)
 		) as $post ) {
+			$this->assertSame( 'publish', $post->post_status, "Sample \"{$post->post_title}\" should be published." );
 			$by_type[ (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ][] = $post->ID;
 		}
 
