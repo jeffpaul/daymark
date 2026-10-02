@@ -2676,8 +2676,8 @@
 			target = '#home';
 		}
 
-		if (homeSnapshot && target !== '#post' && target !== '#reblog' && target !== '#home') {
-			homeSnapshot = null;
+		if (feedSnapshot && target !== '#post' && target !== '#reblog' && target !== feedSnapshot.hash) {
+			feedSnapshot = null;
 		}
 
 		AIAssistSheet.hide(false);
@@ -3832,7 +3832,7 @@
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
-				saveHomeSnapshot(screen, subTrigger);
+				saveFeedSnapshot(screen, subTrigger);
 				openPostView('sub', item);
 			}
 			return;
@@ -3844,7 +3844,7 @@
 		if (markTrigger) {
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
-				saveHomeSnapshot(screen, markTrigger);
+				saveFeedSnapshot(screen, markTrigger);
 				openPostView('mark', item);
 			}
 			return;
@@ -5232,11 +5232,10 @@
 			// headers instead of repeating one.
 			this._lastGroupKey = null;
 			// Every Timeline item rendered so far, in order, across all
-			// pages — what saveHomeSnapshot() captures when a card opens.
+			// pages — what saveFeedSnapshot() captures when a card opens.
 			this._items = [];
 
-			const snapshot = homeSnapshot;
-			homeSnapshot = null;
+			const snapshot = takeFeedSnapshot('#home');
 			if (snapshot) {
 				this.restoreSnapshot(snapshot);
 			}
@@ -5264,13 +5263,13 @@
 			if (snapshot) {
 				// Pending and Drafts just loaded above the Timeline and may
 				// have pushed it down; put the opened card back in place.
-				this.scrollToAnchor(snapshot, true);
+				scrollFeedToAnchor(snapshot, true);
 				return;
 			}
 			await this.loadRecent();
 		},
 
-		// Rebuild the Timeline from a saved snapshot (see homeSnapshot)
+		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
 		// instead of fetching page 1 again. Items are re-rendered rather
 		// than restored as saved HTML, so a Like or Bookmark changed on
 		// the post view (which mutates these same item objects) shows up.
@@ -5297,25 +5296,7 @@
 			}
 			// showScreen() focuses the header right after init() starts,
 			// which scrolls to the top. Position the card after that.
-			requestAnimationFrame(() => this.scrollToAnchor(snapshot, false));
-		},
-
-		// Scroll so the opened card sits where it was when it was tapped,
-		// falling back to the saved scroll offset if it can't be found.
-		// `focusCard` moves keyboard focus back to that card, matching
-		// where a screen-reader or keyboard user left off.
-		scrollToAnchor(snapshot, focusCard) {
-			const card = root.querySelector(snapshot.anchorSelector);
-			if (!card || !card.isConnected) {
-				window.scrollTo(0, snapshot.scrollY);
-				return;
-			}
-			const wrap = card.closest('.daymark-recent__item-wrap') || card;
-			const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
-			window.scrollTo(0, Math.max(0, top));
-			if (focusCard) {
-				card.focus({ preventScroll: true });
-			}
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, false));
 		},
 
 		// (Re)load the first page of recent Marks and arm infinite scroll.
@@ -5789,6 +5770,22 @@
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
+			// The results currently shown — what saveFeedSnapshot()
+			// captures when a card opens.
+			this._items = [];
+
+			// Coming back from a post opened here: restore the same
+			// filters and results, and the card's place, instead of
+			// searching again from the top (see feedSnapshot).
+			const snapshot = takeFeedSnapshot('#search');
+			if (snapshot) {
+				searchPreset = null;
+				this.searchQuery = snapshot.query || '';
+				this.searchType = snapshot.type || '';
+				this.searchSource = snapshot.source || '';
+				this.searchBookmarked = !!snapshot.bookmarked;
+				this.searchDate = snapshot.date || '';
+			}
 
 			// A preset handed from Explore/Me ("browse by type", "your
 			// Marks", "Following", "Bookmarks") right before navigate('#search')
@@ -5811,7 +5808,28 @@
 			}
 
 			this.loadSubscriptionsForFilter();
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+				return;
+			}
 			await this.runSearch();
+		},
+
+		// Re-render the saved results rather than searching again, so the
+		// list (and any Like or Bookmark changed on the post view, which
+		// mutates these same item objects) matches what the reader left.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-search-results]');
+			if (!list) {
+				return;
+			}
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+			observeLikeAvailability(this, list);
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
 		},
 
 		syncFilterChips() {
@@ -5910,6 +5928,7 @@
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				teardownLikeAvailabilityObserver(this);
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -5971,6 +5990,7 @@
 			}
 			this._bySubId.clear();
 			this._byMarkId.clear();
+			this._items = items.slice();
 			items.forEach((item) => rememberItem(this, item));
 			if (!items.length) {
 				list.innerHTML =
@@ -8815,31 +8835,76 @@
 	// Create/Publish do.
 	let pendingPostView = null;
 
-	// What Home's Timeline looked like when one of its cards was opened:
-	// every item loaded so far (all infinite-scroll pages, in order), the
-	// paging state, and where the tapped card sat on screen. Going back
-	// re-renders Home from scratch, which used to reload only page 1 and
-	// land at the top. HomeScreen.init() consumes this instead, so the
-	// reader returns to the card they opened. Kept in memory only: a
-	// reload or a cold start begins at the top as before. showScreen()
-	// discards it once the reader goes anywhere other than #post/#reblog.
-	let homeSnapshot = null;
+	// What a feed list looked like when one of its cards was opened, so
+	// Back returns the reader to that card instead of the top. Going back
+	// re-renders the screen from scratch, which used to reload only the
+	// first page and land at the top. Holds the screen's hash, every item
+	// it had rendered (on Home, all infinite-scroll pages, in order), that
+	// screen's own state (Home's paging, Search's filters), and where the
+	// tapped card sat on screen. HomeScreen.init()/SearchScreen.init()
+	// consume it when `hash` matches. Kept in memory only: a reload or a
+	// cold start begins at the top as before. showScreen() discards it
+	// once the reader goes anywhere other than #post/#reblog or back.
+	let feedSnapshot = null;
 
-	function saveHomeSnapshot(screen, trigger) {
-		if (screen !== HomeScreen || !Array.isArray(screen._items) || !screen._items.length) {
+	function saveFeedSnapshot(screen, trigger) {
+		let hash = '';
+		let extra = null;
+		if (screen === HomeScreen) {
+			hash = '#home';
+			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
+		} else if (screen === SearchScreen) {
+			hash = '#search';
+			extra = {
+				query: screen.searchQuery,
+				type: screen.searchType,
+				source: screen.searchSource,
+				bookmarked: screen.searchBookmarked,
+				date: screen.searchDate,
+			};
+		}
+		if (!hash || !Array.isArray(screen._items) || !screen._items.length) {
+			feedSnapshot = null;
 			return;
 		}
 		const card = trigger.closest('.daymark-recent__item-wrap') || trigger;
-		homeSnapshot = {
-			items: screen._items.slice(),
-			recentPage: screen.recentPage,
-			recentDone: screen.recentDone,
-			anchorSelector: trigger.hasAttribute('data-subpost')
-				? '[data-subpost="' + CSS.escape(trigger.getAttribute('data-subpost')) + '"]'
-				: '[data-expand-post="' + CSS.escape(trigger.getAttribute('data-expand-post')) + '"]',
-			anchorTop: card.getBoundingClientRect().top,
-			scrollY: window.scrollY,
-		};
+		feedSnapshot = Object.assign(
+			{
+				hash,
+				items: screen._items.slice(),
+				anchorSelector: trigger.hasAttribute('data-subpost')
+					? '[data-subpost="' + CSS.escape(trigger.getAttribute('data-subpost')) + '"]'
+					: '[data-expand-post="' + CSS.escape(trigger.getAttribute('data-expand-post')) + '"]',
+				anchorTop: card.getBoundingClientRect().top,
+				scrollY: window.scrollY,
+			},
+			extra
+		);
+	}
+
+	// Hand a screen its saved snapshot, once, if it was saved for it.
+	function takeFeedSnapshot(hash) {
+		const snapshot = feedSnapshot && feedSnapshot.hash === hash ? feedSnapshot : null;
+		feedSnapshot = null;
+		return snapshot;
+	}
+
+	// Scroll so the opened card sits where it was when it was tapped,
+	// falling back to the saved scroll offset if it can't be found.
+	// `focusCard` moves keyboard focus back to that card, matching where
+	// a screen-reader or keyboard user left off.
+	function scrollFeedToAnchor(snapshot, focusCard) {
+		const card = root.querySelector(snapshot.anchorSelector);
+		if (!card || !card.isConnected) {
+			window.scrollTo(0, snapshot.scrollY);
+			return;
+		}
+		const wrap = card.closest('.daymark-recent__item-wrap') || card;
+		const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
+		window.scrollTo(0, Math.max(0, top));
+		if (focusCard) {
+			card.focus({ preventScroll: true });
+		}
 	}
 
 	function openPostView(kind, item) {
