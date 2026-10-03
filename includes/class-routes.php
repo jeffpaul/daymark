@@ -378,6 +378,51 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * A cache version for the service worker that changes whenever the
+	 * plugin's cached assets do.
+	 *
+	 * The worker only re-installs (and so only re-downloads app.js, app.css,
+	 * offline-boot.js, and the Featured Content slider's two files into a
+	 * fresh cache) when the bytes of /daymark/sw.js
+	 * change, and it serves those files cache-first, ignoring their
+	 * `?ver=` query. A fixed cache name therefore meant an installed Daymark
+	 * kept the JavaScript it had on install day through every later release,
+	 * including any that fixed a client-side bug. The plugin version covers a
+	 * normal release; the assets' modification times also cover a development
+	 * checkout, where the version constant does not move.
+	 *
+	 * @return string For example `0.17.0-1a2b3c4d`.
+	 */
+	public static function service_worker_cache_version(): string {
+		$signature = '';
+
+		foreach ( array( 'app.js', 'app.css', 'offline-boot.js', 'featured-content.js', 'featured-content.css' ) as $file ) {
+			$path       = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
+			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
+		}
+
+		return DAYMARK_VERSION . '-' . substr( md5( $signature ), 0, 8 );
+	}
+
+	/**
+	 * The service worker script served at /daymark/sw.js: assets/daymark-sw.js
+	 * with its two placeholders filled in (the plugin assets URL and the
+	 * cache version above).
+	 *
+	 * @return string
+	 */
+	public static function build_service_worker_script(): string {
+		$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
+		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
+
+		return str_replace(
+			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__' ),
+			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version() ),
+			$sw_js
+		);
+	}
+
+	/**
 	 * Builds the app shell's bootstrap config array — the exact same shape
 	 * templates/app-shell.php inlines as `window.daymarkApp` for a normal
 	 * online load, and GET /daymark/config.json (see maybe_load_app_shell())
@@ -397,7 +442,8 @@ class Daymark_Routes {
 	 * @return array<string, mixed>
 	 */
 	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0 ): array {
-		$user = wp_get_current_user();
+		$user                     = wp_get_current_user();
+		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
 
 		/*
 		 * Connector list and per-type destination defaults, from the
@@ -492,77 +538,65 @@ class Daymark_Routes {
 		);
 
 		return array(
-			'restUrl'                 => esc_url_raw( rest_url( 'daymark/v1/' ) ),
-			'assetsUrl'               => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
+			'restUrl'                => esc_url_raw( rest_url( 'daymark/v1/' ) ),
+			'assetsUrl'              => esc_url_raw( DAYMARK_PLUGIN_URL . 'assets/' ),
 			// Trailing-slash directory URL for the app's own base
 			// (/daymark/, or /daymark-app/) — the service worker
 			// registration scope (issue #126) needs a directory-shaped
 			// URL, not app_url()'s own bare (no trailing slash) form.
-			'appUrl'                  => esc_url_raw( self::app_url() . '/' ),
-			'nonce'                   => wp_create_nonce( 'wp_rest' ),
-			'siteUrl'                 => esc_url_raw( home_url( '/' ) ),
-			'siteTitle'               => sanitize_text_field( get_bloginfo( 'name' ) ),
+			'appUrl'                 => esc_url_raw( self::app_url() . '/' ),
+			'nonce'                  => wp_create_nonce( 'wp_rest' ),
+			'siteUrl'                => esc_url_raw( home_url( '/' ) ),
+			'siteTitle'              => sanitize_text_field( get_bloginfo( 'name' ) ),
 			// A raw PHP date() format string (Settings -> General -> Date
 			// Format) — assets/app.js's formatDateWithPhpFormat() maps it
 			// token-by-token onto a Timeline card's own absolute-date
 			// display, so a card reads dates the same way the rest of
 			// wp-admin already does rather than the browser's own locale
 			// default.
-			'dateFormat'              => sanitize_text_field( get_option( 'date_format' ) ),
+			'dateFormat'             => sanitize_text_field( get_option( 'date_format' ) ),
 			// Site Icon first, Daymark's own bundled icon otherwise — same
 			// resolution icon_url() already uses for the browser favicon
 			// and PWA manifest icons.
-			'siteIconUrl'             => esc_url_raw( self::icon_url( 96 ) ),
+			'siteIconUrl'            => esc_url_raw( self::icon_url( 96 ) ),
 			// Always Daymark's own bundled icon, never the site's Site Icon
 			// — used for the app shell's own header/nav chrome.
-			'daymarkIconUrl'          => esc_url_raw( self::daymark_icon_url( 96 ) ),
-			'screen'                  => $screen,
-			'connectors'              => $connectors,
-			'defaults'                => $type_defaults,
-			'categories'              => $categories,
-			'categoryDefaults'        => $category_defaults,
-			'titlePolicy'             => $title_policy,
-			'defaultCategory'         => (int) get_option( 'default_category' ),
-			'ai'                      => array(
+			'daymarkIconUrl'         => esc_url_raw( self::daymark_icon_url( 96 ) ),
+			'screen'                 => $screen,
+			'connectors'             => $connectors,
+			'defaults'               => $type_defaults,
+			'categories'             => $categories,
+			'categoryDefaults'       => $category_defaults,
+			'titlePolicy'            => $title_policy,
+			'defaultCategory'        => (int) get_option( 'default_category' ),
+			'ai'                     => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),
 			),
-			'notifications'           => array(
+			'notifications'          => array(
 				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
 			),
-			// Subscriptions currently failing a poll check, as a minimal,
-			// fully-sanitized array for the Me screen's Connections tab — a
-			// raw `get_with_issues()` row is a SELECT * off the
-			// `daymark_subscription` table and would carry fields this app
-			// shell must never receive (notably `websub_secret`, issue #82).
-			// Only the fields the tab actually renders are exposed.
-			'subscriptionsWithIssues' => array_map(
-				static function ( array $row ): array {
-					return array(
-						'id'                        => absint( $row['id'] ?? 0 ),
-						'site_title'                => sanitize_text_field( (string) ( $row['site_title'] ?? '' ) ),
-						'site_url'                  => esc_url_raw( (string) ( $row['site_url'] ?? '' ) ),
-						'site_icon_url'             => esc_url_raw( (string) ( $row['site_icon_url'] ?? '' ) ),
-						'status'                    => sanitize_key( (string) ( $row['status'] ?? '' ) ),
-						'last_error'                => sanitize_text_field( (string) ( $row['last_error'] ?? '' ) ),
-						'consecutive_failure_count' => absint( $row['consecutive_failure_count'] ?? 0 ),
-					);
-				},
-				Daymark_Plugin::instance()->subscriptions->get_with_issues()
-			),
-			'controllableHelpers'     => $controllable_helpers,
-			'publishHelpers'          => $awareness_helpers,
-			'currentUser'             => array(
+			'controllableHelpers'    => $controllable_helpers,
+			'publishHelpers'         => $awareness_helpers,
+			'currentUser'            => array(
 				'id'             => (int) $user->ID,
 				'displayName'    => $user->display_name,
 				'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $user->ID, array( 'size' => 96 ) ) ),
 				'profileEditUrl' => esc_url_raw( get_edit_profile_url( $user->ID ) ),
 				'logoutUrl'      => esc_url_raw( wp_logout_url( self::app_url( 'me' ) ) ),
 			),
-			'adminSubscriptionsUrl'   => esc_url_raw( Daymark_Admin_Subscriptions::page_url() ),
-			'pluginsUrl'              => esc_url_raw( admin_url( 'plugins.php' ) ),
-			'pendingDraftId'          => $pending_draft_id,
-			'pendingType'             => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
+			// Settings -> Daymark needs Daymark_Admin_Subscriptions::CAPABILITY, so
+			// anyone without it gets no link (an empty string) rather than one
+			// that lands on a permission error, and no in-app Unsubscribe.
+			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::page_url() ) : '',
+			'canManageSubscriptions' => $can_manage_subscriptions,
+			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
+			// The newest Timeline item this user has seen (or null), so
+			// Home can open anchored on it with newer posts above — see
+			// Daymark_Timeline_Position.
+			'timelineLastSeen'       => Daymark_Timeline_Position::get( (int) $user->ID ),
+			'pendingDraftId'         => $pending_draft_id,
+			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
 	}
 
@@ -656,12 +690,9 @@ class Daymark_Routes {
 				// header needed. The one placeholder token gets the real
 				// plugin assets URL substituted in, since app.css/app.js live
 				// under a different directory than this URL does.
-				$sw_path = DAYMARK_PLUGIN_DIR . 'assets/daymark-sw.js';
-				$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
-				$sw_js   = str_replace( '__DAYMARK_ASSETS_URL__', DAYMARK_PLUGIN_URL . 'assets/', $sw_js );
 				header( 'Content-Type: application/javascript; charset=utf-8' );
 				header( 'Cache-Control: no-store' );
-				echo $sw_js; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with one URL substitution, not user input.
+				echo self::build_service_worker_script(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static plugin-owned JS with two substitutions (an assets URL and a version string), not user input.
 				exit;
 			}
 

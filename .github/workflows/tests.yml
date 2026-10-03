@@ -8,7 +8,55 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a pull request makes the run for the previous commit
+# pointless, so cancel it instead of letting it finish. Pushes to main are
+# never cancelled: each one is a real record of what landed.
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # A pull request that changes only documentation (Markdown, readme.txt,
+  # docs/, LICENSE) cannot change what the tests test, so the heavy steps
+  # below skip for it. The jobs themselves still run, and finish in a few
+  # seconds, instead of being skipped outright: a skipped *matrix* job is
+  # reported under its unexpanded name, which would leave the required checks
+  # ("Browser E2E (Playwright, WP latest)", "PHPUnit (WP stable, PHP 8.2)", and
+  # so on) waiting forever. Anything else — code, tests, workflows, fixtures —
+  # runs everything, and so does every push to main. If the changed-files
+  # lookup fails for any reason, everything runs.
+  changes:
+    name: Detect docs-only changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Are there changes outside documentation?
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename') || [ -z "$files" ]; then
+            echo "Could not list the changed files; running everything."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -qvE '^(docs/.+|.+\.md|readme\.txt|LICENSE)$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Only documentation changed; skipping the heavy test steps."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Resolves the three WordPress versions every job tests against, per our
   # "latest and latest-minus-one" support policy (see also
   # wordpress-version-checker.yml, which bumps "Requires at least"/"Tested
@@ -100,7 +148,7 @@ jobs:
     name: PHPUnit (WP ${{ matrix.config.label }}, PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: resolve
+    needs: [resolve, changes]
     # The nightly leg (RC or trunk) is early warning for the next WordPress
     # release: failures show on the run but do not block merges. minimum
     # and stable are both part of our declared support policy and block.
@@ -110,21 +158,21 @@ jobs:
       matrix:
         php: ['8.2', '8.4']
         config: ${{ fromJSON(needs.resolve.outputs.phpunit-matrix) }}
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: wordpress_test
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v7.0.1
+        if: needs.changes.outputs.code == 'true'
+
+      # The runner image already ships MySQL 8.0 (root password "root"); starting
+      # it takes a few seconds, where pulling and health-checking a MySQL
+      # service container took about half a minute in every job.
+      - name: Start MySQL
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          sudo systemctl start mysql.service
+          mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wordpress_test'
 
       - name: Set up PHP
+        if: needs.changes.outputs.code == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -133,19 +181,22 @@ jobs:
           tools: composer
 
       - name: Install WordPress test library (WP ${{ matrix.config.label }})
+        if: needs.changes.outputs.code == 'true'
         run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 '${{ matrix.config.wp }}' true
 
       - name: Install dependencies
+        if: needs.changes.outputs.code == 'true'
         run: composer install --no-interaction --prefer-dist
 
       - name: Run PHPUnit
+        if: needs.changes.outputs.code == 'true'
         run: WP_TESTS_DIR=/tmp/wordpress-tests-lib composer test
 
   smoke:
     name: Smoke suite (WP ${{ matrix.config.label }}, live install)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: resolve
+    needs: [resolve, changes]
     # The nightly leg (RC or trunk) is early warning; non-blocking. minimum
     # and latest are both part of our declared support policy and block.
     continue-on-error: ${{ matrix.config.label == 'nightly' }}
@@ -153,29 +204,35 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: wp_smoke
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v7.0.1
+        if: needs.changes.outputs.code == 'true'
 
-      - name: Set up PHP + WP-CLI
+      # The runner image already ships MySQL 8.0 (root password "root"); starting
+      # it takes a few seconds, where pulling and health-checking a MySQL
+      # service container took about half a minute in every job.
+      - name: Start MySQL
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          sudo systemctl start mysql.service
+          mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wp_smoke'
+
+      - name: Set up PHP
+        if: needs.changes.outputs.code == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mysqli, gd
           coverage: none
-          tools: wp-cli
+
+      # Installed by our own script (retries + checksum), not setup-php's
+      # `tools: wp-cli`, whose download failed intermittently.
+      - name: Install WP-CLI
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/install-wp-cli.sh
 
       - name: Install scratch WordPress (${{ matrix.config.label }})
+        if: needs.changes.outputs.code == 'true'
         run: |
           bash bin/download-wp.sh '${{ matrix.config.wp }}' /tmp/wp
           wp config create --path=/tmp/wp --dbname=wp_smoke --dbuser=root --dbpass=root --dbhost=127.0.0.1
@@ -183,11 +240,13 @@ jobs:
             --admin_user=admin --admin_password=admin --admin_email=admin@smoke.test --skip-email
 
       - name: Link and activate the plugin
+        if: needs.changes.outputs.code == 'true'
         run: |
           ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/daymark
           wp plugin activate daymark --path=/tmp/wp
 
       - name: Run smoke suite (57 assertions, E2E scenarios 1-10)
+        if: needs.changes.outputs.code == 'true'
         run: |
           printf '#!/bin/bash\nexec wp --path=/tmp/wp "$@"\n' > "$RUNNER_TEMP/wpx"
           chmod +x "$RUNNER_TEMP/wpx"
@@ -197,7 +256,7 @@ jobs:
     name: Browser E2E (Playwright, WP ${{ matrix.config.label }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: resolve
+    needs: [resolve, changes]
     # The nightly leg (RC or trunk) is early warning; non-blocking. minimum
     # and latest are both part of our declared support policy and block.
     continue-on-error: ${{ matrix.config.label == 'nightly' }}
@@ -205,29 +264,35 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJSON(needs.resolve.outputs.scratch-matrix) }}
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: wp_e2e
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
-          --health-interval=10s --health-timeout=5s --health-retries=5
     steps:
       - uses: actions/checkout@v7.0.1
+        if: needs.changes.outputs.code == 'true'
 
-      - name: Set up PHP + WP-CLI
+      # The runner image already ships MySQL 8.0 (root password "root"); starting
+      # it takes a few seconds, where pulling and health-checking a MySQL
+      # service container took about half a minute in every job.
+      - name: Start MySQL
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          sudo systemctl start mysql.service
+          mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wp_e2e'
+
+      - name: Set up PHP
+        if: needs.changes.outputs.code == 'true'
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           extensions: mysqli, gd
           coverage: none
-          tools: wp-cli
+
+      # Installed by our own script (retries + checksum), not setup-php's
+      # `tools: wp-cli`, whose download failed intermittently.
+      - name: Install WP-CLI
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/install-wp-cli.sh
 
       - name: Install scratch WordPress (${{ matrix.config.label }})
+        if: needs.changes.outputs.code == 'true'
         run: |
           bash bin/download-wp.sh '${{ matrix.config.wp }}' /tmp/wp
           wp config create --path=/tmp/wp --dbname=wp_e2e --dbuser=root --dbpass=root --dbhost=127.0.0.1
@@ -237,12 +302,14 @@ jobs:
           wp rewrite structure '/%postname%/' --path=/tmp/wp
 
       - name: Link and activate the plugin
+        if: needs.changes.outputs.code == 'true'
         run: |
           ln -s "$GITHUB_WORKSPACE" /tmp/wp/wp-content/plugins/daymark
           wp plugin activate daymark --path=/tmp/wp
           wp rewrite flush --path=/tmp/wp
 
       - name: Seed E2E fixtures
+        if: needs.changes.outputs.code == 'true'
         run: |
           mkdir -p /tmp/wp/wp-content/mu-plugins
           # Registers a fake publishing helper so the awareness-note test
@@ -266,6 +333,7 @@ jobs:
             '{"isWelcomeGuide":false,"core/editor":{"isWelcomeGuide":false}}' --path=/tmp/wp
 
       - name: Start web server
+        if: needs.changes.outputs.code == 'true'
         run: |
           wp server --host=127.0.0.1 --port=8889 --path=/tmp/wp &
           for i in $(seq 1 30); do
@@ -275,12 +343,14 @@ jobs:
           curl -sf -o /dev/null http://127.0.0.1:8889/wp-login.php
 
       - name: Set up Node
+        if: needs.changes.outputs.code == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: '20'
           cache: npm
 
       - name: Install dependencies
+        if: needs.changes.outputs.code == 'true'
         run: npm ci
 
       # Caches the downloaded browser binary (~150MB), keyed on the locked
@@ -289,15 +359,18 @@ jobs:
       # still ensures the OS-level packages `--with-deps` installs are
       # present, which a fresh runner VM never carries over between runs.
       - name: Cache Playwright browser binaries
+        if: needs.changes.outputs.code == 'true'
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright
+        if: needs.changes.outputs.code == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run browser E2E
+        if: needs.changes.outputs.code == 'true'
         env:
           WP_BASE_URL: http://127.0.0.1:8889
           WP_ADMIN_USER: admin
@@ -305,7 +378,7 @@ jobs:
         run: npx playwright test
 
       - name: Upload traces on failure
-        if: failure()
+        if: failure() && needs.changes.outputs.code == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: playwright-traces-${{ matrix.config.label }}

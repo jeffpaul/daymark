@@ -158,6 +158,81 @@ class Daymark_Comment_Delivery {
 	}
 
 	/**
+	 * The origin signals for a subscription post, resolving them live (one
+	 * cached permalink fetch, shared with deliver()/resolve_comment_target())
+	 * when not already cached. Public so Daymark_Like_Delivery can answer
+	 * "can a Like reach this origin" from the exact same discovery a Comment
+	 * already uses, never a second fetch of the same page.
+	 *
+	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|WP_Error
+	 */
+	public static function origin_signals_for_post( int $subscription_post_id ) {
+		$permalink = self::validate_subscription_permalink( $subscription_post_id );
+
+		if ( is_wp_error( $permalink ) ) {
+			return $permalink;
+		}
+
+		return self::discover_origin_signals( $permalink );
+	}
+
+	/**
+	 * The origin signals for any http(s) URL (a Like or Reblog Mark's
+	 * target), with the same URL guard and the same cache as
+	 * origin_signals_for_post(), so a target already looked up for Like
+	 * availability costs nothing here.
+	 *
+	 * @param string $url Target URL.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	public static function origin_signals_for_url( string $url ) {
+		$url    = esc_url_raw( trim( $url ) );
+		$scheme = '' !== $url ? strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) ) : '';
+
+		if ( '' === $url || ! in_array( $scheme, array( 'http', 'https' ), true ) || is_wp_error( Daymark_Subscription_Url_Guard::check( $url ) ) ) {
+			return new WP_Error(
+				'daymark_comment_unsafe_url',
+				__( "This post's source couldn't be safely reached.", 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		return self::discover_origin_signals( $url );
+	}
+
+	/**
+	 * The origin signals for a permalink, read from cache only — never a
+	 * fetch, never a DNS lookup. Null when nothing is cached yet. Used where
+	 * a live lookup would be too expensive (every row of a Timeline
+	 * response); anything cached here already passed
+	 * validate_subscription_permalink()'s URL guard when it was written.
+	 *
+	 * @param string $permalink Subscription post permalink.
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|null
+	 */
+	public static function cached_origin_signals( string $permalink ): ?array {
+		if ( '' === $permalink ) {
+			return null;
+		}
+
+		$cached = get_transient( self::signals_cache_key( $permalink ) );
+
+		return is_array( $cached ) ? $cached : null;
+	}
+
+	/**
+	 * Transient key discover_origin_signals() caches a permalink's signals
+	 * under — shared with cached_origin_signals() so the two can't drift.
+	 *
+	 * @param string $permalink Origin permalink.
+	 * @return string
+	 */
+	private static function signals_cache_key( string $permalink ): string {
+		return 'daymark_comment_sig_' . md5( $permalink );
+	}
+
+	/**
 	 * Shared post-lookup + permalink validation both deliver() and
 	 * resolve_comment_target() need before anything else.
 	 *
@@ -299,7 +374,7 @@ class Daymark_Comment_Delivery {
 
 		$user = wp_get_current_user();
 
-		$response = wp_safe_remote_post(
+		$response = Daymark_Outbound_Guard::post(
 			$comments_url,
 			array(
 				'timeout'             => (int) apply_filters( 'daymark_subscription_comment_fetch_timeout', 10 ),
@@ -400,10 +475,10 @@ class Daymark_Comment_Delivery {
 	 * active locally, so a non-Jetpack site pays nothing for this check.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
 	 */
 	private static function discover_origin_signals( string $permalink ): array {
-		$cache_key = 'daymark_comment_sig_' . md5( $permalink );
+		$cache_key = self::signals_cache_key( $permalink );
 		$cached    = get_transient( $cache_key );
 
 		if ( is_array( $cached ) ) {
@@ -425,18 +500,26 @@ class Daymark_Comment_Delivery {
 	 * The actual, uncached fetch discover_origin_signals() wraps.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
 	 */
 	private static function fetch_origin_signals( string $permalink ): array {
+		// Resolved independently of the permalink fetch below: WordPress.com
+		// answers for the origin even when the origin's own page refuses or
+		// times out on this server's request, so a failed fetch shouldn't
+		// also cost the Jetpack route.
+		$jetpack_origin = Daymark_Jetpack_Engagement::resolve_origin( $permalink );
+
 		$empty = array(
 			'webmention_endpoint' => '',
 			'rest_root'           => '',
 			'post_id'             => 0,
-			'jetpack_site_id'     => 0,
-			'jetpack_post_id'     => 0,
+			'jetpack_site_id'     => null !== $jetpack_origin ? $jetpack_origin['site_id'] : 0,
+			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
+			'activitypub_object'  => false,
+			'bluesky'             => self::is_bluesky_url( $permalink ),
 		);
 
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				'timeout'             => (int) apply_filters( 'daymark_subscription_comment_fetch_timeout', 10 ),
@@ -463,15 +546,31 @@ class Daymark_Comment_Delivery {
 			$webmention_endpoint = self::find_link_href( $html, 'webmention' );
 		}
 
-		$jetpack_origin = Daymark_Jetpack_Engagement::resolve_origin( $permalink );
-
 		return array(
 			'webmention_endpoint' => '' !== $webmention_endpoint ? esc_url_raw( WP_Http::make_absolute_url( $webmention_endpoint, $permalink ) ) : '',
 			'rest_root'           => self::find_link_href( $html, 'https://api.w.org/' ),
 			'post_id'             => self::extract_post_id( self::find_link_href( $html, 'alternate', 'application/json' ) ),
 			'jetpack_site_id'     => null !== $jetpack_origin ? $jetpack_origin['site_id'] : 0,
 			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
+			// A fediverse post (Mastodon, or a site running the ActivityPub
+			// plugin) advertises its ActivityStreams object this way; Bridgy
+			// Fed can deliver a Like to one (issue #441).
+			'activitypub_object'  => '' !== self::find_link_href( $html, 'alternate', 'application/activity+json' ),
+			'bluesky'             => self::is_bluesky_url( $permalink ),
 		);
+	}
+
+	/**
+	 * Whether a URL is a Bluesky post (bsky.app), which Bridgy Fed can also
+	 * deliver a Like to.
+	 *
+	 * @param string $url URL.
+	 * @return bool
+	 */
+	private static function is_bluesky_url( string $url ): bool {
+		$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+
+		return 'bsky.app' === $host || str_ends_with( $host, '.bsky.app' );
 	}
 
 	/**

@@ -295,6 +295,24 @@ class Daymark_Subscription_Post_Type {
 			)
 		);
 
+		// A gallery post's own photo URLs (a JSON list, in display order),
+		// for its Timeline card's 2x2 grid. Written only through
+		// Daymark_Subscription_Poller::store_gallery_images(), which checks
+		// each URL; this callback re-checks them on any other write.
+		register_post_meta(
+			self::POST_TYPE,
+			'gallery_images',
+			array(
+				'type'              => 'string',
+				'description'       => __( "A gallery post's photo URLs, as a JSON list.", 'daymark' ),
+				'single'            => true,
+				'default'           => '',
+				'show_in_rest'      => false,
+				'sanitize_callback' => array( self::class, 'sanitize_gallery_images' ),
+				'auth_callback'     => $auth_callback,
+			)
+		);
+
 		// The *source* site's permalink for this specific post — never a
 		// URL on this site, since this post type has no permalink here.
 		register_post_meta(
@@ -372,6 +390,19 @@ class Daymark_Subscription_Post_Type {
 		$wp_query->set_404();
 		status_header( 404 );
 		nocache_headers();
+	}
+
+	/**
+	 * Sanitize `gallery_images` meta: a JSON list of http(s) image URLs.
+	 *
+	 * @param mixed $value Raw meta value.
+	 * @return string JSON list, or '' when nothing valid is left.
+	 */
+	public static function sanitize_gallery_images( $value ): string {
+		$decoded = is_string( $value ) ? json_decode( $value, true ) : $value;
+		$clean   = Daymark_Subscription_Content_Sniffer::gallery_images( '', is_array( $decoded ) ? array_map( 'strval', $decoded ) : array() );
+
+		return empty( $clean ) ? '' : (string) wp_json_encode( $clean );
 	}
 
 	/**

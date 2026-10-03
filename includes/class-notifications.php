@@ -168,6 +168,10 @@ class Daymark_Notifications {
 			}
 		}
 
+		foreach ( $this->get_jetpack_likes( $daymark_post_ids ) as $like ) {
+			$dated_items[] = $like;
+		}
+
 		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
 			$dated_items[] = array(
 				'timestamp' => $this->subscription_issue_timestamp( $subscription ),
@@ -256,6 +260,12 @@ class Daymark_Notifications {
 			}
 		}
 
+		foreach ( $this->get_jetpack_likes( $daymark_post_ids ) as $like ) {
+			if ( $like['timestamp'] > $seen ) {
+				return true;
+			}
+		}
+
 		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
 			if ( $this->subscription_issue_timestamp( $subscription ) > $seen ) {
 				return true;
@@ -334,10 +344,12 @@ class Daymark_Notifications {
 			array(
 				'post__in' => $post_ids,
 				'status'   => 'approve',
-				// Replies only: federation plugins (ATmosphere, Webmention)
-				// also store likes/reposts as comments with their own
-				// comment types — reactions are not notification items.
-				'type'     => 'comment',
+				// Replies, plus quote posts (issue #396 follow-up): a reblog
+				// with commentary, which the ActivityPub plugin stores as a
+				// `quote` comment holding the quoter's own words. Plain
+				// likes and reposts carry no text, so they stay out — they
+				// show only as counts on the Mark.
+				'type'     => array( 'comment', 'quote' ),
 				'number'   => $limit,
 				'orderby'  => 'comment_date_gmt',
 				'order'    => 'DESC',
@@ -382,6 +394,17 @@ class Daymark_Notifications {
 			}
 		}
 
+		// A quote post reads like a reply but isn't one: label it as what
+		// it is, keeping the network the federation detection found.
+		$is_quote = 'quote' === $comment->comment_type;
+
+		if ( $is_quote ) {
+			$source_label = 'fediverse' === $source
+				? __( 'Quoted your Mark on the Fediverse', 'daymark' )
+				: __( 'Quoted your Mark', 'daymark' );
+			$is_imported  = true;
+		}
+
 		$author = $is_imported && '' !== $external_author
 			? $external_author
 			: $comment->comment_author;
@@ -407,6 +430,10 @@ class Daymark_Notifications {
 			'comment_date_relative' => $relative,
 			'comment_author'        => sanitize_text_field( $author ),
 			'is_imported'           => $is_imported,
+			// 'quote' for a quote post (a reblog with commentary), else
+			// 'reply'. The item stays type 'comment' so it groups, filters,
+			// and takes a Reply exactly like any other conversation item.
+			'comment_kind'          => $is_quote ? 'quote' : 'reply',
 			'source'                => $source,
 			'source_label'          => $is_imported && '' !== $source_label
 				? sanitize_text_field( $source_label )
@@ -426,6 +453,66 @@ class Daymark_Notifications {
 			'post_url'              => esc_url_raw( (string) get_permalink( $post ) ),
 			'daymark_type'          => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
 		);
+	}
+
+	/**
+	 * WordPress.com likes on the given Marks, as dated notification items —
+	 * one per liker, read from the META_OWN_LIKES meta
+	 * Daymark_Jetpack_Engagement::sync_own_likes() stores (never a live
+	 * WordPress.com request here). Shaped like a comment item's
+	 * post_id/post_title/post_url/source so the app shell groups it into
+	 * the same per-Mark conversation card and source filter.
+	 *
+	 * @param int[] $post_ids Mark post IDs the current user may see.
+	 * @return array<int, array{timestamp: int, item: array<string, mixed>}>
+	 */
+	private function get_jetpack_likes( array $post_ids ): array {
+		if ( empty( $post_ids ) ) {
+			return array();
+		}
+
+		update_meta_cache( 'post', $post_ids );
+
+		$items = array();
+
+		foreach ( $post_ids as $post_id ) {
+			$likers = Daymark_Jetpack_Engagement::own_likes( (int) $post_id )['likers'];
+
+			if ( empty( $likers ) ) {
+				continue;
+			}
+
+			$post = get_post( (int) $post_id );
+
+			if ( ! $post instanceof WP_Post ) {
+				continue;
+			}
+
+			$post_title = html_entity_decode( sanitize_text_field( get_the_title( $post ) ), ENT_QUOTES, 'UTF-8' );
+			$post_url   = esc_url_raw( (string) get_permalink( $post ) );
+
+			foreach ( $likers as $liker ) {
+				$liked_at = absint( $liker['liked_at'] ?? 0 );
+
+				$items[] = array(
+					'timestamp' => $liked_at,
+					'item'      => array(
+						'type'         => 'jetpack_like',
+						'author'       => sanitize_text_field( (string) ( $liker['name'] ?? '' ) ),
+						'author_url'   => esc_url_raw( (string) ( $liker['url'] ?? '' ) ),
+						'avatar'       => esc_url_raw( (string) ( $liker['avatar'] ?? '' ) ),
+						'date'         => $liked_at ? gmdate( 'c', $liked_at ) : '',
+						'source'       => 'wpcom',
+						'source_label' => __( 'WordPress.com', 'daymark' ),
+						'post_id'      => (int) $post->ID,
+						'post_title'   => $post_title,
+						'post_url'     => $post_url,
+					),
+				);
+			}
+		}
+
+		return $items;
 	}
 
 	/**

@@ -15,6 +15,9 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	/** @var int */
 	private $author_a;
 
+	/** @var int A second author with a distinct login/display name (issue #293 author filter). */
+	private $author_b;
+
 	/** @var Daymark_Subscriptions */
 	private $subscriptions;
 
@@ -24,6 +27,14 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		Daymark_Subscriptions::install();
 
 		$this->author_a      = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$this->author_b      = (int) self::factory()->user->create(
+			array(
+				'role'         => 'author',
+				'user_login'   => 'alice',
+				'user_email'   => 'alice@example.test',
+				'display_name' => 'Alice Appleseed',
+			)
+		);
 		$this->subscriptions = new Daymark_Subscriptions();
 	}
 
@@ -234,6 +245,371 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 
 		$this->assertSame( $mark_id, $items[0]['id'] );
 		$this->assertSame( array( 'type' => 'video' ), $items[0]['featured_content'] );
+	}
+
+	/** A gallery Featured Content reports its first four image URLs and the total count, for the card's grid. */
+	public function test_mark_with_gallery_featured_content_reports_first_four_images_and_count() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Gallery demo', 'note' );
+		$ids     = array();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'gallery' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $ids ) ) )
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( 'gallery', $items[0]['featured_content']['type'] );
+		$this->assertSame( 5, $items[0]['featured_content']['count'] );
+		$this->assertCount( 4, $items[0]['featured_content']['images'] );
+		$this->assertStringStartsWith( 'http', $items[0]['featured_content']['images'][0] );
+	}
+
+	/** Issue #461: the card's grid follows the saved attachment_ids order, not attachment-ID order. */
+	public function test_gallery_featured_content_images_follow_the_saved_order() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Reordered gallery', 'note' );
+		$ids     = array();
+		for ( $i = 0; $i < 3; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		$saved = array_reverse( $ids );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'gallery' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $saved ) ) )
+		);
+
+		$items    = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+		$expected = array_map(
+			static function ( $id ) {
+				return esc_url_raw( wp_get_attachment_image_url( $id, 'medium_large' ) );
+			},
+			$saved
+		);
+
+		$this->assertSame( $expected, $items[0]['featured_content']['images'] );
+	}
+
+	/** A gallery Mark sends its first four photos, in order, and its photo count for the card's 2x2 grid. */
+	public function test_gallery_mark_reports_its_own_photos_for_the_grid() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Photo gallery', 'gallery' );
+		$ids     = array();
+		for ( $i = 0; $i < 5; $i++ ) {
+			$ids[] = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		}
+		update_post_meta( $mark_id, '_daymark_media_ids', wp_json_encode( $ids ) );
+
+		$item = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0];
+
+		$this->assertSame( 5, $item['gallery']['count'] );
+		$this->assertSame(
+			array_map(
+				static function ( $id ) {
+					return esc_url_raw( wp_get_attachment_image_url( $id, 'medium_large' ) );
+				},
+				array_slice( $ids, 0, 4 )
+			),
+			$item['gallery']['images']
+		);
+	}
+
+	/** A Mark with a single photo gets no grid. */
+	public function test_single_photo_mark_has_no_gallery_field() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'One photo', 'gallery' );
+		$id      = self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $mark_id );
+		update_post_meta( $mark_id, '_daymark_media_ids', wp_json_encode( array( $id ) ) );
+
+		$item = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0];
+
+		$this->assertArrayNotHasKey( 'gallery', $item );
+	}
+
+	/**
+	 * A video Featured Content sends its resolved thumbnail for the card's
+	 * preview, and nothing before it is resolved (reading never fetches).
+	 */
+	public function test_video_featured_content_reports_its_resolved_thumbnail() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Video demo', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'video' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ',
+					),
+				)
+			)
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertArrayNotHasKey( 'image', $fc, 'Not resolved yet: the card keeps its placeholder' );
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode(
+					array(
+						'type'          => 'video',
+						'version'       => '1.0',
+						'html'          => '<iframe src="https://www.youtube.com/embed/BZtL1NVlxgQ"></iframe>',
+						'thumbnail_url' => 'https://i.ytimg.com/vi/BZtL1NVlxgQ/hqdefault.jpg',
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		( new Daymark_Featured_Content_Social() )->resolve_remote_image( $mark_id );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( 'https://i.ytimg.com/vi/BZtL1NVlxgQ/hqdefault.jpg', $fc['image'] );
+	}
+
+	/**
+	 * GET /marks/{id}/featured-content-image resolves a missing video
+	 * thumbnail once and stores it, so the next Timeline load carries it.
+	 */
+	public function test_featured_content_image_endpoint_resolves_and_stores_a_missing_thumbnail() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Video to resolve', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'video' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'video' => array(
+						'source' => 'url',
+						'url'    => 'https://www.youtube.com/watch?v=abc123',
+					),
+				)
+			)
+		);
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'application/json' ),
+				'body'     => wp_json_encode(
+					array(
+						'type'          => 'video',
+						'version'       => '1.0',
+						'html'          => '<iframe src="https://www.youtube.com/embed/abc123"></iframe>',
+						'thumbnail_url' => 'https://i.ytimg.com/vi/abc123/hqdefault.jpg',
+					)
+				),
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		$response = rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'https://i.ytimg.com/vi/abc123/hqdefault.jpg', $response->get_data()['url'] );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( 'https://i.ytimg.com/vi/abc123/hqdefault.jpg', $fc['image'], 'Stored for the next Timeline load' );
+	}
+
+	/** The endpoint answers with an empty URL for non-video Featured Content, and 404s for an unpublished post. */
+	public function test_featured_content_image_endpoint_ignores_other_kinds_and_drafts() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote post', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'quote' => array( 'text' => 'Hi.' ) ) ) );
+
+		$this->assertSame( '', rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) )->get_data()['url'] );
+
+		wp_update_post(
+			array(
+				'ID'          => $mark_id,
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->assertSame( 404, rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-image" ) )->get_status() );
+	}
+
+	/**
+	 * A link Featured Content Mark (the Link post format, which the link kind requires).
+	 *
+	 * @param string $url Link URL.
+	 * @return int Mark ID.
+	 */
+	private function create_link_mark( string $url ): int {
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Link demo', 'note' );
+		set_post_format( $mark_id, 'link' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'link' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'link' => array( 'url' => $url ) ) ) );
+
+		return $mark_id;
+	}
+
+	/** A link sends its URL and site, and `preview: null` until its page has been looked up; never fetching. */
+	public function test_link_featured_content_reports_url_host_and_no_preview_until_looked_up() {
+		wp_set_current_user( $this->author_a );
+		$this->create_link_mark( 'https://www.example.org/news/' );
+
+		$fetched = false;
+		$watch   = static function ( $preempt ) use ( &$fetched ) {
+			$fetched = true;
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $watch );
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		remove_filter( 'pre_http_request', $watch );
+
+		$this->assertSame( 'link', $fc['type'] );
+		$this->assertSame( 'https://www.example.org/news/', $fc['url'] );
+		$this->assertSame( 'example.org', $fc['host'] );
+		$this->assertNull( $fc['preview'] );
+		$this->assertFalse( $fetched, 'The Timeline never fetches the linked page' );
+	}
+
+	/** GET /marks/{id}/featured-content-link looks the page up once; the Timeline then carries the cached preview. */
+	public function test_featured_content_link_endpoint_resolves_and_caches_the_preview() {
+		wp_set_current_user( $this->author_a );
+		$mark_id = $this->create_link_mark( 'https://www.example.org/news/' );
+
+		$public  = static function () {
+			return array( '93.184.216.34' );
+		};
+		$respond = static function () {
+			return array(
+				'headers'  => array( 'content-type' => 'text/html; charset=UTF-8' ),
+				'body'     => '<html><head><meta property="og:title" content="WordPress News" /><meta property="og:description" content="The latest from WordPress." /><meta property="og:image" content="https://example.org/og.jpg" /></head><body></body></html>',
+				'response' => array(
+					'code'    => 200,
+					'message' => 'OK',
+				),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+		add_filter( 'pre_http_request', $respond );
+		$response = rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) );
+		remove_filter( 'pre_http_request', $respond );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', $public );
+
+		$expected = array(
+			'title'       => 'WordPress News',
+			'description' => 'The latest from WordPress.',
+			'image'       => 'https://example.org/og.jpg',
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $expected, $response->get_data()['preview'] );
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+		$this->assertSame( $expected, $fc['preview'] );
+	}
+
+	/** The link endpoint answers `preview: null` for other kinds and 404s for an unpublished post. */
+	public function test_featured_content_link_endpoint_ignores_other_kinds_and_drafts() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote post', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta( $mark_id, '_daymark_featured_content', wp_json_encode( array( 'quote' => array( 'text' => 'Hi.' ) ) ) );
+
+		$this->assertNull( rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) )->get_data()['preview'] );
+
+		wp_update_post(
+			array(
+				'ID'          => $mark_id,
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->assertSame( 404, rest_do_request( $this->request( 'GET', "/daymark/v1/marks/{$mark_id}/featured-content-link" ) )->get_status() );
+	}
+
+	/** A quote Featured Content sends its text and credit, for the card's quote banner. */
+	public function test_quote_featured_content_reports_text_and_credit() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Quote demo', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode(
+				array(
+					'quote' => array(
+						'text'         => 'The best way to predict the future is to invent it.',
+						'author'       => 'Alan Kay',
+						'citation_url' => 'https://www.example.org/wiki/Alan_Kay',
+					),
+				)
+			)
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+
+		$this->assertSame( 'quote', $fc['type'] );
+		$this->assertSame( 'The best way to predict the future is to invent it.', $fc['text'] );
+		$this->assertSame( 'Alan Kay — example.org', $fc['credit'] );
+	}
+
+	/** A long quote is cut to a card-sized length with an ellipsis; a quote with no credit sends an empty one. */
+	public function test_long_quote_is_cut_for_the_card() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Long quote', 'note' );
+		update_post_meta( $mark_id, '_daymark_featured_content_type', 'quote' );
+		update_post_meta(
+			$mark_id,
+			'_daymark_featured_content',
+			wp_json_encode( array( 'quote' => array( 'text' => str_repeat( 'word ', 100 ) ) ) )
+		);
+
+		$fc = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data()[0]['featured_content'];
+
+		$this->assertLessThanOrEqual( 280, mb_strlen( $fc['text'] ) );
+		$this->assertStringEndsWith( '…', $fc['text'] );
+		$this->assertSame( '', $fc['credit'] );
 	}
 
 	/** A Mark with no Featured Content set omits the field entirely, rather than reporting a null/empty value. */
@@ -587,5 +963,217 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$ids     = array_column( rest_do_request( $request )->get_data(), 'id' );
 
 		$this->assertSame( array( $ordinary_mark_id ), $ids );
+	}
+
+	/** Issue #293 — `after` is an inclusive floor (the boundary-day Mark is kept). */
+	public function test_after_filters_marks_inclusively() {
+		wp_set_current_user( $this->author_a );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'Older' );
+		$boundary = $this->create_mark( '2024-01-02 00:00:00', 'Boundary' );
+		$newer    = $this->create_mark( '2024-01-03 00:00:00', 'Newer' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$this->assertSame(
+			array( $newer, $boundary ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — `before` is an inclusive ceiling. */
+	public function test_before_filters_marks_inclusively() {
+		wp_set_current_user( $this->author_a );
+
+		$oldest   = $this->create_mark( '2024-01-01 00:00:00', 'Older' );
+		$boundary = $this->create_mark( '2024-01-02 00:00:00', 'Boundary' );
+		$this->create_mark( '2024-01-03 00:00:00', 'Newer' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'before', '2024-01-02 00:00:00' );
+		$this->assertSame(
+			array( $boundary, $oldest ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — `after` + `before` together bracket a window. */
+	public function test_bracket_returns_marks_within_the_window() {
+		wp_set_current_user( $this->author_a );
+
+		$this->create_mark( '2024-01-01 00:00:00', 'Outside Low' );
+		$low  = $this->create_mark( '2024-01-02 00:00:00', 'Low Boundary' );
+		$high = $this->create_mark( '2024-01-03 00:00:00', 'High Boundary' );
+		$this->create_mark( '2024-01-10 00:00:00', 'Outside High' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$request->set_param( 'before', '2024-01-03 00:00:00' );
+		$this->assertSame(
+			array( $high, $low ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — the same window applies to subscription posts via their own `published_at` meta. */
+	public function test_date_window_applies_to_subscription_posts_via_published_at() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$this->create_subscription_post( $subscription_id, '2024-01-01 00:00:00', 'Too Old' );
+		$boundary = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'On The After Bound' );
+		$newest   = $this->create_subscription_post( $subscription_id, '2024-01-03 00:00:00', 'Within Window' );
+		$this->create_subscription_post( $subscription_id, '2024-01-10 00:00:00', 'Too New' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-02 00:00:00' );
+		$request->set_param( 'before', '2024-01-03 00:00:00' );
+		$this->assertSame(
+			array( $newest, $boundary ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/** Issue #293 — the route's `format => 'date-time'` arg validation rejects a malformed window bound before it reaches the query. */
+	public function test_invalid_date_time_is_rejected_by_arg_validation() {
+		wp_set_current_user( $this->author_a );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', 'not-a-date' );
+
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		// WP aggregates the per-arg date-time format failure under the
+		// generic rest_invalid_param envelope with a `rest_invalid_date`
+		// detail.
+		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
+		$this->assertArrayHasKey( 'after', $response->get_data()['data']['details'] );
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` returns exactly the Marks published on
+	 * today's calendar date in a prior year: the one-year-ago and
+	 * two-years-ago same-date Marks match (date-desc, the newer first),
+	 * this-year's own same-date Mark is excluded by the exclusive
+	 * `before` bound, and a different-day prior-year Mark never matches.
+	 * uses the same wp_date() today the implementation itself resolves,
+	 * so the two can never disagree about which day is "today".
+	 */
+	public function test_on_this_day_returns_prior_year_same_date_marks_only() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$last_year     = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'Last year, this day'
+		);
+		$two_years_ago = $this->create_mark(
+			sprintf( '%d-%s-%s 08:00:00', $year - 2, $mon, $day ),
+			'Two years ago, this day'
+		);
+
+		// A different day last year — must not match, whatever "this day"
+		// happens to be (01 flopped to 02 when today IS the 1st).
+		$different_day = '01' === $day ? '02' : '01';
+		$this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $different_day ),
+			'Last year, different day'
+		);
+
+		// Published on the same calendar date but this year — excluded by
+		// the exclusive `before` bound at local midnight today.
+		$this->create_mark( wp_date( 'Y-m-d' ) . ' 10:00:00', 'Today' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame(
+			array( $last_year, $two_years_ago ),
+			$ids,
+			'Only prior-year same-date Marks return, newest first'
+		);
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` is Marks-only by construction, exactly
+	 * like `mine`: a subscription post published on the very same date
+	 * is skipped entirely, not merely filtered out of a merged result.
+	 */
+	public function test_on_this_day_excludes_subscription_posts() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$match_mark      = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'Matching Mark'
+		);
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$this->create_subscription_post(
+			$subscription_id,
+			sprintf( '%d-%s-%s 09:00:00', $year - 1, $mon, $day ),
+			'Same-date subscription post'
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame( array( $match_mark ), $ids );
+	}
+
+	/**
+	 * Issue #294 — `on_this_day` ANDs with an explicit `after`/`before`
+	 * window (both are date_query clauses on the same post_date column), so
+	 * an on-this-day Mark outside the window is still excluded.
+	 */
+	public function test_on_this_day_combines_with_an_explicit_date_window() {
+		wp_set_current_user( $this->author_a );
+
+		$year = (int) wp_date( 'Y' );
+		$mon  = wp_date( 'm' );
+		$day  = wp_date( 'd' );
+
+		$last_year     = $this->create_mark(
+			sprintf( '%d-%s-%s 10:00:00', $year - 1, $mon, $day ),
+			'One year ago'
+		);
+		$two_years_ago = $this->create_mark(
+			sprintf( '%d-%s-%s 08:00:00', $year - 2, $mon, $day ),
+			'Two years ago'
+		);
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '1' );
+		$request->set_param( 'after', sprintf( '%d-%s-%s 00:00:00', $year - 1, $mon, $day ) );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertSame(
+			array( $last_year ),
+			$ids,
+			'The window ANDed with on-this-day keeps only the one-year-ago Mark'
+		);
+	}
+
+	/** Issue #294 — `on_this_day` present-but-false is a no-op, exactly like the other boolean params. */
+	public function test_on_this_day_set_to_false_is_a_no_op() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-01 00:00:00', 'A Mark' );
+		$sub_post_id     = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'A Subscription Post' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'on_this_day', '0' );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertEqualsCanonicalizing( array( $mark_id, $sub_post_id ), $ids );
 	}
 }

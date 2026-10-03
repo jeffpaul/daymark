@@ -34,10 +34,11 @@
  * pending value in the same request.
  *
  * `SUPPORTED_TYPES` (filterable via `daymark_featured_content_allowed_types`)
- * is deliberately scoped to what's actually implemented end-to-end so far —
- * `array( 'audio', 'video' )` for this phase — so the editor panel and the
- * meta sanitizer can never accept or render a content kind before its own
- * phase has actually shipped a frontend renderer for it.
+ * is deliberately scoped to what's actually implemented end-to-end —
+ * `audio`, `video`, `gallery` (issue #406), `quote`, and `link` (issue #407)
+ * — so the editor panel and the meta sanitizer can never accept or render a
+ * content kind before its own phase has actually shipped a frontend renderer
+ * for it.
  *
  * No new build step: the editor panel (`assets/featured-content-editor.js`)
  * is plain ES2020 calling `wp.element.createElement` against WordPress
@@ -72,14 +73,23 @@ class Daymark_Featured_Content {
 	public const META_DATA = '_daymark_featured_content';
 
 	/**
-	 * Content-kind values this phase implements end-to-end (editor UI +
-	 * frontend rendering). Later phases widen this — gallery, quote, and a
-	 * link-post-format-only `link` kind — as each one's own frontend
-	 * rendering ships; see issue #401's phased plan.
+	 * Content-kind values implemented end-to-end (editor UI + frontend
+	 * rendering). The `link` kind is only honored for a post that genuinely
+	 * uses the `link` post format — that constraint is enforced at read time
+	 * in get_featured_content(), since a meta sanitizer has no post ID to
+	 * check. See issue #401's phased plan for the full order.
 	 *
 	 * @var string[]
 	 */
-	private const SUPPORTED_TYPES = array( 'audio', 'video' );
+	private const SUPPORTED_TYPES = array( 'audio', 'video', 'gallery', 'quote', 'link' );
+
+	/**
+	 * Default cap on how many images a gallery Featured Content may store.
+	 * Filterable via `daymark_featured_content_gallery_max`.
+	 *
+	 * @var int
+	 */
+	private const GALLERY_MAX = 20;
 
 	/**
 	 * File extensions a profiled URL's own path can end in and still be
@@ -150,13 +160,12 @@ class Daymark_Featured_Content {
 	private static function allowed_types(): array {
 		/**
 		 * Filters which Featured Content type values are accepted by the
-		 * meta sanitizer and offered by the editor panel. Starts scoped to
-		 * what this phase actually implements end-to-end; later phases
-		 * widen this as gallery/quote/link ship — see issue #401.
+		 * meta sanitizer and offered by the editor panel. Scoped to what
+		 * is implemented end-to-end.
 		 *
 		 * @since 0.18.0
 		 *
-		 * @param string[] $types Defaults to `array( 'audio', 'video' )`.
+		 * @param string[] $types Defaults to `array( 'audio', 'video', 'gallery', 'quote', 'link' )`.
 		 */
 		return array_values( array_unique( array_map( 'strval', (array) apply_filters( 'daymark_featured_content_allowed_types', self::SUPPORTED_TYPES ) ) ) );
 	}
@@ -220,11 +229,10 @@ class Daymark_Featured_Content {
 
 	/**
 	 * Sanitize `_daymark_featured_content` — keeps only sub-keys this class
-	 * currently recognizes (`audio`/`video`), each narrowed to its own
-	 * allowed shape; a gallery/quote/link sub-key sent by a future client
-	 * ahead of this phase's own rollout is silently dropped rather than
-	 * stored unsanitized, since nothing here can validate a shape this
-	 * class doesn't implement yet.
+	 * currently recognizes (`audio`/`video`/`gallery`/`quote`/`link`), each
+	 * narrowed to its own allowed shape; any other sub-key is silently
+	 * dropped rather than stored unsanitized, since nothing here can
+	 * validate a shape this class doesn't implement.
 	 *
 	 * @param mixed $value Raw JSON string.
 	 * @return string Re-encoded, sanitized JSON (possibly `'{}'`).
@@ -251,6 +259,30 @@ class Daymark_Featured_Content {
 
 			if ( ! empty( $video ) ) {
 				$clean['video'] = $video;
+			}
+		}
+
+		if ( isset( $decoded['quote'] ) && is_array( $decoded['quote'] ) ) {
+			$quote = self::sanitize_quote_shape( $decoded['quote'] );
+
+			if ( ! empty( $quote ) ) {
+				$clean['quote'] = $quote;
+			}
+		}
+
+		if ( isset( $decoded['link'] ) && is_array( $decoded['link'] ) ) {
+			$link = self::sanitize_link_shape( $decoded['link'] );
+
+			if ( ! empty( $link ) ) {
+				$clean['link'] = $link;
+			}
+		}
+
+		if ( isset( $decoded['gallery'] ) && is_array( $decoded['gallery'] ) ) {
+			$gallery = self::sanitize_gallery_shape( $decoded['gallery'] );
+
+			if ( ! empty( $gallery ) ) {
+				$clean['gallery'] = $gallery;
 			}
 		}
 
@@ -299,6 +331,121 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Sanitize a `quote` shape — `{ text, author?, citation_url? }`. `text`
+	 * is required: a quote with nothing to quote is stored as nothing, the
+	 * same "don't persist a shape you can't render" rule sanitize_data()
+	 * applies per sub-key. `author` is optional plain text (often a speaker
+	 * a citation URL's host already implies). `citation_url` must survive
+	 * esc_url_raw() as an http(s) URL or it's dropped entirely — never
+	 * stored raw, never half-sanitized.
+	 *
+	 * Deliberately no length caps on the text: a quote is the author's own
+	 * words, not a generated metadata string, so truncating it would corrupt
+	 * content rather than bound risk, and WP core's own post/request limits
+	 * already bound what can reach this sanitizer at all.
+	 *
+	 * @param array<string, mixed> $raw Decoded sub-array.
+	 * @return array<string, mixed> Sanitized sub-array; empty when unusable.
+	 */
+	private static function sanitize_quote_shape( array $raw ): array {
+		$text = isset( $raw['text'] ) ? trim( (string) $raw['text'] ) : '';
+		$text = '' === $text ? '' : sanitize_textarea_field( $text );
+
+		if ( '' === $text ) {
+			return array();
+		}
+
+		$clean = array( 'text' => $text );
+
+		if ( isset( $raw['author'] ) ) {
+			$author = sanitize_text_field( (string) $raw['author'] );
+
+			if ( '' !== $author ) {
+				$clean['author'] = $author;
+			}
+		}
+
+		if ( isset( $raw['citation_url'] ) ) {
+			$citation_url = esc_url_raw( trim( (string) $raw['citation_url'] ), array( 'http', 'https' ) );
+
+			if ( '' !== $citation_url ) {
+				$clean['citation_url'] = $citation_url;
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Sanitize a `link` shape — `{ url }`. Honored only for a post actually
+	 * carrying the `link` post format (enforced at read time in
+	 * get_featured_content(), since a sanitizer has no post ID). `url` is
+	 * required and must survive esc_url_raw() as an http(s) URL.
+	 *
+	 * @param array<string, mixed> $raw Decoded sub-array.
+	 * @return array<string, mixed> Sanitized sub-array; empty when unusable.
+	 */
+	private static function sanitize_link_shape( array $raw ): array {
+		$url = isset( $raw['url'] ) ? esc_url_raw( trim( (string) $raw['url'] ), array( 'http', 'https' ) ) : '';
+
+		return '' === $url ? array() : array( 'url' => $url );
+	}
+
+	/**
+	 * How many images a gallery Featured Content may store.
+	 *
+	 * @return int
+	 */
+	private static function gallery_max(): int {
+		/**
+		 * Filters the maximum number of images stored for gallery Featured Content.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param int $max Defaults to 20.
+		 */
+		return max( 1, (int) apply_filters( 'daymark_featured_content_gallery_max', self::GALLERY_MAX ) );
+	}
+
+	/**
+	 * Sanitize a gallery sub-key: `{ attachment_ids: [int, ...] }`. IDs are
+	 * absint'd, de-duplicated (first occurrence wins, order preserved), and
+	 * kept only when they are real image attachments. Anything else — a
+	 * video ID, a missing attachment, a non-numeric value — is dropped.
+	 * An empty result is rejected entirely so a type of `gallery` with no
+	 * usable images never gets stored.
+	 *
+	 * @param array<string, mixed> $raw Decoded gallery sub-array.
+	 * @return array{attachment_ids: int[]}|array{}
+	 */
+	private static function sanitize_gallery_shape( array $raw ): array {
+		$ids   = isset( $raw['attachment_ids'] ) && is_array( $raw['attachment_ids'] ) ? $raw['attachment_ids'] : array();
+		$clean = array();
+
+		foreach ( $ids as $id ) {
+			$id = absint( $id );
+
+			if ( $id <= 0 || isset( $clean[ $id ] ) || ! wp_attachment_is_image( $id ) ) {
+				continue;
+			}
+
+			$clean[ $id ] = $id;
+
+			if ( count( $clean ) >= self::gallery_max() ) {
+				break;
+			}
+		}
+
+		if ( empty( $clean ) ) {
+			return array();
+		}
+
+		return array(
+			'attachment_ids' => array_values( $clean ),
+		);
+	}
+
+	/**
 	 * Whether a post has a genuinely usable Featured Content set.
 	 *
 	 * @param int|WP_Post|null $post Post ID/object, or null for the current post.
@@ -337,6 +484,14 @@ class Daymark_Featured_Content {
 			return array();
 		}
 
+		// The `link` kind is only meaningful for a post that genuinely uses
+		// the `link` post format. Enforced here at read time because the meta
+		// sanitizers have no post ID to check against, so a `link` value set
+		// on a standard/aside/etc. post is never rendered.
+		if ( 'link' === $type && 'link' !== get_post_format( $post->ID ) ) {
+			return array();
+		}
+
 		return array(
 			'type' => $type,
 			'data' => $data,
@@ -361,6 +516,63 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * A post's Featured Content markup for the app's full post view
+	 * (GET /daymark/v1/marks/{id}/content). The same markup the front end
+	 * renders, except a gallery always includes every image: that request
+	 * is never singular, and the app shell loads the slider script and
+	 * stylesheet itself.
+	 *
+	 * @param int|WP_Post $post Post ID or object.
+	 * @return string Markup, or '' when the post has no Featured Content.
+	 */
+	public static function render_for_app( $post ): string {
+		return self::render( $post, array( 'full_gallery' => true ) );
+	}
+
+	/**
+	 * A gallery block's images as the same slider a gallery Featured Content
+	 * uses, for the app's full post view (GET /daymark/v1/marks/{id}/content),
+	 * where core's gallery block would otherwise show as stacked images: the
+	 * app shell has no theme stylesheet to lay it out.
+	 *
+	 * @param int[]                   $attachment_ids Image attachment IDs, in display order.
+	 * @param array<int, string>|null $captions       Captions keyed by attachment ID (a gallery block's own), or null to use each image's attachment caption.
+	 * @return string Slider markup, or '' when no image is usable.
+	 */
+	public static function render_gallery_for_app( array $attachment_ids, ?array $captions = null ): string {
+		return self::render_gallery( array( 'attachment_ids' => $attachment_ids ), true, __( 'Gallery', 'daymark' ), $captions );
+	}
+
+	/**
+	 * A slide's caption markup, or '' when there is no caption. Keeps only
+	 * simple inline formatting and links: no class or style attributes, so
+	 * a caption can't take on the app's own styles.
+	 *
+	 * @param string $caption Caption text or HTML.
+	 * @return string
+	 */
+	private static function gallery_caption_html( string $caption ): string {
+		$caption = trim(
+			wp_kses(
+				$caption,
+				array(
+					'a'      => array(
+						'href'   => true,
+						'rel'    => true,
+						'target' => true,
+					),
+					'em'     => array(),
+					'strong' => array(),
+					'code'   => array(),
+					'br'     => array(),
+				)
+			)
+		);
+
+		return '' === $caption ? '' : '<p class="daymark-fc-gallery__caption">' . $caption . '</p>';
+	}
+
+	/**
 	 * Build a post's Featured Content markup.
 	 *
 	 * @param int|WP_Post|null     $post Post ID/object, or null for the current post.
@@ -377,10 +589,18 @@ class Daymark_Featured_Content {
 
 		$html = '';
 
+		$discover = self::oembed_discovery_allowed( (int) $post->post_author, $post );
+
 		if ( 'audio' === $fc['type'] ) {
-			$html = self::render_audio( $fc['data'] );
+			$html = self::render_audio( $fc['data'], $discover );
 		} elseif ( 'video' === $fc['type'] ) {
-			$html = self::render_video( $fc['data'] );
+			$html = self::render_video( $fc['data'], $discover );
+		} elseif ( 'gallery' === $fc['type'] ) {
+			$html = self::render_gallery( $fc['data'], ! empty( $args['full_gallery'] ) );
+		} elseif ( 'quote' === $fc['type'] ) {
+			$html = self::render_quote( $fc['data'] );
+		} elseif ( 'link' === $fc['type'] ) {
+			$html = self::render_link( $fc['data'], $post );
 		}
 
 		/**
@@ -434,6 +654,40 @@ class Daymark_Featured_Content {
 	}
 
 	/**
+	 * Whether a user's Featured Content URL may be resolved by oEmbed
+	 * discovery, where a remote page names its own oEmbed endpoint and so
+	 * chooses the markup that appears on the published post.
+	 *
+	 * WordPress core enables discovery only for a user with `unfiltered_html`
+	 * (an Administrator or Editor on a single site) and keeps it off for an
+	 * Author or Contributor, for exactly that reason; this follows the same
+	 * rule. It is decided by the post's author, not the current visitor,
+	 * because the markup is rendered for anonymous visitors under that
+	 * author's name. On a one-person site the author is the administrator, so
+	 * nothing changes; on a multi-user site an Author's Featured Content still
+	 * works for every provider WordPress trusts and for a direct media file
+	 * link. Sites that define `DISALLOW_UNFILTERED_HTML` turn discovery off for
+	 * everyone, as WordPress does.
+	 *
+	 * @param int          $user_id The post's author (or, for an editor preview, whose rights apply).
+	 * @param WP_Post|null $post    The post, when known.
+	 * @return bool
+	 */
+	public static function oembed_discovery_allowed( int $user_id, ?WP_Post $post = null ): bool {
+		$allowed = $user_id > 0 && user_can( $user_id, 'unfiltered_html' );
+
+		/**
+		 * Filters whether Featured Content may use oEmbed discovery for a post.
+		 *
+		 * @since 0.18.0
+		 *
+		 * @param bool         $allowed Whether the post author has `unfiltered_html`.
+		 * @param WP_Post|null $post    The post, when known.
+		 */
+		return (bool) apply_filters( 'daymark_featured_content_oembed_discovery', $allowed, $post );
+	}
+
+	/**
 	 * Render an audio-type Featured Content: an attachment via core's own
 	 * `wp_audio_shortcode()`, or a URL via a resolved oEmbed preview
 	 * (Daymark_Subscription_Oembed::resolve() — already fully generic, no
@@ -444,10 +698,11 @@ class Daymark_Featured_Content {
 	 * a provider page URL, which that native fallback can't play either
 	 * way (see is_direct_media_url()).
 	 *
-	 * @param array{source: string, attachment_id?: int, url?: string} $data Sanitized audio data.
+	 * @param array{source: string, attachment_id?: int, url?: string} $data     Sanitized audio data.
+	 * @param bool                                                     $discover Whether oEmbed discovery is allowed for this post's author.
 	 * @return string
 	 */
-	private static function render_audio( array $data ): string {
+	private static function render_audio( array $data, bool $discover = false ): string {
 		if ( 'library' === ( $data['source'] ?? '' ) && ! empty( $data['attachment_id'] ) ) {
 			return (string) wp_audio_shortcode( array( 'src' => wp_get_attachment_url( (int) $data['attachment_id'] ) ) );
 		}
@@ -458,7 +713,7 @@ class Daymark_Featured_Content {
 			return '';
 		}
 
-		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url ) : array();
+		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url, $discover ) : array();
 
 		if ( ! empty( $embed['html'] ) ) {
 			return (string) $embed['html'];
@@ -471,10 +726,11 @@ class Daymark_Featured_Content {
 	 * Render a video-type Featured Content — same source/oEmbed/fallback
 	 * order as render_audio(), via `wp_video_shortcode()` instead.
 	 *
-	 * @param array{source: string, attachment_id?: int, url?: string} $data Sanitized video data.
+	 * @param array{source: string, attachment_id?: int, url?: string} $data     Sanitized video data.
+	 * @param bool                                                     $discover Whether oEmbed discovery is allowed for this post's author.
 	 * @return string
 	 */
-	private static function render_video( array $data ): string {
+	private static function render_video( array $data, bool $discover = false ): string {
 		if ( 'library' === ( $data['source'] ?? '' ) && ! empty( $data['attachment_id'] ) ) {
 			return (string) wp_video_shortcode( array( 'src' => wp_get_attachment_url( (int) $data['attachment_id'] ) ) );
 		}
@@ -485,13 +741,281 @@ class Daymark_Featured_Content {
 			return '';
 		}
 
-		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url ) : array();
+		$embed = class_exists( 'Daymark_Subscription_Oembed' ) ? Daymark_Subscription_Oembed::resolve( $url, $discover ) : array();
 
 		if ( ! empty( $embed['html'] ) ) {
 			return (string) $embed['html'];
 		}
 
 		return self::is_direct_media_url( $url ) ? (string) wp_video_shortcode( array( 'src' => $url ) ) : '';
+	}
+
+	/**
+	 * Render a quote-type Featured Content: a `<blockquote>` with the quoted
+	 * text plus an attribution line where one was provided. Attribution is
+	 * the author when one exists, else the citation URL's own host — a
+	 * speaker's name often lives in bibiliography/permalink context without
+	 * a typed-out author — and a citation URL's host is never repeated as
+	 * link text when the author already serves as the label. Escaped
+	 * throughout at output, never wpautop()'d (the stored text's line breaks
+	 * are preserved via white-space CSS instead of being re-flowed, so a
+	 * quote keeps its own punctuation intact).
+	 *
+	 * @param array{text: string, author?: string, citation_url?: string} $data Sanitized quote data.
+	 * @return string
+	 */
+	private static function render_quote( array $data ): string {
+		$text = (string) ( $data['text'] ?? '' );
+
+		if ( '' === $text ) {
+			return '';
+		}
+
+		$author       = (string) ( $data['author'] ?? '' );
+		$citation_url = (string) ( $data['citation_url'] ?? '' );
+		$has_credit   = '' !== $author || '' !== $citation_url;
+
+		$html  = '<blockquote class="daymark-featured-quote">';
+		$html .= '<p>' . esc_html( $text ) . '</p>';
+
+		if ( $has_credit ) {
+			$label = '' !== $author ? $author : self::url_host_label( $citation_url );
+
+			$html .= '<footer>';
+
+			if ( '' !== $author && '' !== $citation_url ) {
+				$html .= '<cite>' . esc_html( $author ) . ' — <a href="' . esc_url( $citation_url ) . '" rel="noopener">' . esc_html( self::url_host_label( $citation_url ) ) . '</a></cite>';
+			} elseif ( '' !== $author ) {
+				$html .= '<cite>' . esc_html( $author ) . '</cite>';
+			} else {
+				$html .= '<cite><a href="' . esc_url( $citation_url ) . '" rel="noopener">' . esc_html( $label ) . '</a></cite>';
+			}
+
+			$html .= '</footer>';
+		}
+
+		$html .= '</blockquote>';
+
+		return $html;
+	}
+
+	/**
+	 * A quote's credit line as plain text, for a Timeline card (which can't
+	 * hold a link, since the whole card is a button): "Author — host" with
+	 * both, or whichever one is set — the same wording render_quote() shows.
+	 *
+	 * @param array{text?: string, author?: string, citation_url?: string} $data Sanitized quote data.
+	 * @return string '' when the quote has no credit.
+	 */
+	public static function quote_credit( array $data ): string {
+		$author       = (string) ( $data['author'] ?? '' );
+		$citation_url = (string) ( $data['citation_url'] ?? '' );
+		$parts        = array();
+
+		if ( '' !== $author ) {
+			$parts[] = $author;
+		}
+
+		if ( '' !== $citation_url ) {
+			$parts[] = self::url_host_label( $citation_url );
+		}
+
+		return implode( ' — ', $parts );
+	}
+
+	/**
+	 * Render a link-type Featured Content. With a saved preview of the
+	 * linked page (Daymark_Featured_Content_Social::link_preview(), resolved
+	 * when the Featured Content was saved), it's a preview card: the page's
+	 * image, title, description, and site, the whole card one link. Without
+	 * one (not resolved yet, or the page has no Open Graph title), it's a
+	 * plain anchor labelled with the link's host. Never fetches the page:
+	 * a visitor must not be able to trigger an outbound request. Only ever
+	 * reached for a post with the `link` post format (the read-time gate in
+	 * get_featured_content()), so there's no format check here.
+	 *
+	 * @param array{url: string} $data Sanitized link data.
+	 * @param WP_Post|null       $post The post, for its saved preview.
+	 * @return string
+	 */
+	private static function render_link( array $data, ?WP_Post $post = null ): string {
+		$url = (string) ( $data['url'] ?? '' );
+
+		if ( '' === $url ) {
+			return '';
+		}
+
+		$host    = self::url_host_label( $url );
+		$preview = $post ? Daymark_Featured_Content_Social::link_preview( $post ) : null;
+
+		if ( empty( $preview['title'] ) ) {
+			return sprintf(
+				'<a class="daymark-featured-link" href="%1$s" target="_blank" rel="noopener">%2$s</a>',
+				esc_url( $url ),
+				esc_html( $host )
+			);
+		}
+
+		// Outside a single post the stylesheet isn't loaded in the head; a
+		// late enqueue prints it in the footer, like the gallery slider's.
+		self::enqueue_frontend_assets( false );
+
+		$image = '' !== $preview['image']
+			? sprintf( '<img class="daymark-featured-link-card__image" src="%s" alt="" loading="lazy" decoding="async" />', esc_url( $preview['image'] ) )
+			: '';
+
+		$description = '' !== $preview['description']
+			? sprintf( '<span class="daymark-featured-link-card__description">%s</span>', esc_html( $preview['description'] ) )
+			: '';
+
+		return sprintf(
+			'<a class="daymark-featured-link-card" href="%1$s" target="_blank" rel="noopener">%2$s<span class="daymark-featured-link-card__text"><span class="daymark-featured-link-card__title">%3$s</span>%4$s<span class="daymark-featured-link-card__site">%5$s</span></span></a>',
+			esc_url( $url ),
+			$image,
+			esc_html( $preview['title'] ),
+			$description,
+			esc_html( $host )
+		);
+	}
+
+	/**
+	 * Render a gallery Featured Content as a slider shell. Every slide is in
+	 * the markup (a no-JS visitor sees them stacked; assets/featured-content.js
+	 * adds `is-enhanced` and shows one at a time). Controls, dots, and the
+	 * live region are omitted for a single image — there is nothing to slide.
+	 * Outside a single post only the first image is rendered, since the
+	 * slider's assets are not loaded there.
+	 *
+	 * @param array{attachment_ids?: int[]} $data  Sanitized gallery data.
+	 * @param bool                          $full  Render every image even outside a single post — for the app's full post view, which loads the slider itself.
+	 * @param string                        $label The carousel's accessible name; '' for "Featured gallery".
+	 * @param array<int, string>|null       $captions Captions keyed by attachment ID, or null to use each image's own attachment caption.
+	 * @return string
+	 */
+	private static function render_gallery( array $data, bool $full = false, string $label = '', ?array $captions = null ): string {
+		$ids          = isset( $data['attachment_ids'] ) && is_array( $data['attachment_ids'] ) ? $data['attachment_ids'] : array();
+		$images       = array();
+		$slide_labels = array();
+
+		foreach ( $ids as $id ) {
+			$id = absint( $id );
+
+			if ( $id <= 0 || ! wp_attachment_is_image( $id ) ) {
+				continue;
+			}
+
+			$img = wp_get_attachment_image(
+				$id,
+				'large',
+				false,
+				array(
+					'class' => 'daymark-fc-gallery__img',
+				)
+			);
+
+			if ( '' === $img ) {
+				continue;
+			}
+
+			$images[]       = $img;
+			$slide_labels[] = self::gallery_caption_html(
+				null === $captions ? (string) wp_get_attachment_caption( $id ) : (string) ( $captions[ $id ] ?? '' )
+			);
+		}
+
+		$count = count( $images );
+
+		if ( 0 === $count ) {
+			return '';
+		}
+
+		// Outside a single post — the home page, an archive, search, a feed —
+		// a theme calls the_post_thumbnail() once per listed post, and the
+		// slider's stylesheet and script are not loaded there. Showing up to
+		// 20 stacked, unstyled images in every listing would be far worse
+		// than the featured image it replaces, so show only the first image.
+		if ( $count > 1 && ! is_singular() && ! $full ) {
+			$images       = array_slice( $images, 0, 1 );
+			$slide_labels = array_slice( $slide_labels, 0, 1 );
+			$count        = 1;
+		}
+
+		if ( $count > 1 && ! $full ) {
+			self::enqueue_frontend_assets( true );
+		}
+
+		$slides = array();
+
+		foreach ( $images as $index => $img ) {
+			$slides[] = sprintf(
+				'<div class="daymark-fc-gallery__slide" role="group" aria-roledescription="%1$s" aria-label="%2$s">%3$s</div>',
+				esc_attr__( 'slide', 'daymark' ),
+				esc_attr(
+					sprintf(
+						/* translators: 1: current slide number, 2: total slides. */
+						__( 'Slide %1$d of %2$d', 'daymark' ),
+						$index + 1,
+						$count
+					)
+				),
+				$img . $slide_labels[ $index ]
+			);
+		}
+
+		$controls = '';
+
+		if ( $count > 1 ) {
+			$dots = array();
+
+			for ( $i = 0; $i < $count; $i++ ) {
+				$dots[] = sprintf(
+					'<button type="button" class="daymark-fc-gallery__dot" data-daymark-gallery-dot data-index="%1$d" aria-label="%2$s"></button>',
+					$i,
+					esc_attr(
+						sprintf(
+							/* translators: %d: slide number. */
+							__( 'Show slide %d', 'daymark' ),
+							$i + 1
+						)
+					)
+				);
+			}
+
+			$controls = sprintf(
+				'<button type="button" class="daymark-fc-gallery__nav daymark-fc-gallery__nav--prev" data-daymark-gallery-prev aria-label="%1$s"></button><button type="button" class="daymark-fc-gallery__nav daymark-fc-gallery__nav--next" data-daymark-gallery-next aria-label="%2$s"></button><div class="daymark-fc-gallery__dots">%3$s</div><div class="screen-reader-text" data-daymark-gallery-live aria-live="polite" data-template="%4$s"></div>',
+				esc_attr__( 'Previous slide', 'daymark' ),
+				esc_attr__( 'Next slide', 'daymark' ),
+				implode( '', $dots ),
+				esc_attr(
+					/* translators: 1: current slide number, 2: total slides. */
+					__( 'Slide %1$d of %2$d', 'daymark' )
+				)
+			);
+		}
+
+		return sprintf(
+			'<div class="daymark-fc-gallery" data-daymark-gallery tabindex="0" role="region" aria-roledescription="%1$s" aria-label="%2$s"><div class="daymark-fc-gallery__track">%3$s</div>%4$s</div>',
+			esc_attr__( 'carousel', 'daymark' ),
+			'' !== $label ? esc_attr( $label ) : esc_attr__( 'Featured gallery', 'daymark' ),
+			implode( '', $slides ),
+			$controls
+		);
+	}
+
+	/**
+	 * A short, human-readable label for a URL — its host with a leading
+	 * `www.` prefix stripped (e.g. `https://www.example.com/some/path` →
+	 * `example.com`). Falls back to the URL itself when its host can't be
+	 * parsed, so the caller never emits an empty label.
+	 *
+	 * @param string $url URL to derive a label from.
+	 * @return string
+	 */
+	public static function url_host_label( string $url ): string {
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+		$host = preg_replace( '/^www\./', '', $host );
+
+		return '' !== $host ? $host : $url;
 	}
 
 	/**
@@ -515,10 +1039,13 @@ class Daymark_Featured_Content {
 		// classic editor/media-library screens call for the same reason.
 		wp_enqueue_media();
 
+		// jquery-touch-punch (core-bundled) lets core's gallery editor's
+		// jQuery UI sortable list be reordered by touch as well as mouse —
+		// media-views depends on jquery-ui-sortable but not on it (issue #461).
 		wp_enqueue_script(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.js',
-			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models' ),
+			array( 'wp-hooks', 'wp-element', 'wp-data', 'wp-i18n', 'wp-api-fetch', 'media-editor', 'media-models', 'jquery-touch-punch' ),
 			DAYMARK_VERSION,
 			true
 		);
@@ -551,16 +1078,41 @@ class Daymark_Featured_Content {
 	 * @return void
 	 */
 	public function maybe_enqueue_frontend_style(): void {
-		if ( ! is_singular() || ! self::has_featured_content( get_queried_object_id() ) ) {
+		$post_id = (int) get_queried_object_id();
+
+		if ( ! is_singular() || ! self::has_featured_content( $post_id ) ) {
 			return;
 		}
 
+		self::enqueue_frontend_assets( 'gallery' === ( self::get_featured_content( $post_id )['type'] ?? '' ) );
+	}
+
+	/**
+	 * Enqueue the frontend stylesheet and, for a gallery, its slider script.
+	 * Called both for the queried post (head) and from render_gallery()
+	 * itself, so a gallery shown inside another single post's page (a
+	 * related-posts block, say) still gets its styles and behavior.
+	 *
+	 * @param bool $with_script Whether to enqueue the gallery slider script too.
+	 * @return void
+	 */
+	private static function enqueue_frontend_assets( bool $with_script ): void {
 		wp_enqueue_style(
 			'daymark-featured-content',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content.css',
 			array(),
 			DAYMARK_VERSION
 		);
+
+		if ( $with_script ) {
+			wp_enqueue_script(
+				'daymark-featured-content',
+				DAYMARK_PLUGIN_URL . 'assets/featured-content.js',
+				array(),
+				DAYMARK_VERSION,
+				true
+			);
+		}
 	}
 
 	/**

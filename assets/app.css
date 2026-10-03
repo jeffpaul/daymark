@@ -168,6 +168,16 @@ h2[tabindex='-1']:focus {
 	letter-spacing: -0.02em;
 }
 
+/* CreateScreen's Mark-type chip, sitting after the title in the same flex
+   row — the title's own `flex: 1` already pushes it flush against the
+   header's trailing edge with no positioning of its own needed; `flex: none`
+   only guards its .daymark-chip white-space: nowrap text against flex-shrink
+   compression on a narrow viewport. Replaces the former .daymark-typebadge
+   paragraph that used to sit below the media picker. */
+.daymark-topbar__typechip {
+	flex: none;
+}
+
 /* PostScreen's own header (issue #315): its title is the post's own,
    arbitrary length, and — unlike every other screen's short, always-single-
    line title (Search/Explore/Me/Notifications) — can wrap to several lines.
@@ -774,7 +784,9 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image,
 .daymark-recent__item--gallery,
 .daymark-recent__item--video,
-.daymark-recent__item--mixed {
+.daymark-recent__item--mixed,
+.daymark-recent__item--quote,
+.daymark-recent__item--linkpreview {
 	flex-direction: column;
 	align-items: stretch;
 	gap: 0;
@@ -785,7 +797,9 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image .daymark-recent__body,
 .daymark-recent__item--gallery .daymark-recent__body,
 .daymark-recent__item--video .daymark-recent__body,
-.daymark-recent__item--mixed .daymark-recent__body {
+.daymark-recent__item--mixed .daymark-recent__body,
+.daymark-recent__item--quote .daymark-recent__body,
+.daymark-recent__item--linkpreview .daymark-recent__body {
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md) 0;
 }
 
@@ -805,7 +819,9 @@ h2[tabindex='-1']:focus {
 .daymark-recent__item--image .daymark-recent__footer,
 .daymark-recent__item--gallery .daymark-recent__footer,
 .daymark-recent__item--video .daymark-recent__footer,
-.daymark-recent__item--mixed .daymark-recent__footer {
+.daymark-recent__item--mixed .daymark-recent__footer,
+.daymark-recent__item--quote .daymark-recent__footer,
+.daymark-recent__item--linkpreview .daymark-recent__footer {
 	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md) var(--daymark-spacing-sm);
 }
 
@@ -834,6 +850,143 @@ h2[tabindex='-1']:focus {
 	border-radius: 0;
 }
 
+/* A quote Featured Content in a card's banner slot (renderQuoteBanner() in
+   app.js), where a featured image would go: the quote large, with a bar
+   down its left edge like the quote in the post view, then its credit.
+   A long quote is clamped to six lines; the server also cuts it to a
+   card-sized length. */
+.daymark-recent__thumbwrap--quote {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-xs);
+	width: 100%;
+	padding: var(--daymark-spacing-md);
+	background: var(--daymark-accent-wash);
+	border-left: 4px solid var(--daymark-accent);
+	box-sizing: border-box;
+	text-align: left;
+}
+
+.daymark-recent__quotetext {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 6;
+	overflow: hidden;
+	font-size: 19px;
+	line-height: 1.4;
+	font-weight: 500;
+	color: var(--daymark-text-primary);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.daymark-recent__quotecredit {
+	font-size: 14px;
+	color: var(--daymark-text-secondary);
+}
+
+/* A link Featured Content in a card's banner slot (renderLinkBanner() in
+   app.js): the linked page's own image across the card, at the 1.91:1
+   shape Open Graph images are made for, then the page's site and title on
+   the surface color below it, like a link preview in a social feed. */
+.daymark-recent__thumbwrap--link {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	background: var(--daymark-surface);
+	border-bottom: 1px solid var(--daymark-border);
+	text-align: left;
+}
+
+.daymark-recent__linkimage {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1.91 / 1;
+	object-fit: cover;
+	border-radius: 0;
+}
+
+.daymark-recent__linkmeta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+}
+
+.daymark-recent__linkhost {
+	font-size: 12px;
+	color: var(--daymark-text-secondary);
+	overflow-wrap: anywhere;
+}
+
+.daymark-recent__linktitle {
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.35;
+	color: var(--daymark-text-primary);
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	overflow: hidden;
+}
+
+/* A gallery card's media (renderGalleryGrid() in app.js): up to four
+   photos as a 2x2 grid of equal, rounded tiles with a small gap between
+   them, like a social app's multi-photo post. Each tile is roughly 3:2,
+   so the whole grid is 3:2 and grows with the card's width rather than
+   being cropped to a fixed strip. Fewer images fill the same box — one
+   whole, two as tall columns, three as two across the top and the third
+   under the first, leaving the bottom-right tile empty.
+   Declared after the gallery-kind banner height above so it wins at
+   equal specificity. Not tied to the card's own kind class, so the grid
+   lays out the same on any card that renders one. */
+.daymark-recent__thumbwrap.daymark-recent__thumbwrap--grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	grid-template-rows: 1fr 1fr;
+	gap: 4px;
+	height: auto;
+	aspect-ratio: 3 / 2;
+	overflow: hidden;
+}
+
+.daymark-recent__gridcell {
+	position: relative;
+	display: block;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-recent__thumbwrap--grid .daymark-recent__thumb--cell {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.daymark-recent__thumbwrap--grid-1 .daymark-recent__gridcell {
+	grid-column: 1 / -1;
+	grid-row: 1 / -1;
+}
+
+.daymark-recent__thumbwrap--grid-2 .daymark-recent__gridcell {
+	grid-row: 1 / -1;
+}
+
+.daymark-recent__gridmore {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.45);
+	color: #fff;
+	font-size: 20px;
+	font-weight: 700;
+}
+
 .daymark-recent__thumbwrap--media .daymark-recent__thumb--siteicon {
 	/* A site-icon-as-banner would otherwise stretch a small favicon across
 	   176px of width — cap it to something recognizable instead, centered
@@ -843,6 +996,61 @@ h2[tabindex='-1']:focus {
 	height: 64px;
 	margin: auto;
 	padding: 0;
+}
+
+/* A Checkin Mark's own map-preview banner (osmTileForLocation()/
+   renderCheckinMapPreview() in app.js) is a single square OpenStreetMap
+   tile, not a wide photo — square, not this banner's usual 176px-tall
+   rectangle, is what keeps the pin overlay's precomputed percentage
+   position aligned with what's actually drawn. A rectangular container
+   would force object-fit: cover to crop the square tile asymmetrically,
+   sliding the pin out of registration with the real pixel it marks. */
+.daymark-recent__thumbwrap--checkin {
+	height: auto;
+	aspect-ratio: 1;
+}
+
+/* The same map preview's standalone form — build_map_preview_block() in
+   class-publisher.php emits this exact markup into a Checkin Mark's own
+   post_content, so it renders unstyled-by-default wherever that content
+   does: a Mark's real theme-rendered permalink page, and the app shell's
+   full-screen post view (PostScreen), which loads that same content HTML
+   verbatim. Square for the same registration reason as the Timeline
+   card's own .daymark-recent__thumbwrap--checkin above. */
+.daymark-checkin-map {
+	position: relative;
+	display: block;
+	width: 100%;
+	max-width: 480px;
+	aspect-ratio: 1;
+	margin: 0 0 var(--daymark-spacing-md);
+	overflow: hidden;
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+}
+
+.daymark-checkin-map img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* A simple CSS teardrop (a square rotated 45°, one corner squared off) —
+   no icon font/SVG needed for a single-color marker. Positioned by its own
+   point, not its center: osmTileForLocation()/resolve_map_tile()'s
+   pinLeft/pinTop mark exactly where the coordinate falls, so the pin's tip
+   — not its rounded body — needs to land there. */
+.daymark-checkin-map__pin {
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	margin-left: -7px;
+	margin-top: -14px;
+	border-radius: 50% 50% 50% 0;
+	background: var(--daymark-accent);
+	box-shadow: 0 0 0 2px #fff;
+	transform: rotate(-45deg);
 }
 
 .daymark-recent__thumb {
@@ -992,6 +1200,15 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 	white-space: normal;
 	overflow-wrap: anywhere;
+}
+
+/* A title placed above a small thumbnail (renderCardTitle(), app.js) takes
+   its own full line in .daymark-recent__item's wrapped flex row, the same
+   flex-basis: 100% trick .daymark-recent__footer uses, so it starts at the
+   card's left padding instead of after the thumbnail. */
+.daymark-recent__title--lead {
+	flex-basis: 100%;
+	min-width: 0;
 }
 
 .daymark-recent__meta {
@@ -1715,6 +1932,29 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* A Check In's own optional photo/video zone (issue #424) — deliberately
+   the smallest, plainest control in the composer: a small underlined text
+   link (the same weight already given to "Choose from library instead"
+   below, via the shared .daymark-btn--text class this element also
+   carries), not a bordered dashed box at all, so it reads as genuinely
+   secondary — almost incidental — next to the Place field's own more
+   substantial bordered-input treatment. Overrides every box-like property
+   the shared .daymark-picker__zone rule otherwise sets. */
+.daymark-picker--minimal .daymark-picker__zone {
+	display: inline-flex;
+	min-height: var(--daymark-tap-min);
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.daymark-picker--minimal.is-dragover .daymark-picker__zone {
+	color: var(--daymark-accent);
+}
+
 /* Camera-first: the primary picker action is a <button> (opens the device
    camera/mic directly via `capture`), not the <label> the neutral,
    untyped picker still uses — reset button chrome while keeping the same
@@ -1746,6 +1986,17 @@ h2[tabindex='-1']:focus {
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-sm);
+}
+
+/* Same reasoning as [data-existing-media-slot]:empty above: before any file
+   is picked, this is a plain empty <div> — still its own flex item in
+   .daymark-screen's column, costing a full gap on both sides (a picker's
+   own bottom gap, then a second gap before whatever field follows it) for
+   no visible content. Most noticeable next to the Check In composer's own
+   small, plain-text media picker (issue #424), where the reserved space
+   reads as disproportionate next to how little the picker itself is. */
+.daymark-preview:empty {
+	display: none;
 }
 
 .daymark-preview__grid {
@@ -1875,6 +2126,16 @@ h2[tabindex='-1']:focus {
 	padding: 0;
 }
 
+/* The composer's existing-media slot renders nothing (its own
+   existingMediaMarkup() returns '') for a fresh session or a draft with no
+   media attached yet — but as a plain <div>, an empty one still counted as
+   its own flex item in .daymark-screen's column, costing a full gap above
+   the picker below it for no visible content. Matches the same :empty
+   precedent .daymark-autosave-status already established. */
+[data-existing-media-slot]:empty {
+	display: none;
+}
+
 /* Editable media list when reopening a draft: thumbnail + alt field. */
 .daymark-editmedia {
 	list-style: none;
@@ -1972,6 +2233,14 @@ h2[tabindex='-1']:focus {
 .daymark-field__label {
 	font-size: 14px;
 	font-weight: 600;
+	color: var(--daymark-text-secondary);
+}
+
+/* A short line under a field's label explaining what the field is for
+   (e.g. the Reblog screen's "Your thoughts"). */
+.daymark-field__help {
+	margin: 0 0 var(--daymark-spacing-xs);
+	font-size: 14px;
 	color: var(--daymark-text-secondary);
 }
 
@@ -2279,7 +2548,13 @@ h2[tabindex='-1']:focus {
 }
 
 /* Existing-tag autocomplete dropdown, shown under the "Add a tag" input
-   while typing — tapping an item avoids typing the full tag name. */
+   while typing — tapping an item avoids typing the full tag name.
+   Height-capped and independently scrollable (rather than growing to fit
+   every result) so a long result list stays reachable once the on-screen
+   keyboard has claimed the bottom half of a phone's viewport — reported
+   directly against the Checkin Place field's own search results, where
+   more than one candidate could render entirely behind the keyboard with
+   no way to scroll down to it. */
 .daymark-tags__suggest {
 	display: flex;
 	flex-direction: column;
@@ -2290,6 +2565,11 @@ h2[tabindex='-1']:focus {
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius-sm);
 	background: var(--daymark-bg);
+	max-height: 180px;
+	overflow-y: auto;
+	overflow-x: hidden;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
 }
 
 .daymark-tags__suggestitem {
@@ -2315,12 +2595,29 @@ h2[tabindex='-1']:focus {
 /* The Checkin Place field's own search-as-you-type suggestions carry a
    second, muted address line for disambiguating similarly-named results —
    the tag autocomplete's plain single-line items never needed this, so
-   these two rules are scoped to the `--place` modifier only. */
+   these two rules are scoped to the `--place` modifier only. Both lines
+   are clipped to one line with an ellipsis (rather than wrapping a long
+   address across two or three lines) so each result stays compact — a
+   full postal address, as Nominatim often returns, would otherwise blow
+   past the tap-min-derived row height and force fewer results into the
+   suggestion list's now-capped, scrollable viewport above. min-width: 0
+   is required for a flex child's own text-overflow to actually truncate,
+   rather than force the flex column wider. */
 .daymark-tags__suggestitem--place {
 	flex-direction: column;
 	align-items: flex-start;
 	height: auto;
 	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+}
+
+.daymark-tags__suggestitem--place .daymark-tags__suggestitem-name,
+.daymark-tags__suggestitem-address {
+	display: block;
+	width: 100%;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }
 
 .daymark-tags__suggestitem-address {
@@ -2737,16 +3034,25 @@ h2[tabindex='-1']:focus {
 	outline-offset: 2px;
 }
 
+/* The Date dropdown (issue #293) is the last item in the type-chip row, so
+   it wraps in line with the chips (right after Check-ins) instead of
+   taking a row of its own. It reuses the source filter's pill styling. */
+
 /* --- Recent item: per-item ⋯ actions menu --- */
-/* A flex row: the site icon column (.daymark-recent__siteicon, below) sits
-   first, then the card's own thumbnail/title/meta content takes the
-   remaining space — position: relative is kept only so
-   .daymark-recent__actions (the ⋯ button) can still pin itself to the
-   wrap's right edge, absolutely, same as before. */
+/* A flex row: the leading column (.daymark-recent__leadcol, below — the
+   site icon stacked above the type icon) sits first, then the card's own
+   thumbnail/title/meta content takes the remaining space — position:
+   relative is kept only so .daymark-recent__actions (the ⋯ button) can
+   still pin itself to the wrap's right edge, absolutely, same as before.
+   align-items: flex-start (rather than center) pins the leading column to
+   every card's own top edge regardless of how tall the card grows (a long
+   excerpt, a footer row, a media banner) — center alignment used to float
+   the site icon against the card's vertical midpoint instead, which drifted
+   further from the title the longer a card's own content ran. */
 .daymark-recent__item-wrap {
 	position: relative;
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: var(--daymark-spacing-sm);
 }
 
@@ -2783,35 +3089,50 @@ h2[tabindex='-1']:focus {
 	padding-right: 0;
 }
 
-/* A media-dominant card is much taller than the wrap's other children
-   (the site icon, type icon, and — Mark only — the ⋯ button) — center
-   alignment would otherwise float those against the photo's own
-   midpoint; top-aligning them instead keeps them where Path's own
-   reference lines its icons up: against each moment's leading edge. */
-.daymark-recent__item-wrap:has(.daymark-recent__item--image),
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery),
-.daymark-recent__item-wrap:has(.daymark-recent__item--video),
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) {
-	align-items: flex-start;
-}
+/* The leading column: the site icon stacked directly above its row's type
+   icon (renderLeadColumn(), app.js), instead of the two sitting side by
+   side as separate columns — reclaiming the type icon's own former column
+   width plus one item-wrap gap for the card's own content (reported
+   directly: the card read as narrower than it needed to be, with two
+   leading columns competing for horizontal space that could go to the
+   title/excerpt/media instead). A fixed width — matching the site icon's
+   own 44px tap target — keeps every row's column the same width whether or
+   not a site icon is actually present (a Draft has none; see below), so a
+   card's own content always starts at the identical x position. `background`
+   masks the rail line (below) behind this column's own full height,
+   including the gap between the two icons, the same way each type icon's
+   own opaque circle already masked its own narrower slice before this
+   change.
 
-.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__siteicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--image) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--gallery) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--video) .daymark-recent__typeicon,
-.daymark-recent__item-wrap:has(.daymark-recent__item--mixed) .daymark-recent__typeicon {
+   margin-top gives every card kind the same small offset below the wrap's
+   own top edge (the wrap itself is align-items: flex-start, above) rather
+   than sitting flush against it, so the site icon lines up with the card's
+   own visible content instead of its outer border. For a plain (non-media)
+   card this value is deliberately identical to .daymark-recent__item's own
+   padding-top (also --daymark-spacing-sm) — the two are meant to match
+   exactly, so the site icon's top edge lands level with the title text's
+   own top edge rather than floating above it. A media-dominant card
+   (image/gallery/video/mixed — see .daymark-recent__item--image and
+   friends, above) dropped its own padding so the banner runs full bleed,
+   so this same offset instead reads as a small, deliberate buffer against
+   the photo's own top edge — Path's own reference lines its icons up this
+   way, against each moment's leading edge rather than its midpoint. */
+.daymark-recent__leadcol {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex-shrink: 0;
+	gap: var(--daymark-spacing-xs);
+	width: var(--daymark-tap-min);
 	margin-top: var(--daymark-spacing-sm);
+	background: var(--daymark-bg);
 }
 
-/* The rail: a small, quiet type-indicator between the site icon and the
-   card itself (see renderTypeIcon() in app.js), threaded to the item
-   above and below by a thin connecting line so a scan down the list reads
-   as one continuous chronological flow — Path's own timeline spine, kept
-   deliberately muted (grey, not the accent color) since this is a glance
-   aid, not something competing with the content for attention. */
+/* A small, quiet type-indicator (see renderTypeIcon() in app.js), threaded
+   to the item above and below by a thin connecting line so a scan down the
+   list reads as one continuous chronological flow — Path's own timeline
+   spine, kept deliberately muted (grey, not the accent color) since this is
+   a glance aid, not something competing with the content for attention. */
 .daymark-recent__typeicon {
 	flex-shrink: 0;
 	display: inline-flex;
@@ -2829,12 +3150,12 @@ h2[tabindex='-1']:focus {
    confined to each icon's own small box only ever reached a few px past
    it — never far enough to touch the next row's icon. Drawing it once
    behind the whole list instead makes it genuinely continuous from the
-   first icon to the last; each icon's own opaque background then masks
-   the segment directly behind it, which is what keeps the line looking
-   like it passes behind the icons rather than over them. `isolation:
-   isolate` scopes the line's negative z-index to this list, so it stays
-   behind this list's own icons without also dropping behind unrelated
-   content elsewhere on the page. */
+   first icon to the last; each leading column's own opaque background
+   (.daymark-recent__leadcol, above) then masks the segment directly behind
+   it, which is what keeps the line looking like it passes behind the
+   column rather than over it. `isolation: isolate` scopes the line's
+   negative z-index to this list, so it stays behind this list's own icons
+   without also dropping behind unrelated content elsewhere on the page. */
 .daymark-recent__list:has(.daymark-recent__typeicon) {
 	position: relative;
 	isolation: isolate;
@@ -2845,31 +3166,14 @@ h2[tabindex='-1']:focus {
 	position: absolute;
 	top: 0;
 	bottom: 0;
-	/* Site icon column width + the item-wrap gap to the type icon + half
-	   the type icon's own 28px width — centers the line under every
-	   type icon in a list that has a leading site icon column. */
-	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
+	/* Half the leading column's own fixed width — centers the line under
+	   every column in the list, site icon present or not (see
+	   .daymark-recent__leadcol's own fixed width, above, which is what lets
+	   a single offset work for every row regardless). */
+	left: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 	z-index: -1;
-}
-
-/* A Draft row never renders the leading site icon column — see
-   renderMarkItem()'s isDraft check in app.js, which skips it because a
-   draft has no separate site to filter to. Home's Drafts row sits directly
-   above the main Timeline list in the very same visual context (unlike
-   Me's own drafts list, which uses a plain renderMarkCore() anchor with no
-   item-wrap/type-icon rail at all), so its lone type icon still needs to
-   land on the exact same rail x-position every row below it uses — left as
-   the row's own first, flush-left flex child, it read as its own
-   disconnected column sitting hard against the screen edge instead of
-   continuing that line (reported directly, with a screenshot). Adding the
-   site icon column's own width + gap as a margin achieves that without a
-   separate (invisible) placeholder element in the markup, and the rail
-   line above needs no matching override anymore since every type icon in
-   the list now sits at the same offset regardless of a leading site icon. */
-.daymark-recent__item-wrap:not(:has(.daymark-recent__siteicon)) .daymark-recent__typeicon {
-	margin-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 }
 
 /* Relative-period group headers (Today, This Week, Last Month, ...; see
@@ -2893,7 +3197,7 @@ h2[tabindex='-1']:focus {
 .daymark-recent__groupheader {
 	position: relative;
 	margin: var(--daymark-spacing-md) 0 0;
-	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 28px + var(--daymark-spacing-sm));
+	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 	background: var(--daymark-bg);
 }
 
@@ -2906,7 +3210,7 @@ h2[tabindex='-1']:focus {
 	   headers only ever render on Home's own Timeline (renderFeedItemsWithGroups()),
 	   which always has a leading site icon (see the flourish's own comment
 	   below), so this never needs the Drafts-style no-site-icon offset. */
-	left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm) + 14px);
+	left: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 }
@@ -2930,13 +3234,24 @@ h2[tabindex='-1']:focus {
    row (a Mark's own, or a subscribed site's), so — unlike the rail
    itself — there's no Drafts-style "no site icon column" case to also
    account for here. */
+/* 28px-wide SVG, centered on the rail at half the leading column's width. */
 .daymark-timeline-flourish {
 	display: none;
-	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
+	padding-left: calc(var(--daymark-tap-min) / 2 - 14px);
 }
 
-.daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish {
+.daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish--end,
+.daymark-screen:has(.daymark-recent__typeicon) > .daymark-timeline-flourish--start {
 	display: block;
+}
+
+/* The sunrise is a direct child of .daymark-screen (above Pending/Drafts
+   when those show), so the rail starts above the first section and the
+   Drafts/Pending lists' lines run on through the screen's section gap into
+   the Timeline's own, instead of breaking there. */
+.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-pending-list]:has(.daymark-recent__typeicon)::before,
+.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-drafts-list]:has(.daymark-recent__typeicon)::before {
+	bottom: calc(-1 * var(--daymark-spacing-lg));
 }
 
 /* Cancels .daymark-recent's own flex `gap` between each flourish and the
@@ -2954,7 +3269,9 @@ h2[tabindex='-1']:focus {
 	   contributor that fix didn't reach (this flourish sits above the
 	   pull-to-refresh indicator issue #213 already trimmed, not after it). */
 	margin-top: calc(-1 * var(--daymark-spacing-xs));
-	margin-bottom: calc(-1 * var(--daymark-spacing-sm));
+	/* Cancels .daymark-screen's section gap instead (this now sits directly
+	   in the screen, not in a .daymark-recent section). */
+	margin-bottom: calc(-1 * var(--daymark-spacing-lg) + var(--daymark-spacing-xs));
 }
 
 .daymark-timeline-flourish--end {
@@ -3259,6 +3576,50 @@ h2[tabindex='-1']:focus {
 	gap: var(--daymark-spacing-md);
 }
 
+/* What the full post view shows above a post's body: its Featured Content
+   (a video, audio, gallery, quote, or link, styled by the app shell's copy
+   of assets/featured-content.css) or else its featured image. These rules
+   keep media inside the screen's width, including a gallery that is still
+   stacked because the slider script isn't loaded (the offline shell). */
+.daymark-postview-featured img,
+.daymark-postview-featured video,
+.daymark-postview-featured iframe {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-postview-featured iframe {
+	width: 100%;
+	aspect-ratio: 16 / 9;
+}
+
+.daymark-postview-featured audio {
+	width: 100%;
+}
+
+.daymark-postview-featured__img {
+	width: 100%;
+}
+
+/* The gallery slider's live region uses WordPress's screen-reader-text
+   class, which a theme normally defines but the app shell has no theme.
+   The slider appears in the featured block and, for a gallery block in
+   the post itself, in the body. */
+.daymark-postview-featured .screen-reader-text,
+.daymark-expand-content .screen-reader-text {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
 /* A post's full body, rendered on the full-screen post-view screen
    (PostScreen, issue #270) — already-sanitized HTML from the server either
    way (a Mark/ordinary post's own the_content, or a subscription post's
@@ -3369,6 +3730,14 @@ h2[tabindex='-1']:focus {
 	margin: var(--daymark-spacing-xs) 0 0;
 	font-size: 13px;
 	line-height: 1.4;
+	color: var(--daymark-text-secondary);
+}
+
+/* The linked page's site, under its title and description, when the
+   preview is a link Featured Content in the full post view. */
+.daymark-oembed-preview__site {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 12px;
 	color: var(--daymark-text-secondary);
 }
 
@@ -3555,4 +3924,38 @@ h2[tabindex='-1']:focus {
 	line-height: 1;
 	color: var(--daymark-accent-deep);
 	background: var(--daymark-accent-wash);
+}
+
+/* --- Timeline "new posts" button ---
+   Shown when Home opens anchored on the last post seen, with newer posts
+   above it (HomeScreen.showNewPosts()). Pinned under the header so it stays
+   reachable while the reader scrolls; tapping it jumps to the newest post. */
+.daymark-newposts {
+	position: fixed;
+	top: calc(var(--daymark-tap-min) + var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 6;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
+	border: 0;
+	border-radius: 999px;
+	background: var(--daymark-accent);
+	color: #fff;
+	font: inherit;
+	font-weight: 600;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+	cursor: pointer;
+}
+
+.daymark-newposts[hidden] {
+	display: none;
+}
+
+.daymark-newposts:focus-visible {
+	outline: 2px solid var(--daymark-accent-deep, #9e2a02);
+	outline-offset: 2px;
 }

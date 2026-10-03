@@ -358,7 +358,15 @@ class Daymark_Subscription_Poller {
 			return 0;
 		}
 
-		if ( $this->post_exists_for_permalink( $subscription_id, $permalink ) ) {
+		$existing_id = $this->existing_post_id_for_permalink( $subscription_id, $permalink );
+
+		if ( $existing_id > 0 ) {
+			// A gallery post ingested before galleries kept their photo list
+			// gets it on its next poll, so its Timeline card can show the grid.
+			if ( 'gallery' === get_post_meta( $existing_id, 'post_format', true ) && empty( self::gallery_images_for( $existing_id ) ) ) {
+				self::store_gallery_images( $existing_id, (array) ( $normalized['gallery_images'] ?? array() ) );
+			}
+
 			return 0;
 		}
 
@@ -406,6 +414,9 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'featured_image_url', $image );
 		update_post_meta( $post_id, 'embed_data', $embed_data );
 		update_post_meta( $post_id, 'link_url', $link_url );
+		if ( 'gallery' === $format ) {
+			self::store_gallery_images( $post_id, (array) ( $normalized['gallery_images'] ?? array() ) );
+		}
 		// Every format starts excerpt_only: rich-media formats get their
 		// embed data pre-resolved above, but none of them (nor standard/
 		// note/quote/link) fetch a full body at ingest time.
@@ -422,9 +433,9 @@ class Daymark_Subscription_Poller {
 	 *
 	 * @param int    $subscription_id Subscription ID.
 	 * @param string $permalink       Source permalink (already sanitized).
-	 * @return bool
+	 * @return int The existing post's ID, or 0 when there is none.
 	 */
-	private function post_exists_for_permalink( int $subscription_id, string $permalink ): bool {
+	private function existing_post_id_for_permalink( int $subscription_id, string $permalink ): int {
 		$query = new WP_Query(
 			array(
 				'post_type'      => Daymark_Subscription_Post_Type::POST_TYPE,
@@ -449,7 +460,38 @@ class Daymark_Subscription_Poller {
 			)
 		);
 
-		return ! empty( $query->posts );
+		return empty( $query->posts ) ? 0 : (int) $query->posts[0];
+	}
+
+	/**
+	 * Store a gallery post's photo URLs (`gallery_images` meta, a JSON list)
+	 * for its Timeline card's 2x2 grid. Each URL is re-checked here, since
+	 * it came from another site's markup.
+	 *
+	 * @param int      $post_id Subscription post ID.
+	 * @param string[] $urls    Image URLs, in display order.
+	 * @return void
+	 */
+	public static function store_gallery_images( int $post_id, array $urls ): void {
+		$clean = Daymark_Subscription_Content_Sniffer::gallery_images( '', $urls );
+
+		if ( empty( $clean ) ) {
+			return;
+		}
+
+		update_post_meta( $post_id, 'gallery_images', wp_slash( (string) wp_json_encode( $clean ) ) );
+	}
+
+	/**
+	 * A gallery post's stored photo URLs, in display order.
+	 *
+	 * @param int $post_id Subscription post ID.
+	 * @return string[]
+	 */
+	public static function gallery_images_for( int $post_id ): array {
+		$decoded = json_decode( (string) get_post_meta( $post_id, 'gallery_images', true ), true );
+
+		return is_array( $decoded ) ? array_values( array_filter( array_map( 'strval', $decoded ) ) ) : array();
 	}
 
 	/**
@@ -600,7 +642,7 @@ class Daymark_Subscription_Poller {
 		// wp_safe_remote_get(), not wp_remote_get(): this is a stored,
 		// user-subscribed-to external URL fetched on a live user action, same
 		// SSRF-hardening reasoning as the feed source's own site-HTML fetch.
-		$response = wp_safe_remote_get(
+		$response = Daymark_Outbound_Guard::get(
 			$permalink,
 			array(
 				/**
@@ -657,13 +699,102 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
-		$sanitized = wp_kses_post( self::extract_body_html( $body ) );
+		$sanitized = self::strip_untrusted_presentation( wp_kses_post( self::extract_body_html( $body ) ) );
 
 		update_post_meta( $post_id, 'body_content', $sanitized );
 		update_post_meta( $post_id, 'content_state', 'full' );
 		update_post_meta( $post_id, 'fetched_full_at', current_time( 'mysql', true ) );
 
+		// The full page usually lists every photo of a gallery, where a feed
+		// may carry only some, so prefer it when it finds more.
+		if ( 'gallery' === get_post_meta( $post_id, 'post_format', true ) ) {
+			$from_body = Daymark_Subscription_Content_Sniffer::gallery_images( $sanitized );
+
+			if ( count( $from_body ) > count( self::gallery_images_for( $post_id ) ) ) {
+				self::store_gallery_images( $post_id, $from_body );
+			}
+		}
+
 		return true;
+	}
+
+	/**
+	 * Remove a remote page's own presentation from an HTML fragment: every
+	 * inline `style` attribute, and every class token that starts with
+	 * `daymark-`.
+	 *
+	 * The wp_kses_post() sanitizer keeps `style` (limited to a safe-CSS
+	 * property list, but that list still includes layout properties such as
+	 * `position`, `top`/`left`, `z-index`, and `width`/`height`) and keeps
+	 * `class`, and the app shell's CSP allows inline styles and loads
+	 * app.css. A hostile subscribed site could therefore lay its own
+	 * content over the authenticated UI, either with its own inline
+	 * positioning or by borrowing Daymark's own overlay classes (a
+	 * `class="daymark-sheet"` becomes a fixed, full-screen layer). Script
+	 * execution is not possible (the CSP's `script-src` is nonce-only), so
+	 * this is UI redressing, not XSS, but a cached subscription post has no
+	 * legitimate need for either. Other classes are left alone: they carry
+	 * the source site's own semantics (an image's `alignleft`, a block's
+	 * `wp-block-*`) and match nothing in the app's stylesheet. An image's
+	 * real dimensions live in its width/height attributes, not its style.
+	 *
+	 * Public and static because both the poller (at store time) and the
+	 * REST controller (at read time, for a body cached before this existed)
+	 * call it. Marks' own content is never passed through it: a Mark's
+	 * Check In map preview legitimately uses a `daymark-` class and a
+	 * positioned pin.
+	 *
+	 * `$strip_styles` and `$keep_classes` exist for a Mark's own content (see
+	 * Daymark_REST_Controller::get_mark_content()): it keeps its inline styles
+	 * and the Check In map's own classes, and only loses any other `daymark-`
+	 * class, which an Author could otherwise use to overlay the app.
+	 *
+	 * @param string   $html         HTML fragment, already passed through wp_kses_post().
+	 * @param bool     $strip_styles Whether to remove inline `style` attributes.
+	 * @param string[] $keep_classes `daymark-` class tokens to leave alone (compared case-insensitively).
+	 * @return string The same HTML without inline styles (when asked) or `daymark-` classes.
+	 */
+	public static function strip_untrusted_presentation( string $html, bool $strip_styles = true, array $keep_classes = array() ): string {
+		// No shortcut on the raw text: a class can be written with an HTML
+		// entity (`daymark&#45;sheet`), which never contains the literal
+		// "daymark-" but decodes to it in the browser. The tag processor
+		// decodes attribute values, so it must always look. The wp_kses_post()
+		// sanitizer already decodes numeric entities in a class value today,
+		// so this is defense in depth against that changing, or against a body
+		// that skipped it.
+		if ( '' === $html ) {
+			return $html;
+		}
+
+		$keep      = array_map( 'strtolower', $keep_classes );
+		$processor = new WP_HTML_Tag_Processor( $html );
+
+		while ( $processor->next_tag() ) {
+			if ( $strip_styles ) {
+				$processor->remove_attribute( 'style' );
+			}
+
+			$class = $processor->get_attribute( 'class' );
+
+			if ( ! is_string( $class ) || false === stripos( $class, 'daymark-' ) ) {
+				continue;
+			}
+
+			$kept = array_filter(
+				preg_split( '/\s+/', trim( $class ) ),
+				static function ( $token ) use ( $keep ) {
+					return '' !== $token && ( 0 !== stripos( $token, 'daymark-' ) || in_array( strtolower( $token ), $keep, true ) );
+				}
+			);
+
+			if ( $kept ) {
+				$processor->set_attribute( 'class', implode( ' ', $kept ) );
+			} else {
+				$processor->remove_attribute( 'class' );
+			}
+		}
+
+		return $processor->get_updated_html();
 	}
 
 	/**

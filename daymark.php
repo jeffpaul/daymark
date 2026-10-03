@@ -3,7 +3,7 @@
  * Plugin Name:       Daymark
  * Plugin URI:        https://github.com/jeffpaul/daymark
  * Description:       Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
- * Version:           0.17.0
+ * Version:           0.19.0
  * Requires at least: 7.0
  * Requires PHP:      8.2
  * Author:            Jeffrey Paul
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DAYMARK_VERSION', '0.17.0' );
+define( 'DAYMARK_VERSION', '0.19.0' );
 define( 'DAYMARK_PLUGIN_FILE', __FILE__ );
 define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
@@ -48,10 +48,13 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/class-connector-x.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-registry.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmarks.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-timeline-position.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmark-images.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin-overlap.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rate-limiter.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin-detector.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-url-guard.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-outbound-guard.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-html-cache.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-content-sniffer.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscriptions.php';
@@ -67,7 +70,10 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opengraph.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-bridgy-fed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-activitypub-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';
@@ -75,6 +81,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-post-format-icon.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-subscriber.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-websub-endpoint.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-featured-content.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-featured-content-social.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/functions-featured-content.php';
 
 register_activation_hook( __FILE__, array( 'Daymark_Plugin', 'activate' ) );

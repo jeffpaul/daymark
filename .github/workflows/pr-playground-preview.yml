@@ -11,11 +11,25 @@ name: PR Playground Preview
 # base64-ish blueprint data URI into permanent git history. A comment
 # keeps the button on the PR and out of the commit message.
 #
+# Runs as `pull_request_target` so it has a write token on fork PRs, which
+# is how community contributions arrive: a plain `pull_request` run from a
+# fork gets a read-only token and cannot post the comment. It never checks
+# out or executes PR code — the only PR-controlled values it touches are the
+# head repo URL and branch name, read from the event payload, passed through
+# `env:` (never interpolated into a shell command) and serialized with
+# JSON.stringify into a blueprint that Playground, not this runner, acts on
+# — which makes this a safe use of the trigger, same as
+# credit-contributors.yml and pr-review-checklist.yml. Because the workflow
+# file is always read from the base branch, a change to this file only takes
+# effect once it is merged.
+#
 # NOTE: Playground fetches the branch from the browser, unauthenticated,
-# so the button only works while the repository is PUBLIC. On a private
-# repo the button appears but the instance cannot load the plugin.
+# so the button only works while the head repository (this one, or a
+# contributor's fork) is PUBLIC and the branch still exists. On a private
+# repo, or once a fork's branch is deleted, the instance cannot load the
+# plugin.
 on:
-  pull_request:
+  pull_request_target:
     # `synchronize` is included even though the blueprint's own content
     # never changes across pushes (it points at the PR's branch name, not a
     # commit SHA) — the underlying action manages a single comment rather
@@ -23,11 +37,9 @@ on:
     # (or creates) that same comment instead of duplicating it. That matters
     # because a PR opened via the GitHub API (rather than a person pushing
     # through the web UI) does not reliably deliver a plain `pull_request`
-    # `opened` event — only `pull_request_target`-based workflows (like
-    # credit-contributors.yml) are guaranteed to see it — so an
-    # `opened`-only trigger can silently never run for such a PR. The first
-    # real push after that (a `synchronize`) is this workflow's fallback
-    # chance to still post the button.
+    # `opened` event, so an `opened`-only trigger can silently never run for
+    # such a PR. The first real push after that (a `synchronize`) is this
+    # workflow's fallback chance to still post the button.
     types: [opened, synchronize, reopened]
 
 # Disable permissions for all available scopes by default.
@@ -38,9 +50,6 @@ jobs:
   playground-preview:
     name: Add Playground preview button to the PR
     runs-on: ubuntu-latest
-    # Fork PRs get a read-only GITHUB_TOKEN and cannot comment on the PR;
-    # skip rather than fail.
-    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
       pull-requests: write
@@ -60,11 +69,13 @@ jobs:
           // so a reviewer lands in a Timeline that already has content to
           // scroll, search, and click into — not an empty "subscribe to
           // your first site" state.
-          const presetSites = [
-            'https://jeffpaul.com',
-            'https://jondesrosiers.com',
-            'https://aaron.jorb.in',
-          ];
+          // Site URL => display name to store as the subscription's title
+          // (an empty name keeps the title discovery found).
+          const presetSites = {
+            'https://jeffpaul.com': 'Jeffrey Paul',
+            'https://jondesrosiers.com': '',
+            'https://aaron.jorb.in': 'Aaron Jorbin',
+          };
 
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
           // first, same as Playground's own documented examples. By this
@@ -85,36 +96,26 @@ jobs:
             '',
             '$plugin = Daymark_Plugin::instance();',
             '',
-            `foreach ( ${JSON.stringify(presetSites)} as $site_url ) {`,
+            `$preset_sites = json_decode( ${JSON.stringify(JSON.stringify(presetSites))}, true );`,
+            'foreach ( $preset_sites as $site_url => $site_name ) {',
             '\t$result = $plugin->subscriptions->subscribe_to_site( $site_url );',
             '\tif ( ! is_wp_error( $result ) ) {',
+            "\t\tif ( '' !== $site_name ) {",
+            "\t\t\t$plugin->subscriptions->update( (int) $result, array( 'site_title' => $site_name ) );",
+            '\t\t}',
             '\t\t$plugin->subscription_poller->poll_subscription( (int) $result );',
             '\t}',
             '}',
             '',
-            // A sample Mark using Featured Content (issue #401): a YouTube
-            // video set as this post's own featured content instead of an
-            // image, so a reviewer already sees that feature working without
-            // setting it up themselves. Published via the publisher (the same
-            // one code path every other Mark-creation caller uses) with the
-            // two Featured Content meta keys set directly afterward, since
-            // Featured Content is a general block-editor feature (issue #401)
-            // rather than part of the publisher's own Mark contract.
-            '$featured_mark_id = $plugin->publisher->publish(',
-            '\tarray(',
-            "\t\t'title'        => 'Featured Content demo',",
-            "\t\t'caption'      => 'Demo of Featured Content: this Mark uses a YouTube video as its featured video instead of an image.',",
-            "\t\t'primary_type' => 'note',",
-            '\t)',
-            ');',
-            '',
-            'if ( ! is_wp_error( $featured_mark_id ) ) {',
-            "\tupdate_post_meta( $featured_mark_id, '_daymark_featured_content_type', 'video' );",
-            '\tupdate_post_meta(',
-            '\t\t$featured_mark_id,',
-            "\t\t'_daymark_featured_content',",
-            "\t\twp_json_encode( array( 'video' => array( 'source' => 'url', 'url' => 'https://www.youtube.com/watch?v=BZtL1NVlxgQ' ) ) )",
-            '\t);',
+            // Sample Marks for each Mark type and Featured Content kind
+            // (image, gallery, Check In, and Featured Content gallery /
+            // quote / link / video). The script and its sample photos ship
+            // in the plugin checkout this preview installs, so nothing is
+            // fetched or generated at run time — see
+            // .github/blueprints/seed-sample-content.php.
+            "$seed = dirname( DAYMARK_PLUGIN_FILE ) . '/.github/blueprints/seed-sample-content.php';",
+            'if ( file_exists( $seed ) ) {',
+            '\trequire $seed;',
             '}',
             '',
           ].join('\n');
@@ -178,7 +179,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
       - name: Post Playground preview button
-        uses: WordPress/action-wp-playground-pr-preview@5e92f5e3c80d06126f22e83e4bb21221fbbd3e7f # v3
+        uses: WordPress/action-wp-playground-pr-preview@1b15093d61b5e98cdfeb31466f34ade495762cd7 # v4.0.0
         with:
           # Comment, not append-to-description: keeps the blueprint data URI
           # out of the squash-merge commit message (see the note above).

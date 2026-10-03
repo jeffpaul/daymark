@@ -32,6 +32,7 @@ delete_option( 'daymark_legacy_app_base' );
 delete_option( 'daymark_redirect_rule_added' );
 delete_option( 'daymark_nav_routes_added' );
 delete_option( 'daymark_subscriptions_db_version' );
+delete_option( 'daymark_bridgy_fed_bridged' );
 
 // Per-user routing/filing preferences, notification read-state, and the
 // rel=me profile URL used in h-card markup, across all users.
@@ -39,6 +40,7 @@ delete_metadata( 'user', 0, 'daymark_destination_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_category_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_notifications_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
+delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 
 // Scheduled backflow sync events (recurring + pending one-off freshen) and
@@ -46,6 +48,16 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+// Per-subscription WebSub retry checks carry an argument, so clear every one.
+wp_unschedule_hook( 'daymark_websub_verify_timeout' );
+// Pending Featured Content share-image lookups (one per post, with an argument).
+wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
+
+// The share image Daymark resolved for a post's remote Featured Content
+// (issue #408) is a cache derived from that content, not content itself,
+// so it goes; the Featured Content meta it came from stays with the post.
+delete_post_meta_by_key( '_daymark_featured_content_image' );
+delete_post_meta_by_key( '_daymark_featured_content_link_preview' );
 
 // Backflow transients: the freshen marker plus per-post sync cooldowns.
 delete_transient( 'daymark_backflow_freshened' );
@@ -61,6 +73,20 @@ $daymark_cooldowns = $wpdb->get_col(
 );
 
 foreach ( $daymark_cooldowns as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
+}
+
+// WebSub pending-verification markers and attempt counts.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_websub_transients = $wpdb->get_col(
+	$wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+		$wpdb->esc_like( '_transient_daymark_websub_pending_' ) . '%',
+		$wpdb->esc_like( '_transient_daymark_websub_attempts_' ) . '%'
+	)
+);
+
+foreach ( $daymark_websub_transients as $daymark_option_name ) {
 	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 

@@ -93,6 +93,10 @@
 ( function ( wp ) {
 	'use strict';
 
+	// Library types the Featured Content picker offers: audio and video for
+	// a single file, images for a gallery (issue #406).
+	var PICKER_MEDIA_TYPES = [ 'audio', 'video', 'image' ];
+
 	if ( ! wp || ! wp.hooks || ! wp.element || ! wp.data || ! wp.i18n ) {
 		return;
 	}
@@ -168,6 +172,32 @@
 		var ext = match ? match[ 1 ].toLowerCase() : '';
 
 		return -1 !== AUDIO_EXTENSIONS.indexOf( ext ) || -1 !== VIDEO_EXTENSIONS.indexOf( ext );
+	}
+
+	/**
+	 * The preview request URL: the pasted link, plus the post being edited.
+	 *
+	 * The server decides whether a link may be resolved by oEmbed discovery
+	 * from the post's author (Daymark_Featured_Content::oembed_discovery_allowed()),
+	 * so an Editor previewing an Author's post has to see what that post will
+	 * actually render. The endpoint can already carry a query string (plain
+	 * permalinks put the route in `?rest_route=`), so the separator is chosen
+	 * rather than assumed.
+	 *
+	 * @param {string} endpoint The preview route's URL.
+	 * @param {string} url      The link to preview.
+	 * @return {string}
+	 */
+	function oembedPreviewUrl( endpoint, url ) {
+		var editor = wp.data && wp.data.select ? wp.data.select( 'core/editor' ) : null;
+		var postId = editor && editor.getCurrentPostId ? editor.getCurrentPostId() : 0;
+		var query = 'url=' + encodeURIComponent( url );
+
+		if ( postId ) {
+			query += '&post_id=' + encodeURIComponent( postId );
+		}
+
+		return endpoint + ( -1 === endpoint.indexOf( '?' ) ? '?' : '&' ) + query;
 	}
 
 	/**
@@ -337,7 +367,7 @@
 
 					var self = this;
 
-					wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( url ) } )
+					wp.apiFetch( { url: oembedPreviewUrl( endpoint, url ) } )
 						.then( function ( response ) {
 							self.renderPreview( response && response.embed ? response.embed : null );
 						} )
@@ -456,12 +486,11 @@
 	 * has to match reality once the toolbar is actually on screen,
 	 * regardless of which internal mechanism produced it.
 	 *
-	 * Deliberately Video/Audio only, no Image option: `openMediaPicker()`'s
-	 * own `library: { type: [ 'audio', 'video' ] }` restriction already
-	 * excludes every other mime type from the underlying query before this
-	 * filter ever runs, so an Image option would only ever show zero results
-	 * — this filter narrows *within* that existing restriction, it doesn't
-	 * loosen it.
+	 * Video, Audio, and Images (images make a gallery — issue #406):
+	 * `openMediaPicker()`'s own `library: { type: PICKER_MEDIA_TYPES }`
+	 * restriction excludes every other mime type from the underlying query
+	 * before this filter ever runs — this filter narrows *within* that
+	 * existing restriction, it doesn't loosen it.
 	 *
 	 * Feature-detected and wrapped defensively, matching this file's
 	 * established posture toward every other wp.media internal it touches: a
@@ -620,6 +649,9 @@
 						'<option value="audio">' +
 						__( 'Audio', 'daymark' ) +
 						'</option>' +
+						'<option value="image">' +
+						__( 'Images', 'daymark' ) +
+						'</option>' +
 						'</select>' +
 						'</div>'
 				);
@@ -627,7 +659,7 @@
 				$wrap.find( 'select' ).on( 'change', function () {
 					var value = $jq( this ).val();
 
-					library.props.set( 'type', value ? value : [ 'audio', 'video' ] );
+					library.props.set( 'type', value ? value : PICKER_MEDIA_TYPES );
 				} );
 
 				if ( $toolbar.length ) {
@@ -672,6 +704,116 @@
 	}
 
 	/**
+	 * Open WordPress core's own gallery editor (issue #461) — the "Edit
+	 * Gallery" screen the classic editor's "Create Gallery" button and
+	 * wp.media.gallery.edit() use: the images in a drag-sortable list, each
+	 * removable and captionable, with "Add to Gallery" for more. Built the
+	 * same way wp.media.gallery.edit() builds it (media-editor.js): a `post`
+	 * frame opened straight into its `gallery-edit` state with a Selection as
+	 * that state's library. The sortable list is core's jQuery UI sortable
+	 * (touch works through the core-bundled jquery-touch-punch script this
+	 * file depends on).
+	 *
+	 * A second frame, not more states on getFeaturedContentFrameClass()'s
+	 * frame: MediaFrame.Post is the only frame class that wires the gallery
+	 * menu ("Cancel Gallery"/"Add to Gallery") and toolbars ("Insert
+	 * gallery"/"Update gallery", "Add to gallery") to these states, and
+	 * reproducing that wiring on a Select frame would mean copying core's
+	 * internals rather than using them.
+	 *
+	 * Core's gallery shortcode settings (columns, link, size, random order)
+	 * are turned off with the state's own `displaySettings` attribute: they
+	 * set [gallery] shortcode attributes, and Featured Content has no
+	 * shortcode for them to apply to.
+	 *
+	 * @param {Object}   options
+	 * @param {Object[]} [options.models] Attachment models, in order (a new pick).
+	 * @param {number[]} [options.ids]    Saved attachment IDs, in order (Replace).
+	 * @param {Function} onSave           Called with the final ordered ID list.
+	 * @return {boolean} False when core's gallery editor isn't available, so
+	 *                   the caller can save the pick as-is instead.
+	 */
+	function openGalleryEditor( options, onSave ) {
+		var Selection = wp.media && wp.media.model && wp.media.model.Selection;
+
+		if ( ! Selection || ! wp.media.controller || ! wp.media.controller.GalleryEdit ) {
+			return false;
+		}
+
+		var frame;
+		var editState;
+
+		try {
+			var selection;
+
+			if ( options.ids && options.ids.length ) {
+				// The same query wp.media.gallery.edit() runs for an existing
+				// [gallery ids="..."]: one request, in the saved order. Once
+				// fetched, the selection drops its ties to the query so the
+				// sortable list is free to reorder it.
+				var attachments = wp.media.query( {
+					post__in: options.ids,
+					orderby: 'post__in',
+					order: 'ASC',
+					type: 'image',
+					perPage: -1,
+				} );
+
+				selection = new Selection( attachments.models, {
+					props: attachments.props.toJSON(),
+					multiple: true,
+				} );
+
+				selection.more().done( function () {
+					selection.props.set( { query: false } );
+					selection.unmirror();
+					selection.props.unset( 'orderby' );
+				} );
+			} else {
+				selection = new Selection( options.models || [], { multiple: true } );
+			}
+
+			frame = wp.media( {
+				frame: 'post',
+				state: 'gallery-edit',
+				editing: !! ( options.ids && options.ids.length ),
+				multiple: true,
+				selection: selection,
+			} );
+
+			editState = frame.state( 'gallery-edit' );
+		} catch ( err ) {
+			return false;
+		}
+
+		if ( ! editState ) {
+			return false;
+		}
+
+		editState.set( 'displaySettings', false );
+
+		// Fired by core's "Insert gallery"/"Update gallery" button with the
+		// state's library, which the sortable list keeps in display order.
+		editState.on( 'update', function ( library ) {
+			var ids = [];
+
+			library.each( function ( model ) {
+				if ( model.id ) {
+					ids.push( model.id );
+				}
+			} );
+
+			if ( ids.length ) {
+				onSave( ids );
+			}
+		} );
+
+		frame.open();
+
+		return true;
+	}
+
+	/**
 	 * Open the media picker for Featured Content — the same modal overlay
 	 * "Set featured image" opens, titled "Featured content", scoped to
 	 * audio/video. Uses the custom frame above when available (adding the
@@ -685,17 +827,22 @@
 	 *
 	 * @param {Function} onLibrarySelect Called with the picked attachment's REST-shaped object.
 	 * @param {Function} onUrlSelect     Called with a pasted URL string.
+	 * @param {Function} onGallerySelect Called with an ordered list of image attachment IDs.
 	 */
-	function openMediaPicker( onLibrarySelect, onUrlSelect ) {
+	function openMediaPicker( onLibrarySelect, onUrlSelect, onGallerySelect ) {
 		if ( ! wp.media ) {
 			return;
 		}
 
 		var options = {
 			title: __( 'Featured content', 'daymark' ),
-			library: { type: [ 'audio', 'video' ] },
-			multiple: false,
-			button: { text: __( 'Use this file', 'daymark' ) },
+			library: { type: PICKER_MEDIA_TYPES },
+			// 'add' lets a tap toggle each item into the selection, with no
+			// modifier key — what a phone or trackpad needs to build a
+			// gallery. A single audio/video pick still works exactly as it
+			// did with a one-item selection.
+			multiple: 'add',
+			button: { text: __( 'Use selection', 'daymark' ) },
 		};
 
 		var FrameClass = getFeaturedContentFrameClass();
@@ -716,10 +863,53 @@
 		bindLibraryTypeFilter( frame );
 
 		frame.on( 'select', function () {
-			var selection = frame.state().get( 'selection' ).first();
+			var selection = frame.state().get( 'selection' );
+			var items = [];
+			var isImage = function ( item ) {
+				return 0 === ( item.mime || '' ).indexOf( 'image/' );
+			};
 
-			if ( selection ) {
-				onLibrarySelect( selection.toJSON() );
+			if ( ! selection ) {
+				return;
+			}
+
+			var imageModels = [];
+
+			selection.each( function ( model ) {
+				var json = model.toJSON();
+
+				if ( json && json.id ) {
+					items.push( json );
+
+					if ( isImage( json ) ) {
+						imageModels.push( model );
+					}
+				}
+			} );
+
+			var images = items.filter( isImage );
+			var media = items.filter( function ( item ) {
+				return ! isImage( item );
+			} );
+
+			// Only images: a gallery, reviewed in core's gallery editor so
+			// the author can reorder or drop images before it's saved
+			// (issue #461). If that editor can't open, the pick is saved in
+			// selection order, as before. Otherwise the first audio/video
+			// wins (a mixed pick is ambiguous, and one file is what those
+			// kinds store).
+			if ( images.length && ! media.length ) {
+				var opened = openGalleryEditor( { models: imageModels }, onGallerySelect );
+
+				if ( ! opened ) {
+					onGallerySelect(
+						images.map( function ( item ) {
+							return item.id;
+						} )
+					);
+				}
+			} else if ( media.length ) {
+				onLibrarySelect( media[ 0 ] );
 			}
 		} );
 
@@ -728,6 +918,270 @@
 		} );
 
 		frame.open();
+	}
+
+	/**
+	 * The display host of a URL, mirroring Daymark_Featured_Content::
+	 * url_host_label() — the hostname with a leading "www." stripped,
+	 * falling back to the raw URL when it can't be parsed. Used by the
+	 * quote/link previews (and the quote form's citation link) so the
+	 * sidebar never disagrees with what the front end renders.
+	 *
+	 * @param {string} url
+	 * @return {string}
+	 */
+	function hostLabel( url ) {
+		try {
+			return new URL( url ).hostname.replace( /^www\./, '' );
+		} catch ( err ) {
+			return url;
+		}
+	}
+
+	/**
+	 * A static preview for a quote or link Featured Content value — mirroring
+	 * Daymark_Featured_Content::render_quote()/render_link() exactly (and the
+	 * .daymark-featured-quote / .daymark-featured-link rules in
+	 * assets/featured-content.css), built purely from the stored data rather
+	 * than resolving a live oEmbed or attachment the way FeaturedContentPreview
+	 * does for audio/video. A quote renders as a <blockquote> with an optional
+	 * <footer><cite> attribution when an author and/or a citation URL is set
+	 * (author and citation together read "author — citation host"; citation
+	 * alone just links its host); a link renders as a single new-tab anchor
+	 * labeled by its host. Rendered directly from FeaturedContentControl —
+	 * never as a component with hooks of its own — since neither kind has
+	 * anything worth resolving asynchronously.
+	 *
+	 * @param {{type: string, data: Object}} current Resolved Featured Content.
+	 * @return {Object|null}
+	 */
+	function renderStaticFeaturedContentPreview( current ) {
+		var type = current.type;
+		var data = current.data || {};
+
+		if ( 'quote' === type ) {
+			var text = data.text || '';
+			var author = data.author || '';
+			var citationUrl = data.citation_url || '';
+			var credit = null;
+
+			if ( '' !== author || '' !== citationUrl ) {
+				var citeChildren = [];
+
+				if ( '' !== author && '' !== citationUrl ) {
+					citeChildren.push( author, ' — ' );
+				}
+
+				if ( '' !== citationUrl ) {
+					citeChildren.push(
+						el( 'a', { href: citationUrl, rel: 'noopener' }, hostLabel( citationUrl ) )
+					);
+				} else {
+					citeChildren.push( author );
+				}
+
+				credit = el( 'footer', null, el( 'cite', null, citeChildren ) );
+			}
+
+			return el(
+				'blockquote',
+				{ className: 'daymark-featured-quote' },
+				el( 'p', null, text ),
+				credit
+			);
+		}
+
+		if ( 'link' === type ) {
+			var url = data.url || '';
+
+			if ( ! url ) {
+				return null;
+			}
+
+			return el(
+				'a',
+				{ className: 'daymark-featured-link', href: url, target: '_blank', rel: 'noopener' },
+				hostLabel( url )
+			);
+		}
+
+		return null;
+	}
+
+	/**
+	 * A small compose form for a quote Featured Content value: the quoted
+	 * text (required), an optional author, and an optional citation URL
+	 * (rendered as its host in the credit's link). Shown from
+	 * FeaturedContentControl's own compose state rather than the media
+	 * modal — a quote is typed, not picked. "Add a quote" opens it blank;
+	 * Replace on an already-set quote opens it pre-filled. Save is
+	 * disabled until the text field has a non-whitespace value, and only
+	 * ever sends fields the author actually filled in, matching how
+	 * Daymark_Featured_Content::sanitize_quote_shape() stores a value.
+	 *
+	 * @param {{initialData: ?Object, onSave: Function, onCancel: Function}} props
+	 * @return {Object}
+	 */
+	function FeaturedContentQuoteForm( props ) {
+		var initialData = props.initialData || {};
+
+		var textState = useState( initialData.text || '' );
+		var text = textState[ 0 ];
+		var setText = textState[ 1 ];
+
+		var authorState = useState( initialData.author || '' );
+		var author = authorState[ 0 ];
+		var setAuthor = authorState[ 1 ];
+
+		var citationState = useState( initialData.citation_url || '' );
+		var citation = citationState[ 0 ];
+		var setCitation = citationState[ 1 ];
+
+		function submit() {
+			var data = { text: text.trim() };
+
+			if ( author.trim() ) {
+				data.author = author.trim();
+			}
+
+			if ( citation.trim() ) {
+				data.citation_url = citation.trim();
+			}
+
+			props.onSave( data );
+		}
+
+		return el(
+			'div',
+			{ className: 'daymark-fc-compose' },
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-text' },
+				__( 'Quote', 'daymark' )
+			),
+			el( 'textarea', {
+				id: 'daymark-fc-quote-text',
+				className: 'daymark-fc-compose-input',
+				rows: 4,
+				value: text,
+				onChange: function ( event ) {
+					setText( event.target.value );
+				},
+			} ),
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-author' },
+				__( 'Author (optional)', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-quote-author',
+				type: 'text',
+				className: 'daymark-fc-compose-input',
+				value: author,
+				onChange: function ( event ) {
+					setAuthor( event.target.value );
+				},
+			} ),
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-quote-citation' },
+				__( 'Link to the source (optional)', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-quote-citation',
+				type: 'url',
+				className: 'daymark-fc-compose-input',
+				value: citation,
+				onChange: function ( event ) {
+					setCitation( event.target.value );
+				},
+			} ),
+			el(
+				'div',
+				{ className: 'daymark-fc-compose-actions' },
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-primary',
+						disabled: ! text.trim(),
+						onClick: submit,
+					},
+					__( 'Save', 'daymark' )
+				),
+				el(
+					'button',
+					{ type: 'button', className: 'button-link', onClick: props.onCancel },
+					__( 'Cancel', 'daymark' )
+				)
+			)
+		);
+	}
+
+	/**
+	 * A small single-field compose form for a link Featured Content value:
+	 * just the URL. Shown from FeaturedContentControl's own compose state
+	 * (the URL is typed, not picked through the media modal) whenever the
+	 * post's format is Link. Save is disabled until the field has a
+	 * non-whitespace value.
+	 *
+	 * @param {{initialData: ?Object, onSave: Function, onCancel: Function}} props
+	 * @return {Object}
+	 */
+	function FeaturedContentLinkForm( props ) {
+		var initialData = props.initialData || {};
+
+		var urlState = useState( initialData.url || '' );
+		var url = urlState[ 0 ];
+		var setUrl = urlState[ 1 ];
+
+		function submit() {
+			var value = url.trim();
+
+			if ( ! value ) {
+				return;
+			}
+
+			props.onSave( { url: value } );
+		}
+
+		return el(
+			'div',
+			{ className: 'daymark-fc-compose' },
+			el(
+				'label',
+				{ className: 'daymark-fc-compose-label', htmlFor: 'daymark-fc-link-url' },
+				__( 'URL', 'daymark' )
+			),
+			el( 'input', {
+				id: 'daymark-fc-link-url',
+				type: 'url',
+				className: 'daymark-fc-compose-input',
+				value: url,
+				onChange: function ( event ) {
+					setUrl( event.target.value );
+				},
+			} ),
+			el(
+				'div',
+				{ className: 'daymark-fc-compose-actions' },
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-primary',
+						disabled: ! url.trim(),
+						onClick: submit,
+					},
+					__( 'Save', 'daymark' )
+				),
+				el(
+					'button',
+					{ type: 'button', className: 'button-link', onClick: props.onCancel },
+					__( 'Cancel', 'daymark' )
+				)
+			)
+		);
 	}
 
 	/**
@@ -759,14 +1213,31 @@
 	 */
 	function FeaturedContentPreview( props ) {
 		var type = props.type;
-		var data = props.data;
-		var isUrl = 'url' === data.source;
+		var data = props.data || {};
+		var isGallery = 'gallery' === type;
+		var isUrl = ! isGallery && 'url' === data.source;
+		var galleryIds = isGallery && Array.isArray( data.attachment_ids ) ? data.attachment_ids : [];
 
 		var attachment = useSelect(
 			function ( select ) {
-				return isUrl ? null : select( 'core' ).getMedia( data.attachment_id );
+				return isUrl || isGallery ? null : select( 'core' ).getMedia( data.attachment_id );
 			},
-			[ isUrl, data.attachment_id ]
+			[ isUrl, isGallery, data.attachment_id ]
+		);
+
+		var galleryMedia = useSelect(
+			function ( select ) {
+				if ( ! isGallery ) {
+					return [];
+				}
+
+				return galleryIds.map( function ( id ) {
+					return select( 'core' ).getMedia( id );
+				} ).filter( function ( item ) {
+					return item && item.source_url;
+				} );
+			},
+			[ isGallery, galleryIds.join( ',' ) ]
 		);
 
 		var embedState = useState( null );
@@ -788,7 +1259,7 @@
 
 				var cancelled = false;
 
-				wp.apiFetch( { url: endpoint + '?url=' + encodeURIComponent( data.url ) } )
+				wp.apiFetch( { url: oembedPreviewUrl( endpoint, data.url ) } )
 					.then( function ( response ) {
 						if ( ! cancelled ) {
 							setEmbed( response && response.embed ? response.embed : false );
@@ -806,6 +1277,24 @@
 			},
 			[ isUrl, data.url ]
 		);
+
+		if ( isGallery ) {
+			if ( ! galleryMedia.length ) {
+				return null;
+			}
+
+			return el(
+				'div',
+				{ className: 'daymark-fc-preview daymark-fc-preview--gallery' },
+				galleryMedia.slice( 0, 4 ).map( function ( item ) {
+					return el( 'img', {
+						key: item.id,
+						src: item.source_url,
+						alt: item.alt_text || '',
+					} );
+				} )
+			);
+		}
 
 		if ( ! isUrl ) {
 			if ( ! attachment || ! attachment.source_url ) {
@@ -865,16 +1354,31 @@
 
 	/**
 	 * The control rendered right after core's own Featured Image button.
-	 * Two states: unset (a single toggle button opening the media modal) or
-	 * already set — a preview with Replace/Remove overlaid at its bottom
-	 * edge on hover/focus, matching core's own Featured Image thumbnail
-	 * treatment (`.editor-post-featured-image__actions`, confirmed directly
-	 * against Gutenberg's own `post-featured-image/index.jsx`/`style.scss`)
-	 * rather than a separate text row below the preview — Replace reopens
-	 * the same modal. No standalone "Featured content: Audio/Video" label:
-	 * the preview itself (a native player or an oEmbed embed) already
-	 * denotes the type, the same reasoning core's own thumbnail needs no
-	 * "Featured image: JPEG" caption either.
+	 * Three states: unset (a single "Set featured content" button opening the
+	 * media picker — pick one audio/video file, several images for a
+	 * gallery, or paste a link on its "Add by URL" tab — with quick "add"
+	 * links beside it for quote/link when those kinds are allowed: quote
+	 * always, link only when the post's own format is already Link,
+	 * mirroring the server-side `get_featured_content()` read-time gate);
+	 * already set with an audio/video/gallery value (a preview with
+	 * Replace/Remove overlaid at its bottom edge on hover/focus, matching
+	 * core's own Featured Image thumbnail treatment —
+	 * `.editor-post-featured-image__actions`, confirmed directly against
+	 * Gutenberg's own `post-featured-image/index.jsx`/`style.scss` — where
+	 * Replace reopens the picker for audio/video, and core's gallery
+	 * editor with the saved images in order for a gallery); or already set with a quote/link value (a plain static
+	 * preview mirroring the front end's own render, where Replace re-opens
+	 * that kind's compose form pre-filled rather than the picker — a quote
+	 * is typed, not picked). A third, transient compose state shows the
+	 * quote or link form itself in place of the summary; save writes it and
+	 * returns to the preview, cancel discards the draft and returns to
+	 * whatever the control showed before. No standalone "Featured content:
+	 * Audio/Video" label: the preview itself (a native player, an oEmbed
+	 * embed, a gallery strip, a link, or a styled quote) already denotes
+	 * the type, the same reasoning core's own thumbnail needs no "Featured
+	 * image: JPEG" caption either. A small note appears under the preview
+	 * when a link kind is set but the post isn't on the Link format, since
+	 * that's the only case where it won't render on the front end.
 	 */
 	function FeaturedContentControl() {
 		var meta = useSelect( function ( select ) {
@@ -883,8 +1387,23 @@
 			return editor ? editor.getEditedPostAttribute( 'meta' ) || {} : {};
 		}, [] );
 
+		var postFormat = useSelect( function ( select ) {
+			var editor = select( 'core/editor' );
+
+			return editor ? editor.getEditedPostAttribute( 'format' ) || '' : '';
+		}, [] );
+
+		var composeState = useState( null );
+		var compose = composeState[ 0 ];
+		var setCompose = composeState[ 1 ];
+
 		var editPost = useDispatch( 'core/editor' ).editPost;
 		var current = readFeaturedContent( meta );
+		var allowedTypes = config.allowedTypes || [];
+
+		function closeCompose() {
+			setCompose( null );
+		}
 
 		function handleLibrarySelect( attachment ) {
 			var mime = attachment.mime || '';
@@ -905,24 +1424,92 @@
 			saveFeaturedContent( editPost, guessUrlKind( url ), { source: 'url', url: url } );
 		}
 
+		function handleQuoteSave( data ) {
+			saveFeaturedContent( editPost, 'quote', data );
+			setCompose( null );
+		}
+
+		function handleLinkSave( data ) {
+			saveFeaturedContent( editPost, 'link', data );
+			setCompose( null );
+		}
+
+		function handleGallerySelect( ids ) {
+			if ( ids && ids.length ) {
+				saveFeaturedContent( editPost, 'gallery', { attachment_ids: ids } );
+			}
+		}
+
 		function openPicker() {
-			openMediaPicker( handleLibrarySelect, handleUrlSelect );
+			var savedIds = 'gallery' === current.type && current.data && Array.isArray( current.data.attachment_ids )
+				? current.data.attachment_ids
+				: [];
+
+			// Replace on a gallery goes straight to core's gallery editor
+			// with the saved images in their saved order (issue #461). To
+			// switch a gallery to audio or video, Remove it and set new
+			// Featured Content.
+			if ( savedIds.length && openGalleryEditor( { ids: savedIds }, handleGallerySelect ) ) {
+				return;
+			}
+
+			openMediaPicker( handleLibrarySelect, handleUrlSelect, handleGallerySelect );
+		}
+
+		if ( compose ) {
+			var composeInitial = null;
+
+			if ( compose === current.type ) {
+				composeInitial = current.data;
+			}
+
+			var composeForm = 'quote' === compose
+				? el( FeaturedContentQuoteForm, {
+					initialData: composeInitial,
+					onSave: handleQuoteSave,
+					onCancel: closeCompose,
+				} )
+				: el( FeaturedContentLinkForm, {
+					initialData: composeInitial,
+					onSave: handleLinkSave,
+					onCancel: closeCompose,
+				} );
+
+			return el( 'div', { className: 'daymark-fc-summary' }, composeForm );
 		}
 
 		if ( current.type ) {
+			var isStaticKind = 'quote' === current.type || 'link' === current.type;
+			var replaceAction = isStaticKind
+				? function () {
+					setCompose( current.type );
+				}
+				: openPicker;
+			var formatNote = '';
+
+			if ( 'link' === current.type && 'link' !== postFormat ) {
+				formatNote = el(
+					'p',
+					{ className: 'daymark-fc-format-note' },
+					__( 'This link only shows on the front end for posts using the Link format.', 'daymark' )
+				);
+			}
+
 			return el(
 				'div',
 				{ className: 'daymark-fc-summary' },
 				el(
 					'div',
 					{ className: 'daymark-fc-preview-wrap' },
-					el( FeaturedContentPreview, { type: current.type, data: current.data } ),
+					isStaticKind
+						? renderStaticFeaturedContentPreview( current )
+						: el( FeaturedContentPreview, { type: current.type, data: current.data } ),
 					el(
 						'div',
 						{ className: 'daymark-fc-actions' },
 						el(
 							'button',
-							{ type: 'button', className: 'daymark-fc-action', onClick: openPicker },
+							{ type: 'button', className: 'daymark-fc-action', onClick: replaceAction },
 							__( 'Replace', 'daymark' )
 						),
 						el(
@@ -937,14 +1524,54 @@
 							__( 'Remove', 'daymark' )
 						)
 					)
+				),
+				formatNote
+			);
+		}
+
+		var quickAdds = [];
+
+		if ( -1 !== allowedTypes.indexOf( 'quote' ) ) {
+			quickAdds.push(
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-link daymark-fc-set-extra',
+						onClick: function () {
+							setCompose( 'quote' );
+						},
+					},
+					__( 'Add a quote', 'daymark' )
+				)
+			);
+		}
+
+		if ( -1 !== allowedTypes.indexOf( 'link' ) && 'link' === postFormat ) {
+			quickAdds.push(
+				el(
+					'button',
+					{
+						type: 'button',
+						className: 'button-link daymark-fc-set-extra',
+						onClick: function () {
+							setCompose( 'link' );
+						},
+					},
+					__( 'Add a link', 'daymark' )
 				)
 			);
 		}
 
 		return el(
-			'button',
-			{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
-			__( 'Set featured content', 'daymark' )
+			'div',
+			{ className: 'daymark-fc-set' },
+			el(
+				'button',
+				{ type: 'button', className: 'daymark-fc-toggle', onClick: openPicker },
+				__( 'Set featured content', 'daymark' )
+			),
+			quickAdds
 		);
 	}
 

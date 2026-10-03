@@ -43,6 +43,231 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		return $request;
 	}
 
+	/**
+	 * Publish a post with the given content as author A, logged in as A.
+	 *
+	 * @param string $content Post content.
+	 * @return int Post ID.
+	 */
+	private function published_post( string $content = '<p>Body.</p>' ): int {
+		wp_set_current_user( $this->author_a );
+
+		return (int) self::factory()->post->create(
+			array(
+				'post_author'  => $this->author_a,
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+	}
+
+	/**
+	 * An uploaded image attachment (a real file, so its URL and sizes resolve).
+	 *
+	 * @param int $post_id Parent post ID.
+	 * @return int Attachment ID.
+	 */
+	private function image( int $post_id ): int {
+		return (int) self::factory()->attachment->create_upload_object( __DIR__ . '/e2e/fixtures/test-image.png', $post_id );
+	}
+
+	/** A post with no Featured Content and no featured image has nothing to show above its body. */
+	public function test_featured_is_empty_with_nothing_set() {
+		$data = rest_do_request( $this->request_for( $this->published_post() ) )->get_data();
+
+		$this->assertSame( '', $data['featured'] );
+	}
+
+	/** A featured image the content doesn't show is returned for the top of the post view. */
+	public function test_featured_image_not_in_content_is_returned() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertStringContainsString( '<img', $featured );
+		$this->assertStringContainsString( wp_basename( (string) get_attached_file( $image_id ), '.png' ), $featured );
+	}
+
+	/**
+	 * An image Mark's first photo is both its featured image and in its
+	 * content (the publisher does that), so it is not shown twice.
+	 */
+	public function test_featured_image_already_in_content_is_not_repeated() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => sprintf(
+					'<!-- wp:image {"id":%1$d} --><figure class="wp-block-image"><img src="%2$s" class="wp-image-%1$d" alt="" /></figure><!-- /wp:image -->',
+					$image_id,
+					esc_url( (string) wp_get_attachment_url( $image_id ) )
+				),
+			)
+		);
+
+		$this->assertSame( '', rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'] );
+	}
+
+	/** A resized copy of the featured image in the content (no wp-image class) also counts as shown. */
+	public function test_resized_copy_of_featured_image_in_content_is_not_repeated() {
+		$post_id  = $this->published_post();
+		$image_id = $this->image( $post_id );
+		set_post_thumbnail( $post_id, $image_id );
+		$resized = preg_replace( '/\.png$/', '-300x200.png', (string) wp_get_attachment_url( $image_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => '<p><img src="' . esc_url( $resized ) . '" alt="" /></p>',
+			)
+		);
+
+		$this->assertSame( '', rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'] );
+	}
+
+	/** Featured Content wins over a featured image. */
+	public function test_featured_content_is_returned_instead_of_the_featured_image() {
+		$post_id = $this->published_post();
+		set_post_thumbnail( $post_id, $this->image( $post_id ) );
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, 'quote' );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'quote' => array( 'text' => 'Seize the day.' ) ) )
+		);
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertStringContainsString( 'daymark-featured-quote', $featured );
+		$this->assertStringContainsString( 'Seize the day.', $featured );
+		$this->assertStringNotContainsString( '<img', $featured );
+	}
+
+	/**
+	 * A gallery returns every image, even though a REST request is never a
+	 * single-post view (where the front end shows only the first image).
+	 */
+	public function test_featured_gallery_returns_every_slide() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ), $this->image( $post_id ) );
+		update_post_meta( $post_id, Daymark_Featured_Content::META_TYPE, 'gallery' );
+		update_post_meta(
+			$post_id,
+			Daymark_Featured_Content::META_DATA,
+			wp_json_encode( array( 'gallery' => array( 'attachment_ids' => $ids ) ) )
+		);
+
+		$featured = rest_do_request( $this->request_for( $post_id ) )->get_data()['featured'];
+
+		$this->assertSame( 3, substr_count( $featured, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'data-daymark-gallery', $featured );
+	}
+
+	/**
+	 * Gallery block markup in the shape Daymark_Publisher writes.
+	 *
+	 * @param int[] $ids Image attachment IDs.
+	 * @return string
+	 */
+	private function gallery_block( array $ids ): string {
+		$inner = array();
+		foreach ( $ids as $id ) {
+			$inner[] = sprintf(
+				'<!-- wp:image {"id":%1$d,"sizeSlug":"large","linkDestination":"none"} --><figure class="wp-block-image size-large"><img src="%2$s" alt="" class="wp-image-%1$d"/></figure><!-- /wp:image -->',
+				$id,
+				esc_url( (string) wp_get_attachment_url( $id ) )
+			);
+		}
+
+		return '<!-- wp:paragraph --><p>Before.</p><!-- /wp:paragraph -->'
+			. '<!-- wp:gallery {"linkTo":"none"} --><figure class="wp-block-gallery has-nested-images columns-default is-cropped">' . implode( '', $inner ) . '</figure><!-- /wp:gallery -->'
+			. '<!-- wp:paragraph --><p>After.</p><!-- /wp:paragraph -->';
+	}
+
+	/** A gallery block in the post shows as the app's slider, in place, keeping its photo order. */
+	public function test_gallery_block_renders_as_a_slider_in_the_post_view() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( array( $ids[2], $ids[0], $ids[1] ) ),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertStringContainsString( 'data-daymark-gallery', $content );
+		$this->assertSame( 3, substr_count( $content, 'daymark-fc-gallery__slide' ) );
+		$this->assertStringContainsString( 'aria-label="Gallery"', $content );
+		$this->assertStringNotContainsString( 'wp-block-gallery', $content );
+		$this->assertStringNotContainsString( 'DAYMARKGALLERYSLOT', $content );
+		$this->assertLessThan( strpos( $content, 'data-daymark-gallery' ), strpos( $content, 'Before.' ) );
+		$this->assertLessThan( strpos( $content, 'After.' ), strpos( $content, 'data-daymark-gallery' ) );
+
+		$first  = strpos( $content, wp_basename( (string) get_attached_file( $ids[2] ), '.png' ) );
+		$second = strpos( $content, wp_basename( (string) get_attached_file( $ids[0] ), '.png' ) );
+		$this->assertNotFalse( $first );
+		$this->assertLessThan( $second, $first, 'Slides follow the gallery block order' );
+	}
+
+	/** Each slide shows the caption written in its image block; an image with none gets no caption. */
+	public function test_gallery_slider_shows_each_image_blocks_caption() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => str_replace(
+					'class="wp-image-' . $ids[0] . '"/></figure>',
+					'class="wp-image-' . $ids[0] . '"/><figcaption class="wp-element-caption">Sunset at the <em>pier</em><span class="daymark-sheet">x</span></figcaption></figure>',
+					$this->gallery_block( $ids )
+				),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertSame( 1, substr_count( $content, 'daymark-fc-gallery__caption' ) );
+		$this->assertStringContainsString( '<p class="daymark-fc-gallery__caption">Sunset at the <em>pier</em>x</p>', $content, 'Formatting kept; classes and other tags dropped' );
+		$this->assertStringNotContainsString( 'daymark-sheet', $content );
+	}
+
+	/** A one-photo gallery block is left as core renders it: there is nothing to slide. */
+	public function test_single_image_gallery_block_is_left_alone() {
+		$post_id = $this->published_post();
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( array( $this->image( $post_id ) ) ),
+			)
+		);
+
+		$content = rest_do_request( $this->request_for( $post_id ) )->get_data()['content'];
+
+		$this->assertStringContainsString( 'wp-block-gallery', $content );
+		$this->assertStringNotContainsString( 'data-daymark-gallery', $content );
+	}
+
+	/** The swap is scoped to this request: a gallery rendered elsewhere afterwards is untouched. */
+	public function test_gallery_swap_does_not_leak_past_the_request() {
+		$post_id = $this->published_post();
+		$ids     = array( $this->image( $post_id ), $this->image( $post_id ) );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_content' => $this->gallery_block( $ids ),
+			)
+		);
+
+		rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertStringContainsString( 'wp-block-gallery', do_blocks( $this->gallery_block( $ids ) ) );
+	}
+
 	/** A true Mark's own content is returned, rendered — not the raw block markup. */
 	public function test_mark_content_is_rendered() {
 		wp_set_current_user( $this->author_a );
@@ -62,6 +287,40 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertStringContainsString( 'Hello from a Mark.', $response->get_data()['content'] );
 		$this->assertStringNotContainsString( 'wp:paragraph', $response->get_data()['content'], 'Block comment markup is not leaked as visible text' );
+	}
+
+	/**
+	 * Another Author's post cannot carry Daymark's own overlay classes into an
+	 * Editor's app (a `daymark-sheet` is a fixed, full-screen layer through
+	 * app.css). Unrelated classes and the Check In map preview's own classes
+	 * and pin style are kept.
+	 */
+	public function test_mark_content_strips_daymark_classes_but_keeps_the_checkin_map() {
+		$content = '<div class="daymark-sheet wp-block-group">Spoof</div>'
+			. '<figure class="daymark-checkin-map"><img src="https://tile.openstreetmap.org/1/1/1.png" width="256" height="256" alt="" />'
+			. '<span class="daymark-checkin-map__pin" style="left:50%;top:50%" aria-hidden="true"></span></figure>';
+
+		$post_id = (int) self::factory()->post->create(
+			array(
+				'post_author'  => $this->author_a,
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+
+		wp_set_current_user( $this->author_b );
+
+		$response = rest_do_request( $this->request_for( $post_id ) );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$html = $response->get_data()['content'];
+
+		$this->assertStringNotContainsString( 'daymark-sheet', $html, 'An overlay class from another author is removed' );
+		$this->assertStringContainsString( 'wp-block-group', $html, 'Unrelated classes are kept' );
+		$this->assertStringContainsString( 'daymark-checkin-map', $html, "The Check In map's own class is kept" );
+		$this->assertStringContainsString( 'daymark-checkin-map__pin', $html, "The map pin's class is kept" );
+		$this->assertStringContainsString( 'left:50%;top:50%', $html, "The map pin's positioning style is kept" );
 	}
 
 	/**

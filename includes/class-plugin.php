@@ -125,6 +125,15 @@ final class Daymark_Plugin {
 	public Daymark_Jetpack_Engagement $jetpack_engagement;
 
 	/**
+	 * Real ActivityPub Like/Announce/Undo for a subscribed post whose origin
+	 * is a fediverse object, via the ActivityPub plugin's own outbox (issue
+	 * #439).
+	 *
+	 * @var Daymark_ActivityPub_Engagement
+	 */
+	public Daymark_ActivityPub_Engagement $activitypub_engagement;
+
+	/**
 	 * "Featured Content" block-editor sidebar panel (issue #401) —
 	 * audio/video/gallery/quote/link as a post's featured content, in place
 	 * of (or alongside) a Featured Image.
@@ -132,6 +141,22 @@ final class Daymark_Plugin {
 	 * @var Daymark_Featured_Content
 	 */
 	public Daymark_Featured_Content $featured_content;
+
+	/**
+	 * Featured Content share image/description for oEmbed and Open Graph
+	 * (issue #408).
+	 *
+	 * @var Daymark_Featured_Content_Social
+	 */
+	public Daymark_Featured_Content_Social $featured_content_social;
+
+	/**
+	 * Bridgy Fed routing for Like/Reblog Marks of fediverse and Bluesky
+	 * posts (issue #441).
+	 *
+	 * @var Daymark_Bridgy_Fed
+	 */
+	public Daymark_Bridgy_Fed $bridgy_fed;
 
 	/**
 	 * Subscription source registry (inbound mirror of the syndication
@@ -282,7 +307,10 @@ final class Daymark_Plugin {
 		$this->websub_subscriber            = new Daymark_Websub_Subscriber();
 		$this->websub_endpoint              = new Daymark_Websub_Endpoint();
 		$this->jetpack_engagement           = new Daymark_Jetpack_Engagement();
+		$this->activitypub_engagement       = new Daymark_ActivityPub_Engagement();
 		$this->featured_content             = new Daymark_Featured_Content();
+		$this->featured_content_social      = new Daymark_Featured_Content_Social();
+		$this->bridgy_fed                   = new Daymark_Bridgy_Fed();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -290,6 +318,12 @@ final class Daymark_Plugin {
 		// priority, so both migrations must run before that.
 		add_action( 'init', array( __CLASS__, 'remove_public_timeline_page' ), 5 );
 		add_action( 'init', array( __CLASS__, 'migrate_content_type_pages' ), 5 );
+		// Early, at priority 5: the Webmention plugin builds its list of
+		// post types to send from (get_post_types_by_support( 'webmentions' ))
+		// on `init` at priority 10, so the Like post type must already be
+		// registered by then — rather than relying on this plugin happening
+		// to load before that one alphabetically.
+		add_action( 'init', array( $this->like_visibility, 'register_post_type' ), 5 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( DAYMARK_PLUGIN_FILE ), array( $this, 'add_action_links' ) );
@@ -364,8 +398,12 @@ final class Daymark_Plugin {
 		$this->admin_bar->register();
 		$this->admin_post_format_icon->register();
 		$this->websub_endpoint->register();
+		$this->websub_subscriber->register();
 		$this->jetpack_engagement->register();
+		$this->activitypub_engagement->register();
 		$this->featured_content->register();
+		$this->featured_content_social->register();
+		$this->bridgy_fed->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

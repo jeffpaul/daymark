@@ -1,33 +1,43 @@
 <?php
 /**
- * Hides a Like Mark's own auto-published post from every public discovery
- * surface except its own direct permalink.
+ * Keeps a Like Mark out of everywhere an ordinary post shows up, except
+ * its own direct permalink.
  *
  * A Like Mark (`_daymark_like_of` post meta — see the "Subscribed-post
  * engagement" decision, CLAUDE.md) exists purely to give a federation
  * plugin a real, fetchable `u-like-of` source page to send an outbound
- * Webmention/ActivityPub Like from; it is not content a reader is meant to
- * find. It was already excluded from Daymark's own Timeline (issue #267),
- * but nothing kept it out of the site's own front end, feed, REST API, or
- * XML sitemap — so it could still show up as an ordinary post on the
- * theme's home page, in an "Asides" archive, in the site's RSS feed, or via
- * `wp/v2/posts`, exactly as reported.
+ * Webmention from; it is not content a reader is meant to find.
  *
- * The one deliberate exception is the post's own singular permalink: the
- * Webmention verification a Like toggle relies on requires the origin site
- * to be able to fetch that URL directly and find the `u-like-of` markup, so
- * it must stay reachable by a plain, unauthenticated GET. Every hook below
- * is scoped to leave `is_singular()` (and a direct, capability-checked
- * single-item REST fetch) completely untouched.
+ * It lives on its own post type, self::POST_TYPE, rather than `post`.
+ * The earlier approach (issue #361) kept Like Marks as ordinary posts and
+ * filtered them out of each discovery surface one by one — but that could
+ * only ever reach the surfaces it knew about: a `pre_get_posts` guard
+ * scoped to the main query misses a block theme's Query Loop (a secondary
+ * WP_Query), widgets, related-posts plugins, and wp-admin's own Posts
+ * list, which is exactly where they kept showing up. A dedicated post type
+ * that is not `public`, excluded from search, not in REST, has no archive,
+ * no admin UI, no categories/tags/post formats, is simply never part of
+ * any query for `post` in the first place — the site's home page, every
+ * archive, search, its RSS/Atom feed, `wp/v2/posts`, the XML sitemap,
+ * Jetpack Social/Publicize (which only auto-shares post types declaring
+ * `publicize` support), and wp-admin's Posts list all leave it out with no
+ * per-surface filter needed.
+ *
+ * It stays `publicly_queryable` so its own permalink (`?daymark_like=slug`
+ * — no rewrite rule, so nothing to flush) is still reachable by a plain,
+ * unauthenticated GET: the origin site verifies a Webmention by fetching
+ * that URL and finding the `u-like-of` markup. It declares `webmentions`
+ * post type support so the Webmention plugin still sends for it.
+ *
+ * Like Marks already stored as `post` (before this change) are moved onto
+ * the new post type once, on `init` (maybe_migrate_legacy_likes()), and a
+ * request for one's old post permalink 301s to its new URL. The original
+ * per-surface filters below are kept as defense in depth for a legacy row
+ * the migration hasn't reached yet.
  *
  * Deliberately scoped to `_daymark_like_of` only — a Reblog Mark
  * (`_daymark_repost_of`) is real, user-chosen, publishable content and
- * stays exactly as visible/syndicated as any other Mark.
- *
- * wp-admin's own post list is intentionally left alone: a site owner can
- * still see and manage a Like Mark there (or in the block editor, which
- * this class's REST guard also leaves working for whoever can edit the
- * post) — only the *public* discovery surfaces are hidden.
+ * stays an ordinary, fully visible/syndicated `post`.
  *
  * @package Daymark
  */
@@ -42,17 +52,208 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Like_Visibility {
 
 	/**
-	 * Hook up.
+	 * The Like Mark post type.
+	 *
+	 * @var string
+	 */
+	public const POST_TYPE = 'daymark_like';
+
+	/**
+	 * Option set once every legacy `post`-typed Like Mark has been moved
+	 * onto self::POST_TYPE.
+	 *
+	 * @var string
+	 */
+	public const MIGRATED_OPTION = 'daymark_like_post_type_migrated';
+
+	/**
+	 * Legacy Like Marks moved per request, so a site with many of them
+	 * never does it all in one page load.
+	 *
+	 * @var int
+	 */
+	private const MIGRATION_BATCH = 100;
+
+	/**
+	 * Hook up. Called from Daymark_Plugin::on_init() (`init`, default
+	 * priority), after the post type itself registered at priority 5.
 	 *
 	 * @return void
 	 */
 	public function register(): void {
+		// The post type itself registers earlier, on init at priority 5
+		// (see Daymark_Plugin::setup()) — registered here too only if that
+		// didn't run (e.g. a caller invoking register() directly).
+		if ( ! post_type_exists( self::POST_TYPE ) ) {
+			$this->register_post_type();
+		}
+
+		$this->maybe_migrate_legacy_likes();
+
+		add_action( 'template_redirect', array( $this, 'redirect_legacy_permalink' ) );
+		add_filter( 'jetpack_sync_prevent_sending_post_data', array( $this, 'prevent_jetpack_sync' ), 10, 2 );
 		add_action( 'pre_get_posts', array( $this, 'exclude_from_main_query' ) );
 		add_filter( 'rest_post_query', array( $this, 'exclude_from_rest_collection' ), 10, 1 );
 		add_filter( 'rest_pre_dispatch', array( $this, 'block_rest_single_item' ), 10, 3 );
 		add_filter( 'wp_sitemaps_posts_query_args', array( $this, 'exclude_from_sitemap' ), 10, 2 );
 		add_filter( 'oembed_response_data', array( $this, 'suppress_oembed' ), 10, 2 );
 		add_filter( 'publicize_should_publicize_published_post', array( $this, 'suppress_publicize' ), 10, 2 );
+	}
+
+	/**
+	 * Register self::POST_TYPE. See the class docblock for why each flag is
+	 * set the way it is.
+	 *
+	 * @return void
+	 */
+	public function register_post_type(): void {
+		register_post_type(
+			self::POST_TYPE,
+			array(
+				'label'               => __( 'Likes', 'daymark' ),
+				'labels'              => array(
+					'name'          => __( 'Likes', 'daymark' ),
+					'singular_name' => __( 'Like', 'daymark' ),
+				),
+				'public'              => false,
+				'publicly_queryable'  => true,
+				'show_ui'             => false,
+				'show_in_menu'        => false,
+				'show_in_admin_bar'   => false,
+				'show_in_nav_menus'   => false,
+				'show_in_rest'        => false,
+				'has_archive'         => false,
+				'rewrite'             => false,
+				'query_var'           => self::POST_TYPE,
+				'exclude_from_search' => true,
+				'can_export'          => true,
+				'hierarchical'        => false,
+				'capability_type'     => 'post',
+				'map_meta_cap'        => true,
+				'supports'            => array( 'title', 'editor', 'author', 'custom-fields', 'comments', 'webmentions' ),
+			)
+		);
+	}
+
+	/**
+	 * Move a post onto self::POST_TYPE, dropping the category/tag/post
+	 * format terms a `post` carried (none of which this post type has).
+	 * `set_post_type()` fires no status transition, so nothing re-sends.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return void
+	 */
+	public static function convert_to_like_post_type( int $post_id ): void {
+		if ( 'post' !== get_post_type( $post_id ) ) {
+			return;
+		}
+
+		wp_delete_object_term_relationships( $post_id, array( 'category', 'post_tag', 'post_format' ) );
+		set_post_type( $post_id, self::POST_TYPE );
+	}
+
+	/**
+	 * One-time move of every Like Mark still stored as a `post` (created
+	 * before this post type existed) onto self::POST_TYPE, in batches.
+	 *
+	 * @return void
+	 */
+	public function maybe_migrate_legacy_likes(): void {
+		if ( get_option( self::MIGRATED_OPTION ) ) {
+			return;
+		}
+
+		$ids = get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'any',
+				'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
+				'posts_per_page' => self::MIGRATION_BATCH,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		// 'any' excludes trash; a trashed Like (the undo path) moves too so
+		// a later restore can never bring it back as an ordinary post.
+		$trashed = get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'trash',
+				'meta_key'       => '_daymark_like_of', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time migration lookup.
+				'posts_per_page' => self::MIGRATION_BATCH,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		foreach ( array_merge( $ids, $trashed ) as $post_id ) {
+			self::convert_to_like_post_type( (int) $post_id );
+		}
+
+		if ( count( $ids ) < self::MIGRATION_BATCH && count( $trashed ) < self::MIGRATION_BATCH ) {
+			update_option( self::MIGRATED_OPTION, 1 );
+		}
+	}
+
+	/**
+	 * A request for a migrated Like Mark's old `post` permalink now 404s
+	 * (it's no longer a `post`) — 301 it to the Like's new URL instead, so
+	 * a Webmention receiver re-verifying the old source URL still finds it.
+	 *
+	 * @return void
+	 */
+	public function redirect_legacy_permalink(): void {
+		if ( ! is_404() ) {
+			return;
+		}
+
+		$args = array(
+			'post_type'      => self::POST_TYPE,
+			'post_status'    => 'publish',
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		);
+
+		$post_id = absint( get_query_var( 'p' ) );
+		$name    = (string) get_query_var( 'name' );
+
+		if ( $post_id > 0 ) {
+			$args['p'] = $post_id;
+		} elseif ( '' !== $name ) {
+			$args['name'] = $name;
+		} else {
+			return;
+		}
+
+		$found = get_posts( $args );
+
+		if ( empty( $found ) ) {
+			return;
+		}
+
+		wp_safe_redirect( get_permalink( (int) $found[0] ), 301 );
+		exit;
+	}
+
+	/**
+	 * Keep a Like Mark out of Jetpack Sync, which otherwise replicates
+	 * published posts to WordPress.com (where they surfaced in the Reader,
+	 * issue #389). NOT independently confirmed against a live Jetpack
+	 * install — the filter name/signature follows Jetpack's Sync posts
+	 * module and should be verified against its current source.
+	 *
+	 * @param bool         $prevent Whether Jetpack would otherwise withhold the post.
+	 * @param WP_Post|null $post    The post being synced.
+	 * @return bool
+	 */
+	public function prevent_jetpack_sync( $prevent, $post ) {
+		if ( $post instanceof WP_Post && self::POST_TYPE === $post->post_type ) {
+			return true;
+		}
+
+		return $prevent;
 	}
 
 	/**

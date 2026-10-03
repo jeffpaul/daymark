@@ -16,15 +16,17 @@
  * reloading the whole page — the admin-post handler stays as that one
  * form's no-JS fallback, unchanged.
  *
- * Gated on `edit_posts`, not the wp-admin-conventional `manage_options`:
- * every existing Daymark permission check in this codebase
- * (Daymark_REST_Controller::permissions_check(), and
- * Daymark_Subscription_Post_Type's meta `auth_callback`, which explicitly
- * mirrors that same gate) already uses `edit_posts`, and
- * add_options_page()'s capability parameter accepts any capability string,
- * not only `manage_options`. Matching that existing authorization model
- * keeps one consistent gate across the whole plugin instead of introducing
- * a second one just for this screen.
+ * Gated on `manage_options`, the wp-admin convention for site settings. This
+ * screen writes site-wide state — the Privacy tab's location/weather/camera
+ * capture and public-location toggles, the poll interval, and the one
+ * shared, ownerless subscription list (subscribe, unsubscribe, rename,
+ * import, export) — so it belongs to whoever administers the site: the
+ * single operator of a one-person site, or an administrator setting Daymark
+ * up for several users. It used to be `edit_posts` (matching the rest of
+ * the plugin's per-user permission checks), which let a Contributor publish
+ * every Mark's exact coordinates or unsubscribe everyone's feeds. The REST
+ * routes that do the same jobs (create, delete, import, export) share this
+ * gate — see Daymark_REST_Controller::permissions_check_manage().
  *
  * @package Daymark
  */
@@ -43,12 +45,9 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * Capability required to view this screen and act on its forms.
 	 *
-	 * Deliberately `edit_posts` rather than the wp-admin-conventional
-	 * `manage_options` — see the class docblock.
-	 *
 	 * @var string
 	 */
-	public const CAPABILITY = 'edit_posts';
+	public const CAPABILITY = 'manage_options';
 
 	/**
 	 * Settings page slug. Shortened from the original `daymark-subscriptions`
@@ -172,6 +171,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
+		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
@@ -544,6 +544,7 @@ class Daymark_Admin_Subscriptions {
 			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
 			'title_updated'       => __( 'Site name updated.', 'daymark' ),
 			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
+			'bridgy_fed_saved'    => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
 			'feeds_unchanged'     => __( 'No changes made to this site\'s feeds.', 'daymark' ),
 		);
@@ -2032,14 +2033,14 @@ class Daymark_Admin_Subscriptions {
 				'label'       => 'Webmention',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
-				'description' => __( "Sends and receives Webmentions automatically — a reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
+				'description' => __( "Needed for Like (or ActivityPub/Jetpack): without this plugin, the ActivityPub plugin, or Jetpack with your WordPress.com account linked, subscribed posts show no Like icon at all. Sends and receives Webmentions automatically — a like or reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
 			),
 			'activitypub'     => array(
 				'label'       => 'ActivityPub',
 				'wporg_slug'  => 'activitypub',
 				'folder_slug' => 'activitypub',
 				/* translators: "Reply from the Fediverse" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
-				'description' => __( 'Makes your site followable from Mastodon, Threads, Pixelfed, and the rest of the fediverse — a published Mark reaches those followers automatically, and their replies come back into Daymark Notifications labeled "Reply from the Fediverse."', 'daymark' ),
+				'description' => __( 'Makes your site followable from Mastodon, Threads, Pixelfed, and the rest of the fediverse — a published Mark reaches those followers automatically, and their replies come back into Daymark Notifications labeled "Reply from the Fediverse." Also one of the ways a Like can reach its origin (alongside Webmention and Jetpack): with version 8.1.0 or later active and your own user enabled as an ActivityPub author, liking a subscribed post from Mastodon or another fediverse site sends it a real ActivityPub Like, and reblogging one sends a boost (Announce) — both undone if you unlike or unreblog.', 'daymark' ),
 			),
 			'atmosphere'      => array(
 				'label'       => 'ATmosphere',
@@ -2055,7 +2056,7 @@ class Daymark_Admin_Subscriptions {
 				'wporg_slug'  => 'jetpack',
 				'folder_slug' => 'jetpack',
 				'classes'     => array( 'Automattic\\Jetpack\\Connection\\Client' ),
-				'description' => __( "Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
+				'description' => __( "Needed for Like (or Webmention/ActivityPub) on WordPress.com and Jetpack-connected sites: without this, the Webmention plugin, or the ActivityPub plugin, subscribed posts show no Like icon at all. Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
 			),
 			'bridgy_fed'      => array(
 				'label'       => 'Bridgy Fed',
@@ -2068,7 +2069,7 @@ class Daymark_Admin_Subscriptions {
 				'wporg_slug'  => 'simple-location',
 				'folder_slug' => 'simple-location',
 				'classes'     => array( 'Geo_Data' ),
-				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself.', 'daymark' ),
+				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself. A captured temperature and short condition description (such as "Mostly clear") are bridged the same way.', 'daymark' ),
 			),
 		);
 	}
@@ -2203,6 +2204,9 @@ class Daymark_Admin_Subscriptions {
 						<p>
 							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get started', 'daymark' ); ?></a>
 						</p>
+						<?php if ( 'https://fed.brid.gy/' === $connector['url'] ) : ?>
+							<?php $this->render_bridgy_fed_form(); ?>
+						<?php endif; ?>
 					<?php else : ?>
 						<?php
 						$status  = $this->connector_status( $connector );
@@ -2400,6 +2404,58 @@ class Daymark_Admin_Subscriptions {
 			<?php submit_button( __( 'Save privacy settings', 'daymark' ) ); ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * The "this site is bridged" checkbox on the Bridgy Fed card (issue
+	 * #441). Bridgy Fed has no stable API Daymark could ask, so the site
+	 * owner says so here once they've set it up.
+	 *
+	 * @return void
+	 */
+	private function render_bridgy_fed_form(): void {
+		$webmention = Daymark_Plugin_Detector::is_active( 'webmention' );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_bridgy_fed_save" />
+			<?php wp_nonce_field( 'daymark_bridgy_fed_save', 'daymark_bridgy_fed_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Bridgy_Fed::OPTION ); ?>" value="1" <?php checked( '1', (string) get_option( Daymark_Bridgy_Fed::OPTION, '' ) ); ?> />
+					<?php esc_html_e( 'This site is bridged with Bridgy Fed', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'When checked, liking or reblogging a fediverse or Bluesky post you follow sends it through Bridgy Fed. Posts on sites that accept Webmentions still get them directly.', 'daymark' ); ?>
+				<?php if ( ! $webmention ) : ?>
+					<?php esc_html_e( 'Needs the Webmention plugin above to be active.', 'daymark' ); ?>
+				<?php endif; ?>
+			</p>
+			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Bridgy Fed checkbox (admin_post_daymark_bridgy_fed_save).
+	 *
+	 * @return void
+	 */
+	public function handle_bridgy_fed_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_bridgy_fed_save', 'daymark_bridgy_fed_save_nonce' );
+
+		update_option( Daymark_Bridgy_Fed::OPTION, isset( $_POST[ Daymark_Bridgy_Fed::OPTION ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect(
+			array(
+				'tab'                  => 'connectors',
+				self::NOTICE_QUERY_VAR => 'bridgy_fed_saved',
+			)
+		);
 	}
 
 	/**

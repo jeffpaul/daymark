@@ -68,6 +68,22 @@ class Daymark_Jetpack_Engagement {
 	public const META_COMMENT = 'daymark_jetpack_comment';
 
 	/**
+	 * Post meta on one of this site's own Marks: the WordPress.com likes it
+	 * has received, as last fetched by sync_own_likes(). JSON:
+	 * `{count: int, likers: {wpcom_user_id: {name, url, avatar, liked_at}}, fetched_at: int}`.
+	 *
+	 * @var string
+	 */
+	public const META_OWN_LIKES = '_daymark_jetpack_likes';
+
+	/**
+	 * Per-Mark minimum gap between two own-likes fetches, in seconds.
+	 *
+	 * @var int
+	 */
+	private const OWN_LIKES_COOLDOWN = 10 * MINUTE_IN_SECONDS;
+
+	/**
 	 * Registers hooks — mirrors Daymark_Bookmarks' own cleanup convention.
 	 *
 	 * @return void
@@ -136,6 +152,203 @@ class Daymark_Jetpack_Engagement {
 		} catch ( \Throwable $e ) {
 			return false;
 		}
+	}
+
+	/**
+	 * Whether this site itself has a blog-level Jetpack connection — the
+	 * only requirement for reading likes on its *own* posts (unlike a
+	 * Like/Comment on someone else's post, which needs the acting user's
+	 * own linked account). `is_connected()` is the current Connection
+	 * package name; `is_active()` is its older equivalent.
+	 *
+	 * @return bool
+	 */
+	public static function site_connected(): bool {
+		if ( ! self::is_available() ) {
+			return false;
+		}
+
+		try {
+			$manager = new \Automattic\Jetpack\Connection\Manager();
+
+			if ( method_exists( $manager, 'is_connected' ) ) {
+				return (bool) $manager->is_connected();
+			}
+
+			return method_exists( $manager, 'is_active' ) && (bool) $manager->is_active();
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+	}
+
+	/**
+	 * This site's own WordPress.com blog ID, or 0 when unknown.
+	 *
+	 * @return int
+	 */
+	private static function own_site_id(): int {
+		try {
+			$manager = new \Automattic\Jetpack\Connection\Manager();
+
+			if ( method_exists( $manager, 'get_site_id' ) ) {
+				$id = $manager->get_site_id();
+
+				return is_wp_error( $id ) ? 0 : absint( $id );
+			}
+		} catch ( \Throwable $e ) {
+			return 0;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Fetch the WordPress.com likes one of this site's own Marks has
+	 * received and store them via store_own_likes(). Jetpack likes are
+	 * recorded on WordPress.com's servers, never in this site's own
+	 * database, so without this they're invisible to Daymark's like count
+	 * and Notifications. A Jetpack-connected site's posts keep the same
+	 * post IDs on WordPress.com, so the local ID is used directly.
+	 *
+	 * Rate-limited per Mark (OWN_LIKES_COOLDOWN), made "as the blog" (a
+	 * site owner reading their own post's likes needs no personal
+	 * WordPress.com link), and never throws: any failure just leaves the
+	 * last stored value in place.
+	 *
+	 * NOT independently confirmed against a live Jetpack install — the
+	 * `sites/{site}/posts/{post}/likes` endpoint and its `found`/`likes[]`
+	 * response shape come from WordPress.com's public API docs; flagged for
+	 * verification.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return bool Whether a fresh result was stored.
+	 */
+	public static function sync_own_likes( int $post_id ): bool {
+		if ( ! self::site_connected() ) {
+			return false;
+		}
+
+		$cooldown_key = 'daymark_jp_own_likes_' . $post_id;
+
+		if ( false !== get_transient( $cooldown_key ) ) {
+			return false;
+		}
+
+		set_transient( $cooldown_key, 1, self::OWN_LIKES_COOLDOWN );
+
+		$site_id = self::own_site_id();
+
+		if ( 0 === $site_id ) {
+			return false;
+		}
+
+		try {
+			$response = \Automattic\Jetpack\Connection\Client::wpcom_json_api_request_as_blog(
+				sprintf( 'sites/%d/posts/%d/likes', $site_id, $post_id )
+			);
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+
+		if ( is_wp_error( $response ) ) {
+			return false;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+
+		if ( $code < 200 || $code >= 300 ) {
+			return false;
+		}
+
+		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+
+		if ( ! is_array( $body ) ) {
+			return false;
+		}
+
+		self::store_own_likes( $post_id, $body );
+
+		return true;
+	}
+
+	/**
+	 * Merge a decoded `sites/{site}/posts/{post}/likes` response into a
+	 * Mark's META_OWN_LIKES. A liker keeps the `liked_at` it was first
+	 * stored with (WordPress.com's own `date_liked` when present, else the
+	 * time this site first saw it), so a Notifications item's date doesn't
+	 * move on every refresh; a liker missing from the new response
+	 * (unliked) is dropped. Separate from sync_own_likes() so it can be
+	 * unit tested without the real Jetpack classes.
+	 *
+	 * @param int                  $post_id Mark post ID.
+	 * @param array<string, mixed> $body    Decoded API response.
+	 * @return void
+	 */
+	public static function store_own_likes( int $post_id, array $body ): void {
+		$previous = self::own_likes( $post_id );
+		$likers   = array();
+		$now      = time();
+
+		foreach ( (array) ( $body['likes'] ?? array() ) as $like ) {
+			if ( ! is_array( $like ) || empty( $like['ID'] ) ) {
+				continue;
+			}
+
+			$wpcom_id = (string) absint( $like['ID'] );
+			$liked_at = isset( $previous['likers'][ $wpcom_id ]['liked_at'] )
+				? (int) $previous['likers'][ $wpcom_id ]['liked_at']
+				: 0;
+
+			if ( 0 === $liked_at && ! empty( $like['date_liked'] ) ) {
+				$parsed   = strtotime( (string) $like['date_liked'] );
+				$liked_at = false !== $parsed ? $parsed : 0;
+			}
+
+			$likers[ $wpcom_id ] = array(
+				'name'     => sanitize_text_field( (string) ( $like['name'] ?? $like['login'] ?? '' ) ),
+				'url'      => esc_url_raw( (string) ( $like['URL'] ?? $like['profile_URL'] ?? '' ) ),
+				'avatar'   => esc_url_raw( (string) ( $like['avatar_URL'] ?? '' ) ),
+				'liked_at' => $liked_at > 0 ? $liked_at : $now,
+			);
+		}
+
+		$count = isset( $body['found'] ) ? absint( $body['found'] ) : count( $likers );
+
+		update_post_meta(
+			$post_id,
+			self::META_OWN_LIKES,
+			wp_json_encode(
+				array(
+					'count'      => max( $count, count( $likers ) ),
+					'likers'     => (object) $likers,
+					'fetched_at' => $now,
+				)
+			)
+		);
+	}
+
+	/**
+	 * A Mark's stored WordPress.com likes (see META_OWN_LIKES).
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array{count: int, likers: array<string, array{name: string, url: string, avatar: string, liked_at: int}>, fetched_at: int}
+	 */
+	public static function own_likes( int $post_id ): array {
+		$decoded = json_decode( (string) get_post_meta( $post_id, self::META_OWN_LIKES, true ), true );
+
+		if ( ! is_array( $decoded ) ) {
+			return array(
+				'count'      => 0,
+				'likers'     => array(),
+				'fetched_at' => 0,
+			);
+		}
+
+		return array(
+			'count'      => absint( $decoded['count'] ?? 0 ),
+			'likers'     => is_array( $decoded['likers'] ?? null ) ? $decoded['likers'] : array(),
+			'fetched_at' => absint( $decoded['fetched_at'] ?? 0 ),
+		);
 	}
 
 	/**
@@ -270,7 +483,9 @@ class Daymark_Jetpack_Engagement {
 	}
 
 	/**
-	 * Like a post via WordPress.com's own real Like API, as the current user.
+	 * Like a post via WordPress.com's own real Like API, as the current user:
+	 * POST `/sites/{site}/posts/{post}/likes/new` (v1.1) — confirmed against
+	 * wp-calypso's own REST client (see unlike()).
 	 *
 	 * @param int $site_id WordPress.com site ID (from resolve_origin()).
 	 * @param int $post_id WordPress.com post ID (from resolve_origin()).
@@ -281,9 +496,13 @@ class Daymark_Jetpack_Engagement {
 	}
 
 	/**
-	 * Undo a Like via WordPress.com's own API. `.../likes/mine/delete`
-	 * mirrors the equivalent, WP.com-documented "my like status"
-	 * (`.../likes/mine/`) read convention.
+	 * Undo a Like via WordPress.com's own API: a POST to
+	 * `/sites/{site}/posts/{post}/likes/mine/delete` on the v1.1 REST API.
+	 * Confirmed against WordPress.com's own first-party client, Automattic/
+	 * wp-calypso (`packages/calypso-e2e/src/rest-api-client.ts`,
+	 * `postLikeAction()`), which likes via POST `.../likes/new` and unlikes
+	 * via POST `.../likes/mine/delete`, both at apiVersion 1.1 — the same
+	 * paths like() and this method use.
 	 *
 	 * @param int $site_id WordPress.com site ID.
 	 * @param int $post_id WordPress.com post ID.
@@ -295,7 +514,10 @@ class Daymark_Jetpack_Engagement {
 
 	/**
 	 * Post a comment via WordPress.com's own real Comment API, as the
-	 * current user.
+	 * current user: POST `/sites/{site}/posts/{post}/replies/new` with a
+	 * `content` field — confirmed against Jetpack's own endpoint definition
+	 * (`json-endpoints/class.wpcom-json-api-update-comment-endpoint.php`)
+	 * and wp-calypso's REST client (`createComment()`, apiVersion 1.1).
 	 *
 	 * @param int    $site_id WordPress.com site ID.
 	 * @param int    $post_id WordPress.com post ID.
@@ -333,7 +555,11 @@ class Daymark_Jetpack_Engagement {
 				'v1.1',
 				array( 'method' => 'POST' ),
 				$body,
-				'wpcom'
+				// WordPress.com's v1.1 like/reply endpoints live under
+				// `rest`, not `wpcom` (the wpcom/v2 base) — the Client
+				// builds `{base}/{base_api_path}/v{version}/{path}`,
+				// confirmed against Automattic/jetpack's connection package.
+				'rest'
 			);
 		} catch ( \Throwable $e ) {
 			return new WP_Error( 'daymark_jetpack_request_failed', $e->getMessage() );

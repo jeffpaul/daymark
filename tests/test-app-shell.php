@@ -11,12 +11,12 @@
  */
 class Test_App_Shell extends WP_UnitTestCase {
 
-	private function render_shell(): string {
+	private function render_shell( string $role = 'author' ): string {
 		// Fresh script/style registries: WP_Scripts marks handles as done
 		// after printing, which would blank a second render in-process.
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
 
-		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		$user_id = self::factory()->user->create( array( 'role' => $role ) );
 		wp_set_current_user( $user_id );
 
 		$this->go_to( '/' );
@@ -26,6 +26,14 @@ class Test_App_Shell extends WP_UnitTestCase {
 		include DAYMARK_PLUGIN_DIR . 'templates/app-shell.php';
 
 		return (string) ob_get_clean();
+	}
+
+	/** The app shell loads the Featured Content slider and styles, for galleries in the full post view. */
+	public function test_app_shell_loads_the_featured_content_slider() {
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( 'assets/featured-content.js', $html );
+		$this->assertStringContainsString( 'assets/featured-content.css', $html );
 	}
 
 	/** Assets are emitted by the enqueue API, deferred, with inline config. */
@@ -46,9 +54,9 @@ class Test_App_Shell extends WP_UnitTestCase {
 		);
 	}
 
-	/** The bootstrap config carries the current user's identity and the wp-admin Subscriptions link, for the Me/Explore screens. */
+	/** An administrator's bootstrap config carries their identity and the Settings -> Daymark link. */
 	public function test_config_carries_me_and_subscriptions_links() {
-		$html = $this->render_shell();
+		$html = $this->render_shell( 'administrator' );
 
 		$this->assertStringContainsString( '"currentUser":', $html );
 		$this->assertStringContainsString( '"adminSubscriptionsUrl":', $html );
@@ -56,6 +64,23 @@ class Test_App_Shell extends WP_UnitTestCase {
 			str_replace( '/', '\/', Daymark_Admin_Subscriptions::page_url() ),
 			$html,
 			'Config must carry the wp-admin Subscriptions screen URL'
+		);
+		$this->assertStringContainsString( '"canManageSubscriptions":true', $html );
+	}
+
+	/**
+	 * Someone who cannot open Settings -> Daymark gets no link to it and no
+	 * in-app Unsubscribe, rather than a link that lands on a permission error.
+	 */
+	public function test_config_omits_the_settings_link_for_a_user_who_cannot_manage_it() {
+		$html = $this->render_shell( 'author' );
+
+		$this->assertStringContainsString( '"currentUser":', $html );
+		$this->assertStringContainsString( '"adminSubscriptionsUrl":""', $html );
+		$this->assertStringContainsString( '"canManageSubscriptions":false', $html );
+		$this->assertStringNotContainsString(
+			str_replace( '/', '\/', Daymark_Admin_Subscriptions::page_url() ),
+			$html
 		);
 	}
 
@@ -196,6 +221,42 @@ class Test_App_Shell extends WP_UnitTestCase {
 			$html,
 			'The inline bootstrap script must carry the exact nonce the CSP header allows'
 		);
+	}
+
+	/**
+	 * Core dependencies print their own inline scripts. One is wp-i18n's
+	 * "wp-i18n-js-after", which sets the locale's text direction. Every
+	 * inline script in the shell needs the nonce, or the browser blocks it.
+	 */
+	public function test_every_inline_script_carries_the_csp_nonce() {
+		$captured = null;
+		$capture  = static function ( $policy ) use ( &$captured ) {
+			$captured = $policy;
+
+			return $policy;
+		};
+		add_filter( 'daymark_app_content_security_policy', $capture );
+
+		$html = $this->render_shell();
+		remove_filter( 'daymark_app_content_security_policy', $capture );
+
+		preg_match( '/nonce-([A-Za-z0-9+\/=]+)/', (string) $captured, $nonce_matches );
+		$this->assertNotEmpty( $nonce_matches, 'script-src must carry a nonce' );
+
+		$this->assertStringContainsString( 'id="wp-i18n-js-after"', $html, 'The wp-i18n locale setup script must be printed' );
+
+		preg_match_all( '/<script\b[^>]*>/i', $html, $tags );
+		$inline_tags = array_filter(
+			$tags[0],
+			static function ( string $tag ): bool {
+				return ! preg_match( '/\ssrc=/i', $tag );
+			}
+		);
+
+		$this->assertNotEmpty( $inline_tags, 'The shell must print inline scripts' );
+		foreach ( $inline_tags as $tag ) {
+			$this->assertStringContainsString( 'nonce="' . $nonce_matches[1] . '"', $tag, "Inline script without the CSP nonce: {$tag}" );
+		}
 	}
 
 	/**

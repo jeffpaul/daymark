@@ -149,11 +149,18 @@
 
 	/**
 	 * Reduce an HTML string (e.g. comment content) to plain text.
+	 *
+	 * Parsed through an inert <template>, not a detached <div>: a <div> that
+	 * is never attached still starts a network request for every <img> in the
+	 * markup, so a federated reply carrying <img src="https://tracker/…"> told
+	 * its author when the Notifications screen was opened. A template's
+	 * contents belong to an inert document that loads nothing and runs
+	 * nothing.
 	 */
 	function toPlainText(html) {
-		const div = document.createElement('div');
-		div.innerHTML = String(html === null || html === undefined ? '' : html);
-		return (div.textContent || '').trim();
+		const template = document.createElement('template');
+		template.innerHTML = String(html === null || html === undefined ? '' : html);
+		return (template.content.textContent || '').trim();
 	}
 
 	/**
@@ -447,6 +454,62 @@
 		{ type: 'checkin', label: __('Check-ins', 'daymark') },
 	];
 
+	// Search's date-preset filter, mapped to an inclusive after/before
+	// window on GET /timeline (issue #293). Deliberately a preset list —
+	// not a free-form date range — reusing the exact same vocabulary the
+	// Timeline's relative-period group headers already show (timelinePeriod,
+	// below), so a person reads the same buckets in both places: "This
+	// Week" in a group header and "This Week" in this dropdown mean the
+	// same span of dates. `''` is "any time", no date constraint at all.
+	const SEARCH_DATE_FILTERS = [
+		{ key: '', label: __('Any time', 'daymark') },
+		{ key: 'today', label: __('Today', 'daymark') },
+		{ key: 'this_week', label: __('This Week', 'daymark') },
+		{ key: 'last_week', label: __('Last Week', 'daymark') },
+		{ key: 'this_month', label: __('This Month', 'daymark') },
+		{ key: 'last_month', label: __('Last Month', 'daymark') },
+	];
+
+	// Resolves a SEARCH_DATE_FILTERS key into its inclusive [after, before]
+	// bound(s), as RFC 3339 (the format GET /timeline's own args validate).
+	// Matching timelinePeriod()'s calendar semantics: weeks start Sunday
+	// (Date#getDay()'s 0-based convention), "This Month" means the 1st.
+	// `before` is exclusive of the *next* bucket's start so an item exactly
+	// at a boundary never matches two adjacent presets; the backend treats
+	// both as inclusive, so given `after`/`before` here are the last
+	// committed instant on each side.
+	function dateFilterBounds(key) {
+		const now = new Date();
+		const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const startOfWeek = (d) => {
+			const s = startOfDay(d);
+			s.setDate(s.getDate() - s.getDay());
+			return s;
+		};
+		const toIso = (d) => d.toISOString();
+		switch (key) {
+			case 'today':
+				return { after: toIso(startOfDay(now)) };
+			case 'this_week':
+				return { after: toIso(startOfWeek(now)) };
+			case 'last_week': {
+				const end = startOfWeek(now);
+				const start = new Date(end);
+				start.setDate(start.getDate() - 7);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			case 'this_month':
+				return { after: toIso(new Date(now.getFullYear(), now.getMonth(), 1)) };
+			case 'last_month': {
+				const end = new Date(now.getFullYear(), now.getMonth(), 1);
+				const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			default:
+				return null;
+		}
+	}
+
 	// Feather-style icon glyphs (inner SVG markup) for the persistent bottom
 	// nav, matching the app's other inline icons. Text stays as the
 	// accessible name and hover title — see NAV_TABS/navFooterMarkup().
@@ -631,6 +694,25 @@
 		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
+	// The Timeline's empty state. "Subscribe to a site" points at
+	// Settings -> Daymark, which only someone who can manage it can open, so
+	// for everyone else the sentence is just the publish half.
+	function emptyTimelineHtml() {
+		if (!config.adminSubscriptionsUrl) {
+			return `<p class="daymark-empty">${sprintf(
+				/* translators: %s: "Publish a Mark" link */
+				__('Nothing here yet. %s to fill your timeline.', 'daymark'),
+				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
+			)}</p>`;
+		}
+		return `<p class="daymark-empty">${sprintf(
+			/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+			__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
+			'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
+			`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('subscribe to a site', 'daymark'))}</a>`
+		)}</p>`;
+	}
+
 	// Unsubscribe (issue #326) — the ⋯ overflow menu's one destructive
 	// entry, gated on the item actually being a subscription post (never
 	// rendered for a Mark, which has no subscription of its own). Opens the
@@ -640,7 +722,9 @@
 	// removing a whole followed site is bigger and less easily undone than
 	// a single Like/Bookmark tap.
 	function renderUnsubscribeToggle(item) {
-		if (!item.subscription_id) {
+		// DELETE /subscriptions/{id} needs the same capability as
+		// Settings -> Daymark, so anyone without it never sees the entry.
+		if (!item.subscription_id || !config.canManageSubscriptions) {
 			return '';
 		}
 		const id = esc(String(item.subscription_id));
@@ -764,6 +848,39 @@
 		)}<span class="daymark-stat__label">${label}</span></span>`;
 	}
 
+	// A short, low-key description of whether this user's own Like/Comment
+	// actually reached the origin (Daymark_Like_Delivery's STATE_*): '' when
+	// there's nothing to report.
+	function deliveryStatusText(state) {
+		switch (state) {
+			case 'sent':
+				return __('Delivered to the original site', 'daymark');
+			case 'pending':
+				return __('Delivery pending', 'daymark');
+			case 'failed':
+			case 'not_sent':
+				return __('Not delivered to the original site', 'daymark');
+			default:
+				return '';
+		}
+	}
+
+	function withDeliveryStatus(label, state) {
+		const status = deliveryStatusText(state);
+		return status
+			? sprintf(
+					/* translators: 1: action label (e.g. "Unlike"), 2: delivery status */
+					__('%1$s · %2$s', 'daymark'),
+					label,
+					status
+			  )
+			: label;
+	}
+
+	function likeToggleLabel(liked, delivery) {
+		return liked ? withDeliveryStatus(__('Unlike', 'daymark'), delivery) : __('Like', 'daymark');
+	}
+
 	// The Like toggle for a subscription post — the row's other *interactive*
 	// entry besides Bookmark/Repost, same span[role="button"] reasoning as
 	// renderBookmarkToggle() (nested inside the card's own expand-trigger
@@ -778,9 +895,17 @@
 		// "liked" for display purposes; toggleLike() below resolves which
 		// one to undo entirely server-side.
 		const liked = !!item.liked_mark_id || !!item.jetpack_liked;
+		// Only offered when a Like can actually reach the origin (see
+		// Daymark_Like_Delivery): `like_available` is false when nothing
+		// could deliver one, null while still unknown (kept visible;
+		// observeLikeAvailability() resolves it lazily). An already-liked
+		// item always keeps its icon so it can be unliked.
+		if (!liked && false === item.like_available) {
+			return '';
+		}
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
-		const label = liked ? __('Unlike', 'daymark') : __('Like', 'daymark');
+		const label = likeToggleLabel(liked, item.like_delivery);
 		return `<span class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
 		}" role="button" tabindex="0" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
@@ -808,7 +933,9 @@
 		// for that path.
 		const commented = !!item.replied_mark_id || !!item.jetpack_commented;
 		const id = esc(String(item.id));
-		const label = __('Comment', 'daymark');
+		const label = commented
+			? withDeliveryStatus(__('Comment', 'daymark'), item.comment_delivery)
+			: __('Comment', 'daymark');
 		return `<span class="daymark-stat daymark-stat--comment${
 			commented ? ' daymark-stat--active' : ''
 		}" role="button" tabindex="0" aria-label="${esc(label)}" title="${esc(
@@ -1168,7 +1295,27 @@
 	// replayed through the exact same REST endpoints a live Publish/Save as
 	// Draft/autosave already uses the moment connectivity returns, so the
 	// server never sees a different code path for offline-originated work.
-	const OFFLINE_DB_NAME = 'daymark-offline';
+	// >>> offline-db (tests/e2e/offline-queue-scope.spec.js extracts this
+	// region up to the matching "<<<" marker and runs it in a real browser,
+	// so keep it self-contained: it may use only `config`, `document`, and
+	// what is defined inside it.)
+	//
+	// One database per user per site. IndexedDB is shared by everyone who
+	// uses the same browser origin, and this database holds two kinds of
+	// personal data: unsent Marks (drafts, captions, picked media, captured
+	// location) and cached bookmark content. Under one shared database, a
+	// second person logging in on the same browser had the first person's
+	// queued Marks replayed into *their* account at boot, and could browse
+	// the first person's cached bookmarks offline. So the database name
+	// carries the WordPress user ID and a short hash of the site's REST
+	// address (a subdirectory multisite shares one origin across sites), and
+	// logging out deliberately keeps it: unsent work is never thrown away,
+	// it simply stays with its owner until they come back.
+	const OFFLINE_DB_PREFIX = 'daymark-offline';
+	// The single, shared database this used to be. It is claimed once, by the
+	// first person to open the app after the update; see
+	// claimLegacyOfflineDB().
+	const LEGACY_OFFLINE_DB_NAME = 'daymark-offline';
 	// v2 adds BOOKMARK_STORE (see "Bookmarks" below) — the existing
 	// OFFLINE_STORE is untouched, so onupgradeneeded's own existence check
 	// (unchanged) still leaves an existing 'pending' store alone on
@@ -1177,13 +1324,36 @@
 	const OFFLINE_STORE = 'pending';
 	const BOOKMARK_STORE = 'bookmarks';
 
-	function openOfflineDB() {
+	// A short, stable, non-cryptographic hash (FNV-1a) — only ever used to
+	// tell two sites on one origin apart in a database name.
+	function shortHash(text) {
+		let hash = 0x811c9dc5;
+		for (let i = 0; i < text.length; i++) {
+			hash ^= text.charCodeAt(i);
+			hash = Math.imul(hash, 0x01000193) >>> 0;
+		}
+		return hash.toString(16).padStart(8, '0');
+	}
+
+	// The current user's own database name, or '' when there is no signed-in
+	// user to scope to — in which case nothing is opened at all rather than
+	// falling back to a shared one.
+	function offlineDbName() {
+		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
+		if (!userId) {
+			return '';
+		}
+		return OFFLINE_DB_PREFIX + '-u' + userId + '-' + shortHash(String(config.restUrl || ''));
+	}
+
+	function openScopedOfflineDB() {
 		return new Promise((resolve, reject) => {
-			if (!('indexedDB' in window)) {
-				reject(new Error('IndexedDB unavailable'));
+			const name = offlineDbName();
+			if (!('indexedDB' in window) || !name) {
+				reject(new Error('Offline storage unavailable'));
 				return;
 			}
-			const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+			const request = indexedDB.open(name, OFFLINE_DB_VERSION);
 			request.onupgradeneeded = () => {
 				const db = request.result;
 				if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
@@ -1201,6 +1371,114 @@
 			request.onsuccess = () => resolve(request.result);
 			request.onerror = () => reject(request.error);
 		});
+	}
+
+	// Opens the pre-scoping shared database only if it already exists.
+	// indexedDB.open() on a missing name would create an empty one, so the
+	// versionchange transaction is aborted the moment it reports a brand-new
+	// database (oldVersion 0), which leaves nothing behind.
+	function openLegacyOfflineDBIfPresent() {
+		return new Promise((resolve) => {
+			const request = indexedDB.open(LEGACY_OFFLINE_DB_NAME);
+			request.onupgradeneeded = (event) => {
+				if (event.oldVersion === 0) {
+					request.transaction.abort();
+				}
+			};
+			request.onsuccess = () => resolve(request.result);
+			request.onerror = () => resolve(null);
+			request.onblocked = () => resolve(null);
+		});
+	}
+
+	function deleteIndexedDB(name) {
+		return new Promise((resolve) => {
+			const request = indexedDB.deleteDatabase(name);
+			request.onsuccess = () => resolve(true);
+			request.onerror = () => resolve(false);
+			// Another tab still holds a connection; the deletion completes when
+			// it lets go. Nothing here should wait on that.
+			request.onblocked = () => resolve(false);
+		});
+	}
+
+	async function copyLegacyPendingMarks() {
+		const legacy = await openLegacyOfflineDBIfPresent();
+		if (!legacy) {
+			return;
+		}
+		try {
+			let records = [];
+			if (legacy.objectStoreNames.contains(OFFLINE_STORE)) {
+				records = await idbRequest(legacy.transaction(OFFLINE_STORE, 'readonly').objectStore(OFFLINE_STORE).getAll());
+			}
+			if (records.length) {
+				const db = await openScopedOfflineDB();
+				try {
+					const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+					const store = tx.objectStore(OFFLINE_STORE);
+					records.forEach((record) => {
+						const copy = Object.assign({}, record);
+						// A fresh local id in the new database. And nothing is
+						// uploading any more: that request died with the page.
+						delete copy.id;
+						if (copy.status === 'uploading') {
+							copy.status = 'queued';
+						}
+						store.add(copy);
+					});
+					await new Promise((resolve, reject) => {
+						tx.oncomplete = resolve;
+						tx.onerror = () => reject(tx.error);
+						tx.onabort = () => reject(tx.error);
+					});
+				} finally {
+					db.close();
+				}
+				// Emptied before deleting, so if the delete is blocked by
+				// another open tab a later run finds nothing left to copy
+				// and never duplicates a Mark.
+				await idbRequest(legacy.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE).clear());
+			}
+		} finally {
+			legacy.close();
+		}
+		await deleteIndexedDB(LEGACY_OFFLINE_DB_NAME);
+	}
+
+	// Once per page load: hand whatever the old shared database still holds
+	// to whoever opens the app first after the update. On a one-person site
+	// that is the right person; on a shared browser it can be the wrong one,
+	// but only once, and only for work already queued at upgrade time. Cached
+	// bookmarks are not carried over: they are re-fetched for the right user
+	// by syncBookmarkCache() on the next online boot, and copying one
+	// person's into another's would reproduce the leak. Never throws and
+	// never blocks opening the user's own database; a failed migration just
+	// leaves the old database for the next attempt. A Web Lock (where the
+	// browser has them) keeps two tabs opened together from both copying.
+	let legacyClaim = null;
+	function claimLegacyOfflineDB() {
+		if (!legacyClaim) {
+			legacyClaim = (async () => {
+				if (!('indexedDB' in window) || !offlineDbName()) {
+					return;
+				}
+				try {
+					if (navigator.locks && typeof navigator.locks.request === 'function') {
+						await navigator.locks.request('daymark-offline-legacy-claim', copyLegacyPendingMarks);
+					} else {
+						await copyLegacyPendingMarks();
+					}
+				} catch (err) {
+					// Leave the old database in place for the next attempt.
+				}
+			})();
+		}
+		return legacyClaim;
+	}
+
+	function openOfflineDB() {
+		return claimLegacyOfflineDB().then(openScopedOfflineDB);
 	}
 
 	function idbRequest(request) {
@@ -1344,6 +1622,8 @@
 		}
 	}
 
+	// <<< offline-db
+
 	// Every <img src> an item's cached content markup references — walked
 	// via a <template> (its .content is an inert DocumentFragment, so
 	// parsing arbitrary bookmarked HTML here never runs any script/loads
@@ -1376,21 +1656,64 @@
 	// media. Best-effort per image: a failed fetch just leaves that one
 	// image pointing at its original, still-offline-broken URL — never
 	// blocks caching the rest of the item.
-	async function cacheContentImages(html) {
+	//
+	// An image on another site can't be fetched from here: the app's CSP
+	// allows fetch() only to this site, and most sites don't send CORS
+	// headers anyway. Those go through this site instead
+	// (GET /bookmarks/{id}/image, issue #455), which returns the image
+	// base64-encoded. That route only answers for a post this user has
+	// bookmarked, so the bookmark must be saved before this runs (it is:
+	// see toggleBookmark() and syncBookmarkCache()). A few at a time, and
+	// at most BOOKMARK_IMAGE_LIMIT per bookmark, to stay well inside the
+	// route's rate limit.
+	const BOOKMARK_IMAGE_LIMIT = 20;
+
+	async function cacheContentImages(html, bookmarkId) {
 		const urls = extractImageUrls(html);
 		const images = {};
-		await Promise.all(
-			urls.map(async (url) => {
-				try {
-					const response = await fetch(url);
+		let offSite = 0;
+
+		const saveOne = async (url) => {
+			let absolute;
+			try {
+				absolute = new URL(url, window.location.href);
+			} catch (err) {
+				return;
+			}
+			if ('http:' !== absolute.protocol && 'https:' !== absolute.protocol) {
+				return;
+			}
+			try {
+				if (absolute.origin === window.location.origin) {
+					const response = await fetch(absolute.href);
 					if (response.ok) {
 						images[url] = await response.blob();
 					}
-				} catch (err) {
-					// Best-effort — see this function's own docblock.
+					return;
 				}
-			})
-		);
+				if (!bookmarkId || offSite >= BOOKMARK_IMAGE_LIMIT) {
+					return;
+				}
+				offSite += 1;
+				const result = await apiGet(
+					'bookmarks/' + bookmarkId + '/image?url=' + encodeURIComponent(absolute.href)
+				);
+				if (result && result.data && result.mime) {
+					const bytes = Uint8Array.from(atob(result.data), (c) => c.charCodeAt(0));
+					images[url] = new Blob([bytes], { type: result.mime });
+				}
+			} catch (err) {
+				// Best-effort — see this function's own docblock.
+			}
+		};
+
+		const queue = urls.slice();
+		const worker = async () => {
+			while (queue.length) {
+				await saveOne(queue.shift());
+			}
+		};
+		await Promise.all([worker(), worker(), worker()]);
 		return images;
 	}
 
@@ -1415,12 +1738,19 @@
 				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
 			);
 			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
-			const images = await cacheContentImages(content);
+			// The full post view's featured block (see postviewFeaturedHtml())
+			// is cached too, so it shows offline along with its images.
+			const featured = isSubscriptionPost ? '' : response.featured || '';
+			const featuredImage = isSubscriptionPost && item && item.featured_image_url
+				? `<img src="${esc(String(item.featured_image_url))}" alt="" />`
+				: '';
+			const images = await cacheContentImages(featured + featuredImage + content, id);
 			await putCachedBookmark({
 				id: Number(id),
 				kind,
 				item,
 				content,
+				featured,
 				images,
 				cachedAt: Date.now(),
 			});
@@ -1969,7 +2299,22 @@
 	// stored type; otherwise the Home launcher's chosen type (if any);
 	// otherwise the caption-only default. The server recomputes
 	// authoritatively on save.
+	//
+	// Checkin is the one deliberate exception (issue #424): once declared —
+	// via a fresh Checkin launcher entry or a resumed Checkin draft — it
+	// never gets reclassified by attached media the way every other type
+	// does. A checkin's own point is the place; an optional photo/video
+	// showing where you are ("see it's me at the Leaning Tower of Pisa!")
+	// is real, additional content, not a competing type — the server's own
+	// detect_primary_type() already honors this same override for a
+	// checkin+media publish, so the composer's own type badge/Place field
+	// must agree throughout the session rather than silently flipping to
+	// Image/Video/Gallery the instant a file is picked.
 	function effectiveType() {
+		const declaredType = state.editing ? state.editing.type : state.pendingType;
+		if ('checkin' === declaredType) {
+			return 'checkin';
+		}
 		if (state.files.length && state.editing && state.editing.media.length) {
 			return 'mixed';
 		}
@@ -2336,6 +2681,10 @@
 		}
 		if (target === '#reblog' && !pendingReblog) {
 			target = '#home';
+		}
+
+		if (feedSnapshot && target !== '#post' && target !== '#reblog' && target !== feedSnapshot.hash) {
+			feedSnapshot = null;
 		}
 
 		AIAssistSheet.hide(false);
@@ -2761,20 +3110,22 @@
 		return __('this site', 'daymark');
 	}
 
-	// The site icon that sits on every Timeline item except a Draft, as its
-	// own leading-column element — not a small circular badge overlapping
-	// the thumbnail's corner. A single click is the only interaction: it
-	// filters Timeline down to just that source (applySourceFilter(), via
-	// the data-filter-site attribute onFeedListClick() reads), no popover
-	// menu and no separate "visit the site" action (a live product review
-	// asked for both simplifications — the popover read as a false circular
-	// tap target, and "visit" left the app for a use case that didn't earn
-	// its own menu). Shared by a Mark's own icon (renderMarkItem()) and a
-	// subscription post's site icon (renderSubscriptionPostCard()) so the
-	// two can never drift apart. Kept as its own sibling element in the
-	// card's flex layout (not nested inside the card's own link/button) so
-	// a future Daymark content type can render its own card differently
-	// without this icon's placement following along.
+	// The site icon that sits on every Timeline item except a Draft — the
+	// top half of the item-wrap's leading column (renderLeadColumn(), below,
+	// stacks it above its row's type icon), not a small circular badge
+	// overlapping the thumbnail's corner. A single click is the only
+	// interaction: it filters Timeline down to just that source
+	// (applySourceFilter(), via the data-filter-site attribute
+	// onFeedListClick() reads), no popover menu and no separate "visit the
+	// site" action (a live product review asked for both simplifications —
+	// the popover read as a false circular tap target, and "visit" left the
+	// app for a use case that didn't earn its own menu). Shared by a Mark's
+	// own icon (renderMarkItem()) and a subscription post's site icon
+	// (renderSubscriptionPostCard()) so the two can never drift apart. Kept
+	// as its own sibling element in the card's flex layout (not nested
+	// inside the card's own link/button) so a future Daymark content type
+	// can render its own card differently without this icon's placement
+	// following along.
 	//
 	// `title` carries the site's name and URL as a native on-hover tooltip
 	// (issue #181) — deliberately separate from `aria-label`, which
@@ -2799,6 +3150,23 @@
 					${icon}
 				</button>
 			</div>`;
+	}
+
+	// The item-wrap's leading column: the site icon (renderSiteIconButton(),
+	// omitted for a Draft — see renderMarkItem()'s own isDraft check) stacked
+	// directly above its row's type icon (renderTypeIcon()), instead of the
+	// two sitting side by side as separate columns — reclaiming the type
+	// icon's own former column width plus one item-wrap gap for the card's
+	// own content. Always rendered, even for a Draft (siteIconHtml empty),
+	// so every row's type icon lands in the identical, fixed-width column
+	// regardless of whether a site icon happens to be present — the same
+	// consistent-rail-position goal the now-removed
+	// :not(:has(.daymark-recent__siteicon)) margin-left rule (issue #403)
+	// used to solve by fixing up a lone type icon's position after the fact.
+	// Shared by renderMarkItem() and renderSubscriptionPostCard() so the two
+	// can never render this column differently.
+	function renderLeadColumn(siteIconHtml, kind) {
+		return `<div class="daymark-recent__leadcol">${siteIconHtml}${renderTypeIcon(kind)}</div>`;
 	}
 
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
@@ -2878,12 +3246,13 @@
 						</div>
 					</div>
 				</div>`;
+		const layoutKind = cardLayoutKind(item, kind);
 		const card = isDraft
 			? `<a class="daymark-recent__item daymark-recent__item--${esc(
-					kind
+					layoutKind
 			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
 			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
-					kind
+					layoutKind
 			  )}" data-expand-post="${id}">${renderMarkCore(item)}</button>`;
 		// The routing popover's own panel — a sibling of the card button, not
 		// nested inside it: a target's own link can't validly live inside
@@ -2899,8 +3268,7 @@
 		const overflowItems = isDraft ? '' : markOverflowMenuItems(item);
 		return `
 			<div class="daymark-recent__item-wrap" data-item="${id}">
-				${siteIcon}
-				${renderTypeIcon(kind)}
+				${renderLeadColumn(siteIcon, kind)}
 				${card}
 				${actions}
 				${renderOverflowPanel(item, overflowItems, '')}
@@ -3214,6 +3582,7 @@
 						  )}</p>`
 						: ''
 				}
+				${result.site ? `<p class="daymark-oembed-preview__site">${esc(result.site)}</p>` : ''}
 			</div>`;
 	}
 
@@ -3472,6 +3841,7 @@
 		if (subTrigger) {
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
+				saveFeedSnapshot(screen, subTrigger);
 				openPostView('sub', item);
 			}
 			return;
@@ -3483,6 +3853,7 @@
 		if (markTrigger) {
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
+				saveFeedSnapshot(screen, markTrigger);
 				openPostView('mark', item);
 			}
 			return;
@@ -3737,13 +4108,12 @@
 	// root cause of duplicate Like/Repost Marks getting created.
 	function setEngagementToggleState(trigger, kind, active, markId, item) {
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
-		const label = active
-			? 'like' === kind
-				? __('Unlike', 'daymark')
-				: __('Undo reblog', 'daymark')
-			: 'like' === kind
-			? __('Like', 'daymark')
-			: __('Reblog', 'daymark');
+		const label =
+			'like' === kind
+				? likeToggleLabel(active, active && item ? item.like_delivery : '')
+				: active
+				? __('Undo reblog', 'daymark')
+				: __('Reblog', 'daymark');
 		trigger.classList.toggle(activeClass, active);
 		trigger.classList.toggle('daymark-stat--active', active);
 		trigger.setAttribute('aria-pressed', active ? 'true' : 'false');
@@ -3783,20 +4153,291 @@
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
 		trigger.setAttribute('data-like-busy', 'true');
+		// Not yet known whether a Like can reach this origin: check first
+		// (the same answer observeLikeAvailability() would have fetched),
+		// so a tap never creates a Like nothing can deliver.
+		if (!wasLiked && true !== item.like_available) {
+			const available = await resolveLikeAvailability(item, id);
+			if (false === available) {
+				trigger.removeAttribute('data-like-busy');
+				hideUnavailableLikeToggle(trigger);
+				return;
+			}
+		}
 		setEngagementToggleState(trigger, 'like', !wasLiked, 0, item);
 		try {
 			if (!wasLiked) {
 				const result = await apiPost('subscription-posts/' + id + '/like', {});
+				item.like_delivery = result.delivery || '';
 				setEngagementToggleState(trigger, 'like', true, result.mark_id || 0, item);
 			} else {
 				await apiDelete('subscription-posts/' + id + '/like');
+				item.like_delivery = '';
 				setEngagementToggleState(trigger, 'like', false, 0, item);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
 			setEngagementToggleState(trigger, 'like', wasLiked, 0, item);
+			// The server refuses a Like nothing can deliver even when the
+			// client thought it could (a stale cached answer) — treat that
+			// exactly like a negative pre-check.
+			if (err && 'daymark_like_undeliverable' === err.code) {
+				item.like_available = false;
+				hideUnavailableLikeToggle(trigger);
+			}
 		} finally {
 			trigger.removeAttribute('data-like-busy');
+		}
+	}
+
+	// Resolve (and remember on the item) whether a Like can reach this
+	// post's origin. Resolves to true/false, or null when the check itself
+	// failed (e.g. offline or rate-limited) — the caller then proceeds and
+	// lets the server's own refusal be the backstop.
+	async function resolveLikeAvailability(item, id) {
+		if (true === item.like_available || false === item.like_available) {
+			return item.like_available;
+		}
+		try {
+			const result = await apiGet('subscription-posts/' + id + '/like-availability');
+			item.like_available = !!(result && result.available);
+			return item.like_available;
+		} catch (err) {
+			return null;
+		}
+	}
+
+	// A tapped Like that turned out to be undeliverable: say so briefly on
+	// the icon itself, then remove it — and every other copy of the same
+	// post's Like icon on screen (the Timeline card and the full post view
+	// share renderers, so the same id can appear more than once).
+	function hideUnavailableLikeToggle(trigger) {
+		const id = trigger.getAttribute('data-like-toggle');
+		showFlashBubble(trigger, __("This site can't receive Likes", 'daymark'));
+		window.setTimeout(() => removeLikeToggles(id), 2000);
+	}
+
+	// Removes every not-yet-liked Like icon for one subscription post id.
+	// An already-liked one is left alone so it can still be unliked.
+	function removeLikeToggles(id) {
+		if (!id) {
+			return;
+		}
+		document.querySelectorAll('[data-like-toggle]').forEach((el) => {
+			if (id === el.getAttribute('data-like-toggle') && 'true' !== el.getAttribute('aria-pressed')) {
+				el.remove();
+			}
+		});
+	}
+
+	// --- Lazy Like availability ---
+	//
+	// A subscription post's `like_available` is null until its origin has
+	// been looked up (a Timeline response never makes that fetch itself).
+	// A video or audio Featured Content card whose thumbnail the server
+	// hasn't resolved yet (Featured Content saved before that resolution
+	// existed, or a site with WP-Cron off), or a link card whose page
+	// preview isn't cached yet, asks for it as it nears the viewport, then
+	// swaps its media slot for the real preview. Same
+	// lookahead, single-in-flight queue, and 429 backoff as
+	// observeOembedPreviewCandidates(). The server stores what it finds, so
+	// later Timeline loads carry it without asking.
+	function observeFeaturedImages(screen, container) {
+		if (!('IntersectionObserver' in window) || !container || !screen._byMarkId) {
+			return;
+		}
+		if (!screen._fcImageQueue) {
+			teardownFeaturedImages(screen);
+		}
+		if (!screen._fcImageObserver) {
+			screen._fcImageObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._fcImageObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-expand-post');
+						if (id && !screen._fcImageAttempted.has(id) && !screen._fcImageQueue.includes(id)) {
+							screen._fcImageQueue.push(id);
+							drainFeaturedImageQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: OEMBED_PREVIEW_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-expand-post]').forEach((el) => {
+			const id = el.getAttribute('data-expand-post');
+			const item = id ? screen._byMarkId.get(id) : null;
+			if (!item || !featuredPreviewPending(item) || screen._fcImageAttempted.has(id)) {
+				return;
+			}
+			screen._fcImageObserver.observe(el);
+		});
+	}
+
+	// Whether a Mark card's Featured Content still has a preview to fetch:
+	// a video/audio thumbnail, or a link's page preview.
+	function featuredPreviewPending(item) {
+		const fc = item.featured_content;
+		if (!fc) {
+			return false;
+		}
+		if ('link' === fc.type) {
+			return !!fc.url && null === fc.preview;
+		}
+		return ['video', 'audio'].includes(fc.type) && !fc.image;
+	}
+
+	function teardownFeaturedImages(screen) {
+		if (screen._fcImageObserver) {
+			screen._fcImageObserver.disconnect();
+			screen._fcImageObserver = null;
+		}
+		screen._fcImageAttempted = new Set();
+		screen._fcImageQueue = [];
+		screen._fcImageInFlight = false;
+		screen._fcImageBackoffUntil = 0;
+	}
+
+	async function drainFeaturedImageQueue(screen) {
+		if (screen._fcImageInFlight || Date.now() < screen._fcImageBackoffUntil) {
+			return;
+		}
+		const id = screen._fcImageQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._fcImageInFlight = true;
+		try {
+			const item = screen._byMarkId.get(id);
+			const fc = item && item.featured_content;
+			if (fc && 'link' === fc.type) {
+				const result = await apiGet('marks/' + id + '/featured-content-link');
+				screen._fcImageAttempted.add(id);
+				fc.preview = (result && result.preview) || { title: '', description: '', image: '' };
+				refreshCardMedia(id, item);
+			} else if (fc) {
+				const result = await apiGet('marks/' + id + '/featured-content-image');
+				screen._fcImageAttempted.add(id);
+				if (result && result.url) {
+					fc.image = result.url;
+					refreshCardMedia(id, item);
+				}
+			}
+		} catch (err) {
+			if (err && 429 === err.status) {
+				screen._fcImageBackoffUntil = Date.now() + (Number(err.retryAfter) || 60) * 1000;
+			} else {
+				screen._fcImageAttempted.add(id);
+			}
+		} finally {
+			screen._fcImageInFlight = false;
+			drainFeaturedImageQueue(screen);
+		}
+	}
+
+	// Re-render one Mark card's media slot in place. A placeholder renders
+	// its play button beside it rather than inside it, so both go.
+	function refreshCardMedia(id, item) {
+		document.querySelectorAll(`[data-expand-post="${CSS.escape(String(id))}"]`).forEach((card) => {
+			const old = card.querySelector('.daymark-recent__thumbwrap');
+			if (!old) {
+				return;
+			}
+			const next = old.nextElementSibling;
+			if (next && next.classList.contains('daymark-recent__thumbplay')) {
+				next.remove();
+			}
+			old.outerHTML = renderCardMedia(item, mediaKindForItem(item, resolveCardKind(item)));
+		});
+	}
+
+	// Mirrors observeOembedPreviewCandidates()/drainOembedPreviewQueue():
+	// an IntersectionObserver with the same lookahead, a single-in-flight
+	// queue, and the same 429 backoff. A card that resolves to false loses
+	// its Like icon; everything else keeps it.
+	function observeLikeAvailability(screen, container) {
+		if (!('IntersectionObserver' in window) || !container) {
+			return;
+		}
+		if (!screen._likeAvailQueue) {
+			teardownLikeAvailabilityObserver(screen);
+		}
+		if (!screen._likeAvailObserver) {
+			screen._likeAvailObserver = new IntersectionObserver(
+				(entries) => {
+					entries.forEach((entry) => {
+						if (!entry.isIntersecting) {
+							return;
+						}
+						screen._likeAvailObserver.unobserve(entry.target);
+						const id = entry.target.getAttribute('data-like-toggle');
+						if (id && !screen._likeAvailAttempted.has(id) && !screen._likeAvailQueue.includes(id)) {
+							screen._likeAvailQueue.push(id);
+							drainLikeAvailabilityQueue(screen);
+						}
+					});
+				},
+				{ rootMargin: OEMBED_PREVIEW_LOOKAHEAD }
+			);
+		}
+		container.querySelectorAll('[data-like-toggle]').forEach((el) => {
+			const id = el.getAttribute('data-like-toggle');
+			const item = id && screen._bySubId ? screen._bySubId.get(id) : null;
+			const known = item && (true === item.like_available || false === item.like_available);
+			if (!item || known || 'true' === el.getAttribute('aria-pressed') || screen._likeAvailAttempted.has(id)) {
+				return;
+			}
+			screen._likeAvailObserver.observe(el);
+		});
+	}
+
+	function teardownLikeAvailabilityObserver(screen) {
+		if (screen._likeAvailObserver) {
+			screen._likeAvailObserver.disconnect();
+			screen._likeAvailObserver = null;
+		}
+		screen._likeAvailAttempted = new Set();
+		screen._likeAvailQueue = [];
+		screen._likeAvailInFlight = false;
+		screen._likeAvailBackoffUntil = 0;
+	}
+
+	async function drainLikeAvailabilityQueue(screen) {
+		if (screen._likeAvailInFlight || Date.now() < screen._likeAvailBackoffUntil) {
+			return;
+		}
+		const id = screen._likeAvailQueue.shift();
+		if (!id) {
+			return;
+		}
+		screen._likeAvailInFlight = true;
+		try {
+			const result = await apiGet('subscription-posts/' + id + '/like-availability');
+			screen._likeAvailAttempted.add(id);
+			const item = screen._bySubId && screen._bySubId.get(id);
+			const available = !!(result && result.available);
+			if (item) {
+				item.like_available = available;
+			}
+			if (!available) {
+				removeLikeToggles(id);
+			}
+		} catch (err) {
+			if (err && 429 === err.status) {
+				// Rate-limited, not a real answer: leave it out of
+				// _likeAvailAttempted so a later observeLikeAvailability()
+				// call can pick it back up once the backoff clears.
+				const waitMs = (Number(err.retryAfter) || 60) * 1000;
+				screen._likeAvailBackoffUntil = Date.now() + waitMs;
+			} else {
+				screen._likeAvailAttempted.add(id);
+			}
+		} finally {
+			screen._likeAvailInFlight = false;
+			drainLikeAvailabilityQueue(screen);
 		}
 	}
 
@@ -3830,6 +4471,7 @@
 			setEngagementToggleState(trigger, 'repost', false, 0, item);
 			try {
 				await apiDelete('marks/' + existingMarkId);
+				discardFeedSnapshot();
 				maybeShowInteractionHint('repost', trigger);
 			} catch (err) {
 				setEngagementToggleState(trigger, 'repost', true, existingMarkId, item);
@@ -3956,12 +4598,22 @@
 		const item = screen && screen._bySubId && screen._bySubId.get(id);
 		try {
 			const result = await apiPost('subscription-posts/' + id + '/comment', { text });
+			if ('webmention' === result.method && result.mark_id) {
+				// A Webmention comment is published as a new Mark of your own.
+				discardFeedSnapshot();
+			}
 			if ('webmention' === result.method && result.mark_id && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.replied_mark_id = result.mark_id;
 			} else if ('jetpack' === result.method && item) {
 				trigger.classList.add('daymark-stat--active');
 				item.jetpack_commented = true;
+			}
+			if (item && result.delivery) {
+				item.comment_delivery = result.delivery;
+				const label = withDeliveryStatus(__('Comment', 'daymark'), result.delivery);
+				trigger.setAttribute('aria-label', label);
+				trigger.setAttribute('title', label);
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 		} catch (err) {
@@ -4385,6 +5037,7 @@
 		}
 		try {
 			await apiDelete('subscriptions/' + subscriptionId);
+			discardFeedSnapshot();
 			if (wrap) {
 				const parentList = wrap.parentElement;
 				wrap.remove();
@@ -4435,38 +5088,7 @@
 			if (more) {
 				more.hidden = true;
 			}
-			list.innerHTML = `<p class="daymark-empty">${sprintf(
-				/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
-				__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
-				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-				`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-					__('subscribe to a site', 'daymark')
-				)}</a>`
-			)}</p>`;
-		} else if (list.hasAttribute('data-me-drafts')) {
-			// Me's Drafts tab chrome stays put; only the list's own content
-			// empties. _draftsLoaded is deliberately left true so a later
-			// switch to the tab doesn't re-fetch a just-emptied list.
-			list.innerHTML = `<p class="daymark-empty">${sprintf(
-				/* translators: %s: "Start one" link */
-				__('No drafts. %s.', 'daymark'),
-				'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
-			)}</p>`;
-		} else if (list.hasAttribute('data-me-published-list')) {
-			screen.teardownPublishedObserver();
-			const sentinel = root.querySelector('[data-me-published-sentinel]');
-			if (sentinel) {
-				sentinel.hidden = true;
-			}
-			const more = root.querySelector('[data-me-published-more]');
-			if (more) {
-				more.hidden = true;
-			}
-			list.innerHTML = `<p class="daymark-empty">${sprintf(
-				/* translators: %s: "Publish a Mark" link */
-				__('Nothing published yet. %s.', 'daymark'),
-				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
-			)}</p>`;
+			list.innerHTML = emptyTimelineHtml();
 		}
 	}
 
@@ -4660,6 +5282,85 @@
 
 	// --- Screen: Home (Timeline) ---
 
+	// --- Timeline "last seen" marker ---
+	//
+	// The newest Timeline item this user has seen on Home, stored on the
+	// server (Daymark_Timeline_Position) so it follows them across devices.
+	// A fresh Home load opens anchored on it, with any newer posts above it
+	// and a "new posts" button to jump up to them — the way a chat app
+	// keeps your place at the last message you read. The server only ever
+	// moves the marker to a newer item.
+	let timelineLastSeen = config.timelineLastSeen || null;
+
+	// How far back a fresh load looks for the marker: one request this size
+	// (GET /timeline caps per_page at 50). A multiple of RECENT_PER_PAGE, so
+	// infinite scroll carries on from the next page exactly. A marker older
+	// than this many items just opens at the top, as before.
+	const LAST_SEEN_SEARCH_LIMIT = 50;
+
+	// Debounced save of the newest card seen, so a scroll through many
+	// cards sends one request, not one per card.
+	const LAST_SEEN_SAVE_DELAY = 1500;
+	let lastSeenSaveTimer = null;
+	let lastSeenPendingId = 0;
+
+	function timelineItemIndex(items, ref) {
+		if (!ref || !Array.isArray(items)) {
+			return -1;
+		}
+		const wantSub = 'subscription_post' === ref.item_type;
+		return items.findIndex(
+			(item) =>
+				String(item.id) === String(ref.id) &&
+				('subscription_post' === item.item_type) === wantSub
+		);
+	}
+
+	function timelineCardSelector(item) {
+		return 'subscription_post' === item.item_type
+			? '[data-subpost="' + CSS.escape(String(item.id)) + '"]'
+			: '[data-expand-post="' + CSS.escape(String(item.id)) + '"]';
+	}
+
+	function queueLastSeenSave(id) {
+		lastSeenPendingId = id;
+		if (lastSeenSaveTimer) {
+			clearTimeout(lastSeenSaveTimer);
+		}
+		lastSeenSaveTimer = setTimeout(() => flushLastSeenSave(false), LAST_SEEN_SAVE_DELAY);
+	}
+
+	// `leaving` uses a keepalive request, which the browser finishes even
+	// as the page is hidden or closed.
+	function flushLastSeenSave(leaving) {
+		if (lastSeenSaveTimer) {
+			clearTimeout(lastSeenSaveTimer);
+			lastSeenSaveTimer = null;
+		}
+		const id = lastSeenPendingId;
+		lastSeenPendingId = 0;
+		if (!id || !config.nonce) {
+			return;
+		}
+		fetch(config.restUrl + 'timeline/last-seen', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ id }),
+			keepalive: !!leaving,
+		})
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				if (data && 'last_seen' in data) {
+					timelineLastSeen = data.last_seen;
+				}
+			})
+			.catch(() => {
+				// Best effort: a lost save only means the next visit opens
+				// a little further down than it could have.
+			});
+	}
+
 	const HomeScreen = {
 		render() {
 			// Home itself is the merged Marks + subscriptions feed now, so
@@ -4682,6 +5383,7 @@
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
 					<span class="daymark-spinner" aria-hidden="true"></span>
 				</div>
+				${timelineStartFlourish()}
 				<section class="daymark-recent" data-pending-section hidden aria-labelledby="daymark-pending-heading">
 					<h2 id="daymark-pending-heading" class="daymark-section-heading">${esc(__('Pending', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-pending-list></div>
@@ -4690,10 +5392,13 @@
 					<h2 id="daymark-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-drafts-list></div>
 				</section>
+				<button type="button" class="daymark-newposts" data-new-posts hidden>
+					<span aria-hidden="true">&uarr;</span>
+					<span data-new-posts-label></span>
+				</button>
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
-					${timelineStartFlourish()}
 					<div class="daymark-recent__list" data-recent-list aria-live="polite">
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading your timeline', 'daymark'))}</span>
@@ -4721,11 +5426,18 @@
 			// nothing to return).
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 
+			const newPosts = root.querySelector('[data-new-posts]');
+			if (newPosts) {
+				newPosts.addEventListener('click', () => this.jumpToNewest());
+			}
+
 			bindLauncher(this);
 			bindChromeAutoHide(this);
 		},
 
 		async init() {
+			this.teardownSeenObserver();
+			this.watchForUserScroll();
 			this._searchSeq = 0;
 			this._hasDrafts = false;
 			this.recentPage = 1;
@@ -4744,6 +5456,14 @@
 			// loadMorePage() so an appended page continues the same run of
 			// headers instead of repeating one.
 			this._lastGroupKey = null;
+			// Every Timeline item rendered so far, in order, across all
+			// pages — what saveFeedSnapshot() captures when a card opens.
+			this._items = [];
+
+			const snapshot = takeFeedSnapshot('#home');
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+			}
 
 			await refreshPendingSection();
 
@@ -4765,11 +5485,52 @@
 				// A drafts failure never blocks the recent list below.
 			}
 
-			await this.loadRecent();
+			if (snapshot) {
+				// Pending and Drafts just loaded above the Timeline and may
+				// have pushed it down; put the opened card back in place.
+				scrollFeedToAnchor(snapshot, true);
+				this.observeSeen();
+				return;
+			}
+			await this.loadRecent({ anchor: true });
+		},
+
+		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
+		// instead of fetching page 1 again. Items are re-rendered rather
+		// than restored as saved HTML, so a Like or Bookmark changed on
+		// the post view (which mutates these same item objects) shows up.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-recent-list]');
+			const sentinel = root.querySelector('[data-recent-sentinel]');
+			if (!list) {
+				return;
+			}
+			this.recentPage = snapshot.recentPage;
+			this.recentDone = snapshot.recentDone;
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = renderFeedItemsWithGroups(this, this._items);
+			observeRehydrateCandidates(this, list);
+			observeOembedPreviewCandidates(this, list);
+			observeLikeAvailability(this, list);
+			observeFeaturedImages(this, list);
+			if (this.recentDone) {
+				if (sentinel) {
+					sentinel.hidden = true;
+				}
+			} else {
+				this.setupObserver();
+			}
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, false));
 		},
 
 		// (Re)load the first page of recent Marks and arm infinite scroll.
-		async loadRecent() {
+		// `anchor` (a fresh Home load only — never pull-to-refresh, which
+		// asks for the newest posts) opens on the last-seen marker when it
+		// is in the most recent LAST_SEEN_SEARCH_LIMIT items.
+		async loadRecent({ anchor = false } = {}) {
 			const list = root.querySelector('[data-recent-list]');
 			const more = root.querySelector('[data-recent-more]');
 			const sentinel = root.querySelector('[data-recent-sentinel]');
@@ -4781,8 +5542,12 @@
 				heading.textContent = __('Timeline', 'daymark');
 			}
 			this.teardownObserver();
+			this.teardownSeenObserver();
+			this.hideNewPosts();
 			teardownRehydrateObserver(this);
 			teardownOembedPreviewObserver(this);
+			teardownLikeAvailabilityObserver(this);
+			teardownFeaturedImages(this);
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -4798,20 +5563,41 @@
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
-				const arr = Array.isArray(items) ? items : [];
+				let arr = Array.isArray(items) ? items : [];
+				// How many items this first load fetched; infinite scroll
+				// resumes from the page after it.
+				let loaded = RECENT_PER_PAGE;
+				let anchorIndex = anchor ? timelineItemIndex(arr, timelineLastSeen) : -1;
+				if (anchor && timelineLastSeen && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
+					// Not at the very top: load further back in one request,
+					// both to find the marker when it is past the first page
+					// and so there is enough below it to scroll it to the
+					// top (a short list would leave the newer cards above it
+					// on screen, and they would count as seen).
+					try {
+						const wide = await apiGet('timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=1');
+						if (seq !== this._searchSeq || !list.isConnected) {
+							return;
+						}
+						const wideArr = Array.isArray(wide) ? wide : [];
+						const wideIndex = timelineItemIndex(wideArr, timelineLastSeen);
+						if (wideIndex >= 0) {
+							arr = wideArr;
+							loaded = LAST_SEEN_SEARCH_LIMIT;
+							anchorIndex = wideIndex;
+						}
+					} catch (err) {
+						// Fall through to an ordinary top-of-Timeline load.
+					}
+				}
+				this.recentPage = loaded / RECENT_PER_PAGE;
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
-					list.innerHTML = `<p class="daymark-empty">${sprintf(
-						/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
-						__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
-						'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-						`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-							__('subscribe to a site', 'daymark')
-						)}</a>`
-					)}</p>`;
+					list.innerHTML = emptyTimelineHtml();
 					this.recentDone = true;
 					if (sentinel) {
 						sentinel.hidden = true;
@@ -4821,8 +5607,20 @@
 				list.innerHTML = renderFeedItemsWithGroups(this, arr);
 				observeRehydrateCandidates(this, list);
 				observeOembedPreviewCandidates(this, list);
+				observeLikeAvailability(this, list);
+				observeFeaturedImages(this, list);
+				// Position before tracking what's seen: otherwise the newest
+				// cards, briefly on screen at the top, would count as seen.
+				// Skipped once the reader has started scrolling on their own:
+				// the load can finish seconds later, and jumping then would
+				// move the page out from under them.
+				if (anchorIndex > 0 && !this._userScrolled) {
+					this.scrollToItem(arr[anchorIndex]);
+					this.showNewPosts(anchorIndex);
+				}
+				this.observeSeen();
 
-				if (arr.length < RECENT_PER_PAGE) {
+				if (arr.length < loaded) {
 					// A short first page means there is nothing more to load.
 					this.recentDone = true;
 					if (sentinel) {
@@ -4882,6 +5680,7 @@
 				const arr = Array.isArray(items) ? items : [];
 				if (arr.length && list.isConnected) {
 					this.recentPage = nextPage;
+					this._items = (this._items || []).concat(arr);
 					arr.forEach((item) => rememberItem(this, item));
 					// Deliberately not resetting this._lastGroupKey first —
 					// continuing from wherever loadRecent()'s own page (or a
@@ -4890,6 +5689,9 @@
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
 					observeRehydrateCandidates(this, list);
 					observeOembedPreviewCandidates(this, list);
+					observeLikeAvailability(this, list);
+					observeFeaturedImages(this, list);
+					this.observeSeen();
 				}
 				if (arr.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
@@ -4933,6 +5735,162 @@
 			if (this.observer) {
 				this.observer.disconnect();
 				this.observer = null;
+			}
+		},
+
+		// Note when the reader scrolls (wheel, touch, or a scrolling key)
+		// before the Timeline has loaded, so loadRecent() doesn't then jump
+		// them to the last-seen post. Re-armed on every init(); the
+		// previous listener is removed first so they don't pile up.
+		watchForUserScroll() {
+			this._userScrolled = false;
+			if (this._onUserScroll) {
+				['wheel', 'touchmove', 'keydown'].forEach((type) =>
+					window.removeEventListener(type, this._onUserScroll)
+				);
+			}
+			this._onUserScroll = (event) => {
+				if (
+					'keydown' === event.type &&
+					!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '].includes(event.key)
+				) {
+					return;
+				}
+				this._userScrolled = true;
+			};
+			['wheel', 'touchmove', 'keydown'].forEach((type) =>
+				window.addEventListener(type, this._onUserScroll, { passive: true })
+			);
+		},
+
+		// Scroll so a Timeline item sits just below the header, with its
+		// date heading when it is the first card under one.
+		scrollToItem(item) {
+			const card = root.querySelector('[data-recent-list] ' + timelineCardSelector(item));
+			if (!card) {
+				return;
+			}
+			const wrap = card.closest('.daymark-recent__item-wrap') || card;
+			const prev = wrap.previousElementSibling;
+			const target = prev && prev.classList.contains('daymark-recent__groupheader') ? prev : wrap;
+			const header = root.querySelector('.daymark-topbar');
+			const offset = header ? header.offsetHeight : 0;
+			window.scrollTo(0, Math.max(0, target.getBoundingClientRect().top + window.scrollY - offset));
+		},
+
+		// Watch Timeline cards and record the newest one seen. Re-callable
+		// after each render: cards already watched are skipped.
+		observeSeen() {
+			if (!('IntersectionObserver' in window)) {
+				return;
+			}
+			const list = root.querySelector('[data-recent-list]');
+			if (!list) {
+				return;
+			}
+			if (!this._seenObserver) {
+				this._newestSeenIndex = Infinity;
+				this._seenObserver = new IntersectionObserver(
+					(entries) => {
+						entries.forEach((entry) => {
+							if (entry.isIntersecting) {
+								this.noteSeen(entry.target);
+							}
+						});
+					},
+					{ threshold: 0.6 }
+				);
+			}
+			list.querySelectorAll('.daymark-recent__item-wrap:not([data-seen-watched])').forEach((wrap) => {
+				wrap.setAttribute('data-seen-watched', '');
+				this._seenObserver.observe(wrap);
+			});
+		},
+
+		teardownSeenObserver() {
+			if (this._seenObserver) {
+				this._seenObserver.disconnect();
+				this._seenObserver = null;
+			}
+		},
+
+		noteSeen(wrap) {
+			const trigger = wrap.querySelector('[data-subpost], [data-expand-post]');
+			if (!trigger) {
+				return;
+			}
+			const ref = trigger.hasAttribute('data-subpost')
+				? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
+				: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
+			const index = timelineItemIndex(this._items, ref);
+			if (index < 0 || index >= this._newestSeenIndex) {
+				return;
+			}
+			this._newestSeenIndex = index;
+			this.updateNewPosts(index);
+			// Nothing to save for a card at or below the stored marker; the
+			// server ignores an older item anyway, this just skips the call.
+			const markerIndex = timelineItemIndex(this._items, timelineLastSeen);
+			if (markerIndex >= 0 && index >= markerIndex) {
+				return;
+			}
+			queueLastSeenSave(Number(ref.id));
+		},
+
+		// The "new posts" button: how many newer posts sit above the card
+		// the Timeline opened on. Counts down as they come into view and
+		// disappears once the newest has been seen.
+		showNewPosts(count) {
+			this._newPostsCount = count;
+			this.updateNewPosts(count);
+		},
+
+		updateNewPosts(newestSeenIndex) {
+			const button = root.querySelector('[data-new-posts]');
+			if (!button || !this._newPostsCount) {
+				return;
+			}
+			const count = Math.min(this._newPostsCount, newestSeenIndex);
+			if (count <= 0) {
+				this.hideNewPosts();
+				return;
+			}
+			const label = sprintf(
+				/* translators: %d: number of newer posts above the current one */
+				_n('%d new post', '%d new posts', count, 'daymark'),
+				count
+			);
+			const text = button.querySelector('[data-new-posts-label]');
+			if (text) {
+				text.textContent = label;
+			}
+			button.setAttribute(
+				'aria-label',
+				sprintf(
+					/* translators: %s: e.g. "3 new posts" */
+					__('%s. Jump to the newest post.', 'daymark'),
+					label
+				)
+			);
+			button.hidden = false;
+		},
+
+		hideNewPosts() {
+			this._newPostsCount = 0;
+			const button = root.querySelector('[data-new-posts]');
+			if (button) {
+				button.hidden = true;
+			}
+		},
+
+		jumpToNewest() {
+			const reduce =
+				window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+			window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+			this.hideNewPosts();
+			const first = root.querySelector('[data-recent-list] [data-subpost], [data-recent-list] [data-expand-post]');
+			if (first) {
+				first.focus({ preventScroll: true });
 			}
 		},
 
@@ -5145,8 +6103,16 @@
 				)}" autocomplete="off" />
 				<div class="daymark-searchfilters" data-search-filters>
 					<div class="daymark-filterchips" role="group" aria-label="${esc(
-						__('Filter by type', 'daymark')
-					)}" data-filter-chips>${filterChips}</div>
+						__('Search filters', 'daymark')
+					)}" data-filter-chips>${filterChips}
+					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
+						__('Filter by date', 'daymark')
+					)}</label>
+					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${SEARCH_DATE_FILTERS.map(
+						(filter) =>
+							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
+					).join('')}</select>
+					</div>
 					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
 						__('Filter by source', 'daymark')
 					)}</label>
@@ -5195,6 +6161,14 @@
 				});
 			}
 
+			const dateFilter = root.querySelector('[data-date-filter]');
+			if (dateFilter) {
+				dateFilter.addEventListener('change', () => {
+					this.searchDate = dateFilter.value;
+					this.runSearch();
+				});
+			}
+
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
@@ -5221,9 +6195,26 @@
 			this.searchType = '';
 			this.searchSource = '';
 			this.searchBookmarked = false;
+			this.searchDate = '';
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
+			// The results currently shown — what saveFeedSnapshot()
+			// captures when a card opens.
+			this._items = [];
+
+			// Coming back from a post opened here: restore the same
+			// filters and results, and the card's place, instead of
+			// searching again from the top (see feedSnapshot).
+			const snapshot = takeFeedSnapshot('#search');
+			if (snapshot) {
+				searchPreset = null;
+				this.searchQuery = snapshot.query || '';
+				this.searchType = snapshot.type || '';
+				this.searchSource = snapshot.source || '';
+				this.searchBookmarked = !!snapshot.bookmarked;
+				this.searchDate = snapshot.date || '';
+			}
 
 			// A preset handed from Explore/Me ("browse by type", "your
 			// Marks", "Following", "Bookmarks") right before navigate('#search')
@@ -5239,13 +6230,36 @@
 
 			this.syncFilterChips();
 			this.syncBookmarksBanner();
+			this.syncSearchExtras();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
 				input.value = this.searchQuery;
 			}
 
 			this.loadSubscriptionsForFilter();
+			if (snapshot) {
+				this.restoreSnapshot(snapshot);
+				return;
+			}
 			await this.runSearch();
+		},
+
+		// Re-render the saved results rather than searching again, so the
+		// list (and any Like or Bookmark changed on the post view, which
+		// mutates these same item objects) matches what the reader left.
+		restoreSnapshot(snapshot) {
+			const list = root.querySelector('[data-search-results]');
+			if (!list) {
+				return;
+			}
+			this._items = snapshot.items.slice();
+			this._items.forEach((item) => rememberItem(this, item));
+			list.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+			observeLikeAvailability(this, list);
+			observeFeaturedImages(this, list);
+			// showScreen() focuses the header right after init() starts,
+			// which scrolls to the top. Position the card after that.
+			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
 		},
 
 		syncFilterChips() {
@@ -5266,6 +6280,17 @@
 			const banner = root.querySelector('[data-search-bookmarks-banner]');
 			if (banner) {
 				banner.hidden = !this.searchBookmarked;
+			}
+		},
+
+		// Reflects the current date filter value back onto its control —
+		// called at boot so a fresh render shows any state searchPreset may
+		// have been carrying. Explore hands over type/source only today, so
+		// this is effectively a no-op until a future preset carries a date.
+		syncSearchExtras() {
+			const date = root.querySelector('[data-date-filter]');
+			if (date && date.value !== this.searchDate) {
+				date.value = this.searchDate;
 			}
 		},
 
@@ -5313,6 +6338,17 @@
 			if (this.searchBookmarked) {
 				params.set('bookmarked', '1');
 			}
+			if (this.searchDate) {
+				const bounds = dateFilterBounds(this.searchDate);
+				if (bounds) {
+					if (bounds.after) {
+						params.set('after', bounds.after);
+					}
+					if (bounds.before) {
+						params.set('before', bounds.before);
+					}
+				}
+			}
 			try {
 				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
@@ -5321,6 +6357,9 @@
 				const arr = Array.isArray(items) ? items : [];
 				this._bySubId.clear();
 				this._byMarkId.clear();
+				teardownLikeAvailabilityObserver(this);
+				teardownFeaturedImages(this);
+				this._items = arr.slice();
 				arr.forEach((item) => rememberItem(this, item));
 				if (!arr.length) {
 					list.innerHTML =
@@ -5330,6 +6369,8 @@
 					return;
 				}
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
+				observeLikeAvailability(this, list);
+				observeFeaturedImages(this, list);
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
@@ -5357,9 +6398,10 @@
 		// Offline fallback for the Bookmarks-filtered view: renders from
 		// BOOKMARK_STORE's own cached item summaries instead of a live
 		// GET /timeline. Applies the type/keyword filters client-side,
-		// best-effort — the Source filter (mine/a specific subscription)
-		// is skipped here, since the cache has no reliable per-source
-		// membership to filter by offline.
+		// best-effort — the Source filter (mine/a specific subscription) and
+		// the date filter (issue #293) is skipped
+		// here, since the cache has no reliable per-source membership or
+		// per-item meta to filter by offline.
 		async renderCachedBookmarks(list, seq) {
 			const cached = await getAllCachedBookmarks();
 			if (seq !== this._searchSeq || !list.isConnected) {
@@ -5380,6 +6422,7 @@
 			}
 			this._bySubId.clear();
 			this._byMarkId.clear();
+			this._items = items.slice();
 			items.forEach((item) => rememberItem(this, item));
 			if (!items.length) {
 				list.innerHTML =
@@ -5397,11 +6440,15 @@
 	// A first, deliberately non-chronological browsing destination — never
 	// a second Timeline. Every section here is real, built entirely on
 	// data the plugin already exposes (Mark type filtering, bookmark
-	// state, active subscriptions): "Browse by type", "Bookmarks", and
-	// "Following" all hand a preset off to Search rather than duplicating
-	// its results rendering. Memories, highlights, collections, favorites,
-	// and suggested content are future sections on this same screen, not
-	// implied by anything rendered here.
+	// state, prior-year same-date Marks, active subscriptions): "Browse by
+	// type", "Bookmarks", "On this day", and "Following". The preset
+	// sections hand results off to Search rather than duplicating its
+	// rendering; "On this day" (issue #294) and "Following" render their
+	// own card lists in place, with "On this day" reusing the shared
+	// feed-item pipeline (renderFeedItem()/rememberItem()/onFeedListClick)
+	// exactly like Search's own results list. Highlights, collections,
+	// favorites, and suggested content are future sections on this same
+	// screen, not implied by anything rendered here.
 
 	const ExploreScreen = {
 		render() {
@@ -5432,6 +6479,15 @@
 						<button type="button" class="daymark-exploretype" data-explore-bookmarks>${navIcon(
 							BOOKMARK_GLYPH
 						)}<span>${esc(__('Saved for offline', 'daymark'))}</span></button>
+					</div>
+				</section>
+				<section class="daymark-recent" aria-labelledby="daymark-explore-memories-heading">
+					<h2 id="daymark-explore-memories-heading" class="daymark-section-heading">${esc(
+						__('On this day', 'daymark')
+					)}</h2>
+					<div class="daymark-recent__list" data-explore-memories>
+						${skeletonRows(2)}
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
@@ -5475,11 +6531,53 @@
 				});
 			}
 
-			bindDismissible(this, [navFooterDismissEntry(this)]);
+			// "On this day" renders real feed cards (renderFeedItem), so it
+			// gets the exact same delegated click/keydown handlers Search
+			// binds on its own results list — card taps open the post view,
+			// and the stat-row toggles work identically here.
+			const memories = root.querySelector('[data-explore-memories]');
+			if (memories) {
+				memories.addEventListener('click', (event) => onFeedListClick(this, event));
+				memories.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
+
+			// Like Search's results list, the memories list renders cards
+			// whose ⋯/routing/overflow menus need the shared dismissal
+			// entry, not just the bottom-nav one.
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
 
 		async init() {
+			// "On this day" renders real feed cards, so it needs the same
+			// per-item Maps Search keeps — card taps hand openPostView() the
+			// item via these (onFeedListClick()'s data-expand-post branch).
+			this._bySubId = new Map();
+			this._byMarkId = new Map();
+			// The "On this day" cards currently shown — what
+			// saveFeedSnapshot() captures when one is opened.
+			this._items = [];
+
+			const memories = root.querySelector('[data-explore-memories]');
+			const snapshot = takeFeedSnapshot('#explore');
+			if (memories && snapshot) {
+				// Coming back from a memory opened here: show the same
+				// cards and put the opened one back in place instead of
+				// fetching again and landing at the top (see feedSnapshot).
+				// Following loads below it, so it can't shift the card.
+				this._items = snapshot.items.slice();
+				this._items.forEach((item) => rememberItem(this, item));
+				memories.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
+				// showScreen() focuses the header right after init()
+				// starts, which scrolls to the top. Position the card after.
+				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
+			} else if (memories) {
+				// Deliberately kicked off and left running, not awaited:
+				// memories and Following load independently, and one failing
+				// never blocks the other.
+				this.loadMemories(memories);
+			}
+
 			const list = root.querySelector('[data-explore-following]');
 			if (!list) {
 				return;
@@ -5489,13 +6587,13 @@
 				return;
 			}
 			if (!subscriptions.length) {
-				list.innerHTML = `<p class="daymark-empty">${sprintf(
-					/* translators: %s: "Subscribe to one" link */
-					__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
-					`<a href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-						__('Subscribe to one', 'daymark')
-					)}</a>`
-				)}</p>`;
+				list.innerHTML = config.adminSubscriptionsUrl
+					? `<p class="daymark-empty">${sprintf(
+							/* translators: %s: "Subscribe to one" link */
+							__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
+							`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('Subscribe to one', 'daymark'))}</a>`
+					  )}</p>`
+					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
 				return;
 			}
 			const subscriptionLabel = (sub) =>
@@ -5517,6 +6615,52 @@
 					)}</span></span></button>`;
 				})
 				.join('');
+		},
+
+		// Fills the "On this day" list: GET /timeline?on_this_day=1 (Marks
+		// published on today's calendar date in a prior year, per issue
+		// #294), rendered through the same shared feed-item pipeline Search
+		// uses — renderFeedItem() for the cards, rememberItem() so taps can
+		// hand openPostView() the item, no group headers (the section has
+		// its own heading; a single "this day" bucket would add nothing).
+		// A genuinely empty result keeps the section visible with a
+		// friendly note rather than removing it; a fetch failure shows an
+		// inline error, same shape as the Following list's own loading
+		// states.
+		async loadMemories(list) {
+			let items;
+			try {
+				items = await apiGet('timeline?on_this_day=1&per_page=50');
+			} catch (err) {
+				if (list.isConnected) {
+					list.innerHTML =
+						'<p class="daymark-error" role="alert">' +
+						esc(__("Couldn't load your memories. Try again in a moment.", 'daymark')) +
+						'</p>';
+				}
+				return;
+			}
+			if (!list.isConnected) {
+				return;
+			}
+			const arr = Array.isArray(items) ? items : [];
+			this._bySubId.clear();
+			this._byMarkId.clear();
+			this._items = arr.slice();
+			arr.forEach((item) => rememberItem(this, item));
+			if (!arr.length) {
+				list.innerHTML =
+					'<p class="daymark-empty">' +
+					esc(
+						__(
+							'No memories from this day yet. Marks you publish today will appear here next year.',
+							'daymark'
+						)
+					) +
+					'</p>';
+				return;
+			}
+			list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 		},
 	};
 
@@ -5954,8 +7098,18 @@
 					)}</p>`;
 					return;
 				}
-				list.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
-				draftItems.forEach((item) => rememberItem(this, item));
+				// View-only here (tap to resume editing) — full Edit/Delete
+				// management stays on Home's own Drafts row.
+				list.innerHTML = draftItems
+					.map(
+						(item) =>
+							`<a class="daymark-recent__item daymark-recent__item--${esc(
+								cardLayoutKind(item, resolveCardKind(item))
+							)}" href="#create" data-edit-draft="${esc(
+								String(item.id)
+							)}">${renderMarkCore(item)}</a>`
+					)
+					.join('');
 				bindDraftTaps(list);
 			} catch (err) {
 				if (seq !== this._draftsSeq || !list.isConnected) {
@@ -6001,6 +7155,9 @@
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
 				)}</h1>
+				<span class="daymark-chip daymark-topbar__typechip" data-type-badge>${esc(
+					TYPE_LABELS[effectiveType()]
+				)}</span>
 			</header>
 			<section class="daymark-screen">
 				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
@@ -6026,15 +7183,36 @@
 				}
 				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				${
-					// The Home launcher's Note bubble (and, per the same
-					// reasoning, the Checkin bubble — issue #143 — which has
-					// no media picker at all) jumps straight past the picker
-					// into a focused writing flow — attaching any file would
-					// flip the type away from 'note'/'checkin' anyway
-					// (detectType() only ever returns 'note' when nothing is
-					// attached), so hiding it here loses no real capability.
-					('note' === state.pendingType || 'checkin' === state.pendingType) && !state.files.length && !editing
+					// The Home launcher's Note bubble jumps straight past the
+					// picker into a focused writing flow — attaching any file
+					// would flip the type away from 'note' anyway (detectType()
+					// only ever returns 'note' when nothing is attached), so
+					// hiding it here loses no real capability. Checkin (issue
+					// #143) used to bypass the picker the exact same way, but a
+					// Check In can now carry an optional photo/video of its own
+					// (issue #424 — see the dedicated branch below), so it no
+					// longer skips the picker at all, fresh session or resumed
+					// draft alike.
+					'note' === state.pendingType && !state.files.length && !editing
 						? ''
+						: 'checkin' === effectiveType()
+						? // Optional media for a Check In (issue #424): a place
+						  // is the whole point of a checkin — this is deliberately
+						  // the smallest, plainest affordance in the composer, on
+						  // purpose disproportionate to the Place field below it
+						  // (no icon, no dashed border box, no hint line — just a
+						  // small underlined text link, the same weight
+						  // "Choose from library instead" already carries for a
+						  // typed entry's own secondary action), never the
+						  // camera-first flow a typed Image/Video/Audio entry
+						  // gets. Image/video only (no audio — the ask this
+						  // covers is "show where you are," not a voice memo).
+						  `<div class="daymark-picker daymark-picker--minimal">
+					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*" multiple />
+					<label for="daymark-file-input" class="daymark-btn daymark-btn--text daymark-picker__zone">${esc(
+						__('+ Add a photo or video (optional)', 'daymark')
+					)}</label>
+				</div>`
 						: ACCEPT_BY_TYPE[state.pendingType]
 						? // A typed launcher entry (Image/Video/Audio): camera-first
 						  // — the primary action opens the device's camera/mic
@@ -6070,11 +7248,6 @@
 				</div>`
 				}
 				<div class="daymark-preview" data-preview></div>
-				<p class="daymark-typebadge">${sprintf(
-					/* translators: %s: Mark type label (e.g. "Image") */
-					esc(__('Mark type: %s', 'daymark')),
-					`<span class="daymark-chip" data-type-badge>${esc(TYPE_LABELS[effectiveType()])}</span>`
-				)}</p>
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
@@ -7560,7 +8733,7 @@
 			glyph: REPOST_GLYPH,
 			title: __('Reblog', 'daymark'),
 			body: __(
-				'Tap here to share this post on your own site. You can add your own thoughts first, or skip that.',
+				'Tap here to share this post on your own site, with a line about why you think it\'s worth reading.',
 				'daymark'
 			),
 		},
@@ -7838,26 +9011,77 @@
 			: 'article';
 	}
 
+	// The Featured Content kinds that carry media of their own and so replace a
+	// card's media slot (see mediaKindForItem()).
+	const FEATURED_MEDIA_KINDS = ['audio', 'video', 'gallery'];
+
 	// The card-media kind to actually render, once a Mark's own Featured
-	// Content (issue #401) is taken into account. `resolveCardKind()` above
-	// answers "what kind of Mark is this" — the rail icon's own question,
-	// unaffected by Featured Content — but the media slot's job is showing
-	// whatever the Mark's front-end permalink page itself would show there,
-	// and Featured Content already replaces a post's Featured Image there
-	// by default (`maybe_replace_post_thumbnail_html()`,
-	// class-featured-content.php) regardless of the Mark's own primary
-	// type. A Note/Checkin Mark that sets a video/audio Featured Content is
-	// exactly the case this exists for: its own `kind` renders no media
-	// slot at all, but Featured Content is real, chosen content worth
-	// showing. Gallery/quote/link Featured Content aren't handled yet —
-	// `item.featured_content.type` is only ever 'audio'/'video' until those
-	// later phases ship their own card treatment.
-	function mediaKindForItem(item, kind) {
-		return item.featured_content && item.featured_content.type ? item.featured_content.type : kind;
+	// Content (issue #401) and — for a Check In specifically (issue #424) —
+	// its own optional attached photo/video are taken into account.
+	// `resolveCardKind()` above answers "what kind of Mark is this" — the
+	// rail icon's own question, unaffected by either — but the media slot's
+	// job is showing whatever real media the Mark actually carries.
+	// Featured Content already replaces a post's Featured Image there by
+	// default (`maybe_replace_post_thumbnail_html()`, class-
+	// featured-content.php) regardless of the Mark's own primary type — a
+	// Note/Checkin Mark that sets a video/audio Featured Content is exactly
+	// the case this exists for. Checked first: a deliberately, explicitly
+	// chosen Featured Content value should still win over an incidentally
+	// attached photo, matching how Featured Content already overrides a
+	// post's ordinary Featured Image everywhere else. Failing that, a
+	// Checkin Mark's own `media_kind` (prepare_mark_summary(),
+	// class-rest-controller.php — set only when the Mark actually carries
+	// attached media) resolves to whatever real kind that media is
+	// (image/gallery/video/mixed), so "see it's me at the Leaning Tower of
+	// Pisa!" renders as a real photo, not an empty checkin card. A gallery
+	// Featured Content passes through as the 'gallery' kind and renders as a
+	// 2x2 image grid (renderGalleryGrid()); quote/link Featured
+	// Content don't change the media slot at all — the Mark keeps its own
+	// card kind (see FEATURED_MEDIA_KINDS).
+	// The kind a Mark card's own class (daymark-recent__item--{kind}) uses.
+	// A card whose media slot shows a gallery grid (a gallery Featured
+	// Content, or a Check In with several photos) takes the gallery card's
+	// layout, so it looks the same as a gallery Mark's card, and an ordinary
+	// post with a featured image takes the image card's layout. The rail
+	// icon still shows the item's own type.
+	function cardLayoutKind(item, kind) {
+		const mediaKind = mediaKindForItem(item, kind);
+		return ['gallery', 'quote', 'linkpreview'].includes(mediaKind) || ('article' === kind && 'image' === mediaKind)
+			? mediaKind
+			: kind;
 	}
 
-	// The rail column every card carries between its site icon and its own
-	// body — a quiet, muted indicator of what kind of thing this is,
+	function mediaKindForItem(item, kind) {
+		// The media kinds replace the card's own kind. A quote does too: it
+		// shows in the banner slot where a featured image would go
+		// (renderQuoteBanner()), the way Featured Content replaces the
+		// featured image on the post's own page. So does a link: a preview
+		// of the linked page (renderLinkBanner()).
+		if (item.featured_content && FEATURED_MEDIA_KINDS.includes(item.featured_content.type)) {
+			return item.featured_content.type;
+		}
+		if (item.featured_content && 'quote' === item.featured_content.type && item.featured_content.text) {
+			return 'quote';
+		}
+		if (item.featured_content && 'link' === item.featured_content.type && item.featured_content.url) {
+			return 'linkpreview';
+		}
+		if ('checkin' === kind && item.media_kind) {
+			return item.media_kind;
+		}
+		// An ordinary post (not a Mark) with a featured image shows it as
+		// the full-width banner an image Mark has, the same as a followed
+		// site's article (see renderSubscriptionPostCard()). Its excerpt
+		// still shows and its rail icon still says Article.
+		if ('article' === kind && item.thumbnail) {
+			return 'image';
+		}
+		return kind;
+	}
+
+	// The rail icon every card carries directly below its site icon, in the
+	// same leading column (renderLeadColumn()) — a quiet, muted indicator of
+	// what kind of thing this is,
 	// visually threaded to the item above and below by a thin connecting
 	// line (see .daymark-recent__typeicon::before in app.css) so a scan
 	// down the list reads as one continuous chronological flow, the way
@@ -7885,6 +9109,52 @@
 		return `<span class="daymark-recent__thumbbadge" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${glyph}</svg></span>`;
 	}
 
+	// Which single 256x256 OpenStreetMap raster tile best previews a
+	// coordinate, and where within that one tile the coordinate itself
+	// falls (as a 0-100 percentage of the tile's own width/height, for
+	// positioning a pin overlay with plain CSS left/top) — the same
+	// slippy-map tile math every OSM-based map already uses to pick a
+	// tile for a given latitude/longitude/zoom. Mirrors
+	// Daymark_Publisher::resolve_map_tile() in class-publisher.php
+	// exactly; keep the two in sync, the same "two implementations that
+	// must agree" shape AUDIO_EXTENSIONS/DIRECT_MEDIA_EXTENSIONS already
+	// established for Featured Content (issue #401).
+	function osmTileForLocation(lat, lng, zoom) {
+		const scale = Math.pow(2, zoom);
+		const latRad = (lat * Math.PI) / 180;
+		const x = ((lng + 180) / 360) * scale;
+		const y = ((1 - Math.asinh(Math.tan(latRad)) / Math.PI) / 2) * scale;
+		return {
+			x: Math.floor(x),
+			y: Math.floor(y),
+			zoom,
+			pinLeft: ((x - Math.floor(x)) * 100).toFixed(3),
+			pinTop: ((y - Math.floor(y)) * 100).toFixed(3),
+		};
+	}
+
+	// A Checkin Mark's own leading visual on the Timeline card — a single
+	// OpenStreetMap tile centered on its captured location (issue #143's
+	// own follow-up), with a small pin overlaid at the exact position
+	// osmTileForLocation() resolved. No API key: OSM's own public tile
+	// server, the same one build_place_block()'s "View on map" link
+	// already sends a reader to. A Checkin's own captured location is the
+	// author's explicit, chosen content (unlike another Mark type's quiet
+	// background location capture, which never reaches this function at
+	// all — see renderCardMedia()'s own 'checkin'-only branch below), so
+	// this needs no daymark_publish_location_publicly privacy check of
+	// its own; class-publisher.php's docblock for build_map_preview_block()
+	// carries the full reasoning.
+	function renderCheckinMapPreview(location) {
+		const tile = osmTileForLocation(location.lat, location.lng, 15);
+		const tileUrl = `https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`;
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--checkin">${imgWithFallback(
+			tileUrl,
+			'daymark-recent__thumb',
+			'📍'
+		)}<span class="daymark-checkin-map__pin" style="left:${tile.pinLeft}%;top:${tile.pinTop}%" aria-hidden="true"></span></span>`;
+	}
+
 	// One card's media slot: a real image — a Mark's own thumbnail, a
 	// subscription post's featured_image_url, or (only when there's no
 	// post image at all) the subscription's own site icon — when there is
@@ -7894,13 +9164,107 @@
 	// class-publisher.php — so the placeholder keeps the media slot's own
 	// visual promise instead of collapsing to nothing); or no slot at all
 	// for a kind with none (note/link). A broken image degrades to the
-	// same placeholder via imgWithFallback()'s shared error handling.
-	function renderCardMedia(item, kind) {
-		if ('note' === kind || 'link' === kind || 'checkin' === kind) {
+	// same placeholder via imgWithFallback()'s shared error handling. A
+	// Checkin Mark with a captured location is handled first, on its own —
+	// see renderCheckinMapPreview() above.
+	// A gallery card shows its first four images as a 2x2 grid of equal,
+	// rounded tiles in the card's media slot, since a handful of photos
+	// reads better side by side than as one cropped frame. That covers a
+	// Mark whose Featured Content is a gallery (issue #406) and a Mark with
+	// several photos of its own (a gallery Mark, or a Check In with more
+	// than one photo), whose `gallery` summary field carries the same
+	// images/count shape. Fewer than four images fill the same box (one
+	// image whole, two as columns, three as two on top and the third under
+	// the first, with the bottom-right tile left empty); more than
+	// four add a "+N" on the last tile. The images are decorative (the
+	// card's title and excerpt carry the meaning), so they get empty alt
+	// text, like every other card thumbnail.
+	function renderGalleryGrid(item, kind) {
+		if ('gallery' !== kind) {
 			return '';
 		}
+		const fc = item.featured_content;
+		const source = fc && 'gallery' === fc.type ? fc : item.gallery;
+		if (!source || !Array.isArray(source.images) || !source.images.length) {
+			return '';
+		}
+		const images = source.images.slice(0, 4);
+		const extra = Math.max(0, (parseInt(source.count, 10) || images.length) - images.length);
+		const cells = images
+			.map((src, index) => {
+				const more =
+					extra > 0 && index === images.length - 1
+						? `<span class="daymark-recent__gridmore" aria-hidden="true">+${esc(String(extra))}</span>`
+						: '';
+				return `<span class="daymark-recent__gridcell">${imgWithFallback(
+					src,
+					'daymark-recent__thumb daymark-recent__thumb--cell',
+					'G'
+				)}${more}</span>`;
+			})
+			.join('');
+		// No kind badge: the tiles themselves show it's several photos, and
+		// the badge's corner offset would be clipped by the grid's edge.
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--grid daymark-recent__thumbwrap--grid-${images.length}">${cells}</span>`;
+	}
+
+	// A quote Featured Content, shown in a card's banner slot in place of a
+	// featured image: the quote text, then its credit ("Author — host").
+	// Plain spans, since the whole card is a button and can't hold a link;
+	// the post view shows the credit's link. The server cuts a long quote
+	// to a card-sized length.
+	function renderQuoteBanner(item) {
+		const fc = item.featured_content || {};
+		const credit = fc.credit ? `<span class="daymark-recent__quotecredit">${esc(fc.credit)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--quote"><span class="daymark-recent__quotetext">${esc(
+			fc.text
+		)}</span>${credit}</span>`;
+	}
+
+	// A link Featured Content, shown in a card's banner slot in place of a
+	// featured image: the linked page's own image full-width when it has
+	// one, then its site and title, like a link preview in a social feed.
+	// Before the preview is known (preview: null, filled in by
+	// observeFeaturedImages()) or when the page has none, it shows the site
+	// alone. Plain spans, since the whole card is a button.
+	function renderLinkBanner(item) {
+		const fc = item.featured_content || {};
+		const preview = fc.preview || {};
+		const image = preview.image
+			? imgWithFallback(preview.image, 'daymark-recent__linkimage', (fc.host || 'L').charAt(0).toUpperCase())
+			: '';
+		const title = preview.title ? `<span class="daymark-recent__linktitle">${esc(preview.title)}</span>` : '';
+		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--link">${image}<span class="daymark-recent__linkmeta"><span class="daymark-recent__linkhost">${esc(
+			fc.host || ''
+		)}</span>${title}</span></span>`;
+	}
+
+	function renderCardMedia(item, kind) {
+		if ('quote' === kind) {
+			return renderQuoteBanner(item);
+		}
+		if ('linkpreview' === kind) {
+			return renderLinkBanner(item);
+		}
+		if ('checkin' === kind) {
+			return item.location ? renderCheckinMapPreview(item.location) : '';
+		}
+		if ('note' === kind || 'link' === kind) {
+			return '';
+		}
+		const gridMarkup = renderGalleryGrid(item, kind);
+		if (gridMarkup) {
+			return gridMarkup;
+		}
 		const isMedia = MEDIA_DOMINANT_KINDS.includes(kind);
-		const src = item.thumbnail || item.featured_image_url || item.site_icon_url;
+		// A video or audio Featured Content's own thumbnail (the video's
+		// preview image, or the file's cover art) wins when it's what this
+		// card's media slot is showing.
+		const featuredImage =
+			item.featured_content && kind === item.featured_content.type && item.featured_content.image
+				? item.featured_content.image
+				: '';
+		const src = featuredImage || item.thumbnail || item.featured_image_url || item.site_icon_url;
 		// A manufactured placeholder glyph only earns its keep for a kind
 		// where it stands in for media the reader would otherwise expect —
 		// the media-dominant kinds (image/video/gallery/mixed) plus audio,
@@ -7924,7 +9288,7 @@
 		if (src) {
 			const thumbClass =
 				'daymark-recent__thumb' +
-				(item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
+				(featuredImage || item.thumbnail || item.featured_image_url ? '' : ' daymark-recent__thumb--siteicon');
 			return `<span class="${wrapClass}">${imgWithFallback(
 				src,
 				thumbClass,
@@ -7935,6 +9299,23 @@
 		return `<span class="${wrapClass} daymark-recent__thumb--placeholder" aria-hidden="true"><svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${
 			CARD_KIND_ICONS[kind] || CARD_KIND_ICONS.note
 		}</svg></span>${playButton}`;
+	}
+
+	// A card's title, placed by what its media slot holds. Beside a small
+	// thumbnail (an article's featured image, audio artwork, a site-icon
+	// fallback) the title gets its own full-width line above the thumbnail
+	// row, so it starts at the card's left padding like a thumbnail-less
+	// card's title instead of indented past the thumbnail. A banner kind
+	// (image/gallery/video/mixed, a Checkin map) keeps the title below its
+	// banner, inside .daymark-recent__body. Returns [leadTitle, bodyTitle];
+	// exactly one is non-empty.
+	function renderCardTitle(title, mediaKind, mediaHtml) {
+		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
+		const leads =
+			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind && 'linkpreview' !== mediaKind;
+		return leads
+			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
+			: ['', markup];
 	}
 
 	// The meta line every card kind shares: only when the server resolved
@@ -8075,10 +9456,14 @@
 		// thumbnail-less card's stats (flush with the card's own padding). See
 		// .daymark-recent__footer in app.css for how this wraps onto its own
 		// full-width line regardless of kind.
+		const mediaKind = mediaKindForItem(item, kind);
+		const media = renderCardMedia(item, mediaKind);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media);
 		return `
-					${renderCardMedia(item, mediaKindForItem(item, kind))}
+					${leadTitle}
+					${media}
 					<span class="daymark-recent__body">
-						<span class="daymark-recent__title">${esc(title)}</span>
+						${bodyTitle}
 						<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
@@ -8120,26 +9505,37 @@
 		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
 		const overflowItems = subscriptionOverflowMenuItems(item);
+		// An article with a real featured image shows it as the same
+		// full-width banner an image Mark has, not a small thumbnail beside
+		// the text, so a followed post's photo gets as much room as your
+		// own. Its excerpt still shows (showExcerpt above reads the real
+		// kind), and the rail icon still says "Article".
+		const layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		const media = renderCardMedia(item, layoutKind);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media);
 		return `
 				<div class="daymark-recent__item-wrap">
-					${renderSiteIconButton({
-						iconSrc: item.site_icon_url || '',
-						iconAlt: siteLabel,
-						ariaLabel: sprintf(
-							/* translators: %s: site name */
-							__('Filter Timeline to posts from %s', 'daymark'),
-							siteLabel
-						),
-						filterValue: String(item.subscription_id),
-						siteUrl: item.site_url || '',
-					})}
-					${renderTypeIcon(kind)}
-					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+					${renderLeadColumn(
+						renderSiteIconButton({
+							iconSrc: item.site_icon_url || '',
+							iconAlt: siteLabel,
+							ariaLabel: sprintf(
+								/* translators: %s: site name */
+								__('Filter Timeline to posts from %s', 'daymark'),
+								siteLabel
+							),
+							filterValue: String(item.subscription_id),
+							siteUrl: item.site_url || '',
+						}),
 						kind
+					)}
+					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+						layoutKind
 					)}" data-subpost="${id}">
-						${renderCardMedia(item, kind)}
+						${leadTitle}
+						${media}
 						<span class="daymark-recent__body">
-							<span class="daymark-recent__title">${esc(title)}</span>
+							${bodyTitle}
 							<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
 							${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 						</span>
@@ -8214,12 +9610,50 @@
 		return template.innerHTML;
 	}
 
+	// Removes a remote page's own presentation from cached subscription
+	// HTML: every inline style, and every class token starting with
+	// `daymark-` (a `class="daymark-sheet"` would otherwise become a fixed,
+	// full-screen layer over the app). The server already strips both from
+	// a subscription body it serves (Daymark_Subscription_Poller::
+	// strip_untrusted_presentation()), but a bookmark cached in this
+	// browser's IndexedDB before that existed is rendered offline without
+	// ever asking the server, so it is cleaned again here. Never used for a
+	// Mark's own content, whose Check In map preview legitimately uses a
+	// `daymark-` class and an inline-positioned pin. Parsed through an inert
+	// <template>, so nothing in the markup runs or loads.
+	function stripUntrustedPresentation(html) {
+		if (!html) {
+			return html;
+		}
+		const template = document.createElement('template');
+		template.innerHTML = html;
+		template.content.querySelectorAll('[style]').forEach((el) => {
+			el.removeAttribute('style');
+		});
+		template.content.querySelectorAll('[class]').forEach((el) => {
+			const kept = String(el.getAttribute('class'))
+				.split(/\s+/)
+				.filter((token) => token && !/^daymark-/i.test(token));
+			if (kept.length) {
+				el.setAttribute('class', kept.join(' '));
+			} else {
+				el.removeAttribute('class');
+			}
+		});
+		return template.innerHTML;
+	}
+
 	// A bookmarked item's cached content (see cacheBookmarkOffline()) is
 	// the fallback for both loaders below, only reached on a
 	// connectivity-shaped failure of the live fetch — an actual server
 	// error (a real HTTP response, not a network failure) is rethrown
 	// unchanged rather than silently masked by stale cached content.
-	async function loadExpandHtmlOffline(err, id) {
+	//
+	// Returns the post view's whole HTML, built by `compose` from the cached
+	// content and the cached record (a subscription post's compose strips
+	// the other site's styles and classes itself), with every cached image swapped for its
+	// offline copy (the featured block's images included).
+	async function loadExpandHtmlOffline(err, id, compose) {
 		if (!(err instanceof TypeError) && navigator.onLine) {
 			throw err;
 		}
@@ -8227,7 +9661,48 @@
 		if (!cached || !cached.content) {
 			throw err;
 		}
-		return rewriteContentImagesForOffline(String(cached.content), cached.images);
+		return rewriteContentImagesForOffline(compose(String(cached.content), cached), cached.images);
+	}
+
+	// What the full post view shows above a post's body: its Featured
+	// Content, or else its featured image. For a Mark or ordinary post the
+	// server builds it (GET /marks/{id}/content's `featured`); for a
+	// subscription post it's the feed's own featured image, left out when
+	// the body already shows that image.
+	function postviewFeaturedHtml(html) {
+		return html ? `<div class="daymark-postview-featured">${html}</div>` : '';
+	}
+
+	// Whether `html` already shows the image at `url`. Compares the file
+	// path with its extension and WordPress's "-scaled" and "-1024x768"
+	// suffixes removed, followed by "." or "-", so any resized copy of the
+	// same upload counts (including one served through a CDN host).
+	function contentShowsImage(html, url) {
+		if (!html || !url) {
+			return false;
+		}
+		let path;
+		try {
+			path = new URL(url, window.location.href).pathname;
+		} catch (err) {
+			return html.indexOf(url) !== -1;
+		}
+		const stem = path
+			.replace(/\.[a-z0-9]+$/i, '')
+			.replace(/-scaled$/i, '')
+			.replace(/-\d+x\d+$/, '');
+		if (stem.length < 2) {
+			return false;
+		}
+		return html.indexOf(stem + '.') !== -1 || html.indexOf(stem + '-') !== -1;
+	}
+
+	function subscriptionFeaturedHtml(item, content) {
+		const url = item && item.featured_image_url ? String(item.featured_image_url) : '';
+		if (!url || contentShowsImage(content, url)) {
+			return '';
+		}
+		return postviewFeaturedHtml(`<img class="daymark-postview-featured__img" src="${esc(url)}" alt="" />`);
 	}
 
 	// A Mark or ordinary post's own content — straight from the site's own
@@ -8235,14 +9710,14 @@
 	// down in the first place (unlike a subscription post's external
 	// click-through fetch, below): no comments, no theme chrome, ever.
 	async function loadMarkExpandHtml(item) {
-		let content;
+		const compose = (content, full) =>
+			postviewFeaturedHtml(full && full.featured ? String(full.featured) : '') + expandBodyHtml(content);
 		try {
 			const full = await apiGet('marks/' + item.id + '/content');
-			content = full && full.content ? String(full.content) : '';
+			return compose(full && full.content ? String(full.content) : '', full);
 		} catch (err) {
-			content = await loadExpandHtmlOffline(err, item.id);
+			return loadExpandHtmlOffline(err, item.id, compose);
 		}
-		return expandBodyHtml(content);
 	}
 
 	// Shared by the normal load and a forced refresh (the "Refresh content"
@@ -8256,18 +9731,23 @@
 	// PostScreen's own interaction row now (renderRefreshContentToggle()),
 	// not baked into the loaded content string.
 	async function fetchSubscriptionExpandBody(item, forceRefresh) {
-		let content;
+		// Second layer behind the server's own strip: this is another site's
+		// HTML, so its styles and any daymark- class are removed on the client
+		// too, whichever path (live or cached) it arrived by.
+		const compose = (content) => {
+			const body = stripUntrustedPresentation(content);
+			return subscriptionFeaturedHtml(item, body) + expandBodyHtml(body);
+		};
 		try {
 			const path = 'subscription-posts/' + item.id + (forceRefresh ? '?refresh=1' : '');
 			const full = await apiGet(path);
-			content = full && full.body_content ? String(full.body_content) : '';
+			return compose(full && full.body_content ? String(full.body_content) : '');
 		} catch (err) {
 			if (forceRefresh) {
 				throw err;
 			}
-			content = await loadExpandHtmlOffline(err, item.id);
+			return loadExpandHtmlOffline(err, item.id, compose);
 		}
-		return expandBodyHtml(content);
 	}
 
 	// One-shot hand-off from whichever feed-list screen (Home or Search) a
@@ -8279,6 +9759,89 @@
 	// since #post has no fixed back destination the way Notifications/
 	// Create/Publish do.
 	let pendingPostView = null;
+
+	// What a feed list looked like when one of its cards was opened, so
+	// Back returns the reader to that card instead of the top. Going back
+	// re-renders the screen from scratch, which used to reload only the
+	// first page and land at the top. Holds the screen's hash, every item
+	// it had rendered (on Home, all infinite-scroll pages, in order), that
+	// screen's own state (Home's paging, Search's filters), and where the
+	// tapped card sat on screen. HomeScreen.init(), SearchScreen.init(),
+	// and ExploreScreen.init() (its "On this day" cards) consume it when `hash` matches. Kept in memory only: a reload or a
+	// cold start begins at the top as before. showScreen() discards it
+	// once the reader goes anywhere other than #post/#reblog or back.
+	let feedSnapshot = null;
+
+	function saveFeedSnapshot(screen, trigger) {
+		let hash = '';
+		let extra = null;
+		if (screen === HomeScreen) {
+			hash = '#home';
+			extra = { recentPage: screen.recentPage, recentDone: screen.recentDone };
+		} else if (screen === ExploreScreen) {
+			hash = '#explore';
+		} else if (screen === SearchScreen) {
+			hash = '#search';
+			extra = {
+				query: screen.searchQuery,
+				type: screen.searchType,
+				source: screen.searchSource,
+				bookmarked: screen.searchBookmarked,
+				date: screen.searchDate,
+			};
+		}
+		if (!hash || !Array.isArray(screen._items) || !screen._items.length) {
+			feedSnapshot = null;
+			return;
+		}
+		const card = trigger.closest('.daymark-recent__item-wrap') || trigger;
+		feedSnapshot = Object.assign(
+			{
+				hash,
+				items: screen._items.slice(),
+				anchorSelector: trigger.hasAttribute('data-subpost')
+					? '[data-subpost="' + CSS.escape(trigger.getAttribute('data-subpost')) + '"]'
+					: '[data-expand-post="' + CSS.escape(trigger.getAttribute('data-expand-post')) + '"]',
+				anchorTop: card.getBoundingClientRect().top,
+				scrollY: window.scrollY,
+			},
+			extra
+		);
+	}
+
+	// Drop the saved snapshot after an action that changes what the list
+	// should show: unsubscribing from a site (its posts must leave the
+	// list), or publishing or removing one of your own Marks from the post
+	// view (a reblog, a Webmention comment, undoing a reblog). The screen
+	// then reloads on Back, as it did before snapshots existed.
+	function discardFeedSnapshot() {
+		feedSnapshot = null;
+	}
+
+	// Hand a screen its saved snapshot, once, if it was saved for it.
+	function takeFeedSnapshot(hash) {
+		const snapshot = feedSnapshot && feedSnapshot.hash === hash ? feedSnapshot : null;
+		feedSnapshot = null;
+		return snapshot;
+	}
+
+	// Scroll so the opened card sits where it was when it was tapped,
+	// falling back to the saved scroll offset if it can't be found.
+	// `focusCard` moves keyboard focus back to that card, matching where
+	// a screen-reader or keyboard user left off.
+	function scrollFeedToAnchor(snapshot, focusCard) {
+		const card = root.querySelector(snapshot.anchorSelector);
+		if (!card || !card.isConnected) {
+			window.scrollTo(0, snapshot.scrollY);
+			return;
+		}
+		const wrap = card.closest('.daymark-recent__item-wrap') || card;
+		const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
+		window.scrollTo(0, Math.max(0, top));
+		if (focusCard) {
+			card.focus({ preventScroll: true });
+		}
+	}
 
 	function openPostView(kind, item) {
 		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };
@@ -8389,6 +9952,8 @@
 			this._byMarkId = new Map();
 			this._bySubId = new Map();
 			rememberItem(this, this.view.item);
+			teardownLikeAvailabilityObserver(this);
+			observeLikeAvailability(this, root.querySelector('.daymark-postview-meta'));
 			await this.load(false);
 		},
 
@@ -8413,7 +9978,15 @@
 						: await loadMarkExpandHtml(item);
 				if (body.isConnected) {
 					body.innerHTML = html || expandErrorHtml();
+					// A Featured Content gallery's slider (assets/featured-content.js,
+					// loaded by the app shell) only scans the page once, at load.
+					if (window.daymarkFeaturedGallery) {
+						body.querySelectorAll('[data-daymark-gallery]').forEach((gallery) =>
+							window.daymarkFeaturedGallery.init(gallery)
+						);
+					}
 					this.maybeLoadOembedPreview(kind, item, body);
+					this.maybeShowFeaturedLinkPreview(kind, item, body);
 				}
 			} catch (err) {
 				if (body.isConnected) {
@@ -8433,6 +10006,40 @@
 		// result, a network error, or the view having already navigated
 		// away by the time the fetch resolves) — there is no error state
 		// worth surfacing for an optional enhancement like this one.
+		// A link Featured Content arrives as a bare link to the page's site
+		// (Daymark_Featured_Content::render_link()). Here it becomes a
+		// preview card of the linked page (image, title, description, site),
+		// the same clickable card a followed post's link gets, using the
+		// preview the Timeline data already carried or fetching it once. A
+		// page with no Open Graph title keeps the bare link.
+		async maybeShowFeaturedLinkPreview(kind, item, body) {
+			const fc = item.featured_content;
+			const slot = body.querySelector('.daymark-postview-featured');
+			if ('mark' !== kind || !fc || 'link' !== fc.type || !fc.url || !slot) {
+				return;
+			}
+			let preview = fc.preview;
+			if (!preview) {
+				try {
+					const result = await apiGet('marks/' + item.id + '/featured-content-link');
+					preview = result && result.preview;
+					if (preview) {
+						fc.preview = preview;
+					}
+				} catch (err) {
+					return;
+				}
+			}
+			if (!preview || !preview.title || !slot.isConnected) {
+				return;
+			}
+			slot.innerHTML = `<a class="daymark-oembed-preview daymark-oembed-preview--link" href="${esc(
+				fc.url
+			)}" target="_blank" rel="noopener noreferrer">${oembedLinkPreviewInnerHtml(
+				Object.assign({}, preview, { site: fc.host || '' })
+			)}</a>`;
+		},
+
 		maybeLoadOembedPreview(kind, item, body) {
 			if ('sub' !== kind || !item.link_url || 'link' !== resolveCardKind(item)) {
 				return;
@@ -8535,15 +10142,9 @@
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(__('Reblog', 'daymark'))}</h1>
+				<h1 class="daymark-topbar__title" tabindex="-1">${esc(__('Reblog', 'daymark'))}</h1>
 			</header>
 			<section class="daymark-screen">
-				<div class="daymark-field">
-					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
-					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
-						defaultTitle
-					)}" />
-				</div>
 				<div class="daymark-field">
 					<div class="daymark-field__label">${esc(__('Reblogged post', 'daymark'))}</div>
 					<blockquote class="daymark-reblog-quote">
@@ -8555,9 +10156,21 @@
 				</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-reblog-comment">${esc(__('Your thoughts', 'daymark'))}</label>
+					<p class="daymark-field__help" id="daymark-reblog-comment-help">${esc(
+						__(
+							"Say why you're sharing this. A reblog with your own words reads better and gives people something to reply to.",
+							'daymark'
+						)
+					)}</p>
 					<textarea id="daymark-reblog-comment" class="daymark-textarea" rows="4" placeholder="${esc(
-						__('Add your own thoughts (optional)…', 'daymark')
-					)}" data-reblog-comment></textarea>
+						__('What do you think of it?', 'daymark')
+					)}" aria-describedby="daymark-reblog-comment-help" data-reblog-comment data-daymark-focus></textarea>
+				</div>
+				<div class="daymark-field">
+					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
+					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
+						defaultTitle
+					)}" />
 				</div>
 			</section>
 			<footer class="daymark-actionbar">
@@ -8570,6 +10183,19 @@
 
 		bindEvents() {
 			root.querySelector('[data-action="reblog-publish"]').addEventListener('click', () => this.submit());
+			// Typing anything takes the screen back out of the "no thoughts
+			// yet" second-tap state (see submit()).
+			root.querySelector('[data-reblog-comment]').addEventListener('input', () => this.resetNudge());
+		},
+
+		// Back to the ordinary Publish button after the nudge was shown.
+		resetNudge() {
+			if (!this.nudged) {
+				return;
+			}
+			this.nudged = false;
+			root.querySelector('[data-reblog-status]').textContent = '';
+			root.querySelector('[data-action="reblog-publish"]').textContent = __('Publish', 'daymark');
 		},
 
 		// showScreen()'s own guard already redirects a direct/refreshed
@@ -8579,6 +10205,7 @@
 			const hand = pendingReblog;
 			this.item = hand ? hand.item : {};
 			this.returnTo = hand ? hand.returnTo : '#home';
+			this.nudged = false;
 			pendingReblog = null;
 		},
 
@@ -8586,7 +10213,21 @@
 			const button = root.querySelector('[data-action="reblog-publish"]');
 			const status = root.querySelector('[data-reblog-status]');
 			const title = root.querySelector('[data-reblog-title]').value.trim();
-			const comment = root.querySelector('[data-reblog-comment]').value.trim();
+			const commentField = root.querySelector('[data-reblog-comment]');
+			const comment = commentField.value.trim();
+
+			// Encouraged, not required: with nothing written, the first tap
+			// asks once and the second tap reblogs anyway.
+			if ('' === comment && !this.nudged) {
+				this.nudged = true;
+				status.textContent = __(
+					'Add a line about why you are sharing this? Or tap again to reblog without one.',
+					'daymark'
+				);
+				button.textContent = __('Reblog without comment', 'daymark');
+				commentField.focus();
+				return;
+			}
 
 			button.disabled = true;
 			button.textContent = __('Publishing…', 'daymark');
@@ -8604,11 +10245,13 @@
 			try {
 				const mark = await apiUpload('marks', formData);
 				this.item.reposted_mark_id = mark.id;
+				discardFeedSnapshot();
 				navigate(this.returnTo);
 			} catch (err) {
 				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
 				button.disabled = false;
 				button.textContent = __('Publish', 'daymark');
+				this.nudged = false;
 			}
 		},
 	};
@@ -9350,6 +10993,9 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
+			if ('jetpack_like' === item.type) {
+				return this.renderJetpackLikeItem(item);
+			}
 
 			const text = toPlainText(item.comment_content);
 			const long = text.length > 140;
@@ -9391,7 +11037,10 @@
 					${
 						item.source_url
 							? `<a class="daymark-note-card__link" href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(
-									__('↗ View on network', 'daymark')
+									// A quote post is the quoter's own post, not a reply on a network.
+									'quote' === item.comment_kind
+										? __('↗ View their post', 'daymark')
+										: __('↗ View on network', 'daymark')
 							  )}</a>`
 							: ''
 					}
@@ -9464,11 +11113,46 @@
 				)}</span>
 				<p class="daymark-note-card__text">${esc(siteLabel)}</p>
 				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				<div class="daymark-note-card__links">
-					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl || '#')}">${esc(
-						__('→ Manage subscriptions', 'daymark')
-					)}</a>
-				</div>
+				${
+					config.adminSubscriptionsUrl
+						? `<div class="daymark-note-card__links">
+					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl)}">${esc(
+								__('→ Manage subscriptions', 'daymark')
+						  )}</a>
+				</div>`
+						: ''
+				}
+			</article>`;
+		},
+
+		// A WordPress.com like on one of your own Marks. Jetpack keeps these
+		// on WordPress.com rather than as comments on your site, so the
+		// server pulls them in separately
+		// (Daymark_Jetpack_Engagement::sync_own_likes()). It carries the
+		// same post_id/source fields as a comment, so it groups into that
+		// Mark's conversation card and the source filter like any reply —
+		// just with nothing to reply to.
+		renderJetpackLikeItem(item) {
+			const name = item.author || __('Someone', 'daymark');
+			const when = item.date ? relativeTime(item.date) : '';
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip">${esc(item.source_label || __('WordPress.com', 'daymark'))}</span>
+				<p class="daymark-note-card__text">${esc(
+					sprintf(
+						/* translators: %s: name of the person who liked the Mark */
+						__('%s liked this', 'daymark'),
+						name
+					)
+				)}</p>
+				${when ? `<p class="daymark-note-card__meta">${esc(when)}</p>` : ''}
+				${
+					item.author_url
+						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+								item.author_url
+						  )}" target="_blank" rel="noopener">${esc(__('↗ View profile', 'daymark'))}</a></div>`
+						: ''
+				}
 			</article>`;
 		},
 
@@ -9767,6 +11451,14 @@
 	// /daymark navigation any other cold load gets. Nothing already queued
 	// is lost: IndexedDB survives the reload and flushes again on the very
 	// next boot, same as this listener already does below.
+	// Save the newest Timeline card seen before the app is hidden or
+	// closed, rather than losing the last debounced save.
+	document.addEventListener('visibilitychange', () => {
+		if ('hidden' === document.visibilityState) {
+			flushLastSeenSave(true);
+		}
+	});
+
 	window.addEventListener('online', () => {
 		if (config.offlineShell) {
 			window.location.reload();

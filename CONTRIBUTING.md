@@ -176,6 +176,13 @@ stubbed AT Protocol API — see the setup notes at the top of
   capability check before any write, nonce verified via the `X-WP-Nonce`
   header, inputs sanitized, output escaped, MIME validated from file content
   (not the extension), and no unauthenticated publishing endpoints.
+- **Send outside data through the outbound guard, and list it.** Every request
+  Daymark makes to another server goes through `Daymark_Outbound_Guard`
+  (`get()`, `post()`, or `run()`), which checks the address and every
+  redirect; a test fails on any call that doesn't. A new outbound call, or new
+  data sent on an existing one, also needs an entry under "External services"
+  in `readme.txt` saying what is sent, when, and where its terms and privacy
+  policy are.
 - **Rate-limit expensive endpoints.** AI calls, publish, autosave, and manual
   sync actions go through `Daymark_Rate_Limiter` (see `rate_limit()` in the
   REST controller); a new expensive endpoint should, too. Composer autosave
@@ -274,7 +281,11 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    pass before merge. (Hooks Docs runs after merge — see above.) On a PR
    from a first-time contributor, GitHub holds workflow runs for maintainer
    approval before they start — if CI doesn't appear to run right away,
-   that's why; a maintainer will approve it, not ignore it.
+   that's why; a maintainer will approve it, not ignore it. A PR that
+   changes only documentation (Markdown files, `readme.txt`, `docs/`, or
+   `LICENSE`) skips the heavy Tests steps and reports the same required
+   checks within seconds; anything else runs the full suite. A newer push
+   to the same PR cancels the run still going for the previous commit.
 3. **Add or update tests** alongside behavior changes (PHPUnit for
    PHP/REST, Playwright for user-facing flows).
 4. **Write clear commit messages** with an imperative subject line
@@ -282,6 +293,10 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    isn't obvious.
 5. **Update docs** (`README.md`, `readme.txt`, and this file) when you
    change user-facing behavior or the development workflow.
+   If you add a new Mark type or Featured Content kind, also add a sample
+   of it to `.github/blueprints/seed-sample-content.php` so reviewers can
+   try it in the pull request's Playground preview (sample photos live in
+   `.github/blueprints/sample-images/`).
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
    permanent git history. Say what changed and why, and delete the
@@ -402,10 +417,12 @@ publishes the GitHub release (`.github/workflows/release.yml`).
    - Re-run the full [test suite](#testing) after updating.
    - Note any held-back updates (and why) in the release notes or a
      `DEPENDENCIES.md` so it is not re-litigated next release.
-2. **Open a release PR** that bumps the version in all four places — the
+2. **Open a release PR** that bumps the version in all of these places — the
    `Version:` header and `DAYMARK_VERSION` in `daymark.php`, `Stable tag:` in
-   `readme.txt`, and `package.json`. The release workflow fails the build if
-   these disagree with the tag. Also update `SECURITY.md`'s supported-versions
+   `readme.txt`, `version` in `package.json`, and both `version` fields at the
+   top of `package-lock.json` (the top-level one and the one under
+   `packages[""]`). The release workflow fails the build if any of these
+   disagree with the tag. Also update `SECURITY.md`'s supported-versions
    table to the new version — this one is not build-enforced, so it drifts
    silently if skipped (it sat at `0.6.x` for several releases before this
    note was added).

@@ -105,6 +105,20 @@ $daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_re
  * shell free of theme and admin chrome.
  */
 wp_register_style( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.css', array(), DAYMARK_VERSION );
+// Featured Content's own front-end styles and gallery slider, so a post's
+// Featured Content looks and behaves the same at the top of the full post
+// view as on the post's own page.
+wp_register_style( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/featured-content.css', array(), DAYMARK_VERSION );
+wp_register_script(
+	'daymark-featured-content',
+	DAYMARK_PLUGIN_URL . 'assets/featured-content.js',
+	array(),
+	DAYMARK_VERSION,
+	array(
+		'in_footer' => true,
+		'strategy'  => 'defer',
+	)
+);
 wp_register_script(
 	'daymark-app',
 	DAYMARK_PLUGIN_URL . 'assets/app.js',
@@ -133,17 +147,39 @@ wp_add_inline_script(
 	'before'
 );
 
-// Matches the script-src nonce above onto specific inline scripts only
-// (id format per WP_Scripts::get_inline_script_tag(): "{handle}-js-{position}") —
-// every other inline script on the page, if any, is untouched. Covers both
-// the bootstrap config above and the "daymark-app-js-translations" block
-// wp_set_script_translations() (see above) prints through the same
-// mechanism — without this, our own strict script-src (no 'unsafe-inline')
-// would silently block the translation data from ever reaching wp.i18n.
+// Puts the script-src nonce above on every inline script WordPress prints
+// for the app script and its dependencies. WP_Scripts::get_inline_script_tag()
+// gives each one the id "{handle}-js-{position}", where position is "before",
+// "after", or "translations". This covers the bootstrap config above, the
+// translations block from wp_set_script_translations(), and the inline
+// scripts core attaches to dependencies. One example is wp-i18n's
+// "wp-i18n-js-after", which sets the locale's text direction. Without the
+// nonce, the strict script-src (no 'unsafe-inline') blocks each of them.
+// Inline scripts for any other handle stay untouched.
+$daymark_csp_handles = array();
+$daymark_csp_queue   = array( 'daymark-app' );
+while ( $daymark_csp_queue ) {
+	$daymark_csp_handle = array_shift( $daymark_csp_queue );
+	if ( isset( $daymark_csp_handles[ $daymark_csp_handle ] ) ) {
+		continue;
+	}
+	$daymark_csp_handles[ $daymark_csp_handle ] = true;
+	$daymark_csp_script                         = wp_scripts()->query( $daymark_csp_handle, 'registered' );
+	if ( $daymark_csp_script ) {
+		$daymark_csp_queue = array_merge( $daymark_csp_queue, $daymark_csp_script->deps );
+	}
+}
+$daymark_csp_inline_ids = array();
+foreach ( array_keys( $daymark_csp_handles ) as $daymark_csp_handle ) {
+	foreach ( array( 'before', 'after', 'translations' ) as $daymark_csp_position ) {
+		$daymark_csp_inline_ids[ "{$daymark_csp_handle}-js-{$daymark_csp_position}" ] = true;
+	}
+}
+
 add_filter(
 	'wp_inline_script_attributes',
-	static function ( array $attributes ) use ( $daymark_csp_nonce ): array {
-		if ( isset( $attributes['id'] ) && in_array( $attributes['id'], array( 'daymark-app-js-before', 'daymark-app-js-translations' ), true ) ) {
+	static function ( array $attributes ) use ( $daymark_csp_nonce, $daymark_csp_inline_ids ): array {
+		if ( isset( $attributes['id'] ) && isset( $daymark_csp_inline_ids[ $attributes['id'] ] ) ) {
 			$attributes['nonce'] = $daymark_csp_nonce;
 		}
 
@@ -170,7 +206,7 @@ wp_enqueue_script( 'daymark-app' );
 	<?php /* Home-screen icon (issue #414): always Daymark's own icon, never the site's Site Icon — a home-screen install is an install of Daymark, not of the site. Browser-tab favicon still prefers the Site Icon so an open tab matches the site. */ ?>
 	<link rel="apple-touch-icon" href="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 180 ) ); ?>" />
 	<link rel="icon" href="<?php echo esc_url( Daymark_Routes::icon_url( 32 ) ); ?>" sizes="32x32" />
-	<?php wp_print_styles( array( 'daymark-app' ) ); ?>
+	<?php wp_print_styles( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </head>
 <body class="daymark-app daymark-app--<?php echo esc_attr( $daymark_screen ); ?>">
 	<div id="daymark-app" class="daymark-shell">
@@ -179,6 +215,6 @@ wp_enqueue_script( 'daymark-app' );
 	<noscript>
 		<p class="daymark-noscript"><?php esc_html_e( 'Daymark needs JavaScript. Please enable it and reload.', 'daymark' ); ?></p>
 	</noscript>
-	<?php wp_print_scripts( array( 'daymark-app' ) ); ?>
+	<?php wp_print_scripts( array( 'daymark-featured-content', 'daymark-app' ) ); ?>
 </body>
 </html>
