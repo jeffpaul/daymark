@@ -595,6 +595,9 @@ class Daymark_Routes {
 			// Home can open anchored on it with newer posts above — see
 			// Daymark_Timeline_Position.
 			'timelineLastSeen'       => Daymark_Timeline_Position::get( (int) $user->ID ),
+			// Interaction-row hint keys this user has already seen on any
+			// device — see Daymark_Interaction_Hints.
+			'interactionHintsSeen'   => Daymark_Interaction_Hints::get_seen( (int) $user->ID ),
 			'pendingDraftId'         => $pending_draft_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
