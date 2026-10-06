@@ -190,9 +190,9 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'Big news today.', $normalized['excerpt'] );
 	}
 
-	/** normalize() maps WordPress post_format values with no dedicated Daymark bucket (aside/link/quote) down to 'standard'. */
+	/** normalize() maps a WordPress post_format with no Daymark equivalent down to 'standard'. */
 	public function test_normalize_maps_unmapped_formats_to_standard() {
-		foreach ( array( 'aside', 'link', 'quote', 'standard', 'unknown-future-format' ) as $wp_format ) {
+		foreach ( array( 'standard', 'unknown-future-format' ) as $wp_format ) {
 			$normalized = $this->source->normalize(
 				array(
 					'title'  => array( 'rendered' => 'Item' ),
@@ -204,9 +204,9 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		}
 	}
 
-	/** normalize() maps WordPress's status/chat post_format values to Daymark's own 'note' bucket, not 'standard'. */
-	public function test_normalize_maps_status_and_chat_formats_to_note() {
-		foreach ( array( 'status', 'chat' ) as $wp_format ) {
+	/** normalize() maps WordPress's status/chat/aside post_format values to Daymark's own 'note' bucket (aside: issue #168). */
+	public function test_normalize_maps_status_chat_and_aside_formats_to_note() {
+		foreach ( array( 'status', 'chat', 'aside' ) as $wp_format ) {
 			$normalized = $this->source->normalize(
 				array(
 					'title'  => array( 'rendered' => 'Item' ),
@@ -216,6 +216,49 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 
 			$this->assertSame( 'note', $normalized['post_format'], "format '$wp_format' should map to 'note'" );
 		}
+	}
+
+	/** A link-format post keeps 'link' and finds the page it links to, even with an inline image (issue #168). */
+	public function test_normalize_keeps_link_format_and_detects_its_link() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Worth reading' ),
+				'format'  => 'link',
+				'link'    => 'https://jane.example/2024/worth-reading/',
+				'content' => array( 'rendered' => '<p><img src="https://jane.example/pic.jpg" /> <a href="https://jane.example/about/">me</a> <a href="https://news.example/story">A story</a></p>' ),
+			)
+		);
+
+		$this->assertSame( 'link', $normalized['post_format'] );
+		$this->assertSame( 'https://news.example/story', $normalized['link_url'] );
+	}
+
+	/** A quote-format post keeps 'quote' and carries its blockquote and cite (issue #168). */
+	public function test_normalize_keeps_quote_format_with_its_quote() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'On writing' ),
+				'format'  => 'quote',
+				'content' => array( 'rendered' => '<blockquote class="wp-block-quote"><p>Write every day.</p><cite>Ada Lovelace</cite></blockquote>' ),
+			)
+		);
+
+		$this->assertSame( 'quote', $normalized['post_format'] );
+		$this->assertSame( 'Write every day.', $normalized['quote_text'] );
+		$this->assertSame( 'Ada Lovelace', $normalized['quote_credit'] );
+	}
+
+	/** Only a quote-format post carries quote fields. */
+	public function test_normalize_gives_no_quote_for_other_formats() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'   => array( 'rendered' => 'Not a quote post' ),
+				'format'  => 'standard',
+				'content' => array( 'rendered' => '<blockquote><p>Quoted in passing.</p></blockquote>' ),
+			)
+		);
+
+		$this->assertSame( '', $normalized['quote_text'] );
 	}
 
 	/** normalize() passes through every real Daymark-mapped format unchanged. */

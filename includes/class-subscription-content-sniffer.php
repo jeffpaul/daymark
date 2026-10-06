@@ -85,6 +85,103 @@ class Daymark_Subscription_Content_Sniffer {
 	public const GALLERY_MAX_IMAGES = 20;
 
 	/**
+	 * The most characters of a quote post's quote kept for its card.
+	 *
+	 * @var int
+	 */
+	public const QUOTE_MAX_CHARS = 280;
+
+	/**
+	 * Map a WordPress post format (from `wp/v2/posts`, or one the Friends
+	 * plugin assigned) onto Daymark's own `post_format` vocabulary. Shared
+	 * by Daymark_Subscription_Source_WordPress and
+	 * Daymark_Subscription_Source_Friends so the two can't drift.
+	 *
+	 * - image/video/audio/gallery pass through.
+	 * - status/chat/aside become `note`. WordPress defines all three as a
+	 *   short update, usually untitled (issue #168 added aside).
+	 * - link and quote keep their own names (issue #168): the app shows a
+	 *   link post as its Link card with a preview of the linked page, and a
+	 *   quote post with its quote in a banner (see quote()).
+	 * - Anything else, including no format, is `standard`.
+	 *
+	 * @param string $format WordPress post format slug.
+	 * @return string
+	 */
+	public static function wordpress_format( string $format ): string {
+		$format = sanitize_key( $format );
+
+		if ( in_array( $format, array( 'image', 'video', 'audio', 'gallery', 'link', 'quote' ), true ) ) {
+			return $format;
+		}
+
+		if ( in_array( $format, array( 'status', 'chat', 'aside' ), true ) ) {
+			return 'note';
+		}
+
+		return 'standard';
+	}
+
+	/**
+	 * A quote post's quote and its credit (issue #168): the text of the
+	 * first `<blockquote>` in the content, and the text of a `<cite>`
+	 * inside it, else the first `<cite>` after it. The cite is removed from
+	 * the quote text so the credit isn't shown twice. Both are plain text;
+	 * the quote is cut to QUOTE_MAX_CHARS with an ellipsis. A post with no
+	 * blockquote gives two empty strings, and the app falls back to the
+	 * post's excerpt.
+	 *
+	 * @param string $html Content HTML (untrusted).
+	 * @return array{text: string, credit: string}
+	 */
+	public static function quote( string $html ): array {
+		$empty = array(
+			'text'   => '',
+			'credit' => '',
+		);
+
+		if ( ! preg_match( '#<blockquote\b[^>]*>(.*?)</blockquote>#is', $html, $match, PREG_OFFSET_CAPTURE ) ) {
+			return $empty;
+		}
+
+		$inner  = (string) $match[1][0];
+		$credit = '';
+
+		if ( preg_match( '#<cite\b[^>]*>(.*?)</cite>#is', $inner, $cite ) ) {
+			$credit = $cite[1];
+			$inner  = str_replace( $cite[0], ' ', $inner );
+		} elseif ( preg_match( '#<cite\b[^>]*>(.*?)</cite>#is', substr( $html, (int) $match[0][1] + strlen( (string) $match[0][0] ) ), $cite ) ) {
+			$credit = $cite[1];
+		}
+
+		// Paragraph and line breaks become spaces before the tags go.
+		$inner = preg_replace( '#<(?:/p|br\s*/?)>#i', ' ', $inner );
+		$text  = self::plain( (string) $inner );
+
+		if ( function_exists( 'mb_strlen' ) && mb_strlen( $text ) > self::QUOTE_MAX_CHARS ) {
+			$text = rtrim( mb_substr( $text, 0, self::QUOTE_MAX_CHARS - 1 ) ) . "\u{2026}";
+		}
+
+		return array(
+			'text'   => $text,
+			// A leading dash ("— Ada") is punctuation, not part of the name.
+			'credit' => (string) preg_replace( '/^[\s\-\x{2013}\x{2014}]+/u', '', self::plain( $credit ) ),
+		);
+	}
+
+	/**
+	 * Plain, single-line text of an HTML fragment.
+	 *
+	 * @param string $html Fragment.
+	 * @return string
+	 */
+	private static function plain( string $html ): string {
+		$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES, 'UTF-8' );
+
+		return sanitize_text_field( trim( (string) preg_replace( '/\s+/u', ' ', $text ) ) );
+	}
+
+	/**
 	 * A gallery post's distinct image URLs, for its Timeline card's 2x2 grid.
 	 *
 	 * `$known` (images a source already found in structured data, such as

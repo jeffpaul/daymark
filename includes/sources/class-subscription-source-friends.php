@@ -60,26 +60,15 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 	private const POSTS_PER_PAGE = 20;
 
 	/**
-	 * WordPress post_format values with a dedicated Daymark post_format
-	 * bucket; everything else not in DAYMARK_NOTE_FORMATS either (including
-	 * no format at all) maps to 'standard'. Matches
-	 * Daymark_Subscription_Source_WordPress's own list and the "no natural
-	 * equivalent" treatment issue #84's own unmapped h-entry post types get.
+	 * Post formats that carry media of their own, so a post without a
+	 * thumbnail still looks in its content for an image to show. Matches
+	 * Daymark_Subscription_Source_WordPress's own list; the full format
+	 * mapping is Daymark_Subscription_Content_Sniffer::wordpress_format().
 	 *
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
 
-	/**
-	 * WordPress post_format values mapped to Daymark's own `note` bucket —
-	 * matches Daymark_Subscription_Source_WordPress's own list; see that
-	 * class's DAYMARK_NOTE_FORMATS docblock for why `status`/`chat` get
-	 * their own bucket while `aside`/`link`/`quote` still collapse to
-	 * `standard`.
-	 *
-	 * @var string[]
-	 */
-	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -197,6 +186,7 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 				'published_at' => $post->post_date_gmt,
 				'author_name'  => (string) $user->display_name,
 				'post_format'  => (string) get_post_format( $post->ID ),
+				'reblog'       => $this->is_reblog( $post->ID ),
 			);
 		}
 
@@ -248,13 +238,7 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		$permalink    = esc_url_raw( (string) ( $raw_item['permalink'] ?? '' ) );
 		$published_at = $this->sanitize_datetime( (string) ( $raw_item['published_at'] ?? '' ) );
 
-		$format = sanitize_key( (string) ( $raw_item['post_format'] ?? '' ) );
-
-		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
-			$format = 'note';
-		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
-			$format = 'standard';
-		}
+		$format = Daymark_Subscription_Content_Sniffer::wordpress_format( (string) ( $raw_item['post_format'] ?? '' ) );
 
 		$featured_image_url = '';
 
@@ -287,7 +271,9 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 		$link_url             = '';
 		$wants_image_fallback = '' === $featured_image_url && in_array( $format, self::DAYMARK_MEDIA_FORMATS, true );
 
-		if ( 'standard' === $format || $wants_image_fallback ) {
+		// A link post is about the page it links to, so it needs that link
+		// for its card's preview too (issue #168), but no format guessing.
+		if ( 'standard' === $format || 'link' === $format || $wants_image_fallback ) {
 			$content_html = (string) ( $raw_item['content'] ?? '' );
 			$exclude_host = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
 			$sniffed      = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
@@ -298,7 +284,9 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 				if ( '' !== $sniffed_format ) {
 					$format = $sniffed_format;
 				}
+			}
 
+			if ( 'standard' === $format || 'link' === $format ) {
 				$link_url = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 			}
 
@@ -320,6 +308,14 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 			}
 		}
 
+		// A quote post's quote and credit, for its card's quote banner.
+		$quote = 'quote' === $format
+			? Daymark_Subscription_Content_Sniffer::quote( (string) ( $raw_item['content'] ?? '' ) )
+			: array(
+				'text'   => '',
+				'credit' => '',
+			);
+
 		return array(
 			'title'              => $title,
 			'excerpt'            => $excerpt,
@@ -334,7 +330,31 @@ class Daymark_Subscription_Source_Friends implements Daymark_Subscription_Source
 			// docblock — only ever set for a 'standard'-format post with no
 			// confirmed media, matching the feed source's own treatment.
 			'link_url'           => $link_url,
+			'quote_text'         => $quote['text'],
+			'quote_credit'       => $quote['credit'],
+		) + Daymark_Subscription_Interaction::sanitize(
+			// A friend's fediverse boost is a reblog of the post it carries
+			// (issue #168); Friends caches the boosted post itself, so the
+			// reblogged post is this item's own permalink.
+			! empty( $raw_item['reblog'] ) ? 'repost' : '',
+			$permalink
 		);
+	}
+
+	/**
+	 * Whether a cached post is a fediverse boost. Friends' ActivityPub feed
+	 * parser stores an `activitypub` post meta array with `reblog` set for
+	 * one (read from the akirk/friends source,
+	 * `feed-parsers/class-feed-parser-activitypub.php`; not checked against
+	 * a live install).
+	 *
+	 * @param int $post_id Cached post ID.
+	 * @return bool
+	 */
+	private function is_reblog( int $post_id ): bool {
+		$meta = get_post_meta( $post_id, 'activitypub', true );
+
+		return is_array( $meta ) && ! empty( $meta['reblog'] );
 	}
 
 	/**

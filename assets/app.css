@@ -1211,6 +1211,35 @@ h2[tabindex='-1']:focus {
 	min-width: 0;
 }
 
+/* A followed post's context line (renderInteractionContext(), app.js,
+   issue #168): "Reblogged from example.com" and the like, first in the
+   card and on its own full line, quiet like the meta line. A banner
+   kind's card has no padding of its own, so the line brings its own. */
+.daymark-recent__context {
+	display: flex;
+	flex-basis: 100%;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+	text-align: left;
+	overflow-wrap: anywhere;
+}
+
+.daymark-recent__context svg {
+	flex-shrink: 0;
+}
+
+.daymark-recent__item--image > .daymark-recent__context,
+.daymark-recent__item--gallery > .daymark-recent__context,
+.daymark-recent__item--video > .daymark-recent__context,
+.daymark-recent__item--mixed > .daymark-recent__context,
+.daymark-recent__item--quote > .daymark-recent__context,
+.daymark-recent__item--linkpreview > .daymark-recent__context {
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+}
+
 .daymark-recent__meta {
 	font-size: 13px;
 	color: var(--daymark-text-muted);

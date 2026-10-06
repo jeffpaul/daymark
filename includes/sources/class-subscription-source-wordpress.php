@@ -14,11 +14,11 @@
  * confirmed (most WordPress sites never assign a post format at all), so
  * normalize() still falls back to that same shared content sniffer for a
  * `standard`-reporting post, the same way Daymark_Subscription_Source_Friends
- * does for a cached post with no Friends-assigned format. `status` and
- * `chat` map to Daymark's own `note` bucket (added after the
- * "Subscription type-mapping audit" flagged this vocabulary gap) rather
- * than collapsing to `standard` like `aside`/`link`/`quote` still do — see
- * DAYMARK_NOTE_FORMATS.
+ * does for a cached post with no Friends-assigned format. Every other
+ * format maps through Daymark_Subscription_Content_Sniffer::
+ * wordpress_format(), shared with the Friends source: `status`, `chat`,
+ * and `aside` become a `note`, and `link` and `quote` keep their names
+ * (issue #168).
  *
  * Registered first in
  * Daymark_Subscription_Source_Registry::register_built_in_sources() — ahead
@@ -61,26 +61,13 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 	private const POSTS_PER_PAGE = 20;
 
 	/**
-	 * WordPress post_format values with no dedicated Daymark post_format
-	 * bucket. Mapped down to 'standard' in normalize() — the same "no
-	 * natural equivalent" treatment issue #84's h-entry post types
-	 * (reply/like/repost/bookmark/rsvp) already get.
+	 * Post formats that carry media of their own, so a post without a
+	 * featured-media embed still looks in its content for an image to show.
 	 *
 	 * @var string[]
 	 */
 	private const DAYMARK_MEDIA_FORMATS = array( 'image', 'video', 'audio', 'gallery' );
 
-	/**
-	 * WordPress post_format values mapped to Daymark's own `note` bucket —
-	 * `aside`/`link`/`quote` still map down to `standard` (see
-	 * DAYMARK_MEDIA_FORMATS's own docblock); `status` and `chat` are close
-	 * enough in spirit to a Daymark Note (a short, timestamped text update,
-	 * no dedicated media of its own) that they get their own real bucket
-	 * instead of also collapsing to `standard`.
-	 *
-	 * @var string[]
-	 */
-	private const DAYMARK_NOTE_FORMATS = array( 'status', 'chat' );
 
 	/**
 	 * Source ID.
@@ -269,13 +256,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$published_at = $this->sanitize_datetime( (string) ( $raw_item['date_gmt'] ?? '' ) );
 		$permalink    = esc_url_raw( (string) ( $raw_item['link'] ?? '' ) );
 
-		$format = sanitize_key( (string) ( $raw_item['format'] ?? 'standard' ) );
-
-		if ( in_array( $format, self::DAYMARK_NOTE_FORMATS, true ) ) {
-			$format = 'note';
-		} elseif ( ! in_array( $format, self::DAYMARK_MEDIA_FORMATS, true ) ) {
-			$format = 'standard';
-		}
+		$format = Daymark_Subscription_Content_Sniffer::wordpress_format( (string) ( $raw_item['format'] ?? 'standard' ) );
 
 		$featured_image_url = '';
 
@@ -310,7 +291,9 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 		$link_url             = '';
 		$wants_image_fallback = '' === $featured_image_url && in_array( $format, self::DAYMARK_MEDIA_FORMATS, true );
 
-		if ( 'standard' === $format || $wants_image_fallback ) {
+		// A link post is about the page it links to, so it needs that link
+		// for its card's preview too (issue #168), but no format guessing.
+		if ( 'standard' === $format || 'link' === $format || $wants_image_fallback ) {
 			$content_html = (string) ( $raw_item['content']['rendered'] ?? '' );
 			$exclude_host = '' !== $permalink ? (string) ( wp_parse_url( $permalink, PHP_URL_HOST ) ?? '' ) : '';
 			$sniffed      = Daymark_Subscription_Content_Sniffer::sniff( $content_html, $exclude_host );
@@ -321,7 +304,9 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 				if ( '' !== $sniffed_format ) {
 					$format = $sniffed_format;
 				}
+			}
 
+			if ( 'standard' === $format || 'link' === $format ) {
 				$link_url = '' !== $sniffed['link_url'] ? esc_url_raw( $sniffed['link_url'] ) : '';
 			}
 
@@ -343,6 +328,14 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			}
 		}
 
+		// A quote post's quote and credit, for its card's quote banner.
+		$quote = 'quote' === $format
+			? Daymark_Subscription_Content_Sniffer::quote( (string) ( $raw_item['content']['rendered'] ?? '' ) )
+			: array(
+				'text'   => '',
+				'credit' => '',
+			);
+
 		return array(
 			'title'              => $title,
 			'excerpt'            => $excerpt,
@@ -357,6 +350,8 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			// docblock — only ever set for a 'standard'-format post with no
 			// confirmed media, matching the feed source's own treatment.
 			'link_url'           => $link_url,
+			'quote_text'         => $quote['text'],
+			'quote_credit'       => $quote['credit'],
 		);
 	}
 

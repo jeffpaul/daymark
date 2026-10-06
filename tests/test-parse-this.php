@@ -249,11 +249,54 @@ class Test_Parse_This extends WP_UnitTestCase {
 		$this->assertSame( 'https://mf2.example/1', $reply['permalink'] );
 		$this->assertSame( 'Pat', $reply['author'] );
 		$this->assertSame( 'note', $reply['post_format'] );
-		$this->assertSame( 'https://other.example/original', $reply['in_reply_to'] );
+		$this->assertSame( 'reply', $reply['interaction'] );
+		$this->assertSame( 'https://other.example/original', $reply['interaction_url'] );
 
 		$photos = $source->normalize( $raw[1] );
 		$this->assertSame( 'gallery', $photos['post_format'] );
-		$this->assertSame( '', $photos['in_reply_to'] );
+		$this->assertSame( '', $photos['interaction'] );
+	}
+
+	/** Parse This's repost and bookmark entries keep their targets (issue #168). */
+	public function test_microformats_source_reads_parse_this_interactions() {
+		$this->use_parse_this(
+			array(
+				'type'           => 'feed',
+				'_source_format' => 'mf2+html',
+				'items'          => array(
+					array(
+						'type'      => 'entry',
+						'url'       => array( 'https://mf2.example/r' ),
+						'post-type' => 'repost',
+						'repost-of' => array(
+							array(
+								'type' => 'cite',
+								'url'  => array( 'https://other.example/reposted' ),
+							),
+						),
+					),
+					array(
+						'type'        => 'entry',
+						'url'         => array( 'https://mf2.example/b' ),
+						'post-type'   => 'bookmark',
+						'bookmark-of' => array( 'https://other.example/page' ),
+					),
+				),
+			)
+		);
+
+		$this->mock_response( 'https://mf2.example/i', '<html><body><div class="h-feed">ignored by the stub</div></body></html>' );
+
+		$source = new Daymark_Subscription_Source_Microformats();
+		$raw    = $source->fetch( 'https://mf2.example/i' );
+
+		$repost   = $source->normalize( $raw[0] );
+		$bookmark = $source->normalize( $raw[1] );
+
+		$this->assertSame( 'repost', $repost['interaction'] );
+		$this->assertSame( 'https://other.example/reposted', $repost['interaction_url'] );
+		$this->assertSame( 'bookmark', $bookmark['interaction'] );
+		$this->assertSame( 'https://other.example/page', $bookmark['interaction_url'] );
 	}
 
 	/** A page Parse This reads only from meta tags falls back to Daymark's own scanner. */
@@ -276,7 +319,7 @@ class Test_Parse_This extends WP_UnitTestCase {
 		$item   = $source->normalize( $raw[0] );
 
 		$this->assertSame( 'Own scanner', $item['title'] );
-		$this->assertSame( 'https://other.example/x', $item['in_reply_to'] );
+		$this->assertSame( 'https://other.example/x', $item['interaction_url'] );
 	}
 
 	/** A reply's target is stored on ingest and sent to the app. */
@@ -294,22 +337,24 @@ class Test_Parse_This extends WP_UnitTestCase {
 		$post_id = ( new Daymark_Subscription_Poller() )->maybe_ingest_item(
 			$subscription_id,
 			array(
-				'title'        => '',
-				'excerpt'      => 'A reply',
-				'author'       => 'Pat',
-				'published_at' => gmdate( 'Y-m-d H:i:s' ),
-				'permalink'    => 'https://mf2.example/reply-1',
-				'post_format'  => 'note',
-				'in_reply_to'  => 'https://other.example/original',
+				'title'           => '',
+				'excerpt'         => 'A reply',
+				'author'          => 'Pat',
+				'published_at'    => gmdate( 'Y-m-d H:i:s' ),
+				'permalink'       => 'https://mf2.example/reply-1',
+				'post_format'     => 'note',
+				'interaction'     => 'reply',
+				'interaction_url' => 'https://other.example/original',
 			)
 		);
 
-		$this->assertSame( 'https://other.example/original', get_post_meta( $post_id, 'in_reply_to', true ) );
+		$this->assertSame( 'reply', get_post_meta( $post_id, 'interaction', true ) );
+		$this->assertSame( 'https://other.example/original', get_post_meta( $post_id, 'interaction_url', true ) );
 
 		$this->mock_response( 'https://other.example/original', '<html><head><meta property="og:title" content="The original"></head></html>' );
 
 		$request = new WP_REST_Request( 'GET', '/daymark/v1/subscription-posts/' . $post_id . '/oembed' );
-		$request->set_param( 'target', 'reply' );
+		$request->set_param( 'target', 'interaction' );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 		$data = rest_do_request( $request )->get_data();
 
