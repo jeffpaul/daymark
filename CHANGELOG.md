@@ -27,6 +27,7 @@ can't act on them.
 - A post from a site you follow that replies to, reblogs, bookmarks, or RSVPs to another post now says so in a line at the top of its Timeline card, and the full post view shows a preview of that post. Likes from sites you follow stay out of the Timeline, the same way your own Likes do. ([#479](https://github.com/jeffpaul/daymark/pull/479), [#480](https://github.com/jeffpaul/daymark/pull/480))
 - Posts from WordPress sites you follow keep more of their post format: an aside shows as a Note, a link post as a Link card with a preview of the linked page, and a quote post with its quote across the top of its card. ([#480](https://github.com/jeffpaul/daymark/pull/480))
 - With Jetpack active and your WordPress.com account linked, Settings -> Daymark -> Import/Export can now import the sites you follow in the WordPress.com Reader. You pick from a checklist first, and each site is imported the same way as an OPML entry, so it looks exactly like a subscription added by hand. ([#478](https://github.com/jeffpaul/daymark/pull/478))
+- You can now add AVIF photos to a Mark, and HEIC/HEIF photos where your server can convert them to JPEG. Where it can't, the composer says so when you pick the photo and asks for a JPEG. iPhone already sends photos as JPEG. ([#484](https://github.com/jeffpaul/daymark/pull/484))
 
 ### Changed
 
@@ -35,6 +36,7 @@ can't act on them.
 ### Fixed
 
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
+- Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
 
 ## [0.19.0] - 2026-10-02
 
