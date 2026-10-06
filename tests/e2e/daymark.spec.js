@@ -23,6 +23,31 @@ const ADMIN_PASS = process.env.WP_ADMIN_PASS || 'password';
 // Unique-ish per run so title assertions never match older test posts.
 const RUN_ID = `${Date.now()}`.slice(-6);
 
+// Interaction-hint "seen" state is stored per user on the server (issue
+// #322), and every test here signs in as the same admin, so one test
+// dismissing a hint would hide it from every later test. This init script
+// blanks the server's list in the boot config as the page assigns it, so
+// each test's fresh browser context still starts with every hint unseen,
+// as it did when the state lived only in localStorage. The cross-device
+// hint test below opens a second context without it on purpose.
+function hideServerSeenHints() {
+	let stored;
+	Object.defineProperty(window, 'daymarkApp', {
+		configurable: true,
+		get: () => stored,
+		set: (value) => {
+			if (value && typeof value === 'object') {
+				value.interactionHintsSeen = [];
+			}
+			stored = value;
+		},
+	});
+}
+
+test.beforeEach(async ({ page }) => {
+	await page.addInitScript(hideServerSeenHints);
+});
+
 // Logs in through wp-login.php; the session cookie persists on the context.
 async function loginAs(page) {
 	await page.goto('/wp-login.php');
@@ -609,9 +634,10 @@ test('⋯ overflow menu holds Open original/Share/Unsubscribe; Unsubscribe asks 
 
 // First-time explainer overlays for the interaction row's six icons (issue
 // #321): a plain-language overlay the first time a given icon is tapped,
-// remembered via localStorage so it never reappears — including after a
-// fresh page load in the same browser context, which is what actually
-// distinguishes "seen once, ever" from "seen once, this page render."
+// remembered (on the server and on this device) so it never reappears,
+// including after a fresh page load in the same browser context. That
+// reload is what distinguishes "seen once, ever" from "seen once, this page
+// render."
 test('first-time interaction hint shows once, never again on the same device', async ({ page }) => {
 	const caption = `E2E hint overlay ${RUN_ID}`;
 
@@ -667,6 +693,40 @@ test('first-time interaction hint shows once, never again on the same device', a
 	await bookmarkToggleAgain.click();
 	await expect(bookmarkToggleAgain).toHaveAttribute('aria-pressed', 'false');
 	await expect(page.locator('.daymark-sheet__panel--hint')).toHaveCount(0);
+});
+
+// Issue #322: a hint dismissed on one device stays dismissed on another.
+// The second browser context has its own empty localStorage and no
+// hideServerSeenHints() init script, so only the server's per-user record
+// can keep the Share hint away there.
+test('a first-time interaction hint seen on one device does not reappear on another', async ({ page, browser }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// Record the Share hint as seen the way the app does after the first
+	// tap, then confirm the server kept it.
+	const seen = await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}interaction-hints/share/seen`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		return (await res.json()).seen;
+	});
+	expect(seen).toContain('share');
+
+	const otherDevice = await browser.newContext();
+	try {
+		const otherPage = await otherDevice.newPage();
+		await loginAs(otherPage);
+		await otherPage.goto('/daymark');
+		const config = await otherPage.evaluate(() => window.daymarkApp.interactionHintsSeen);
+		expect(config).toContain('share');
+		await expect(otherPage.locator('.daymark-sheet__panel--hint')).toHaveCount(0);
+	} finally {
+		await otherDevice.close();
+	}
 });
 
 // Scroll-triggered rehydration of pruned subscription-post content (issue
