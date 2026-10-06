@@ -260,6 +260,73 @@ HTML;
 		$this->assertSame( 'image', $normalized['post_format'] );
 	}
 
+	/**
+	 * Each interaction keeps the URL of the post it acts on (issue #168):
+	 * a reference's own href, or a nested h-cite's u-url.
+	 *
+	 * @dataProvider interaction_entry_provider
+	 *
+	 * @param string $reference_html The entry's reference markup.
+	 * @param string $type           Expected interaction.
+	 * @param string $url            Expected target URL.
+	 */
+	public function test_normalize_reports_interaction_and_target( string $reference_html, string $type, string $url ) {
+		$html = '<div class="h-feed"><article class="h-entry">'
+			. $reference_html
+			. '<a class="u-url" href="/2024/entry/">permalink</a>'
+			. '</article></div>';
+
+		$this->mock_response( 'https://acting.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://acting.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( $type, $normalized['interaction'] );
+		$this->assertSame( $url, $normalized['interaction_url'] );
+	}
+
+	/** @return array<string, array{0: string, 1: string, 2: string}> */
+	public function interaction_entry_provider(): array {
+		return array(
+			'reply'             => array( '<a class="u-in-reply-to" href="https://other.example/post/1">re</a>', 'reply', 'https://other.example/post/1' ),
+			'repost via h-cite' => array( '<div class="u-repost-of h-cite"><a class="u-url" href="https://other.example/post/2">original</a></div>', 'repost', 'https://other.example/post/2' ),
+			'like'              => array( '<a class="u-like-of" href="https://other.example/post/3"></a>', 'like', 'https://other.example/post/3' ),
+			'bookmark'          => array( '<a class="u-bookmark-of" href="https://other.example/page">a page</a>', 'bookmark', 'https://other.example/page' ),
+			'relative target'   => array( '<a class="u-like-of" href="/2024/mine/"></a>', 'like', 'https://acting.example/2024/mine/' ),
+		);
+	}
+
+	/** An RSVP keeps its answer and its event's URL (issue #168). */
+	public function test_normalize_reports_rsvp_answer_and_event() {
+		$html = '<div class="h-feed"><article class="h-entry">'
+			. '<data class="p-rsvp" value="Maybe">Maybe</data>'
+			. '<a class="u-in-reply-to" href="https://events.example/meetup">the meetup</a>'
+			. '<a class="u-url" href="/2024/rsvp/">permalink</a>'
+			. '</article></div>';
+
+		$this->mock_response( 'https://rsvper.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://rsvper.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( 'rsvp', $normalized['interaction'] );
+		$this->assertSame( 'maybe', $normalized['interaction_rsvp'] );
+		$this->assertSame( 'https://events.example/meetup', $normalized['interaction_url'] );
+	}
+
+	/** A plain note has no interaction. */
+	public function test_normalize_reports_no_interaction_for_a_plain_note() {
+		$html = '<div class="h-feed"><article class="h-entry"><p class="p-name">Hello</p><a class="u-url" href="/2024/hello/">permalink</a></article></div>';
+
+		$this->mock_response( 'https://plain.example/', $html );
+
+		$raw_items  = $this->source->fetch( 'https://plain.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertSame( '', $normalized['interaction'] );
+		$this->assertSame( '', $normalized['interaction_url'] );
+	}
+
 	/** fetch() returns an empty (not error) array for a page that fetches fine but currently has no h-entry markup — a healthy, quiet state, not a failure. */
 	public function test_fetch_returns_empty_array_when_no_entries() {
 		$this->mock_response( 'https://quiet.example/', '<html><body><p>Nothing published yet.</p></body></html>' );
@@ -370,6 +437,48 @@ HTML;
 	]
 }
 JSON;
+
+	/** A JSON-parsed entry reports its interaction too: a like-of given as a nested h-cite, and an RSVP's answer (issue #168). */
+	public function test_json_entries_report_interactions() {
+		$body = wp_json_encode(
+			array(
+				'items' => array(
+					array(
+						'type'       => array( 'h-entry' ),
+						'properties' => array(
+							'url'     => array( 'https://jane.example/2024/a-like/' ),
+							'like-of' => array(
+								array(
+									'type'       => array( 'h-cite' ),
+									'properties' => array( 'url' => array( 'https://other.example/liked' ) ),
+								),
+							),
+						),
+					),
+					array(
+						'type'       => array( 'h-entry' ),
+						'properties' => array(
+							'url'         => array( 'https://jane.example/2024/rsvp/' ),
+							'rsvp'        => array( 'yes' ),
+							'in-reply-to' => array( 'https://events.example/party' ),
+						),
+					),
+				),
+			)
+		);
+
+		$this->mock_response( 'https://jane.example/feed/mf2-interactions/', $body );
+
+		$raw_items = $this->source->fetch( 'https://jane.example/feed/mf2-interactions/' );
+		$like      = $this->source->normalize( $raw_items[0] );
+		$rsvp      = $this->source->normalize( $raw_items[1] );
+
+		$this->assertSame( 'like', $like['interaction'] );
+		$this->assertSame( 'https://other.example/liked', $like['interaction_url'] );
+		$this->assertSame( 'rsvp', $rsvp['interaction'] );
+		$this->assertSame( 'yes', $rsvp['interaction_rsvp'] );
+		$this->assertSame( 'https://events.example/party', $rsvp['interaction_url'] );
+	}
 
 	/** discover() finds an h-feed page with a JSON feed link and, once a live fetch confirms it, prefers that JSON endpoint over the HTML page. */
 	public function test_discover_prefers_verified_json_feed_link() {

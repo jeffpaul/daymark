@@ -8662,6 +8662,8 @@
 		article:
 			'<line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="17" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="3" y2="18"></line>',
 		link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>',
+		// A followed site's quote-format post (issue #168).
+		quote: '<path d="M3 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2H4c-1.25 0-2 .75-2 1.97V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 0-1 1v2c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.76-2-2-2h-4c-1.25 0-2 .75-2 1.97V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"></path>',
 	});
 
 	// Display labels for the same kind vocabulary — TYPE_LABELS covers a
@@ -8669,7 +8671,96 @@
 	const CARD_KIND_LABELS = Object.assign({}, TYPE_LABELS, {
 		article: __('Article', 'daymark'),
 		link: __('Link', 'daymark'),
+		quote: __('Quote', 'daymark'),
 	});
+
+	// What a followed post does to another post (issue #168), as an icon
+	// for its card's context line. Like is in here even though the
+	// Timeline leaves a followed site's likes out, so one that does show
+	// (opened from elsewhere) still reads correctly.
+	const INTERACTION_ICONS = {
+		reply: '<polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path>',
+		repost: REPOST_GLYPH,
+		like: HEART_GLYPH,
+		bookmark: BOOKMARK_GLYPH,
+		rsvp: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line>',
+	};
+
+	// The sentence a followed post's interaction reads as, shared by its
+	// card's context line and the post view's context block, so the two
+	// can't disagree. Names the target's site when its URL has one. ''
+	// for a post with no interaction.
+	function interactionLabel(interaction) {
+		const type = interaction && interaction.type;
+		if (!type || !INTERACTION_ICONS[type]) {
+			return '';
+		}
+		const host = interaction.url ? urlHostLabel(interaction.url) : '';
+		// [with a site name, without one] for each type, and each RSVP answer.
+		const labels = {
+			reply: [
+				/* translators: %s: site name, e.g. example.com */
+				__('In reply to a post on %s', 'daymark'),
+				__('In reply to a post', 'daymark'),
+			],
+			repost: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Reblogged from %s', 'daymark'),
+				__('Reblogged a post', 'daymark'),
+			],
+			like: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Liked a post on %s', 'daymark'),
+				__('Liked a post', 'daymark'),
+			],
+			bookmark: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Bookmarked a page on %s', 'daymark'),
+				__('Bookmarked a page', 'daymark'),
+			],
+			rsvp: [
+				/* translators: %s: site name, e.g. example.com */
+				__('RSVP to an event on %s', 'daymark'),
+				__('RSVP to an event', 'daymark'),
+			],
+			rsvp_yes: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Going to an event on %s', 'daymark'),
+				__('Going to an event', 'daymark'),
+			],
+			rsvp_no: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Not going to an event on %s', 'daymark'),
+				__('Not going to an event', 'daymark'),
+			],
+			rsvp_maybe: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Maybe going to an event on %s', 'daymark'),
+				__('Maybe going to an event', 'daymark'),
+			],
+			rsvp_interested: [
+				/* translators: %s: site name, e.g. example.com */
+				__('Interested in an event on %s', 'daymark'),
+				__('Interested in an event', 'daymark'),
+			],
+		};
+		const pair = ('rsvp' === type && labels['rsvp_' + interaction.rsvp]) || labels[type];
+		return host ? sprintf(pair[0], host) : pair[1];
+	}
+
+	// A followed post's context line (issue #168): one plain line with an
+	// icon above the title, e.g. "Reblogged from example.com". Plain spans,
+	// since the whole card is a button; the post view links and previews
+	// the target instead.
+	function renderInteractionContext(item) {
+		const label = interactionLabel(item.interaction);
+		if (!label) {
+			return '';
+		}
+		return `<span class="daymark-recent__context"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${
+			INTERACTION_ICONS[item.interaction.type]
+		}</svg><span>${esc(label)}</span></span>`;
+	}
 
 	// Kinds that get the media-dominant layout — a full-width band above
 	// the caption, not a small thumb beside it — the ones a real
@@ -8955,11 +9046,25 @@
 	// the post view shows the credit's link. The server cuts a long quote
 	// to a card-sized length.
 	function renderQuoteBanner(item) {
-		const fc = item.featured_content || {};
-		const credit = fc.credit ? `<span class="daymark-recent__quotecredit">${esc(fc.credit)}</span>` : '';
+		const quote = quoteForItem(item);
+		const credit = quote.credit ? `<span class="daymark-recent__quotecredit">${esc(quote.credit)}</span>` : '';
 		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--quote"><span class="daymark-recent__quotetext">${esc(
-			fc.text
+			quote.text
 		)}</span>${credit}</span>`;
+	}
+
+	// The quote a card's banner shows: a Mark's quote Featured Content, or
+	// a followed quote-format post's own quote (issue #168), falling back
+	// to its excerpt when its content had no blockquote.
+	function quoteForItem(item) {
+		const fc = item.featured_content || {};
+		if ('quote' === fc.type && fc.text) {
+			return { text: fc.text, credit: fc.credit || '' };
+		}
+		return {
+			text: item.quote_text || toPlainText(item.excerpt || ''),
+			credit: item.quote_credit || '',
+		};
 	}
 
 	// A link Featured Content, shown in a card's banner slot in place of a
@@ -9234,7 +9339,8 @@
 		// image/video/gallery/mixed card already carries the point in its
 		// own banner, so a caption stays secondary the same way a Mark's
 		// own excerpt does; article/link/audio/note all lean on the text.
-		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind);
+		// A quote post's quote is already its banner (issue #168).
+		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind) && 'quote' !== kind;
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
@@ -9251,7 +9357,12 @@
 		// the text, so a followed post's photo gets as much room as your
 		// own. Its excerpt still shows (showExcerpt above reads the real
 		// kind), and the rail icon still says "Article".
-		const layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		// A quote post with no quote text to show at all lays out as a
+		// plain note instead of an empty banner.
+		let layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		if ('quote' === kind && !quoteForItem(item).text) {
+			layoutKind = 'note';
+		}
 		const media = renderCardMedia(item, layoutKind);
 		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media);
 		return `
@@ -9273,6 +9384,7 @@
 					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
 						layoutKind
 					)}" data-subpost="${id}">
+						${renderInteractionContext(item)}
 						${leadTitle}
 						${media}
 						<span class="daymark-recent__body">
@@ -9737,7 +9849,7 @@
 			// Shown even when the post's own page couldn't load: what it
 			// replies to comes from the Timeline data, not from that page.
 			if (body.isConnected) {
-				this.maybeShowReplyContext(kind, item, body);
+				this.maybeShowInteractionContext(kind, item, body);
 			}
 		},
 
@@ -9786,31 +9898,30 @@
 			)}</a>`;
 		},
 
-		// A followed post that replies to another post (microformats2
-		// in-reply-to) shows what it replies to above its own content: a
-		// plain "In reply to {site}" link at once, upgraded to a preview
-		// card (title, excerpt, author) once the server has resolved the
-		// replied-to page. A failed lookup keeps the plain link.
-		maybeShowReplyContext(kind, item, body) {
-			if ('sub' !== kind || !item.in_reply_to) {
+		// A followed post that acts on another post — replies to it,
+		// reblogs, likes, or bookmarks it, or RSVPs to an event (issue #168;
+		// replies first, #479) — shows what it acts on above its own
+		// content: the same sentence its card's context line uses
+		// (interactionLabel()) and a plain link at once, upgraded to a
+		// preview card (title, excerpt, author) once the server has resolved
+		// the target page. A failed lookup keeps the plain link.
+		maybeShowInteractionContext(kind, item, body) {
+			const interaction = item.interaction || {};
+			const label = interactionLabel(interaction);
+			if ('sub' !== kind || !label || !interaction.url) {
 				return;
 			}
-			const host = urlHostLabel(item.in_reply_to);
+			const host = urlHostLabel(interaction.url);
 			const context = document.createElement('div');
 			context.className = 'daymark-reply-context';
 			context.innerHTML = `<p class="daymark-reply-context__label">${esc(
-				host
-					? /* translators: %s: site name, e.g. example.com */ sprintf(
-							__('In reply to a post on %s', 'daymark'),
-							host
-					  )
-					: __('In reply to', 'daymark')
+				label
 			)}</p><a class="daymark-reply-context__link" href="${esc(
-				item.in_reply_to
-			)}" target="_blank" rel="noopener noreferrer">${esc(item.in_reply_to)}</a>`;
+				interaction.url
+			)}" target="_blank" rel="noopener noreferrer">${esc(interaction.url)}</a>`;
 			body.prepend(context);
 
-			apiGet('subscription-posts/' + item.id + '/oembed?target=reply')
+			apiGet('subscription-posts/' + item.id + '/oembed?target=interaction')
 				.then((result) => {
 					const inner = oembedLinkPreviewInnerHtml(
 						Object.assign({}, result || {}, { site: host })
@@ -9821,7 +9932,7 @@
 					const link = document.createElement('a');
 					link.className =
 						'daymark-oembed-preview daymark-oembed-preview--link daymark-reply-context__card';
-					link.href = item.in_reply_to;
+					link.href = interaction.url;
 					link.target = '_blank';
 					link.rel = 'noopener noreferrer';
 					link.innerHTML = inner;

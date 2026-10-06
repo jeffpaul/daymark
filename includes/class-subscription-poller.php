@@ -367,6 +367,8 @@ class Daymark_Subscription_Poller {
 				self::store_gallery_images( $existing_id, (array) ( $normalized['gallery_images'] ?? array() ) );
 			}
 
+			self::backfill_type_details( $existing_id, $normalized );
+
 			return 0;
 		}
 
@@ -377,7 +379,6 @@ class Daymark_Subscription_Poller {
 		$format   = sanitize_key( (string) ( $normalized['post_format'] ?? 'standard' ) );
 		$date     = Daymark_Subscription_Post_Type::sanitize_datetime( (string) ( $normalized['published_at'] ?? '' ) );
 		$link_url = esc_url_raw( (string) ( $normalized['link_url'] ?? '' ) );
-		$reply_to = esc_url_raw( (string) ( $normalized['in_reply_to'] ?? '' ) );
 		$is_media = in_array( $format, self::RICH_MEDIA_FORMATS, true );
 
 		// Rich-media formats (image/video/audio/gallery): resolve and cache
@@ -415,9 +416,8 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'featured_image_url', $image );
 		update_post_meta( $post_id, 'embed_data', $embed_data );
 		update_post_meta( $post_id, 'link_url', $link_url );
-		if ( '' !== $reply_to ) {
-			update_post_meta( $post_id, 'in_reply_to', $reply_to );
-		}
+		Daymark_Subscription_Interaction::store( (int) $post_id, $normalized );
+		self::store_quote( (int) $post_id, $normalized );
 		if ( 'gallery' === $format ) {
 			self::store_gallery_images( $post_id, (array) ( $normalized['gallery_images'] ?? array() ) );
 		}
@@ -429,6 +429,58 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'fetched_full_at', '' );
 
 		return (int) $post_id;
+	}
+
+	/**
+	 * Store a quote post's quote and credit (issue #168), when it has them.
+	 *
+	 * @param int                  $post_id    Subscription post ID.
+	 * @param array<string, mixed> $normalized A source's normalize() output.
+	 * @return void
+	 */
+	private static function store_quote( int $post_id, array $normalized ): void {
+		$text   = sanitize_text_field( (string) ( $normalized['quote_text'] ?? '' ) );
+		$credit = sanitize_text_field( (string) ( $normalized['quote_credit'] ?? '' ) );
+
+		if ( '' !== $text ) {
+			update_post_meta( $post_id, 'quote_text', $text );
+		}
+
+		if ( '' !== $credit ) {
+			update_post_meta( $post_id, 'quote_credit', $credit );
+		}
+	}
+
+	/**
+	 * Give an already-ingested post what issue #168 added, when the source
+	 * now reports it: its interaction, and a `note`/`link`/`quote` format
+	 * in place of the `standard` it was stored with before. Only ever fills
+	 * in or promotes away from `standard`; it never changes a real format.
+	 *
+	 * @param int                  $post_id    Existing subscription post ID.
+	 * @param array<string, mixed> $normalized A source's normalize() output.
+	 * @return void
+	 */
+	private static function backfill_type_details( int $post_id, array $normalized ): void {
+		if ( '' === Daymark_Subscription_Interaction::from_post( $post_id )['type'] ) {
+			Daymark_Subscription_Interaction::store( $post_id, $normalized );
+		}
+
+		$format = sanitize_key( (string) ( $normalized['post_format'] ?? '' ) );
+
+		if ( 'standard' !== get_post_meta( $post_id, 'post_format', true ) || ! in_array( $format, array( 'note', 'link', 'quote' ), true ) ) {
+			return;
+		}
+
+		update_post_meta( $post_id, 'post_format', $format );
+
+		$link_url = esc_url_raw( (string) ( $normalized['link_url'] ?? '' ) );
+
+		if ( 'link' === $format && '' !== $link_url ) {
+			update_post_meta( $post_id, 'link_url', $link_url );
+		}
+
+		self::store_quote( $post_id, $normalized );
 	}
 
 	/**

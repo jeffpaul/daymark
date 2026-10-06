@@ -157,6 +157,67 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( array(), $this->source->discover( 'https://stranger.example/' ) );
 	}
 
+	/** A boost Friends cached from the fediverse becomes a reblog of the boosted post (issue #168). */
+	public function test_a_boost_becomes_a_repost_of_the_boosted_post() {
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'    => Friends::CPT,
+				'post_author'  => $this->friend_id,
+				'post_title'   => '',
+				'post_content' => '<p>Someone else wrote this.</p>',
+				'post_status'  => 'publish',
+				'guid'         => 'https://social.example/@pat/123',
+			)
+		);
+		update_post_meta( $post_id, 'activitypub', array( 'reblog' => true ) );
+
+		$raw_items  = $this->source->fetch( 'https://jane.example/' );
+		$normalized = $this->source->normalize( $raw_items[0] );
+
+		$this->assertTrue( $raw_items[0]['reblog'] );
+		$this->assertSame( 'repost', $normalized['interaction'] );
+		$this->assertSame( 'https://social.example/@pat/123', $normalized['interaction_url'] );
+	}
+
+	/** An ordinary cached post has no interaction. */
+	public function test_an_ordinary_post_has_no_interaction() {
+		$normalized = $this->source->normalize(
+			array(
+				'title'     => 'Hello',
+				'content'   => '<p>Hi.</p>',
+				'permalink' => 'https://jane.example/hello/',
+			)
+		);
+
+		$this->assertSame( '', $normalized['interaction'] );
+	}
+
+	/** Friends' link and quote formats get the same treatment as the WordPress REST source's (issue #168). */
+	public function test_normalize_keeps_link_and_quote_formats() {
+		$link  = $this->source->normalize(
+			array(
+				'title'       => 'A link',
+				'content'     => '<p><a href="https://news.example/story">A story</a></p>',
+				'permalink'   => 'https://jane.example/a-link/',
+				'post_format' => 'link',
+			)
+		);
+		$quote = $this->source->normalize(
+			array(
+				'title'       => 'A quote',
+				'content'     => '<blockquote><p>Less, but better.</p></blockquote><p>&mdash; <cite>Dieter Rams</cite></p>',
+				'permalink'   => 'https://jane.example/a-quote/',
+				'post_format' => 'quote',
+			)
+		);
+
+		$this->assertSame( 'link', $link['post_format'] );
+		$this->assertSame( 'https://news.example/story', $link['link_url'] );
+		$this->assertSame( 'quote', $quote['post_format'] );
+		$this->assertSame( 'Less, but better.', $quote['quote_text'] );
+		$this->assertSame( 'Dieter Rams', $quote['quote_credit'] );
+	}
+
 	/** fetch() builds raw items from the friend's own cached posts entirely via a local query — guid (not get_permalink(), which would be useless for a non-public post type) becomes the permalink. */
 	public function test_fetch_builds_raw_items_from_cached_posts() {
 		$post_id = self::factory()->post->create(
@@ -262,12 +323,12 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 	public function test_normalize_sniffs_inline_image_even_with_an_unmapped_format() {
 		$normalized = $this->source->normalize(
 			array(
-				'title'        => 'A quote',
+				'title'        => 'A post',
 				'content'      => '<img src="https://jane.example/inline.jpg">',
-				'permalink'    => 'https://jane.example/2024/a-quote/',
+				'permalink'    => 'https://jane.example/2024/a-post/',
 				'published_at' => '2024-03-05 10:00:00',
 				'author_name'  => 'Jane Doe',
-				'post_format'  => 'quote',
+				'post_format'  => 'some-future-format',
 			)
 		);
 
@@ -317,9 +378,9 @@ class Test_Subscription_Source_Friends extends WP_UnitTestCase {
 		$this->assertSame( 'https://jane.example/inline.jpg', $normalized['featured_image_url'] );
 	}
 
-	/** normalize() maps a Friends-assigned status/chat post_format to Daymark's own 'note' bucket, not 'standard', matching Daymark_Subscription_Source_WordPress's own mapping. */
+	/** normalize() maps a Friends-assigned status/chat/aside post_format to Daymark's own 'note' bucket, matching Daymark_Subscription_Source_WordPress's own mapping. */
 	public function test_normalize_maps_status_and_chat_formats_to_note() {
-		foreach ( array( 'status', 'chat' ) as $wp_format ) {
+		foreach ( array( 'status', 'chat', 'aside' ) as $wp_format ) {
 			$normalized = $this->source->normalize(
 				array(
 					'title'        => 'An update',

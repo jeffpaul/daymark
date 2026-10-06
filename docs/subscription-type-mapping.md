@@ -86,10 +86,10 @@ rule below. Current order, most-preferred first:
 
 | Source | Real, structured per-item signal | How it becomes `post_format` | Content-sniffing fallback |
 |---|---|---|---|
-| `friends` | Friends' own already-assigned WordPress post_format taxonomy value (Friends does its own content-based format-discovery upstream, before Daymark ever sees the cached post) | `image`/`video`/`audio`/`gallery` pass straight through; `status`/`chat` map to `note`; `aside`/`link`/`quote`/unset all collapse to `standard` | **Yes** — `Daymark_Subscription_Content_Sniffer` scans the cached post's own content HTML only when the resolved format is `standard` (never for `note` — see "Follow-up: status/chat mapped to Note" below); a real Friends-assigned format is never second-guessed |
-| `wordpress` | The subscribed site's real `format` field from `GET wp/v2/posts` | Same pass-through/`note`-mapping/collapse as `friends` | **Yes** — same shared sniffer, over `content.rendered`, only when `format` resolves to `standard` |
+| `friends` | Friends' own already-assigned WordPress post_format taxonomy value (Friends does its own content-based format-discovery upstream, before Daymark ever sees the cached post) | Through the shared `Daymark_Subscription_Content_Sniffer::wordpress_format()`: `image`/`video`/`audio`/`gallery`/`link`/`quote` pass straight through; `status`/`chat`/`aside` map to `note`; unset or unknown collapses to `standard`. A fediverse boost (Friends' `activitypub` meta with `reblog` set) also reports a `repost` interaction (issue #168) | **Yes** — `Daymark_Subscription_Content_Sniffer` scans the cached post's own content HTML only when the resolved format is `standard` (never for `note` — see "Follow-up: status/chat mapped to Note" below); a real Friends-assigned format is never second-guessed |
+| `wordpress` | The subscribed site's real `format` field from `GET wp/v2/posts` | Same `wordpress_format()` mapping as `friends`. No interaction signal: Post Kinds registers its `kind` taxonomy with `show_in_rest => false` | **Yes** — same shared sniffer, over `content.rendered`, only when `format` resolves to `standard` (a `link` post is scanned only for its `link_url`) |
 | `feed` | Media RSS `medium` (or MIME `type` prefix) on an RSS `<enclosure>` — `video`/`audio`/`image` counted directly, more than one image → `gallery` | Enclosure counts feed the same 5-way decision | **Yes** (original implementation; the sniffer now lives in a shared class other sources use too) — only when *no* enclosure carried any signal at all |
-| `microformats` | mf2 `u-photo`/`u-video`/`u-audio` property elements on the h-entry itself (media), plus the IndieWeb post-type-discovery algorithm's own class tokens (`rsvp`/`reply`/`repost`/`like`/`bookmark`/`note`) | Any video → `video`; any audio → `audio`; >1 photo → `gallery`; 1 photo → `image`; none of those *and* post-type is `reply`/`rsvp` → `note` (issue #292); none of those and any other post-type → `standard` | **No, and none needed for media** — an h-entry's own mf2 markup already *is* the explicit signal every other source's fallback is trying to approximate; there is no "no enclosure" ambiguity to recover from. The `reply`/`rsvp` → `note` step is itself a fallback, applied only once media resolves to nothing. |
+| `microformats` | mf2 `u-photo`/`u-video`/`u-audio` property elements on the h-entry itself (media), plus the IndieWeb post-type-discovery algorithm's own class tokens (`rsvp`/`reply`/`repost`/`like`/`bookmark`/`note`) | Any video → `video`; any audio → `audio`; >1 photo → `gallery`; 1 photo → `image`; none of those *and* post-type is `reply`/`rsvp` → `note` (issue #292); none of those and any other post-type → `standard`. Separately, every non-note post type is reported as an interaction with its target URL (issue #168) | **No, and none needed for media** — an h-entry's own mf2 markup already *is* the explicit signal every other source's fallback is trying to approximate; there is no "no enclosure" ambiguity to recover from. The `reply`/`rsvp` → `note` step is itself a fallback, applied only once media resolves to nothing. |
 
 All four sources share the exact same weighting once a signal is found:
 video beats audio beats more-than-one-photo (gallery) beats one photo
@@ -127,6 +127,10 @@ neither ever overrides a real, explicitly assigned format from any source.
 
 ## Follow-up: status/chat mapped to Note
 
+> Since issue #168, `aside` maps to `note` too, and `link` and `quote`
+> keep their own formats. See "Interaction context, and aside/link/quote
+> (issue #168)" below; the reasoning in this section is kept as history.
+
 The first of the two vocabulary-expansion opportunities this audit flagged
 (below) has since been acted on: WordPress's `status` and `chat` post_format
 values now map to Daymark's own `note` post_format bucket in both
@@ -149,6 +153,9 @@ already be one) all already treated `post_format` as an open string, not a
 hardcoded enum.
 
 ## Follow-up: mf2 reply/rsvp mapped to Note (issue #292)
+
+> Issue #168 settled the open questions at the end of this section: see
+> "Interaction context, and aside/link/quote (issue #168)" below.
 
 The other vocabulary-expansion opportunity this audit flagged — mf2
 post-type discovery going entirely unused for `post_format` — has been
@@ -195,6 +202,43 @@ still having no Daymark equivalent — remains a settled design choice: see
 "Follow-up: status/chat mapped to Note" above for why those three
 specifically stay collapsed to `standard`.
 
+## Interaction context, and aside/link/quote (issue #168)
+
+The post type a source detects now reaches the Timeline, but as a separate
+**interaction**, not as a `post_format`. `post_format` still says what media
+a post carries: it drives the card's media slot, Search's type chips, and
+the `type` filter, and a reblog can also be a photo.
+
+- **Vocabulary**: `Daymark_Subscription_Interaction` owns it. A source's
+  `normalize()` returns `interaction` (`reply`, `repost`, `like`,
+  `bookmark`, or `rsvp`), `interaction_url` (the post it acts on), and
+  `interaction_rsvp` (an RSVP's answer). The poller stores them as
+  subscription-post meta, and the REST summary sends one `interaction`
+  object. This replaced #479's reply-only `in_reply_to`, which never
+  shipped in a release; that key is still read as a fallback.
+- **Sources**: `microformats` reports all five, in all three of its
+  parsing paths (its own scanner, mf2 JSON, and Parse This), reading the
+  target from the reference property's `href` or a nested h-cite's `u-url`.
+  `friends` reports a fediverse boost as a `repost`. `wordpress`, `feed`,
+  and `jsonfeed` have no standard field for this.
+- **App**: a card gets one plain-text context line above its title, for
+  example "Reblogged from example.com". The post view shows the same
+  sentence with a preview of the target
+  (`GET /subscription-posts/{id}/oembed?target=interaction`; `reply` still
+  works).
+- **Likes**: a followed site's likes are stored but left out of every
+  Timeline listing, the same way the user's own Like Marks are.
+- **Formats**: on the `wordpress` and `friends` sources, `aside` now maps
+  to `note` (WordPress defines an aside as a short, usually untitled
+  update, like `status`). `link` stays `link`, so the post gets the Link
+  card and a preview of its `link_url`. `quote` stays `quote`: the card
+  shows the post's first blockquote (`quote_text`, cut to 280 characters)
+  and its `<cite>` (`quote_credit`) in the quote banner, or the excerpt
+  when there is no blockquote.
+- **Already-ingested posts**: a later poll fills in an interaction, and
+  promotes a stored `standard` to `note`/`link`/`quote`, for any post still
+  in the source's feed. It never changes a real format.
+
 ## Remaining gaps in detection itself
 
 Lower priority than the two above, since none is a structured signal a site
@@ -205,13 +249,11 @@ is actively trying to communicate:
   sniffed, nothing. Given none has a Daymark equivalent either, this costs
   nothing today, but is worth knowing about if a future Mark type ever wants
   to represent a linked document/download.
-- **A friend's own reply/like/repost signal**, if Friends tracks one
-  internally for ActivityPub-sourced content, isn't read by
-  `Daymark_Subscription_Source_Friends` at all — only `post_format` is. This
-  is explicitly unverified: this source's own docblock already flags that it
-  was researched against the public akirk/friends GitHub source rather than
-  a live installation, so confirming whether such a signal even exists there
-  needs a real Friends-active site to check against.
+- **A friend's reply or like.** Since issue #168, a fediverse boost is
+  read (Friends' `activitypub` post meta with `reblog` set, found in the
+  akirk/friends source, not checked on a live install). Whether Friends
+  keeps a reply's or a like's target anywhere Daymark could read is still
+  unknown.
 
 ## When Daymark's own type vocabulary changes
 

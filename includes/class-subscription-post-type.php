@@ -295,22 +295,48 @@ class Daymark_Subscription_Post_Type {
 			)
 		);
 
-		// The post this one replies to, when its source marks it up as a
-		// reply (microformats2 `in-reply-to`). Shown as reply context in the
-		// app's post view; never fetched by Daymark.
-		register_post_meta(
-			self::POST_TYPE,
-			'in_reply_to',
-			array(
-				'type'              => 'string',
-				'description'       => __( 'The URL of the post this one replies to, when detected.', 'daymark' ),
-				'single'            => true,
-				'default'           => '',
-				'show_in_rest'      => true,
-				'sanitize_callback' => 'esc_url_raw',
-				'auth_callback'     => $auth_callback,
-			)
+		// What this post does to another post (issue #168) — see
+		// Daymark_Subscription_Interaction. Shown as a context line on the
+		// card and a preview in the post view; the target is never fetched
+		// at ingest.
+		$interaction_meta = array(
+			Daymark_Subscription_Interaction::META_TYPE => array(
+				__( 'What this post does to another post: reply, repost, like, bookmark, or rsvp.', 'daymark' ),
+				'sanitize_key',
+			),
+			Daymark_Subscription_Interaction::META_URL  => array(
+				__( 'The URL of the post this one acts on.', 'daymark' ),
+				'esc_url_raw',
+			),
+			Daymark_Subscription_Interaction::META_RSVP => array(
+				__( "An RSVP's answer: yes, no, maybe, or interested.", 'daymark' ),
+				'sanitize_key',
+			),
+			'quote_text'                                => array(
+				__( "A quote post's quote, as plain text.", 'daymark' ),
+				'sanitize_text_field',
+			),
+			'quote_credit'                              => array(
+				__( "Who a quote post's quote is by, as plain text.", 'daymark' ),
+				'sanitize_text_field',
+			),
 		);
+
+		foreach ( $interaction_meta as $meta_key => $meta ) {
+			register_post_meta(
+				self::POST_TYPE,
+				$meta_key,
+				array(
+					'type'              => 'string',
+					'description'       => $meta[0],
+					'single'            => true,
+					'default'           => '',
+					'show_in_rest'      => true,
+					'sanitize_callback' => $meta[1],
+					'auth_callback'     => $auth_callback,
+				)
+			);
+		}
 
 		// A gallery post's own photo URLs (a JSON list, in display order),
 		// for its Timeline card's 2x2 grid. Written only through

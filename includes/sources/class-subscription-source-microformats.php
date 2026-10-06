@@ -106,6 +106,33 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	);
 
 	/**
+	 * The mf2 property naming the post each interaction acts on (issue
+	 * #168), as an HTML class token. An RSVP's event is its `in-reply-to`.
+	 *
+	 * @var array<string, string>
+	 */
+	private const REFERENCE_CLASSES = array(
+		'reply'    => 'u-in-reply-to',
+		'repost'   => 'u-repost-of',
+		'like'     => 'u-like-of',
+		'bookmark' => 'u-bookmark-of',
+		'rsvp'     => 'u-in-reply-to',
+	);
+
+	/**
+	 * REFERENCE_CLASSES as mf2 JSON / jf2 property names.
+	 *
+	 * @var array<string, string>
+	 */
+	private const REFERENCE_PROPERTIES = array(
+		'reply'    => 'in-reply-to',
+		'repost'   => 'repost-of',
+		'like'     => 'like-of',
+		'bookmark' => 'bookmark-of',
+		'rsvp'     => 'in-reply-to',
+	);
+
+	/**
 	 * Mf2 post types (issue #292) promoted to Daymark's own `note`
 	 * post_format bucket — only ever applied as a fallback when no real
 	 * media was found (see normalize()), the same "note is a confirmed
@@ -117,10 +144,9 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 	 *
 	 * `repost`/`like`/`bookmark` are deliberately left out: unlike a
 	 * reply/RSVP, they're reactions to *someone else's* content rather than
-	 * the author's own words — see issue #292 for the open question of
-	 * whether they should instead be filtered from the Timeline entirely,
-	 * mirroring how a Mark carrying its own `_daymark_like_of`/
-	 * `_daymark_repost_of` is already excluded there.
+	 * the author's own words. All five reach the Timeline as an interaction
+	 * instead (issue #168, Daymark_Subscription_Interaction), and a like is
+	 * left out of the Timeline the way the user's own Like Marks are.
 	 *
 	 * @var string[]
 	 */
@@ -374,8 +400,12 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			'raw_media'          => array_values( array_merge( $photos, $videos, $audios ) ),
 			// A gallery's own photos, in order, for its Timeline card's 2x2 grid.
 			'gallery_images'     => 'gallery' === $post_format ? Daymark_Subscription_Content_Sniffer::gallery_images( '', $photos ) : array(),
-			// The post this one replies to, for the post view's reply context.
-			'in_reply_to'        => 'reply' === (string) ( $raw_item['post_type'] ?? '' ) ? esc_url_raw( (string) ( $raw_item['in_reply_to'] ?? '' ) ) : '',
+		) + Daymark_Subscription_Interaction::sanitize(
+			// What this post does to another post (issue #168): the card's
+			// context line and the post view's preview.
+			(string) ( $raw_item['post_type'] ?? '' ),
+			(string) ( $raw_item['interaction_url'] ?? '' ),
+			(string) ( $raw_item['rsvp'] ?? '' )
 		);
 	}
 
@@ -421,23 +451,28 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			$author_name = $this->plain_text( $author_matches[0]['inner_html'] );
 		}
 
-		// u-in-reply-to can sit on the same element as a nested h-cite, so
-		// read it from the unstripped entry, like detect_post_type() does.
-		$reply_matches = $this->find_elements_by_class( $entry_html, 'u-in-reply-to' );
-		$in_reply_to   = isset( $reply_matches[0] ) ? $this->resolve_href_attribute( $reply_matches[0], $base_url ) : '';
+		$post_type = $this->detect_post_type( $entry_html );
+
+		// A reference property (u-in-reply-to, u-repost-of, ...) often sits
+		// on the same element as a nested h-cite, so read it from the
+		// unstripped entry, like detect_post_type() does.
+		$interaction_url = isset( self::REFERENCE_CLASSES[ $post_type ] )
+			? $this->reference_url( $entry_html, self::REFERENCE_CLASSES[ $post_type ], $base_url )
+			: '';
 
 		return array(
-			'name'         => $name,
-			'summary'      => $summary,
-			'content_html' => $content_html,
-			'permalink'    => $permalink,
-			'published'    => $published,
-			'author_name'  => $author_name,
-			'photos'       => $photos,
-			'videos'       => $videos,
-			'audios'       => $audios,
-			'post_type'    => $this->detect_post_type( $entry_html ),
-			'in_reply_to'  => $in_reply_to,
+			'name'            => $name,
+			'summary'         => $summary,
+			'content_html'    => $content_html,
+			'permalink'       => $permalink,
+			'published'       => $published,
+			'author_name'     => $author_name,
+			'photos'          => $photos,
+			'videos'          => $videos,
+			'audios'          => $audios,
+			'post_type'       => $post_type,
+			'interaction_url' => $interaction_url,
+			'rsvp'            => 'rsvp' === $post_type ? $this->rsvp_value( $entry_html ) : '',
 		);
 	}
 
@@ -616,7 +651,8 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 
 		$photos = $this->json_media_urls( $properties, 'photo', $base_url );
 
-		$featured = $this->first_json_value( $properties, 'featured' );
+		$featured  = $this->first_json_value( $properties, 'featured' );
+		$post_type = $this->detect_json_post_type( $properties );
 
 		if ( '' !== $featured ) {
 			$featured = esc_url_raw( WP_Http::make_absolute_url( $featured, $base_url ) );
@@ -627,17 +663,18 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return array(
-			'name'         => $this->first_json_value( $properties, 'name' ),
-			'summary'      => $this->first_json_value( $properties, 'summary' ),
-			'content_html' => $this->first_json_html_value( $properties, 'content' ),
-			'permalink'    => $permalink,
-			'published'    => $this->first_json_value( $properties, 'published' ),
-			'author_name'  => sanitize_text_field( $author_name ),
-			'photos'       => $photos,
-			'videos'       => $this->json_media_urls( $properties, 'video', $base_url ),
-			'audios'       => $this->json_media_urls( $properties, 'audio', $base_url ),
-			'post_type'    => $this->detect_json_post_type( $properties ),
-			'in_reply_to'  => $this->json_reference_url( $properties, 'in-reply-to', $base_url ),
+			'name'            => $this->first_json_value( $properties, 'name' ),
+			'summary'         => $this->first_json_value( $properties, 'summary' ),
+			'content_html'    => $this->first_json_html_value( $properties, 'content' ),
+			'permalink'       => $permalink,
+			'published'       => $this->first_json_value( $properties, 'published' ),
+			'author_name'     => sanitize_text_field( $author_name ),
+			'photos'          => $photos,
+			'videos'          => $this->json_media_urls( $properties, 'video', $base_url ),
+			'audios'          => $this->json_media_urls( $properties, 'audio', $base_url ),
+			'post_type'       => $post_type,
+			'interaction_url' => isset( self::REFERENCE_PROPERTIES[ $post_type ] ) ? $this->json_reference_url( $properties, self::REFERENCE_PROPERTIES[ $post_type ], $base_url ) : '',
+			'rsvp'            => $this->first_json_value( $properties, 'rsvp' ),
 		);
 	}
 
@@ -769,17 +806,18 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return array(
-			'name'         => Daymark_Parse_This::text( $entry, 'name' ),
-			'summary'      => $summary,
-			'content_html' => wp_kses_post( Daymark_Parse_This::content_html( $entry ) ),
-			'permalink'    => $permalink,
-			'published'    => Daymark_Parse_This::text( $entry, 'published' ),
-			'author_name'  => Daymark_Parse_This::author_name( $entry ),
-			'photos'       => $photos,
-			'videos'       => Daymark_Parse_This::urls( $entry, 'video', $base_url ),
-			'audios'       => Daymark_Parse_This::urls( $entry, 'audio', $base_url ),
-			'post_type'    => $post_type,
-			'in_reply_to'  => Daymark_Parse_This::urls( $entry, 'in-reply-to', $base_url )[0] ?? '',
+			'name'            => Daymark_Parse_This::text( $entry, 'name' ),
+			'summary'         => $summary,
+			'content_html'    => wp_kses_post( Daymark_Parse_This::content_html( $entry ) ),
+			'permalink'       => $permalink,
+			'published'       => Daymark_Parse_This::text( $entry, 'published' ),
+			'author_name'     => Daymark_Parse_This::author_name( $entry ),
+			'photos'          => $photos,
+			'videos'          => Daymark_Parse_This::urls( $entry, 'video', $base_url ),
+			'audios'          => Daymark_Parse_This::urls( $entry, 'audio', $base_url ),
+			'post_type'       => $post_type,
+			'interaction_url' => isset( self::REFERENCE_PROPERTIES[ $post_type ] ) ? ( Daymark_Parse_This::urls( $entry, self::REFERENCE_PROPERTIES[ $post_type ], $base_url )[0] ?? '' ) : '',
+			'rsvp'            => Daymark_Parse_This::text( $entry, 'rsvp' ),
 		);
 	}
 
@@ -949,6 +987,52 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return esc_url_raw( WP_Http::make_absolute_url( $href, $base_url ) );
+	}
+
+	/**
+	 * The URL a reference property (u-in-reply-to, u-repost-of, ...) names:
+	 * the element's own `href`, else, for a nested h-cite, the first
+	 * `u-url` inside it.
+	 *
+	 * @param string $entry_html  This entry's own outer HTML.
+	 * @param string $class_token Reference property class token.
+	 * @param string $base_url    Page URL the entry was found on.
+	 * @return string
+	 */
+	private function reference_url( string $entry_html, string $class_token, string $base_url ): string {
+		$matches = $this->find_elements_by_class( $entry_html, $class_token );
+
+		if ( ! isset( $matches[0] ) ) {
+			return '';
+		}
+
+		$url = $this->resolve_href_attribute( $matches[0], $base_url );
+
+		if ( '' === $url ) {
+			$inner = $this->find_elements_by_class( $matches[0]['inner_html'], 'u-url' );
+			$url   = isset( $inner[0] ) ? $this->resolve_href_attribute( $inner[0], $base_url ) : '';
+		}
+
+		return $url;
+	}
+
+	/**
+	 * An RSVP's answer: the `p-rsvp` element's `value` attribute (the
+	 * `<data class="p-rsvp" value="yes">` convention), else its text.
+	 *
+	 * @param string $entry_html This entry's own outer HTML.
+	 * @return string
+	 */
+	private function rsvp_value( string $entry_html ): string {
+		$matches = $this->find_elements_by_class( $entry_html, 'p-rsvp' );
+
+		if ( ! isset( $matches[0] ) ) {
+			return '';
+		}
+
+		$value = $this->get_attribute_value( $matches[0]['attrs'], 'value' );
+
+		return '' !== $value ? $value : $this->plain_text( $matches[0]['inner_html'] );
 	}
 
 	/**

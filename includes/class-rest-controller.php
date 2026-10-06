@@ -700,11 +700,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'required'          => true,
 						'sanitize_callback' => 'absint',
 					),
-					// `reply`: preview the post this one replies to instead
-					// of its own outbound link.
+					// `interaction`: preview the post this one replies to,
+					// reblogs, likes, bookmarks, or RSVPs to (issue #168)
+					// instead of its own outbound link. `reply` is its
+					// earlier name.
 					'target' => array(
 						'type'    => 'string',
-						'enum'    => array( 'link', 'reply' ),
+						'enum'    => array( 'link', 'interaction', 'reply' ),
 						'default' => 'link',
 					),
 				),
@@ -1601,7 +1603,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// `meta_key`/`orderby` above (for the published_at sort) stay
 			// intact alongside this separate `meta_query` filter — WP_Query
 			// supports both together.
-			$subscription_meta_conditions = array();
+			// A followed site's likes stay out of every Timeline listing
+			// (issue #168), the same way the user's own Like Marks do just
+			// above: a like of some other post says little on its own. The
+			// posts are still stored.
+			$subscription_meta_conditions = array(
+				array(
+					'relation' => 'OR',
+					array(
+						'key'     => Daymark_Subscription_Interaction::META_TYPE,
+						'compare' => 'NOT EXISTS',
+					),
+					array(
+						'key'     => Daymark_Subscription_Interaction::META_TYPE,
+						'value'   => Daymark_Subscription_Interaction::HIDDEN_FROM_TIMELINE,
+						'compare' => 'NOT IN',
+					),
+				),
+			);
 
 			if ( $subscription_id > 0 ) {
 				$subscription_meta_conditions[] = array(
@@ -3460,8 +3479,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * GET /daymark/v1/subscription-posts/{id}/oembed — best-effort link
 	 * preview of a link-format subscription post's own detected outbound
 	 * link (`link_url`), for the full-screen post view. With
-	 * `target=reply`, the post it replies to (`in_reply_to`) instead, for
-	 * the post view's reply context.
+	 * `target=interaction` (or `reply`, its earlier name), the post this one
+	 * replies to, reblogs, likes, bookmarks, or RSVPs to instead (issue
+	 * #168), for the post view's interaction context.
 	 *
 	 * Tries Daymark_Subscription_Opengraph first (issue #349) — Open Graph/
 	 * Twitter Card meta tags are the far more universal signal for an
@@ -3497,15 +3517,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		if ( is_wp_error( $check ) ) {
 			return $check;
 		}
-		$is_reply = 'reply' === $request->get_param( 'target' );
-		$link_url = (string) get_post_meta( $id, $is_reply ? 'in_reply_to' : 'link_url', true );
+		$is_reply = in_array( $request->get_param( 'target' ), array( 'interaction', 'reply' ), true );
+		$link_url = $is_reply
+			? Daymark_Subscription_Interaction::from_post( $id )['url']
+			: (string) get_post_meta( $id, 'link_url', true );
 
 		$preview = array();
 
 		if ( '' !== $link_url ) {
 			$preview = Daymark_Subscription_Opengraph::resolve( $link_url );
 
-			// Reply context is a citation, never a playable embed.
+			// Interaction context is a citation, never a playable embed.
 			if ( empty( $preview ) && ! $is_reply ) {
 				$preview = Daymark_Subscription_Oembed::resolve( $link_url );
 			}
@@ -4009,9 +4031,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// time; present, the app shell's full-screen post view offers
 			// an oEmbed preview of it via GET /subscription-posts/{id}/oembed.
 			'link_url'           => esc_url_raw( (string) get_post_meta( $post_id, 'link_url', true ) ),
-			// The post this one replies to (microformats2 `in-reply-to`),
-			// for the post view's "In reply to" line. '' for most posts.
-			'in_reply_to'        => esc_url_raw( (string) get_post_meta( $post_id, 'in_reply_to', true ) ),
+			// What this post does to another post — reply, repost, like,
+			// bookmark, or rsvp — with that post's URL and an RSVP's
+			// answer (issue #168). Empty strings for most posts. The card
+			// shows a context line; the post view previews `url`.
+			'interaction'        => Daymark_Subscription_Interaction::from_post( $post_id ),
+			// A quote post's quote and credit, for its card's quote banner
+			// (issue #168). '' unless the post is quote-format and its
+			// content had a blockquote.
+			'quote_text'         => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_text', true ) ),
+			'quote_credit'       => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_credit', true ) ),
 			'content_state'      => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
 			// The subscription's cached favicon, used as a pruned
 			// rich-media post's Timeline placeholder in place of its
