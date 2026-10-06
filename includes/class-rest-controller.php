@@ -880,6 +880,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/interaction-hints/(?P<hint>[a-z]+)/seen',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'mark_interaction_hint_seen' ),
+				// A pure local write (per-user meta, no outbound request),
+				// at most once per hint per user — no rate-limit bucket.
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -2802,6 +2814,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( array( 'last_seen' => $marker ) );
+	}
+
+	/**
+	 * POST /daymark/v1/interaction-hints/{hint}/seen — record that the
+	 * current user has seen an interaction-row explainer overlay, so it
+	 * stays dismissed on every device they use (issue #322). The response
+	 * lists every hint key seen after the update.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function mark_interaction_hint_seen( WP_REST_Request $request ) {
+		$seen = Daymark_Interaction_Hints::mark_seen(
+			get_current_user_id(),
+			sanitize_key( (string) $request->get_param( 'hint' ) )
+		);
+
+		if ( is_wp_error( $seen ) ) {
+			return $seen;
+		}
+
+		return rest_ensure_response( array( 'seen' => $seen ) );
 	}
 
 	/**

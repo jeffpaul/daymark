@@ -26,6 +26,10 @@ can't act on them.
 - Daymark now works with the optional Parse This plugin (2.0.0 or later), listed on Settings -> Daymark -> Connectors. With it, link previews also show the page's author and use its microformats and JSON-LD, and sites you follow through their microformats are read by Parse This's complete parser. Daymark only gives Parse This pages it already fetched, and works as before without it. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - A post from a site you follow that replies to another post now shows what it replies to at the top of the full post view, with a preview of that post. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 
+### Changed
+
+- The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
+
 ### Fixed
 
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))

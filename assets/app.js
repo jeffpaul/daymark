@@ -8361,10 +8361,11 @@
 	// First-time explainer overlays for the shared interaction row's six
 	// icons (Like/Comment/Reblog/Bookmark/"Open original"/Share) — plain,
 	// elementary-school-level copy, one short overlay the first time each
-	// icon is actually used, never again after that. `localStorage` (per
-	// device, not per user) is the deliberate first cut — see CLAUDE.md's
-	// own decision row for why, and the tracked future-release issue for
-	// syncing this server-side instead.
+	// icon is actually used, never again after that — on any device the
+	// user signs in on (issue #322). The server's per-user record
+	// (Daymark_Interaction_Hints, read at boot as config.interactionHintsSeen)
+	// is the source of truth; see the storage helpers below for the
+	// device-side copy that covers offline taps.
 	//
 	// Two shapes, per issue #357. Like/Bookmark/"Open original"/Share act
 	// instantly with no further UI step, so their hint is shown *after* the
@@ -8377,7 +8378,8 @@
 	// too late to introduce anything, so they use
 	// maybeShowInteractionHintThen() to show the hint (skipped once already
 	// seen) *before* that compose step, proceeding into it once dismissed.
-	const INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
+	// Device-wide key used before issue #322 (no user in it).
+	const LEGACY_INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
 
 	const INTERACTION_HINTS = {
 		like: {
@@ -8424,25 +8426,97 @@
 		},
 	};
 
-	// A localStorage read/write can throw (private-browsing modes, storage
-	// disabled) — never let that stop the real action these always run
-	// after. Treated as "already seen" on a read failure specifically, so a
-	// broken localStorage degrades to "no hints ever shown" rather than
-	// showing one on every single tap.
-	function hasSeenInteractionHint(key) {
+	// Seen state lives in two places. The server's per-user record arrives
+	// at boot in config.interactionHintsSeen and is what a second device
+	// reads. A per-user localStorage copy covers a hint seen while the
+	// save can't reach the server (offline, the cold-offline shell with no
+	// nonce, a failed request): it still counts as seen here, and
+	// syncInteractionHints() sends it on the next boot or `online` event.
+	// localStorage can throw (private browsing, storage disabled); every
+	// access is wrapped so that never stops the real action a hint follows.
+	const seenInteractionHints = new Set(
+		Array.isArray(config.interactionHintsSeen) ? config.interactionHintsSeen.map(String) : []
+	);
+
+	// Scoped to the signed-in user, so on a shared browser one person's
+	// unsynced hints are never sent to another person's account. '' when
+	// there's no user to scope to.
+	function interactionHintStorageKey(key) {
+		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
+		return userId ? 'daymark-hint-seen-u' + userId + '-' + key : '';
+	}
+
+	function storedInteractionHint(key) {
+		const storageKey = interactionHintStorageKey(key);
+		if (!storageKey) {
+			return false;
+		}
 		try {
-			return !!window.localStorage.getItem(INTERACTION_HINT_STORAGE_PREFIX + key);
+			return !!window.localStorage.getItem(storageKey);
 		} catch (err) {
-			return true;
+			return false;
 		}
 	}
 
-	function markInteractionHintSeen(key) {
-		try {
-			window.localStorage.setItem(INTERACTION_HINT_STORAGE_PREFIX + key, '1');
-		} catch (err) {
-			// Nothing to do — worst case the hint reappears next tap.
+	function storeInteractionHint(key) {
+		const storageKey = interactionHintStorageKey(key);
+		if (!storageKey) {
+			return;
 		}
+		try {
+			window.localStorage.setItem(storageKey, '1');
+		} catch (err) {
+			// The in-memory set still covers this session.
+		}
+	}
+
+	function hasSeenInteractionHint(key) {
+		return seenInteractionHints.has(key) || storedInteractionHint(key);
+	}
+
+	// Best effort. On failure the localStorage copy stays, and
+	// syncInteractionHints() retries it later.
+	function saveInteractionHintSeen(key) {
+		if (!config.nonce) {
+			return Promise.resolve();
+		}
+		return apiPost('interaction-hints/' + encodeURIComponent(key) + '/seen', {})
+			.then((data) => {
+				if (data && Array.isArray(data.seen)) {
+					data.seen.forEach((seenKey) => seenInteractionHints.add(String(seenKey)));
+				}
+			})
+			.catch(() => {});
+	}
+
+	function markInteractionHintSeen(key) {
+		seenInteractionHints.add(key);
+		storeInteractionHint(key);
+		saveInteractionHintSeen(key);
+	}
+
+	// Runs at boot and on `online`. First moves any pre-#322 device-wide
+	// key onto the current user (the first person to sign in after the
+	// update gets it, the same rule claimLegacyOfflineDB() follows), then
+	// sends the server any hint this device has seen that it doesn't
+	// know about yet.
+	function syncInteractionHints() {
+		if (!interactionHintStorageKey('like')) {
+			return;
+		}
+		Object.keys(INTERACTION_HINTS).forEach((key) => {
+			try {
+				if (window.localStorage.getItem(LEGACY_INTERACTION_HINT_STORAGE_PREFIX + key)) {
+					storeInteractionHint(key);
+					window.localStorage.removeItem(LEGACY_INTERACTION_HINT_STORAGE_PREFIX + key);
+				}
+			} catch (err) {
+				// Storage unavailable: nothing stored to claim or send.
+			}
+			if (!seenInteractionHints.has(key) && storedInteractionHint(key)) {
+				saveInteractionHintSeen(key);
+			}
+		});
 	}
 
 	// Called after a successful Like/Bookmark/"Open original"/Share action.
@@ -11185,7 +11259,11 @@
 			return;
 		}
 		flushOfflineQueue().catch(() => {});
+		syncInteractionHints();
 	});
+	// Send any interaction hint this device saw while it couldn't reach
+	// the server, and claim pre-#322 device-wide hint keys.
+	syncInteractionHints();
 	// A record still marked 'uploading' at boot means the page that started
 	// it was closed or reloaded before the request finished — nothing is
 	// actually in flight anymore, so it's downgraded to plain 'queued'
