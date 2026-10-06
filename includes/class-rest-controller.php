@@ -695,10 +695,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'get_subscription_post_oembed' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'id' => array(
+					'id'     => array(
 						'type'              => 'integer',
 						'required'          => true,
 						'sanitize_callback' => 'absint',
+					),
+					// `reply`: preview the post this one replies to instead
+					// of its own outbound link.
+					'target' => array(
+						'type'    => 'string',
+						'enum'    => array( 'link', 'reply' ),
+						'default' => 'link',
 					),
 				),
 			)
@@ -868,6 +875,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'sanitize_callback' => 'absint',
 					),
 				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/interaction-hints/(?P<hint>[a-z]+)/seen',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'mark_interaction_hint_seen' ),
+				// A pure local write (per-user meta, no outbound request),
+				// at most once per hint per user — no rate-limit bucket.
+				'permission_callback' => array( $this, 'permissions_check' ),
 			)
 		);
 
@@ -1189,6 +1208,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Daymark_Publisher::resolve_repost_of()/resolve_like_of().
 			'repost_of'            => (string) $request->get_param( 'repost_of' ),
 			'like_of'              => (string) $request->get_param( 'like_of' ),
+			// The Reblog screen's quote of the reblogged post (issue #393):
+			// its title and author, for Daymark_Publisher's core/quote block.
+			'quote_title'          => sanitize_text_field( (string) $request->get_param( 'quote_title' ) ),
+			'quote_author'         => sanitize_text_field( (string) $request->get_param( 'quote_author' ) ),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -2794,6 +2817,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/interaction-hints/{hint}/seen — record that the
+	 * current user has seen an interaction-row explainer overlay, so it
+	 * stays dismissed on every device they use (issue #322). The response
+	 * lists every hint key seen after the update.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function mark_interaction_hint_seen( WP_REST_Request $request ) {
+		$seen = Daymark_Interaction_Hints::mark_seen(
+			get_current_user_id(),
+			sanitize_key( (string) $request->get_param( 'hint' ) )
+		);
+
+		if ( is_wp_error( $seen ) ) {
+			return $seen;
+		}
+
+		return rest_ensure_response( array( 'seen' => $seen ) );
+	}
+
+	/**
 	 * POST /daymark/v1/notifications/plugin-overlaps/{plugin}/dismiss —
 	 * dismiss a plugin-overlap Notifications item (issue #346) for the
 	 * current user. One-way: there's no matching "un-dismiss" route, since
@@ -3414,7 +3459,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * GET /daymark/v1/subscription-posts/{id}/oembed — best-effort link
 	 * preview of a link-format subscription post's own detected outbound
-	 * link (`link_url`), for the full-screen post view.
+	 * link (`link_url`), for the full-screen post view. With
+	 * `target=reply`, the post it replies to (`in_reply_to`) instead, for
+	 * the post view's reply context.
 	 *
 	 * Tries Daymark_Subscription_Opengraph first (issue #349) — Open Graph/
 	 * Twitter Card meta tags are the far more universal signal for an
@@ -3450,14 +3497,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		if ( is_wp_error( $check ) ) {
 			return $check;
 		}
-		$link_url = (string) get_post_meta( $id, 'link_url', true );
+		$is_reply = 'reply' === $request->get_param( 'target' );
+		$link_url = (string) get_post_meta( $id, $is_reply ? 'in_reply_to' : 'link_url', true );
 
 		$preview = array();
 
 		if ( '' !== $link_url ) {
 			$preview = Daymark_Subscription_Opengraph::resolve( $link_url );
 
-			if ( empty( $preview ) ) {
+			// Reply context is a citation, never a playable embed.
+			if ( empty( $preview ) && ! $is_reply ) {
 				$preview = Daymark_Subscription_Oembed::resolve( $link_url );
 			}
 		}
@@ -3473,6 +3522,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'title'       => (string) ( $preview['title'] ?? '' ),
 				'description' => (string) ( $preview['description'] ?? '' ),
 				'image'       => (string) ( $preview['image'] ?? '' ),
+				// Set only when Parse This is active and found them.
+				'author'      => (string) ( $preview['author'] ?? '' ),
+				'published'   => (string) ( $preview['published'] ?? '' ),
+				'url'         => esc_url_raw( $link_url ),
 			)
 		);
 	}
@@ -3956,6 +4009,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// time; present, the app shell's full-screen post view offers
 			// an oEmbed preview of it via GET /subscription-posts/{id}/oembed.
 			'link_url'           => esc_url_raw( (string) get_post_meta( $post_id, 'link_url', true ) ),
+			// The post this one replies to (microformats2 `in-reply-to`),
+			// for the post view's "In reply to" line. '' for most posts.
+			'in_reply_to'        => esc_url_raw( (string) get_post_meta( $post_id, 'in_reply_to', true ) ),
 			'content_state'      => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
 			// The subscription's cached favicon, used as a pruned
 			// rich-media post's Timeline placeholder in place of its

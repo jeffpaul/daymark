@@ -2244,6 +2244,13 @@ class Daymark_Admin_Subscriptions {
 				'classes'     => array( 'Geo_Data' ),
 				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself. A captured temperature and short condition description (such as "Mostly clear") are bridged the same way.', 'daymark' ),
 			),
+			'parse_this'      => array(
+				'label'       => 'Parse This',
+				'wporg_slug'  => Daymark_Parse_This::SLUG,
+				'folder_slug' => Daymark_Parse_This::SLUG,
+				'constants'   => array( 'PARSE_THIS_VERSION' ),
+				'description' => __( 'Reads the pages Daymark shows you more fully. Link previews gain the author and publish date, and use a page\'s microformats and JSON-LD as well as its Open Graph tags. Sites you follow through their microformats get a complete parser, so posts show the right author, title, and photos. Daymark works without it and falls back to its own simpler parsing. Needs version 2.0.0 or later.', 'daymark' ),
+			),
 		);
 	}
 

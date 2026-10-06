@@ -22,7 +22,18 @@ can't act on them.
 
 ### Added
 
+- You can now follow sites that publish a JSON Feed, the format Micro.blog and many static sites use. Daymark finds it from the site's page, or you can paste the feed's own address. A site that offers RSS as well is still followed through RSS, and the subscribe picker lists both. ([#479](https://github.com/jeffpaul/daymark/pull/479))
+- Daymark now works with the optional Parse This plugin (2.0.0 or later), listed on Settings -> Daymark -> Connectors. With it, link previews also show the page's author and use its microformats and JSON-LD, and sites you follow through their microformats are read by Parse This's complete parser. Daymark only gives Parse This pages it already fetched, and works as before without it. ([#479](https://github.com/jeffpaul/daymark/pull/479))
+- A post from a site you follow that replies to another post now shows what it replies to at the top of the full post view, with a preview of that post. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - With Jetpack active and your WordPress.com account linked, Settings -> Daymark -> Import/Export can now import the sites you follow in the WordPress.com Reader. You pick from a checklist first, and each site is imported the same way as an OPML entry, so it looks exactly like a subscription added by hand. ([#478](https://github.com/jeffpaul/daymark/pull/478))
+
+### Changed
+
+- The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
+
+### Fixed
+
+- A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 
 ## [0.19.0] - 2026-10-02
 

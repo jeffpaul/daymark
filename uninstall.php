@@ -34,13 +34,16 @@ delete_option( 'daymark_nav_routes_added' );
 delete_option( 'daymark_subscriptions_db_version' );
 delete_option( 'daymark_bridgy_fed_bridged' );
 
-// Per-user routing/filing preferences, notification read-state, and the
-// rel=me profile URL used in h-card markup, across all users.
+// Per-user routing/filing preferences, notification read-state, dismissed
+// notices and hints, and the rel=me profile URL used in h-card markup,
+// across all users.
 delete_metadata( 'user', 0, 'daymark_destination_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_category_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_notifications_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
+delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
+delete_metadata( 'user', 0, 'daymark_plugin_overlap_dismissed', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 
 // Scheduled backflow sync events (recurring + pending one-off freshen) and

@@ -3565,6 +3565,9 @@
 		if (!result || !result.title) {
 			return '';
 		}
+		// The author and site, when known. The author comes only from Parse
+		// This (see Daymark_Parse_This), so most previews show the site alone.
+		const byline = [result.author, result.site].filter(Boolean).join(' · ');
 		return `
 			${
 				result.image
@@ -3582,8 +3585,17 @@
 						  )}</p>`
 						: ''
 				}
-				${result.site ? `<p class="daymark-oembed-preview__site">${esc(result.site)}</p>` : ''}
+				${byline ? `<p class="daymark-oembed-preview__site">${esc(byline)}</p>` : ''}
 			</div>`;
+	}
+
+	// A URL's host without "www.", for a short "where this links" label.
+	function urlHostLabel(url) {
+		try {
+			return new URL(url).hostname.replace(/^www\./, '');
+		} catch (e) {
+			return '';
+		}
 	}
 
 	// A Timeline/Search card's whole surface is a real <button>
@@ -8349,10 +8361,11 @@
 	// First-time explainer overlays for the shared interaction row's six
 	// icons (Like/Comment/Reblog/Bookmark/"Open original"/Share) — plain,
 	// elementary-school-level copy, one short overlay the first time each
-	// icon is actually used, never again after that. `localStorage` (per
-	// device, not per user) is the deliberate first cut — see CLAUDE.md's
-	// own decision row for why, and the tracked future-release issue for
-	// syncing this server-side instead.
+	// icon is actually used, never again after that — on any device the
+	// user signs in on (issue #322). The server's per-user record
+	// (Daymark_Interaction_Hints, read at boot as config.interactionHintsSeen)
+	// is the source of truth; see the storage helpers below for the
+	// device-side copy that covers offline taps.
 	//
 	// Two shapes, per issue #357. Like/Bookmark/"Open original"/Share act
 	// instantly with no further UI step, so their hint is shown *after* the
@@ -8365,7 +8378,8 @@
 	// too late to introduce anything, so they use
 	// maybeShowInteractionHintThen() to show the hint (skipped once already
 	// seen) *before* that compose step, proceeding into it once dismissed.
-	const INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
+	// Device-wide key used before issue #322 (no user in it).
+	const LEGACY_INTERACTION_HINT_STORAGE_PREFIX = 'daymark-hint-seen-';
 
 	const INTERACTION_HINTS = {
 		like: {
@@ -8412,25 +8426,97 @@
 		},
 	};
 
-	// A localStorage read/write can throw (private-browsing modes, storage
-	// disabled) — never let that stop the real action these always run
-	// after. Treated as "already seen" on a read failure specifically, so a
-	// broken localStorage degrades to "no hints ever shown" rather than
-	// showing one on every single tap.
-	function hasSeenInteractionHint(key) {
+	// Seen state lives in two places. The server's per-user record arrives
+	// at boot in config.interactionHintsSeen and is what a second device
+	// reads. A per-user localStorage copy covers a hint seen while the
+	// save can't reach the server (offline, the cold-offline shell with no
+	// nonce, a failed request): it still counts as seen here, and
+	// syncInteractionHints() sends it on the next boot or `online` event.
+	// localStorage can throw (private browsing, storage disabled); every
+	// access is wrapped so that never stops the real action a hint follows.
+	const seenInteractionHints = new Set(
+		Array.isArray(config.interactionHintsSeen) ? config.interactionHintsSeen.map(String) : []
+	);
+
+	// Scoped to the signed-in user, so on a shared browser one person's
+	// unsynced hints are never sent to another person's account. '' when
+	// there's no user to scope to.
+	function interactionHintStorageKey(key) {
+		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
+		return userId ? 'daymark-hint-seen-u' + userId + '-' + key : '';
+	}
+
+	function storedInteractionHint(key) {
+		const storageKey = interactionHintStorageKey(key);
+		if (!storageKey) {
+			return false;
+		}
 		try {
-			return !!window.localStorage.getItem(INTERACTION_HINT_STORAGE_PREFIX + key);
+			return !!window.localStorage.getItem(storageKey);
 		} catch (err) {
-			return true;
+			return false;
 		}
 	}
 
-	function markInteractionHintSeen(key) {
-		try {
-			window.localStorage.setItem(INTERACTION_HINT_STORAGE_PREFIX + key, '1');
-		} catch (err) {
-			// Nothing to do — worst case the hint reappears next tap.
+	function storeInteractionHint(key) {
+		const storageKey = interactionHintStorageKey(key);
+		if (!storageKey) {
+			return;
 		}
+		try {
+			window.localStorage.setItem(storageKey, '1');
+		} catch (err) {
+			// The in-memory set still covers this session.
+		}
+	}
+
+	function hasSeenInteractionHint(key) {
+		return seenInteractionHints.has(key) || storedInteractionHint(key);
+	}
+
+	// Best effort. On failure the localStorage copy stays, and
+	// syncInteractionHints() retries it later.
+	function saveInteractionHintSeen(key) {
+		if (!config.nonce) {
+			return Promise.resolve();
+		}
+		return apiPost('interaction-hints/' + encodeURIComponent(key) + '/seen', {})
+			.then((data) => {
+				if (data && Array.isArray(data.seen)) {
+					data.seen.forEach((seenKey) => seenInteractionHints.add(String(seenKey)));
+				}
+			})
+			.catch(() => {});
+	}
+
+	function markInteractionHintSeen(key) {
+		seenInteractionHints.add(key);
+		storeInteractionHint(key);
+		saveInteractionHintSeen(key);
+	}
+
+	// Runs at boot and on `online`. First moves any pre-#322 device-wide
+	// key onto the current user (the first person to sign in after the
+	// update gets it, the same rule claimLegacyOfflineDB() follows), then
+	// sends the server any hint this device has seen that it doesn't
+	// know about yet.
+	function syncInteractionHints() {
+		if (!interactionHintStorageKey('like')) {
+			return;
+		}
+		Object.keys(INTERACTION_HINTS).forEach((key) => {
+			try {
+				if (window.localStorage.getItem(LEGACY_INTERACTION_HINT_STORAGE_PREFIX + key)) {
+					storeInteractionHint(key);
+					window.localStorage.removeItem(LEGACY_INTERACTION_HINT_STORAGE_PREFIX + key);
+				}
+			} catch (err) {
+				// Storage unavailable: nothing stored to claim or send.
+			}
+			if (!seenInteractionHints.has(key) && storedInteractionHint(key)) {
+				saveInteractionHintSeen(key);
+			}
+		});
 	}
 
 	// Called after a successful Like/Bookmark/"Open original"/Share action.
@@ -9648,6 +9734,11 @@
 					body.innerHTML = expandErrorHtml();
 				}
 			}
+			// Shown even when the post's own page couldn't load: what it
+			// replies to comes from the Timeline data, not from that page.
+			if (body.isConnected) {
+				this.maybeShowReplyContext(kind, item, body);
+			}
 		},
 
 		// Best-effort link preview of a link-kind subscription post's own
@@ -9693,6 +9784,50 @@
 			)}" target="_blank" rel="noopener noreferrer">${oembedLinkPreviewInnerHtml(
 				Object.assign({}, preview, { site: fc.host || '' })
 			)}</a>`;
+		},
+
+		// A followed post that replies to another post (microformats2
+		// in-reply-to) shows what it replies to above its own content: a
+		// plain "In reply to {site}" link at once, upgraded to a preview
+		// card (title, excerpt, author) once the server has resolved the
+		// replied-to page. A failed lookup keeps the plain link.
+		maybeShowReplyContext(kind, item, body) {
+			if ('sub' !== kind || !item.in_reply_to) {
+				return;
+			}
+			const host = urlHostLabel(item.in_reply_to);
+			const context = document.createElement('div');
+			context.className = 'daymark-reply-context';
+			context.innerHTML = `<p class="daymark-reply-context__label">${esc(
+				host
+					? /* translators: %s: site name, e.g. example.com */ sprintf(
+							__('In reply to a post on %s', 'daymark'),
+							host
+					  )
+					: __('In reply to', 'daymark')
+			)}</p><a class="daymark-reply-context__link" href="${esc(
+				item.in_reply_to
+			)}" target="_blank" rel="noopener noreferrer">${esc(item.in_reply_to)}</a>`;
+			body.prepend(context);
+
+			apiGet('subscription-posts/' + item.id + '/oembed?target=reply')
+				.then((result) => {
+					const inner = oembedLinkPreviewInnerHtml(
+						Object.assign({}, result || {}, { site: host })
+					);
+					if (!context.isConnected || !inner) {
+						return;
+					}
+					const link = document.createElement('a');
+					link.className =
+						'daymark-oembed-preview daymark-oembed-preview--link daymark-reply-context__card';
+					link.href = item.in_reply_to;
+					link.target = '_blank';
+					link.rel = 'noopener noreferrer';
+					link.innerHTML = inner;
+					context.querySelector('.daymark-reply-context__link').replaceWith(link);
+				})
+				.catch(() => {});
 		},
 
 		maybeLoadOembedPreview(kind, item, body) {
@@ -9793,7 +9928,8 @@
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
-			const source = subscriptionSiteLabel(item);
+			// Credit the author as well as the site, as the published quote does.
+			const source = [item.author, subscriptionSiteLabel(item)].filter(Boolean).join(', ');
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
@@ -9892,6 +10028,9 @@
 			formData.append('title', title);
 			formData.append('caption', comment);
 			formData.append('quote_title', this.item.title || this.item.permalink || '');
+			if (this.item.author) {
+				formData.append('quote_author', this.item.author);
+			}
 			formData.append('primary_type', 'note');
 			formData.append('status', 'publish');
 			formData.append('ai_assist_used', '0');
@@ -11120,7 +11259,11 @@
 			return;
 		}
 		flushOfflineQueue().catch(() => {});
+		syncInteractionHints();
 	});
+	// Send any interaction hint this device saw while it couldn't reach
+	// the server, and claim pre-#322 device-wide hint keys.
+	syncInteractionHints();
 	// A record still marked 'uploading' at boot means the page that started
 	// it was closed or reloaded before the request finished — nothing is
 	// actually in flight anymore, so it's downgraded to plain 'queued'

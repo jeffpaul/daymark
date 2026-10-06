@@ -192,6 +192,51 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         run: WP_TESTS_DIR=/tmp/wordpress-tests-lib composer test
 
+  # The whole PHPUnit suite again with the real Parse This plugin loaded
+  # (tests/parse-this-stub/load.php loads it from DAYMARK_PARSE_THIS_DIR),
+  # so every link-preview and microformats test also runs through Daymark's
+  # optional Parse This path. Pinned to a release tag. Not in the required
+  # checks: a Parse This change should be looked at, not block a merge.
+  phpunit-parse-this:
+    name: PHPUnit with Parse This (WP stable, PHP 8.4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [resolve, changes]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        if: needs.changes.outputs.code == 'true'
+
+      - name: Start MySQL
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          sudo systemctl start mysql.service
+          mysql -h 127.0.0.1 -uroot -proot -e 'CREATE DATABASE wordpress_test'
+
+      - name: Set up PHP
+        if: needs.changes.outputs.code == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mysqli, gd
+          coverage: none
+          tools: composer
+
+      - name: Install WordPress test library (WP stable)
+        if: needs.changes.outputs.code == 'true'
+        run: bash bin/install-wp-tests.sh wordpress_test root root 127.0.0.1 '${{ needs.resolve.outputs.stable }}' true
+
+      - name: Install dependencies
+        if: needs.changes.outputs.code == 'true'
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Get Parse This 2.0.0
+        if: needs.changes.outputs.code == 'true'
+        run: git clone --quiet --depth 1 --branch 2.0.0 https://github.com/dshanske/parse-this.git /tmp/parse-this
+
+      - name: Run PHPUnit with Parse This
+        if: needs.changes.outputs.code == 'true'
+        run: DAYMARK_PARSE_THIS_DIR=/tmp/parse-this WP_TESTS_DIR=/tmp/wordpress-tests-lib composer test
+
   smoke:
     name: Smoke suite (WP ${{ matrix.config.label }}, live install)
     runs-on: ubuntu-latest

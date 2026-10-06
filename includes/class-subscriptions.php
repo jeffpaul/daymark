@@ -350,24 +350,7 @@ class Daymark_Subscriptions {
 			// from) into either the Subscribe field or an existing row's
 			// "Choose from available feeds" action would be a dead end here
 			// even though subscribe_to_site() itself can already handle it.
-			$feed_source = $registry->get_source( 'feed' );
-			$direct      = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
-				? $feed_source->discover_direct_feed( $site_url )
-				: array();
-
-			if ( ! empty( $direct ) ) {
-				$candidates = array_map(
-					static function ( $candidate ) use ( $feed_source ) {
-						if ( is_array( $candidate ) ) {
-							$candidate['source_type']  = 'feed';
-							$candidate['source_label'] = $feed_source->get_label();
-						}
-
-						return $candidate;
-					},
-					$direct
-				);
-			}
+			$candidates = $this->discover_direct_feed( $registry, $site_url );
 		}
 
 		if ( empty( $candidates ) ) {
@@ -441,6 +424,53 @@ class Daymark_Subscriptions {
 	}
 
 	/**
+	 * Treat a URL as a feed itself: first as RSS/Atom, then as JSON Feed.
+	 *
+	 * The fallback both subscribe paths use once page-based discovery
+	 * found nothing, so a person can paste a feed's own address (see
+	 * Daymark_Subscription_Source_Feed::discover_direct_feed()). JSON Feed
+	 * is tried second because SimplePie can't read it.
+	 *
+	 * @param Daymark_Subscription_Source_Registry $registry Source registry.
+	 * @param string                               $site_url URL entered by the user.
+	 * @return array<int, array<string, mixed>> Candidates tagged with
+	 *                                          `source_type` and `source_label`.
+	 */
+	private function discover_direct_feed( Daymark_Subscription_Source_Registry $registry, string $site_url ): array {
+		foreach ( array( 'feed', 'jsonfeed' ) as $source_id ) {
+			$source = $registry->get_source( $source_id );
+
+			if ( ! is_object( $source ) || ! method_exists( $source, 'discover_direct_feed' ) ) {
+				continue;
+			}
+
+			$direct = $source->discover_direct_feed( $site_url );
+
+			if ( empty( $direct ) ) {
+				continue;
+			}
+
+			$label = $source->get_label();
+
+			return array_values(
+				array_map(
+					static function ( $candidate ) use ( $source_id, $label ) {
+						if ( is_array( $candidate ) ) {
+							$candidate['source_type']  = $source_id;
+							$candidate['source_label'] = $label;
+						}
+
+						return $candidate;
+					},
+					$direct
+				)
+			);
+		}
+
+		return array();
+	}
+
+	/**
 	 * Rank a discovered candidate's `source_type` by how completely it's
 	 * likely to capture a post's full content and metadata for Timeline
 	 * rendering (issue #334) — used only to preselect the single most
@@ -463,6 +493,8 @@ class Daymark_Subscriptions {
 	 *    embeds it (e.g. `content:encoded`); otherwise an excerpt, with
 	 *    `post_format` guessed by Daymark_Subscription_Content_Sniffer
 	 *    rather than read from a structured field.
+	 *  - `jsonfeed` (2): JSON Feed — the same as RSS/Atom: full content
+	 *    only when the feed carries `content_html`.
 	 *  - `microformats` (3): a bounded, purpose-built parsed subset of a
 	 *    page's own h-entry markup — the least structurally complete of the
 	 *    four built-in sources.
@@ -482,6 +514,7 @@ class Daymark_Subscriptions {
 			'wordpress'    => 0,
 			'friends'      => 1,
 			'feed'         => 2,
+			'jsonfeed'     => 2,
 			'microformats' => 3,
 		);
 
@@ -773,15 +806,11 @@ class Daymark_Subscriptions {
 		// docblock for why a second feed on an already-subscribed WordPress
 		// site can never be reached through page-based discovery alone.
 		if ( '' === $feed_url ) {
-			$feed_source = $registry->get_source( 'feed' );
-			$direct      = ( $feed_source instanceof Daymark_Subscription_Source_Feed )
-				? $feed_source->discover_direct_feed( $site_url )
-				: array();
+			$direct = $this->discover_direct_feed( $registry, $site_url );
 
 			if ( ! empty( $direct ) ) {
-				$feed                = $direct[0];
-				$feed['source_type'] = 'feed';
-				$feed_url            = isset( $feed['url'] ) ? (string) $feed['url'] : '';
+				$feed     = $direct[0];
+				$feed_url = isset( $feed['url'] ) ? (string) $feed['url'] : '';
 			}
 		}
 

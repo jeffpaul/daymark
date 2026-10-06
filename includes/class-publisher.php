@@ -360,10 +360,17 @@ class Daymark_Publisher {
 			$quote_title = sanitize_text_field( (string) ( $data['quote_title'] ?? '' ) );
 
 			if ( '' !== $quote_title ) {
+				$host   = (string) wp_parse_url( $repost_of, PHP_URL_HOST );
+				$author = sanitize_text_field( (string) ( $data['quote_author'] ?? '' ) );
+
 				$quote = array(
 					'url'    => $repost_of,
 					'title'  => $quote_title,
-					'source' => (string) wp_parse_url( $repost_of, PHP_URL_HOST ),
+					// "Author, example.com" when the author is known.
+					'source' => '' !== $author && '' !== $host
+						/* translators: 1: author name, 2: site, e.g. example.com */
+						? sprintf( __( '%1$s, %2$s', 'daymark' ), $author, $host )
+						: ( '' !== $author ? $author : $host ),
 				);
 			}
 		}

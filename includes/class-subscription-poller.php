@@ -377,6 +377,7 @@ class Daymark_Subscription_Poller {
 		$format   = sanitize_key( (string) ( $normalized['post_format'] ?? 'standard' ) );
 		$date     = Daymark_Subscription_Post_Type::sanitize_datetime( (string) ( $normalized['published_at'] ?? '' ) );
 		$link_url = esc_url_raw( (string) ( $normalized['link_url'] ?? '' ) );
+		$reply_to = esc_url_raw( (string) ( $normalized['in_reply_to'] ?? '' ) );
 		$is_media = in_array( $format, self::RICH_MEDIA_FORMATS, true );
 
 		// Rich-media formats (image/video/audio/gallery): resolve and cache
@@ -414,6 +415,9 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'featured_image_url', $image );
 		update_post_meta( $post_id, 'embed_data', $embed_data );
 		update_post_meta( $post_id, 'link_url', $link_url );
+		if ( '' !== $reply_to ) {
+			update_post_meta( $post_id, 'in_reply_to', $reply_to );
+		}
 		if ( 'gallery' === $format ) {
 			self::store_gallery_images( $post_id, (array) ( $normalized['gallery_images'] ?? array() ) );
 		}

@@ -74,7 +74,7 @@ class Daymark_Subscription_Source_Registry {
 
 	/**
 	 * Register the built-in sources: Friends first, then WordPress REST
-	 * API, then feed, then microformats.
+	 * API, then feed, then JSON Feed, then microformats.
 	 *
 	 * Registration order is what implements every documented precedence
 	 * rule across these sources: discover_feeds() below returns the first
@@ -101,6 +101,11 @@ class Daymark_Subscription_Source_Registry {
 	 *   ever wins discovery for a site with h-feed/h-entry markup but no
 	 *   discoverable feed (and, per the row above, no working WP REST API)
 	 *   at all.
+	 * - JSON Feed comes right after RSS/Atom: a site offering both is still
+	 *   followed through RSS/Atom automatically, as before, and a site
+	 *   offering only JSON Feed (common on Micro.blog) is now followed at
+	 *   all. It stays ahead of microformats, since a feed a site publishes
+	 *   on purpose beats scraping its page.
 	 *
 	 * @return void
 	 */
@@ -108,6 +113,7 @@ class Daymark_Subscription_Source_Registry {
 		$this->register_source( new Daymark_Subscription_Source_Friends() );
 		$this->register_source( new Daymark_Subscription_Source_WordPress() );
 		$this->register_source( new Daymark_Subscription_Source_Feed() );
+		$this->register_source( new Daymark_Subscription_Source_Jsonfeed() );
 		$this->register_source( new Daymark_Subscription_Source_Microformats() );
 	}
 

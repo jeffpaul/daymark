@@ -113,6 +113,7 @@ class Daymark_Subscription_OPML {
 		$site_url   = (string) ( $subscription['site_url'] ?? '' );
 		$feed_url   = (string) ( $subscription['feed_url'] ?? '' );
 		$icon_url   = (string) ( $subscription['site_icon_url'] ?? '' );
+		$source     = sanitize_key( (string) ( $subscription['source_type'] ?? 'feed' ) );
 
 		// text/title both carry the same value — a plain site name when
 		// known, else the site URL itself so the row still has a usable
@@ -128,6 +129,12 @@ class Daymark_Subscription_OPML {
 
 		if ( '' !== $icon_url ) {
 			$outline->setAttributeNS( self::NAMESPACE_URI, 'daymark:iconUrl', $icon_url );
+		}
+
+		// Which Daymark source reads xmlUrl, so a JSON Feed or WordPress
+		// REST API subscription imports back as itself rather than as RSS.
+		if ( '' !== $source && 'feed' !== $source ) {
+			$outline->setAttributeNS( self::NAMESPACE_URI, 'daymark:sourceType', $source );
 		}
 
 		return $outline;
@@ -263,7 +270,7 @@ class Daymark_Subscription_OPML {
 	 * (`daymark_subscription_opml_max_entries`); this method imports
 	 * whatever it is given.
 	 *
-	 * @param array<int, array{label?: string, xml_url?: string, html_url?: string, icon_url?: string}> $entries Entries to import.
+	 * @param array<int, array{label?: string, xml_url?: string, html_url?: string, icon_url?: string, source_type?: string}> $entries Entries to import.
 	 * @return array<int, array{label: string, status: string, message: string}>
 	 */
 	public function import_entries( array $entries ): array {
@@ -282,7 +289,7 @@ class Daymark_Subscription_OPML {
 	 * Read one `<outline>` element into import_entries()' plain entry shape.
 	 *
 	 * @param DOMElement $node One `<outline>` element.
-	 * @return array{label: string, xml_url: string, html_url: string, icon_url: string}
+	 * @return array{label: string, xml_url: string, html_url: string, icon_url: string, source_type: string}
 	 */
 	private function entry_from_outline( DOMElement $node ): array {
 		$xml_url  = trim( $node->getAttribute( 'xmlUrl' ) );
@@ -300,10 +307,11 @@ class Daymark_Subscription_OPML {
 		}
 
 		return array(
-			'label'    => '' !== $text ? $text : $title,
-			'xml_url'  => $xml_url,
-			'html_url' => $html_url,
-			'icon_url' => trim( $icon_url ),
+			'label'       => '' !== $text ? $text : $title,
+			'xml_url'     => $xml_url,
+			'html_url'    => $html_url,
+			'icon_url'    => trim( $icon_url ),
+			'source_type' => $node->getAttributeNS( self::NAMESPACE_URI, 'sourceType' ),
 		);
 	}
 
@@ -349,7 +357,7 @@ class Daymark_Subscription_OPML {
 	 * Daymark_Subscriptions::subscribe_to_site() when only an `htmlUrl` is
 	 * present.
 	 *
-	 * @param array{label?: string, xml_url?: string, html_url?: string, icon_url?: string} $entry One entry.
+	 * @param array{label?: string, xml_url?: string, html_url?: string, icon_url?: string, source_type?: string} $entry One entry.
 	 * @return array{label: string, status: string, message: string}
 	 */
 	private function import_entry( array $entry ): array {
@@ -361,7 +369,13 @@ class Daymark_Subscription_OPML {
 		$label = sanitize_text_field( $label );
 
 		if ( '' !== $xml_url ) {
-			return $this->import_via_xml_url( $xml_url, $html_url, $label, (string) ( $entry['icon_url'] ?? '' ) );
+			return $this->import_via_xml_url(
+				$xml_url,
+				$html_url,
+				$label,
+				(string) ( $entry['icon_url'] ?? '' ),
+				(string) ( $entry['source_type'] ?? '' )
+			);
 		}
 
 		return $this->import_via_html_url( $html_url, $label );
@@ -378,13 +392,14 @@ class Daymark_Subscription_OPML {
 	 * an arbitrary uploaded file a trusted *target* to store and later
 	 * fetch on a schedule.
 	 *
-	 * @param string $xml_url  Raw `xmlUrl` attribute value.
-	 * @param string $html_url Raw `htmlUrl` attribute value, if any.
-	 * @param string $label    Display label for the result row.
-	 * @param string $icon_url Raw icon URL, if any (validated here).
+	 * @param string $xml_url     Raw `xmlUrl` attribute value.
+	 * @param string $html_url    Raw `htmlUrl` attribute value, if any.
+	 * @param string $label       Display label for the result row.
+	 * @param string $icon_url    Raw icon URL, if any (validated here).
+	 * @param string $source_type Raw source ID, if any (validated here).
 	 * @return array{label: string, status: string, message: string}
 	 */
-	private function import_via_xml_url( string $xml_url, string $html_url, string $label, string $icon_url = '' ): array {
+	private function import_via_xml_url( string $xml_url, string $html_url, string $label, string $icon_url = '', string $source_type = '' ): array {
 		$xml_url = esc_url_raw( $xml_url );
 		$scheme  = strtolower( (string) wp_parse_url( $xml_url, PHP_URL_SCHEME ) );
 		$host    = (string) wp_parse_url( $xml_url, PHP_URL_HOST );
@@ -418,7 +433,7 @@ class Daymark_Subscription_OPML {
 			array(
 				'site_url'      => $site_url,
 				'feed_url'      => $xml_url,
-				'source_type'   => 'feed',
+				'source_type'   => $this->validate_source_type( $source_type ),
 				'site_title'    => $label,
 				'feed_title'    => $label,
 				'site_icon_url' => $this->validate_icon_url( $icon_url ),
@@ -478,6 +493,27 @@ class Daymark_Subscription_OPML {
 		}
 
 		return $html_url;
+	}
+
+	/**
+	 * Validate an entry's source type: Daymark's own export writes a
+	 * `daymark:sourceType` attribute for a subscription read by a source
+	 * other than RSS/Atom, so a JSON Feed or WordPress REST API
+	 * subscription imports back as itself.
+	 *
+	 * @param string $source_type Raw source ID, or '' when absent.
+	 * @return string A registered source ID, or 'feed'.
+	 */
+	private function validate_source_type( string $source_type ): string {
+		$source_type = sanitize_key( $source_type );
+
+		// Only a source this site has registered; anything else is read as
+		// the RSS/Atom feed an `xmlUrl` normally is.
+		if ( '' === $source_type || null === Daymark_Plugin::instance()->subscription_source_registry->get_source( $source_type ) ) {
+			return 'feed';
+		}
+
+		return $source_type;
 	}
 
 	/**
