@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#322](https://github.com/jeffpaul/daymark/issues/322))
+- The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
 
 ## [0.19.0] - 2026-10-02
 
