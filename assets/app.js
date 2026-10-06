@@ -3565,6 +3565,9 @@
 		if (!result || !result.title) {
 			return '';
 		}
+		// The author and site, when known. The author comes only from Parse
+		// This (see Daymark_Parse_This), so most previews show the site alone.
+		const byline = [result.author, result.site].filter(Boolean).join(' · ');
 		return `
 			${
 				result.image
@@ -3582,8 +3585,17 @@
 						  )}</p>`
 						: ''
 				}
-				${result.site ? `<p class="daymark-oembed-preview__site">${esc(result.site)}</p>` : ''}
+				${byline ? `<p class="daymark-oembed-preview__site">${esc(byline)}</p>` : ''}
 			</div>`;
+	}
+
+	// A URL's host without "www.", for a short "where this links" label.
+	function urlHostLabel(url) {
+		try {
+			return new URL(url).hostname.replace(/^www\./, '');
+		} catch (e) {
+			return '';
+		}
 	}
 
 	// A Timeline/Search card's whole surface is a real <button>
@@ -9722,6 +9734,11 @@
 					body.innerHTML = expandErrorHtml();
 				}
 			}
+			// Shown even when the post's own page couldn't load: what it
+			// replies to comes from the Timeline data, not from that page.
+			if (body.isConnected) {
+				this.maybeShowReplyContext(kind, item, body);
+			}
 		},
 
 		// Best-effort link preview of a link-kind subscription post's own
@@ -9767,6 +9784,50 @@
 			)}" target="_blank" rel="noopener noreferrer">${oembedLinkPreviewInnerHtml(
 				Object.assign({}, preview, { site: fc.host || '' })
 			)}</a>`;
+		},
+
+		// A followed post that replies to another post (microformats2
+		// in-reply-to) shows what it replies to above its own content: a
+		// plain "In reply to {site}" link at once, upgraded to a preview
+		// card (title, excerpt, author) once the server has resolved the
+		// replied-to page. A failed lookup keeps the plain link.
+		maybeShowReplyContext(kind, item, body) {
+			if ('sub' !== kind || !item.in_reply_to) {
+				return;
+			}
+			const host = urlHostLabel(item.in_reply_to);
+			const context = document.createElement('div');
+			context.className = 'daymark-reply-context';
+			context.innerHTML = `<p class="daymark-reply-context__label">${esc(
+				host
+					? /* translators: %s: site name, e.g. example.com */ sprintf(
+							__('In reply to a post on %s', 'daymark'),
+							host
+					  )
+					: __('In reply to', 'daymark')
+			)}</p><a class="daymark-reply-context__link" href="${esc(
+				item.in_reply_to
+			)}" target="_blank" rel="noopener noreferrer">${esc(item.in_reply_to)}</a>`;
+			body.prepend(context);
+
+			apiGet('subscription-posts/' + item.id + '/oembed?target=reply')
+				.then((result) => {
+					const inner = oembedLinkPreviewInnerHtml(
+						Object.assign({}, result || {}, { site: host })
+					);
+					if (!context.isConnected || !inner) {
+						return;
+					}
+					const link = document.createElement('a');
+					link.className =
+						'daymark-oembed-preview daymark-oembed-preview--link daymark-reply-context__card';
+					link.href = item.in_reply_to;
+					link.target = '_blank';
+					link.rel = 'noopener noreferrer';
+					link.innerHTML = inner;
+					context.querySelector('.daymark-reply-context__link').replaceWith(link);
+				})
+				.catch(() => {});
 		},
 
 		maybeLoadOembedPreview(kind, item, body) {
@@ -9867,7 +9928,8 @@
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
-			const source = subscriptionSiteLabel(item);
+			// Credit the author as well as the site, as the published quote does.
+			const source = [item.author, subscriptionSiteLabel(item)].filter(Boolean).join(', ');
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
@@ -9966,6 +10028,9 @@
 			formData.append('title', title);
 			formData.append('caption', comment);
 			formData.append('quote_title', this.item.title || this.item.permalink || '');
+			if (this.item.author) {
+				formData.append('quote_author', this.item.author);
+			}
 			formData.append('primary_type', 'note');
 			formData.append('status', 'publish');
 			formData.append('ai_assist_used', '0');

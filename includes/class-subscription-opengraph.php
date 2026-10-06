@@ -281,6 +281,36 @@ class Daymark_Subscription_Opengraph {
 			$description = $description_fallback;
 		}
 
+		$author    = '';
+		$published = '';
+
+		// With Parse This active, its parse of the same HTML comes first:
+		// microformats, then JSON-LD, then meta tags, which also gives the
+		// author and publish date. Daymark's own meta-tag values above fill
+		// any field it leaves empty. It makes no request of its own.
+		$jf2 = Daymark_Parse_This::parse_html( $html, $base_url, 'single' );
+
+		if ( null !== $jf2 ) {
+			$pt_title       = Daymark_Parse_This::text( $jf2, 'name' );
+			$pt_description = Daymark_Parse_This::text( $jf2, 'summary' );
+
+			if ( '' === $pt_description ) {
+				$pt_description = Daymark_Parse_This::text( $jf2, 'content' );
+			}
+
+			$pt_image = Daymark_Parse_This::urls( $jf2, 'featured', $base_url )[0] ?? ( Daymark_Parse_This::urls( $jf2, 'photo', $base_url )[0] ?? '' );
+
+			$title       = '' !== $pt_title ? $pt_title : $title;
+			$description = '' !== $pt_description ? $pt_description : $description;
+
+			// Never trade an https image (og:image:secure_url) for an http one.
+			if ( '' !== $pt_image && ( '' === $image || 'https' === strtolower( (string) wp_parse_url( $pt_image, PHP_URL_SCHEME ) ) ) ) {
+				$image = $pt_image;
+			}
+			$author    = Daymark_Parse_This::author_name( $jf2 );
+			$published = self::clean_date( Daymark_Parse_This::text( $jf2, 'published' ) );
+		}
+
 		$title = self::clean_text( $title, self::MAX_TITLE_LENGTH );
 
 		// A page with no usable title has nothing worth showing as a link
@@ -290,12 +320,36 @@ class Daymark_Subscription_Opengraph {
 			return array();
 		}
 
-		return array(
+		$preview = array(
 			'type'        => 'link',
 			'title'       => $title,
 			'description' => self::clean_description( $description ),
 			'image'       => self::safe_image_url( $image, $base_url ),
 		);
+
+		// Only present when Parse This found them, so a preview built from
+		// meta tags alone keeps exactly its previous shape.
+		if ( '' !== $author ) {
+			$preview['author'] = self::clean_text( $author, self::MAX_TITLE_LENGTH );
+		}
+
+		if ( '' !== $published ) {
+			$preview['published'] = $published;
+		}
+
+		return $preview;
+	}
+
+	/**
+	 * A publish date as RFC 3339 in UTC, or '' when it doesn't parse.
+	 *
+	 * @param string $value Raw date from the page.
+	 * @return string
+	 */
+	private static function clean_date( string $value ): string {
+		$timestamp = '' !== trim( $value ) ? strtotime( $value ) : false;
+
+		return false === $timestamp ? '' : gmdate( 'Y-m-d\TH:i:s\Z', $timestamp );
 	}
 
 	/**

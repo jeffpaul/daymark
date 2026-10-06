@@ -113,6 +113,7 @@ class Daymark_Subscription_OPML {
 		$site_url   = (string) ( $subscription['site_url'] ?? '' );
 		$feed_url   = (string) ( $subscription['feed_url'] ?? '' );
 		$icon_url   = (string) ( $subscription['site_icon_url'] ?? '' );
+		$source     = sanitize_key( (string) ( $subscription['source_type'] ?? 'feed' ) );
 
 		// text/title both carry the same value — a plain site name when
 		// known, else the site URL itself so the row still has a usable
@@ -128,6 +129,12 @@ class Daymark_Subscription_OPML {
 
 		if ( '' !== $icon_url ) {
 			$outline->setAttributeNS( self::NAMESPACE_URI, 'daymark:iconUrl', $icon_url );
+		}
+
+		// Which Daymark source reads xmlUrl, so a JSON Feed or WordPress
+		// REST API subscription imports back as itself rather than as RSS.
+		if ( '' !== $source && 'feed' !== $source ) {
+			$outline->setAttributeNS( self::NAMESPACE_URI, 'daymark:sourceType', $source );
 		}
 
 		return $outline;
@@ -372,7 +379,7 @@ class Daymark_Subscription_OPML {
 			array(
 				'site_url'      => $site_url,
 				'feed_url'      => $xml_url,
-				'source_type'   => 'feed',
+				'source_type'   => $this->extract_source_type( $node ),
 				'site_title'    => $label,
 				'feed_title'    => $label,
 				'site_icon_url' => $this->extract_icon_url( $node ),
@@ -432,6 +439,25 @@ class Daymark_Subscription_OPML {
 		}
 
 		return $html_url;
+	}
+
+	/**
+	 * Read the optional `daymark:sourceType` attribute Daymark's own export
+	 * writes for a subscription read by a source other than RSS/Atom.
+	 *
+	 * @param DOMElement $node The `<outline>` element.
+	 * @return string A registered source ID, or 'feed'.
+	 */
+	private function extract_source_type( DOMElement $node ): string {
+		$source_type = sanitize_key( $node->getAttributeNS( self::NAMESPACE_URI, 'sourceType' ) );
+
+		// Only a source this site has registered; anything else is read as
+		// the RSS/Atom feed an `xmlUrl` normally is.
+		if ( '' === $source_type || null === Daymark_Plugin::instance()->subscription_source_registry->get_source( $source_type ) ) {
+			return 'feed';
+		}
+
+		return $source_type;
 	}
 
 	/**

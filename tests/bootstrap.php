@@ -75,6 +75,10 @@ require_once __DIR__ . '/class-plugin-detector-stub.php';
 // PHPUnit run) would otherwise cause.
 require_once __DIR__ . '/class-plugin-overlap-fake.php';
 
+// See tests/parse-this-stub/load.php's own docblock — the real Parse
+// This when DAYMARK_PARSE_THIS_DIR is set, otherwise an inert stub.
+require_once __DIR__ . '/parse-this-stub/load.php';
+
 // See tests/activitypub-stub/load.php's own docblock — an inert-by-default
 // stand-in for the ActivityPub plugin's outbox API (issue #439).
 require_once __DIR__ . '/activitypub-stub/load.php';

@@ -352,6 +352,47 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Parse This can fetch pages, so Daymark calls it in one place only:
+	 * Daymark_Parse_This, inside a Daymark_Outbound_Guard::run( … ) call.
+	 * Any `ParseThis\…` class or function name in code elsewhere fails.
+	 */
+	public function test_parse_this_is_only_called_through_the_guarded_adapter() {
+		$name_tokens = array_filter( array( T_STRING, defined( 'T_NAME_QUALIFIED' ) ? T_NAME_QUALIFIED : null, defined( 'T_NAME_FULLY_QUALIFIED' ) ? T_NAME_FULLY_QUALIFIED : null ) );
+		$root        = dirname( __DIR__ ) . '/includes';
+		$files       = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
+		$offenders   = array();
+		$guarded     = 0;
+
+		foreach ( $files as $file ) {
+			if ( 'php' !== $file->getExtension() ) {
+				continue;
+			}
+
+			// A local source file, not a remote URL.
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$tokens  = token_get_all( (string) file_get_contents( $file->getPathname() ) );
+			$ranges  = $this->guarded_ranges( $tokens );
+			$adapter = 'class-parse-this.php' === $file->getFilename();
+
+			foreach ( $tokens as $index => $token ) {
+				if ( ! is_array( $token ) || ! in_array( $token[0], $name_tokens, true ) || 0 !== stripos( ltrim( $token[1], '\\' ), 'ParseThis\\' ) ) {
+					continue;
+				}
+
+				if ( $adapter && $this->inside_any_range( $index, $ranges ) ) {
+					++$guarded;
+					continue;
+				}
+
+				$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . ' — call Parse This through Daymark_Parse_This, inside Daymark_Outbound_Guard::run()';
+			}
+		}
+
+		$this->assertSame( array(), $offenders );
+		$this->assertGreaterThan( 0, $guarded, 'Daymark_Parse_This should construct the parser inside the guard.' );
+	}
+
+	/**
 	 * Token-index ranges (open paren, matching close paren) of every
 	 * `Daymark_Outbound_Guard::run( … )` call in a token stream.
 	 *
