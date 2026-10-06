@@ -2153,6 +2153,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		// AI vision providers read JPEG, PNG, GIF, and WebP; an AVIF or a
+		// HEIC can only fail there (#481).
+		if ( ! in_array( $mime, Daymark_Publisher::VISION_MIME_TYPES, true ) ) {
+			return new WP_Error(
+				'daymark_alt_text_format_unsupported',
+				__( "Alt text can't be suggested for this image format.", 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
 		$context = array(
 			'text'         => sanitize_textarea_field( (string) $request->get_param( 'text' ) ),
 			'type'         => 'image',
@@ -2639,7 +2649,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return '';
 		}
 
-		return (string) wp_get_attachment_image( $thumbnail_id, 'large' );
+		// A GIF at full size, so an animated one keeps its animation (#482).
+		return (string) wp_get_attachment_image( $thumbnail_id, Daymark_Publisher::display_size( $thumbnail_id, 'large' ) );
 	}
 
 	/**
@@ -4362,7 +4373,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$images = array();
 
 		foreach ( array_slice( $attachment_ids, 0, 4 ) as $attachment_id ) {
-			$url = wp_get_attachment_image_url( absint( $attachment_id ), 'medium_large' );
+			// A GIF at full size, so an animated one keeps its animation (#482).
+			$url = wp_get_attachment_image_url( absint( $attachment_id ), Daymark_Publisher::display_size( absint( $attachment_id ), 'medium_large' ) );
 
 			if ( $url ) {
 				$images[] = esc_url_raw( $url );
@@ -4494,8 +4506,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// medium_large (768px wide): the thumbnail is also a card's
 		// full-width banner, which a 300px `medium` image would blur on a
-		// high-density phone screen.
-		$url = wp_get_attachment_image_url( $attachment_id, 'medium_large' );
+		// high-density phone screen. A GIF stays at full size, so an
+		// animated one keeps its animation (#482).
+		$url = wp_get_attachment_image_url( $attachment_id, Daymark_Publisher::display_size( $attachment_id, 'medium_large' ) );
 
 		return $url ? esc_url_raw( $url ) : '';
 	}

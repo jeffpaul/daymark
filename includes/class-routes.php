@@ -569,6 +569,9 @@ class Daymark_Routes {
 			'categoryDefaults'       => $category_defaults,
 			'titlePolicy'            => $title_policy,
 			'defaultCategory'        => (int) get_option( 'default_category' ),
+			// Whether the server can convert a HEIC/HEIF photo to JPEG
+			// (#481); the composer refuses one at pick time when it can't.
+			'heicUploads'            => Daymark_Publisher::accepts_heic(),
 			'ai'                     => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),
