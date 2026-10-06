@@ -271,6 +271,16 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			return $raw_items;
 		}
 
+		// With Parse This active, its full mf2 parser reads the page this
+		// method already fetched: implied properties, nested authors and the
+		// feed's own author inherited by each entry. Daymark's own scanner
+		// below is the fallback whenever it isn't installed or finds nothing.
+		$parse_this_items = $this->parse_with_parse_this( $body, $url );
+
+		if ( null !== $parse_this_items ) {
+			return $parse_this_items;
+		}
+
 		$entries = $this->find_elements_by_class( $body, 'h-entry' );
 
 		if ( empty( $entries ) ) {
@@ -364,6 +374,8 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			'raw_media'          => array_values( array_merge( $photos, $videos, $audios ) ),
 			// A gallery's own photos, in order, for its Timeline card's 2x2 grid.
 			'gallery_images'     => 'gallery' === $post_format ? Daymark_Subscription_Content_Sniffer::gallery_images( '', $photos ) : array(),
+			// The post this one replies to, for the post view's reply context.
+			'in_reply_to'        => 'reply' === (string) ( $raw_item['post_type'] ?? '' ) ? esc_url_raw( (string) ( $raw_item['in_reply_to'] ?? '' ) ) : '',
 		);
 	}
 
@@ -409,6 +421,11 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			$author_name = $this->plain_text( $author_matches[0]['inner_html'] );
 		}
 
+		// u-in-reply-to can sit on the same element as a nested h-cite, so
+		// read it from the unstripped entry, like detect_post_type() does.
+		$reply_matches = $this->find_elements_by_class( $entry_html, 'u-in-reply-to' );
+		$in_reply_to   = isset( $reply_matches[0] ) ? $this->resolve_href_attribute( $reply_matches[0], $base_url ) : '';
+
 		return array(
 			'name'         => $name,
 			'summary'      => $summary,
@@ -420,6 +437,7 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			'videos'       => $videos,
 			'audios'       => $audios,
 			'post_type'    => $this->detect_post_type( $entry_html ),
+			'in_reply_to'  => $in_reply_to,
 		);
 	}
 
@@ -619,6 +637,7 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			'videos'       => $this->json_media_urls( $properties, 'video', $base_url ),
 			'audios'       => $this->json_media_urls( $properties, 'audio', $base_url ),
 			'post_type'    => $this->detect_json_post_type( $properties ),
+			'in_reply_to'  => $this->json_reference_url( $properties, 'in-reply-to', $base_url ),
 		);
 	}
 
@@ -639,6 +658,129 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return 'note';
+	}
+
+	/**
+	 * A JSON mf2 reference property's URL — either a bare URL or a nested
+	 * h-cite whose own `url` names the cited post.
+	 *
+	 * @param array<string, mixed> $properties Entry `properties` object.
+	 * @param string               $key        Property name, e.g. 'in-reply-to'.
+	 * @param string               $base_url   Feed URL, for a relative value.
+	 * @return string
+	 */
+	private function json_reference_url( array $properties, string $key, string $base_url ): string {
+		$value = $properties[ $key ][0] ?? null;
+
+		if ( is_array( $value ) ) {
+			$value = $value['properties']['url'][0] ?? ( $value['value'] ?? null );
+		}
+
+		if ( ! is_string( $value ) || '' === trim( $value ) ) {
+			return '';
+		}
+
+		$url    = WP_Http::make_absolute_url( trim( $value ), $base_url );
+		$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+
+		return in_array( $scheme, array( 'http', 'https' ), true ) ? esc_url_raw( $url ) : '';
+	}
+
+	/**
+	 * Read a page's h-entries with Parse This, when it is active.
+	 *
+	 * Parse This parses the HTML fetch() already downloaded and makes no
+	 * request of its own (see Daymark_Parse_This::parse_html()). Its jf2
+	 * entries are mapped onto the same raw-item shape parse_entry()
+	 * produces, so normalize() treats both alike.
+	 *
+	 * @param string $html     Page HTML.
+	 * @param string $base_url Page URL.
+	 * @return array<int, array<string, mixed>>|null Raw items, or null to
+	 *                                                 fall back to Daymark's
+	 *                                                 own scanner.
+	 */
+	private function parse_with_parse_this( string $html, string $base_url ): ?array {
+		$jf2 = Daymark_Parse_This::parse_html( $html, $base_url, 'feed' );
+
+		// Only microformats count here. A page with none gets a single item
+		// built from its meta tags, which is not a feed of posts.
+		if ( null === $jf2 || 'mf2+html' !== (string) ( $jf2['_source_format'] ?? '' ) ) {
+			return null;
+		}
+
+		$entries = is_array( $jf2['items'] ?? null ) ? $jf2['items'] : array();
+
+		if ( empty( $entries ) && 'entry' === ( $jf2['type'] ?? '' ) ) {
+			// A single h-entry page rather than an h-feed.
+			$entries = array( $jf2 );
+		}
+
+		$raw_items = array();
+
+		foreach ( $entries as $entry ) {
+			if ( ! is_array( $entry ) || 'entry' !== ( $entry['type'] ?? 'entry' ) ) {
+				continue;
+			}
+
+			$raw_items[] = $this->raw_item_from_jf2( $entry, $base_url );
+		}
+
+		return empty( $raw_items ) ? null : $raw_items;
+	}
+
+	/**
+	 * Map one Parse This jf2 entry onto parse_entry()'s raw-item shape.
+	 *
+	 * @param array<string, mixed> $entry    jf2 entry (always_arrays on).
+	 * @param string               $base_url Page URL, for relative URLs.
+	 * @return array<string, mixed>
+	 */
+	private function raw_item_from_jf2( array $entry, string $base_url ): array {
+		$permalink = Daymark_Parse_This::urls( $entry, 'url', $base_url )[0] ?? '';
+
+		if ( '' === $permalink ) {
+			$permalink = Daymark_Parse_This::urls( $entry, 'uid', $base_url )[0] ?? '';
+		}
+
+		$photos = Daymark_Parse_This::urls( $entry, 'photo', $base_url );
+
+		foreach ( Daymark_Parse_This::urls( $entry, 'featured', $base_url ) as $featured ) {
+			if ( ! in_array( $featured, $photos, true ) ) {
+				array_unshift( $photos, $featured );
+			}
+		}
+
+		// Parse This runs the full post type discovery algorithm; Daymark
+		// only distinguishes the reaction types POST_TYPE_CLASSES lists.
+		$post_type = sanitize_key( (string) ( $entry['post-type'] ?? '' ) );
+
+		if ( ! isset( self::POST_TYPE_CLASSES[ $post_type ] ) ) {
+			$post_type = 'note';
+		}
+
+		// Parse This fills `summary` from the content's text when a post has
+		// none, which for a photo post is the image's address. Keep only a
+		// summary the post wrote itself; normalize() falls back to content.
+		$summary = Daymark_Parse_This::text( $entry, 'summary' );
+
+		if ( Daymark_Parse_This::text( $entry, 'content' ) === $summary ) {
+			$summary = '';
+		}
+
+		return array(
+			'name'         => Daymark_Parse_This::text( $entry, 'name' ),
+			'summary'      => $summary,
+			'content_html' => wp_kses_post( Daymark_Parse_This::content_html( $entry ) ),
+			'permalink'    => $permalink,
+			'published'    => Daymark_Parse_This::text( $entry, 'published' ),
+			'author_name'  => Daymark_Parse_This::author_name( $entry ),
+			'photos'       => $photos,
+			'videos'       => Daymark_Parse_This::urls( $entry, 'video', $base_url ),
+			'audios'       => Daymark_Parse_This::urls( $entry, 'audio', $base_url ),
+			'post_type'    => $post_type,
+			'in_reply_to'  => Daymark_Parse_This::urls( $entry, 'in-reply-to', $base_url )[0] ?? '',
+		);
 	}
 
 	/**

@@ -20,6 +20,16 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- You can now follow sites that publish a JSON Feed, the format Micro.blog and many static sites use. Daymark finds it from the site's page, or you can paste the feed's own address. A site that offers RSS as well is still followed through RSS, and the subscribe picker lists both.
+- Daymark now works with the optional Parse This plugin (2.0.0 or later), listed on Settings -> Daymark -> Connectors. With it, link previews also show the page's author and use its microformats and JSON-LD, and sites you follow through their microformats are read by Parse This's complete parser. Daymark only gives Parse This pages it already fetched, and works as before without it.
+- A post from a site you follow that replies to another post now shows what it replies to at the top of the full post view, with a preview of that post.
+
+### Fixed
+
+- A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site.
+
 ## [0.19.0] - 2026-10-02
 
 ### Added

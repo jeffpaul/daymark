@@ -295,6 +295,23 @@ class Daymark_Subscription_Post_Type {
 			)
 		);
 
+		// The post this one replies to, when its source marks it up as a
+		// reply (microformats2 `in-reply-to`). Shown as reply context in the
+		// app's post view; never fetched by Daymark.
+		register_post_meta(
+			self::POST_TYPE,
+			'in_reply_to',
+			array(
+				'type'              => 'string',
+				'description'       => __( 'The URL of the post this one replies to, when detected.', 'daymark' ),
+				'single'            => true,
+				'default'           => '',
+				'show_in_rest'      => true,
+				'sanitize_callback' => 'esc_url_raw',
+				'auth_callback'     => $auth_callback,
+			)
+		);
+
 		// A gallery post's own photo URLs (a JSON list, in display order),
 		// for its Timeline card's 2x2 grid. Written only through
 		// Daymark_Subscription_Poller::store_gallery_images(), which checks

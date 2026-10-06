@@ -3613,12 +3613,41 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
-/* The linked page's site, under its title and description, when the
-   preview is a link Featured Content in the full post view. */
+/* The linked page's author (when Parse This found one) and site, under
+   its title and description. */
 .daymark-oembed-preview__site {
 	margin: var(--daymark-spacing-xs) 0 0;
 	font-size: 12px;
 	color: var(--daymark-text-secondary);
+}
+
+/* "In reply to" context above a followed post that replies to another
+   (PostScreen.maybeShowReplyContext(), app.js): a small label, then the
+   replied-to post's link, upgraded to a compact preview card once it
+   resolves. */
+.daymark-reply-context {
+	margin-bottom: var(--daymark-spacing-md);
+	padding-left: var(--daymark-spacing-sm);
+	border-left: 3px solid var(--daymark-border);
+}
+
+.daymark-reply-context__label {
+	margin: 0 0 var(--daymark-spacing-xs);
+	font-size: 12px;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-reply-context__link {
+	font-size: 13px;
+	overflow-wrap: anywhere;
+}
+
+.daymark-reply-context .daymark-oembed-preview {
+	margin-top: 0;
+}
+
+.daymark-reply-context .daymark-oembed-preview--link img {
+	height: 120px;
 }
 
 /* The same "link"/"photo" preview on a Timeline/Search card itself (issue
