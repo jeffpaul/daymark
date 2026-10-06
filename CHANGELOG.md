@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- With Jetpack active and your WordPress.com account linked, Settings -> Daymark -> Import/Export can now import the sites you follow in the WordPress.com Reader. You pick from a checklist first, and each site is imported the same way as an OPML entry, so it looks exactly like a subscription added by hand. ([#478](https://github.com/jeffpaul/daymark/pull/478))
+
 ## [0.19.0] - 2026-10-02
 
 ### Added
