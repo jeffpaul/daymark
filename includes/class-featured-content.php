@@ -906,7 +906,8 @@ class Daymark_Featured_Content {
 
 			$img = wp_get_attachment_image(
 				$id,
-				'large',
+				// A GIF at full size, so an animated one keeps its animation (#482).
+				Daymark_Publisher::display_size( $id, 'large' ),
 				false,
 				array(
 					'class' => 'daymark-fc-gallery__img',

@@ -103,6 +103,10 @@ class Daymark_Publisher {
 	 * wp_check_filetype_and_ext()) before upload — never trust the file
 	 * extension alone.
 	 *
+	 * AVIF and HEIC/HEIF were added in issue #481. HEIC/HEIF is only
+	 * accepted where the server can convert it to JPEG (see accepts_heic()),
+	 * so this list is what Daymark knows, not what every site takes.
+	 *
 	 * @var string[]
 	 */
 	public const ALLOWED_MIME_TYPES = array(
@@ -110,6 +114,9 @@ class Daymark_Publisher {
 		'image/png',
 		'image/gif',
 		'image/webp',
+		'image/avif',
+		'image/heic',
+		'image/heif',
 		'video/mp4',
 		'video/quicktime',
 		'audio/mpeg',
@@ -248,6 +255,57 @@ class Daymark_Publisher {
 		96 => 'Thunderstorm',
 		99 => 'Thunderstorm',
 	);
+
+	/**
+	 * HEIC/HEIF photos, the default format on iPhone (issue #481). Core
+	 * converts them to JPEG on upload, but only when the server's image
+	 * editor supports HEIC. Image sequences (Live Photos, bursts) are left
+	 * out.
+	 *
+	 * @var string[]
+	 */
+	public const HEIC_MIME_TYPES = array( 'image/heic', 'image/heif' );
+
+	/**
+	 * Image formats AI vision providers accept, so alt text is only asked
+	 * for an image a provider can read (issue #481).
+	 *
+	 * @var string[]
+	 */
+	public const VISION_MIME_TYPES = array( 'image/jpeg', 'image/png', 'image/gif', 'image/webp' );
+
+	/**
+	 * Whether this site takes HEIC/HEIF uploads: only when the server's
+	 * image editor can read HEIC, since core then converts the photo to a
+	 * JPEG every browser can show (WordPress 6.7+). Without that, the file
+	 * would be stored as-is and only Safari could display it.
+	 *
+	 * @return bool
+	 */
+	public static function accepts_heic(): bool {
+		/**
+		 * Filters whether Daymark accepts HEIC/HEIF photo uploads.
+		 *
+		 * @since 0.20.0
+		 *
+		 * @param bool $accepts Defaults to whether the server's image editor supports HEIC.
+		 */
+		return (bool) apply_filters( 'daymark_accept_heic_uploads', wp_image_editor_supports( array( 'mime_type' => 'image/heic' ) ) );
+	}
+
+	/**
+	 * The image size to ask for when showing an attachment (issue #482).
+	 * Core flattens an animated GIF to its first frame when it makes
+	 * resized copies, and skips `srcset` for a full-size GIF to keep its
+	 * animation, so a GIF is always shown at full size.
+	 *
+	 * @param int    $attachment_id Attachment ID.
+	 * @param string $size          The size wanted for any other image.
+	 * @return string
+	 */
+	public static function display_size( int $attachment_id, string $size ): string {
+		return 'image/gif' === get_post_mime_type( $attachment_id ) ? 'full' : $size;
+	}
 
 	/**
 	 * Content-sniffed MIME aliases mapped to their canonical allowed type.
@@ -1119,6 +1177,21 @@ class Daymark_Publisher {
 		$content_mime = (string) $finfo->file( $file['tmp_name'] );
 		$content_mime = self::canonical_mime( $content_mime );
 
+		// An older libmagic may not recognize AVIF or HEIC. Core's own
+		// check reads the file's bytes too, so it is still a content check.
+		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
+			$image_mime   = (string) wp_get_image_mime( $file['tmp_name'] );
+			$content_mime = '' !== $image_mime ? self::canonical_mime( $image_mime ) : $content_mime;
+		}
+
+		if ( in_array( $content_mime, self::HEIC_MIME_TYPES, true ) && ! self::accepts_heic() ) {
+			return new WP_Error(
+				'daymark_heic_unsupported',
+				__( "This site can't convert HEIC photos. Please share the photo as a JPEG instead.", 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			return new WP_Error(
 				'invalid_mime',
@@ -1522,7 +1595,8 @@ class Daymark_Publisher {
 	 * @return string Block markup.
 	 */
 	private function build_image_block( int $attachment_id ): string {
-		$url = wp_get_attachment_image_url( $attachment_id, 'large' );
+		$size = self::display_size( $attachment_id, 'large' );
+		$url  = wp_get_attachment_image_url( $attachment_id, $size );
 
 		if ( ! $url ) {
 			$url = (string) wp_get_attachment_url( $attachment_id );
@@ -1531,12 +1605,13 @@ class Daymark_Publisher {
 		$alt = (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true );
 
 		return sprintf(
-			"<!-- wp:image {\"id\":%1\$d,\"sizeSlug\":\"large\",\"linkDestination\":\"none\"} -->\n" .
-			"<figure class=\"wp-block-image size-large\"><img src=\"%2\$s\" alt=\"%3\$s\" class=\"wp-image-%1\$d\"/></figure>\n" .
+			"<!-- wp:image {\"id\":%1\$d,\"sizeSlug\":\"%4\$s\",\"linkDestination\":\"none\"} -->\n" .
+			"<figure class=\"wp-block-image size-%4\$s\"><img src=\"%2\$s\" alt=\"%3\$s\" class=\"wp-image-%1\$d\"/></figure>\n" .
 			'<!-- /wp:image -->',
 			$attachment_id,
 			esc_url( $url ),
-			esc_attr( $alt )
+			esc_attr( $alt ),
+			esc_attr( $size )
 		);
 	}
 

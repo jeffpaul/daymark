@@ -995,6 +995,18 @@
 	// Pre-filters the composer's native file picker to match the launcher
 	// bubble that was tapped — 'note' has no entry since it skips the
 	// picker entirely (see CreateScreen.render()).
+	// Image formats AI vision providers can read, matching
+	// Daymark_Publisher::VISION_MIME_TYPES (#481). Alt text isn't suggested
+	// automatically for any other format, such as AVIF.
+	const VISION_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+	// A HEIC/HEIF photo, including an image sequence (#481). Some browsers
+	// report no type for one, so the extension counts too.
+	function isHeicFile(file) {
+		const type = (file && file.type) || '';
+		return /^image\/hei[cf]/.test(type) || /\.hei[cf]s?$/i.test((file && file.name) || '');
+	}
+
 	const ACCEPT_BY_TYPE = {
 		image: 'image/*',
 		video: 'video/*',
@@ -7361,6 +7373,28 @@
 			if (!picked.length) {
 				return;
 			}
+			// A HEIC/HEIF photo the server can't convert would be stored as
+			// a file most browsers can't show, so the server refuses it
+			// (#481). Say so now, rather than as a failed upload later.
+			// iPhone Safari already hands over a JPEG, so this is mostly a
+			// .heic dragged in on a Mac or a HEIF from an Android phone.
+			const status = root.querySelector('[data-create-status]');
+			if (status) {
+				status.textContent = '';
+			}
+			if (!config.heicUploads) {
+				const refused = picked.filter(isHeicFile);
+				if (refused.length && status) {
+					status.textContent = __(
+						"This site can't convert HEIC photos. Please share the photo as a JPEG instead.",
+						'daymark'
+					);
+				}
+				picked.splice(0, picked.length, ...picked.filter((file) => !isHeicFile(file)));
+				if (!picked.length) {
+					return;
+				}
+			}
 			picked.forEach((file) => {
 				const duplicate = state.files.some(
 					(entry) =>
@@ -7379,7 +7413,11 @@
 					url: isImage ? URL.createObjectURL(file) : '',
 					kind: (file.type || '').split('/')[0] || 'file',
 					alt: '',
-					altStatus: isImage && config.ai && config.ai.available ? 'loading' : 'idle',
+					// Only formats AI vision providers can read (#481).
+					altStatus:
+						isImage && VISION_IMAGE_TYPES.includes(file.type) && config.ai && config.ai.available
+							? 'loading'
+							: 'idle',
 					altEdited: false,
 				};
 				state.files.push(entry);
@@ -7539,7 +7577,11 @@
 					  esc(__('AI-suggested — edit as needed', 'daymark')) +
 					  '</span>'
 					: '';
-			const canImprove = config.ai && config.ai.available && entry.altStatus !== 'loading';
+			const canImprove =
+				config.ai &&
+				config.ai.available &&
+				entry.altStatus !== 'loading' &&
+				VISION_IMAGE_TYPES.includes(entry.file ? entry.file.type : '');
 			const improveButton = canImprove
 				? `<button type="button" class="daymark-btn daymark-btn--text daymark-alt__improve" data-alt-improve="${esc(
 						entry.id
