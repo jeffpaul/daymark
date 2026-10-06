@@ -45,6 +45,10 @@
  *    see bindDiscoverSourcesForms(). The picker's own "Update feeds"/
  *    "Discard" forms are unchanged plain submits; only the initial discovery
  *    trigger is enhanced here.
+ * 6. The WordPress.com Reader import checklist (issue #435) gets a "Select
+ *    all" checkbox that checks or unchecks every followed site at once.
+ *    It is hidden without JavaScript, where each box is toggled by hand.
+ *    See bindReaderImportToggle().
  */
 (function () {
 	'use strict';
@@ -55,7 +59,64 @@
 		bindRefreshForms();
 		bindEditTitleDisclosures();
 		bindDiscoverSourcesForms();
+		bindReaderImportToggle();
 	} );
+
+	/**
+	 * Wires the Reader import checklist's "Select all" checkbox (behavior
+	 * 6). Only the entries that can still be imported carry
+	 * `data-daymark-reader-import-entry`; already-subscribed ones are
+	 * disabled and left alone.
+	 *
+	 * @return void
+	 */
+	function bindReaderImportToggle() {
+		var form = document.querySelector( '[data-daymark-reader-import-form]' );
+
+		if ( ! form ) {
+			return;
+		}
+
+		var toggle = form.querySelector( '[data-daymark-reader-import-toggle-all]' );
+		var label = form.querySelector( '[data-daymark-reader-import-toggle-all-label]' );
+		var entries = form.querySelectorAll( '[data-daymark-reader-import-entry]' );
+
+		if ( ! toggle || ! entries.length ) {
+			return;
+		}
+
+		toggle.hidden = false;
+
+		if ( label ) {
+			label.hidden = false;
+		}
+
+		var sync = function () {
+			var checked = 0;
+
+			entries.forEach( function ( entry ) {
+				if ( entry.checked ) {
+					checked++;
+				}
+			} );
+
+			toggle.checked = checked === entries.length;
+			toggle.indeterminate = checked > 0 && checked < entries.length;
+		};
+
+		toggle.addEventListener( 'change', function () {
+			entries.forEach( function ( entry ) {
+				entry.checked = toggle.checked;
+			} );
+			toggle.indeterminate = false;
+		} );
+
+		entries.forEach( function ( entry ) {
+			entry.addEventListener( 'change', sync );
+		} );
+
+		sync();
+	}
 
 	/**
 	 * Wires the Subscribe form (behavior 1) to run discovery via `fetch()`

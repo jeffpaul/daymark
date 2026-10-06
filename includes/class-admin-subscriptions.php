@@ -170,6 +170,9 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_update_feeds', array( $this, 'handle_subscription_update_feeds' ) );
 		add_action( 'admin_post_daymark_subscriptions_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_post_daymark_subscriptions_import', array( $this, 'handle_import' ) );
+		add_action( 'admin_post_daymark_reader_import_load', array( $this, 'handle_reader_import_load' ) );
+		add_action( 'admin_post_daymark_reader_import_confirm', array( $this, 'handle_reader_import_confirm' ) );
+		add_action( 'admin_post_daymark_reader_import_cancel', array( $this, 'handle_reader_import_cancel' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
@@ -479,6 +482,7 @@ class Daymark_Admin_Subscriptions {
 		<?php
 		$this->render_export_link();
 		$this->render_import_form();
+		$this->render_reader_import_section();
 	}
 
 	/**
@@ -508,7 +512,7 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
-		if ( 'opml_imported' === $notice ) {
+		if ( 'opml_imported' === $notice || 'reader_imported' === $notice ) {
 			$this->render_opml_import_results();
 
 			return;
@@ -1980,6 +1984,175 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * The transient key holding the current user's stashed WordPress.com
+	 * Reader follow list (issue #435) between "Load my Reader follows" and
+	 * "Import selected" — per user, the same POST-redirect-GET convention
+	 * the OPML results and the new-subscribe picker already use.
+	 *
+	 * @return string
+	 */
+	private static function reader_import_transient_key(): string {
+		return 'daymark_reader_import_follows_' . get_current_user_id();
+	}
+
+	/**
+	 * Render the "Import from WordPress.com Reader" section (issue #435).
+	 * Hidden entirely without Jetpack; a connect link when Jetpack is
+	 * active but the current user hasn't linked their own WordPress.com
+	 * account; otherwise a "Load my Reader follows" button, or the
+	 * checklist once follows have been loaded.
+	 *
+	 * @return void
+	 */
+	private function render_reader_import_section(): void {
+		$status = Daymark_Reader_Import::status();
+
+		if ( Daymark_Reader_Import::STATUS_UNAVAILABLE === $status ) {
+			return;
+		}
+		?>
+		<h2><?php esc_html_e( 'Import from WordPress.com Reader', 'daymark' ); ?></h2>
+		<?php if ( Daymark_Reader_Import::STATUS_NOT_CONNECTED === $status ) : ?>
+			<p><?php esc_html_e( 'Link your WordPress.com account through Jetpack to import the sites you already follow in the Reader.', 'daymark' ); ?></p>
+			<p>
+				<a href="<?php echo esc_url( Daymark_Jetpack_Engagement::connect_account_url() ); ?>" class="button button-secondary"><?php esc_html_e( 'Connect your WordPress.com account', 'daymark' ); ?></a>
+			</p>
+			<?php
+			return;
+		endif;
+
+		$stashed = get_transient( self::reader_import_transient_key() );
+
+		if ( is_array( $stashed ) && ! empty( $stashed['entries'] ) && is_array( $stashed['entries'] ) ) {
+			$this->render_reader_import_picker( $stashed );
+
+			return;
+		}
+		?>
+		<p><?php esc_html_e( 'Subscribe to the sites you already follow in the WordPress.com Reader. You choose which ones before anything is imported. This is a one-time import: following or unfollowing later in either place does not carry over.', 'daymark' ); ?></p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_reader_import_load" />
+			<?php wp_nonce_field( 'daymark_reader_import_load', 'daymark_reader_import_load_nonce' ); ?>
+			<?php submit_button( __( 'Load my Reader follows', 'daymark' ), 'secondary', 'daymark-reader-import-load', true ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render the Reader follows checklist: every followed site checked by
+	 * default, except ones this site already subscribes to, which are
+	 * shown checked and disabled (they would only come back as duplicates).
+	 *
+	 * @param array{entries: array<int, array<string, string>>, total?: int, truncated?: bool} $stashed The stashed follow list.
+	 * @return void
+	 */
+	private function render_reader_import_picker( array $stashed ): void {
+		$entries    = $stashed['entries'];
+		$subscribed = array();
+
+		foreach ( Daymark_Plugin::instance()->subscriptions->get_all() as $subscription ) {
+			$subscribed[ strtolower( untrailingslashit( (string) ( $subscription['feed_url'] ?? '' ) ) ) ] = true;
+		}
+		?>
+		<p>
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: %d: number of sites followed in the WordPress.com Reader. */
+					_n( 'You follow %d site in the WordPress.com Reader. Uncheck any you don\'t want, then import the rest.', 'You follow %d sites in the WordPress.com Reader. Uncheck any you don\'t want, then import the rest.', count( $entries ), 'daymark' ),
+					count( $entries )
+				)
+			);
+			?>
+		</p>
+		<?php if ( ! empty( $stashed['truncated'] ) ) : ?>
+			<p class="description">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: 1: number of follows listed, 2: total number of follows. */
+						__( 'Only the first %1$d of your %2$d follows are listed. Import these, then add any others by URL.', 'daymark' ),
+						count( $entries ),
+						max( count( $entries ), (int) ( $stashed['total'] ?? 0 ) )
+					)
+				);
+				?>
+			</p>
+		<?php endif; ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-daymark-reader-import-form>
+			<input type="hidden" name="action" value="daymark_reader_import_confirm" />
+			<?php wp_nonce_field( 'daymark_reader_import_confirm', 'daymark_reader_import_confirm_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" data-daymark-reader-import-toggle-all checked="checked" hidden="hidden" />
+					<span data-daymark-reader-import-toggle-all-label hidden="hidden"><?php esc_html_e( 'Select all', 'daymark' ); ?></span>
+				</label>
+			</p>
+			<div style="max-height:400px;overflow:auto;border:1px solid #dcdcde;background:#fff;padding:4px 12px;max-width:600px;">
+				<?php foreach ( $entries as $index => $entry ) : ?>
+					<?php
+					$xml_url = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
+					$label   = isset( $entry['label'] ) ? (string) $entry['label'] : $xml_url;
+					$already = isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] );
+					?>
+					<label style="display:block;margin:6px 0;">
+						<input
+							type="checkbox"
+							name="daymark_reader_entry[]"
+							value="<?php echo esc_attr( (string) $index ); ?>"
+							checked="checked"
+							<?php disabled( $already ); ?>
+							<?php echo $already ? '' : 'data-daymark-reader-import-entry'; ?>
+						/>
+						<strong><?php echo esc_html( $label ); ?></strong>
+						<?php if ( $already ) : ?>
+							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
+						<?php endif; ?>
+						<br />
+						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $xml_url ); ?></code>
+					</label>
+				<?php endforeach; ?>
+			</div>
+			<?php submit_button( __( 'Import selected', 'daymark' ), 'primary', 'daymark-reader-import-submit', false ); ?>
+		</form>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:8px;">
+			<input type="hidden" name="action" value="daymark_reader_import_cancel" />
+			<?php wp_nonce_field( 'daymark_reader_import_cancel', 'daymark_reader_import_cancel_nonce' ); ?>
+			<?php submit_button( __( 'Cancel', 'daymark' ), 'link', 'daymark-reader-import-cancel', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The stashed Reader follows a submitted checklist selected, in list
+	 * order. Anything that isn't a non-negative whole number, is out of
+	 * range, or repeats is ignored.
+	 *
+	 * @param array<int, array<string, string>> $entries Stashed follow list.
+	 * @param array<int, mixed>                 $indices Submitted checkbox values.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function selected_reader_entries( array $entries, array $indices ): array {
+		$wanted = array();
+
+		foreach ( $indices as $index ) {
+			if ( is_int( $index ) || ( is_string( $index ) && ctype_digit( $index ) ) ) {
+				$wanted[ (int) $index ] = true;
+			}
+		}
+
+		$selected = array();
+
+		foreach ( $entries as $index => $entry ) {
+			if ( isset( $wanted[ (int) $index ] ) && is_array( $entry ) ) {
+				$selected[] = $entry;
+			}
+		}
+
+		return $selected;
+	}
+
+	/**
 	 * Recommended companion IndieWeb plugins (issue #86) — every one of
 	 * these solves its problem at the data/protocol layer rather than
 	 * through theme template rendering, which is exactly what already lets
@@ -3448,14 +3621,127 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * Handle "Load my Reader follows" (admin_post_daymark_reader_import_load,
+	 * issue #435): fetch the current user's WordPress.com Reader follows,
+	 * stash them, and redirect back to the Import/Export tab, where
+	 * render_reader_import_section() shows the checklist. Rate-limited on
+	 * the same bucket subscribing and the OPML import use.
+	 *
+	 * @return void
+	 */
+	public function handle_reader_import_load(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_reader_import_load', 'daymark_reader_import_load_nonce' );
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		$follows = Daymark_Reader_Import::fetch_follows();
+
+		if ( is_wp_error( $follows ) ) {
+			$this->redirect_with_error( $follows->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		if ( empty( $follows['entries'] ) ) {
+			$this->redirect_with_error( __( 'You don\'t follow any sites in the WordPress.com Reader yet.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		set_transient( self::reader_import_transient_key(), $follows, HOUR_IN_SECONDS );
+
+		$this->redirect( array(), 'import-export' );
+	}
+
+	/**
+	 * Handle "Import selected" (admin_post_daymark_reader_import_confirm,
+	 * issue #435): import the checked follows through the same per-entry
+	 * import the OPML import uses, then show the same per-entry results.
+	 * Reads the follow list from the stash, never from the request, so a
+	 * submitted form can only choose among what WordPress.com returned.
+	 *
+	 * @return void
+	 */
+	public function handle_reader_import_confirm(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_reader_import_confirm', 'daymark_reader_import_confirm_nonce' );
+
+		$stashed = get_transient( self::reader_import_transient_key() );
+
+		if ( ! is_array( $stashed ) || empty( $stashed['entries'] ) || ! is_array( $stashed['entries'] ) ) {
+			$this->redirect_with_error( __( 'Your Reader follow list has expired. Please load it again.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce already verified above via check_admin_referer().
+		$indices  = isset( $_POST['daymark_reader_entry'] ) && is_array( $_POST['daymark_reader_entry'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['daymark_reader_entry'] ) ) : array();
+		$selected = array_slice( self::selected_reader_entries( $stashed['entries'], $indices ), 0, Daymark_Reader_Import::max_entries() );
+
+		if ( empty( $selected ) ) {
+			$this->redirect_with_error( __( 'Select at least one site to import.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		delete_transient( self::reader_import_transient_key() );
+
+		$results = ( new Daymark_Subscription_OPML() )->import_entries( $selected );
+
+		set_transient( 'daymark_opml_import_result_' . get_current_user_id(), $results, MINUTE_IN_SECONDS );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'reader_imported' ), 'import-export' );
+	}
+
+	/**
+	 * Handle the checklist's Cancel (admin_post_daymark_reader_import_cancel):
+	 * discard the stashed follow list without importing anything.
+	 *
+	 * @return void
+	 */
+	public function handle_reader_import_cancel(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_reader_import_cancel', 'daymark_reader_import_cancel_nonce' );
+
+		delete_transient( self::reader_import_transient_key() );
+
+		$this->redirect( array(), 'import-export' );
+	}
+
+	/**
 	 * Redirect back to the settings page with the given query args merged
 	 * in, then stop execution (standard POST-redirect-GET).
 	 *
 	 * @param array<string, string> $args Extra query args (e.g. the notice).
+	 * @param string                $tab  Tab to land on; '' for the default tab.
 	 * @return void
 	 */
-	private function redirect( array $args ): void {
-		$url = add_query_arg( $args, self::page_url() );
+	private function redirect( array $args, string $tab = '' ): void {
+		$url = add_query_arg( $args, '' !== $tab ? self::tab_url( $tab ) : self::page_url() );
 
 		wp_safe_redirect( $url );
 		exit;
@@ -3466,14 +3752,16 @@ class Daymark_Admin_Subscriptions {
 	 * given message.
 	 *
 	 * @param string $message Error message to display.
+	 * @param string $tab     Tab to land on; '' for the default tab.
 	 * @return void
 	 */
-	private function redirect_with_error( string $message ): void {
+	private function redirect_with_error( string $message, string $tab = '' ): void {
 		$this->redirect(
 			array(
 				self::NOTICE_QUERY_VAR  => 'error',
 				self::MESSAGE_QUERY_VAR => $message,
-			)
+			),
+			$tab
 		);
 	}
 }
