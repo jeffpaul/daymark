@@ -248,15 +248,63 @@ class Daymark_Subscription_OPML {
 			);
 		}
 
+		return $this->import_entries( array_map( array( $this, 'entry_from_outline' ), $entries ) );
+	}
+
+	/**
+	 * Import a list of already-parsed entries, one result per entry, then
+	 * trigger one async poll if anything new was created. Shared by
+	 * import() (OPML `<outline>` elements) and the WordPress.com Reader
+	 * import (Daymark_Reader_Import, issue #435), so a row from either
+	 * source goes through the exact same validation, SSRF guard, and
+	 * duplicate handling as one added by hand.
+	 *
+	 * The caller is responsible for the entry-count cap
+	 * (`daymark_subscription_opml_max_entries`); this method imports
+	 * whatever it is given.
+	 *
+	 * @param array<int, array{label?: string, xml_url?: string, html_url?: string, icon_url?: string}> $entries Entries to import.
+	 * @return array<int, array{label: string, status: string, message: string}>
+	 */
+	public function import_entries( array $entries ): array {
 		$results = array();
 
-		foreach ( $entries as $node ) {
-			$results[] = $this->import_entry( $node );
+		foreach ( $entries as $entry ) {
+			$results[] = $this->import_entry( is_array( $entry ) ? $entry : array() );
 		}
 
 		$this->maybe_poll_new_subscriptions( $results );
 
 		return $results;
+	}
+
+	/**
+	 * Read one `<outline>` element into import_entries()' plain entry shape.
+	 *
+	 * @param DOMElement $node One `<outline>` element.
+	 * @return array{label: string, xml_url: string, html_url: string, icon_url: string}
+	 */
+	private function entry_from_outline( DOMElement $node ): array {
+		$xml_url  = trim( $node->getAttribute( 'xmlUrl' ) );
+		$html_url = trim( $node->getAttribute( 'htmlUrl' ) );
+		$text     = trim( $node->getAttribute( 'text' ) );
+		$title    = trim( $node->getAttribute( 'title' ) );
+
+		// The namespaced `daymark:iconUrl` attribute this class's own
+		// export() writes, falling back to a plain `iconUrl` attribute for
+		// interop with a hand-edited or non-namespace-aware file.
+		$icon_url = $node->getAttributeNS( self::NAMESPACE_URI, 'iconUrl' );
+
+		if ( '' === $icon_url ) {
+			$icon_url = $node->getAttribute( 'iconUrl' );
+		}
+
+		return array(
+			'label'    => '' !== $text ? $text : $title,
+			'xml_url'  => $xml_url,
+			'html_url' => $html_url,
+			'icon_url' => trim( $icon_url ),
+		);
 	}
 
 	/**
@@ -295,26 +343,25 @@ class Daymark_Subscription_OPML {
 	}
 
 	/**
-	 * Import one `<outline>` entry: the `xmlUrl` fast path (create() only,
-	 * no live fetch — the scoping decision behind this whole feature) when a
-	 * feed URL is present, else full live discovery via
+	 * Import one entry: the `xmlUrl` fast path (create() only, no live
+	 * fetch — the scoping decision behind this whole feature) when a feed
+	 * URL is present, else full live discovery via
 	 * Daymark_Subscriptions::subscribe_to_site() when only an `htmlUrl` is
 	 * present.
 	 *
-	 * @param DOMElement $node One `<outline>` element.
+	 * @param array{label?: string, xml_url?: string, html_url?: string, icon_url?: string} $entry One entry.
 	 * @return array{label: string, status: string, message: string}
 	 */
-	private function import_entry( DOMElement $node ): array {
-		$xml_url  = trim( $node->getAttribute( 'xmlUrl' ) );
-		$html_url = trim( $node->getAttribute( 'htmlUrl' ) );
-		$text     = trim( $node->getAttribute( 'text' ) );
-		$title    = trim( $node->getAttribute( 'title' ) );
+	private function import_entry( array $entry ): array {
+		$xml_url  = trim( (string) ( $entry['xml_url'] ?? '' ) );
+		$html_url = trim( (string) ( $entry['html_url'] ?? '' ) );
+		$label    = trim( (string) ( $entry['label'] ?? '' ) );
 
-		$label = '' !== $text ? $text : ( '' !== $title ? $title : ( '' !== $xml_url ? $xml_url : $html_url ) );
+		$label = '' !== $label ? $label : ( '' !== $xml_url ? $xml_url : $html_url );
 		$label = sanitize_text_field( $label );
 
 		if ( '' !== $xml_url ) {
-			return $this->import_via_xml_url( $node, $xml_url, $html_url, $label );
+			return $this->import_via_xml_url( $xml_url, $html_url, $label, (string) ( $entry['icon_url'] ?? '' ) );
 		}
 
 		return $this->import_via_html_url( $html_url, $label );
@@ -331,14 +378,13 @@ class Daymark_Subscription_OPML {
 	 * an arbitrary uploaded file a trusted *target* to store and later
 	 * fetch on a schedule.
 	 *
-	 * @param DOMElement $node     The `<outline>` element (for its
-	 *                             `daymark:iconUrl` attribute).
-	 * @param string     $xml_url  Raw `xmlUrl` attribute value.
-	 * @param string     $html_url Raw `htmlUrl` attribute value, if any.
-	 * @param string     $label    Display label for the result row.
+	 * @param string $xml_url  Raw `xmlUrl` attribute value.
+	 * @param string $html_url Raw `htmlUrl` attribute value, if any.
+	 * @param string $label    Display label for the result row.
+	 * @param string $icon_url Raw icon URL, if any (validated here).
 	 * @return array{label: string, status: string, message: string}
 	 */
-	private function import_via_xml_url( DOMElement $node, string $xml_url, string $html_url, string $label ): array {
+	private function import_via_xml_url( string $xml_url, string $html_url, string $label, string $icon_url = '' ): array {
 		$xml_url = esc_url_raw( $xml_url );
 		$scheme  = strtolower( (string) wp_parse_url( $xml_url, PHP_URL_SCHEME ) );
 		$host    = (string) wp_parse_url( $xml_url, PHP_URL_HOST );
@@ -375,7 +421,7 @@ class Daymark_Subscription_OPML {
 				'source_type'   => 'feed',
 				'site_title'    => $label,
 				'feed_title'    => $label,
-				'site_icon_url' => $this->extract_icon_url( $node ),
+				'site_icon_url' => $this->validate_icon_url( $icon_url ),
 			)
 		);
 
@@ -435,10 +481,8 @@ class Daymark_Subscription_OPML {
 	}
 
 	/**
-	 * Read and validate an outline's Daymark-specific icon URL: the
-	 * namespaced `daymark:iconUrl` attribute this class's own export()
-	 * writes, falling back to a plain, non-namespaced `iconUrl` attribute
-	 * for interop with a hand-edited or non-namespace-aware file.
+	 * Validate an entry's icon URL (an outline's `daymark:iconUrl`, or a
+	 * WordPress.com Reader follow's `site_icon`).
 	 *
 	 * Run through Daymark_Subscription_Url_Guard::check() before being
 	 * accepted: unlike `site_url`, this value is a real fetch target — it
@@ -446,16 +490,10 @@ class Daymark_Subscription_OPML {
 	 * it gets the same SSRF hardening every other stored, fetchable
 	 * subscription URL already gets.
 	 *
-	 * @param DOMElement $node The `<outline>` element.
+	 * @param string $icon_url Raw icon URL.
 	 * @return string The validated icon URL, or '' when absent or unsafe.
 	 */
-	private function extract_icon_url( DOMElement $node ): string {
-		$icon_url = $node->getAttributeNS( self::NAMESPACE_URI, 'iconUrl' );
-
-		if ( '' === $icon_url ) {
-			$icon_url = $node->getAttribute( 'iconUrl' );
-		}
-
+	private function validate_icon_url( string $icon_url ): string {
 		$icon_url = trim( $icon_url );
 
 		if ( '' === $icon_url ) {
