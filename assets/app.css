@@ -399,6 +399,17 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
+/* "Use site defaults" inside the Publish screen's remembered-choices note
+   (PublishScreen.refreshRememberedNote()): an inline text link that still
+   meets the tap-target minimum. */
+.daymark-publish-subnote .daymark-btn--text {
+	padding: 0 var(--daymark-spacing-xs);
+	font: inherit;
+	font-weight: 600;
+	color: var(--daymark-accent);
+	cursor: pointer;
+}
+
 /* --- Buttons --- */
 .daymark-btn {
 	display: inline-flex;

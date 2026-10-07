@@ -152,35 +152,15 @@ class Daymark_Syndication_Registry {
 	}
 
 	/**
-	 * Get default destination connector IDs for a Mark type.
-	 *
-	 * Routing: note→bluesky, image→instagram, gallery→instagram,
-	 * video→youtube; audio and mixed have no defaults (mixed asks each
-	 * time; audio awaits a configured destination).
+	 * Get default destination connector IDs for a Mark type: the site's
+	 * own defaults (Settings -> Daymark -> General), filterable through
+	 * `daymark_default_destinations`. See Daymark_Settings::destination_defaults().
 	 *
 	 * @param string $type Primary Mark type.
 	 * @return string[] Connector IDs.
 	 */
 	public function get_defaults_for_type( string $type ): array {
-		$defaults = array(
-			'note'    => array( 'bluesky' ),
-			'image'   => array( 'instagram' ),
-			'gallery' => array( 'instagram' ),
-			'video'   => array( 'youtube' ),
-			'audio'   => array(),
-			'mixed'   => array(),
-		);
-
-		/**
-		 * Filters the default destination connector IDs for a Mark type.
-		 *
-		 * Lets a host, settings screen, or onboarding flow supply
-		 * per-site routing without modifying core Daymark.
-		 *
-		 * @param string[] $type_defaults Default connector IDs for this type.
-		 * @param string   $type          Primary Mark type.
-		 */
-		return apply_filters( 'daymark_default_destinations', $defaults[ $type ] ?? array(), $type );
+		return Daymark_Settings::destination_defaults( $type );
 	}
 
 	/**

@@ -61,6 +61,28 @@ final class Daymark_Settings {
 	public const BLOGROLL_PUBLIC = 'daymark_blogroll_public';
 
 	/**
+	 * Option: the destinations a new Mark of each type starts with, as a
+	 * map of Mark type to connector IDs.
+	 */
+	public const DEFAULT_DESTINATIONS = 'daymark_default_destinations';
+
+	/**
+	 * Option: the categories a new Mark of each type starts with, as a map
+	 * of Mark type to category term IDs.
+	 */
+	public const DEFAULT_CATEGORIES = 'daymark_default_categories';
+
+	/**
+	 * Destinations a type starts with before anyone has set site defaults.
+	 */
+	private const BUILTIN_DESTINATIONS = array(
+		'note'    => array( 'bluesky' ),
+		'image'   => array( 'instagram' ),
+		'gallery' => array( 'instagram' ),
+		'video'   => array( 'youtube' ),
+	);
+
+	/**
 	 * Every option this class owns, for uninstall.
 	 *
 	 * @return string[]
@@ -75,7 +97,92 @@ final class Daymark_Settings {
 			self::AI_AUTO_SUGGEST,
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
+			self::DEFAULT_DESTINATIONS,
+			self::DEFAULT_CATEGORIES,
 		);
+	}
+
+	/**
+	 * A type's site default destinations as stored (Settings -> Daymark ->
+	 * General), before any filter. Falls back to the built-in defaults until
+	 * the site saves its own.
+	 *
+	 * @param string $type Mark primary type.
+	 * @return string[] Connector IDs.
+	 */
+	public static function stored_destination_defaults( string $type ): array {
+		$stored = get_option( self::DEFAULT_DESTINATIONS, null );
+
+		if ( ! is_array( $stored ) ) {
+			return self::BUILTIN_DESTINATIONS[ $type ] ?? array();
+		}
+
+		return isset( $stored[ $type ] ) && is_array( $stored[ $type ] )
+			? array_values( array_map( 'sanitize_key', $stored[ $type ] ) )
+			: array();
+	}
+
+	/**
+	 * A type's site default destinations, as in effect: what a new Mark of
+	 * that type starts with when its author has no remembered choice.
+	 *
+	 * @param string $type Mark primary type.
+	 * @return string[] Connector IDs.
+	 */
+	public static function destination_defaults( string $type ): array {
+		/**
+		 * Filters the default destination connector IDs for a Mark type.
+		 *
+		 * Defaults to the site's own choice (Settings -> Daymark ->
+		 * General), itself defaulting to notes -> Bluesky, images and
+		 * galleries -> Instagram, and video -> YouTube.
+		 *
+		 * @param string[] $type_defaults Default connector IDs for this type.
+		 * @param string   $type          Primary Mark type.
+		 */
+		$ids = apply_filters( 'daymark_default_destinations', self::stored_destination_defaults( $type ), $type );
+
+		return is_array( $ids ) ? array_values( array_unique( array_map( 'sanitize_key', $ids ) ) ) : array();
+	}
+
+	/**
+	 * A type's site default categories as stored, before any filter. Empty
+	 * until the site saves its own, which leaves the site's default
+	 * category in place.
+	 *
+	 * @param string $type Mark primary type.
+	 * @return int[] Category term IDs.
+	 */
+	public static function stored_category_defaults( string $type ): array {
+		$stored = get_option( self::DEFAULT_CATEGORIES, array() );
+
+		return is_array( $stored ) && isset( $stored[ $type ] ) && is_array( $stored[ $type ] )
+			? array_values( array_filter( array_map( 'absint', $stored[ $type ] ) ) )
+			: array();
+	}
+
+	/**
+	 * A type's site default categories, as in effect.
+	 *
+	 * @param string $type Mark primary type.
+	 * @return int[] Category term IDs.
+	 */
+	public static function category_defaults( string $type ): array {
+		/**
+		 * Filters the default category IDs for a Mark type.
+		 *
+		 * Defaults to the site's own choice (Settings -> Daymark ->
+		 * General). An empty list files the Mark under the site's default
+		 * category.
+		 *
+		 * @since 0.20.0
+		 *
+		 * @param int[]  $ids  Default category term IDs for this type.
+		 * @param string $type Primary Mark type.
+		 */
+		$ids = apply_filters( 'daymark_default_categories', self::stored_category_defaults( $type ), $type );
+
+		return is_array( $ids ) ? array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) ) : array();
 	}
 
 	/**

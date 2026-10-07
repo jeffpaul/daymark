@@ -452,7 +452,7 @@ class Daymark_Routes {
 		 * appear here with their live connection status.
 		 */
 		$registry   = Daymark_Syndication_Registry::instance();
-		$all_types  = array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed' );
+		$all_types  = array( 'note', 'image', 'gallery', 'video', 'audio', 'mixed', 'checkin' );
 		$connectors = array();
 
 		// Only genuinely connected networks (a real connector plugin with
@@ -477,12 +477,18 @@ class Daymark_Routes {
 		$visible_ids   = array_column( $connectors, 'id' );
 		$publisher     = Daymark_Plugin::instance()->publisher;
 		$type_defaults = array();
+		$site_defaults = array();
 
 		foreach ( $all_types as $type ) {
 			// The user's remembered selection for the type (falling back to
-			// the model defaults), limited to destinations actually offered.
+			// the site defaults), limited to destinations actually offered.
 			$type_defaults[ $type ] = array_values(
 				array_intersect( $publisher->get_effective_defaults( $type ), $visible_ids )
+			);
+			// The site defaults alone, so the Publish screen can tell when a
+			// remembered choice differs from them and offer to switch back.
+			$site_defaults[ $type ] = array_values(
+				array_intersect( Daymark_Settings::destination_defaults( $type ), $visible_ids )
 			);
 		}
 
@@ -504,9 +510,14 @@ class Daymark_Routes {
 			);
 		}
 
-		$category_defaults = array();
+		$category_defaults      = array();
+		$site_category_defaults = array();
+		$category_ids           = array_column( $categories, 'id' );
 		foreach ( $all_types as $type ) {
-			$category_defaults[ $type ] = $publisher->get_effective_categories( $type );
+			$category_defaults[ $type ]      = $publisher->get_effective_categories( $type );
+			$site_category_defaults[ $type ] = array_values(
+				array_intersect( Daymark_Settings::category_defaults( $type ), $category_ids )
+			);
 		}
 
 		// Per-type policy for the composer's optional Title field.
@@ -565,8 +576,10 @@ class Daymark_Routes {
 			'screen'                 => $screen,
 			'connectors'             => $connectors,
 			'defaults'               => $type_defaults,
+			'siteDefaults'           => $site_defaults,
 			'categories'             => $categories,
 			'categoryDefaults'       => $category_defaults,
+			'siteCategoryDefaults'   => $site_category_defaults,
 			'titlePolicy'            => $title_policy,
 			'defaultCategory'        => (int) get_option( 'default_category' ),
 			// Whether the server can convert a HEIC/HEIF photo to JPEG

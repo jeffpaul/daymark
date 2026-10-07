@@ -184,6 +184,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
+		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
 		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
 		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
@@ -660,6 +661,259 @@ class Daymark_Admin_Subscriptions {
 		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
 		<?php $this->render_blogroll_form(); ?>
+		<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
+		<?php $this->render_publishing_defaults_form(); ?>
+		<?php
+	}
+
+	/**
+	 * Mark types offered in the defaults table, in the composer's order,
+	 * with the labels the app shows.
+	 *
+	 * @return array<string, string> Type => label.
+	 */
+	private static function publishing_types(): array {
+		return array(
+			'image'   => __( 'Image', 'daymark' ),
+			'gallery' => __( 'Gallery', 'daymark' ),
+			'video'   => __( 'Video', 'daymark' ),
+			'audio'   => __( 'Audio', 'daymark' ),
+			'note'    => __( 'Note', 'daymark' ),
+			'checkin' => __( 'Check In', 'daymark' ),
+			'mixed'   => __( 'Mixed media', 'daymark' ),
+		);
+	}
+
+	/**
+	 * Connected destinations, the only ones a new Mark is ever offered.
+	 *
+	 * @return Daymark_Syndication_Connector[]
+	 */
+	private static function connected_destinations(): array {
+		return array_values(
+			array_filter(
+				Daymark_Syndication_Registry::instance()->get_connectors(),
+				static function ( $connector ): bool {
+					return $connector->is_connected();
+				}
+			)
+		);
+	}
+
+	/**
+	 * Connected destination IDs that can take a Mark type.
+	 *
+	 * @param Daymark_Syndication_Connector[] $connectors Connected destinations.
+	 * @param string                          $type       Mark type.
+	 * @return string[]
+	 */
+	private static function destination_ids_for_type( array $connectors, string $type ): array {
+		$ids = array();
+
+		foreach ( $connectors as $connector ) {
+			if ( $connector->supports_daymark_type( $type ) ) {
+				$ids[] = $connector->get_id();
+			}
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * The site's categories, or none when the only one is the site's
+	 * default category (filing under it needs no choice).
+	 *
+	 * @return WP_Term[]
+	 */
+	private static function choosable_categories(): array {
+		$categories = get_categories(
+			array(
+				'hide_empty' => false,
+				'orderby'    => 'name',
+			)
+		);
+		$default    = (int) get_option( 'default_category' );
+
+		foreach ( $categories as $category ) {
+			if ( (int) $category->term_id !== $default ) {
+				return $categories;
+			}
+		}
+
+		return array();
+	}
+
+	/**
+	 * Whether two ID lists hold the same IDs, in any order.
+	 *
+	 * @param array<int, int|string> $a First list.
+	 * @param array<int, int|string> $b Second list.
+	 * @return bool
+	 */
+	private static function same_ids( array $a, array $b ): bool {
+		$a = array_map( 'strval', array_unique( $a ) );
+		$b = array_map( 'strval', array_unique( $b ) );
+		sort( $a );
+		sort( $b );
+
+		return $a === $b;
+	}
+
+	/**
+	 * The "New Marks" defaults table on the General tab: for each Mark
+	 * type, the destinations and categories a new Mark starts with.
+	 * Remembered choices still win for whoever made them; the Publish
+	 * screen offers a way back to these.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_publishing_defaults_form(): void {
+		$connectors = self::connected_destinations();
+		$categories = self::choosable_categories();
+
+		if ( empty( $connectors ) && empty( $categories ) ) {
+			?>
+			<p class="description">
+				<?php
+				printf(
+					/* translators: 1: link to the Connectors tab, 2: link to Posts -> Categories */
+					esc_html__( 'Nothing to set yet. Each new Mark goes to your site under its default category. To choose more, %1$s or %2$s.', 'daymark' ),
+					'<a href="' . esc_url( self::tab_url( 'connectors' ) ) . '">' . esc_html__( 'connect a destination', 'daymark' ) . '</a>',
+					'<a href="' . esc_url( admin_url( 'edit-tags.php?taxonomy=category' ) ) . '">' . esc_html__( 'add categories', 'daymark' ) . '</a>'
+				);
+				?>
+			</p>
+			<?php
+			return;
+		}
+		?>
+		<p class="description" style="max-width:56em;">
+			<?php esc_html_e( 'Each new Mark starts with these choices for its type. When you change them while publishing, Daymark remembers your choice for that type and starts there next time. The Publish screen shows when that happens and can switch back to these defaults.', 'daymark' ); ?>
+			<?php if ( ! empty( $categories ) ) : ?>
+				<?php esc_html_e( 'A type with no category ticked is filed under your site\'s default category.', 'daymark' ); ?>
+			<?php endif; ?>
+		</p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_publishing_defaults_save" />
+			<?php wp_nonce_field( 'daymark_publishing_defaults_save', 'daymark_publishing_defaults_save_nonce' ); ?>
+			<table class="widefat striped" style="max-width:56em;margin-top:1em;">
+				<thead>
+					<tr>
+						<th scope="col"><?php esc_html_e( 'Type', 'daymark' ); ?></th>
+						<?php if ( ! empty( $connectors ) ) : ?>
+							<th scope="col"><?php esc_html_e( 'Share to', 'daymark' ); ?></th>
+						<?php endif; ?>
+						<?php if ( ! empty( $categories ) ) : ?>
+							<th scope="col"><?php esc_html_e( 'File under', 'daymark' ); ?></th>
+						<?php endif; ?>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( self::publishing_types() as $type => $label ) : ?>
+						<tr>
+							<th scope="row"><?php echo esc_html( $label ); ?></th>
+							<?php if ( ! empty( $connectors ) ) : ?>
+								<td><?php $this->render_destination_defaults_cell( $type, $label, $connectors ); ?></td>
+							<?php endif; ?>
+							<?php if ( ! empty( $categories ) ) : ?>
+								<td><?php $this->render_category_defaults_cell( $type, $label, $categories ); ?></td>
+							<?php endif; ?>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<?php submit_button( __( 'Save defaults', 'daymark' ) ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * One type's "Share to" checkboxes in the defaults table.
+	 *
+	 * @param string                          $type       Mark type.
+	 * @param string                          $label      Mark type label.
+	 * @param Daymark_Syndication_Connector[] $connectors Connected destinations.
+	 * @return void
+	 */
+	private function render_destination_defaults_cell( string $type, string $label, array $connectors ): void {
+		$effective  = Daymark_Settings::destination_defaults( $type );
+		$overridden = ! self::same_ids( $effective, Daymark_Settings::stored_destination_defaults( $type ) );
+		$offered    = self::destination_ids_for_type( $connectors, $type );
+
+		if ( empty( $offered ) ) {
+			echo '<span class="description">' . esc_html__( 'No connected destination takes this type.', 'daymark' ) . '</span>';
+
+			return;
+		}
+		?>
+		<fieldset>
+			<legend class="screen-reader-text">
+				<?php
+				/* translators: %s: Mark type label, e.g. "Image" */
+				echo esc_html( sprintf( __( 'Share %s Marks to', 'daymark' ), $label ) );
+				?>
+			</legend>
+			<?php foreach ( $connectors as $connector ) : ?>
+				<?php
+				if ( ! in_array( $connector->get_id(), $offered, true ) ) {
+					continue;
+				}
+				?>
+				<label style="display:block;margin:0 0 0.25em;">
+					<input
+						type="checkbox"
+						name="daymark_default_destinations[<?php echo esc_attr( $type ); ?>][]"
+						value="<?php echo esc_attr( $connector->get_id() ); ?>"
+						<?php checked( in_array( $connector->get_id(), $effective, true ) ); ?>
+						<?php disabled( $overridden ); ?>
+					/>
+					<?php echo esc_html( $connector->get_label() ); ?>
+				</label>
+			<?php endforeach; ?>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php esc_html_e( 'Set by code on this site, so it can\'t be changed here.', 'daymark' ); ?></p>
+			<?php endif; ?>
+		</fieldset>
+		<?php
+	}
+
+	/**
+	 * One type's "File under" checkboxes in the defaults table.
+	 *
+	 * @param string    $type       Mark type.
+	 * @param string    $label      Mark type label.
+	 * @param WP_Term[] $categories Site categories.
+	 * @return void
+	 */
+	private function render_category_defaults_cell( string $type, string $label, array $categories ): void {
+		$effective  = Daymark_Settings::category_defaults( $type );
+		$overridden = ! self::same_ids( $effective, Daymark_Settings::stored_category_defaults( $type ) );
+		?>
+		<fieldset style="max-height:9em;overflow:auto;">
+			<legend class="screen-reader-text">
+				<?php
+				/* translators: %s: Mark type label, e.g. "Image" */
+				echo esc_html( sprintf( __( 'File %s Marks under', 'daymark' ), $label ) );
+				?>
+			</legend>
+			<?php foreach ( $categories as $category ) : ?>
+				<label style="display:block;margin:0 0 0.25em;">
+					<input
+						type="checkbox"
+						name="daymark_default_categories[<?php echo esc_attr( $type ); ?>][]"
+						value="<?php echo esc_attr( (string) $category->term_id ); ?>"
+						<?php checked( in_array( (int) $category->term_id, $effective, true ) ); ?>
+						<?php disabled( $overridden ); ?>
+					/>
+					<?php echo esc_html( $category->name ); ?>
+				</label>
+			<?php endforeach; ?>
+		</fieldset>
+		<?php if ( $overridden ) : ?>
+			<p class="description"><?php esc_html_e( 'Set by code on this site, so it can\'t be changed here.', 'daymark' ); ?></p>
+		<?php endif; ?>
 		<?php
 	}
 
@@ -903,15 +1157,16 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		$success_messages = array(
-			'unsubscribed'        => __( 'Unsubscribed.', 'daymark' ),
-			'refreshed'           => __( 'Refresh requested.', 'daymark' ),
-			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
-			'title_updated'       => __( 'Site name updated.', 'daymark' ),
-			'privacy_saved'       => __( 'Data & privacy settings saved.', 'daymark' ),
-			'blogroll_saved'      => __( 'Blogroll setting saved.', 'daymark' ),
-			'bridgy_fed_saved'    => __( 'Bridgy Fed setting saved.', 'daymark' ),
-			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
-			'feeds_unchanged'     => __( 'No changes made to this site\'s feeds.', 'daymark' ),
+			'unsubscribed'              => __( 'Unsubscribed.', 'daymark' ),
+			'refreshed'                 => __( 'Refresh requested.', 'daymark' ),
+			'icon_refreshed'            => __( 'Site icon refreshed.', 'daymark' ),
+			'title_updated'             => __( 'Site name updated.', 'daymark' ),
+			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
+			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
+			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
+			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
+			'poll_interval_saved'       => __( 'Check frequency saved.', 'daymark' ),
+			'feeds_unchanged'           => __( 'No changes made to this site\'s feeds.', 'daymark' ),
 		);
 
 		if ( isset( $success_messages[ $notice ] ) ) {
@@ -2994,6 +3249,78 @@ class Daymark_Admin_Subscriptions {
 			<?php endif; ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * Save the "New Marks" defaults (admin_post_daymark_publishing_defaults_save).
+	 *
+	 * Only the cells the table actually showed are replaced: a type a
+	 * filter overrides keeps its stored value, and a stored destination
+	 * that isn't shown (not connected right now, or can't take the type)
+	 * is kept, so disconnecting a destination doesn't erase its defaults.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	public function handle_publishing_defaults_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_publishing_defaults_save', 'daymark_publishing_defaults_save_nonce' );
+
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$posted_destinations = isset( $_POST['daymark_default_destinations'] ) && is_array( $_POST['daymark_default_destinations'] )
+			? wp_unslash( $_POST['daymark_default_destinations'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Each value is sanitized below.
+			: array();
+		$posted_categories   = isset( $_POST['daymark_default_categories'] ) && is_array( $_POST['daymark_default_categories'] )
+			? wp_unslash( $_POST['daymark_default_categories'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Each value is sanitized below.
+			: array();
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		$connectors      = self::connected_destinations();
+		$category_ids    = array_map(
+			static function ( $category ): int {
+				return (int) $category->term_id;
+			},
+			self::choosable_categories()
+		);
+		$destination_map = array();
+		$category_map    = array();
+
+		foreach ( array_keys( self::publishing_types() ) as $type ) {
+			$stored  = Daymark_Settings::stored_destination_defaults( $type );
+			$offered = self::destination_ids_for_type( $connectors, $type );
+
+			if ( empty( $offered ) || ! self::same_ids( Daymark_Settings::destination_defaults( $type ), $stored ) ) {
+				$destination_map[ $type ] = $stored;
+			} else {
+				$picked                   = isset( $posted_destinations[ $type ] ) ? array_map( 'sanitize_key', (array) $posted_destinations[ $type ] ) : array();
+				$destination_map[ $type ] = array_values(
+					array_unique(
+						array_merge(
+							array_intersect( $picked, $offered ),
+							array_diff( $stored, $offered )
+						)
+					)
+				);
+			}
+
+			$stored_categories = Daymark_Settings::stored_category_defaults( $type );
+
+			if ( empty( $category_ids ) || ! self::same_ids( Daymark_Settings::category_defaults( $type ), $stored_categories ) ) {
+				$category_map[ $type ] = $stored_categories;
+			} else {
+				$picked                = isset( $posted_categories[ $type ] ) ? array_map( 'absint', (array) $posted_categories[ $type ] ) : array();
+				$category_map[ $type ] = array_values( array_unique( array_intersect( $picked, $category_ids ) ) );
+			}
+		}
+
+		update_option( Daymark_Settings::DEFAULT_DESTINATIONS, $destination_map, false );
+		update_option( Daymark_Settings::DEFAULT_CATEGORIES, $category_map, false );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'publishing_defaults_saved' ), 'general' );
 	}
 
 	/**
