@@ -31,10 +31,10 @@ can't act on them.
 - Daymark now has a dark theme that follows your device setting. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - With a mouse or keyboard, a refresh button in the Timeline's header does what pulling down does on a phone. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Notifications marks the replies that arrived since your last visit as New, and the bell's dot now appears during a visit instead of only after a reload. ([#485](https://github.com/jeffpaul/daymark/pull/485))
-- Settings -> Daymark has a new General tab, shown first, with how often Daymark checks the sites you follow and a new option to share them as a public blogroll. Sharing publishes an OPML file that feed readers can import and links to it from your site's pages. A new Blogroll block lists the sites you follow on any page. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- Import / Export can now import your site's old Links Manager list, the classic WordPress blogroll, when it has one. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- Settings -> Daymark has a new General tab, shown first, with how often Daymark checks the sites you follow and a new option to share them as a public blogroll. Sharing publishes an OPML file that feed readers can import and links to it from your site's pages. A new Blogroll block lists the sites you follow on any page. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- Import / Export can now import your site's old Links Manager list, the classic WordPress blogroll, when it has one. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 
 ### Changed
 
@@ -46,11 +46,11 @@ can't act on them.
 - Timestamps, site names, and the card icons have higher contrast, so they're easier to read outdoors. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Search now loads more results as you scroll, instead of stopping at 20, and shows how many there are. Bookmarks and My Marks, which open in Search, load more too. A site's icon on a Timeline card now says "Show posts from" that site, which is what it does. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 - The Timeline loads 20 posts at a time instead of 5, so scrolling makes fewer requests. ([#486](https://github.com/jeffpaul/daymark/pull/486))
-- Daymark now captures a location only for Check Ins. Other Marks no longer ask your browser for your location or store one. Turning off Check In location also stops the place lookup. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- A setting that code on your site overrides now shows its real value, greyed out, with a note. Before, its checkbox seemed to do nothing. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- The Connectors tab now starts with the two plugins most sites need, Webmention and ActivityPub, and lists the others under Optional. Each card has a short summary, with details under More. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- With no social destination connected, the Publish screen now says your site is the destination and where the Mark also reaches through an active fediverse or Bluesky plugin. Before, it said "No social networks connected yet". ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- Daymark now captures a location only for Check Ins. Other Marks no longer ask your browser for your location or store one. Turning off Check In location also stops the place lookup. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- A setting that code on your site overrides now shows its real value, greyed out, with a note. Before, its checkbox seemed to do nothing. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- The Connectors tab now starts with the two plugins most sites need, Webmention and ActivityPub, and lists the others under Optional. Each card has a short summary, with details under More. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- With no social destination connected, the Publish screen now says your site is the destination and where the Mark also reaches through an active fediverse or Bluesky plugin. Before, it said "No social networks connected yet". ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 
 ### Fixed
 
@@ -60,8 +60,8 @@ can't act on them.
 - Pulling down to refresh with more than about ten followed sites reported most of them as "checked too recently" when they were never checked. The Timeline now checks every site in one request, says how many it checked, and hands any it runs out of time for to a background check. A pull that starts above the Timeline, on the drafts line, now works too, and the result message clears after a few seconds. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - After a long scroll through the Timeline, opening a post from a site you follow could fail with "Couldn't load full content." Background work while scrolling used up the same request allowance that opening a post needs. Opening a post now has its own allowance, and a post that's already saved on your site opens without using any. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 - When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently. ([#486](https://github.com/jeffpaul/daymark/pull/486))
-- Unchecking a feed in "Choose from available feeds" no longer unfollows it unless you also tick "Also unfollow the feeds I unchecked". Before, one stray click could unfollow a site and move its saved posts to Trash. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
-- Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- Unchecking a feed in "Choose from available feeds" no longer unfollows it unless you also tick "Also unfollow the feeds I unchecked". Before, one stray click could unfollow a site and move its saved posts to Trash. ([#487](https://github.com/jeffpaul/daymark/pull/487))
+- Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 
 ## [0.19.0] - 2026-10-02
 
