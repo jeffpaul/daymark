@@ -494,10 +494,10 @@ class Daymark_Publisher {
 		}
 
 		// Categories: the site-filing counterpart to destinations. Same
-		// "provided vs fall back to the remembered per-type default" rule.
-		// Unlike post formats there is no built-in map — categories are a
-		// per-site taxonomy — so an empty effective default just leaves the
-		// WordPress default category in place.
+		// "provided vs fall back to the remembered per-type default" rule,
+		// then the site's own default categories for the type. An empty
+		// effective default just leaves the WordPress default category in
+		// place.
 		$raw_categories    = $data['categories'] ?? null;
 		$categories        = $this->sanitize_category_ids( $raw_categories ?? array() );
 		$category_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
@@ -2595,10 +2595,10 @@ class Daymark_Publisher {
 	/**
 	 * The preselected categories for a Mark type.
 	 *
-	 * The user's last explicit selection for the type wins. Unlike
-	 * destinations there is no model fallback — categories are a per-site
-	 * taxonomy with no universal mapping — so a type never filed before
-	 * returns an empty list and the site's default category applies.
+	 * The user's last explicit selection for the type wins; the site's
+	 * own default categories for the type (Settings -> Daymark -> General)
+	 * are the fallback. With neither, the list is empty and the site's
+	 * default category applies.
 	 *
 	 * @param string $type    Mark primary type.
 	 * @param int    $user_id User ID; defaults to the current user.
@@ -2612,7 +2612,7 @@ class Daymark_Publisher {
 			return $this->sanitize_category_ids( $prefs[ $type ] );
 		}
 
-		return array();
+		return $this->sanitize_category_ids( Daymark_Settings::category_defaults( $type ) );
 	}
 
 	/**

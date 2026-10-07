@@ -74,7 +74,7 @@ class Test_Settings extends WP_UnitTestCase {
 
 	/** Uninstall's list covers every option this class reads. */
 	public function test_options_lists_every_setting(): void {
-		$this->assertCount( 8, array_unique( Daymark_Settings::options() ) );
+		$this->assertCount( 10, array_unique( Daymark_Settings::options() ) );
 	}
 
 	/** The app config carries the AI auto-suggest and location capture settings. */

@@ -48,6 +48,10 @@
 	const typeDefaults = config.defaults || {};
 	const siteCategories = Array.isArray(config.categories) ? config.categories : [];
 	const categoryDefaults = config.categoryDefaults || {};
+	// The site's own defaults per type (Settings -> Daymark -> General),
+	// before anyone's remembered choice.
+	const siteTypeDefaults = config.siteDefaults || {};
+	const siteCategoryDefaults = config.siteCategoryDefaults || {};
 	const root = document.getElementById('daymark-app');
 
 	if (!root) {
@@ -118,6 +122,14 @@
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
 		editing: null, // { id, type, media: [{id, kind, thumbnail, filename}] } while editing a draft
+		// True when the composer holds a saved draft or queued Mark someone
+		// reopened. Not set by autosave: an autosave turns a new Mark into a
+		// draft (state.editing) mid-session, but it's still a new Mark.
+		resumed: false,
+		// The type whose default destinations and categories were applied
+		// this session, so going Back and Next again keeps changes unless
+		// the type itself changed.
+		defaultsAppliedFor: null,
 		helpers: [], // enabled controllable third-party publishing helper ids
 		offlineQueueId: null, // IndexedDB id while this composition is queued offline (see submitOrQueue())
 	};
@@ -1119,6 +1131,22 @@
 		return Array.isArray(defaults) ? defaults.map(Number) : [];
 	}
 
+	function siteTargetsFor(type) {
+		const defaults = siteTypeDefaults[type];
+		return Array.isArray(defaults) ? defaults.slice() : [];
+	}
+
+	function siteCategoriesFor(type) {
+		const defaults = siteCategoryDefaults[type];
+		return Array.isArray(defaults) ? defaults.map(Number) : [];
+	}
+
+	function sameIdSet(a, b) {
+		const left = Array.from(new Set(a.map(String))).sort();
+		const right = Array.from(new Set(b.map(String))).sort();
+		return left.length === right.length && left.every((id, i) => id === right[i]);
+	}
+
 	// Bumped by resetComposer(), so an autosave response that arrives after
 	// the composer has moved on to something else (a new Mark, a different
 	// draft) can recognize it's stale and leave `state` alone instead of
@@ -1160,6 +1188,8 @@
 		state.categories = [];
 		state.aiAssistUsed = false;
 		state.editing = null;
+		state.resumed = false;
+		state.defaultsAppliedFor = null;
 		state.helpers = [];
 		state.offlineQueueId = null;
 	}
@@ -2147,6 +2177,7 @@
 			return;
 		}
 		abandonComposer();
+		state.resumed = true;
 		const payload = record.payload;
 		if (record.targetId) {
 			state.editing = { id: record.targetId, type: payload.primaryType, media: [] };
@@ -2440,6 +2471,7 @@
 	async function loadDraftIntoState(id) {
 		const mark = await apiGet('marks/' + id);
 		abandonComposer();
+		state.resumed = true;
 		state.editing = {
 			id: mark.id,
 			type: mark.type || 'note',
@@ -7799,11 +7831,14 @@
 				}
 				status.textContent = '';
 				state.primaryType = effectiveType();
-				// An edited draft keeps its stored destination and category
-				// selections; fresh Marks start from the per-type defaults.
-				if (!state.editing) {
+				// A reopened draft keeps its stored destination and category
+				// selections; a new Mark starts from the per-type defaults,
+				// once per type. Checked with state.resumed rather than state.editing,
+				// since an autosave makes a new Mark a draft before Next.
+				if (!state.resumed && state.defaultsAppliedFor !== state.primaryType) {
 					state.targets = defaultTargetsFor(state.primaryType);
 					state.categories = defaultCategoriesFor(state.primaryType);
+					state.defaultsAppliedFor = state.primaryType;
 				}
 				navigate('#publish');
 			});
@@ -10845,6 +10880,7 @@
 					/^[aeiou]/i.test(TYPE_LABELS[state.primaryType] || '') ? esc(__('an', 'daymark')) : esc(__('a', 'daymark')),
 					`<span class="daymark-chip">${esc(TYPE_LABELS[state.primaryType])}</span>`
 				)}</p>
+				<p class="daymark-publish-subnote" data-remembered-note hidden></p>
 				<ul class="daymark-destlist">
 					<li class="daymark-dest daymark-dest--locked">
 						<span class="daymark-dest__row">
@@ -10942,6 +10978,94 @@
 				<ul class="daymark-destlist">${items}</ul>`;
 		},
 
+		// Which of the current choices are a remembered choice that differs
+		// from the site's defaults. Only for a new Mark: a reopened draft
+		// keeps its own saved choices. A choice the person has since changed
+		// on this screen no longer counts, since it isn't the remembered one.
+		rememberedChoices() {
+			if (state.resumed) {
+				return { targets: false, categories: false };
+			}
+			const type = state.primaryType;
+			const supported = (ids) =>
+				ids.filter((id) => {
+					const connector = connectors.find((c) => c.id === id);
+					return connector && connectorSupportsType(connector, type);
+				});
+			const remembered = supported(defaultTargetsFor(type));
+			const site = supported(siteTargetsFor(type));
+			const targets =
+				connectors.length > 0 &&
+				!sameIdSet(remembered, site) &&
+				sameIdSet(supported(state.targets), remembered);
+			const pickerShown = siteCategories.some((c) => c.id !== config.defaultCategory);
+			const rememberedCats = defaultCategoriesFor(type);
+			const categories =
+				pickerShown &&
+				!sameIdSet(rememberedCats, siteCategoriesFor(type)) &&
+				sameIdSet(state.categories, rememberedCats);
+			return { targets, categories };
+		},
+
+		// "Starting from your last choices for Image Marks. Use site
+		// defaults" — shown while a remembered choice is in use and differs
+		// from the site's defaults, so a one-off change never silently
+		// sticks.
+		refreshRememberedNote() {
+			const note = root.querySelector('[data-remembered-note]');
+			if (!note) {
+				return;
+			}
+			const remembered = this.rememberedChoices();
+			if (!remembered.targets && !remembered.categories) {
+				note.hidden = true;
+				note.textContent = '';
+				return;
+			}
+			const label = TYPE_LABELS[state.primaryType] || state.primaryType;
+			let text;
+			if (remembered.targets && remembered.categories) {
+				/* translators: %s: Mark type label, e.g. "Image" */
+				text = __('Starting from your last destinations and categories for %s Marks.', 'daymark');
+			} else if (remembered.targets) {
+				/* translators: %s: Mark type label, e.g. "Image" */
+				text = __('Starting from your last destinations for %s Marks.', 'daymark');
+			} else {
+				/* translators: %s: Mark type label, e.g. "Image" */
+				text = __('Starting from your last categories for %s Marks.', 'daymark');
+			}
+			note.innerHTML = `${esc(sprintf(text, label))} <button type="button" class="daymark-btn--text" data-use-site-defaults>${esc(
+				__('Use site defaults', 'daymark')
+			)}</button>`;
+			note.hidden = false;
+			note.querySelector('[data-use-site-defaults]').addEventListener('click', () => this.useSiteDefaults());
+		},
+
+		// Switch this Mark to the site's defaults. Publishing then remembers
+		// them for the type, the same as any other choice.
+		useSiteDefaults() {
+			const remembered = this.rememberedChoices();
+			if (remembered.targets) {
+				state.targets = siteTargetsFor(state.primaryType);
+				root.querySelectorAll('[data-connector]').forEach((input) => {
+					input.checked = !input.disabled && state.targets.includes(input.getAttribute('data-connector'));
+				});
+			}
+			if (remembered.categories) {
+				state.categories = siteCategoriesFor(state.primaryType);
+				root.querySelectorAll('[data-category]').forEach((input) => {
+					input.checked = state.categories.includes(Number(input.getAttribute('data-category')));
+				});
+			}
+			this.refreshRememberedNote();
+			announce(__('Switched to the site defaults.', 'daymark'));
+			const heading = root.querySelector('[data-daymark-focus]');
+			if (heading) {
+				heading.focus();
+			}
+			scheduleAutosave();
+		},
+
 		bindEvents() {
 			root.querySelectorAll('[data-connector]').forEach((input) => {
 				input.addEventListener('change', () => {
@@ -10953,6 +11077,7 @@
 					} else {
 						state.targets = state.targets.filter((t) => t !== id);
 					}
+					this.refreshRememberedNote();
 					scheduleAutosave();
 				});
 			});
@@ -10967,9 +11092,12 @@
 					} else {
 						state.categories = state.categories.filter((c) => c !== id);
 					}
+					this.refreshRememberedNote();
 					scheduleAutosave();
 				});
 			});
+
+			this.refreshRememberedNote();
 
 			root.querySelectorAll('[data-helper]').forEach((input) => {
 				input.addEventListener('change', () => {
