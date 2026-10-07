@@ -49,6 +49,9 @@
  *    all" checkbox that checks or unchecks every followed site at once.
  *    It is hidden without JavaScript, where each box is toggled by hand.
  *    See bindReaderImportToggle().
+ * 7. The subscriptions table's "Select all" checkbox, and a confirmation
+ *    before a bulk Unsubscribe. Without JavaScript the boxes are checked
+ *    one by one and the bulk action runs as submitted. See bindBulkActions().
  */
 (function () {
 	'use strict';
@@ -60,7 +63,49 @@
 		bindEditTitleDisclosures();
 		bindDiscoverSourcesForms();
 		bindReaderImportToggle();
+		bindBulkActions();
 	} );
+
+	/**
+	 * Wires the table's bulk actions (behavior 7).
+	 *
+	 * @return void
+	 */
+	function bindBulkActions() {
+		var form = document.querySelector( '[data-daymark-bulk-form]' );
+		var all = document.querySelector( '[data-daymark-select-all]' );
+		var boxes = document.querySelectorAll( '[data-daymark-select]' );
+
+		if ( all ) {
+			all.addEventListener( 'change', function () {
+				boxes.forEach( function ( box ) {
+					box.checked = all.checked;
+				} );
+			} );
+		}
+
+		if ( ! form ) {
+			return;
+		}
+
+		form.addEventListener( 'submit', function ( event ) {
+			var select = form.querySelector( '[name="daymark_bulk_action"]' );
+			var checked = document.querySelectorAll( '[data-daymark-select]:checked' ).length;
+			var config = window.daymarkAdminSubscriptions;
+
+			if ( ! select || 'unsubscribe' !== select.value || 0 === checked ) {
+				return;
+			}
+
+			var message = config && config.i18n && config.i18n.confirmBulkUnsubscribe
+				? config.i18n.confirmBulkUnsubscribe.replace( '%d', String( checked ) )
+				: 'Unsubscribe from ' + checked + ' sites?';
+
+			if ( ! window.confirm( message ) ) {
+				event.preventDefault();
+			}
+		} );
+	}
 
 	/**
 	 * Wires the Reader import checklist's "Select all" checkbox (behavior

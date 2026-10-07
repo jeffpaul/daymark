@@ -179,13 +179,28 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	/**
 	 * Renders the page and returns its output as a string.
 	 *
+	 * @param string $tab Tab to render when the test hasn't set ?tab= itself; '' for none.
 	 * @return string
 	 */
-	private function render(): string {
+	private function render( string $tab = 'subscriptions' ): string {
+		// Most tests here are about the Subscriptions tab, which is no
+		// longer the default (General is). An explicit ?tab= set by a test
+		// wins; '' renders with no tab at all.
+		$set_tab = ! isset( $_GET['tab'] ) && '' !== $tab; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture.
+
+		if ( $set_tab ) {
+			$_GET['tab'] = $tab;
+		}
+
 		ob_start();
 		$this->admin_subscriptions->render_page();
+		$output = (string) ob_get_clean();
 
-		return (string) ob_get_clean();
+		if ( $set_tab ) {
+			unset( $_GET['tab'] );
+		}
+
+		return $output;
 	}
 
 	public function test_refresh_button_shown_for_active_subscription(): void {
@@ -1804,7 +1819,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$output      = $this->render();
 		unset( $_GET['tab'] );
 
-		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Privacy<\/a>/', $output );
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Data &amp; privacy<\/a>/', $output );
 
 		foreach ( array( 'daymark_capture_location', 'daymark_capture_weather', 'daymark_capture_camera_metadata' ) as $option ) {
 			$this->assertMatchesRegularExpression(
@@ -1851,7 +1866,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * default.
 	 */
 	public function test_poll_interval_form_defaults_to_daily(): void {
-		$output = $this->render();
+		$output = $this->render( 'general' );
 
 		$this->assertStringContainsString( 'Check for new posts:', $output );
 		$this->assertMatchesRegularExpression(
@@ -1864,7 +1879,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	public function test_poll_interval_form_reflects_stored_option_value(): void {
 		update_option( 'daymark_subscription_poll_interval', HOUR_IN_SECONDS );
 
-		$output = $this->render();
+		$output = $this->render( 'general' );
 
 		delete_option( 'daymark_subscription_poll_interval' );
 
@@ -1878,17 +1893,28 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	// Tab nav + legacy URL (issue #86 restructuring)
 	// -----------------------------------------------------------------
 
-	/** With no ?tab=, the Subscriptions tab renders and is marked active. */
-	public function test_tab_nav_renders_all_tabs_with_subscriptions_default_active(): void {
-		$output = $this->render();
+	/** With no ?tab=, the General tab renders and is marked active. */
+	public function test_tab_nav_renders_all_tabs_with_general_default_active(): void {
+		$output = $this->render( '' );
 
 		$this->assertStringContainsString( 'nav-tab-wrapper', $output );
-		foreach ( array( 'Subscriptions', 'Connectors', 'Import / Export', 'Privacy' ) as $label ) {
-			$this->assertStringContainsString( $label, $output );
+		foreach ( array( 'General', 'Subscriptions', 'Connectors', 'Import / Export', 'Data &amp; privacy' ) as $label ) {
+			$this->assertStringContainsString( '>' . $label . '</a>', $output );
 		}
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>General<\/a>/', $output );
+		// The General tab's own content (the poll interval form) rendered,
+		// and the Subscriptions tab's subscribe form did not.
+		$this->assertStringContainsString( 'Check for new posts:', $output );
+		$this->assertStringNotContainsString( 'daymark_site_url', $output );
+	}
+
+	/** ?tab=subscriptions renders the subscribe form, without the General tab's poll interval form. */
+	public function test_subscriptions_tab_renders_subscribe_form(): void {
+		$output = $this->render();
+
 		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Subscriptions<\/a>/', $output );
-		// The Subscriptions tab's own content (the subscribe form) rendered too.
 		$this->assertStringContainsString( 'daymark_site_url', $output );
+		$this->assertStringNotContainsString( 'Check for new posts:', $output );
 	}
 
 	/** ?tab= switches both which nav item is marked active and which content renders. */
@@ -1903,13 +1929,13 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'daymark_site_url', $output );
 	}
 
-	/** An unrecognized ?tab= value falls back to the default (Subscriptions) tab. */
-	public function test_invalid_tab_falls_back_to_subscriptions(): void {
+	/** An unrecognized ?tab= value falls back to the default (General) tab. */
+	public function test_invalid_tab_falls_back_to_general(): void {
 		$_GET['tab'] = 'not-a-real-tab';
 		$output      = $this->render();
 		unset( $_GET['tab'] );
 
-		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>Subscriptions<\/a>/', $output );
+		$this->assertMatchesRegularExpression( '/class="nav-tab nav-tab-active"[^>]*>General<\/a>/', $output );
 	}
 
 	/** page_url() now points at the short options-general.php?page=daymark URL (issue #86). */
@@ -2168,5 +2194,311 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		);
 
 		$this->assertSame( 'active', $status );
+	}
+
+	// -----------------------------------------------------------------
+	// Settings screen follow-ups: Data & privacy, General, the Failing
+	// view, paging, bulk actions, and error notices.
+	// -----------------------------------------------------------------
+
+	/**
+	 * Call an admin_post handler, stopping it at its redirect instead of at
+	 * exit(). Returns the URL it redirected to.
+	 *
+	 * @param string               $method Handler method name.
+	 * @param string               $nonce  Nonce action, also its field name plus `_nonce`.
+	 * @param array<string, mixed> $post   Submitted fields.
+	 * @return string
+	 */
+	private function call_handler( string $method, string $nonce, array $post ): string {
+		$stop = static function ( $location ) {
+			throw new RuntimeException( esc_url_raw( (string) $location ) );
+		};
+
+		$_POST                         = $post;
+		$_REQUEST[ $nonce . '_nonce' ] = wp_create_nonce( $nonce );
+		add_filter( 'wp_redirect', $stop );
+
+		try {
+			$this->admin_subscriptions->$method();
+			$location = '';
+		} catch ( RuntimeException $e ) {
+			$location = $e->getMessage();
+		} finally {
+			remove_filter( 'wp_redirect', $stop );
+			$_POST = array();
+			unset( $_REQUEST[ $nonce . '_nonce' ] );
+		}
+
+		return $location;
+	}
+
+	/** The Data & privacy tab lists the new reply and AI settings with their defaults. */
+	public function test_privacy_tab_lists_reply_and_ai_settings(): void {
+		$output = $this->render( 'privacy' );
+
+		$this->assertStringContainsString( 'Hold imported replies', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_hold_imported_replies"[^>]*checked/', $output );
+		$this->assertMatchesRegularExpression( '/name="daymark_ai_auto_suggest"[^>]*checked/', $output );
+	}
+
+	/** A setting a filter overrides shows its real value, disabled, with a note. */
+	public function test_privacy_setting_overridden_by_code_is_disabled_with_note(): void {
+		add_filter( 'daymark_capture_weather', '__return_false' );
+		$output = $this->render( 'privacy' );
+		remove_filter( 'daymark_capture_weather', '__return_false' );
+
+		$this->assertMatchesRegularExpression( '/name="daymark_capture_weather"[^>]*disabled/', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_capture_weather"[^>]*checked/', $output );
+		$this->assertStringContainsString( 'Turned off by code on this site', $output );
+		// Settings that aren't overridden stay editable.
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_capture_location"[^>]*disabled/', $output );
+	}
+
+	/** Saving Data & privacy leaves an overridden setting's stored value alone. */
+	public function test_privacy_save_skips_overridden_setting(): void {
+		update_option( 'daymark_capture_weather', '1' );
+		add_filter( 'daymark_capture_weather', '__return_false' );
+
+		// The disabled weather checkbox isn't submitted; location is unchecked.
+		$location = $this->call_handler( 'handle_privacy_save', 'daymark_privacy_save', array() );
+
+		remove_filter( 'daymark_capture_weather', '__return_false' );
+
+		$this->assertStringContainsString( 'tab=privacy', $location );
+		$this->assertSame( '1', get_option( 'daymark_capture_weather' ) );
+		$this->assertSame( '', get_option( 'daymark_capture_location' ) );
+
+		delete_option( 'daymark_capture_weather' );
+		delete_option( 'daymark_capture_location' );
+		delete_option( 'daymark_capture_camera_metadata' );
+		delete_option( 'daymark_publish_location_publicly' );
+		delete_option( 'daymark_hold_imported_replies' );
+		delete_option( 'daymark_ai_auto_suggest' );
+	}
+
+	/** The General tab offers the public blogroll setting, off by default. */
+	public function test_general_tab_renders_blogroll_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_blogroll_public"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_blogroll_public"[^>]*checked/', $output );
+		$this->assertStringNotContainsString( 'Your blogroll:', $output );
+	}
+
+	/** Saving the blogroll setting turns it on and returns to the General tab. */
+	public function test_blogroll_save_turns_setting_on(): void {
+		$location = $this->call_handler( 'handle_blogroll_save', 'daymark_blogroll_save', array( 'daymark_blogroll_public' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::blogroll_public() );
+		$this->assertStringContainsString( 'Your blogroll:', $this->render( 'general' ) );
+
+		delete_option( 'daymark_blogroll_public' );
+	}
+
+	/** The Failing view lists only subscriptions having trouble, and the view links count both. */
+	public function test_failing_view_lists_only_failing_subscriptions(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://healthy.example/',
+				'feed_url'   => 'https://healthy.example/feed/',
+				'site_title' => 'Healthy Site',
+			)
+		);
+		$failing = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://broken.example/',
+				'feed_url'   => 'https://broken.example/feed/',
+				'site_title' => 'Broken Site',
+			)
+		);
+		$this->subscriptions->update( $failing, array( 'consecutive_failure_count' => 2 ) );
+
+		$all = $this->render();
+		$this->assertStringContainsString( 'All (2)', $all );
+		$this->assertStringContainsString( 'Failing (1)', $all );
+		$this->assertStringContainsString( 'Healthy Site', $all );
+
+		$_GET['view'] = 'failing';
+		$output       = $this->render();
+		unset( $_GET['view'] );
+
+		$this->assertStringContainsString( 'Broken Site', $output );
+		$this->assertStringNotContainsString( 'Healthy Site', $output );
+	}
+
+	/** A long list is split into pages of 50. */
+	public function test_table_paginates_long_lists(): void {
+		for ( $i = 1; $i <= 51; $i++ ) {
+			$this->subscriptions->create(
+				array(
+					'site_url'   => sprintf( 'https://site%02d.example/', $i ),
+					'feed_url'   => sprintf( 'https://site%02d.example/feed/', $i ),
+					'site_title' => sprintf( 'Site %02d', $i ),
+				)
+			);
+		}
+
+		$first = $this->render();
+		$this->assertStringContainsString( 'Site 50', $first );
+		$this->assertStringNotContainsString( 'Site 51', $first );
+		$this->assertStringContainsString( '51 sites', $first );
+
+		$_GET['paged'] = '2';
+		$second        = $this->render();
+		unset( $_GET['paged'] );
+
+		$this->assertStringContainsString( 'Site 51', $second );
+		$this->assertStringNotContainsString( 'Site 01', $second );
+	}
+
+	/** Each row has a checkbox that joins the bulk-actions form. */
+	public function test_rows_have_bulk_checkboxes(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://bulk.example/',
+				'feed_url' => 'https://bulk.example/feed/',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringContainsString( 'id="daymark-subscriptions-bulk"', $output );
+		$this->assertMatchesRegularExpression( '/name="daymark_subscription_ids\[\]"[^>]*value="' . $id . '"[^>]*form="daymark-subscriptions-bulk"|value="' . $id . '"[^>]*form="daymark-subscriptions-bulk"/', $output );
+	}
+
+	/** Bulk Unsubscribe removes every selected subscription. */
+	public function test_bulk_unsubscribe_removes_selected(): void {
+		$one  = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://one.example/',
+				'feed_url' => 'https://one.example/feed/',
+			)
+		);
+		$two  = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://two.example/',
+				'feed_url' => 'https://two.example/feed/',
+			)
+		);
+		$keep = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://keep.example/',
+				'feed_url' => 'https://keep.example/feed/',
+			)
+		);
+
+		$location = $this->call_handler(
+			'handle_bulk',
+			'daymark_subscriptions_bulk',
+			array(
+				'daymark_bulk_action'      => 'unsubscribe',
+				'daymark_subscription_ids' => array( (string) $one, (string) $two ),
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=bulk_unsubscribed', $location );
+		$this->assertStringContainsString( 'daymark_removed=2', $location );
+		$this->assertNull( $this->subscriptions->get( $one ) );
+		$this->assertNull( $this->subscriptions->get( $two ) );
+		$this->assertNotNull( $this->subscriptions->get( $keep ) );
+	}
+
+	/**
+	 * A bulk submission with nothing selected shows an error. The message
+	 * travels in a per-user transient, not the URL, and shows once.
+	 */
+	public function test_bulk_without_selection_shows_error_once(): void {
+		$location = $this->call_handler( 'handle_bulk', 'daymark_subscriptions_bulk', array( 'daymark_bulk_action' => 'unsubscribe' ) );
+
+		$this->assertStringContainsString( 'daymark_notice=error', $location );
+		$this->assertStringNotContainsString( 'Choose', $location );
+
+		$_GET['daymark_notice'] = 'error';
+		$first                  = $this->render();
+		$second                 = $this->render();
+		unset( $_GET['daymark_notice'] );
+
+		$this->assertStringContainsString( 'Choose a bulk action and at least one site.', $first );
+		$this->assertStringNotContainsString( 'Choose a bulk action', $second );
+		$this->assertStringContainsString( 'Something went wrong.', $second );
+	}
+
+	/** Text in the URL is never shown as an error message. */
+	public function test_error_notice_ignores_message_in_url(): void {
+		$_GET['daymark_notice']  = 'error';
+		$_GET['daymark_message'] = 'Call this number now';
+		$output                  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_message'] );
+
+		$this->assertStringNotContainsString( 'Call this number now', $output );
+	}
+
+	/**
+	 * Unchecking a feed in the picker without the confirmation box keeps it
+	 * subscribed and reports it as kept.
+	 */
+	public function test_reconcile_keeps_unchecked_feed_without_confirmation(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'    => 'https://reconcile-keep.example/',
+				'feed_url'    => 'https://reconcile-keep.example/feed/',
+				'source_type' => 'feed',
+				'status'      => 'active',
+			)
+		);
+
+		$method  = new ReflectionMethod( $this->admin_subscriptions, 'reconcile_selected_candidates' );
+		$outcome = $method->invoke(
+			$this->admin_subscriptions,
+			'https://reconcile-keep.example/',
+			array(
+				array(
+					'url'          => 'https://reconcile-keep.example/feed/',
+					'source_type'  => 'feed',
+					'source_label' => 'RSS/Atom Feed',
+				),
+			),
+			array(),
+			false
+		);
+
+		$this->assertSame( 0, $outcome['removed'] );
+		$this->assertSame( 1, $outcome['kept'] );
+		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://reconcile-keep.example/feed/' ) );
+
+		$notice = new ReflectionMethod( $this->admin_subscriptions, 'resolve_update_feeds_notice' );
+		$this->assertSame( 'feeds_remove_unconfirmed', $notice->invoke( $this->admin_subscriptions, $outcome ) );
+	}
+
+	/** The Import / Export tab offers old Links Manager entries for import. */
+	public function test_import_tab_offers_links_manager_entries(): void {
+		require_once ABSPATH . 'wp-admin/includes/bookmark.php';
+
+		wp_insert_link(
+			array(
+				'link_name' => 'Old Friend',
+				'link_url'  => 'https://old-friend.example/',
+			)
+		);
+
+		$output = $this->render( 'import-export' );
+
+		$this->assertStringContainsString( 'Import from Links', $output );
+		$this->assertStringContainsString( 'Old Friend', $output );
+	}
+
+	/** The Connectors tab leads with the plugins to start with. */
+	public function test_connectors_tab_groups_start_with_plugins_first(): void {
+		$output = $this->render( 'connectors' );
+
+		$start    = strpos( $output, 'Webmention' );
+		$optional = strpos( $output, 'Bridgy Fed' );
+
+		$this->assertNotFalse( $start );
+		$this->assertNotFalse( $optional );
+		$this->assertLessThan( $optional, $start );
+		$this->assertStringNotContainsString( 'CLAUDE.md', $output );
 	}
 }

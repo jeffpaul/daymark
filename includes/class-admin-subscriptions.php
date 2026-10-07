@@ -83,12 +83,6 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private const NOTICE_QUERY_VAR = 'daymark_notice';
 
-	/**
-	 * Query var carrying an error notice's message text.
-	 *
-	 * @var string
-	 */
-	private const MESSAGE_QUERY_VAR = 'daymark_message';
 
 	/**
 	 * Query var carrying how many feeds a 'subscribed'/'subscribed_pending'
@@ -120,6 +114,20 @@ class Daymark_Admin_Subscriptions {
 	 * @var string
 	 */
 	private const SEARCH_QUERY_VAR = 's';
+
+	/**
+	 * Query var for the subscriptions table's view: '' (all) or 'failing'.
+	 *
+	 * @var string
+	 */
+	private const VIEW_QUERY_VAR = 'view';
+
+	/**
+	 * Subscriptions shown per page of the table.
+	 *
+	 * @var int
+	 */
+	private const PER_PAGE = 50;
 
 	/**
 	 * Subscriptions table columns a visitor can sort by (issue #178), via
@@ -175,6 +183,9 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_reader_import_cancel', array( $this, 'handle_reader_import_cancel' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
+		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
+		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
+		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
 		add_action( 'admin_post_daymark_subscription_poll_interval_save', array( $this, 'handle_poll_interval_save' ) );
 	}
 
@@ -312,19 +323,21 @@ class Daymark_Admin_Subscriptions {
 				'restUrl'   => esc_url_raw( rest_url( 'daymark/v1/subscriptions/' ) ),
 				'restNonce' => wp_create_nonce( 'wp_rest' ),
 				'i18n'      => array(
-					'refreshLabel'     => __( 'Refresh', 'daymark' ),
-					'refreshingLabel'  => __( 'Refreshing…', 'daymark' ),
-					'statusActive'     => __( 'Active', 'daymark' ),
-					'statusError'      => __( 'Error', 'daymark' ),
-					'justNow'          => __( 'Just now', 'daymark' ),
-					'genericError'     => __( 'Something went wrong. Please try again.', 'daymark' ),
+					'refreshLabel'           => __( 'Refresh', 'daymark' ),
+					'refreshingLabel'        => __( 'Refreshing…', 'daymark' ),
+					'statusActive'           => __( 'Active', 'daymark' ),
+					'statusError'            => __( 'Error', 'daymark' ),
+					'justNow'                => __( 'Just now', 'daymark' ),
+					'genericError'           => __( 'Something went wrong. Please try again.', 'daymark' ),
+					/* translators: %d: number of sites selected. */
+					'confirmBulkUnsubscribe' => __( 'Unsubscribe from %d selected sites? Their saved posts move to Trash.', 'daymark' ),
 					// %s is replaced with the failure's own reason text
 					// client-side (see applyRefreshedRow() in
 					// admin-subscriptions.js) — kept as one translatable
 					// string rather than concatenating a fixed prefix, so a
 					// translation can reorder around the inserted reason.
 					/* translators: %s: the most recent fetch failure's reason. */
-					'recentFetchIssue' => __( 'Recent fetch issue: %s', 'daymark' ),
+					'recentFetchIssue'       => __( 'Recent fetch issue: %s', 'daymark' ),
 				),
 			)
 		);
@@ -343,7 +356,7 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * This screen's admin URL for a specific tab.
 	 *
-	 * @param string $tab One of TABS' own keys.
+	 * @param string $tab One of tabs()' own keys.
 	 * @return string
 	 */
 	public static function tab_url( string $tab ): string {
@@ -352,35 +365,39 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * Tab key => nav label. Order is display order; the first entry is the
-	 * default tab (resolve_active_tab()'s own fallback). Introduced in
-	 * issue #86's own restructuring once a fourth section (Connectors)
-	 * would otherwise have made a single, unbroken page read as one
-	 * overloaded settings screen — see CLAUDE.md's own architectural
-	 * decision row for the full rationale.
+	 * default tab (resolve_active_tab()'s own fallback). General comes
+	 * first so the screen opens on settings, not on the list of followed
+	 * sites. The `privacy` key is kept for existing links; its label is
+	 * "Data & privacy" so it isn't confused with core's Settings -> Privacy.
 	 *
-	 * @var array<string, string>
+	 * @return array<string, string>
 	 */
-	private const TABS = array(
-		'subscriptions' => 'Subscriptions',
-		'connectors'    => 'Connectors',
-		'import-export' => 'Import / Export',
-		'privacy'       => 'Privacy',
-	);
+	private static function tabs(): array {
+		return array(
+			'general'       => __( 'General', 'daymark' ),
+			'subscriptions' => __( 'Subscriptions', 'daymark' ),
+			'connectors'    => __( 'Connectors', 'daymark' ),
+			'import-export' => __( 'Import / Export', 'daymark' ),
+			'privacy'       => __( 'Data & privacy', 'daymark' ),
+		);
+	}
 
 	/**
 	 * Resolve which tab to render from `?tab=`, falling back to the first
-	 * TABS entry for a missing or unrecognized value — the same
+	 * tabs() entry for a missing or unrecognized value — the same
 	 * whitelist-or-default posture resolve_sort_request() already uses for
 	 * `?orderby=`.
 	 *
-	 * @return string One of TABS' own keys.
+	 * @return string One of tabs()' own keys.
 	 */
 	private function resolve_active_tab(): string {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only tab selection, not a state-changing action.
 		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : '';
 
-		if ( ! isset( self::TABS[ $tab ] ) ) {
-			$tab = array_key_first( self::TABS );
+		$tabs = self::tabs();
+
+		if ( ! isset( $tabs[ $tab ] ) ) {
+			$tab = array_key_first( $tabs );
 		}
 
 		return $tab;
@@ -393,13 +410,13 @@ class Daymark_Admin_Subscriptions {
 	 * a small, standard piece of chrome" posture (e.g. the sortable-column
 	 * arrow, the pencil-icon disclosure).
 	 *
-	 * @param string $active One of TABS' own keys.
+	 * @param string $active One of tabs()' own keys.
 	 * @return void
 	 */
 	private function render_tab_nav( string $active ): void {
 		?>
 		<h2 class="nav-tab-wrapper">
-			<?php foreach ( self::TABS as $tab => $label ) : ?>
+			<?php foreach ( self::tabs() as $tab => $label ) : ?>
 				<a
 					href="<?php echo esc_url( self::tab_url( $tab ) ); ?>"
 					class="nav-tab<?php echo $tab === $active ? ' nav-tab-active' : ''; ?>"
@@ -429,7 +446,9 @@ class Daymark_Admin_Subscriptions {
 			<?php $this->render_notice(); ?>
 			<?php $this->render_tab_nav( $active_tab ); ?>
 
-			<?php if ( 'subscriptions' === $active_tab ) : ?>
+			<?php if ( 'general' === $active_tab ) : ?>
+				<?php $this->render_general_tab(); ?>
+			<?php elseif ( 'subscriptions' === $active_tab ) : ?>
 				<?php $this->render_subscriptions_tab(); ?>
 			<?php elseif ( 'connectors' === $active_tab ) : ?>
 				<?php $this->render_connectors_tab(); ?>
@@ -451,21 +470,196 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscriptions_tab(): void {
-		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_all();
-		$total_count   = count( $subscriptions );
+		$all           = Daymark_Plugin::instance()->subscriptions->get_all();
+		$total_count   = count( $all );
+		$failing_count = count( array_filter( $all, array( __CLASS__, 'is_failing' ) ) );
+		$view          = $this->resolve_view_request();
 		$search        = $this->resolve_search_request();
+		$subscriptions = 'failing' === $view ? array_values( array_filter( $all, array( __CLASS__, 'is_failing' ) ) ) : $all;
 		$subscriptions = $this->filter_subscriptions( $subscriptions, $search );
 		$sort          = $this->resolve_sort_request();
 		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
+		$matching      = count( $subscriptions );
+		$pages         = max( 1, (int) ceil( $matching / self::PER_PAGE ) );
+		$page          = min( $pages, $this->resolve_page_request() );
+		$subscriptions = array_slice( $subscriptions, ( $page - 1 ) * self::PER_PAGE, self::PER_PAGE );
 		?>
 		<p><?php esc_html_e( 'Subscribe to another site\'s feed to see its posts alongside your own Marks in the Timeline.', 'daymark' ); ?></p>
 
 		<?php $this->render_subscribe_form(); ?>
 		<?php if ( $total_count > 0 ) : ?>
+			<?php $this->render_view_links( $view, $total_count, $failing_count ); ?>
 			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
+			<?php $this->render_bulk_form(); ?>
 		<?php endif; ?>
 		<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
+		<?php $this->render_pagination( $page, $pages, $matching ); ?>
+		<?php
+	}
+
+	/**
+	 * Whether a subscription is having trouble: flagged dead, or with at
+	 * least one failed check since its last success.
+	 *
+	 * @param array<string, mixed> $subscription Subscription row.
+	 * @return bool
+	 */
+	public static function is_failing( array $subscription ): bool {
+		return 'error' === ( $subscription['status'] ?? '' ) || absint( $subscription['consecutive_failure_count'] ?? 0 ) > 0;
+	}
+
+	/**
+	 * The table's view from `?view=`: 'failing' or '' (all).
+	 *
+	 * @return string
+	 */
+	private function resolve_view_request(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter, not a state-changing action.
+		$view = isset( $_GET[ self::VIEW_QUERY_VAR ] ) ? sanitize_key( wp_unslash( $_GET[ self::VIEW_QUERY_VAR ] ) ) : '';
+
+		return 'failing' === $view ? 'failing' : '';
+	}
+
+	/**
+	 * The table's page number from `?paged=`, at least 1.
+	 *
+	 * @return int
+	 */
+	private function resolve_page_request(): int {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only paging, not a state-changing action.
+		return max( 1, isset( $_GET['paged'] ) ? absint( wp_unslash( $_GET['paged'] ) ) : 1 );
+	}
+
+	/**
+	 * The current table URL's own view, search, and sort arguments, so a
+	 * link that changes one of them keeps the others.
+	 *
+	 * @return array<string, string>
+	 */
+	private function current_table_args(): array {
+		$args = array();
+		$sort = $this->resolve_sort_request();
+
+		if ( '' !== $this->resolve_view_request() ) {
+			$args[ self::VIEW_QUERY_VAR ] = 'failing';
+		}
+
+		if ( '' !== $this->resolve_search_request() ) {
+			$args[ self::SEARCH_QUERY_VAR ] = $this->resolve_search_request();
+		}
+
+		$args['orderby'] = $sort['orderby'];
+		$args['order']   = $sort['order'];
+
+		return $args;
+	}
+
+	/**
+	 * "All (N) | Failing (M)" view links, in core's list-table style.
+	 *
+	 * @param string $view          Active view: '' or 'failing'.
+	 * @param int    $total_count   All subscriptions.
+	 * @param int    $failing_count Subscriptions having trouble.
+	 * @return void
+	 */
+	private function render_view_links( string $view, int $total_count, int $failing_count ): void {
+		$base = self::tab_url( 'subscriptions' );
+		?>
+		<ul class="subsubsub">
+			<li>
+				<a href="<?php echo esc_url( $base ); ?>"<?php echo '' === $view ? ' class="current" aria-current="page"' : ''; ?>>
+					<?php
+					/* translators: %d: number of subscriptions */
+					printf( esc_html__( 'All (%d)', 'daymark' ), (int) $total_count );
+					?>
+				</a> |
+			</li>
+			<li>
+				<a href="<?php echo esc_url( add_query_arg( self::VIEW_QUERY_VAR, 'failing', $base ) ); ?>"<?php echo 'failing' === $view ? ' class="current" aria-current="page"' : ''; ?>>
+					<?php
+					/* translators: %d: number of subscriptions having trouble */
+					printf( esc_html__( 'Failing (%d)', 'daymark' ), (int) $failing_count );
+					?>
+				</a>
+			</li>
+		</ul>
+		<?php
+	}
+
+	/**
+	 * The bulk-actions form. The table's row checkboxes join it through the
+	 * HTML `form` attribute, since each row already holds its own forms and
+	 * forms can't be nested.
+	 *
+	 * @return void
+	 */
+	private function render_bulk_form(): void {
+		?>
+		<form id="daymark-subscriptions-bulk" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="tablenav top" style="clear:both;" data-daymark-bulk-form>
+			<input type="hidden" name="action" value="daymark_subscriptions_bulk" />
+			<?php wp_nonce_field( 'daymark_subscriptions_bulk', 'daymark_subscriptions_bulk_nonce' ); ?>
+			<div class="alignleft actions bulkactions">
+				<label for="daymark-bulk-action" class="screen-reader-text"><?php esc_html_e( 'Select bulk action', 'daymark' ); ?></label>
+				<select name="daymark_bulk_action" id="daymark-bulk-action">
+					<option value=""><?php esc_html_e( 'Bulk actions', 'daymark' ); ?></option>
+					<option value="refresh"><?php esc_html_e( 'Refresh', 'daymark' ); ?></option>
+					<option value="unsubscribe"><?php esc_html_e( 'Unsubscribe', 'daymark' ); ?></option>
+				</select>
+				<?php submit_button( __( 'Apply', 'daymark' ), 'action', 'daymark-bulk-apply', false ); ?>
+			</div>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Page links under the table, in core's list-table style.
+	 *
+	 * @param int $page     Current page.
+	 * @param int $pages    Number of pages.
+	 * @param int $matching Subscriptions matching the view and search.
+	 * @return void
+	 */
+	private function render_pagination( int $page, int $pages, int $matching ): void {
+		if ( $pages <= 1 ) {
+			return;
+		}
+
+		$links = paginate_links(
+			array(
+				'base'      => add_query_arg( 'paged', '%#%', add_query_arg( $this->current_table_args(), self::tab_url( 'subscriptions' ) ) ),
+				'format'    => '',
+				'current'   => $page,
+				'total'     => $pages,
+				'prev_text' => __( '&laquo; Previous', 'daymark' ),
+				'next_text' => __( 'Next &raquo;', 'daymark' ),
+			)
+		);
+		?>
+		<div class="tablenav bottom">
+			<div class="tablenav-pages">
+				<span class="displaying-num">
+					<?php
+					/* translators: %d: number of subscriptions */
+					echo esc_html( sprintf( _n( '%d site', '%d sites', $matching, 'daymark' ), $matching ) );
+					?>
+				</span>
+				<span class="pagination-links"><?php echo wp_kses_post( (string) $links ); ?></span>
+			</div>
+		</div>
+		<?php
+	}
+
+	/**
+	 * The General tab: how often followed sites are checked, and whether
+	 * they're shared as a public blogroll.
+	 *
+	 * @return void
+	 */
+	private function render_general_tab(): void {
+		?>
+		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
+		<?php $this->render_blogroll_form(); ?>
 		<?php
 	}
 
@@ -483,6 +677,124 @@ class Daymark_Admin_Subscriptions {
 		$this->render_export_link();
 		$this->render_import_form();
 		$this->render_reader_import_section();
+		$this->render_links_import_section();
+	}
+
+	/**
+	 * "Import from Links": a one-time import of this site's old Links
+	 * Manager (blogroll) entries. Shown only when the site has any. Each
+	 * link's RSS address is used as its feed when it has one; otherwise its
+	 * site address is discovered the same way subscribing by URL does.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_links_import_section(): void {
+		$links = Daymark_Blogroll::links_for_import();
+
+		if ( empty( $links ) ) {
+			return;
+		}
+
+		$subscribed = array();
+
+		foreach ( Daymark_Plugin::instance()->subscriptions->get_all() as $subscription ) {
+			foreach ( array( 'feed_url', 'site_url' ) as $field ) {
+				$subscribed[ strtolower( untrailingslashit( (string) ( $subscription[ $field ] ?? '' ) ) ) ] = true;
+			}
+		}
+		?>
+		<h2><?php esc_html_e( 'Import from Links', 'daymark' ); ?></h2>
+		<p>
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: %d: number of links in the site's Links (blogroll) list. */
+					_n( 'This site has %d link in its old Links (blogroll) list. Uncheck any you don\'t want to follow, then import the rest.', 'This site has %d links in its old Links (blogroll) list. Uncheck any you don\'t want to follow, then import the rest.', count( $links ), 'daymark' ),
+					count( $links )
+				)
+			);
+			?>
+		</p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_links_import" />
+			<?php wp_nonce_field( 'daymark_links_import', 'daymark_links_import_nonce' ); ?>
+			<div style="max-height:400px;overflow:auto;border:1px solid #dcdcde;background:#fff;padding:4px 12px;max-width:600px;">
+				<?php foreach ( $links as $link_id => $entry ) : ?>
+					<?php
+					$shown   = '' !== $entry['xml_url'] ? $entry['xml_url'] : $entry['html_url'];
+					$already = isset( $subscribed[ strtolower( untrailingslashit( $entry['xml_url'] ) ) ] )
+						|| isset( $subscribed[ strtolower( untrailingslashit( $entry['html_url'] ) ) ] );
+					?>
+					<label style="display:block;margin:6px 0;">
+						<input
+							type="checkbox"
+							name="daymark_link_id[]"
+							value="<?php echo esc_attr( (string) $link_id ); ?>"
+							<?php checked( ! $already ); ?>
+							<?php disabled( $already ); ?>
+						/>
+						<strong><?php echo esc_html( '' !== $entry['label'] ? $entry['label'] : $shown ); ?></strong>
+						<?php if ( $already ) : ?>
+							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
+						<?php endif; ?>
+						<br />
+						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $shown ); ?></code>
+					</label>
+				<?php endforeach; ?>
+			</div>
+			<?php submit_button( __( 'Import selected links', 'daymark' ), 'secondary', 'daymark-links-import-submit', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Import the checked Links entries (admin_post_daymark_links_import).
+	 * The form sends only link IDs; the addresses are read back from the
+	 * site's own Links table, then go through the same per-entry import as
+	 * an OPML file.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	public function handle_links_import(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_links_import', 'daymark_links_import_nonce' );
+
+		$ids   = isset( $_POST['daymark_link_id'] ) ? array_map( 'absint', (array) wp_unslash( $_POST['daymark_link_id'] ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$links = Daymark_Blogroll::links_for_import();
+		$picks = array();
+
+		foreach ( array_unique( $ids ) as $id ) {
+			if ( isset( $links[ $id ] ) ) {
+				$picks[] = $links[ $id ];
+			}
+		}
+
+		if ( empty( $picks ) ) {
+			$this->redirect_with_error( __( 'Select at least one link to import.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		$results = ( new Daymark_Subscription_OPML() )->import_entries( $picks );
+
+		set_transient( 'daymark_opml_import_result_' . get_current_user_id(), $results, MINUTE_IN_SECONDS );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'opml_imported' ), 'import-export' );
 	}
 
 	/**
@@ -500,9 +812,13 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		if ( 'error' === $notice ) {
-			$message = isset( $_GET[ self::MESSAGE_QUERY_VAR ] ) // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
-				? sanitize_text_field( wp_unslash( $_GET[ self::MESSAGE_QUERY_VAR ] ) ) // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
-				: __( 'Something went wrong.', 'daymark' );
+			// The message itself never travels in the URL (a crafted link
+			// could otherwise show any text here); redirect_with_error()
+			// leaves it in a short-lived transient for this user.
+			$key     = self::error_transient_key();
+			$stored  = get_transient( $key );
+			$message = is_string( $stored ) && '' !== $stored ? $stored : __( 'Something went wrong.', 'daymark' );
+			delete_transient( $key );
 
 			printf(
 				'<div class="notice notice-error is-dismissible"><p>%s</p></div>',
@@ -536,6 +852,50 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		if ( 'bulk_unsubscribed' === $notice ) {
+			$count = $this->resolve_notice_removed_count();
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %d: number of sites unsubscribed */
+						_n( 'Unsubscribed from %d site. Its saved posts moved to Trash.', 'Unsubscribed from %d sites. Their saved posts moved to Trash.', $count, 'daymark' ),
+						$count
+					)
+				)
+			);
+
+			return;
+		}
+
+		if ( 'bulk_refreshed' === $notice ) {
+			$checked = isset( $_GET[ self::COUNT_QUERY_VAR ] ) ? absint( wp_unslash( $_GET[ self::COUNT_QUERY_VAR ] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
+			$skipped = isset( $_GET['daymark_skipped'] ) ? absint( wp_unslash( $_GET['daymark_skipped'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
+			$message = sprintf(
+				/* translators: %d: number of sites checked */
+				_n( 'Checked %d site.', 'Checked %d sites.', $checked, 'daymark' ),
+				$checked
+			);
+
+			if ( $skipped > 0 ) {
+				$message .= ' ' . sprintf(
+					/* translators: %d: number of sites not checked now */
+					_n( '%d was checked recently, couldn\'t be reached, or will update in the background.', '%d were checked recently, couldn\'t be reached, or will update in the background.', $skipped, 'daymark' ),
+					$skipped
+				);
+			}
+
+			printf( '<div class="notice notice-success is-dismissible"><p>%s</p></div>', esc_html( $message ) );
+
+			return;
+		}
+
+		if ( 'feeds_remove_unconfirmed' === $notice ) {
+			$this->render_feeds_remove_unconfirmed_notice();
+
+			return;
+		}
+
 		if ( 'feeds_updated' === $notice || 'feeds_updated_pending' === $notice ) {
 			$this->render_feeds_updated_notice( $notice );
 
@@ -547,7 +907,8 @@ class Daymark_Admin_Subscriptions {
 			'refreshed'           => __( 'Refresh requested.', 'daymark' ),
 			'icon_refreshed'      => __( 'Site icon refreshed.', 'daymark' ),
 			'title_updated'       => __( 'Site name updated.', 'daymark' ),
-			'privacy_saved'       => __( 'Privacy settings saved.', 'daymark' ),
+			'privacy_saved'       => __( 'Data & privacy settings saved.', 'daymark' ),
+			'blogroll_saved'      => __( 'Blogroll setting saved.', 'daymark' ),
 			'bridgy_fed_saved'    => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved' => __( 'Check frequency saved.', 'daymark' ),
 			'feeds_unchanged'     => __( 'No changes made to this site\'s feeds.', 'daymark' ),
@@ -666,6 +1027,42 @@ class Daymark_Admin_Subscriptions {
 
 		printf(
 			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+			esc_html( $message )
+		);
+	}
+
+	/**
+	 * Render the warning for an "Update feeds" submission where feeds were
+	 * unchecked without ticking "Also unfollow the feeds I unchecked", so
+	 * nothing was removed. Also reports any feeds that were added.
+	 *
+	 * @return void
+	 */
+	private function render_feeds_remove_unconfirmed_notice(): void {
+		$kept  = $this->resolve_notice_removed_count();
+		$added = (int) ( isset( $_GET[ self::COUNT_QUERY_VAR ] ) ? absint( wp_unslash( $_GET[ self::COUNT_QUERY_VAR ] ) ) : 0 ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of a redirect status; not a state-changing action.
+
+		$message = sprintf(
+			/* translators: %d: number of feeds that were unchecked but are still followed. */
+			_n(
+				'%d feed you unchecked is still followed. To unfollow it, check "Also unfollow the feeds I unchecked" and update again.',
+				'%d feeds you unchecked are still followed. To unfollow them, check "Also unfollow the feeds I unchecked" and update again.',
+				$kept,
+				'daymark'
+			),
+			$kept
+		);
+
+		if ( $added > 0 ) {
+			$message .= ' ' . sprintf(
+				/* translators: %d: number of feeds added. */
+				_n( 'Added %d feed.', 'Added %d feeds.', $added, 'daymark' ),
+				$added
+			);
+		}
+
+		printf(
+			'<div class="notice notice-warning is-dismissible"><p>%s</p></div>',
 			esc_html( $message )
 		);
 	}
@@ -1269,6 +1666,9 @@ class Daymark_Admin_Subscriptions {
 		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
 			<input type="hidden" name="tab" value="subscriptions" />
+			<?php if ( '' !== $this->resolve_view_request() ) : ?>
+				<input type="hidden" name="<?php echo esc_attr( self::VIEW_QUERY_VAR ); ?>" value="failing" />
+			<?php endif; ?>
 			<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
 			<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
 			<p class="search-box">
@@ -1328,6 +1728,10 @@ class Daymark_Admin_Subscriptions {
 		<table class="wp-list-table widefat fixed striped">
 			<thead>
 				<tr>
+					<td class="manage-column column-cb check-column">
+						<label class="screen-reader-text" for="daymark-select-all"><?php esc_html_e( 'Select all', 'daymark' ); ?></label>
+						<input type="checkbox" id="daymark-select-all" data-daymark-select-all />
+					</td>
 					<?php $this->render_sortable_column_header( __( 'Site', 'daymark' ), 'site', $orderby, $order, $search ); ?>
 					<?php $this->render_sortable_column_header( __( 'Status', 'daymark' ), 'status', $orderby, $order, $search ); ?>
 					<?php $this->render_sortable_column_header( __( 'Last fetched', 'daymark' ), 'last_checked', $orderby, $order, $search ); ?>
@@ -1374,7 +1778,11 @@ class Daymark_Admin_Subscriptions {
 			$args[ self::SEARCH_QUERY_VAR ] = $search;
 		}
 
-		$url       = add_query_arg( $args, self::page_url() );
+		if ( '' !== $this->resolve_view_request() ) {
+			$args[ self::VIEW_QUERY_VAR ] = 'failing';
+		}
+
+		$url       = add_query_arg( $args, self::tab_url( 'subscriptions' ) );
 		$aria_sort = ! $is_active ? 'none' : ( 'desc' === $order ? 'descending' : 'ascending' );
 		?>
 		<th scope="col" aria-sort="<?php echo esc_attr( $aria_sort ); ?>">
@@ -1566,6 +1974,15 @@ class Daymark_Admin_Subscriptions {
 		$has_error_message = '' !== $last_error && ( $is_error || $failure_count > 0 );
 		?>
 		<tr data-daymark-subscription-row="<?php echo esc_attr( (string) $id ); ?>">
+			<th scope="row" class="check-column">
+				<label class="screen-reader-text" for="daymark-select-<?php echo esc_attr( (string) $id ); ?>">
+					<?php
+					/* translators: %s: site name */
+					echo esc_html( sprintf( __( 'Select %s', 'daymark' ), $row_label ) );
+					?>
+				</label>
+				<input type="checkbox" id="daymark-select-<?php echo esc_attr( (string) $id ); ?>" name="daymark_subscription_ids[]" value="<?php echo esc_attr( (string) $id ); ?>" form="daymark-subscriptions-bulk" data-daymark-select />
+			</th>
 			<td>
 				<?php if ( '' !== $icon_url ) : ?>
 					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;margin-right:6px;" onerror="this.remove()" />
@@ -1609,6 +2026,7 @@ class Daymark_Admin_Subscriptions {
 			</td>
 		</tr>
 		<tr data-daymark-subscription-sources-row="<?php echo esc_attr( (string) $id ); ?>">
+			<td></td>
 			<td colspan="4" style="padding-top:0;">
 				<?php $this->render_source_switch_control( $id, $site_url, $feed_url ); ?>
 			</td>
@@ -1905,6 +2323,12 @@ class Daymark_Admin_Subscriptions {
 				<legend><strong><?php esc_html_e( 'Feeds found for this site:', 'daymark' ); ?></strong></legend>
 				<?php $this->render_candidate_checkboxes( $candidates, $current_feed_url, false ); ?>
 			</fieldset>
+			<p>
+				<label>
+					<input type="checkbox" name="daymark_confirm_remove" value="1" />
+					<?php esc_html_e( 'Also unfollow the feeds I unchecked. Their saved posts move to Trash.', 'daymark' ); ?>
+				</label>
+			</p>
 			<?php submit_button( __( 'Update feeds', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
 		</form>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
@@ -2204,52 +2628,66 @@ class Daymark_Admin_Subscriptions {
 		return array(
 			'webmention'      => array(
 				'label'       => 'Webmention',
+				'group'       => 'start',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
-				'description' => __( "Needed for Like (or ActivityPub/Jetpack): without this plugin, the ActivityPub plugin, or Jetpack with your WordPress.com account linked, subscribed posts show no Like icon at all. Sends and receives Webmentions automatically — a like or reply you compose to a subscribed post notifies its source the moment you publish, and mentions from across the IndieWeb arrive back as native comments Daymark already recognizes and labels in Notifications. It also improves the commenting experience for other Daymark users who subscribe to your site: with this active, someone reading one of your posts in their own Daymark app can comment directly from there instead of being redirected to your site's own comment form.", 'daymark' ),
+				'summary'     => __( 'Lets your Likes, comments, and Reblogs reach other sites, and brings their replies back to your Notifications.', 'daymark' ),
+				'details'     => __( 'Sends a Webmention to every site your Mark links to when you publish, and receives the ones other sites send you as ordinary comments, which Daymark labels in Notifications. It is one of the ways a Like can reach a post you follow; without it, the ActivityPub plugin, or Jetpack, followed posts show no Like button. It also lets other Daymark users comment on your posts from their own app.', 'daymark' ),
 			),
 			'activitypub'     => array(
 				'label'       => 'ActivityPub',
+				'group'       => 'start',
 				'wporg_slug'  => 'activitypub',
 				'folder_slug' => 'activitypub',
-				/* translators: "Reply from the Fediverse" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
-				'description' => __( 'Makes your site followable from Mastodon, Threads, Pixelfed, and the rest of the fediverse — a published Mark reaches those followers automatically, and their replies come back into Daymark Notifications labeled "Reply from the Fediverse." Also one of the ways a Like can reach its origin (alongside Webmention and Jetpack): with version 8.1.0 or later active and your own user enabled as an ActivityPub author, liking a subscribed post from Mastodon or another fediverse site sends it a real ActivityPub Like, and reblogging one sends a boost (Announce) — both undone if you unlike or unreblog.', 'daymark' ),
+				'summary'     => __( 'Makes your site followable from Mastodon and the rest of the fediverse, and brings replies back.', 'daymark' ),
+				/* translators: "Reply from the Fediverse" matches the label Daymark shows in Notifications for this source. */
+				'details'     => __( 'Each Mark you publish reaches your fediverse followers, and their replies appear in Notifications as "Reply from the Fediverse". With version 8.1.0 or later and your user enabled as an ActivityPub author, liking or reblogging a fediverse post you follow sends a real Like or boost, undone if you unlike or unreblog.', 'daymark' ),
 			),
 			'atmosphere'      => array(
 				'label'       => 'ATmosphere',
+				'group'       => 'optional',
 				'wporg_slug'  => 'atmosphere',
 				'folder_slug' => 'wordpress-atmosphere',
 				'classes'     => array( 'Atmosphere\\Publisher' ),
 				'constants'   => array( 'ATMOSPHERE_VERSION' ),
-				/* translators: "Reply from Bluesky" matches the exact label Daymark itself shows in Notifications for this source — see readme.txt's own backflow FAQ. */
-				'description' => __( 'Connects your site to Bluesky / the AT Protocol — the publish screen gets a per-Mark Bluesky toggle, and replies delivered back are recognized and labeled in Notifications ("Reply from Bluesky").', 'daymark' ),
+				'summary'     => __( 'Connects your site to Bluesky.', 'daymark' ),
+				/* translators: "Reply from Bluesky" matches the label Daymark shows in Notifications for this source. */
+				'details'     => __( 'The Publish screen gets a per-Mark Bluesky switch, and replies from Bluesky appear in Notifications as "Reply from Bluesky".', 'daymark' ),
 			),
 			'jetpack'         => array(
 				'label'       => 'Jetpack',
+				'group'       => 'optional',
 				'wporg_slug'  => 'jetpack',
 				'folder_slug' => 'jetpack',
 				'classes'     => array( 'Automattic\\Jetpack\\Connection\\Client' ),
-				'description' => __( "Needed for Like (or Webmention/ActivityPub) on WordPress.com and Jetpack-connected sites: without this, the Webmention plugin, or the ActivityPub plugin, subscribed posts show no Like icon at all. Once you've personally linked your own WordPress.com account through Jetpack (Jetpack → My Connection), liking or commenting on a subscribed post whose own site is WordPress.com-hosted or Jetpack-connected goes straight to WordPress.com's real Like/Comment API — the same one the official Jetpack app itself uses — instead of publishing a small Mark of your own or sending you to a browser view of the original post. Every other subscribed site is unaffected and keeps working exactly as before.", 'daymark' ),
+				'summary'     => __( 'Likes and comments on WordPress.com and Jetpack sites go straight to WordPress.com.', 'daymark' ),
+				'details'     => __( 'After you link your own WordPress.com account (Jetpack → My Connection), liking or commenting on a followed post from a WordPress.com or Jetpack-connected site uses WordPress.com\'s own Like and Comment API, the one the Jetpack app uses. Other sites are unaffected. It also lets you import the sites you follow in the WordPress.com Reader.', 'daymark' ),
 			),
 			'bridgy_fed'      => array(
-				'label'       => 'Bridgy Fed',
-				'type'        => 'service',
-				'url'         => 'https://fed.brid.gy/',
-				'description' => __( 'A free, hosted bridge — not a plugin to install — that gives your site a fediverse and Bluesky presence through the Webmention support above, with no ActivityPub or AT Protocol plugin of its own required. An alternative to the ActivityPub plugin above rather than an addition to it: Bridgy Fed bridges you in under an auto-generated handle tied to its own domain, where the ActivityPub plugin gives your site its own native handle on your own domain. See CLAUDE.md for the full comparison.', 'daymark' ),
+				'label'   => 'Bridgy Fed',
+				'group'   => 'optional',
+				'type'    => 'service',
+				'url'     => 'https://fed.brid.gy/',
+				'summary' => __( 'A free hosted bridge to the fediverse and Bluesky, instead of the ActivityPub plugin.', 'daymark' ),
+				'details' => __( 'Bridgy Fed is a service, not a plugin. It uses the Webmention plugin to give your site a fediverse and Bluesky presence under a handle on its own domain, where the ActivityPub plugin gives your site a handle on your own domain. Use one or the other, not both.', 'daymark' ),
 			),
 			'simple_location' => array(
 				'label'       => 'Simple Location',
+				'group'       => 'optional',
 				'wporg_slug'  => 'simple-location',
 				'folder_slug' => 'simple-location',
 				'classes'     => array( 'Geo_Data' ),
-				'description' => __( 'Once active, a Check In (or any other Mark carrying quietly-captured location) has its coordinates and place name bridged into this plugin\'s own data at publish time — reverse-geocoding an address when none was resolved, a "posted from" display, and a map/archive view all become available for free, with no duplicate location code inside Daymark itself. A captured temperature and short condition description (such as "Mostly clear") are bridged the same way.', 'daymark' ),
+				'summary'     => __( 'Adds a "posted from" line and map views to your Check Ins.', 'daymark' ),
+				'details'     => __( 'When you publish a Check In, its coordinates, place name, and weather are copied into Simple Location\'s own data, so its location display and map archive work for Check Ins without Daymark duplicating them. Daymark only keeps a location for Check Ins.', 'daymark' ),
 			),
 			'parse_this'      => array(
 				'label'       => 'Parse This',
+				'group'       => 'optional',
 				'wporg_slug'  => Daymark_Parse_This::SLUG,
 				'folder_slug' => Daymark_Parse_This::SLUG,
 				'constants'   => array( 'PARSE_THIS_VERSION' ),
-				'description' => __( 'Reads the pages Daymark shows you more fully. Link previews gain the author and publish date, and use a page\'s microformats and JSON-LD as well as its Open Graph tags. Sites you follow through their microformats get a complete parser, so posts show the right author, title, and photos. Daymark works without it and falls back to its own simpler parsing. Needs version 2.0.0 or later.', 'daymark' ),
+				'summary'     => __( 'Reads the pages Daymark shows you more fully.', 'daymark' ),
+				'details'     => __( 'Link previews gain the author and publish date, and sites you follow through their microformats get a complete parser. Daymark works without it. Needs version 2.0.0 or later.', 'daymark' ),
 			),
 		);
 	}
@@ -2370,51 +2808,82 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_connectors_tab(): void {
+		$connectors = self::recommended_connectors();
+		$groups     = array(
+			'start'    => array(
+				'heading' => __( 'Start here', 'daymark' ),
+				'intro'   => __( 'These two make Likes, comments, and replies work with other sites.', 'daymark' ),
+			),
+			'optional' => array(
+				'heading' => __( 'Optional', 'daymark' ),
+				'intro'   => __( 'Add any of these for the services you use.', 'daymark' ),
+			),
+		);
 		?>
-		<p><?php esc_html_e( 'Daymark works best when paired with IndieWeb plugins and services such as these — each one extends what Daymark already does, at the protocol level, without Daymark needing to reimplement it.', 'daymark' ); ?></p>
-		<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:1em;max-width:900px;">
-			<?php foreach ( self::recommended_connectors() as $connector ) : ?>
-				<?php $is_service = 'service' === ( $connector['type'] ?? 'plugin' ); ?>
-				<div class="card" style="max-width:none;margin:0;">
-					<?php if ( $is_service ) : ?>
-						<h3>
-							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
-						</h3>
-						<p><?php echo esc_html( $connector['description'] ); ?></p>
-						<p>
-							<a href="<?php echo esc_url( $connector['url'] ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get started', 'daymark' ); ?></a>
-						</p>
-						<?php if ( 'https://fed.brid.gy/' === $connector['url'] ) : ?>
-							<?php $this->render_bridgy_fed_form(); ?>
+		<p><?php esc_html_e( 'Daymark works with these plugins and services. Each one adds a way to reach other sites without Daymark reimplementing it.', 'daymark' ); ?></p>
+		<?php foreach ( $groups as $group => $text ) : ?>
+			<h2><?php echo esc_html( $text['heading'] ); ?></h2>
+			<p><?php echo esc_html( $text['intro'] ); ?></p>
+			<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1em;max-width:900px;">
+				<?php foreach ( $connectors as $connector ) : ?>
+					<?php
+					if ( ( $connector['group'] ?? 'optional' ) !== $group ) {
+						continue;
+					}
+					$this->render_connector_card( $connector );
+					?>
+				<?php endforeach; ?>
+			</div>
+		<?php endforeach; ?>
+		<?php
+	}
+
+	/**
+	 * One Connectors-tab card: name, one-sentence summary, its status or
+	 * install action, and the longer details behind a "More" disclosure.
+	 *
+	 * @param array<string, mixed> $connector One recommended_connectors() entry.
+	 * @return void
+	 */
+	private function render_connector_card( array $connector ): void {
+		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
+		$link       = $is_service ? $connector['url'] : 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+		?>
+		<div class="card" style="max-width:none;margin:0;">
+			<h3>
+				<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
+			</h3>
+			<p><?php echo esc_html( $connector['summary'] ); ?></p>
+			<details>
+				<summary><?php esc_html_e( 'More', 'daymark' ); ?></summary>
+				<p><?php echo esc_html( $connector['details'] ); ?></p>
+			</details>
+			<?php if ( $is_service ) : ?>
+				<p>
+					<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get started', 'daymark' ); ?></a>
+				</p>
+				<?php if ( 'https://fed.brid.gy/' === $connector['url'] ) : ?>
+					<?php $this->render_bridgy_fed_form(); ?>
+				<?php endif; ?>
+			<?php else : ?>
+				<?php $status = $this->connector_status( $connector ); ?>
+				<p>
+					<?php if ( 'active' === $status ) : ?>
+						<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
+						<?php esc_html_e( 'Active', 'daymark' ); ?>
+					<?php elseif ( 'inactive' === $status ) : ?>
+						<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
+						<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
+						<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
+							<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
 						<?php endif; ?>
+					<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
+						<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
 					<?php else : ?>
-						<?php
-						$status  = $this->connector_status( $connector );
-						$wp_link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
-						?>
-						<h3>
-							<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
-						</h3>
-						<p><?php echo esc_html( $connector['description'] ); ?></p>
-						<p>
-							<?php if ( 'active' === $status ) : ?>
-								<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
-								<?php esc_html_e( 'Active', 'daymark' ); ?>
-							<?php elseif ( 'inactive' === $status ) : ?>
-								<?php $plugin_file = $this->connector_plugin_file( $connector ); ?>
-								<?php esc_html_e( 'Installed, not active.', 'daymark' ); ?>
-								<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
-									<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
-								<?php endif; ?>
-							<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
-								<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
-							<?php else : ?>
-								<a href="<?php echo esc_url( $wp_link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
-							<?php endif; ?>
-						</p>
+						<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from WordPress.org', 'daymark' ); ?></a>
 					<?php endif; ?>
-				</div>
-			<?php endforeach; ?>
+				</p>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
@@ -2454,7 +2923,10 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_poll_interval_form(): void {
-		$current = (int) get_option( 'daymark_subscription_poll_interval', DAY_IN_SECONDS );
+		$stored     = (int) get_option( Daymark_Settings::POLL_INTERVAL, DAY_IN_SECONDS );
+		$effective  = Daymark_Settings::poll_interval();
+		$overridden = $stored !== $effective;
+		$current    = $stored;
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1em;">
 			<input type="hidden" name="action" value="daymark_subscription_poll_interval_save" />
@@ -2462,14 +2934,85 @@ class Daymark_Admin_Subscriptions {
 			<label for="daymark_subscription_poll_interval">
 				<?php esc_html_e( 'Check for new posts:', 'daymark' ); ?>
 			</label>
-			<select name="daymark_subscription_poll_interval" id="daymark_subscription_poll_interval">
+			<select name="daymark_subscription_poll_interval" id="daymark_subscription_poll_interval" <?php disabled( $overridden ); ?>>
 				<?php foreach ( self::poll_interval_options() as $seconds => $label ) : ?>
 					<option value="<?php echo esc_attr( (string) $seconds ); ?>" <?php selected( $current, $seconds ); ?>><?php echo esc_html( $label ); ?></option>
 				<?php endforeach; ?>
 			</select>
-			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-poll-interval-submit', false ); ?>
+			<?php if ( $overridden ) : ?>
+				<p class="description">
+					<?php
+					printf(
+						/* translators: %s: a duration, such as "2 hours" */
+						esc_html__( 'Set by code on this site to every %s, so it can\'t be changed here.', 'daymark' ),
+						esc_html( human_time_diff( 0, max( MINUTE_IN_SECONDS, $effective ) ) )
+					);
+					?>
+				</p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-poll-interval-submit', false ); ?>
+			<?php endif; ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * The public blogroll setting: share the sites you follow as an OPML
+	 * file, linked from the site's pages (Daymark_Blogroll).
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_blogroll_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::BLOGROLL_PUBLIC, false );
+		$effective  = Daymark_Settings::blogroll_public();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:1.5em;">
+			<input type="hidden" name="action" value="daymark_blogroll_save" />
+			<?php wp_nonce_field( 'daymark_blogroll_save', 'daymark_blogroll_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::BLOGROLL_PUBLIC ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Share the sites you follow as a public blogroll', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'Publishes your active subscriptions as an OPML file that feed readers can import, and links to it from your site\'s pages so readers can find it. To show the list on a page, add the Blogroll block.', 'daymark' ); ?>
+			</p>
+			<?php if ( $effective ) : ?>
+				<p>
+					<?php esc_html_e( 'Your blogroll:', 'daymark' ); ?>
+					<a href="<?php echo esc_url( Daymark_Blogroll::opml_url() ); ?>"><?php echo esc_html( Daymark_Blogroll::opml_url() ); ?></a>
+				</p>
+			<?php endif; ?>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-blogroll-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the public blogroll setting (admin_post_daymark_blogroll_save).
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	public function handle_blogroll_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_blogroll_save', 'daymark_blogroll_save_nonce' );
+
+		update_option( Daymark_Settings::BLOGROLL_PUBLIC, isset( $_POST[ Daymark_Settings::BLOGROLL_PUBLIC ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'blogroll_saved' ), 'general' );
 	}
 
 	/**
@@ -2493,64 +3036,105 @@ class Daymark_Admin_Subscriptions {
 		$allowed = self::poll_interval_options();
 
 		if ( ! isset( $allowed[ $posted ] ) ) {
-			$this->redirect_with_error( __( 'That check frequency is not a valid choice.', 'daymark' ) );
+			$this->redirect_with_error( __( 'That check frequency is not a valid choice.', 'daymark' ), 'general' );
 
 			return;
 		}
 
 		update_option( 'daymark_subscription_poll_interval', $posted );
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'poll_interval_saved' ) );
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'poll_interval_saved' ), 'general' );
 	}
 
 	/**
-	 * Definitions for the Privacy section's checkboxes (issue #289): option
-	 * name => label, description, and default. The default matches each
-	 * option's matching filter's own pre-existing hardcoded default (see
-	 * Daymark_Publisher::extract_camera_info()/resolve_location()/
-	 * fetch_weather() and Daymark_Microformats::hentry_markup()), so an
-	 * upgrading site's behavior is unchanged until a site owner actively
-	 * unchecks one — the option is a new way to set what the filter already
-	 * defaulted to, not a new default.
+	 * Definitions for the Data & privacy tab's checkboxes: option name =>
+	 * label, description, default, and `effective`, a callable returning the
+	 * value actually in effect (the option, unless a developer filter
+	 * overrides it — see Daymark_Settings). When the two differ, the
+	 * checkbox is shown disabled with a note, and saving leaves the option
+	 * alone.
 	 *
 	 * @since 0.13.0
 	 *
-	 * @return array<string, array{label: string, description: string, default: bool}>
+	 * @return array<string, array{label: string, description: string, default: bool, effective: callable}>
 	 */
 	private static function privacy_option_definitions(): array {
 		return array(
-			'daymark_capture_location'          => array(
-				'label'       => __( 'Location', 'daymark' ),
-				'description' => __( 'Quietly capture a Mark\'s location (from the browser) for use inside the app — Timeline, notifications. Turning this off also disables weather capture below.', 'daymark' ),
+			Daymark_Settings::CAPTURE_LOCATION      => array(
+				'label'       => __( 'Check In location', 'daymark' ),
+				'description' => __( 'When you start a Check In, ask your browser for your location to suggest the place. No other kind of Mark captures a location. When this is off, type or search for the place instead. Turning this off also turns off weather.', 'daymark' ),
 				'default'     => true,
+				'effective'   => array( 'Daymark_Settings', 'capture_location' ),
 			),
-			'daymark_capture_weather'           => array(
+			Daymark_Settings::CAPTURE_WEATHER       => array(
 				'label'       => __( 'Weather', 'daymark' ),
-				'description' => __( 'Look up the current weather for a Mark\'s captured location. Has no effect if location capture above is off.', 'daymark' ),
+				'description' => __( 'Add the current weather to a Check In, looked up from its location through Open-Meteo. Has no effect when Check In location is off.', 'daymark' ),
 				'default'     => true,
+				'effective'   => array( 'Daymark_Settings', 'capture_weather' ),
 			),
-			'daymark_capture_camera_metadata'   => array(
-				'label'       => __( 'Camera metadata', 'daymark' ),
-				'description' => __( 'Store camera, lens, and exposure details (EXIF) already present in a photo\'s own file.', 'daymark' ),
+			Daymark_Settings::CAPTURE_CAMERA        => array(
+				'label'       => __( 'Camera details', 'daymark' ),
+				'description' => __( 'Keep the camera, lens, and exposure details already in a photo\'s file.', 'daymark' ),
 				'default'     => true,
+				'effective'   => array( 'Daymark_Settings', 'capture_camera_metadata' ),
 			),
-			'daymark_publish_location_publicly' => array(
-				'label'       => __( 'Publish location publicly', 'daymark' ),
-				'description' => __( 'Show a Mark\'s captured location in its public, search-indexable page markup. Off by default — location otherwise stays visible only to you, inside the app.', 'daymark' ),
+			Daymark_Settings::PUBLISH_LOCATION      => array(
+				'label'       => __( 'Coordinates in page markup', 'daymark' ),
+				'description' => __( 'A Check In\'s page always shows its place name and a map, so its location is public. This also adds its exact coordinates as machine-readable markup (h-geo) that other sites and feed readers can use.', 'daymark' ),
 				'default'     => false,
+				'effective'   => array( 'Daymark_Settings', 'publish_location_publicly' ),
+			),
+			Daymark_Settings::HOLD_IMPORTED_REPLIES => array(
+				'label'       => __( 'Hold imported replies', 'daymark' ),
+				'description' => __( 'Replies Daymark imports from connected networks wait in Comments → Pending until you approve them. Replies the ActivityPub, ATmosphere, and Webmention plugins deliver follow those plugins\' own settings.', 'daymark' ),
+				'default'     => false,
+				'effective'   => static function (): bool {
+					return 0 === Daymark_Settings::imported_reply_approved();
+				},
+			),
+			Daymark_Settings::AI_AUTO_SUGGEST       => array(
+				'label'       => __( 'Suggest with AI automatically', 'daymark' ),
+				'description' => __( 'While you write, send your caption and the photos you pick to your AI provider to suggest tags and alt text. When this is off, nothing is sent until you tap an AI button.', 'daymark' ),
+				'default'     => true,
+				'effective'   => array( 'Daymark_Settings', 'ai_auto_suggest' ),
 			),
 		);
 	}
 
 	/**
-	 * Render the "Privacy" section (issue #289): a checkbox per
-	 * quietly-captured-metadata opt-out that already existed as a
-	 * developer-only filter (Daymark_Publisher, Daymark_Microformats) but,
-	 * until now, had no UI a non-technical site owner could reach. Each
-	 * checkbox is backed by a same-named wp_option that filter's own
-	 * apply_filters() default argument now reads — a developer filter still
-	 * wins over this option (layered, not replaced), so nothing already
-	 * relying on the filter changes behavior.
+	 * A setting's stored value and the value actually in effect.
+	 *
+	 * @param string               $option     Option name.
+	 * @param array<string, mixed> $definition One privacy_option_definitions() entry.
+	 * @return array{stored: bool, effective: bool, overridden: bool}
+	 */
+	private static function privacy_option_state( string $option, array $definition ): array {
+		$stored    = (bool) get_option( $option, $definition['default'] );
+		$effective = (bool) call_user_func( $definition['effective'] );
+
+		return array(
+			'stored'     => $stored,
+			'effective'  => $effective,
+			'overridden' => $stored !== $effective,
+		);
+	}
+
+	/**
+	 * The note shown under a setting that code on this site has overridden.
+	 *
+	 * @param bool $on The value in effect.
+	 * @return string
+	 */
+	private static function overridden_note( bool $on ): string {
+		return $on
+			? __( 'Turned on by code on this site, so it can\'t be changed here.', 'daymark' )
+			: __( 'Turned off by code on this site, so it can\'t be changed here.', 'daymark' );
+	}
+
+	/**
+	 * Render the Data & privacy tab: one checkbox per setting in
+	 * privacy_option_definitions(). A setting a developer filter has
+	 * overridden shows its real value, disabled, with a note.
 	 *
 	 * @since 0.13.0
 	 *
@@ -2558,12 +3142,13 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_privacy_section(): void {
 		?>
-		<p><?php esc_html_e( 'Control what quietly-captured metadata Daymark stores or publishes for new Marks. A developer can still override any of these from code — see the readme FAQ.', 'daymark' ); ?></p>
+		<p><?php esc_html_e( 'Choose what Daymark captures, keeps, and sends for new Marks.', 'daymark' ); ?></p>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="daymark_privacy_save" />
 			<?php wp_nonce_field( 'daymark_privacy_save', 'daymark_privacy_save_nonce' ); ?>
 			<table class="form-table" role="presentation">
 				<?php foreach ( self::privacy_option_definitions() as $option => $definition ) : ?>
+					<?php $state = self::privacy_option_state( $option, $definition ); ?>
 					<tr>
 						<th scope="row"><?php echo esc_html( $definition['label'] ); ?></th>
 						<td>
@@ -2573,15 +3158,19 @@ class Daymark_Admin_Subscriptions {
 									name="<?php echo esc_attr( $option ); ?>"
 									id="<?php echo esc_attr( $option ); ?>"
 									value="1"
-									<?php checked( (bool) get_option( $option, $definition['default'] ) ); ?>
+									<?php checked( $state['effective'] ); ?>
+									<?php disabled( $state['overridden'] ); ?>
 								/>
 								<?php echo esc_html( $definition['description'] ); ?>
 							</label>
+							<?php if ( $state['overridden'] ) : ?>
+								<p class="description"><?php echo esc_html( self::overridden_note( $state['effective'] ) ); ?></p>
+							<?php endif; ?>
 						</td>
 					</tr>
 				<?php endforeach; ?>
 			</table>
-			<?php submit_button( __( 'Save privacy settings', 'daymark' ) ); ?>
+			<?php submit_button( __( 'Save settings', 'daymark' ) ); ?>
 		</form>
 		<?php
 	}
@@ -2630,12 +3219,7 @@ class Daymark_Admin_Subscriptions {
 
 		update_option( Daymark_Bridgy_Fed::OPTION, isset( $_POST[ Daymark_Bridgy_Fed::OPTION ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
-		$this->redirect(
-			array(
-				'tab'                  => 'connectors',
-				self::NOTICE_QUERY_VAR => 'bridgy_fed_saved',
-			)
-		);
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'bridgy_fed_saved' ), 'connectors' );
 	}
 
 	/**
@@ -2657,11 +3241,17 @@ class Daymark_Admin_Subscriptions {
 
 		check_admin_referer( 'daymark_privacy_save', 'daymark_privacy_save_nonce' );
 
-		foreach ( array_keys( self::privacy_option_definitions() ) as $option ) {
+		foreach ( self::privacy_option_definitions() as $option => $definition ) {
+			// A disabled (code-overridden) checkbox isn't submitted, so
+			// saving it would silently flip the stored option.
+			if ( self::privacy_option_state( $option, $definition )['overridden'] ) {
+				continue;
+			}
+
 			update_option( $option, isset( $_POST[ $option ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 		}
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'privacy_saved' ) );
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'privacy_saved' ), 'privacy' );
 	}
 
 	/**
@@ -3354,14 +3944,18 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		// Unchecking a feed you follow removes it, and its saved posts,
+		// only with this box ticked too. A stray uncheck does nothing.
+		$allow_remove = ! empty( $_POST['daymark_confirm_remove'] ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
 		$site_url = (string) ( $subscription['site_url'] ?? '' );
-		$outcome  = $this->reconcile_selected_candidates( $site_url, $stashed['candidates'], $indices );
+		$outcome  = $this->reconcile_selected_candidates( $site_url, $stashed['candidates'], $indices, $allow_remove );
 
 		$this->redirect(
 			array(
 				self::NOTICE_QUERY_VAR  => $this->resolve_update_feeds_notice( $outcome ),
 				self::COUNT_QUERY_VAR   => (string) $outcome['added'],
-				self::REMOVED_QUERY_VAR => (string) $outcome['removed'],
+				self::REMOVED_QUERY_VAR => (string) ( $outcome['kept'] > 0 ? $outcome['kept'] : $outcome['removed'] ),
 			)
 		);
 	}
@@ -3405,20 +3999,29 @@ class Daymark_Admin_Subscriptions {
 	 * @param int[]                            $indices    The candidate
 	 *                                                      indices a person
 	 *                                                      left checked.
-	 * @return array{added: int, pending: int, removed: int} `added`/`pending`
+	 * @param bool                             $allow_remove Whether an unchecked,
+	 *                                                       already-followed feed
+	 *                                                       is unfollowed (the
+	 *                                                       picker's confirmation
+	 *                                                       box). When false it's
+	 *                                                       kept and counted.
+	 * @return array{added: int, pending: int, removed: int, kept: int} `added`/`pending`
 	 *                                                        match
 	 *                                                        subscribe_to_selected_candidates();
 	 *                                                        `removed` is how
 	 *                                                        many existing
 	 *                                                        subscriptions
-	 *                                                        were unsubscribed.
+	 *                                                        were unsubscribed;
+	 *                                                        `kept` how many were
+	 *                                                        unchecked but kept.
 	 */
-	private function reconcile_selected_candidates( string $site_url, array $candidates, array $indices ): array {
+	private function reconcile_selected_candidates( string $site_url, array $candidates, array $indices, bool $allow_remove = true ): array {
 		$subscriptions = Daymark_Plugin::instance()->subscriptions;
 		$poller        = Daymark_Plugin::instance()->subscription_poller;
 		$added         = 0;
 		$pending       = 0;
 		$removed       = 0;
+		$kept          = 0;
 
 		foreach ( $candidates as $index => $candidate ) {
 			if ( ! is_array( $candidate ) ) {
@@ -3462,6 +4065,11 @@ class Daymark_Admin_Subscriptions {
 				continue; // Never subscribed and still unchecked — no-op.
 			}
 
+			if ( ! $allow_remove ) {
+				++$kept; // Unchecked, but removal wasn't confirmed.
+				continue;
+			}
+
 			$subscriptions->unsubscribe( (int) $existing['id'] );
 			++$removed;
 		}
@@ -3470,6 +4078,7 @@ class Daymark_Admin_Subscriptions {
 			'added'   => $added,
 			'pending' => $pending,
 			'removed' => $removed,
+			'kept'    => $kept,
 		);
 	}
 
@@ -3488,6 +4097,10 @@ class Daymark_Admin_Subscriptions {
 		$added   = $outcome['added'];
 		$pending = $outcome['pending'];
 		$removed = $outcome['removed'];
+
+		if ( ( $outcome['kept'] ?? 0 ) > 0 ) {
+			return 'feeds_remove_unconfirmed';
+		}
 
 		if ( 0 === $added && 0 === $removed ) {
 			return 'feeds_unchanged';
@@ -3571,7 +4184,7 @@ class Daymark_Admin_Subscriptions {
 		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
 
 		if ( is_wp_error( $rate ) ) {
-			$this->redirect_with_error( $rate->get_error_message() );
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
 
 			return;
 		}
@@ -3580,7 +4193,7 @@ class Daymark_Admin_Subscriptions {
 		$file = isset( $_FILES['daymark_opml_file'] ) && is_array( $_FILES['daymark_opml_file'] ) ? $_FILES['daymark_opml_file'] : null;
 
 		if ( null === $file || empty( $file['tmp_name'] ) || ! is_uploaded_file( $file['tmp_name'] ) ) {
-			$this->redirect_with_error( __( 'No OPML file was provided.', 'daymark' ) );
+			$this->redirect_with_error( __( 'No OPML file was provided.', 'daymark' ), 'import-export' );
 
 			return;
 		}
@@ -3589,7 +4202,7 @@ class Daymark_Admin_Subscriptions {
 		$extension = strtolower( (string) pathinfo( $filename, PATHINFO_EXTENSION ) );
 
 		if ( ! in_array( $extension, array( 'opml', 'xml' ), true ) ) {
-			$this->redirect_with_error( __( 'Please upload a .opml or .xml file.', 'daymark' ) );
+			$this->redirect_with_error( __( 'Please upload a .opml or .xml file.', 'daymark' ), 'import-export' );
 
 			return;
 		}
@@ -3599,7 +4212,7 @@ class Daymark_Admin_Subscriptions {
 		$size      = isset( $file['size'] ) ? (int) $file['size'] : 0;
 
 		if ( $size <= 0 || $size > $max_bytes ) {
-			$this->redirect_with_error( __( 'This file is too large to import.', 'daymark' ) );
+			$this->redirect_with_error( __( 'This file is too large to import.', 'daymark' ), 'import-export' );
 
 			return;
 		}
@@ -3610,14 +4223,91 @@ class Daymark_Admin_Subscriptions {
 		$results = ( new Daymark_Subscription_OPML() )->import( $xml );
 
 		if ( is_wp_error( $results ) ) {
-			$this->redirect_with_error( $results->get_error_message() );
+			$this->redirect_with_error( $results->get_error_message(), 'import-export' );
 
 			return;
 		}
 
 		set_transient( 'daymark_opml_import_result_' . get_current_user_id(), $results, MINUTE_IN_SECONDS );
 
-		$this->redirect( array( self::NOTICE_QUERY_VAR => 'opml_imported' ) );
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'opml_imported' ), 'import-export' );
+	}
+
+	/**
+	 * Handle the subscriptions table's bulk actions
+	 * (admin_post_daymark_subscriptions_bulk): Refresh or Unsubscribe the
+	 * checked rows. Refresh spends one charge of the refresh rate limit for
+	 * the whole batch and checks the sites with the same time budget as the
+	 * Timeline's refresh, handing any left over to a background poll.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	public function handle_bulk(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_subscriptions_bulk', 'daymark_subscriptions_bulk_nonce' );
+
+		$action = isset( $_POST['daymark_bulk_action'] ) ? sanitize_key( wp_unslash( $_POST['daymark_bulk_action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$ids    = isset( $_POST['daymark_subscription_ids'] ) ? array_unique( array_filter( array_map( 'absint', (array) wp_unslash( $_POST['daymark_subscription_ids'] ) ) ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		if ( ! in_array( $action, array( 'refresh', 'unsubscribe' ), true ) || empty( $ids ) ) {
+			$this->redirect_with_error( __( 'Choose a bulk action and at least one site.', 'daymark' ) );
+
+			return;
+		}
+
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+
+		if ( 'unsubscribe' === $action ) {
+			$removed = 0;
+
+			foreach ( $ids as $id ) {
+				if ( null !== $subscriptions->get( $id ) && ! is_wp_error( $subscriptions->unsubscribe( $id ) ) ) {
+					++$removed;
+				}
+			}
+
+			$this->redirect(
+				array(
+					self::NOTICE_QUERY_VAR  => 'bulk_unsubscribed',
+					self::REMOVED_QUERY_VAR => (string) $removed,
+				)
+			);
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message() );
+
+			return;
+		}
+
+		$rows = array();
+
+		foreach ( $ids as $id ) {
+			$row = $subscriptions->get( $id );
+
+			if ( null !== $row ) {
+				$rows[] = $row;
+			}
+		}
+
+		$result = Daymark_Plugin::instance()->subscription_poller->manual_refresh_many( $rows );
+
+		$this->redirect(
+			array(
+				self::NOTICE_QUERY_VAR => 'bulk_refreshed',
+				self::COUNT_QUERY_VAR  => (string) $result['refreshed'],
+				'daymark_skipped'      => (string) ( $result['recent'] + $result['queued'] + $result['failed'] ),
+			)
+		);
 	}
 
 	/**
@@ -3740,28 +4430,35 @@ class Daymark_Admin_Subscriptions {
 	 * @param string                $tab  Tab to land on; '' for the default tab.
 	 * @return void
 	 */
-	private function redirect( array $args, string $tab = '' ): void {
-		$url = add_query_arg( $args, '' !== $tab ? self::tab_url( $tab ) : self::page_url() );
+	private function redirect( array $args, string $tab = 'subscriptions' ): void {
+		$url = add_query_arg( $args, self::tab_url( $tab ) );
 
 		wp_safe_redirect( $url );
 		exit;
 	}
 
 	/**
-	 * Redirect back to the settings page with an error notice carrying the
-	 * given message.
+	 * Redirect back to the settings page with an error notice. The message
+	 * is kept in a short-lived per-user transient and only a code goes in
+	 * the URL, so a reload doesn't repeat it and a crafted link can't show
+	 * arbitrary text.
 	 *
 	 * @param string $message Error message to display.
-	 * @param string $tab     Tab to land on; '' for the default tab.
+	 * @param string $tab     Tab to land on.
 	 * @return void
 	 */
-	private function redirect_with_error( string $message, string $tab = '' ): void {
-		$this->redirect(
-			array(
-				self::NOTICE_QUERY_VAR  => 'error',
-				self::MESSAGE_QUERY_VAR => $message,
-			),
-			$tab
-		);
+	private function redirect_with_error( string $message, string $tab = 'subscriptions' ): void {
+		set_transient( self::error_transient_key(), $message, MINUTE_IN_SECONDS );
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'error' ), $tab );
+	}
+
+	/**
+	 * Per-user transient key holding the next error notice's message.
+	 *
+	 * @return string
+	 */
+	private static function error_transient_key(): string {
+		return 'daymark_admin_error_' . get_current_user_id();
 	}
 }

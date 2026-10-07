@@ -394,6 +394,14 @@ class Daymark_Publisher {
 		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 		$type           = $this->detect_primary_type( $media_ids, $requested_type );
 
+		// Location is kept for Check Ins only. A Check In's place is its
+		// content; on any other Mark a location was background data the
+		// author never asked to keep, so it's dropped even if a client
+		// sends one.
+		if ( 'checkin' !== $type ) {
+			$location = null;
+		}
+
 		// A Like Mark (the composer's "Like" toggle on a subscribed post) is a
 		// pure engagement signal, not user-chosen publishable content — it
 		// must never reach a real syndication destination, regardless of the
@@ -850,6 +858,14 @@ class Daymark_Publisher {
 		}
 
 		$type = $this->detect_primary_type( $media_ids, $requested_type );
+
+		// Location is kept for Check Ins only. A Check In's place is its
+		// content; on any other Mark a location was background data the
+		// author never asked to keep, so it's dropped even if a client
+		// sends one.
+		if ( 'checkin' !== $type ) {
+			$location = null;
+		}
 
 		$raw_targets = $data['syndication_targets'] ?? null;
 
@@ -1821,24 +1837,7 @@ class Daymark_Publisher {
 	 * @return array{camera: array<string, string>, exif_timestamp: int|null}
 	 */
 	private function extract_camera_info( array $media_ids ): array {
-		/**
-		 * Whether camera EXIF fields (camera/aperture/iso/focal_length/
-		 * shutter_speed) are copied into `_daymark_camera` post meta.
-		 *
-		 * Defaults to the `daymark_capture_camera_metadata` option (a
-		 * checkbox in Settings -> Daymark's Privacy section, defaulting to
-		 * true) — set to false there, or return false from this filter, to
-		 * opt a site out of storing this quietly-captured device/equipment
-		 * metadata; see the "quiet Mark metadata capture" feature's privacy
-		 * note in readme.txt/README.md. This does not affect the EXIF
-		 * capture-timestamp fallback (see resolve_captured_at()), which is a
-		 * separate date/time concern.
-		 *
-		 * @since 0.11.0
-		 *
-		 * @param bool $capture Defaults to the `daymark_capture_camera_metadata` option.
-		 */
-		$capture_camera_metadata = (bool) apply_filters( 'daymark_capture_camera_metadata', (bool) get_option( 'daymark_capture_camera_metadata', true ) );
+		$capture_camera_metadata = Daymark_Settings::capture_camera_metadata();
 
 		foreach ( $media_ids as $attachment_id ) {
 			$attachment_id = (int) $attachment_id;
@@ -1931,24 +1930,7 @@ class Daymark_Publisher {
 	 * @return array{lat: float, lng: float, accuracy?: float}|null
 	 */
 	private function resolve_location( array $data ): ?array {
-		/**
-		 * Whether a Mark's quietly-captured location (lat/lng, best-effort
-		 * from the composer's browser geolocation) is stored at all.
-		 *
-		 * Defaults to the `daymark_capture_location` option (a checkbox in
-		 * Settings -> Daymark's Privacy section, defaulting to true) — set
-		 * to false there, or return false from this filter, to opt a site
-		 * out of location capture entirely; the client may still send it,
-		 * but the server ignores it. See the "quiet Mark metadata capture"
-		 * feature's privacy note in readme.txt/README.md. Disabling this
-		 * also prevents fetch_weather() from ever running, since weather is
-		 * only ever attempted alongside a resolved location.
-		 *
-		 * @since 0.11.0
-		 *
-		 * @param bool $capture Defaults to the `daymark_capture_location` option.
-		 */
-		if ( ! apply_filters( 'daymark_capture_location', (bool) get_option( 'daymark_capture_location', true ) ) ) {
+		if ( ! Daymark_Settings::capture_location() ) {
 			return null;
 		}
 
@@ -2153,24 +2135,7 @@ class Daymark_Publisher {
 	 * @return array{temperature: float, unit: string, condition: string, code: int}|null
 	 */
 	private function fetch_weather( float $lat, float $lng ) {
-		/**
-		 * Whether a Mark's weather is looked up at all, given a resolved
-		 * location.
-		 *
-		 * Defaults to the `daymark_capture_weather` option (a checkbox in
-		 * Settings -> Daymark's Privacy section, defaulting to true) — set
-		 * to false there, or return false from this filter, to opt a site
-		 * out of the outbound Open-Meteo request entirely, independent of
-		 * `daymark_capture_location` — useful for a site that's fine
-		 * capturing location but does not want any outbound request tied
-		 * to it. See the "quiet Mark metadata capture" feature's privacy
-		 * note in readme.txt/README.md.
-		 *
-		 * @since 0.11.0
-		 *
-		 * @param bool $capture Defaults to the `daymark_capture_weather` option.
-		 */
-		if ( ! apply_filters( 'daymark_capture_weather', (bool) get_option( 'daymark_capture_weather', true ) ) ) {
+		if ( ! Daymark_Settings::capture_weather() ) {
 			return null;
 		}
 

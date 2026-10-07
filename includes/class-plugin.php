@@ -159,6 +159,14 @@ final class Daymark_Plugin {
 	public Daymark_Bridgy_Fed $bridgy_fed;
 
 	/**
+	 * Public blogroll (OPML file, head link, Blogroll block) and Links
+	 * import.
+	 *
+	 * @var Daymark_Blogroll
+	 */
+	public Daymark_Blogroll $blogroll;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -311,6 +319,7 @@ final class Daymark_Plugin {
 		$this->featured_content             = new Daymark_Featured_Content();
 		$this->featured_content_social      = new Daymark_Featured_Content_Social();
 		$this->bridgy_fed                   = new Daymark_Bridgy_Fed();
+		$this->blogroll                     = new Daymark_Blogroll();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -404,6 +413,7 @@ final class Daymark_Plugin {
 		$this->featured_content->register();
 		$this->featured_content_social->register();
 		$this->bridgy_fed->register();
+		$this->blogroll->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

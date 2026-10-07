@@ -798,4 +798,91 @@ class Test_Notifications extends WP_UnitTestCase {
 
 		$this->assertSame( 401, $response->get_status() );
 	}
+
+	/**
+	 * Several failing subscriptions become one summary item instead of one
+	 * item each, so they don't push replies down the list. For someone who
+	 * manages subscriptions it links to the Failing view.
+	 */
+	public function test_several_failing_subscriptions_become_one_summary_item() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$subscriptions = new Daymark_Subscriptions();
+
+		foreach ( array( 'One', 'Two', 'Three', 'Four' ) as $name ) {
+			$id = $subscriptions->create(
+				array(
+					'site_url'   => 'https://' . strtolower( $name ) . '.example/',
+					'feed_url'   => 'https://' . strtolower( $name ) . '.example/feed/',
+					'site_title' => $name,
+				)
+			);
+			$subscriptions->update(
+				$id,
+				array(
+					'consecutive_failure_count' => 1,
+					'last_checked_at'           => '2026-01-01 00:00:00',
+				)
+			);
+		}
+
+		$items = ( new Daymark_Notifications() )->get_notifications();
+		$types = wp_list_pluck( $items, 'type' );
+
+		$this->assertNotContains( 'feed_issue', $types );
+		$this->assertNotContains( 'dead_feed', $types );
+
+		$summary = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'feed_issues' === ( $item['type'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $summary );
+		$this->assertSame( 4, $summary[0]['count'] );
+		$this->assertCount( 3, $summary[0]['site_titles'] );
+		$this->assertStringContainsString( 'view=failing', $summary[0]['manage_url'] );
+	}
+
+	/** An Author sees the summary without a link to a screen they can't open. */
+	public function test_feed_issues_summary_has_no_link_for_author() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$subscriptions = new Daymark_Subscriptions();
+
+		foreach ( array( 'Uno', 'Dos' ) as $name ) {
+			$id = $subscriptions->create(
+				array(
+					'site_url' => 'https://' . strtolower( $name ) . '.example/',
+					'feed_url' => 'https://' . strtolower( $name ) . '.example/feed/',
+				)
+			);
+			$subscriptions->update( $id, array( 'consecutive_failure_count' => 3 ) );
+		}
+
+		$items   = ( new Daymark_Notifications() )->get_notifications();
+		$summary = array_values(
+			array_filter(
+				$items,
+				static function ( array $item ) {
+					return 'feed_issues' === ( $item['type'] ?? '' );
+				}
+			)
+		);
+
+		$this->assertCount( 1, $summary );
+		$this->assertSame( '', $summary[0]['manage_url'] );
+	}
+
+	/** The "Hold imported replies" setting holds a reply Daymark imports. */
+	public function test_hold_imported_replies_setting_holds_imported_reply() {
+		update_option( Daymark_Settings::HOLD_IMPORTED_REPLIES, '1' );
+		$approved = Daymark_Settings::imported_reply_approved( 1, 'bluesky', array() );
+		delete_option( Daymark_Settings::HOLD_IMPORTED_REPLIES );
+
+		$this->assertSame( 0, $approved );
+	}
 }

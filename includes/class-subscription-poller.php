@@ -105,8 +105,7 @@ class Daymark_Subscription_Poller {
 	 * @return array<string, array{interval: int, display: string}>
 	 */
 	public static function register_cron_schedule( array $schedules ): array {
-		/** This filter is documented in schedule(). */
-		$interval = (int) apply_filters( 'daymark_subscription_poll_interval', (int) get_option( 'daymark_subscription_poll_interval', DAY_IN_SECONDS ) );
+		$interval = Daymark_Settings::poll_interval();
 
 		$schedules[ self::CRON_SCHEDULE_KEY ] = array(
 			'interval' => max( MINUTE_IN_SECONDS, $interval ),
@@ -1086,8 +1085,21 @@ class Daymark_Subscription_Poller {
 	 * @return array{total: int, refreshed: int, failed: int, recent: int, queued: int}
 	 */
 	public function manual_refresh_all(): array {
-		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_active();
+		return $this->manual_refresh_many( Daymark_Plugin::instance()->subscriptions->get_active() );
+	}
 
+	/**
+	 * Manually refresh the given subscriptions, oldest-checked first, with
+	 * the same cooldown, time budget, and background hand-off as
+	 * manual_refresh_all(). Used by it and by the settings screen's bulk
+	 * Refresh.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Subscription rows.
+	 * @return array{total: int, refreshed: int, failed: int, recent: int, queued: int}
+	 */
+	public function manual_refresh_many( array $subscriptions ): array {
 		usort(
 			$subscriptions,
 			static function ( array $a, array $b ): int {

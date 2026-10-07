@@ -25,6 +25,8 @@ define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-settings.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-blogroll.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-routes.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-rest-controller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publisher.php';
