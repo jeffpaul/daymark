@@ -196,7 +196,9 @@ wp_enqueue_script( 'daymark-app' );
 	<meta charset="<?php bloginfo( 'charset' ); ?>" />
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 	<meta name="robots" content="noindex, nofollow" />
-	<meta name="theme-color" content="#c93a06" />
+	<meta name="color-scheme" content="light dark" />
+	<meta name="theme-color" content="#c93a06" media="(prefers-color-scheme: light)" />
+	<meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
 	<meta name="apple-mobile-web-app-capable" content="yes" />
 	<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 	<meta name="apple-mobile-web-app-title" content="Daymark" />

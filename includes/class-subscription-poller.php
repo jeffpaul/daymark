@@ -1018,6 +1018,37 @@ class Daymark_Subscription_Poller {
 			);
 		}
 
+		$wait = $this->manual_refresh_wait( $subscription );
+
+		if ( $wait > 0 ) {
+			return new WP_Error(
+				'daymark_subscription_refresh_too_recent',
+				__( 'This subscription was refreshed recently. Please try again later.', 'daymark' ),
+				array(
+					'status'      => 429,
+					'retry_after' => $wait,
+				)
+			);
+		}
+
+		$result = $this->poll_subscription( $subscription_id );
+		$this->prune_subscription( $subscription_id );
+
+		// Recorded regardless of poll success/failure: a manual refresh
+		// "used up" its window the moment the request was made, independent
+		// of the cron schedule and never resetting or interacting with it.
+		$subscriptions->update( $subscription_id, array( 'last_manual_refresh_at' => current_time( 'mysql', true ) ) );
+
+		return $result;
+	}
+	/**
+	 * Seconds left before a subscription can be manually refreshed again,
+	 * or 0 when it can be refreshed now.
+	 *
+	 * @param array<string, mixed> $subscription Subscription row.
+	 * @return int
+	 */
+	private function manual_refresh_wait( array $subscription ): int {
 		/**
 		 * Filters how long a manual refresh treats a subscription as too
 		 * recently refreshed to poll again, in seconds.
@@ -1028,29 +1059,93 @@ class Daymark_Subscription_Poller {
 
 		$last_refresh = (string) ( $subscription['last_manual_refresh_at'] ?? '' );
 
-		if ( '' !== $last_refresh ) {
-			$last_ts = strtotime( $last_refresh . ' +00:00' );
-			$elapsed = false !== $last_ts ? ( time() - $last_ts ) : $interval;
+		if ( '' === $last_refresh ) {
+			return 0;
+		}
 
-			if ( $elapsed < $interval ) {
-				return new WP_Error(
-					'daymark_subscription_refresh_too_recent',
-					__( 'This subscription was refreshed recently. Please try again later.', 'daymark' ),
-					array(
-						'status'      => 429,
-						'retry_after' => $interval - $elapsed,
-					)
-				);
+		$last_ts = strtotime( $last_refresh . ' +00:00' );
+		$elapsed = false !== $last_ts ? ( time() - $last_ts ) : $interval;
+
+		return max( 0, $interval - $elapsed );
+	}
+
+	/**
+	 * Manually refresh every active subscription, for the Timeline's
+	 * pull-to-refresh and refresh button.
+	 *
+	 * One request in place of one per subscription, so the app spends one
+	 * rate-limit charge per pull, not one per followed site. Sites are
+	 * checked oldest-checked first. A site inside its manual-refresh
+	 * cooldown is skipped and counted as `recent`. Once the time budget
+	 * runs out, the remaining sites are counted as `queued` and handed to
+	 * an immediate background poll (maybe_poll_now()), so a long list never
+	 * times out the request.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return array{total: int, refreshed: int, failed: int, recent: int, queued: int}
+	 */
+	public function manual_refresh_all(): array {
+		$subscriptions = Daymark_Plugin::instance()->subscriptions->get_active();
+
+		usort(
+			$subscriptions,
+			static function ( array $a, array $b ): int {
+				return strcmp( (string) ( $a['last_checked_at'] ?? '' ), (string) ( $b['last_checked_at'] ?? '' ) );
+			}
+		);
+
+		/**
+		 * Filters how many seconds a refresh of every subscription spends
+		 * polling before handing the rest to a background poll.
+		 *
+		 * @since 0.20.0
+		 *
+		 * @param int $seconds Time budget. Default 15. 0 hands every site
+		 *                     to the background poll.
+		 */
+		$budget = max( 0, (int) apply_filters( 'daymark_subscription_refresh_all_time_budget', 15 ) );
+		$start  = microtime( true );
+
+		$result = array(
+			'total'     => count( $subscriptions ),
+			'refreshed' => 0,
+			'failed'    => 0,
+			'recent'    => 0,
+			'queued'    => 0,
+		);
+
+		foreach ( $subscriptions as $subscription ) {
+			$id = absint( $subscription['id'] ?? 0 );
+
+			if ( $id <= 0 ) {
+				continue;
+			}
+
+			if ( $this->manual_refresh_wait( $subscription ) > 0 ) {
+				++$result['recent'];
+				continue;
+			}
+
+			if ( microtime( true ) - $start >= $budget ) {
+				++$result['queued'];
+				continue;
+			}
+
+			$outcome = $this->manual_refresh( $id );
+
+			if ( ! is_wp_error( $outcome ) ) {
+				++$result['refreshed'];
+			} elseif ( 'daymark_subscription_refresh_too_recent' === $outcome->get_error_code() ) {
+				++$result['recent'];
+			} else {
+				++$result['failed'];
 			}
 		}
 
-		$result = $this->poll_subscription( $subscription_id );
-		$this->prune_subscription( $subscription_id );
-
-		// Recorded regardless of poll success/failure: a manual refresh
-		// "used up" its window the moment the request was made, independent
-		// of the cron schedule and never resetting or interacting with it.
-		$subscriptions->update( $subscription_id, array( 'last_manual_refresh_at' => current_time( 'mysql', true ) ) );
+		if ( $result['queued'] > 0 ) {
+			$this->maybe_poll_now();
+		}
 
 		return $result;
 	}

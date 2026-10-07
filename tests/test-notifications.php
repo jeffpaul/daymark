@@ -734,4 +734,68 @@ class Test_Notifications extends WP_UnitTestCase {
 
 		$this->assertFalse( $notifications->has_unread(), 'An active plugin overlap alone must not mark notifications unread' );
 	}
+
+	/** Creates a subscription with a recent failed check, so it appears as a feed_issue item. */
+	private function failing_subscription( string $checked_at ): int {
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = $subscriptions->create( array( 'feed_url' => 'https://failing.example.com/feed/' ) );
+		$subscriptions->update(
+			$subscription_id,
+			array(
+				'consecutive_failure_count' => 1,
+				'last_checked_at'           => $checked_at,
+				'last_error'                => 'Unreachable.',
+			)
+		);
+
+		return (int) $subscription_id;
+	}
+
+	/** With a last-seen time, each item says whether it arrived after it. */
+	public function test_items_are_flagged_new_relative_to_the_last_visit() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$this->failing_subscription( '2026-01-01 12:00:00' );
+		$checked = strtotime( '2026-01-01 12:00:00 UTC' );
+
+		$notifications = new Daymark_Notifications();
+
+		$before = $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $checked - 60 );
+		$this->assertTrue( $before[0]['is_new'] );
+
+		$after = $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $checked + 60 );
+		$this->assertFalse( $after[0]['is_new'] );
+
+		$plain = $notifications->get_notifications();
+		$this->assertArrayNotHasKey( 'is_new', $plain[0], 'No flag without a last-seen time' );
+	}
+
+	/** GET /notifications/status reports unread without marking anything seen. */
+	public function test_status_route_reports_unread_without_marking_seen() {
+		$user = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user );
+		update_user_meta( $user, Daymark_Notifications::SEEN_META, time() - HOUR_IN_SECONDS );
+		$this->failing_subscription( current_time( 'mysql', true ) );
+
+		$status = new WP_REST_Request( 'GET', '/daymark/v1/notifications/status' );
+		$status->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		$this->assertTrue( rest_do_request( $status )->get_data()['has_unread'] );
+		$this->assertTrue( rest_do_request( $status )->get_data()['has_unread'], 'Checking twice still reads unread' );
+
+		$list = new WP_REST_Request( 'GET', '/daymark/v1/notifications' );
+		$list->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$items = rest_do_request( $list )->get_data();
+
+		$this->assertTrue( $items[0]['is_new'] );
+		$this->assertFalse( rest_do_request( $status )->get_data()['has_unread'], 'Opening Notifications clears it' );
+	}
+
+	/** The status route needs a logged-in user. */
+	public function test_status_route_rejects_unauthenticated_requests() {
+		wp_set_current_user( 0 );
+
+		$response = rest_do_request( new WP_REST_Request( 'GET', '/daymark/v1/notifications/status' ) );
+
+		$this->assertSame( 401, $response->get_status() );
+	}
 }

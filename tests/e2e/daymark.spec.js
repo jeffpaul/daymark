@@ -280,10 +280,10 @@ test('authenticated user sees Daymark Home without wp-admin chrome', async ({ pa
 	await expect(page.locator('#wpadminbar')).toHaveCount(0);
 	await expect(page.locator('#adminmenu')).toHaveCount(0);
 
-	// A fresh user has no drafts: the Drafts section must not render
+	// A fresh user has no drafts: the drafts row must not render
 	// (regression: author display rules once overrode [hidden]).
 	await expect(page.locator('[data-recent-list] .daymark-recent__item, [data-recent-list] .daymark-empty').first()).toBeVisible();
-	await expect(page.locator('[data-drafts-section]')).toBeHidden();
+	await expect(page.locator('[data-drafts-row]')).toBeHidden();
 });
 
 // --- Subscriptions & Timeline (issue #78): Home is the merged feed ---
@@ -321,16 +321,23 @@ test('home Timeline blends a subscribed feed post with the user’s own Mark', a
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	// The Mark card: a <button> (opens its full content on the post-view
-	// screen), not an <a> anymore.
+	// The Mark card opens its full content on the post-view screen. Its
+	// title is the one "open" button; the card itself is a plain container.
 	const markWrap = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
 	await expect(markWrap).toBeVisible();
 	await expect(markWrap.locator('[data-expand-post]')).toBeVisible();
+	await expect(markWrap.getByRole('button', { name: caption })).toBeVisible();
 
-	// A subscription-post card: a <button>, not an <a>.
+	// A subscription-post card has the same shape.
 	const subCard = await findSubscriptionCard(page);
 	await expect(subCard).toBeVisible();
-	await expect(subCard).toHaveClass(/daymark-recent__item--button/);
+	await expect(subCard).toHaveClass(/daymark-recent__item--card/);
+	await expect(subCard.locator('.daymark-recent__open')).toHaveCount(1);
+
+	// Every action is its own control: no button sits inside another, so a
+	// screen reader can reach each one.
+	await expect(page.locator('button button')).toHaveCount(0);
+	await expect(subCard.getByRole('button', { name: 'Bookmark for offline viewing' })).toBeVisible();
 });
 
 // Clicking a Timeline card opens its own content on a dedicated full-screen
@@ -1029,28 +1036,25 @@ test("comment delivery failure (after the pre-check said Webmention was viable) 
 	await expect(page.locator('.daymark-sheet__panel')).toHaveCount(0);
 });
 
-// Pull-to-refresh is gesture-only — there's no visible "Refresh" link or
-// button on Home (Home is assumed to be the Timeline). Independent of the
-// cron schedule and separately rate-limited per subscription (15 minutes);
-// exercised here by refreshing right after ensureSubscription()'s own
-// refresh, which should land on the "checked too recently" outcome. The
-// exact status wording depends on real network timing, so this only
-// asserts the pull indicator shows while in flight and the status settles
-// to something non-empty afterward, not a specific message.
+// Pull-to-refresh on a touch screen. It checks every followed site in one
+// request (POST /subscriptions/refresh), independent of the cron schedule;
+// each site keeps its own 15-minute cooldown, so refreshing right after
+// ensureSubscription()'s own refresh reports that site as checked
+// recently. The exact status wording depends on real network timing, so
+// this only asserts the pull indicator shows while in flight and the
+// status settles to something non-empty afterward, not a specific message.
 test('pull-to-refresh (touch drag) shows the pull indicator and reports a status', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 	await ensureSubscription(page);
 	await page.goto('/daymark');
 
-	// A brief artificial delay on the subscriptions list fetch so the
-	// in-flight state is reliably observable rather than racing a refresh
-	// that can resolve in well under a frame (same technique the "publish
-	// in flight" test below uses via page.route).
-	await page.route('**/daymark/v1/subscriptions', async (route) => {
-		if ('GET' === route.request().method()) {
-			await new Promise((resolve) => setTimeout(resolve, 800));
-		}
+	// A brief artificial delay on the refresh request so the in-flight
+	// state is reliably observable rather than racing a refresh that can
+	// resolve in well under a frame (same technique the "publish in
+	// flight" test below uses via page.route).
+	await page.route('**/daymark/v1/subscriptions/refresh', async (route) => {
+		await new Promise((resolve) => setTimeout(resolve, 800));
 		await route.continue();
 	});
 
@@ -1071,8 +1075,36 @@ test('pull-to-refresh (touch drag) shows the pull indicator and reports a status
 	});
 
 	await expect(indicator).toHaveClass(/is-settling/);
-	await expect(status).not.toHaveText('', { timeout: 20000 });
-	await expect(indicator).not.toHaveClass(/is-settling/);
+	// Each followed site is checked in turn, so allow for real network time.
+	await expect(indicator).not.toHaveClass(/is-settling/, { timeout: 30000 });
+	await expect(status).not.toHaveText('');
+	await expect(status).not.toHaveText('Checking the sites you follow…');
+});
+
+// With a mouse, the header's refresh button does the same as pulling down.
+// It shows only where the main pointer is precise, so this runs as a
+// desktop browser with no touch screen; on the suite's default phone it
+// stays hidden.
+test.describe('with a mouse', () => {
+	test.use({ hasTouch: false, isMobile: false, viewport: { width: 1024, height: 800 } });
+
+	test('the header refresh button refreshes the Timeline', async ({ page }) => {
+		await loginAs(page);
+		await page.goto('/daymark');
+
+		const button = page.getByRole('button', { name: 'Refresh Timeline' });
+		await expect(button).toBeVisible();
+		await button.click();
+		await expect(page.locator('[data-recent-refresh-status]')).not.toHaveText('', { timeout: 20000 });
+		await expect(button).toBeEnabled();
+	});
+});
+
+test('on a touch screen the header refresh button stays hidden', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Refresh Timeline' })).toBeHidden();
 });
 
 // Publish a note Mark to your own site and see it in the Notes view.
@@ -1495,8 +1527,9 @@ test('share target: sharing a photo creates a draft that opens straight into the
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
 	await expect(page.locator('.daymark-editmedia__thumb')).toBeVisible();
 
-	// It's a draft — findable via Drafts on Home, not published/syndicated.
-	await page.goto('/daymark');
+	// It's a draft — findable via Drafts on the Me screen, not
+	// published/syndicated.
+	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
 });
 
@@ -2062,7 +2095,8 @@ test('per-item menu: delete requires confirm — cancel keeps, confirm removes',
 		});
 	}, caption);
 
-	await page.goto('/daymark');
+	// Drafts are managed on the Me screen; Home shows only a count.
+	await page.goto('/daymark/me');
 
 	// Scope every action to this Draft's own card, and within it to the ⋯
 	// actions menu specifically ([data-actions]).
@@ -2157,6 +2191,8 @@ test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => 
 	expect(box.width).toBeGreaterThanOrEqual(TAP_MIN);
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
 
+	// Drafts (and their ⋯ menu) live on the Me screen.
+	await page.goto('/daymark/me');
 	const draftCard = page.locator('.daymark-recent__item-wrap').filter({ hasText: draftCaption }).first();
 	await expect(draftCard).toBeVisible();
 
@@ -2303,10 +2339,14 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
-	// Home shows the Drafts row; the row is findable by its edit-draft
-	// attribute (no "Draft" chip on the card itself — the Drafts section
-	// heading above it already says so).
+	// Home shows a one-line drafts count that leads to the Me screen,
+	// where the draft itself is findable by its edit-draft attribute.
 	await page.goto('/daymark');
+	const draftsRow = page.locator('[data-drafts-row]');
+	await expect(draftsRow).toBeVisible();
+	await expect(draftsRow).toContainText(/draft/);
+	await draftsRow.click();
+	await expect(page).toHaveURL(/#me$/);
 	await expect(page.getByRole('heading', { name: 'Drafts' })).toBeVisible();
 	const row = page.locator('[data-edit-draft]').filter({ hasText: caption }).first();
 	await expect(row).toBeVisible();
@@ -2321,7 +2361,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
 	// Draft row entry is gone; the published Mark is findable via Search.
-	await page.goto('/daymark');
+	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
 	await page.goto('/daymark/search');
 	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
@@ -2343,7 +2383,7 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page.getByText('Saved as draft')).toBeVisible();
 
-	await page.goto('/daymark');
+	await page.goto('/daymark/me');
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
 	await expect(card).toBeVisible();
 	const menu = card.locator('[data-actions]');
@@ -2356,7 +2396,7 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
 
-	await page.goto('/daymark');
+	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
 });
 
@@ -2377,8 +2417,9 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 	await expect(page.locator('[data-autosave-status]')).toHaveText('Saved', { timeout: 10000 });
 
 	// Abandon the composition exactly like a closed tab would: navigate
-	// straight to Home, never tapping Publish or Save as Draft.
-	await page.goto('/daymark');
+	// away, never tapping Publish or Save as Draft. The draft is on the Me
+	// screen.
+	await page.goto('/daymark/me');
 
 	const row = page.locator('[data-edit-draft]').filter({ hasText: caption }).first();
 	await expect(row).toBeVisible();
@@ -2433,7 +2474,7 @@ test('offline: composing while offline queues locally and syncs when back online
 		0,
 		{ timeout: 10000 }
 	);
-	await page.reload();
+	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toBeVisible();
 });
 
@@ -2614,9 +2655,11 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	await page.goto('/daymark');
 	await expect(page.locator('.daymark-iconbtn__dot')).toBeVisible();
 
-	// Viewing notifications clears it without a reload…
-	await page.locator('.daymark-iconbtn').click();
+	// Viewing notifications clears it without a reload, and the reply that
+	// arrived since the last visit is marked New…
+	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
 	await expect(page.getByText(reply).first()).toBeVisible();
+	await expect(page.locator('.daymark-note-card--new').filter({ hasText: reply }).first()).toBeVisible();
 	await page.locator('.daymark-backlink').click();
 	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
 	await expect(page.locator('.daymark-iconbtn__dot')).toHaveCount(0);
@@ -2631,11 +2674,10 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 // timeline. Uploads continue in the background." Publish never waits on
 // the network — it queues the Mark locally and moves on to Success right
 // away, well before an artificially slow create request resolves. While
-// that request is still in flight, Home's Pending section shows it as
+// that request is still in flight, the Timeline shows it at the top as
 // actively uploading (not the generic "Offline" wording used for a
-// genuine connectivity failure); once the request confirms, the Success
-// screen upgrades in place with the real "Published to your site" detail
-// and the Pending row clears.
+// genuine connectivity failure); once the request confirms, its pending
+// card is replaced in place by the real card.
 test('publish is optimistic: Success shows immediately and upgrades once the upload confirms', async ({
 	page,
 }) => {
@@ -2657,18 +2699,24 @@ test('publish is optimistic: Success shows immediately and upgrades once the upl
 
 	// Success shows immediately, from client-known data only — well before
 	// the delayed request could have resolved.
-	await expect(page.getByText('Uploading in the background')).toBeVisible({ timeout: 800 });
+	await expect(page.getByText('already at the top of your Timeline')).toBeVisible({ timeout: 800 });
 	await expect(page.getByText('Published to your site')).toHaveCount(0);
 
-	// Home's Pending section reflects the in-flight upload distinctly from
-	// a genuine offline queue.
+	// The Timeline shows the in-flight upload at the top, distinctly from a
+	// genuine offline queue.
 	await page.locator('a.daymark-success__link[href="#home"]').click();
-	await expect(page.locator('[data-pending-section]')).toBeVisible();
-	await expect(page.locator('[data-pending-section]').getByText('Uploading', { exact: true })).toBeVisible();
+	const pending = page.locator('[data-pending-timeline]');
+	await expect(pending).toBeVisible();
+	await expect(pending.getByText('Uploading…')).toBeVisible();
+	await expect(pending).toContainText(`E2E optimistic ${RUN_ID}`);
 
-	// Once the delayed request resolves, the Pending section clears on its
-	// own — no manual refresh needed.
-	await expect(page.locator('[data-pending-section]')).toBeHidden({ timeout: 5000 });
+	// Once the delayed request resolves, the pending card is replaced by
+	// the real card at the top of the Timeline — no manual refresh needed.
+	await expect(pending).toBeHidden({ timeout: 5000 });
+	await expect(
+		page.locator('[data-recent-list] .daymark-recent__item-wrap').first()
+	).toContainText(`E2E optimistic ${RUN_ID}`);
+	await expect(page.locator('[data-new-posts]')).toBeHidden();
 });
 
 // Regression for the race surfaced (but left unfixed as out of scope) while
@@ -3131,15 +3179,12 @@ test('the public /timeline page is gone (404, no redirect)', async ({ page }) =>
 	await expect(page).toHaveURL(/\/timeline\/?$/);
 });
 
-// Home's Recent Marks list shows the same comment/like stat row as the
-// public Timeline card — a zero count stays a dimmed icon-only, a real
-// count shows next to the icon. These three counts are always someone
-// else's engagement (via federation backflow) with the site owner's own
-// Mark, never the owner's own action, so the icon never picks up the
-// accent-colored "active" treatment a genuine personal toggle (Bookmark,
-// or Like/Repost/Comment on a subscription post) gets — only the count
-// number itself appears.
-test('home Recent Marks entries show comment/like counts', async ({ page }) => {
+// Your own Mark's card shows other people's engagement as plain text
+// ("1 comment"), not as heart/bubble/reblog icons: on a followed post
+// those icons are actions you take, so showing them as read-only counts
+// on your own Marks made them look tappable. Nothing shows at zero. Your
+// own posts are also labelled "You".
+test('your own Mark shows engagement as text and is labelled You', async ({ page }) => {
 	const caption = `E2E stats ${RUN_ID}`;
 	const reply = `E2E nice one ${RUN_ID}`;
 
@@ -3153,8 +3198,9 @@ test('home Recent Marks entries show comment/like counts', async ({ page }) => {
 
 	await page.goto('/daymark');
 	const row = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
-	await expect(row.locator('.daymark-stat--comments.daymark-stat--active')).toHaveCount(0);
-	await expect(row.locator('.daymark-stat--likes.daymark-stat--active')).toHaveCount(0);
+	await expect(row.locator('.daymark-recent__sitename--mine')).toHaveText('You');
+	await expect(row.locator('.daymark-engagement')).toHaveCount(0);
+	await expect(row.locator('[data-like-toggle], [data-comment-toggle], [data-repost-toggle]')).toHaveCount(0);
 
 	await page.evaluate(async (replyText) => {
 		const config = window.daymarkApp;
@@ -3173,9 +3219,7 @@ test('home Recent Marks entries show comment/like counts', async ({ page }) => {
 
 	await page.goto('/daymark');
 	const rowAfter = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
-	const commentStat = rowAfter.locator('.daymark-stat--comments');
-	await expect(commentStat).not.toHaveClass(/daymark-stat--active/);
-	await expect(commentStat.locator('.daymark-stat__count')).toHaveText('1');
+	await expect(rowAfter.locator('.daymark-engagement__part--comments')).toHaveText('1 comment');
 });
 
 // --- Router listener teardown (issue #64) ---
@@ -3261,7 +3305,7 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	// back to Home again. The count must stay at exactly one pair throughout:
 	// under the pre-fix code the very first switch below already left it at
 	// two (Home's pair never removed, Notifications' pair added alongside).
-	await page.locator('.daymark-iconbtn').click(); // -> #notifications
+	await page.locator('a.daymark-iconbtn[href="#notifications"]').click(); // -> #notifications
 	await expect(page.getByText(reply).first()).toBeVisible();
 	await expect.poll(async () => (await counts()).click).toBe(1);
 	await expect.poll(async () => (await counts()).keydown).toBe(1);
@@ -3282,7 +3326,7 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 
 	// Escape on Notifications only ever closes its own reply box, never a
 	// leftover disclosure from a screen that isn't showing anymore.
-	await page.locator('.daymark-iconbtn').click(); // -> #notifications
+	await page.locator('a.daymark-iconbtn[href="#notifications"]').click(); // -> #notifications
 	const card = page.locator('.daymark-note-card').filter({ hasText: reply }).first();
 	await card.locator('[data-reply-toggle]').click();
 	await expect(card.locator('[data-reply-form]')).toBeVisible();
