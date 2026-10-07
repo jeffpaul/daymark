@@ -28,25 +28,25 @@ can't act on them.
 - Posts from WordPress sites you follow keep more of their post format: an aside shows as a Note, a link post as a Link card with a preview of the linked page, and a quote post with its quote across the top of its card. ([#480](https://github.com/jeffpaul/daymark/pull/480))
 - With Jetpack active and your WordPress.com account linked, Settings -> Daymark -> Import/Export can now import the sites you follow in the WordPress.com Reader. You pick from a checklist first, and each site is imported the same way as an OPML entry, so it looks exactly like a subscription added by hand. ([#478](https://github.com/jeffpaul/daymark/pull/478))
 - You can now add AVIF photos to a Mark, and HEIC/HEIF photos where your server can convert them to JPEG. Where it can't, the composer says so when you pick the photo and asks for a JPEG. iPhone already sends photos as JPEG. ([#484](https://github.com/jeffpaul/daymark/pull/484))
-- Daymark now has a dark theme that follows your device setting.
-- With a mouse or keyboard, a refresh button in the Timeline's header does what pulling down does on a phone.
-- Notifications marks the replies that arrived since your last visit as New, and the bell's dot now appears during a visit instead of only after a reload.
+- Daymark now has a dark theme that follows your device setting. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- With a mouse or keyboard, a refresh button in the Timeline's header does what pulling down does on a phone. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Notifications marks the replies that arrived since your last visit as New, and the bell's dot now appears during a visit instead of only after a reload. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 
 ### Changed
 
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
-- A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it.
-- Your own posts are labelled "You", and other people's likes, comments, and reblogs on them show as text ("1 comment") instead of the same icons that are buttons on posts you follow.
-- Home shows your drafts as one line ("3 drafts"). The drafts themselves, with Edit, Publish, and Delete, are on the Me screen, so a few photo drafts no longer push the Timeline down.
-- Screen readers can now reach each button on a Timeline card (Like, Comment, Reblog, Bookmark, More actions) on its own, and the Timeline no longer reads every card aloud each time it loads more posts.
-- Timestamps, site names, and the card icons have higher contrast, so they're easier to read outdoors.
+- A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Your own posts are labelled "You", and other people's likes, comments, and reblogs on them show as text ("1 comment") instead of the same icons that are buttons on posts you follow. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Home shows your drafts as one line ("3 drafts"). The drafts themselves, with Edit, Publish, and Delete, are on the Me screen, so a few photo drafts no longer push the Timeline down. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Screen readers can now reach each button on a Timeline card (Like, Comment, Reblog, Bookmark, More actions) on its own, and the Timeline no longer reads every card aloud each time it loads more posts. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Timestamps, site names, and the card icons have higher contrast, so they're easier to read outdoors. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 
 ### Fixed
 
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
-- The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did.
-- Pulling down to refresh with more than about ten followed sites reported most of them as "checked too recently" when they were never checked. The Timeline now checks every site in one request, says how many it checked, and hands any it runs out of time for to a background check. A pull that starts above the Timeline, on the drafts line, now works too, and the result message clears after a few seconds.
+- The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Pulling down to refresh with more than about ten followed sites reported most of them as "checked too recently" when they were never checked. The Timeline now checks every site in one request, says how many it checked, and hands any it runs out of time for to a background check. A pull that starts above the Timeline, on the drafts line, now works too, and the result message clears after a few seconds. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 
 ## [0.19.0] - 2026-10-02
 
