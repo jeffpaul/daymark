@@ -244,4 +244,45 @@ class Test_Rest_Subscription_Post_Hardening extends WP_UnitTestCase {
 			'Every tag is stripped, whatever the quoting or case'
 		);
 	}
+
+	/**
+	 * The Comment pre-check spends the open allowance only when it has to
+	 * look the origin up; once its answer is cached, asking again is free.
+	 */
+	public function test_comment_target_spends_the_open_allowance_only_on_a_lookup() {
+		wp_set_current_user( $this->author );
+		add_filter(
+			'daymark_rate_limits',
+			static function ( $all ) {
+				$all = is_array( $all ) ? $all : array();
+				$all[ Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN ] = array(
+					'limit'  => 1,
+					'window' => 5 * MINUTE_IN_SECONDS,
+				);
+
+				return $all;
+			}
+		);
+		add_filter(
+			'pre_http_request',
+			static function () {
+				return new WP_Error( 'daymark_test_http_blocked', 'Blocked in test.' );
+			}
+		);
+
+		$first  = $this->create_full_subscription_post( '<p>One.</p>' );
+		$second = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'Another Subscription Post',
+			)
+		);
+		update_post_meta( $second, 'subscription_id', get_post_meta( $first, 'subscription_id', true ) );
+		update_post_meta( $second, 'permalink', 'https://example.com/another-post/' );
+
+		$this->assertSame( 200, rest_do_request( $this->request_for( 'GET', $first, '/comment-target' ) )->get_status() );
+		$this->assertSame( 200, rest_do_request( $this->request_for( 'GET', $first, '/comment-target' ) )->get_status(), 'A cached answer is free' );
+		$this->assertSame( 429, rest_do_request( $this->request_for( 'GET', $second, '/comment-target' ) )->get_status(), 'A new lookup past the allowance is refused' );
+	}
 }

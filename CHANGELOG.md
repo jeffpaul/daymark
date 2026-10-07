@@ -40,6 +40,8 @@ can't act on them.
 - Home shows your drafts as one line ("3 drafts"). The drafts themselves, with Edit, Publish, and Delete, are on the Me screen, so a few photo drafts no longer push the Timeline down. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Screen readers can now reach each button on a Timeline card (Like, Comment, Reblog, Bookmark, More actions) on its own, and the Timeline no longer reads every card aloud each time it loads more posts. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Timestamps, site names, and the card icons have higher contrast, so they're easier to read outdoors. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- Search now loads more results as you scroll, instead of stopping at 20, and shows how many there are. Bookmarks and My Marks, which open in Search, load more too. A site's icon on a Timeline card now says "Show posts from" that site, which is what it does. ([#486](https://github.com/jeffpaul/daymark/pull/486))
+- The Timeline loads 20 posts at a time instead of 5, so scrolling makes fewer requests. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 
 ### Fixed
 
@@ -47,6 +49,8 @@ can't act on them.
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
 - The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Pulling down to refresh with more than about ten followed sites reported most of them as "checked too recently" when they were never checked. The Timeline now checks every site in one request, says how many it checked, and hands any it runs out of time for to a background check. A pull that starts above the Timeline, on the drafts line, now works too, and the result message clears after a few seconds. ([#485](https://github.com/jeffpaul/daymark/pull/485))
+- After a long scroll through the Timeline, opening a post from a site you follow could fail with "Couldn't load full content." Background work while scrolling used up the same request allowance that opening a post needs. Opening a post now has its own allowance, and a post that's already saved on your site opens without using any. ([#486](https://github.com/jeffpaul/daymark/pull/486))
+- When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 
 ## [0.19.0] - 2026-10-02
 

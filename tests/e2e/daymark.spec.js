@@ -1801,11 +1801,11 @@ test('home does not render the redundant Load more button when infinite scroll i
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Publish six quick note Marks via REST (fast, no media) — more than a
-	// single page (5), so the first page is full and infinite scroll arms.
+	// Publish 21 quick note Marks via REST (fast, no media) — more than a
+	// single page (20), so the first page is full and infinite scroll arms.
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
-		for (let i = 1; i <= 6; i++) {
+		for (let i = 1; i <= 21; i++) {
 			await fetch(`${config.restUrl}marks`, {
 				method: 'POST',
 				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
@@ -1831,10 +1831,10 @@ test('infinite scroll appends more recent Marks as the sentinel enters view', as
 	await loginAs(page);
 	await page.goto('/daymark');
 
-	// Seed enough published Marks to guarantee a second page (per_page 5).
+	// Seed enough published Marks to guarantee a second page (per_page 20).
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
-		for (let i = 1; i <= 8; i++) {
+		for (let i = 1; i <= 22; i++) {
 			await fetch(`${config.restUrl}marks`, {
 				method: 'POST',
 				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
@@ -1855,11 +1855,82 @@ test('infinite scroll appends more recent Marks as the sentinel enters view', as
 		.scrollIntoViewIfNeeded()
 		.catch(() => {});
 
-	// More than a single page (5) is now present.
-	await expect.poll(async () => rows.count(), { timeout: 6000 }).toBeGreaterThan(5);
+	// More than a single page (20) is now present.
+	await expect.poll(async () => rows.count(), { timeout: 6000 }).toBeGreaterThan(20);
 
 	// The section-nav stayed reachable (anchored, not buried by the list).
 	await expect(page.locator('.daymark-bottomnav')).toBeVisible();
+});
+
+// When the next page fails to load, the Timeline says so and offers Retry,
+// instead of stopping silently behind its end mark.
+test('a failed Timeline page shows Retry, and Retry loads it', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	// Enough Marks that a second page exists.
+	await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		for (let i = 1; i <= 22; i++) {
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: `Retry seed ${i}`, primary_type: 'note' }),
+			});
+		}
+	});
+
+	// Fail the second page once.
+	let failed = false;
+	await page.route(/\/daymark\/v1\/timeline\?per_page=20&page=2/, async (route) => {
+		if (!failed) {
+			failed = true;
+			await route.abort();
+			return;
+		}
+		await route.continue();
+	});
+
+	await page.goto('/daymark');
+	const rows = page.locator('[data-recent-list] .daymark-recent__item');
+	await expect(rows.first()).toBeVisible();
+	await page.locator('[data-recent-sentinel]').scrollIntoViewIfNeeded().catch(() => {});
+
+	const more = page.locator('[data-recent-more]');
+	await expect(more).toContainText("Couldn't load more.");
+	await more.getByRole('button', { name: 'Retry' }).click();
+	await expect.poll(async () => rows.count(), { timeout: 6000 }).toBeGreaterThan(20);
+	await expect(more).toBeHidden();
+});
+
+// Search loads more as you scroll (it used to stop at 20) and shows how
+// many results there are.
+test('search shows a result count and loads more past the first 20', async ({ page }) => {
+	const tag = `${RUN_ID}page`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(async (t) => {
+		const config = window.daymarkApp;
+		for (let i = 1; i <= 23; i++) {
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: `E2E paged ${t} number ${i}`, primary_type: 'note' }),
+			});
+		}
+	}, tag);
+
+	await page.goto('/daymark/search');
+	await page.fill('[data-search-input]', tag);
+	const results = page.locator('[data-search-results] .daymark-recent__item');
+	await expect(page.locator('[data-search-count]')).toHaveText('23 results');
+	await expect(results).toHaveCount(20);
+
+	await page.locator('[data-search-sentinel]').scrollIntoViewIfNeeded();
+	await expect(results).toHaveCount(23);
 });
 
 // Search: its own bottom-nav destination and route (not a collapsible
@@ -2018,7 +2089,7 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	// no popover left to label a menu item inside. A published Mark's card
 	// has no ⋯ menu at all (Draft-only affordance), so there's none here to
 	// collide with.
-	await expect(markIcon).toHaveAttribute('aria-label', 'Filter Timeline to your Marks');
+	await expect(markIcon).toHaveAttribute('aria-label', 'Show your Marks');
 	await expect(markCard.locator('[data-menu]')).toHaveCount(0);
 
 	// The icon's native on-hover tooltip (issue #181) names the site itself
@@ -2062,7 +2133,7 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	// own), so only the fixed wording the label wraps around it is
 	// asserted here — same tolerance the Source-filter test above already
 	// applies to this same subscription.
-	expect(await subIcon.getAttribute('aria-label')).toContain('Filter Timeline to posts from');
+	expect(await subIcon.getAttribute('aria-label')).toContain('Show posts from');
 	// Same on-hover tooltip as the Mark icon above, but this site's title is
 	// real external data — only its known site_url is asserted here, same
 	// tolerance already applied to the aria-label above.

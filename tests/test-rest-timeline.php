@@ -1195,4 +1195,29 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 
 		$this->assertEqualsCanonicalizing( array( $mark_id, $sub_post_id ), $ids );
 	}
+
+	/** With count=1, X-WP-Total says how many items match across both sources, before paging. */
+	public function test_count_param_reports_the_total_match_count() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/count-feed/' );
+		$this->create_mark( '2024-01-01 00:00:00', 'Counted one' );
+		$this->create_mark( '2024-01-02 00:00:00', 'Counted two' );
+		$this->create_mark( '2024-01-03 00:00:00', 'Counted three' );
+		$this->create_subscription_post( $subscription_id, '2024-01-04 00:00:00', 'Counted four' );
+		$this->create_subscription_post( $subscription_id, '2024-01-05 00:00:00', 'Counted five' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'per_page', 2 );
+		$request->set_param( 'count', true );
+		$request->set_param( 's', 'Counted' );
+		$response = rest_do_request( $request );
+
+		$this->assertCount( 2, $response->get_data(), 'Paging is unchanged' );
+		$this->assertSame( '5', $response->get_headers()['X-WP-Total'] ?? null );
+
+		$plain = $this->request( 'GET', '/daymark/v1/timeline' );
+		$plain->set_param( 's', 'Counted' );
+		$this->assertArrayNotHasKey( 'X-WP-Total', rest_do_request( $plain )->get_headers(), 'No count unless asked for' );
+	}
 }

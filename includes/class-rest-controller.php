@@ -237,6 +237,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
 					),
+					// Search's result count: adds an X-WP-Total header
+					// (WordPress core's own name for it) with how many
+					// items match in all. Off by default, since counting
+					// costs a little extra on every query.
+					'count'           => array(
+						'type'              => 'boolean',
+						'default'           => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
 				),
 			)
 		);
@@ -690,7 +699,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'get_subscription_post_full_content' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'id'      => array(
+					'id'         => array(
 						'type'              => 'integer',
 						'required'          => true,
 						'sanitize_callback' => 'absint',
@@ -698,7 +707,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					// Forces a live re-fetch/re-extraction even for an
 					// already-'full'-cached post — see
 					// get_subscription_post_full_content()'s own docblock.
-					'refresh' => array(
+					'refresh'    => array(
+						'type'              => 'boolean',
+						'required'          => false,
+						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					// Set by the app's own background fetches, which spend
+					// a separate rate-limit allowance from opening a post.
+					'background' => array(
 						'type'              => 'boolean',
 						'required'          => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
@@ -1421,6 +1437,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * Purely additive to every filter above — combining it with an
 	 * explicit `after`/`before` window ANDs both date clauses.
 	 *
+	 * With `count=1`, the response carries an X-WP-Total header: how many
+	 * items match in all, before paging (Search shows it as a result count).
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response
 	 */
@@ -1490,6 +1509,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
 		$include_subscription_posts = ! $mine && ! $on_this_day;
 
+		$want_total = rest_sanitize_boolean( $request->get_param( 'count' ) );
+		$total      = 0;
+
 		$items = array();
 
 		if ( $include_marks ) {
@@ -1506,7 +1528,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'paged'          => 1,
 				'orderby'        => 'date',
 				'order'          => 'DESC',
-				'no_found_rows'  => true,
+				'no_found_rows'  => ! $want_total,
 			);
 
 			// A Like/Repost toggle's own Mark (_daymark_like_of/_daymark_repost_of
@@ -1588,6 +1610,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			}
 
 			$marks_query = new WP_Query( $marks_args );
+			$total      += (int) $marks_query->found_posts;
 
 			foreach ( $marks_query->posts as $post ) {
 				// `item_type` is added here rather than inside
@@ -1608,7 +1631,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'post_status'    => 'publish',
 				'posts_per_page' => $limit,
 				'paged'          => 1,
-				'no_found_rows'  => true,
+				'no_found_rows'  => ! $want_total,
 				'orderby'        => 'meta_value',
 				// Sorts on the source's own published_at, not this site's
 				// ingestion time — matches Daymark_Subscription_Poller's
@@ -1703,6 +1726,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			}
 
 			$subscription_posts_query = new WP_Query( $subscription_posts_args );
+			$total                   += (int) $subscription_posts_query->found_posts;
 
 			foreach ( $subscription_posts_query->posts as $post ) {
 				$items[] = array(
@@ -1722,7 +1746,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$offset        = ( $page - 1 ) * $per_page;
 		$page_of_items = array_slice( $items, $offset, $per_page );
 
-		return rest_ensure_response( array_column( $page_of_items, 'item' ) );
+		$response = rest_ensure_response( array_column( $page_of_items, 'item' ) );
+
+		if ( $want_total ) {
+			$response->header( 'X-WP-Total', (string) $total );
+		}
+
+		return $response;
 	}
 
 	/**
@@ -3510,16 +3540,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * never change again short of being pruned and re-polled, or the whole
 	 * subscription being removed and re-added.
 	 *
+	 * Rate-limited only when it fetches from the other site; returning a
+	 * cached post is free. Opening a post (the default) spends
+	 * ACTION_SUBSCRIPTION_POST_OPEN. The app's background fetches (refilling
+	 * a trimmed post as you scroll, caching a bookmark) pass `background=1`
+	 * and spend ACTION_SUBSCRIPTION_POST_FETCH instead, so they can never
+	 * use up the allowance a tap needs.
+	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_subscription_post_full_content( WP_REST_Request $request ) {
-		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
-
-		if ( is_wp_error( $rate ) ) {
-			return $rate;
-		}
-
 		$id    = absint( $request->get_param( 'id' ) );
 		$check = $this->assert_subscription_post( $id, 'daymark_subscription_post_not_found' );
 
@@ -3532,6 +3563,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$content_state = get_post_meta( $id, 'content_state', true );
 
 		if ( $refresh || 'full' !== $content_state ) {
+			$rate = $this->rate_limit(
+				rest_sanitize_boolean( $request->get_param( 'background' ) )
+					? Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH
+					: Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN
+			);
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+
 			$fetch = Daymark_Plugin::instance()->subscription_poller->fetch_full_content( $id );
 
 			if ( is_wp_error( $fetch ) ) {
@@ -3577,21 +3618,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * effort enhancement" framing throughout: the caller has nothing
 	 * special to branch on beyond "was type non-empty".
 	 *
-	 * Shares the same rate-limit bucket as the click-through content fetch
-	 * (ACTION_SUBSCRIPTION_POST_FETCH) — this is the same class of
-	 * on-demand outbound request against a subscription post, not a
-	 * distinct risk needing its own budget.
+	 * Spends the background allowance (ACTION_SUBSCRIPTION_POST_FETCH):
+	 * cards ask for previews as you scroll. Charged only when the preview
+	 * isn't cached yet, so a preview already looked up is free.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_subscription_post_oembed( WP_REST_Request $request ) {
-		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
-
-		if ( is_wp_error( $rate ) ) {
-			return $rate;
-		}
-
 		$id    = absint( $request->get_param( 'id' ) );
 		$check = $this->assert_subscription_post( $id );
 
@@ -3606,6 +3640,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$preview = array();
 
 		if ( '' !== $link_url ) {
+			// Would resolving this make a request? Open Graph first; an
+			// embed only when Open Graph found nothing (see below).
+			$og_cached = Daymark_Subscription_Opengraph::cached( $link_url );
+			$fetches   = null === $og_cached
+				|| ( empty( $og_cached ) && ! $is_reply && null === Daymark_Subscription_Oembed::cached( $link_url ) );
+
+			if ( $fetches ) {
+				$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+				if ( is_wp_error( $rate ) ) {
+					return $rate;
+				}
+			}
+
 			$preview = Daymark_Subscription_Opengraph::resolve( $link_url );
 
 			// Interaction context is a citation, never a playable embed.
@@ -3709,27 +3757,31 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * cached Webmention-endpoint discovery `deliver()` itself consults, so
 	 * an actual send right after this pre-check costs no second fetch.
 	 *
-	 * Shares ACTION_SUBSCRIPTION_POST_FETCH's rate-limit bucket rather than
-	 * a new one — the same outbound-fetch risk class as the oEmbed preview
-	 * endpoint above, not ACTION_SUBSCRIPTION_COMMENT's (this never attempts
-	 * to actually deliver anything).
+	 * Spends ACTION_SUBSCRIPTION_POST_OPEN, the allowance for things you
+	 * tap (never ACTION_SUBSCRIPTION_COMMENT's: this never delivers
+	 * anything), and only when the origin's signals aren't cached yet.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function get_subscription_post_comment_target( WP_REST_Request $request ) {
-		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
-
-		if ( is_wp_error( $rate ) ) {
-			return $rate;
-		}
-
 		$id    = absint( $request->get_param( 'id' ) );
 		$check = $this->assert_subscription_post( $id );
 
 		if ( is_wp_error( $check ) ) {
 			return $check;
 		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $id, 'permalink', true ) );
+
+		if ( null === Daymark_Comment_Delivery::cached_origin_signals( $permalink ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
 		$target = Daymark_Comment_Delivery::resolve_comment_target( $id );
 
 		if ( is_wp_error( $target ) ) {
@@ -3755,9 +3807,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 *
 	 * Rate-limited only when it would make an outbound request: a cached
 	 * answer (or "no mechanism exists at all", which needs no request) is
-	 * returned free, so resolving a page of already-looked-up cards never
-	 * spends the ACTION_SUBSCRIPTION_POST_FETCH budget click-throughs and the
-	 * comment-target pre-check share.
+	 * returned free. It spends the background allowance
+	 * (ACTION_SUBSCRIPTION_POST_FETCH), never the one opening a post uses.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error

@@ -159,4 +159,47 @@ class Test_Rest_Subscription_Post_Oembed extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( '', $response->get_data()['html'] );
 	}
+
+	/** Limits one rate-limit action for the rest of the test. */
+	private function limit_background_fetches( int $limit ): void {
+		add_filter(
+			'daymark_rate_limits',
+			static function ( $all ) use ( $limit ) {
+				$all = is_array( $all ) ? $all : array();
+				$all[ Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH ] = array(
+					'limit'  => $limit,
+					'window' => 5 * MINUTE_IN_SECONDS,
+				);
+
+				return $all;
+			}
+		);
+		// No real network: the Open Graph lookup fails and is cached as "no preview".
+		add_filter(
+			'pre_http_request',
+			static function () {
+				return new WP_Error( 'daymark_test_http_blocked', 'Blocked in test.' );
+			}
+		);
+	}
+
+	/** A preview that's already been looked up is free; only a real lookup spends the allowance. */
+	public function test_only_a_real_lookup_spends_the_background_allowance() {
+		wp_set_current_user( $this->author_a );
+		$this->limit_background_fetches( 1 );
+
+		$subscription_id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed4/',
+			)
+		);
+		$first           = $this->create_subscription_post( $subscription_id, 'https://first.example/post' );
+		$second          = $this->create_subscription_post( $subscription_id, 'https://second.example/post' );
+
+		$this->assertSame( 200, rest_do_request( $this->request_for( $first ) )->get_status(), 'The first lookup fits the allowance' );
+		$this->assertSame( 200, rest_do_request( $this->request_for( $first ) )->get_status(), 'Asking again is served from cache, for free' );
+		$this->assertSame( 200, rest_do_request( $this->request_for( $first ) )->get_status() );
+		$this->assertSame( 429, rest_do_request( $this->request_for( $second ) )->get_status(), 'A new lookup past the allowance is refused' );
+	}
 }

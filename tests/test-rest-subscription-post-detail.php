@@ -373,27 +373,64 @@ class Test_Rest_Subscription_Post_Detail extends WP_UnitTestCase {
 		$this->assertSame( 0, $this->http_call_counts['https://example.com/no-refresh/'] ?? 0 );
 	}
 
-	/** Past the configured per-user budget, the endpoint returns 429 + Retry-After. */
+	/** Opening a post that has to be fetched spends the open allowance; past it, 429 + Retry-After. */
 	public function test_rate_limiting_returns_429_past_the_threshold() {
-		$this->set_limits( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH, 2, 5 * MINUTE_IN_SECONDS );
+		$this->set_limits( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN, 2, 5 * MINUTE_IN_SECONDS );
 		wp_set_current_user( $this->author_a );
 
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
 
-		// content_state=full + a pre-cached body: every request in this test
-		// is served from cache, so only the rate limiter (not the HTTP mock)
-		// determines the response.
 		for ( $i = 0; $i < 2; $i++ ) {
-			$post_id  = $this->create_subscription_post( $subscription_id, 'https://example.com/cached-' . $i . '/', 'full', '<p>Cached.</p>' );
+			$url = 'https://example.com/fetched-' . $i . '/';
+			$this->mock_response( $url, '<html><body><p>Body ' . $i . '.</p></body></html>' );
+			$post_id  = $this->create_subscription_post( $subscription_id, $url );
 			$response = rest_do_request( $this->request_for( $post_id ) );
 			$this->assertSame( 200, $response->get_status(), 'Requests within the budget succeed' );
 		}
 
-		$post_id  = $this->create_subscription_post( $subscription_id, 'https://example.com/cached-over/', 'full', '<p>Cached.</p>' );
+		$this->mock_response( 'https://example.com/fetched-over/', '<html><body><p>Over.</p></body></html>' );
+		$post_id  = $this->create_subscription_post( $subscription_id, 'https://example.com/fetched-over/' );
 		$response = rest_do_request( $this->request_for( $post_id ) );
 
 		$this->assertSame( 429, $response->get_status(), 'The next request hits the limit' );
 		$this->assertSame( 'daymark_rate_limit_exceeded', $response->get_data()['code'] );
 		$this->assertArrayHasKey( 'retry_after', $response->get_data()['data'] );
+	}
+
+	/** Opening a post that's already cached costs nothing, however many times. */
+	public function test_opening_a_cached_post_is_not_rate_limited() {
+		$this->set_limits( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN, 1, 5 * MINUTE_IN_SECONDS );
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+
+		for ( $i = 0; $i < 3; $i++ ) {
+			$post_id  = $this->create_subscription_post( $subscription_id, 'https://example.com/cached-' . $i . '/', 'full', '<p>Cached.</p>' );
+			$response = rest_do_request( $this->request_for( $post_id ) );
+			$this->assertSame( 200, $response->get_status(), 'A cached post opens past the limit' );
+		}
+	}
+
+	/** Background fetches (background=1) spend their own allowance, never the one opening a post needs. */
+	public function test_background_fetches_do_not_use_up_opening_a_post() {
+		$this->set_limits( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH, 1, 5 * MINUTE_IN_SECONDS );
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+
+		foreach ( array( 'bg-1', 'bg-2', 'tap' ) as $slug ) {
+			$this->mock_response( 'https://example.com/' . $slug . '/', '<html><body><p>' . $slug . '</p></body></html>' );
+		}
+
+		$background = $this->request_for( $this->create_subscription_post( $subscription_id, 'https://example.com/bg-1/' ) );
+		$background->set_param( 'background', true );
+		$this->assertSame( 200, rest_do_request( $background )->get_status() );
+
+		$background = $this->request_for( $this->create_subscription_post( $subscription_id, 'https://example.com/bg-2/' ) );
+		$background->set_param( 'background', true );
+		$this->assertSame( 429, rest_do_request( $background )->get_status(), 'The background allowance is spent' );
+
+		$tap = $this->request_for( $this->create_subscription_post( $subscription_id, 'https://example.com/tap/' ) );
+		$this->assertSame( 200, rest_do_request( $tap )->get_status(), 'Opening a post still works' );
 	}
 }
