@@ -585,6 +585,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/notifications/status',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_notifications_status' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/subscriptions',
 			array(
 				array(
@@ -621,6 +631,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'sanitize_callback' => 'absint',
 					),
 				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/refresh',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'refresh_all_subscriptions' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
 			)
 		);
 
@@ -2356,13 +2376,35 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		unset( $request ); // No query args yet; Daymark-only scope is enforced server-side.
 
 		$notifications = Daymark_Plugin::instance()->notifications;
-		$items         = $notifications->get_notifications();
+		// Read the previous visit before marking this one, so each item
+		// can say whether it arrived since then (`is_new`).
+		$items = $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $notifications->get_seen() );
 
 		// This endpoint backs the notifications screen, so serving it IS
 		// the user seeing their notifications — clear the unread flag.
 		$notifications->mark_seen();
 
 		return rest_ensure_response( $items );
+	}
+
+	/**
+	 * GET /daymark/v1/notifications/status — whether the current user has
+	 * unread notifications, without marking anything seen. The app checks
+	 * it when it comes back to the foreground and when you move between
+	 * screens, so the bell's dot updates during a visit instead of only on
+	 * a page load.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function get_notifications_status( WP_REST_Request $request ) {
+		unset( $request );
+
+		return rest_ensure_response(
+			array( 'has_unread' => Daymark_Plugin::instance()->notifications->has_unread() )
+		);
 	}
 
 	/**
@@ -3280,6 +3322,34 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription = Daymark_Plugin::instance()->subscriptions->get( $id );
 
 		return rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions/refresh — manually refresh every active
+	 * subscription in one request (the Timeline's pull-to-refresh and its
+	 * refresh button).
+	 *
+	 * Spends one charge of the same per-user rate limit a single-site
+	 * refresh uses, instead of one per followed site, so a long list no
+	 * longer runs out of budget partway through. Each site still keeps its
+	 * own 15-minute cooldown. See
+	 * Daymark_Subscription_Poller::manual_refresh_all() for the counts.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function refresh_all_subscriptions( WP_REST_Request $request ) {
+		unset( $request );
+
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_REFRESH );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		return rest_ensure_response( Daymark_Plugin::instance()->subscription_poller->manual_refresh_all() );
 	}
 
 	/**
@@ -4213,6 +4283,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return array<string, mixed>
 	 */
 	private function prepare_mark_summary( int $post_id ): array {
+		$author_id = (int) get_post_field( 'post_author', $post_id );
+
 		$summary = array(
 			'id'                 => absint( $post_id ),
 			// Plain text: the_title filters entity-encode (&#8217; etc.) for
@@ -4258,6 +4330,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'repost_count'       => $this->count_reblogs( $post_id ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
+			// Whose post this is, so a Timeline card can label your own
+			// posts "You" and another author's (on a multi-author site) by
+			// name, instead of every post on this site reading the same.
+			'is_mine'            => $author_id > 0 && get_current_user_id() === $author_id,
+			'author_name'        => $author_id > 0
+				? sanitize_text_field( (string) get_the_author_meta( 'display_name', $author_id ) )
+				: '',
 		);
 
 		// Quiet metadata capture: only ever present when a value was

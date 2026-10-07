@@ -12,7 +12,10 @@
 	--daymark-border: #e0e0e0;
 	--daymark-text-primary: #111111;
 	--daymark-text-secondary: #666666;
-	--daymark-text-muted: #999999;
+	/* #707070, not the old #999999 (2.8:1 on white): timestamps, site
+	   names, and the row icons need 4.5:1 to read outdoors (WCAG 1.4.3). */
+	--daymark-text-muted: #707070;
+	--daymark-bg-subtle: #f4f4f5;
 	--daymark-accent: #c93a06;
 	--daymark-accent-deep: #9e2a02;
 	--daymark-accent-light: #ffd9a8;
@@ -20,6 +23,12 @@
 	--daymark-accent-fg: #ffffff;
 	--daymark-success: #1a7f37;
 	--daymark-error: #b42318;
+	/* A destructive button's fill. Its own token so dark mode can lighten
+	   --daymark-error for red text while this stays dark enough for white
+	   text on it. */
+	--daymark-danger-bg: #b42318;
+	--daymark-danger-bg-hover: #97140c;
+	color-scheme: light;
 	--daymark-radius: 12px;
 	--daymark-radius-sm: 8px;
 	--daymark-tap-min: 44px;
@@ -30,6 +39,29 @@
 	--daymark-spacing-lg: 24px;
 	--daymark-spacing-xl: 32px;
 	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Dark theme, following the device setting. Only the tokens change. The
+   accent gets lighter so it still reads on a dark background, and text on
+   an accent fill turns dark to keep its contrast. */
+@media (prefers-color-scheme: dark) {
+	:root {
+		--daymark-bg: #121212;
+		--daymark-surface: #1e1e1f;
+		--daymark-border: #3a3a3c;
+		--daymark-text-primary: #f2f2f2;
+		--daymark-text-secondary: #c2c2c2;
+		--daymark-text-muted: #a0a0a0;
+		--daymark-bg-subtle: #242426;
+		--daymark-accent: #ff7a45;
+		--daymark-accent-deep: #ffa07a;
+		--daymark-accent-light: #7a3014;
+		--daymark-accent-wash: rgba(255, 122, 69, 0.16);
+		--daymark-accent-fg: #1a0800;
+		--daymark-success: #4cc26b;
+		--daymark-error: #ff6b5e;
+		color-scheme: dark;
+	}
 }
 
 /* --- Base --- */
@@ -726,7 +758,7 @@ h2[tabindex='-1']:focus {
 
 /* Neutral (non-brand) chip marking unpublished items in private views. */
 .daymark-chip--draft {
-	background: var(--daymark-bg-subtle, #f4f4f5);
+	background: var(--daymark-bg-subtle);
 	border-color: var(--daymark-border);
 	color: var(--daymark-text-secondary);
 	vertical-align: middle;
@@ -758,6 +790,42 @@ h2[tabindex='-1']:focus {
  * it, so e.g. the empty Drafts section actually disappears. */
 [hidden] {
 	display: none !important;
+}
+
+/* Home's one-line pointer to your drafts ("3 drafts ›", HomeScreen in
+   app.js). The drafts themselves live on the Me screen. */
+.daymark-draftsrow {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
+	color: var(--daymark-text-primary);
+	font-size: 15px;
+	font-weight: 500;
+	text-decoration: none;
+}
+
+.daymark-draftsrow svg {
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-draftsrow__label {
+	flex: 1;
+}
+
+.daymark-draftsrow__chevron {
+	font-size: 22px;
+	line-height: 1;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-draftsrow:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
 }
 
 .daymark-recent__list {
@@ -1215,6 +1283,55 @@ h2[tabindex='-1']:focus {
 	overflow-wrap: anywhere;
 }
 
+/* A published card is a plain container (not one big <button>), so each
+   control inside it is reachable on its own by a screen reader. Its title
+   is the "open this post" button, and that button's ::after stretches over
+   the whole card, so tapping anywhere on the card still opens the post.
+   The footer's action buttons sit above that layer (z-index 2), so they
+   take their own taps. */
+.daymark-recent__item--card {
+	position: relative;
+	cursor: pointer;
+}
+
+.daymark-recent__open {
+	appearance: none;
+	-webkit-appearance: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	font: inherit;
+	color: inherit;
+	text-align: inherit;
+	overflow-wrap: anywhere;
+	cursor: pointer;
+}
+
+.daymark-recent__open::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: var(--daymark-radius);
+}
+
+.daymark-recent__open:focus-visible {
+	outline: none;
+}
+
+/* Drawn just inside the card's edge: photo cards clip their overflow, so
+   a ring outside the edge would be cut off. */
+.daymark-recent__open:focus-visible::after {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: -2px;
+}
+
+.daymark-recent__item--card .daymark-item-stats button {
+	position: relative;
+	z-index: 2;
+}
+
 /* A title placed above a small thumbnail (renderCardTitle(), app.js) takes
    its own full line in .daymark-recent__item's wrapped flex row, the same
    flex-basis: 100% trick .daymark-recent__footer uses, so it starts at the
@@ -1337,7 +1454,46 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-muted);
 }
 
+/* Every interactive entry in the row is a real <button>; strip the
+   browser's own button chrome. Colour and size come from .daymark-stat. */
+button.daymark-stat {
+	appearance: none;
+	-webkit-appearance: none;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	font-family: inherit;
+	line-height: inherit;
+	cursor: pointer;
+}
+
 .daymark-stat--active {
+	color: var(--daymark-accent);
+	font-weight: 600;
+}
+
+/* Your own Mark's row: other people's engagement as text on the left, and
+   your two controls (Bookmark, ⋯) on the right. A followed post's row keeps
+   its action icons on the left, so the two kinds of card read differently
+   at a glance. */
+.daymark-item-stats--own {
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.daymark-engagement {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	margin-right: auto;
+	min-width: 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
+/* "You": the label on your own posts, in the accent colour. */
+.daymark-recent__sitename--mine {
 	color: var(--daymark-accent);
 	font-weight: 600;
 }
@@ -1591,6 +1747,12 @@ h2[tabindex='-1']:focus {
 
 .daymark-recent__overflowmenu .daymark-stat--unsubscribe {
 	color: var(--daymark-error);
+}
+
+/* The rule the label comment above describes: inside the ⋯ menu each
+   entry shows its text, not just its icon. */
+.daymark-recent__overflowmenu .daymark-stat__label {
+	display: inline;
 }
 
 /* Brief confirmation after a clipboard-copy fallback (shareItem(), app.js)
@@ -2402,6 +2564,22 @@ h2[tabindex='-1']:focus {
 	animation: daymark-spin 0.8s linear infinite;
 }
 
+/* A small spinner inside a line of text: a pending Timeline card's
+   "Uploading…" status (renderPendingTimelineItem(), app.js). */
+.daymark-spinner--inline {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	vertical-align: -1px;
+	border-width: 2px;
+}
+
+.daymark-recent__pendingstatus {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
 @keyframes daymark-spin {
 	to {
 		transform: rotate(360deg);
@@ -2781,6 +2959,24 @@ h2[tabindex='-1']:focus {
 
 .daymark-note-card__text {
 	color: var(--daymark-text-primary);
+}
+
+/* A notification that arrived since your last visit (NotificationsScreen
+   .renderMaybeNew(), app.js). */
+.daymark-note-card--new {
+	border-color: var(--daymark-accent-light);
+	box-shadow: inset 3px 0 0 var(--daymark-accent);
+}
+
+.daymark-note-card__new {
+	align-self: flex-start;
+	padding: 0 var(--daymark-spacing-sm);
+	border-radius: 999px;
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent-deep);
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 20px;
 }
 
 .daymark-clamp {
@@ -3172,7 +3368,7 @@ h2[tabindex='-1']:focus {
    Drafts/Pending lists' lines run on through the screen's section gap into
    the Timeline's own, instead of breaking there. */
 .daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-pending-list]:has(.daymark-recent__typeicon)::before,
-.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-drafts-list]:has(.daymark-recent__typeicon)::before {
+.daymark-screen:has([data-recent-list] .daymark-recent__typeicon) [data-pending-timeline]:has(.daymark-recent__typeicon)::before {
 	bottom: calc(-1 * var(--daymark-spacing-lg));
 }
 
@@ -3314,15 +3510,15 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-btn--danger {
-	background: var(--daymark-error);
+	background: var(--daymark-danger-bg);
 	color: #ffffff;
-	border-color: var(--daymark-error);
+	border-color: var(--daymark-danger-bg);
 }
 
 .daymark-btn--danger:not(:disabled):hover,
 .daymark-btn--danger:not(:disabled):active {
-	background: #97140c;
-	border-color: #97140c;
+	background: var(--daymark-danger-bg-hover);
+	border-color: var(--daymark-danger-bg-hover);
 }
 
 /* --- Notifications: per-item reply --- */
@@ -3877,6 +4073,29 @@ h2[tabindex='-1']:focus {
 	background: var(--daymark-accent-wash);
 }
 
+/* The header's refresh button (HomeScreen, app.js): the Timeline's
+   refresh for a mouse or keyboard. Touch screens pull down instead, so it
+   only shows where the main pointer is precise. */
+.daymark-iconbtn.daymark-refreshbtn {
+	display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.daymark-iconbtn.daymark-refreshbtn {
+		display: inline-flex;
+	}
+}
+
+.daymark-refreshbtn[aria-busy='true'] svg {
+	animation: daymark-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-refreshbtn[aria-busy='true'] svg {
+		animation: none;
+	}
+}
+
 /* --- Timeline "new posts" button ---
    Shown when Home opens anchored on the last post seen, with newer posts
    above it (HomeScreen.showNewPosts()). Pinned under the header so it stays
@@ -3895,7 +4114,7 @@ h2[tabindex='-1']:focus {
 	border: 0;
 	border-radius: 999px;
 	background: var(--daymark-accent);
-	color: #fff;
+	color: var(--daymark-accent-fg);
 	font: inherit;
 	font-weight: 600;
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);

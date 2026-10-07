@@ -54,6 +54,25 @@
 		return;
 	}
 
+	// One polite live region for short screen-reader summaries ("5 more
+	// posts loaded", "12 results"). Feed lists themselves are not live
+	// regions: a live list made a screen reader read every card aloud
+	// each time a page loaded or appended.
+	const announcer = document.createElement('div');
+	announcer.className = 'daymark-visually-hidden';
+	announcer.setAttribute('aria-live', 'polite');
+	document.body.appendChild(announcer);
+	let announceTimer = null;
+
+	function announce(text) {
+		clearTimeout(announceTimer);
+		announcer.textContent = '';
+		// A short delay so the same message twice in a row is read again.
+		announceTimer = setTimeout(() => {
+			announcer.textContent = text;
+		}, 100);
+	}
+
 	// --- App state ---
 	const state = {
 		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
@@ -585,60 +604,76 @@
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
 	}
 
-	// A zero-count stat shows only its (dimmed) icon — no "0" — so the row
-	// stays quiet until there's something to report. `title` mirrors
-	// `aria-label` as a native hover tooltip, matching the precedent
-	// renderSiteIconButton() already set: a screen reader needs the
-	// label; a sighted, non-touch hover wants to see it too. Never carries
-	// `.daymark-stat--active` regardless of count: on a Mark's own card
-	// these three counts (like/comment/repost) are *other people's*
-	// engagement, delivered via federation backflow — not something this
-	// user did — so the accent color renderLikeToggle()/renderRepostToggle()/
-	// renderCommentToggle() apply for a genuine personal toggle (keyed off
-	// liked_mark_id/reposted_mark_id/replied_mark_id, never a count) would
-	// be misleading here.
-	function renderStat(glyph, count, modifier, label) {
-		const hasCount = count > 0;
-		return `<span class="daymark-stat daymark-stat--${modifier}" aria-label="${esc(
-			label
-		)}" title="${esc(label)}">${statIcon(glyph)}${
-			hasCount ? `<span class="daymark-stat__count" aria-hidden="true">${count}</span>` : ''
-		}</span>`;
+	// Other people's engagement with your own Mark, as plain text
+	// ("3 likes · 1 comment · 2 reblogs"), not icons. On a followed post the
+	// heart, bubble, and reblog icons are actions you take; showing the same
+	// icons as read-only counts on your own Marks made them look tappable
+	// when they weren't. Nothing renders while every count is zero.
+	function renderEngagementSummary(item) {
+		const parts = [];
+		const like = item.like_count || 0;
+		const comment = item.comment_count || 0;
+		const repost = item.repost_count || 0;
+		if (like) {
+			parts.push(
+				`<span class="daymark-engagement__part daymark-engagement__part--likes">${esc(
+					sprintf(
+						/* translators: %d: number of likes */
+						_n('%d like', '%d likes', like, 'daymark'),
+						like
+					)
+				)}</span>`
+			);
+		}
+		if (comment) {
+			parts.push(
+				`<span class="daymark-engagement__part daymark-engagement__part--comments">${esc(
+					sprintf(
+						/* translators: %d: number of comments */
+						_n('%d comment', '%d comments', comment, 'daymark'),
+						comment
+					)
+				)}</span>`
+			);
+		}
+		if (repost) {
+			parts.push(
+				`<span class="daymark-engagement__part daymark-engagement__part--reposts">${esc(
+					sprintf(
+						/* translators: %d: number of reblogs */
+						_n('%d reblog', '%d reblogs', repost, 'daymark'),
+						repost
+					)
+				)}</span>`
+			);
+		}
+		return parts.length
+			? `<span class="daymark-engagement">${parts.join('<span aria-hidden="true"> · </span>')}</span>`
+			: '';
 	}
 
-	// A Bookmark toggle, not a passive stat: it always shows (filled when
-	// bookmarked, outline otherwise — never quiet-hidden the way a
-	// zero-count stat is) and is the one *interactive* entry in this row,
-	// so it's a `span[role="button"]` rather than a real `<button>` — this
-	// row lives nested inside the card's own expand-trigger `<button>`
-	// (renderMarkCore()) or, for a subscription post, inside its own
-	// click-through `<button>` (renderSubscriptionPostCard()) — either
-	// way, a real nested `<button>` would trip the HTML parser's own
-	// "no <button> inside <button>" auto-close rule and silently break the
-	// surrounding markup. onFeedListClick()/onFeedListKeydown() handle
-	// activation the same as a real button would (click, or Enter/Space
-	// while focused), and stop before reaching that button's own
-	// expand-post/subpost handling.
+	// A Bookmark toggle: always shown, filled when bookmarked. Like every
+	// entry in the row, it's a real <button>. The card is no longer one big
+	// button (see renderCardTitle()), so these buttons aren't nested inside
+	// another interactive element and screen readers expose each one.
 	function renderBookmarkToggle(item, kind) {
 		const bookmarked = !!item.bookmarked;
 		const id = esc(String(item.id));
 		const label = bookmarked ? __('Remove bookmark', 'daymark') : __('Bookmark for offline viewing', 'daymark');
-		return `<span class="daymark-stat daymark-stat--bookmark${
+		return `<button type="button" class="daymark-stat daymark-stat--bookmark${
 			bookmarked ? ' daymark-stat--active daymark-stat--bookmarked' : ''
-		}" role="button" tabindex="0" aria-pressed="${bookmarked ? 'true' : 'false'}" aria-label="${esc(
+		}" aria-pressed="${bookmarked ? 'true' : 'false'}" aria-label="${esc(
 			label
 		)}" title="${esc(label)}" data-bookmark-toggle="${id}" data-bookmark-kind="${esc(
 			kind
-		)}">${statIcon(BOOKMARK_GLYPH)}</span>`;
+		)}">${statIcon(BOOKMARK_GLYPH)}</button>`;
 	}
 
 	// A permanent "open the original" entry — replaces the old "View full
 	// post"/"View original" link that used to sit in the expanded content's
-	// own footer (only visible once expanded). A `role="menuitem"` span,
-	// not a real `<button>` — nested inside the card's own expand-trigger
-	// button, same reasoning renderBookmarkToggle() above documents, and
-	// role="menuitem" (not "button") since its parent is now the ⋯
-	// overflow menu's own `role="menu"` panel (issue #326). The URL
+	// own footer (only visible once expanded). A <button> with
+	// role="menuitem", since its parent is the ⋯ overflow menu's own
+	// `role="menu"` panel (issue #326). The URL
 	// travels directly on the element itself (data-external-link) rather
 	// than through a
 	// screen._byMarkId/_bySubId lookup, since — unlike Share — there's no
@@ -655,9 +690,9 @@
 		}
 		const url = esc(item.permalink);
 		const label = esc(__('Open original', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--external" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--external" role="menuitem" aria-label="${label}" title="${label}" data-external-link="${url}">${statIcon(
 			EXTERNAL_LINK_GLYPH
-		)}<span class="daymark-stat__label">${label}</span></span>`;
+		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
 	// "Refresh content" (issue #196's own action, previously a standalone
@@ -665,15 +700,15 @@
 	// entry in PostScreen's own ⋯ overflow menu instead (see
 	// renderSubscriptionItemStats()'s `extra` param), since a Timeline card
 	// never has cached content of its own to force a re-fetch of. Dispatched
-	// the same way as every other menu entry (onFeedListClick()/
-	// onFeedListKeydown()), calling PostScreen.load(true) directly rather
-	// than a body-scoped click handler of its own.
+	// the same way as every other menu entry (onFeedListClick()), calling
+	// PostScreen.load(true) directly rather than a body-scoped click handler
+	// of its own.
 	function renderRefreshContentToggle(item) {
 		const id = esc(String(item.id));
 		const label = esc(__('Refresh content', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--refresh" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-refresh-subpost="${id}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--refresh" role="menuitem" aria-label="${label}" title="${label}" data-refresh-subpost="${id}">${statIcon(
 			REFRESH_GLYPH
-		)}<span class="daymark-stat__label">${label}</span></span>`;
+		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
 	// "Where did this go" (issue #255) — a Mark-only affordance, shown once
@@ -681,9 +716,9 @@
 	// 'not_attempted'; a Mark with no selected destinations has nothing to
 	// report here, and a subscription post has no syndication targets of
 	// its own at all). Tapping it opens a small popover — a sibling panel
-	// in the item-wrap, not nested content, since a target's own link
-	// can't validly live inside the card's own expand-trigger <button> —
-	// populated lazily via toggleRoutingPanel(). Lives inside the ⋯
+	// in the item-wrap, not nested inside the card, which a stretched
+	// "open" button covers (see renderCardTitle()) — populated lazily via
+	// toggleRoutingPanel(). Lives inside the ⋯
 	// overflow menu (issue #326); toggleRoutingPanel() itself needed no
 	// changes to get there — it already closes every open menu/panel
 	// (closeItemMenus(), which now also closes the overflow menu) before
@@ -695,9 +730,9 @@
 		}
 		const id = esc(String(item.id));
 		const label = esc(__('Where this went', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--routing" role="menuitem" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-routing-toggle="${id}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--routing" role="menuitem" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-routing-toggle="${id}">${statIcon(
 			ROUTING_GLYPH
-		)}<span class="daymark-stat__label">${label}</span></span>`;
+		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
 	// The Timeline's empty state. "Subscribe to a site" points at
@@ -735,17 +770,16 @@
 		}
 		const id = esc(String(item.subscription_id));
 		const label = esc(__('Unsubscribe', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--unsubscribe" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-menu-unsubscribe="${id}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--unsubscribe" role="menuitem" aria-label="${label}" title="${label}" data-menu-unsubscribe="${id}">${statIcon(
 			UNSUBSCRIBE_GLYPH
-		)}<span class="daymark-stat__label">${label}</span></span>`;
+		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
 	// The ⋯ overflow trigger (issue #326) — a Mark's or subscription post's
 	// less-common actions (Open original, Where this went, Share,
 	// Unsubscribe, Refresh content) collapsed behind one icon so the
 	// primary row stays to Like/Comment/Reblog/Bookmark, the entries
-	// actually tapped often. Same span[role="button"] reasoning as every
-	// other row entry (nested inside the card's own expand-trigger button);
+	// actually tapped often. A real <button>, like every row entry;
 	// its own panel (renderOverflowPanel()) is a sibling of the card,
 	// populated eagerly at render time — unlike Routing, nothing this menu
 	// holds needs a fetch, so there's no lazy-population step to write.
@@ -759,9 +793,9 @@
 		}
 		const id = esc(String(item.id));
 		const label = esc(__('More actions', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--overflow" role="button" tabindex="0" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-overflow-toggle="${id}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--overflow" aria-haspopup="true" aria-expanded="false" aria-label="${label}" title="${label}" data-overflow-toggle="${id}">${statIcon(
 			OVERFLOW_GLYPH
-		)}</span>`;
+		)}</button>`;
 	}
 
 	// A Mark's own ⋯ overflow menu contents (issue #326): everything in its
@@ -831,11 +865,9 @@
 		</div>`;
 	}
 
-	// Nested inside the card's own expand-trigger button, same reasoning
-	// renderBookmarkToggle() above documents — but role="menuitem" here,
-	// not "button", since its parent is now the ⋯ overflow menu's own
-	// role="menu" panel (issue #326; see renderExternalLinkToggle() above).
-	// Shares a Mark's or a subscription post's real permalink — identical
+	// A <button> with role="menuitem", since its parent is the ⋯ overflow
+	// menu's own role="menu" panel (issue #326). Shares a Mark's or a
+	// subscription post's real permalink — identical
 	// behavior for either, so unlike the Bookmark toggle this needs no
 	// `kind` distinction. Omitted entirely when an item has no permalink at
 	// all (should not normally happen for anything actually published),
@@ -849,9 +881,9 @@
 		}
 		const id = esc(String(item.id));
 		const label = esc(__('Share', 'daymark'));
-		return `<span class="daymark-stat daymark-stat--share" role="menuitem" tabindex="0" aria-label="${label}" title="${label}" data-share-toggle="${id}">${statIcon(
+		return `<button type="button" class="daymark-stat daymark-stat--share" role="menuitem" aria-label="${label}" title="${label}" data-share-toggle="${id}">${statIcon(
 			SHARE_GLYPH
-		)}<span class="daymark-stat__label">${label}</span></span>`;
+		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
 	// A short, low-key description of whether this user's own Like/Comment
@@ -887,10 +919,9 @@
 		return liked ? withDeliveryStatus(__('Unlike', 'daymark'), delivery) : __('Like', 'daymark');
 	}
 
-	// The Like toggle for a subscription post — the row's other *interactive*
-	// entry besides Bookmark/Repost, same span[role="button"] reasoning as
-	// renderBookmarkToggle() (nested inside the card's own expand-trigger
-	// button). Unlike Bookmark, activating this publishes (or, to undo,
+	// The Like toggle for a subscription post — a real <button>, like every
+	// other entry in the row (see renderBookmarkToggle()). Unlike Bookmark,
+	// activating this publishes (or, to undo,
 	// trashes) a small Mark of the site owner's own — see toggleLike() — so
 	// `data-like-mark-id` carries that Mark's ID once one exists, letting the
 	// toggle undo itself without a second lookup.
@@ -912,13 +943,13 @@
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
 		const label = likeToggleLabel(liked, item.like_delivery);
-		return `<span class="daymark-stat daymark-stat--like${
+		return `<button type="button" class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
-		}" role="button" tabindex="0" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
+		}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
 			label
 		)}" title="${esc(label)}" data-like-toggle="${id}" data-like-mark-id="${markId}">${statIcon(
 			HEART_GLYPH
-		)}</span>`;
+		)}</button>`;
 	}
 
 	// The Comment toggle (issue #317) — a subscription post's own equivalent
@@ -942,11 +973,11 @@
 		const label = commented
 			? withDeliveryStatus(__('Comment', 'daymark'), item.comment_delivery)
 			: __('Comment', 'daymark');
-		return `<span class="daymark-stat daymark-stat--comment${
+		return `<button type="button" class="daymark-stat daymark-stat--comment${
 			commented ? ' daymark-stat--active' : ''
-		}" role="button" tabindex="0" aria-label="${esc(label)}" title="${esc(
+		}" aria-label="${esc(label)}" title="${esc(
 			label
-		)}" data-comment-toggle="${id}">${statIcon(COMMENT_GLYPH)}</span>`;
+		)}" data-comment-toggle="${id}">${statIcon(COMMENT_GLYPH)}</button>`;
 	}
 
 	// The Repost toggle — same shape/reasoning as renderLikeToggle() above.
@@ -955,47 +986,23 @@
 		const id = esc(String(item.id));
 		const markId = esc(String(item.reposted_mark_id || 0));
 		const label = reposted ? __('Undo reblog', 'daymark') : __('Reblog', 'daymark');
-		return `<span class="daymark-stat daymark-stat--repost${
+		return `<button type="button" class="daymark-stat daymark-stat--repost${
 			reposted ? ' daymark-stat--active daymark-stat--reposted' : ''
-		}" role="button" tabindex="0" aria-pressed="${reposted ? 'true' : 'false'}" aria-label="${esc(
+		}" aria-pressed="${reposted ? 'true' : 'false'}" aria-label="${esc(
 			label
 		)}" title="${esc(label)}" data-repost-toggle="${id}" data-repost-mark-id="${markId}">${statIcon(
 			REPOST_GLYPH
-		)}</span>`;
+		)}</button>`;
 	}
 
+	// A Mark's own interaction row: other people's engagement as text (see
+	// renderEngagementSummary()), then the two things you can do with your
+	// own Mark from a card, Bookmark and the ⋯ menu.
 	function renderItemStats(item) {
-		const likeCount = item.like_count || 0;
-		const commentCount = item.comment_count || 0;
-		const repostCount = item.repost_count || 0;
-		return `<span class="daymark-item-stats">${renderStat(
-			HEART_GLYPH,
-			likeCount,
-			'likes',
-			sprintf(
-				/* translators: %d: number of likes */
-				_n('%d like', '%d likes', likeCount, 'daymark'),
-				likeCount
-			)
-		)}${renderStat(
-			COMMENT_GLYPH,
-			commentCount,
-			'comments',
-			sprintf(
-				/* translators: %d: number of comments */
-				_n('%d comment', '%d comments', commentCount, 'daymark'),
-				commentCount
-			)
-		)}${renderStat(
-			REPOST_GLYPH,
-			repostCount,
-			'reposts',
-			sprintf(
-				/* translators: %d: number of reblogs */
-				_n('%d reblog', '%d reblogs', repostCount, 'daymark'),
-				repostCount
-			)
-		)}${renderBookmarkToggle(item, 'mark')}${renderOverflowToggle(item, markOverflowMenuItems(item))}</span>`;
+		return `<span class="daymark-item-stats daymark-item-stats--own">${renderEngagementSummary(item)}${renderBookmarkToggle(
+			item,
+			'mark'
+		)}${renderOverflowToggle(item, markOverflowMenuItems(item))}</span>`;
 	}
 
 	// Pre-filters the composer's native file picker to match the launcher
@@ -1996,6 +2003,28 @@
 		return pendingId;
 	}
 
+	// Runs once the server confirms a Mark you saved. For a published Mark:
+	// move your Timeline's last-seen marker to it (your own new post is
+	// never "new" to you, so Home won't open below it or count it in the
+	// "N new posts" button), and if Home is on screen, put its real card at
+	// the top of the Timeline where its pending card was.
+	function onMarkSaved(response) {
+		if (!response || !response.id) {
+			return;
+		}
+		// Publishing a draft, or saving a new one, changes the count.
+		HomeScreen.refreshDraftsRow();
+		if ('publish' !== response.status) {
+			return;
+		}
+		// Locally first, so a Home load that starts before the save finishes
+		// already opens at the top.
+		timelineLastSeen = { id: Number(response.id), item_type: 'mark' };
+		queueLastSeenSave(Number(response.id));
+		flushLastSeenSave(false);
+		HomeScreen.insertPublished(response);
+	}
+
 	// The background half of publishInBackground(): attempts the real
 	// request for an already-queued record. A connectivity-shaped failure
 	// just downgrades it to 'queued' — the 'online' listener/
@@ -2013,6 +2042,7 @@
 			const response = await apiUpload(path, payloadToFormData(payload));
 			await deletePendingMark(pendingId);
 			SuccessScreen.upgrade(pendingId, response);
+			onMarkSaved(response);
 		} catch (err) {
 			if (err instanceof TypeError) {
 				await updatePendingMark(pendingId, targetId, payload, 'queued');
@@ -2050,8 +2080,9 @@
 				}
 				try {
 					const path = record.targetId ? 'marks/' + record.targetId : 'marks';
-					await apiUpload(path, payloadToFormData(record.payload));
+					const response = await apiUpload(path, payloadToFormData(record.payload));
 					await deletePendingMark(record.id);
+					onMarkSaved(response);
 				} catch (err) {
 					if (err instanceof TypeError || !navigator.onLine) {
 						break; // Still offline (or just dropped) — retry next trigger.
@@ -2759,6 +2790,50 @@
 		if (heading) {
 			heading.focus();
 		}
+
+		checkUnreadNotifications();
+	}
+
+	// The bell's unread dot used to be decided once, when the page loaded.
+	// Re-check it (GET /notifications/status, which marks nothing seen)
+	// when the app comes back to the foreground and when you move between
+	// screens, at most once a minute, so replies that arrive during a visit
+	// show up. The Notifications screen itself clears the flag.
+	const UNREAD_CHECK_INTERVAL_MS = 60000;
+	let lastUnreadCheck = Date.now();
+
+	async function checkUnreadNotifications(force) {
+		if (!config.nonce || config.offlineShell || !navigator.onLine) {
+			return;
+		}
+		if (!force && Date.now() - lastUnreadCheck < UNREAD_CHECK_INTERVAL_MS) {
+			return;
+		}
+		lastUnreadCheck = Date.now();
+		try {
+			const result = await apiGet('notifications/status');
+			const hasUnread = !!(result && result.has_unread);
+			if (!config.notifications) {
+				config.notifications = {};
+			}
+			if (hasUnread !== !!config.notifications.hasUnread) {
+				config.notifications.hasUnread = hasUnread;
+				updateUnreadDots();
+			}
+		} catch (err) {
+			// Best effort: the dot just stays as it was.
+		}
+	}
+
+	// Redraws every Notifications bell on screen from config.
+	function updateUnreadDots() {
+		root.querySelectorAll('a.daymark-iconbtn[href="#notifications"]').forEach((link) => {
+			const fresh = document.createElement('div');
+			fresh.innerHTML = notificationsIconButton().trim();
+			if (fresh.firstElementChild) {
+				link.replaceWith(fresh.firstElementChild);
+			}
+		});
 	}
 
 	// --- Shared: persistent bottom nav, feed-list rendering ---
@@ -2774,6 +2849,42 @@
 	// same pattern state.pendingType already uses for the Create composer.
 	// SearchScreen.init() consumes and clears it.
 	let searchPreset = null;
+
+	// One-shot: set when Home's drafts row is tapped, so the Me screen
+	// scrolls its Drafts list into view instead of opening at the top.
+	let meShowDrafts = false;
+
+	function noDraftsHtml() {
+		return `<p class="daymark-empty">${sprintf(
+			/* translators: %s: "Start one" link */
+			__('No drafts. %s.', 'daymark'),
+			'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
+		)}</p>`;
+	}
+
+	// Home's one-line pointer to your drafts. Drafts used to render as full
+	// cards above the Timeline, where a few photo drafts could push the feed
+	// several screens down. Now Home shows a count, and the drafts
+	// themselves (with Edit, Publish, and Delete) live on the Me screen.
+	// `count` is how many came back from a request for DRAFTS_ROW_PROBE
+	// items, so one more than DRAFTS_ROW_MAX reads as "10+".
+	const DRAFTS_ROW_MAX = 10;
+	const DRAFTS_ROW_PROBE = DRAFTS_ROW_MAX + 1;
+
+	function draftsRowLabel(count) {
+		if (count > DRAFTS_ROW_MAX) {
+			return sprintf(
+				/* translators: %d: a number of drafts, shown as "10+ drafts" */
+				__('%d+ drafts', 'daymark'),
+				DRAFTS_ROW_MAX
+			);
+		}
+		return sprintf(
+			/* translators: %d: number of drafts */
+			_n('%d draft', '%d drafts', count, 'daymark'),
+			count
+		);
+	}
 
 	const NAV_TABS = [
 		{ key: 'home', hash: '#home', label: __('Timeline', 'daymark'), glyph: TIMELINE_GLYPH },
@@ -3291,13 +3402,20 @@
 					</div>
 				</div>`;
 		const layoutKind = cardLayoutKind(item, kind);
+		// A published card is a plain container holding real controls: its
+		// title button opens the post (and stretches over the whole card, see
+		// renderCardTitle()), and its footer holds separate action buttons.
+		const titleId = isDraft ? '' : nextCardTitleId();
 		const card = isDraft
 			? `<a class="daymark-recent__item daymark-recent__item--${esc(
 					layoutKind
 			  )}" href="#create"${editAttr}>${renderMarkCore(item)}</a>`
-			: `<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+			: `<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--${esc(
 					layoutKind
-			  )}" data-expand-post="${id}">${renderMarkCore(item)}</button>`;
+			  )}" data-expand-post="${id}">${renderMarkCore(
+					item,
+					titleId
+			  )}</div>`;
 		// The routing popover's own panel — a sibling of the card button, not
 		// nested inside it: a target's own link can't validly live inside
 		// another <button>. Gated on the same condition as
@@ -3311,13 +3429,15 @@
 		// for one.
 		const overflowItems = isDraft ? '' : markOverflowMenuItems(item);
 		return `
-			<div class="daymark-recent__item-wrap" data-item="${id}">
+			<article class="daymark-recent__item-wrap" data-item="${id}"${
+				titleId ? ` aria-labelledby="${titleId}"` : ''
+			}>
 				${renderLeadColumn(siteIcon, kind)}
 				${card}
 				${actions}
 				${renderOverflowPanel(item, overflowItems, '')}
 				${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
-			</div>`;
+			</article>`;
 	}
 
 	// Dispatch one merged-feed item to the right card renderer: a
@@ -3644,18 +3764,16 @@
 		}
 	}
 
-	// A Timeline/Search card's whole surface is a real <button>
-	// (.daymark-recent__item--button) — HTML forbids nesting another
-	// interactive element (a real <a>, or an <iframe>) inside a <button>,
-	// the same constraint this file's other per-item toggles already route
-	// around with a span[role="button"] instead of a nested <a>/<button>.
-	// A "link" (Open Graph) result renders as plain, non-clickable content
+	// A Timeline/Search card's whole surface is covered by its stretched
+	// "open" button (see renderCardTitle()), so nothing inside the card
+	// body can be its own click target. A "link" (Open Graph) result renders
+	// as plain, non-clickable content
 	// here (tapping anywhere in the card already opens the full post view,
 	// so the preview doesn't need its own click target); a "photo" result
 	// is already just a safe <img>, per Daymark_Subscription_Oembed. An
-	// "iframe" result is the one case genuinely unsafe to nest inside a
-	// <button> — left card-less here and full-post-view-only, where
-	// PostScreen isn't itself a button.
+	// "iframe" result stays out of the card: the stretched button would
+	// cover it, so it could never be played there. It shows in the full
+	// post view instead.
 	function cardOembedPreviewHtml(result) {
 		if (!result || !result.type) {
 			return '';
@@ -3761,9 +3879,7 @@
 
 		// The Bookmark toggle — checked first so tapping it never also
 		// triggers the card's own expand-post/subpost tap (both live inside
-		// the same clickable card; see renderBookmarkToggle()'s own
-		// docblock for why this is a span[role="button"], not a real
-		// nested <button>).
+		// the same card).
 		const bookmarkToggle = target.closest('[data-bookmark-toggle]');
 		if (bookmarkToggle) {
 			event.preventDefault();
@@ -4013,81 +4129,6 @@
 		if (confirmDel) {
 			event.preventDefault();
 			deleteItem(screen, confirmDel);
-		}
-	}
-
-	// Enter/Space activation for the Bookmark toggle's span[role="button"]
-	// — a real <button> gets this for free; this one doesn't, so it needs
-	// its own keydown handling, bound alongside onFeedListClick() on every
-	// feed-list container.
-	function onFeedListKeydown(screen, event) {
-		if ('Enter' !== event.key && ' ' !== event.key && 'Spacebar' !== event.key) {
-			return;
-		}
-		const bookmarkToggle = event.target.closest('[data-bookmark-toggle]');
-		if (bookmarkToggle) {
-			event.preventDefault();
-			toggleBookmark(screen, bookmarkToggle);
-			return;
-		}
-		const likeToggle = event.target.closest('[data-like-toggle]');
-		if (likeToggle) {
-			event.preventDefault();
-			toggleLike(screen, likeToggle);
-			return;
-		}
-		const repostToggle = event.target.closest('[data-repost-toggle]');
-		if (repostToggle) {
-			event.preventDefault();
-			toggleRepost(screen, repostToggle);
-			return;
-		}
-		const commentToggle = event.target.closest('[data-comment-toggle]');
-		if (commentToggle) {
-			event.preventDefault();
-			toggleComment(screen, commentToggle);
-			return;
-		}
-		const externalLinkToggle = event.target.closest('[data-external-link]');
-		if (externalLinkToggle) {
-			event.preventDefault();
-			openExternalLink(externalLinkToggle);
-			return;
-		}
-		const routingToggle = event.target.closest('[data-routing-toggle]');
-		if (routingToggle) {
-			event.preventDefault();
-			toggleRoutingPanel(screen, routingToggle);
-			return;
-		}
-		const shareToggle = event.target.closest('[data-share-toggle]');
-		if (shareToggle) {
-			event.preventDefault();
-			shareItem(screen, shareToggle);
-			return;
-		}
-		const refreshToggle = event.target.closest('[data-refresh-subpost]');
-		if (refreshToggle) {
-			event.preventDefault();
-			refreshSubscriptionPost(screen);
-			return;
-		}
-		// The ⋯ overflow toggle and Unsubscribe's own first tap (issue
-		// #326) are the two remaining `<span>` entries this menu adds —
-		// every other entry inside the open panel (Open
-		// original/Share/Routing/Refresh content, plus Unsubscribe's own
-		// Confirm/Cancel) is a real <button>, which already gets Enter/
-		// Space activation for free from the browser.
-		const overflowToggle = event.target.closest('[data-overflow-toggle]');
-		if (overflowToggle) {
-			event.preventDefault();
-			toggleOverflowMenu(overflowToggle);
-			return;
-		}
-		const menuUnsubscribe = event.target.closest('[data-menu-unsubscribe]');
-		if (menuUnsubscribe) {
-			event.preventDefault();
-			openUnsubscribeConfirm(menuUnsubscribe);
 		}
 	}
 
@@ -4748,11 +4789,8 @@
 	// menu (issue #326) — same shape as the Draft ⋯ menu's own Delete entry
 	// (renderMarkItem()): hide the actions list, show the confirm text plus
 	// Unsubscribe/Cancel buttons, and focus lands on Cancel so a stray
-	// Enter is non-destructive. Shared by onFeedListClick()'s click
-	// dispatch and, since the trigger is a `<span>`, not a real `<button>`
-	// (nested inside the card's own expand-trigger button, same reasoning
-	// as every other row entry), onFeedListKeydown()'s Enter/Space
-	// handling too.
+	// Enter is non-destructive. Called from onFeedListClick(); the trigger
+	// is a real <button>, so Enter and Space reach it as a click.
 	function openUnsubscribeConfirm(trigger) {
 		const panel = trigger.closest('[data-overflow-panel]');
 		const actions = panel ? panel.querySelector('[data-menu-actions]') : null;
@@ -5125,12 +5163,8 @@
 		if (!list || list.querySelector('[data-item]')) {
 			return;
 		}
-		if (list.hasAttribute('data-drafts-list')) {
-			const section = root.querySelector('[data-drafts-section]');
-			if (section) {
-				section.hidden = true;
-			}
-			screen._hasDrafts = false;
+		if (list.hasAttribute('data-me-drafts')) {
+			list.innerHTML = noDraftsHtml();
 		} else if (list.hasAttribute('data-search-results')) {
 			list.innerHTML =
 				'<p class="daymark-empty">' +
@@ -5200,6 +5234,72 @@
 		return `<div class="daymark-recent__item-wrap">${item}</div>`;
 	}
 
+	// A Mark you just published, while its upload is still running (or
+	// waiting for a connection, or failed): shown as a card at the top of
+	// the Timeline, where the finished post will appear, instead of in a
+	// separate box above the feed. HomeScreen.insertPublished() swaps in the
+	// real card once the server confirms it. Object URLs made for a picked
+	// photo are revoked on the next refresh (pendingObjectUrls).
+	let pendingObjectUrls = [];
+
+	function renderPendingTimelineItem(record) {
+		const payload = record.payload || {};
+		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
+		const firstFile = Array.isArray(payload.newFiles) ? payload.newFiles[0] : null;
+		const kind = payload.primaryType || 'note';
+		let media = '';
+		if (firstFile && 'image' === firstFile.kind && firstFile.blob) {
+			try {
+				const url = URL.createObjectURL(firstFile.blob);
+				pendingObjectUrls.push(url);
+				media = `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media"><img class="daymark-recent__thumb" src="${esc(
+					url
+				)}" alt="" /></span>`;
+			} catch (err) {
+				media = '';
+			}
+		}
+		const status = record.status || 'queued';
+		let chip;
+		if ('error' === status) {
+			chip = `<span class="daymark-chip daymark-chip--danger">${esc(
+				__("Couldn't publish", 'daymark')
+			)}</span> ${esc(__('Tap to review and retry', 'daymark'))}`;
+		} else if ('uploading' === status) {
+			chip = `<span class="daymark-spinner daymark-spinner--inline" aria-hidden="true"></span> ${esc(
+				__('Uploading…', 'daymark')
+			)}`;
+		} else {
+			chip = `<span class="daymark-chip daymark-chip--draft">${esc(__('Offline', 'daymark'))}</span> ${esc(
+				__("Publishes when you're back online", 'daymark')
+			)}`;
+		}
+		const layout = media ? 'image' : 'note';
+		const inner = `
+					${media}
+					<span class="daymark-recent__body">
+						<span class="daymark-recent__title">${esc(title)}</span>
+						<span class="daymark-recent__meta daymark-recent__pendingstatus">${chip}</span>
+					</span>
+					<span class="daymark-recent__footer">
+						${renderCardTimestampRow(
+							{ date: new Date(record.updatedAt || Date.now()).toISOString() },
+							__('You', 'daymark'),
+							true
+						)}
+					</span>`;
+		const card =
+			'uploading' === status
+				? `<div class="daymark-recent__item daymark-recent__item--${layout}" aria-busy="true">${inner}</div>`
+				: `<a class="daymark-recent__item daymark-recent__item--${layout}" href="#create" data-resume-pending="${esc(
+						String(record.id)
+				  )}">${inner}</a>`;
+		return `<div class="daymark-recent__item-wrap daymark-recent__item-wrap--pending">${renderLeadColumn(
+			'',
+			kind
+		)}${card}</div>`;
+	}
+
 	// Wires "tap a pending item to resume it" — the offline-queue
 	// counterpart to bindDraftTaps(), reopening via openPendingMark()
 	// (a local IndexedDB read) instead of openDraft()'s REST fetch.
@@ -5223,6 +5323,7 @@
 	async function refreshPendingSection() {
 		const section = root.querySelector('[data-pending-section]');
 		const list = root.querySelector('[data-pending-list]');
+		const timeline = root.querySelector('[data-pending-timeline]');
 		if (!section || !list) {
 			return;
 		}
@@ -5231,16 +5332,25 @@
 			if (!list.isConnected) {
 				return;
 			}
-			if (!pending.length) {
-				section.hidden = true;
-				list.innerHTML = '';
-				return;
-			}
 			// Most recently touched first, so an item still being edited offline
 			// stays at the top.
 			pending.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-			list.innerHTML = pending.map((record) => renderPendingItem(record)).join('');
-			section.hidden = false;
+			// A Mark on its way to being published goes at the top of the
+			// Timeline; drafts (and anything else) stay in the Pending box.
+			const isPublish = (record) => record.payload && 'publish' === record.payload.status;
+			const publishes = timeline ? pending.filter(isPublish) : [];
+			const others = timeline ? pending.filter((record) => !isPublish(record)) : pending;
+			HomeScreen._pendingPublishCount = publishes.length;
+
+			pendingObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+			pendingObjectUrls = [];
+			if (timeline) {
+				timeline.innerHTML = publishes.map((record) => renderPendingTimelineItem(record)).join('');
+				timeline.hidden = !publishes.length;
+				bindPendingTaps(timeline);
+			}
+			list.innerHTML = others.map((record) => renderPendingItem(record)).join('');
+			section.hidden = !others.length;
 			bindPendingTaps(list);
 		} catch (err) {
 			// IndexedDB unavailable (old browser, private-mode restrictions, …):
@@ -5419,6 +5529,63 @@
 			});
 	}
 
+	// How long a refresh result stays above the Timeline.
+	const REFRESH_STATUS_CLEAR_MS = 6000;
+
+	// One plain sentence or two describing a refresh of every followed site
+	// (see Daymark_Subscription_Poller::manual_refresh_all()).
+	function refreshSummary(result) {
+		const total = result.total || 0;
+		const refreshed = result.refreshed || 0;
+		const recent = result.recent || 0;
+		const queued = result.queued || 0;
+		const failed = result.failed || 0;
+		if (!total) {
+			return __("You're not following any sites yet.", 'daymark');
+		}
+		if (!refreshed && !queued && !failed) {
+			return __('Up to date. Every site was checked in the last few minutes.', 'daymark');
+		}
+		const parts = [];
+		if (refreshed) {
+			parts.push(
+				sprintf(
+					/* translators: %d: number of sites checked */
+					_n('Checked %d site.', 'Checked %d sites.', refreshed, 'daymark'),
+					refreshed
+				)
+			);
+		}
+		if (queued) {
+			parts.push(
+				sprintf(
+					/* translators: %d: number of sites still to be checked */
+					_n('%d more is updating in the background.', '%d more are updating in the background.', queued, 'daymark'),
+					queued
+				)
+			);
+		}
+		if (recent) {
+			parts.push(
+				sprintf(
+					/* translators: %d: number of sites skipped because they were checked recently */
+					_n('%d was checked recently.', '%d were checked recently.', recent, 'daymark'),
+					recent
+				)
+			);
+		}
+		if (failed) {
+			parts.push(
+				sprintf(
+					/* translators: %d: number of sites that could not be reached */
+					_n("%d couldn't be reached.", "%d couldn't be reached.", failed, 'daymark'),
+					failed
+				)
+			);
+		}
+		return parts.join(' ');
+	}
+
 	const HomeScreen = {
 		render() {
 			// Home itself is the merged Marks + subscriptions feed now, so
@@ -5435,9 +5602,14 @@
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${wordmark}</h1>
+				<button type="button" class="daymark-iconbtn daymark-refreshbtn" data-refresh-timeline aria-label="${esc(
+					__('Refresh Timeline', 'daymark')
+				)}" title="${esc(__('Refresh Timeline', 'daymark'))}">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${REFRESH_GLYPH}</svg>
+				</button>
 				${notificationsIconButton()}
 			</header>
-			<section class="daymark-screen">
+			<section class="daymark-screen" data-home-screen>
 				<div class="daymark-pullrefresh" data-pull-indicator aria-hidden="true">
 					<span class="daymark-spinner" aria-hidden="true"></span>
 				</div>
@@ -5446,10 +5618,11 @@
 					<h2 id="daymark-pending-heading" class="daymark-section-heading">${esc(__('Pending', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-pending-list></div>
 				</section>
-				<section class="daymark-recent" data-drafts-section hidden aria-labelledby="daymark-drafts-heading">
-					<h2 id="daymark-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
-					<div class="daymark-recent__list" data-drafts-list></div>
-				</section>
+				<a class="daymark-draftsrow" href="#me" data-drafts-row hidden>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+					<span class="daymark-draftsrow__label" data-drafts-row-label></span>
+					<span class="daymark-draftsrow__chevron" aria-hidden="true">&rsaquo;</span>
+				</a>
 				<button type="button" class="daymark-newposts" data-new-posts hidden>
 					<span aria-hidden="true">&uarr;</span>
 					<span data-new-posts-label></span>
@@ -5457,7 +5630,8 @@
 				<section class="daymark-recent" aria-labelledby="daymark-recent-heading">
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
-					<div class="daymark-recent__list" data-recent-list aria-live="polite">
+					<div class="daymark-recent__list" data-pending-timeline hidden></div>
+					<div class="daymark-recent__list" data-recent-list>
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading your timeline', 'daymark'))}</span>
 					</div>
@@ -5471,13 +5645,23 @@
 
 		bindEvents() {
 			// --- Per-item ⋯ menu (edit / delete) via list delegation ---
-			root.querySelectorAll('[data-recent-list], [data-drafts-list]').forEach((list) => {
+			root.querySelectorAll('[data-recent-list]').forEach((list) => {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
-				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			});
-			// Pull-to-refresh is gesture-only now — Home is assumed to be
-			// the Timeline, so there's no separate "Refresh" link/button.
+			const draftsRow = root.querySelector('[data-drafts-row]');
+			if (draftsRow) {
+				draftsRow.addEventListener('click', () => {
+					meShowDrafts = true;
+				});
+			}
+			// Pull down from the top to refresh on a touch screen. With a
+			// mouse or keyboard, the header's refresh button does the same
+			// (CSS shows it only where the main pointer is precise).
 			this.bindPullGesture();
+			const refreshBtn = root.querySelector('[data-refresh-timeline]');
+			if (refreshBtn) {
+				refreshBtn.addEventListener('click', () => this.pullRefresh());
+			}
 			// Close any open item menu or the launcher on an outside click
 			// or Escape (with focus returned to the launcher's own trigger —
 			// the item menu never took focus in the first place, so it has
@@ -5506,7 +5690,6 @@
 			this.teardownSeenObserver();
 			this.watchForUserScroll();
 			this._searchSeq = 0;
-			this._hasDrafts = false;
 			this.recentPage = 1;
 			this.recentDone = false;
 			this.recentLoading = false;
@@ -5534,23 +5717,7 @@
 
 			await refreshPendingSection();
 
-			const draftsSection = root.querySelector('[data-drafts-section]');
-			const draftsList = root.querySelector('[data-drafts-list]');
-
-			// Drafts are fetched separately so they stay reachable no matter
-			// how many Marks have published since.
-			try {
-				const drafts = await apiGet('marks?status=draft&per_page=10');
-				const draftItems = Array.isArray(drafts) ? drafts : [];
-				if (draftItems.length && draftsSection && draftsList && draftsList.isConnected) {
-					draftsList.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
-					draftsSection.hidden = false;
-					this._hasDrafts = true;
-					bindDraftTaps(draftsList);
-				}
-			} catch (err) {
-				// A drafts failure never blocks the recent list below.
-			}
+			await this.refreshDraftsRow();
 
 			if (snapshot) {
 				// Pending and Drafts just loaded above the Timeline and may
@@ -5560,6 +5727,72 @@
 				return;
 			}
 			await this.loadRecent({ anchor: true });
+		},
+
+		// Drafts are counted separately so they stay reachable no matter
+		// how many Marks have published since. Never throws: a drafts
+		// failure never blocks the Timeline below.
+		async refreshDraftsRow() {
+			const draftsRow = root.querySelector('[data-drafts-row]');
+			if (!draftsRow) {
+				return;
+			}
+			try {
+				const drafts = await apiGet('marks?status=draft&per_page=' + DRAFTS_ROW_PROBE);
+				const count = Array.isArray(drafts) ? drafts.length : 0;
+				if (!draftsRow.isConnected) {
+					return;
+				}
+				const label = draftsRow.querySelector('[data-drafts-row-label]');
+				if (label) {
+					label.textContent = count ? draftsRowLabel(count) : '';
+				}
+				draftsRow.hidden = !count;
+			} catch (err) {
+				// Leave the row as it was.
+			}
+		},
+
+		// Put a Mark you just published at the top of the Timeline, in place
+		// of its pending card (see onMarkSaved()). A no-op when Home isn't
+		// on screen or the card is already there; the next load shows it
+		// either way.
+		insertPublished(item) {
+			const list = root.querySelector('[data-recent-list]');
+			if (!list || !list.isConnected || !Array.isArray(this._items)) {
+				return;
+			}
+			const entry = Object.assign({ item_type: 'mark' }, item);
+			if (timelineItemIndex(this._items, entry) >= 0) {
+				return;
+			}
+			this._items.unshift(entry);
+			rememberItem(this, entry);
+			// Indexes into _items just moved down by one.
+			if (Number.isFinite(this._newestSeenIndex)) {
+				this._newestSeenIndex += 1;
+			}
+			this.hideNewPosts();
+			if (!list.querySelector('.daymark-recent__item-wrap')) {
+				list.innerHTML = '';
+			}
+			const date = entry.date ? parseDate(entry.date) : null;
+			const period = timelinePeriod(date || new Date());
+			const first = list.firstElementChild;
+			const cardHtml = renderFeedItem(entry);
+			if (first && first.classList.contains('daymark-recent__groupheader') && first.textContent === period.label) {
+				first.insertAdjacentHTML('afterend', cardHtml);
+			} else {
+				list.insertAdjacentHTML(
+					'afterbegin',
+					`<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(period.label)}</h3>${cardHtml}`
+				);
+				if (null === this._lastGroupKey) {
+					this._lastGroupKey = period.key;
+				}
+			}
+			observeFeaturedImages(this, list);
+			this.observeSeen();
 		},
 
 		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
@@ -5634,6 +5867,12 @@
 				// How many items this first load fetched; infinite scroll
 				// resumes from the page after it.
 				let loaded = RECENT_PER_PAGE;
+				// A Mark of yours still uploading sits at the top of the
+				// Timeline (see renderPendingTimelineItem()); opening further
+				// down would hide it, so start at the top instead.
+				if (this._pendingPublishCount) {
+					anchor = false;
+				}
 				let anchorIndex = anchor ? timelineItemIndex(arr, timelineLastSeen) : -1;
 				if (anchor && timelineLastSeen && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
 					// Not at the very top: load further back in one request,
@@ -5754,6 +5993,13 @@
 					// prior loadMorePage() call) left off is what keeps this
 					// page's own headers from repeating one still in view.
 					list.insertAdjacentHTML('beforeend', renderFeedItemsWithGroups(this, arr));
+					announce(
+						sprintf(
+							/* translators: %d: number of posts just added to the Timeline */
+							_n('%d more post loaded', '%d more posts loaded', arr.length, 'daymark'),
+							arr.length
+						)
+					);
 					observeRehydrateCandidates(this, list);
 					observeOembedPreviewCandidates(this, list);
 					observeLikeAvailability(this, list);
@@ -5973,8 +6219,9 @@
 			window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
 			this.hideNewPosts();
 			const first = root.querySelector('[data-recent-list] [data-subpost], [data-recent-list] [data-expand-post]');
-			if (first) {
-				first.focus({ preventScroll: true });
+			const target = cardFocusTarget(first);
+			if (target) {
+				target.focus({ preventScroll: true });
 			}
 		},
 
@@ -5985,63 +6232,52 @@
 		// methods here, since Search never needs them (Timeline-only, per
 		// the issue's own scope).
 
-		// --- Pull-to-refresh: independent of the scheduled poll, and
-		// rate-limited server-side per subscription (15 minutes). Refreshes
-		// every active subscription, then reloads the merged feed so any
-		// newly ingested posts appear — never silent, and a skipped
-		// (too-recent) subscription is reported as such, not as a failure.
-
-		async refreshOneSubscription(id) {
-			try {
-				await apiPost('subscriptions/' + id + '/refresh', {});
-				return 'refreshed';
-			} catch (err) {
-				// The manual-refresh cooldown (and the endpoint's own rate
-				// limit) both respond 429 — either way this subscription was
-				// simply checked too recently, not a real failure.
-				return err && 429 === err.status ? 'skipped' : 'failed';
-			}
-		},
+		// --- Pull-to-refresh (and the header refresh button): checks every
+		// followed site in one request (POST /subscriptions/refresh), then
+		// reloads the merged feed so newly found posts appear. One request
+		// spends one rate-limit charge, so a long list of sites no longer
+		// runs out of budget partway through. Each site still has its own
+		// 15-minute cooldown; the server reports those as "checked
+		// recently", and any it ran out of time for as "updating in the
+		// background".
 
 		async pullRefresh() {
 			if (this._refreshing) {
 				return;
 			}
 			this._refreshing = true;
-			const status = root.querySelector('[data-recent-refresh-status]');
 			const indicator = root.querySelector('[data-pull-indicator]');
+			const button = root.querySelector('[data-refresh-timeline]');
 			if (indicator) {
 				indicator.classList.add('is-visible', 'is-settling');
 				indicator.style.transform = 'translateY(40px)';
 			}
-			if (status) {
-				status.textContent = __('Checking your subscriptions…', 'daymark');
+			if (button) {
+				button.setAttribute('aria-busy', 'true');
+				button.disabled = true;
 			}
+			this.setRefreshStatus(__('Checking the sites you follow…', 'daymark'), false);
 
-			let subscriptions = [];
+			let message = '';
 			try {
-				const result = await apiGet('subscriptions');
-				subscriptions = Array.isArray(result) ? result : [];
+				const result = await apiPost('subscriptions/refresh', {});
+				message = refreshSummary(result || {});
 			} catch (err) {
-				subscriptions = []; // Still reload the merged feed below.
-			}
-
-			let refreshed = 0;
-			let skipped = 0;
-			let failed = 0;
-			if (subscriptions.length) {
-				const outcomes = await Promise.all(
-					subscriptions.map((s) => this.refreshOneSubscription(s.id))
-				);
-				outcomes.forEach((outcome) => {
-					if ('refreshed' === outcome) {
-						refreshed += 1;
-					} else if ('skipped' === outcome) {
-						skipped += 1;
-					} else {
-						failed += 1;
-					}
-				});
+				if (err && 429 === err.status) {
+					const minutes = Math.max(1, Math.ceil((err.retryAfter || 60) / 60));
+					message = sprintf(
+						/* translators: %d: minutes until the Timeline can be refreshed again */
+						_n(
+							'You refreshed a moment ago. Try again in %d minute.',
+							'You refreshed a moment ago. Try again in %d minutes.',
+							minutes,
+							'daymark'
+						),
+						minutes
+					);
+				} else {
+					message = __("Couldn't check the sites you follow. Showing what's already here.", 'daymark');
+				}
 			}
 
 			await this.loadRecent();
@@ -6051,56 +6287,41 @@
 				indicator.classList.remove('is-visible', 'is-settling');
 				indicator.style.transform = '';
 			}
-			if (status) {
-				if (!subscriptions.length) {
-					status.textContent = __('No subscriptions to refresh.', 'daymark');
-				} else {
-					const parts = [];
-					if (refreshed) {
-						parts.push(
-							sprintf(
-								/* translators: %d: number of feeds refreshed */
-								_n('%d feed updated', '%d feeds updated', refreshed, 'daymark'),
-								refreshed
-							)
-						);
+			if (button && button.isConnected) {
+				button.removeAttribute('aria-busy');
+				button.disabled = false;
+			}
+			this.setRefreshStatus(message, true);
+		},
+
+		// Shows a short message above the Timeline. `clearSoon` hides it
+		// again after a few seconds, so a result doesn't sit above the feed
+		// for the rest of the visit.
+		setRefreshStatus(text, clearSoon) {
+			const status = root.querySelector('[data-recent-refresh-status]');
+			if (!status) {
+				return;
+			}
+			clearTimeout(this._refreshStatusTimer);
+			status.textContent = text;
+			if (clearSoon && text) {
+				this._refreshStatusTimer = setTimeout(() => {
+					if (status.isConnected && status.textContent === text) {
+						status.textContent = '';
 					}
-					if (skipped) {
-						parts.push(
-							sprintf(
-								/* translators: %d: number of feeds skipped */
-								_n(
-									'%d checked too recently, skipped',
-									'%d checked too recently, skipped',
-									skipped,
-									'daymark'
-								),
-								skipped
-							)
-						);
-					}
-					if (failed) {
-						parts.push(
-							sprintf(
-								/* translators: %d: number of feeds that failed to refresh */
-								_n('%d feed failed to refresh', '%d feeds failed to refresh', failed, 'daymark'),
-								failed
-							)
-						);
-					}
-					status.textContent = parts.length ? parts.join('; ') + '.' : __('Up to date.', 'daymark');
-				}
+				}, REFRESH_STATUS_CLEAR_MS);
 			}
 		},
 
 		// Touch-drag pull-to-refresh: only arms while the page is already
 		// scrolled to the very top (otherwise this is an ordinary scroll
-		// gesture over the list, not a pull). Gesture-only, by design — no
-		// separate "Refresh" link/button on Home.
+		// gesture over the list, not a pull).
 		bindPullGesture() {
-			const list = root.querySelector('[data-recent-list]');
+			// The whole screen, not just the Timeline list, so a pull that
+			// starts on the drafts row or a pending card works too.
+			const area = root.querySelector('[data-home-screen]');
 			const indicator = root.querySelector('[data-pull-indicator]');
-			if (!list || !indicator) {
+			if (!area || !indicator) {
 				return;
 			}
 			const THRESHOLD = 64;
@@ -6145,10 +6366,10 @@
 				armed = false;
 			};
 
-			list.addEventListener('touchstart', onStart, { passive: true });
-			list.addEventListener('touchmove', onMove, { passive: true });
-			list.addEventListener('touchend', onEnd);
-			list.addEventListener('touchcancel', onEnd);
+			area.addEventListener('touchstart', onStart, { passive: true });
+			area.addEventListener('touchmove', onMove, { passive: true });
+			area.addEventListener('touchend', onEnd);
+			area.addEventListener('touchcancel', onEnd);
 		},
 	};
 
@@ -6215,7 +6436,7 @@
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
 					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">${esc(__('Results', 'daymark'))}</h2>
 					<p class="daymark-searchcount" data-search-count aria-live="polite" hidden></p>
-					<div class="daymark-recent__list" data-search-results aria-live="polite">
+					<div class="daymark-recent__list" data-search-results>
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
@@ -6259,7 +6480,6 @@
 			const list = root.querySelector('[data-search-results]');
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
-				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			}
 
 			const more = root.querySelector('[data-search-more]');
@@ -6526,6 +6746,13 @@
 					list.insertAdjacentHTML('beforeend', arr.map((item) => renderFeedItem(item)).join(''));
 					observeLikeAvailability(this, list);
 					observeFeaturedImages(this, list);
+					announce(
+						sprintf(
+							/* translators: %d: number of search results just added to the list */
+							_n('%d more result loaded', '%d more results loaded', arr.length, 'daymark'),
+							arr.length
+						)
+					);
 				}
 				if (arr.length < SEARCH_PER_PAGE) {
 					this._searchDone = true;
@@ -6601,6 +6828,8 @@
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 				observeLikeAvailability(this, list);
 				observeFeaturedImages(this, list);
+				// No announce() here: the result count above the list is
+				// itself a live region and reads out the real total.
 				this._searchDone = arr.length < SEARCH_PER_PAGE;
 				if (!this._searchDone) {
 					this.setupSearchObserver();
@@ -6773,7 +7002,6 @@
 			const memories = root.querySelector('[data-explore-memories]');
 			if (memories) {
 				memories.addEventListener('click', (event) => onFeedListClick(this, event));
-				memories.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			}
 
 			// Like Search's results list, the memories list renders cards
@@ -6983,42 +7211,48 @@
 				});
 			}
 
-			bindDismissible(this, [navFooterDismissEntry(this)]);
+			// Drafts: tap one to resume it; its ⋯ menu has Edit, Publish, and
+			// Delete (renderMarkItem()). This is the one place drafts are
+			// managed, since Home now shows only a count.
+			const drafts = root.querySelector('[data-me-drafts]');
+			if (drafts) {
+				drafts.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
+			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
 
 		async init() {
+			this._bySubId = new Map();
+			this._byMarkId = new Map();
+			const showDrafts = meShowDrafts;
+			meShowDrafts = false;
 			const list = root.querySelector('[data-me-drafts]');
 			if (!list) {
 				return;
 			}
 			try {
-				const drafts = await apiGet('marks?status=draft&per_page=10');
+				const drafts = await apiGet('marks?status=draft&per_page=50');
 				const draftItems = Array.isArray(drafts) ? drafts : [];
 				if (!list.isConnected) {
 					return;
 				}
 				if (!draftItems.length) {
-					list.innerHTML = `<p class="daymark-empty">${sprintf(
-						/* translators: %s: "Start one" link */
-						__('No drafts. %s.', 'daymark'),
-						'<a href="#create">' + esc(__('Start one', 'daymark')) + '</a>'
-					)}</p>`;
+					list.innerHTML = noDraftsHtml();
 					return;
 				}
-				// View-only here (tap to resume editing) — full Edit/Delete
-				// management stays on Home's own Drafts row.
-				list.innerHTML = draftItems
-					.map(
-						(item) =>
-							`<a class="daymark-recent__item daymark-recent__item--${esc(
-								cardLayoutKind(item, resolveCardKind(item))
-							)}" href="#create" data-edit-draft="${esc(
-								String(item.id)
-							)}">${renderMarkCore(item)}</a>`
-					)
-					.join('');
+				list.innerHTML = draftItems.map((item) => renderMarkItem(item)).join('');
 				bindDraftTaps(list);
+				if (showDrafts) {
+					// After showScreen()'s own header focus, which scrolls to
+					// the top.
+					requestAnimationFrame(() => {
+						const heading = root.querySelector('#daymark-me-drafts-heading');
+						if (heading) {
+							heading.scrollIntoView({ block: 'start' });
+						}
+					});
+				}
 			} catch (err) {
 				if (list.isConnected) {
 					list.innerHTML =
@@ -9408,13 +9642,43 @@
 	// (image/gallery/video/mixed, a Checkin map) keeps the title below its
 	// banner, inside .daymark-recent__body. Returns [leadTitle, bodyTitle];
 	// exactly one is non-empty.
-	function renderCardTitle(title, mediaKind, mediaHtml) {
-		const markup = `<span class="daymark-recent__title">${esc(title)}</span>`;
+	//
+	// `titleId`, when given, makes the title the card's one "open this post"
+	// control: a real <button> whose ::after stretches over the whole card
+	// (.daymark-recent__open in app.css), so tapping anywhere on the card
+	// still opens it. Its accessible name is just the title, and the
+	// action buttons in the card's footer stay separate controls that a
+	// screen reader can reach on their own. A Draft passes no id, because
+	// its whole card is already a link back into the composer.
+	function renderCardTitle(title, mediaKind, mediaHtml, titleId) {
+		const text = titleId
+			? `<button type="button" class="daymark-recent__open">${esc(title)}</button>`
+			: esc(title);
+		const idAttr = titleId ? ` id="${esc(titleId)}"` : '';
 		const leads =
 			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind && 'linkpreview' !== mediaKind;
 		return leads
-			? [`<span class="daymark-recent__title daymark-recent__title--lead">${esc(title)}</span>`, '']
-			: ['', markup];
+			? [`<span class="daymark-recent__title daymark-recent__title--lead"${idAttr}>${text}</span>`, '']
+			: ['', `<span class="daymark-recent__title"${idAttr}>${text}</span>`];
+	}
+
+	// Unique ids for card titles, so each card's <article> can name itself
+	// with aria-labelledby. A counter, not the post id: the same post can
+	// render twice on one screen (for example a Draft also in Search).
+	let cardTitleSeq = 0;
+	function nextCardTitleId() {
+		cardTitleSeq += 1;
+		return 'daymark-card-title-' + cardTitleSeq;
+	}
+
+	// The control a keyboard user should land on when focus moves to a card
+	// (Back from the post view, "N new posts"): its title button, or the
+	// card itself for a Draft link.
+	function cardFocusTarget(card) {
+		if (!card) {
+			return null;
+		}
+		return card.querySelector('.daymark-recent__open') || card;
 	}
 
 	// The meta line every card kind shares: only when the server resolved
@@ -9476,6 +9740,15 @@
 	// system font-size setting, rather than relying only on
 	// .daymark-recent__sitename's own CSS text-overflow: ellipsis to catch
 	// it (kept as a second, narrower-viewport safety net, not replaced).
+	// Who a post on this site belongs to: "You" for your own, the author's
+	// name for someone else's on a multi-author site, else the site title.
+	function markAuthorLabel(item) {
+		if (item.is_mine) {
+			return __('You', 'daymark');
+		}
+		return item.author_name || config.siteTitle || __('Site', 'daymark');
+	}
+
 	const SITE_NAME_MAX_LENGTH = 40;
 
 	function truncateSiteName(name) {
@@ -9485,14 +9758,16 @@
 		return `${name.slice(0, SITE_NAME_MAX_LENGTH - 1).trimEnd()}…`;
 	}
 
-	function renderCardTimestampRow(item, siteLabel) {
+	// `isMine` marks a post you wrote: its label reads "You", in the accent
+	// colour, so your own posts stand apart from the sites you follow.
+	function renderCardTimestampRow(item, siteLabel, isMine) {
 		if (!item.date && !siteLabel) {
 			return '';
 		}
 		const site = siteLabel
-			? `<span class="daymark-recent__sitename" title="${esc(siteLabel)}">${esc(
-					truncateSiteName(siteLabel)
-				)}</span>`
+			? `<span class="daymark-recent__sitename${isMine ? ' daymark-recent__sitename--mine' : ''}" title="${esc(
+					siteLabel
+				)}">${esc(truncateSiteName(siteLabel))}</span>`
 			: '';
 		const time = item.date ? renderCardTimestamp(item.date) : '';
 		return `<span class="daymark-recent__timestamprow">${site}${time}</span>`;
@@ -9527,7 +9802,7 @@
 	// renders (Home's Recent/Drafts, Search's results), wrapped by
 	// renderMarkItem() in the same ⋯ actions menu for a Draft. Keeping this
 	// in one place is what "reuse, don't reinvent Mark card markup" means.
-	function renderMarkCore(item) {
+	function renderMarkCore(item, titleId) {
 		const kind = resolveCardKind(item);
 		const title = item.title || __('Untitled Mark', 'daymark');
 		// A Draft's own card renders with no "Draft" chip (issue #405) —
@@ -9557,7 +9832,7 @@
 		// full-width line regardless of kind.
 		const mediaKind = mediaKindForItem(item, kind);
 		const media = renderCardMedia(item, mediaKind);
-		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media, titleId);
 		return `
 					${leadTitle}
 					${media}
@@ -9567,15 +9842,15 @@
 						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
 					<span class="daymark-recent__footer">
-						${renderCardTimestampRow(item, isDraft ? '' : config.siteTitle || __('Site', 'daymark'))}
+						${renderCardTimestampRow(item, isDraft ? '' : markAuthorLabel(item), !isDraft && !!item.is_mine)}
 						${isDraft ? '' : renderItemStats(item)}
 					</span>`;
 	}
 
-	// One subscription-post Timeline card. A <button>, not an <a>: opening it
-	// navigates to the full-screen post view (openPostView(), issue #270),
-	// rather than following its own href — its permalink points at the
-	// *source* site, not anywhere in this app. No *counted* like/comment/
+	// One subscription-post Timeline card. Its title is the card's "open"
+	// button (see renderCardTitle()): opening it navigates to the
+	// full-screen post view (openPostView(), issue #270) rather than to the
+	// permalink, which points at the *source* site, not anywhere in this app. No *counted* like/comment/
 	// reblog stats: those only ever exist for a Mark — Daymark doesn't (and,
 	// for someone else's post, can't cheaply) track the origin site's real
 	// engagement totals. What it *can* track is its own record of the user's
@@ -9617,9 +9892,10 @@
 			layoutKind = 'note';
 		}
 		const media = renderCardMedia(item, layoutKind);
-		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media);
+		const titleId = nextCardTitleId();
+		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media, titleId);
 		return `
-				<div class="daymark-recent__item-wrap">
+				<article class="daymark-recent__item-wrap" aria-labelledby="${titleId}">
 					${renderLeadColumn(
 						renderSiteIconButton({
 							iconSrc: item.site_icon_url || '',
@@ -9634,7 +9910,7 @@
 						}),
 						kind
 					)}
-					<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--${esc(
+					<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--${esc(
 						layoutKind
 					)}" data-subpost="${id}">
 						${renderInteractionContext(item)}
@@ -9649,9 +9925,9 @@
 							${renderCardTimestampRow(item, siteLabel)}
 							${renderSubscriptionItemStats(item)}
 						</span>
-					</button>
+					</div>
 					${renderOverflowPanel(item, overflowItems, unsubscribeConfirmMarkup(item))}
-				</div>`;
+				</article>`;
 	}
 
 	// --- Full-screen post view: a Timeline card's own content, read on a
@@ -9949,7 +10225,10 @@
 		const top = wrap.getBoundingClientRect().top + window.scrollY - snapshot.anchorTop;
 		window.scrollTo(0, Math.max(0, top));
 		if (focusCard) {
-			card.focus({ preventScroll: true });
+			const target = cardFocusTarget(card);
+			if (target) {
+				target.focus({ preventScroll: true });
+			}
 		}
 	}
 
@@ -10034,8 +10313,8 @@
 		// The meta row's Like/Repost/Bookmark/"open original"/Share/Routing/
 		// "Refresh content" toggles (rendered in render() below the post
 		// body — never touched by load() below) get the exact same
-		// click/keyboard handling (onFeedListClick()/onFeedListKeydown())
-		// every Timeline card already shares — including the
+		// click handling (onFeedListClick()) every Timeline card already
+		// shares; they're real buttons, so the keyboard needs nothing extra — including the
 		// "Refresh content" icon, which calls this.load(true) via
 		// refreshSubscriptionPost() the same way a Timeline card's own
 		// toggles reach back into their screen.
@@ -10043,7 +10322,6 @@
 			const meta = root.querySelector('.daymark-postview-meta');
 			if (meta) {
 				meta.addEventListener('click', (event) => onFeedListClick(this, event));
-				meta.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
 			}
 			bindDismissible(this, [itemMenusDismissEntry()]);
 		},
@@ -10408,6 +10686,9 @@
 				const mark = await apiUpload('marks', formData);
 				this.item.reposted_mark_id = mark.id;
 				discardFeedSnapshot();
+				// Your reblog is your own new post: move the last-seen marker
+				// to it so Home doesn't count it as new.
+				onMarkSaved(mark);
 				navigate(this.returnTo);
 			} catch (err) {
 				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
@@ -10752,6 +11033,7 @@
 				// the real request directly rather than risk losing the Mark.
 				try {
 					const response = await apiUpload(path, payloadToFormData(payload));
+					onMarkSaved(response);
 					state.lastPublish = {
 						response,
 						wasDraft: isDraft,
@@ -10820,8 +11102,8 @@
 				)}</h2>
 				<p class="daymark-note-card__meta">${esc(
 					publish.wasDraft
-						? __("Saving in the background — you'll find it under Drafts on Home once it's done.", 'daymark')
-						: __("Uploading in the background — it'll appear in Recent Marks as soon as it's done.", 'daymark')
+						? __("Saving in the background. You'll find it under Drafts on the Me tab.", 'daymark')
+						: __("It's already at the top of your Timeline. The upload finishes in the background.", 'daymark')
 				)}</p>`;
 			}
 
@@ -10850,7 +11132,7 @@
 			${
 				publish.wasDraft
 					? '<p class="daymark-note-card__meta">' +
-					  esc(__('Finish it any time from Recent Marks on Home.', 'daymark')) +
+					  esc(__('Finish it any time from Drafts on the Me tab.', 'daymark')) +
 					  '</p>'
 					: ''
 			}
@@ -10986,7 +11268,7 @@
 						<option value="">${esc(__('All', 'daymark'))}</option>
 					</select>
 				</div>
-				<div class="daymark-recent__list" data-notification-list aria-live="polite">
+				<div class="daymark-recent__list" data-notification-list>
 					${skeletonRows(3)}
 					<span class="daymark-visually-hidden">${esc(__('Loading notifications', 'daymark'))}</span>
 				</div>
@@ -11134,9 +11416,25 @@
 			this.bindShowMore(list);
 		},
 
+		// A notification that arrived since your last visit (`is_new`, set
+		// by GET /notifications) gets a "New" label and an accent edge.
+		renderMaybeNew(item) {
+			const html = this.renderItem(item);
+			if (!item.is_new) {
+				return html;
+			}
+			return html.replace(
+				'<article class="daymark-note-card"',
+				`<article class="daymark-note-card daymark-note-card--new"`
+			).replace(
+				/(<article class="daymark-note-card daymark-note-card--new"[^>]*>)/,
+				`$1<span class="daymark-note-card__new">${esc(__('New', 'daymark'))}</span>`
+			);
+		},
+
 		renderGroup(group) {
 			if ('conversation' !== group.kind) {
-				return this.renderItem(group.item);
+				return this.renderMaybeNew(group.item);
 			}
 			const heading = group.postUrl
 				? `<a href="${esc(group.postUrl)}">${esc(group.postTitle || __('(untitled Mark)', 'daymark'))}</a>`
@@ -11144,7 +11442,7 @@
 			return `
 			<section class="daymark-conversation">
 				<h3 class="daymark-conversation__heading">${heading}</h3>
-				${group.comments.map((comment) => this.renderItem(comment)).join('')}
+				${group.comments.map((comment) => this.renderMaybeNew(comment)).join('')}
 			</section>`;
 		},
 
@@ -11618,6 +11916,8 @@
 	document.addEventListener('visibilitychange', () => {
 		if ('hidden' === document.visibilityState) {
 			flushLastSeenSave(true);
+		} else {
+			checkUnreadNotifications();
 		}
 	});
 

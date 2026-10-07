@@ -7,6 +7,7 @@
  *   - GET    /daymark/v1/subscriptions
  *   - DELETE /daymark/v1/subscriptions/{id}
  *   - POST   /daymark/v1/subscriptions/{id}/refresh
+ *   - POST   /daymark/v1/subscriptions/refresh
  *   - GET    /daymark/v1/subscriptions/export
  *   - POST   /daymark/v1/subscriptions/import
  *
@@ -649,5 +650,100 @@ XML;
 		file_put_contents( $path, $body );
 
 		return $path;
+	}
+
+	/** A one-item RSS feed body, for refresh tests. */
+	private function one_item_feed( string $site ): string {
+		return '<?xml version="1.0"?><rss version="2.0"><channel><title>Example</title><link>' . $site . '</link>'
+			. '<item><title>A Post</title><link>' . $site . 'a-post/</link><guid>' . $site . 'a-post/</guid>'
+			. '<pubDate>Tue, 02 Jan 2024 03:04:05 +0000</pubDate><description>Body.</description></item>'
+			. '</channel></rss>';
+	}
+
+	/** Creates two active subscriptions with reachable feeds; returns their IDs. */
+	private function two_reachable_subscriptions(): array {
+		$subscriptions = new Daymark_Subscriptions();
+		$ids           = array();
+
+		foreach ( array( 'https://one.example/', 'https://two.example/' ) as $site ) {
+			$ids[] = $subscriptions->create(
+				array(
+					'site_url' => $site,
+					'feed_url' => $site . 'feed/',
+				)
+			);
+			$this->mock_response( $site . 'feed/', $this->one_item_feed( $site ), 'application/rss+xml; charset=UTF-8' );
+		}
+
+		return $ids;
+	}
+
+	/** POST /subscriptions/refresh checks every site and reports counts. */
+	public function test_refresh_all_checks_every_site() {
+		wp_set_current_user( $this->author_a );
+		$this->two_reachable_subscriptions();
+
+		$response = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/refresh' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame(
+			array(
+				'total'     => 2,
+				'refreshed' => 2,
+				'failed'    => 0,
+				'recent'    => 0,
+				'queued'    => 0,
+			),
+			$response->get_data()
+		);
+	}
+
+	/** A site inside its manual-refresh cooldown is skipped and counted as recent. */
+	public function test_refresh_all_counts_recently_checked_sites() {
+		wp_set_current_user( $this->author_a );
+		$ids = $this->two_reachable_subscriptions();
+		( new Daymark_Subscriptions() )->update( $ids[0], array( 'last_manual_refresh_at' => current_time( 'mysql', true ) ) );
+
+		$data = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/refresh' ) )->get_data();
+
+		$this->assertSame( 1, $data['refreshed'] );
+		$this->assertSame( 1, $data['recent'] );
+	}
+
+	/** Sites left once the time budget runs out go to an immediate background poll. */
+	public function test_refresh_all_queues_sites_past_the_time_budget() {
+		wp_set_current_user( $this->author_a );
+		$this->two_reachable_subscriptions();
+		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
+		add_filter( 'daymark_subscription_refresh_all_time_budget', '__return_zero' );
+
+		$data = rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/refresh' ) )->get_data();
+
+		remove_filter( 'daymark_subscription_refresh_all_time_budget', '__return_zero' );
+		$this->assertSame( 0, $data['refreshed'] );
+		$this->assertSame( 2, $data['queued'] );
+		$this->assertNotFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ) );
+	}
+
+	/** One refresh of every site spends one rate-limit charge, not one per site. */
+	public function test_refresh_all_spends_one_rate_limit_charge() {
+		wp_set_current_user( $this->author_a );
+		$this->two_reachable_subscriptions();
+
+		// ACTION_SUBSCRIPTION_REFRESH allows 10 requests per window.
+		for ( $i = 0; $i < 10; $i++ ) {
+			$this->assertSame( 200, rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/refresh' ) )->get_status() );
+		}
+
+		$this->assertSame( 429, rest_do_request( $this->request( 'POST', '/daymark/v1/subscriptions/refresh' ) )->get_status() );
+	}
+
+	/** The refresh-all route needs a logged-in user. */
+	public function test_refresh_all_rejects_unauthenticated_requests() {
+		wp_set_current_user( 0 );
+
+		$response = rest_do_request( new WP_REST_Request( 'POST', '/daymark/v1/subscriptions/refresh' ) );
+
+		$this->assertSame( 401, $response->get_status() );
 	}
 }

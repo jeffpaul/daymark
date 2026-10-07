@@ -194,8 +194,8 @@ class Test_Rest_Subscription_Post_Oembed extends WP_UnitTestCase {
 				'feed_url' => 'https://example.com/feed4/',
 			)
 		);
-		$first  = $this->create_subscription_post( $subscription_id, 'https://first.example/post' );
-		$second = $this->create_subscription_post( $subscription_id, 'https://second.example/post' );
+		$first           = $this->create_subscription_post( $subscription_id, 'https://first.example/post' );
+		$second          = $this->create_subscription_post( $subscription_id, 'https://second.example/post' );
 
 		$this->assertSame( 200, rest_do_request( $this->request_for( $first ) )->get_status(), 'The first lookup fits the allowance' );
 		$this->assertSame( 200, rest_do_request( $this->request_for( $first ) )->get_status(), 'Asking again is served from cache, for free' );

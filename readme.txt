@@ -140,11 +140,11 @@ No. Every Mark is a standard post with post meta, so your content is fully porta
 
 = What happens if I close the app or lose connection while composing? =
 
-Your work is always safe. The composer autosaves your caption, media, alt text, and destination choices as you go, so a closed tab, a phone call, or switching apps doesn't lose it. With a connection, it saves straight to a real draft on your site — reopen Daymark and it's waiting under Drafts on Home. Without one, it saves to your device instead, shows up under Pending on Home, and publishes or saves itself automatically the moment you're back online — you don't need to do anything.
+Your work is always safe. The composer autosaves your caption, media, alt text, and destination choices as you go, so a closed tab, a phone call, or switching apps doesn't lose it. With a connection, it saves straight to a real draft on your site — reopen Daymark and it's waiting under Drafts on the Me screen (Home shows how many you have). Without one, it saves to your device instead, shows up under Pending on Home, and publishes or saves itself automatically the moment you're back online — you don't need to do anything.
 
 = Why doesn't Publish make me wait for a big video or gallery to finish uploading? =
 
-It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. A Pending row on Home shows it while that's still in progress, and it moves into your normal Recent Marks (or Drafts) the moment it's done — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
+It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. It shows at the top of your Timeline right away, marked "Uploading…", and becomes the finished post the moment the upload is done (a draft shows under Pending on Home, then moves to Drafts) — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
 
 = Can I share a photo to Daymark from another app? =
 
@@ -152,7 +152,7 @@ Yes, once you've added Daymark to your home screen (required for the share sheet
 
 = Can I create a Mark while offline? =
 
-Yes. Compose, add media, and tap Publish (or Save as Draft) with no connection at all — Daymark saves it on your device and shows the same confirmation screen either way. It publishes automatically as soon as you're back online; until then you'll find it under Pending on Home. This covers a session already open when you go offline (or start one offline); loading `/daymark` for the very first time with zero connectivity doesn't work yet — that needs a network for the initial page load.
+Yes. Compose, add media, and tap Publish (or Save as Draft) with no connection at all — Daymark saves it on your device and shows the same confirmation screen either way. It publishes automatically as soon as you're back online; until then it waits at the top of your Timeline, marked Offline (a draft waits under Pending on Home). This covers a session already open when you go offline (or start one offline); loading `/daymark` for the very first time with zero connectivity doesn't work yet — that needs a network for the initial page load.
 
 = Does it work offline? =
 
@@ -160,7 +160,7 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Screenshots ==
 
-1. Home — the phone-first app shell: drafts and recent Marks in reach, one-tap publishing.
+1. Home — the phone-first app shell: your Timeline, a count of your drafts, one-tap publishing.
 2. Create — pick media, add a caption, and get AI-suggested alt text for each image, editable before you publish.
 3. Publish — your site is always the destination; file the Mark under categories (remembered per type), or save as a draft.
 4. Notifications — replies from syndicated copies flow back automatically, labeled by source.

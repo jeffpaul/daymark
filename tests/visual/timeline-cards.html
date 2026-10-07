@@ -218,7 +218,7 @@
 			label: 'Audio / podcast',
 			html: (title, meta, excerpt) => `
 				${leadCol('T', 'audio')}
-				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--audio">
+				<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--audio">
 					<span class="daymark-recent__thumbwrap">
 						<img class="daymark-recent__thumb" src="${swatch('%23ffd9a8')}" alt="" />
 						${badge('audio', PLAY_GLYPH)}
@@ -229,7 +229,7 @@
 						<span class="daymark-recent__excerpt">${esc(excerpt)}</span>
 					</span>
 					${footer('A Podcast')}
-				</button>`,
+				</div>`,
 		},
 		note: {
 			label: 'Short note (typography-first)',
@@ -247,7 +247,7 @@
 			label: 'Article (subscription, standard format, long excerpt)',
 			html: (title, meta, excerpt) => `
 				${leadCol('N', 'article')}
-				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--article">
+				<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--article">
 					<span class="daymark-recent__thumbwrap">
 						<img class="daymark-recent__thumb" src="${swatch('%23666666')}" alt="" />
 					</span>
@@ -257,20 +257,20 @@
 						<span class="daymark-recent__excerpt">${esc(excerpt)}</span>
 					</span>
 					${footer('Someone Else')}
-				</button>`,
+				</div>`,
 		},
 		link: {
 			label: 'Link (subscription, standard format, short excerpt, no image)',
 			html: (title, meta, excerpt) => `
 				${leadCol('L', 'link')}
-				<button type="button" class="daymark-recent__item daymark-recent__item--button daymark-recent__item--link">
+				<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--link">
 					<span class="daymark-recent__body">
 						<span class="daymark-recent__title">${esc(title)}</span>
 						<span class="daymark-recent__meta">${esc(meta)}</span>
 						<span class="daymark-recent__excerpt">${esc(excerpt)}</span>
 					</span>
 					${footer('Someone Else')}
-				</button>`,
+				</div>`,
 		},
 		mixed: {
 			label: 'Mixed media (Mark only)',
