@@ -179,11 +179,22 @@ class Daymark_Notifications {
 			$dated_items[] = $like;
 		}
 
-		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
+		$with_issues = $this->get_subscriptions_with_issues();
+
+		if ( count( $with_issues ) > 1 ) {
+			// Several failing sites (common after a large import) become one
+			// summary item, so they don't push real replies down the list.
 			$dated_items[] = array(
-				'timestamp' => $this->subscription_issue_timestamp( $subscription ),
-				'item'      => $this->format_subscription_issue( $subscription ),
+				'timestamp' => max( array_map( array( $this, 'subscription_issue_timestamp' ), $with_issues ) ),
+				'item'      => $this->format_subscription_issues_summary( $with_issues ),
 			);
+		} else {
+			foreach ( $with_issues as $subscription ) {
+				$dated_items[] = array(
+					'timestamp' => $this->subscription_issue_timestamp( $subscription ),
+					'item'      => $this->format_subscription_issue( $subscription ),
+				);
+			}
 		}
 
 		foreach ( $this->get_undismissed_plugin_overlaps() as $plugin_key => $overlap ) {
@@ -314,6 +325,41 @@ class Daymark_Notifications {
 		if ( $user_id ) {
 			update_user_meta( $user_id, self::SEEN_META, time() );
 		}
+	}
+
+	/**
+	 * One notification item summarizing several failing subscriptions:
+	 * how many, the first few site names, and (for someone who can manage
+	 * subscriptions) a link to Settings -> Daymark's Failing view.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Subscriptions with issues.
+	 * @return array<string, mixed>
+	 */
+	private function format_subscription_issues_summary( array $subscriptions ): array {
+		$names = array();
+
+		foreach ( array_slice( $subscriptions, 0, 3 ) as $subscription ) {
+			$title   = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+			$names[] = '' !== $title ? $title : esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) );
+		}
+
+		$latest = max( array_map( array( $this, 'subscription_issue_timestamp' ), $subscriptions ) );
+
+		return array(
+			'type'                     => 'feed_issues',
+			'count'                    => count( $subscriptions ),
+			'site_titles'              => $names,
+			'last_checked_at'          => $latest > 0 ? gmdate( 'Y-m-d H:i:s', $latest ) : '',
+			'last_checked_at_relative' => $latest > 0
+				/* translators: %s: human-readable time difference, e.g. "5 minutes". */
+				? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $latest ) )
+				: '',
+			'manage_url'               => current_user_can( Daymark_Admin_Subscriptions::CAPABILITY )
+				? esc_url_raw( add_query_arg( 'view', 'failing', Daymark_Admin_Subscriptions::tab_url( 'subscriptions' ) ) )
+				: '',
+		);
 	}
 
 	/**
@@ -879,17 +925,7 @@ class Daymark_Notifications {
 		// Real connector plugins can surface unverified or unmoderated
 		// replies; the default is to approve them, but a stricter site can
 		// route imports through moderation instead.
-		/**
-		 * Filters whether an imported external response is approved.
-		 *
-		 * @since 0.7.0
-		 *
-		 * @param int    $approved Approval status passed to wp_insert_comment() (1 = approved).
-		 * @param int    $post_id  Mark post ID.
-		 * @param string $network  Network ID, e.g. 'bluesky'.
-		 * @param array<string, mixed> $response The response being imported.
-		 */
-		$approved = (int) apply_filters( 'daymark_comment_import_approved', 1, $post_id, $network, $response );
+		$approved = Daymark_Settings::imported_reply_approved( $post_id, $network, $response );
 
 		$comment_id = wp_insert_comment(
 			array(

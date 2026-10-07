@@ -1911,6 +1911,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function location_reverse_geocode( WP_REST_Request $request ) {
+		// With location capture off, no coordinates should be sent anywhere,
+		// including to the geocoder.
+		if ( ! Daymark_Settings::capture_location() ) {
+			return new WP_Error(
+				'daymark_location_capture_off',
+				__( 'Location capture is turned off on this site.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_LOCATION_LOOKUP );
 
 		if ( is_wp_error( $rate ) ) {

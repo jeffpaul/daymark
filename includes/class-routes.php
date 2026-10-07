@@ -575,6 +575,17 @@ class Daymark_Routes {
 			'ai'                     => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),
+				// Whether the composer may ask for tags and alt text on its
+				// own; when false, AI only runs when an AI button is tapped.
+				'autoSuggest'   => Daymark_Settings::ai_auto_suggest(),
+			),
+			// Where a published Mark also reaches through an active
+			// federation plugin, for the Publish screen's "Your site is the
+			// destination" note.
+			'reach'                  => self::federation_reach(),
+			// Whether starting a Check In may ask for the device's location.
+			'capture'                => array(
+				'location' => Daymark_Settings::capture_location(),
 			),
 			'notifications'          => array(
 				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
@@ -591,7 +602,8 @@ class Daymark_Routes {
 			// Settings -> Daymark needs Daymark_Admin_Subscriptions::CAPABILITY, so
 			// anyone without it gets no link (an empty string) rather than one
 			// that lands on a permission error, and no in-app Unsubscribe.
-			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::page_url() ) : '',
+			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'subscriptions' ) ) : '',
+			'adminConnectorsUrl'     => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'connectors' ) ) : '',
 			'canManageSubscriptions' => $can_manage_subscriptions,
 			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
 			// The newest Timeline item this user has seen (or null), so
@@ -604,6 +616,37 @@ class Daymark_Routes {
 			'pendingDraftId'         => $pending_draft_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
+	}
+
+	/**
+	 * Short labels for where a published Mark also goes through an active
+	 * federation plugin (ActivityPub, ATmosphere), in display order.
+	 *
+	 * @return string[]
+	 */
+	private static function federation_reach(): array {
+		$reach = array();
+
+		if ( Daymark_Plugin_Detector::matches(
+			array(
+				'slugs'     => array( 'activitypub' ),
+				'constants' => array( 'ACTIVITYPUB_PLUGIN_VERSION' ),
+			)
+		) ) {
+			$reach[] = __( 'your fediverse followers', 'daymark' );
+		}
+
+		if ( Daymark_Plugin_Detector::matches(
+			array(
+				'slugs'     => array( 'wordpress-atmosphere' ),
+				'classes'   => array( 'Atmosphere\\Publisher' ),
+				'constants' => array( 'ATMOSPHERE_VERSION' ),
+			)
+		) ) {
+			$reach[] = __( 'Bluesky', 'daymark' );
+		}
+
+		return $reach;
 	}
 
 	/**

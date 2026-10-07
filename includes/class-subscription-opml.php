@@ -100,6 +100,62 @@ class Daymark_Subscription_OPML {
 	}
 
 	/**
+	 * A public OPML blogroll (Daymark_Blogroll): plain OPML 2.0 with no
+	 * Daymark-specific attributes, one outline per given subscription.
+	 *
+	 * A subscription read through the WordPress REST API or the Friends
+	 * plugin stores an address only Daymark can use as its feed, so those
+	 * list the site's standard `/feed/` address instead, which other feed
+	 * readers understand.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param array<int, array<string, mixed>> $subscriptions Subscription rows to list.
+	 * @param string                           $title         Document title.
+	 * @return string A complete OPML XML document.
+	 */
+	public function export_public( array $subscriptions, string $title ): string {
+		$dom               = new DOMDocument( '1.0', 'UTF-8' );
+		$dom->formatOutput = true; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- DOMDocument's own native property name, not ours to rename.
+		$opml              = $dom->createElement( 'opml' );
+		$opml->setAttribute( 'version', '2.0' );
+		$dom->appendChild( $opml );
+
+		$head = $dom->createElement( 'head' );
+		$opml->appendChild( $head );
+		$head->appendChild( $dom->createElement( 'title' ) )->appendChild( $dom->createTextNode( $title ) );
+		$head->appendChild( $dom->createElement( 'dateCreated', gmdate( 'D, d M Y H:i:s \G\M\T' ) ) );
+
+		$body = $dom->createElement( 'body' );
+		$opml->appendChild( $body );
+
+		foreach ( $subscriptions as $subscription ) {
+			$site_url = (string) ( $subscription['site_url'] ?? '' );
+			$feed_url = (string) ( $subscription['feed_url'] ?? '' );
+			$source   = sanitize_key( (string) ( $subscription['source_type'] ?? 'feed' ) );
+
+			if ( in_array( $source, array( 'wordpress', 'friends' ), true ) && '' !== $site_url ) {
+				$feed_url = trailingslashit( $site_url ) . 'feed/';
+			}
+
+			$site_title = trim( (string) ( $subscription['site_title'] ?? '' ) );
+			$label      = '' !== $site_title ? $site_title : $site_url;
+
+			$outline = $dom->createElement( 'outline' );
+			$outline->setAttribute( 'type', 'rss' );
+			$outline->setAttribute( 'text', $label );
+			$outline->setAttribute( 'title', $label );
+			$outline->setAttribute( 'xmlUrl', $feed_url );
+			$outline->setAttribute( 'htmlUrl', $site_url );
+			$body->appendChild( $outline );
+		}
+
+		$xml = $dom->saveXML();
+
+		return false !== $xml ? $xml : '';
+	}
+
+	/**
 	 * Build one subscription's `<outline>` element.
 	 *
 	 * @param DOMDocument          $dom          Owning document (element

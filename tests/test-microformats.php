@@ -343,6 +343,7 @@ class Test_Microformats extends WP_UnitTestCase {
 			)
 		);
 
+		update_post_meta( $this->daymark_id, '_daymark_primary_type', 'checkin' );
 		add_filter( 'daymark_publish_location_publicly', '__return_true' );
 		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
 		remove_filter( 'daymark_publish_location_publicly', '__return_true' );
@@ -368,11 +369,38 @@ class Test_Microformats extends WP_UnitTestCase {
 			)
 		);
 
+		update_post_meta( $this->daymark_id, '_daymark_primary_type', 'checkin' );
 		update_option( 'daymark_publish_location_publicly', '1' );
 		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
 		delete_option( 'daymark_publish_location_publicly' );
 
 		$this->assertStringContainsString( 'class="p-geo h-geo"', $markup );
+	}
+
+	/**
+	 * Coordinates are only ever published for a Check In: with the setting
+	 * on, a non-Check-In Mark that somehow carries a stored location (one
+	 * captured before location became Check-In-only) still gets no h-geo
+	 * markup.
+	 */
+	public function test_entry_metadata_omits_location_markup_for_non_checkin() {
+		update_post_meta(
+			$this->daymark_id,
+			'_daymark_location',
+			wp_json_encode(
+				array(
+					'lat' => 51.5074,
+					'lng' => -0.1278,
+				)
+			)
+		);
+		update_post_meta( $this->daymark_id, '_daymark_primary_type', 'image' );
+
+		update_option( 'daymark_publish_location_publicly', '1' );
+		$markup = $this->microformats->entry_metadata_markup( $this->daymark_id );
+		delete_option( 'daymark_publish_location_publicly' );
+
+		$this->assertStringNotContainsString( 'p-geo', $markup );
 	}
 
 	/**

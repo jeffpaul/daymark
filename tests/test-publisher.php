@@ -569,7 +569,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = (int) $publisher->publish(
 			array(
 				'caption'           => 'With location',
-				'primary_type'      => 'note',
+				'primary_type'      => 'checkin',
 				'location_lat'      => 40.7128,
 				'location_lng'      => -74.006,
 				'location_accuracy' => 15.5,
@@ -583,13 +583,44 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertSame( 15.5, $location['accuracy'] );
 	}
 
+	/**
+	 * A location is kept for Check Ins only: one sent with any other type of
+	 * Mark is dropped, and no weather lookup is made for it.
+	 */
+	public function test_location_dropped_for_non_checkin_mark() {
+		$request_made = false;
+		$http_filter  = static function ( $preempt, $args, $url ) use ( &$request_made ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				$request_made = true;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $http_filter, 10, 3 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'A note with a location',
+				'primary_type' => 'note',
+				'location_lat' => 40.7128,
+				'location_lng' => -74.006,
+			)
+		);
+		remove_filter( 'pre_http_request', $http_filter, 10 );
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_location', true ) );
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_weather', true ) );
+		$this->assertFalse( $request_made, 'No outbound weather request was made' );
+	}
+
 	/** An out-of-range lat/lng is silently dropped, never stored, never an error. */
 	public function test_out_of_range_location_silently_dropped() {
 		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Bad location',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 200,
 				'location_lng' => -74.006,
 			)
@@ -1198,7 +1229,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = (int) $publisher->publish(
 			array(
 				'caption'      => 'Weather test',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1228,7 +1259,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Weather failure test',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1264,7 +1295,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Weather non-200 test',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1300,7 +1331,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Weather malformed test',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1322,7 +1353,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Location capture disabled',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1351,7 +1382,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$publisher->publish(
 			array(
 				'caption'      => 'No weather without location',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1380,7 +1411,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Weather capture disabled',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1443,7 +1474,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Location capture disabled via option',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1472,7 +1503,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$publisher->publish(
 			array(
 				'caption'      => 'Weather capture disabled via option',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -1533,7 +1564,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = $publisher->publish(
 			array(
 				'caption'      => 'Filter wins over option',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)
@@ -2041,7 +2072,7 @@ class Test_Publisher extends WP_UnitTestCase {
 		$post_id   = (int) $publisher->publish(
 			array(
 				'caption'      => 'Weather bridge test',
-				'primary_type' => 'note',
+				'primary_type' => 'checkin',
 				'location_lat' => 40.7128,
 				'location_lng' => -74.006,
 			)

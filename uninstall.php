@@ -33,6 +33,15 @@ delete_option( 'daymark_redirect_rule_added' );
 delete_option( 'daymark_nav_routes_added' );
 delete_option( 'daymark_subscriptions_db_version' );
 delete_option( 'daymark_bridgy_fed_bridged' );
+// Settings -> Daymark's own settings (Daymark_Settings::options()).
+delete_option( 'daymark_capture_location' );
+delete_option( 'daymark_capture_weather' );
+delete_option( 'daymark_capture_camera_metadata' );
+delete_option( 'daymark_publish_location_publicly' );
+delete_option( 'daymark_hold_imported_replies' );
+delete_option( 'daymark_ai_auto_suggest' );
+delete_option( 'daymark_subscription_poll_interval' );
+delete_option( 'daymark_blogroll_public' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,

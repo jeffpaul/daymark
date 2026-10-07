@@ -1178,10 +1178,16 @@
 	// #create shortcut, an empty-state "Start one" link) with one guard
 	// rather than needing a call at each entry point.
 	//
+	// Location is asked for only when the new Mark is a Check In (its place
+	// is the point of it) and only when the site allows location capture
+	// (Settings -> Daymark -> Data & privacy, sent as config.capture). No
+	// other kind of Mark captures a location, and the server drops one sent
+	// for any other type.
+	//
 	// "Don't make users fill those in": no loading state, no error, no
 	// retry prompt — geolocation denial/timeout/absence just leaves
-	// state.location unset, exactly like every other quiet-capture signal
-	// in this feature.
+	// state.location unset, and the author types or searches for the place
+	// instead.
 	function maybeBeginQuietCapture() {
 		if (state.editing) {
 			return;
@@ -1189,7 +1195,13 @@
 		if (!state.capturedAt) {
 			state.capturedAt = new Date().toISOString();
 		}
-		if (state.locationRequested || !('geolocation' in navigator)) {
+		const locationAllowed = !!(config.capture && config.capture.location);
+		if (
+			'checkin' !== effectiveType() ||
+			!locationAllowed ||
+			state.locationRequested ||
+			!('geolocation' in navigator)
+		) {
 			return;
 		}
 		state.locationRequested = true;
@@ -2282,9 +2294,16 @@
 	let quietTagsTimer = null;
 	let quietTagsInFlight = false;
 
+	// Whether the composer may send the draft to the AI provider without a
+	// tap (Settings -> Daymark -> Data & privacy, "Suggest with AI
+	// automatically"). When false, AI only runs from an AI button.
+	function aiAutoSuggest() {
+		return !!(config.ai && config.ai.available && config.ai.autoSuggest !== false);
+	}
+
 	function scheduleQuietTagSuggestion() {
-		if (state.tagsEdited || state.tags.length) {
-			return; // Author already has tags — nothing quiet to add.
+		if (!aiAutoSuggest() || state.tagsEdited || state.tags.length) {
+			return; // Not allowed, or the author already has tags.
 		}
 		clearTimeout(quietTagsTimer);
 		quietTagsTimer = setTimeout(runQuietTagSuggestion, QUIET_TAGS_DEBOUNCE_MS);
@@ -7687,10 +7706,10 @@
 		},
 
 		bindEvents() {
-			// Quietly capture date/time + optional location the moment a
-			// fresh composing session begins — a no-op when resuming a draft
-			// (state.editing is already set by then) or later in the same
-			// session (state.capturedAt is already set). See
+			// Quietly capture date/time (and, for a Check In, the device's
+			// location) the moment a fresh composing session begins — a no-op
+			// when resuming a draft (state.editing is already set by then) or
+			// later in the same session (state.capturedAt is already set). See
 			// maybeBeginQuietCapture()'s own docblock for why this single call
 			// site covers every entry path into a new Mark.
 			maybeBeginQuietCapture();
@@ -7858,9 +7877,11 @@
 					url: isImage ? URL.createObjectURL(file) : '',
 					kind: (file.type || '').split('/')[0] || 'file',
 					alt: '',
-					// Only formats AI vision providers can read (#481).
+					// Only formats AI vision providers can read (#481), and
+					// only when the site lets the composer ask on its own
+					// (aiAutoSuggest()); otherwise "Suggest with AI" stays a tap.
 					altStatus:
-						isImage && VISION_IMAGE_TYPES.includes(file.type) && config.ai && config.ai.available
+						isImage && VISION_IMAGE_TYPES.includes(file.type) && aiAutoSuggest()
 							? 'loading'
 							: 'idle',
 					altEdited: false,
@@ -10733,12 +10754,7 @@
 				? '' // populated below
 				: `<li class="daymark-dest daymark-dest--locked">
 					<span class="daymark-dest__row"><span class="daymark-dest__info">
-						<span class="daymark-recent__meta">${esc(
-							__(
-								'No social networks connected yet — your site is the only destination. Connect one via a Daymark connector plugin (Settings → Connectors).',
-								'daymark'
-							)
-						)}</span>
+						<span class="daymark-recent__meta">${noDestinationsNote()}</span>
 					</span></span>
 				</li>`;
 
@@ -11058,6 +11074,31 @@
 		},
 	};
 
+	// The Publish screen's note when no destination connector is installed.
+	// Your site is the destination; this says where a Mark also goes
+	// through an active federation plugin (config.reach), and, for someone
+	// who can set one up, links to the Connectors tab.
+	function noDestinationsNote() {
+		const reach = Array.isArray(config.reach) ? config.reach : [];
+		let text = __('Your site is the destination.', 'daymark');
+		if (reach.length) {
+			text +=
+				' ' +
+				sprintf(
+					/* translators: %s: a list such as "your fediverse followers, Bluesky" */
+					__('It also reaches %s.', 'daymark'),
+					reach.join(', ')
+				);
+		}
+		let html = esc(text);
+		if (!reach.length && config.adminConnectorsUrl) {
+			html += ` <a href="${esc(config.adminConnectorsUrl)}">${esc(
+				__('Reach the fediverse and Bluesky', 'daymark')
+			)}</a>`;
+		}
+		return html;
+	}
+
 	// --- Screen: Success ---
 
 	// "Tap Publish. Immediately appears in your timeline. Uploads continue
@@ -11147,7 +11188,9 @@
 					? `<ul class="daymark-syndication" aria-label="${esc(
 							__('Syndication status', 'daymark')
 					  )}">${rows}</ul>`
-					: '<p class="daymark-note-card__meta">' + esc(__('No social destinations selected.', 'daymark')) + '</p>'
+					: connectors.length
+					? '<p class="daymark-note-card__meta">' + esc(__('No social destinations selected.', 'daymark')) + '</p>'
+					: ''
 			}`;
 		},
 
@@ -11342,7 +11385,12 @@
 		// comment is (it's a feed-health alert, not a reply) — it stays
 		// visible regardless of the source filter (issue #258).
 		isIssueItem(item) {
-			return 'dead_feed' === item.type || 'feed_issue' === item.type || 'plugin_overlap' === item.type;
+			return (
+				'dead_feed' === item.type ||
+				'feed_issue' === item.type ||
+				'feed_issues' === item.type ||
+				'plugin_overlap' === item.type
+			);
 		},
 
 		// The source filter's options, derived from what's actually in this
@@ -11449,6 +11497,9 @@
 		renderItem(item) {
 			if ('dead_feed' === item.type || 'feed_issue' === item.type) {
 				return this.renderSubscriptionIssueItem(item);
+			}
+			if ('feed_issues' === item.type) {
+				return this.renderSubscriptionIssuesSummary(item);
 			}
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
@@ -11580,6 +11631,45 @@
 								__('→ Manage subscriptions', 'daymark')
 						  )}</a>
 				</div>`
+						: ''
+				}
+			</article>`;
+		},
+
+		// Several followed sites failing at once (often after a large
+		// import), summarized as one card instead of one per site. Links to
+		// Settings -> Daymark's Failing view for someone who can manage
+		// subscriptions (item.manage_url is empty for anyone else).
+		renderSubscriptionIssuesSummary(item) {
+			const count = Number(item.count) || 0;
+			const names = Array.isArray(item.site_titles) ? item.site_titles.filter(Boolean) : [];
+			const more = count - names.length;
+			let list = names.join(', ');
+			if (more > 0) {
+				list = sprintf(
+					/* translators: 1: a list of site names, 2: how many more sites */
+					_n('%1$s and %2$d more', '%1$s and %2$d more', more, 'daymark'),
+					list,
+					more
+				);
+			}
+			const when = item.last_checked_at ? relativeTime(item.last_checked_at) : '';
+			return `
+			<article class="daymark-note-card">
+				<span class="daymark-chip daymark-chip--danger">${esc(__('Feed issues', 'daymark'))}</span>
+				<p class="daymark-note-card__text">${esc(
+					sprintf(
+						/* translators: %d: number of followed sites that aren't updating */
+						_n("%d site you follow isn't updating.", "%d sites you follow aren't updating.", count, 'daymark'),
+						count
+					)
+				)}</p>
+				${list ? `<p class="daymark-note-card__meta">${esc(list)}${when ? ' &middot; ' + esc(when) : ''}</p>` : ''}
+				${
+					item.manage_url
+						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
+								item.manage_url
+						  )}">${esc(__('→ See which sites', 'daymark'))}</a></div>`
 						: ''
 				}
 			</article>`;
