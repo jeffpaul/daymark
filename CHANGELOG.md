@@ -35,7 +35,7 @@ can't act on them.
 - Import / Export can now import your site's old Links Manager list, the classic WordPress blogroll, when it has one. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button. ([#487](https://github.com/jeffpaul/daymark/pull/487))
-- Settings -> Daymark -> General can now set which destinations and categories each type of Mark starts with. Before, destinations could only be changed in code, and categories had no site default. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- Settings -> Daymark -> General can now set which destinations and categories each type of Mark starts with. Before, destinations could only be changed in code, and categories had no site default. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 
 ### Changed
 
@@ -52,7 +52,7 @@ can't act on them.
 - The Connectors tab now starts with the two plugins most sites need, Webmention and ActivityPub, and lists the others under Optional. Each card has a short summary, with details under More. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - With no social destination connected, the Publish screen now says your site is the destination and where the Mark also reaches through an active fediverse or Bluesky plugin. Before, it said "No social networks connected yet". ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#487](https://github.com/jeffpaul/daymark/pull/487))
-- When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 
 ### Fixed
 
@@ -64,7 +64,7 @@ can't act on them.
 - When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 - Unchecking a feed in "Choose from available feeds" no longer unfollows it unless you also tick "Also unfollow the feeds I unchecked". Before, one stray click could unfollow a site and move its saved posts to Trash. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#487](https://github.com/jeffpaul/daymark/pull/487))
-- If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 
 ## [0.19.0] - 2026-10-02
 
