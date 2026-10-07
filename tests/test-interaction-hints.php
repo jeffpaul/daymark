@@ -47,6 +47,14 @@ class Test_Interaction_Hints extends WP_UnitTestCase {
 		$this->assertCount( 1, get_user_meta( $this->user_id, Daymark_Interaction_Hints::META_KEY, false ) );
 	}
 
+	/** The launcher and Check In hints are known keys too. */
+	public function test_launcher_and_checkin_hints_are_known() {
+		Daymark_Interaction_Hints::mark_seen( $this->user_id, 'checkin' );
+		Daymark_Interaction_Hints::mark_seen( $this->user_id, 'launcher' );
+
+		$this->assertSame( array( 'launcher', 'checkin' ), Daymark_Interaction_Hints::get_seen( $this->user_id ) );
+	}
+
 	/** Seen keys come back in the fixed KEYS order, whatever order they were seen in. */
 	public function test_seen_keys_follow_known_key_order() {
 		Daymark_Interaction_Hints::mark_seen( $this->user_id, 'share' );

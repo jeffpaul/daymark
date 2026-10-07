@@ -514,7 +514,7 @@ h2[tabindex='-1']:focus {
 	transition: transform 0.2s ease;
 }
 
-/* Slides fully out of view while scrolling down the Recent Marks list,
+/* Slides fully out of view while scrolling down the Timeline,
    reclaiming its height for content; JS brings it back on scroll-up or
    when focus lands on one of its controls (see bindFooterAutoHide()). */
 .daymark-homefooter.is-footer-hidden {
@@ -698,6 +698,26 @@ h2[tabindex='-1']:focus {
 	transition-delay: 0.26s;
 }
 
+/* Each bubble's type name, under its circle while the launcher is open, so
+   Video, Audio, and Check In don't have to be guessed from their icons.
+   The labels sit at different heights along the arc, so neighbours never
+   overlap. aria-hidden: the bubble's own aria-label already names it. */
+.daymark-launcher__label {
+	position: absolute;
+	top: calc(100% + 3px);
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.4;
+	white-space: nowrap;
+	pointer-events: none;
+}
+
 /* Closing is quicker and never staggered — snappy, not delightful. */
 .daymark-launcher:not(.is-open) .daymark-launcher__bubble {
 	transition: transform 0.16s ease-in, opacity 0.14s ease-in;
@@ -790,7 +810,7 @@ h2[tabindex='-1']:focus {
 	border-color: currentColor;
 }
 
-/* --- Home: recent Marks --- */
+/* --- Home: Timeline --- */
 .daymark-recent {
 	display: flex;
 	flex-direction: column;
@@ -805,6 +825,61 @@ h2[tabindex='-1']:focus {
 
 /* Home's one-line pointer to your drafts ("3 drafts ›", HomeScreen in
    app.js). The drafts themselves live on the Me screen. */
+/* Home's Install card (refreshInstallUi(), app.js): shown while the app
+   isn't installed and this browser can install it, until "Not now". */
+.daymark-installcard {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--daymark-spacing-md);
+	padding: var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
+}
+
+.daymark-installcard__icon {
+	flex: none;
+	border-radius: 10px;
+}
+
+.daymark-installcard__text {
+	flex: 1;
+	min-width: 0;
+}
+
+.daymark-installcard__title {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-installcard__body {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 14px;
+	line-height: 1.45;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-installcard__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	margin-top: var(--daymark-spacing-sm);
+}
+
+.daymark-installcard__btn {
+	width: auto;
+	padding: 0 var(--daymark-spacing-lg);
+}
+
+.daymark-installcard .daymark-btn--text {
+	font: inherit;
+	font-size: 14px;
+	cursor: pointer;
+}
+
 .daymark-draftsrow {
 	display: flex;
 	align-items: center;

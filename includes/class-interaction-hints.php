@@ -31,11 +31,12 @@ class Daymark_Interaction_Hints {
 
 	/**
 	 * Every hint key the app shell knows. Must match the keys of
-	 * INTERACTION_HINTS in assets/app.js.
+	 * INTERACTION_HINTS in assets/app.js. `launcher` and `checkin` (0.20.0)
+	 * introduce the + New Mark launcher and the Check In composer.
 	 *
 	 * @var string[]
 	 */
-	public const KEYS = array( 'like', 'comment', 'repost', 'bookmark', 'external', 'share' );
+	public const KEYS = array( 'like', 'comment', 'repost', 'bookmark', 'external', 'share', 'launcher', 'checkin' );
 
 	/**
 	 * Whether a hint key is one the app shell knows.

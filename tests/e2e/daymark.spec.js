@@ -30,7 +30,27 @@ const RUN_ID = `${Date.now()}`.slice(-6);
 // each test's fresh browser context still starts with every hint unseen,
 // as it did when the state lived only in localStorage. The cross-device
 // hint test below opens a second context without it on purpose.
+//
+// The launcher and Check In hints are marked seen, because they appear
+// before the launcher opens and before the Check In composer asks for
+// location, which would block every test that creates a Mark. Their own
+// test below adds showAllHints() to see them.
 function hideServerSeenHints() {
+	let stored;
+	Object.defineProperty(window, 'daymarkApp', {
+		configurable: true,
+		get: () => stored,
+		set: (value) => {
+			if (value && typeof value === 'object') {
+				value.interactionHintsSeen = ['launcher', 'checkin'];
+			}
+			stored = value;
+		},
+	});
+}
+
+// Init script for a test that needs every hint unseen, flow hints included.
+function showAllHints() {
 	let stored;
 	Object.defineProperty(window, 'daymarkApp', {
 		configurable: true,
@@ -700,6 +720,23 @@ test('first-time interaction hint shows once, never again on the same device', a
 	await bookmarkToggleAgain.click();
 	await expect(bookmarkToggleAgain).toHaveAttribute('aria-pressed', 'false');
 	await expect(page.locator('.daymark-sheet__panel--hint')).toHaveCount(0);
+});
+
+// The first tap on + explains the launcher before opening it, and each
+// bubble then shows its type's name.
+test('first tap on + shows the launcher hint, then opens the labeled launcher', async ({ page }) => {
+	await page.addInitScript(showAllHints);
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await page.locator('[data-action="new-mark"]').evaluate((el) => el.click());
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await expect(hint.locator('.daymark-hint-title')).toHaveText('New Mark');
+	await hint.locator('[data-hint-dismiss]').click();
+
+	await expect(page.locator('.daymark-launcher')).toHaveClass(/is-open/);
+	await expect(page.locator('[data-launcher-type="checkin"] .daymark-launcher__label')).toHaveText('Check In');
 });
 
 // Issue #322: a hint dismissed on one device stays dismissed on another.

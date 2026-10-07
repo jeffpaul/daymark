@@ -32,8 +32,10 @@ for as long as you want it there.
 - **Your camera is one tap away.** Choose Photo, Video, or Audio and
   Daymark opens your camera or microphone right away. Already have the
   shot? Grabbing it from your library is just as easy.
-- **Share to Daymark from anywhere on your phone**, using your phone's own
-  Share button — from Photos, Safari, or almost any other app.
+- **Share to Daymark from other apps on Android**, using your phone's own
+  Share button. (iPhone and iPad don't let web apps receive shares yet.)
+- **Follow the sites you love.** Their new posts appear in your Timeline
+  beside your own, ready to like, comment on, reblog, or bookmark.
 - **You never lose your work**, online or off — Daymark quietly saves as
   you go and publishes the moment you're back online.
 - **Tap Publish and move on with your day.** No spinner to wait out, even
@@ -54,13 +56,15 @@ and nothing to install.
 
 ## Getting started
 
-1. Install and activate Daymark like any WordPress plugin.
+1. Install and activate Daymark like any WordPress plugin. A notice in
+   wp-admin then links to the app and lists the first steps.
 2. Visit `/daymark` on your phone while logged in — for example,
    `https://yoursite.com/daymark`.
-3. Add it to your home screen so it opens like an app:
+3. Add it to your home screen so it opens like an app. Daymark's Home
+   screen shows an Install card until you do:
    - **iPhone (Safari):** tap Share, then **Add to Home Screen**.
-   - **Android (Chrome):** tap the **⋮** menu, then **Add to Home Screen**
-     (or **Install App**, when Chrome offers it).
+   - **Android (Chrome):** tap **Install** on the card, or the **⋮** menu,
+     then **Add to Home Screen**.
 
 That's the whole setup — there's no separate account to create, no
 subscription, and nothing else to configure before your first post.

@@ -77,6 +77,137 @@
 		}, 100);
 	}
 
+	// --- Install ---
+	//
+	// Chromium browsers (Android, desktop Chrome and Edge) fire
+	// `beforeinstallprompt` when the app can be installed; holding on to it
+	// lets an Install button show the browser's own prompt. Safari has no
+	// such event, so on an iPhone or iPad the Install card shows the
+	// Add to Home Screen steps instead. Listening this early (before any
+	// screen renders) matters, since the event can fire right at load.
+	let deferredInstallPrompt = null;
+
+	window.addEventListener('beforeinstallprompt', (event) => {
+		event.preventDefault();
+		deferredInstallPrompt = event;
+		refreshInstallUi();
+	});
+
+	window.addEventListener('appinstalled', () => {
+		deferredInstallPrompt = null;
+		refreshInstallUi();
+	});
+
+	function isInstalledApp() {
+		const standalone =
+			window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+		return standalone || window.navigator.standalone === true;
+	}
+
+	function isIosDevice() {
+		const ua = window.navigator.userAgent || '';
+		// iPadOS reports itself as a Mac; a touch screen tells them apart.
+		return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && window.navigator.maxTouchPoints > 1);
+	}
+
+	// 'prompt' (the browser can show its own install prompt), 'ios' (show
+	// the Add to Home Screen steps), or '' (already installed, or this
+	// browser can't install the app).
+	function installMethod() {
+		if (isInstalledApp()) {
+			return '';
+		}
+		if (deferredInstallPrompt) {
+			return 'prompt';
+		}
+		return isIosDevice() ? 'ios' : '';
+	}
+
+	function installCardDismissKey() {
+		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
+		return 'daymark-install-dismissed-u' + userId;
+	}
+
+	function installCardDismissed() {
+		try {
+			return !!window.localStorage.getItem(installCardDismissKey());
+		} catch (err) {
+			return false;
+		}
+	}
+
+	function dismissInstallCard() {
+		try {
+			window.localStorage.setItem(installCardDismissKey(), '1');
+		} catch (err) {
+			// Storage blocked: the card just comes back next visit.
+		}
+		refreshInstallUi();
+	}
+
+	function installCardBody(method) {
+		if (method === 'ios') {
+			return __(
+				'Add Daymark to your Home Screen to open it like an app: in Safari, tap the Share button, then Add to Home Screen.',
+				'daymark'
+			);
+		}
+		if (/Android/i.test(window.navigator.userAgent || '')) {
+			return __(
+				'Open Daymark from your home screen like an app, and share photos and links to it from other apps.',
+				'daymark'
+			);
+		}
+		return __('Open Daymark in its own window, like an app.', 'daymark');
+	}
+
+	const INSTALL_IOS_STEPS = {
+		glyph:
+			'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>',
+		title: __('Add Daymark to your Home Screen', 'daymark'),
+		body: __(
+			'In Safari, tap the Share button at the bottom of the screen, then tap Add to Home Screen. Daymark then opens from its own icon, like an app.',
+			'daymark'
+		),
+	};
+
+	// Show the browser's install prompt, or the iPhone steps.
+	async function startInstall(opener) {
+		if (deferredInstallPrompt) {
+			const prompt = deferredInstallPrompt;
+			deferredInstallPrompt = null;
+			try {
+				await prompt.prompt();
+				await prompt.userChoice;
+			} catch (err) {
+				// The prompt can only be shown once; nothing else to do.
+			}
+			refreshInstallUi();
+			return;
+		}
+		if (isIosDevice()) {
+			InteractionHintSheet.show(INSTALL_IOS_STEPS, opener);
+		}
+	}
+
+	// Show or hide the Home card and the Me row for the current state.
+	function refreshInstallUi() {
+		const method = installMethod();
+		const card = root && root.querySelector('[data-install-card]');
+		if (card) {
+			const show = method !== '' && !installCardDismissed();
+			card.hidden = !show;
+			if (show) {
+				card.querySelector('[data-install-body]').textContent = installCardBody(method);
+				card.querySelector('[data-install-start]').hidden = method !== 'prompt';
+			}
+		}
+		const row = root && root.querySelector('[data-me-install]');
+		if (row) {
+			row.hidden = method === '';
+		}
+	}
+
 	// --- App state ---
 	const state = {
 		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
@@ -2967,7 +3098,9 @@
 						__('New %s Mark', 'daymark'),
 						TYPE_LABELS[type]
 					)
-				)}">${launcherIcon(TYPE_ICONS[type])}</button>`
+				)}">${launcherIcon(TYPE_ICONS[type])}<span class="daymark-launcher__label" aria-hidden="true">${esc(
+					TYPE_LABELS[type]
+				)}</span></button>`
 		).join('');
 		const launcher = `<div class="daymark-launcher" data-launcher>
 			<div class="daymark-launcher__scrim" aria-hidden="true"></div>
@@ -3061,7 +3194,8 @@
 			if (screen._launcherOpen) {
 				screen.closeLauncher();
 			} else {
-				screen.openLauncher();
+				// The first time, explain the launcher, then open it.
+				maybeShowInteractionHintThen('launcher', btn, () => screen.openLauncher());
 			}
 		});
 
@@ -5669,6 +5803,19 @@
 					<h2 id="daymark-pending-heading" class="daymark-section-heading">${esc(__('Pending', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-pending-list></div>
 				</section>
+				<div class="daymark-installcard" data-install-card hidden>
+					<img class="daymark-installcard__icon" src="${esc(config.daymarkIconUrl || '')}" alt="" width="40" height="40" />
+					<div class="daymark-installcard__text">
+						<p class="daymark-installcard__title">${esc(__('Install Daymark', 'daymark'))}</p>
+						<p class="daymark-installcard__body" data-install-body></p>
+						<div class="daymark-installcard__actions">
+							<button type="button" class="daymark-btn daymark-btn--primary daymark-installcard__btn" data-install-start hidden>${esc(
+								__('Install', 'daymark')
+							)}</button>
+							<button type="button" class="daymark-btn--text" data-install-dismiss>${esc(__('Not now', 'daymark'))}</button>
+						</div>
+					</div>
+				</div>
 				<a class="daymark-draftsrow" href="#me" data-drafts-row hidden>
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
 					<span class="daymark-draftsrow__label" data-drafts-row-label></span>
@@ -5705,6 +5852,18 @@
 					meShowDrafts = true;
 				});
 			}
+			const installStart = root.querySelector('[data-install-start]');
+			if (installStart) {
+				installStart.addEventListener('click', () => startInstall(installStart));
+			}
+			const installDismiss = root.querySelector('[data-install-dismiss]');
+			if (installDismiss) {
+				installDismiss.addEventListener('click', () => {
+					dismissInstallCard();
+					announce(__('You can install Daymark later from the Me tab.', 'daymark'));
+				});
+			}
+			refreshInstallUi();
 			// Pull down from the top to refresh on a touch screen. With a
 			// mouse or keyboard, the header's refresh button does the same
 			// (CSS shows it only where the main pointer is precise).
@@ -5877,7 +6036,7 @@
 			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, false));
 		},
 
-		// (Re)load the first page of recent Marks and arm infinite scroll.
+		// (Re)load the first page of the Timeline and arm infinite scroll.
 		// `anchor` (a fresh Home load only — never pull-to-refresh, which
 		// asks for the newest posts) opens on the last-seen marker when it
 		// is in the most recent LAST_SEEN_SEARCH_LIMIT items.
@@ -7209,6 +7368,7 @@
 				</div>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
 					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
+					<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
 							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
@@ -7250,6 +7410,12 @@
 					navigate('#search');
 				});
 			}
+
+			const install = root.querySelector('[data-me-install]');
+			if (install) {
+				install.addEventListener('click', () => startInstall(install));
+			}
+			refreshInstallUi();
 
 			const logout = root.querySelector('[data-me-logout]');
 			if (logout) {
@@ -7744,11 +7910,23 @@
 			// later in the same session (state.capturedAt is already set). See
 			// maybeBeginQuietCapture()'s own docblock for why this single call
 			// site covers every entry path into a new Mark.
-			maybeBeginQuietCapture();
-			// Idempotent — a no-op unless this is a fresh Checkin session
-			// whose location already resolved earlier (e.g. the composer was
-			// left open on another type for a while before switching).
-			maybeFetchPlaceName();
+			//
+			// The first time the Check In composer opens, its hint runs
+			// first, so the browser's location prompt follows an
+			// explanation instead of appearing out of nowhere.
+			const placeField = root.querySelector('[data-checkin-place]');
+			const beginCapture = () => {
+				maybeBeginQuietCapture();
+				// Idempotent — a no-op unless this is a fresh Checkin session
+				// whose location already resolved earlier (e.g. the composer
+				// was left open on another type for a while before switching).
+				maybeFetchPlaceName();
+			};
+			if (placeField && !state.resumed) {
+				maybeShowInteractionHintThen('checkin', placeField, beginCapture);
+			} else {
+				beginCapture();
+			}
 			this.bindPlaceFieldEvents();
 
 			// Absent only when the Note bubble skipped the picker entirely.
@@ -8929,7 +9107,7 @@
 			glyph: HEART_GLYPH,
 			title: __('Like', 'daymark'),
 			body: __(
-				'Tap the heart to say you enjoyed this post. The person who wrote it can see that you liked it.',
+				'Tap the heart to say you enjoyed this post. Daymark lets the site it came from know, when that site accepts likes.',
 				'daymark'
 			),
 		},
@@ -8937,7 +9115,7 @@
 			glyph: COMMENT_GLYPH,
 			title: __('Comment', 'daymark'),
 			body: __(
-				'Tap here to write a reply. Your comment goes straight to the person who posted it.',
+				'Tap here to reply. When the site it came from accepts replies from Daymark, your comment goes straight there. Otherwise Daymark opens the post so you can comment on the site itself.',
 				'daymark'
 			),
 		},
@@ -8966,6 +9144,31 @@
 			glyph: SHARE_GLYPH,
 			title: __('Share', 'daymark'),
 			body: __('Tap here to send this post to someone else, or copy its link.', 'daymark'),
+		},
+		// Shown the first time + is tapped, before the type bubbles open.
+		launcher: {
+			glyph: PLUS_GLYPH,
+			title: __('New Mark', 'daymark'),
+			body: __(
+				'Pick what you are making: a photo, a video, audio, a note, or a Check In. Daymark saves as you go, so you can stop and finish later.',
+				'daymark'
+			),
+		},
+		// Shown the first time the Check In composer opens, before the
+		// browser asks for location, so the request isn't a surprise.
+		checkin: {
+			glyph: TYPE_ICONS.checkin,
+			title: __('Check In', 'daymark'),
+			body:
+				config.capture && config.capture.location === false
+					? __(
+							'Say where you are. Search for a place or type its name. A photo is optional.',
+							'daymark'
+					  )
+					: __(
+							'Say where you are. Your browser asks to share your location, so Daymark can suggest the place. Only Check Ins use your location. You can also search for a place or type its name, and a photo is optional.',
+							'daymark'
+					  ),
 		},
 	};
 
@@ -9104,8 +9307,11 @@
 		opener: null,
 		onDismiss: null,
 
+		// `key` is an INTERACTION_HINTS key, or a { glyph, title, body }
+		// object for a one-off explainer that isn't tracked as seen (the
+		// iPhone install instructions).
 		show(key, opener, onDismiss) {
-			const hint = INTERACTION_HINTS[key];
+			const hint = typeof key === 'string' ? INTERACTION_HINTS[key] : key;
 			if (!hint) {
 				if (onDismiss) {
 					onDismiss();
@@ -9175,7 +9381,7 @@
 
 	// --- Timeline card kinds: shared type-icon rail + per-kind bodies ---
 	//
-	// Home's Recent Marks list is the merged Timeline feed (GET
+	// Home's Timeline is the merged feed (GET
 	// /daymark/v1/timeline): a Mark item and a subscription-post item each
 	// render their own card shape, but both resolve to one shared set of
 	// content "kinds" here — a Mark's own `type`
