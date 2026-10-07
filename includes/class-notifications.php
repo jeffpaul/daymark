@@ -47,7 +47,7 @@ class Daymark_Notifications {
 	 *
 	 * @var int
 	 */
-	private const DEFAULT_LIMIT = 50;
+	public const DEFAULT_LIMIT = 50;
 
 	/**
 	 * Networks whose responses are threaded replies ("Reply from X").
@@ -142,10 +142,17 @@ class Daymark_Notifications {
 	 * interleaving it chronologically with dated comment activity, rather
 	 * than always pinning it to the top or the bottom of the list.
 	 *
-	 * @param int $limit Maximum items to return.
+	 * When `$seen_before` is given (a Unix timestamp, normally the user's
+	 * last visit to Notifications), every item also carries an `is_new`
+	 * flag: true when it is newer than that visit. A plugin-overlap item is
+	 * never new, for the same reason it never sets the unread dot (see
+	 * has_unread()).
+	 *
+	 * @param int      $limit       Maximum items to return.
+	 * @param int|null $seen_before Optional last-seen timestamp for `is_new`.
 	 * @return array<int, array<string, mixed>> Notification items, newest first.
 	 */
-	public function get_notifications( int $limit = self::DEFAULT_LIMIT ): array {
+	public function get_notifications( int $limit = self::DEFAULT_LIMIT, ?int $seen_before = null ): array {
 		$limit = $limit > 0 ? $limit : self::DEFAULT_LIMIT;
 
 		$dated_items      = array();
@@ -203,8 +210,15 @@ class Daymark_Notifications {
 		);
 
 		$items = array_map(
-			static function ( array $dated_item ) {
-				return $dated_item['item'];
+			static function ( array $dated_item ) use ( $seen_before ) {
+				$item = $dated_item['item'];
+
+				if ( null !== $seen_before ) {
+					$item['is_new'] = 'plugin_overlap' !== ( $item['type'] ?? '' )
+						&& (int) $dated_item['timestamp'] > $seen_before;
+				}
+
+				return $item;
 			},
 			$dated_items
 		);
@@ -273,6 +287,20 @@ class Daymark_Notifications {
 		}
 
 		return false;
+	}
+
+	/**
+	 * When the current user last opened Notifications, as a Unix
+	 * timestamp; 0 if never.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return int
+	 */
+	public function get_seen(): int {
+		$user_id = get_current_user_id();
+
+		return $user_id ? (int) get_user_meta( $user_id, self::SEEN_META, true ) : 0;
 	}
 
 	/**

@@ -185,6 +185,25 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertSame( 'subscription_post', $by_id[ $sub_post_id ]['item_type'] );
 	}
 
+	/** A Mark says whether the current user wrote it, and who did. */
+	public function test_mark_items_say_whose_they_are() {
+		wp_set_current_user( $this->author_a );
+		$mine   = $this->create_mark( '2024-01-02 00:00:00', 'Mine' );
+		$theirs = $this->create_mark( '2024-01-01 00:00:00', 'Theirs' );
+		wp_update_post(
+			array(
+				'ID'          => $theirs,
+				'post_author' => $this->author_b,
+			)
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+		$by_id = array_column( $items, null, 'id' );
+
+		$this->assertTrue( $by_id[ $mine ]['is_mine'] );
+		$this->assertFalse( $by_id[ $theirs ]['is_mine'] );
+		$this->assertSame( 'Alice Appleseed', $by_id[ $theirs ]['author_name'] );
+	}
 	/**
 	 * A Mark's card has no other way to show its own caption text — its
 	 * title is often just a timestamp fallback (see
