@@ -63,6 +63,30 @@ class Daymark_Subscription_Oembed {
 	private const MAX_DIMENSION = 600;
 
 	/**
+	 * A URL's cached oEmbed preview, without fetching anything: the same
+	 * array resolve() returns (empty when an earlier lookup found nothing),
+	 * or null when the URL hasn't been looked up yet with this `$discover`
+	 * setting.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param string $url      Link URL.
+	 * @param bool   $discover Same meaning as resolve()'s.
+	 * @return array<string, string>|null
+	 */
+	public static function cached( string $url, bool $discover = true ): ?array {
+		$url = esc_url_raw( trim( $url ) );
+
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$cached = get_transient( ( $discover ? 'daymark_oembed_' : 'daymark_oembed_nd_' ) . md5( $url ) );
+
+		return is_array( $cached ) ? $cached : null;
+	}
+
+	/**
 	 * Resolve an oEmbed preview for a URL, cached by URL for CACHE_TTL.
 	 *
 	 * Never throws and never blocks — any failure (an unsafe URL, no

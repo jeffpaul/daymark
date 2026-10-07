@@ -441,7 +441,13 @@
 
 	// Home's merged Timeline feed page size — the infinite-scroll unit. A
 	// page shorter than this means there is nothing more to load.
-	const RECENT_PER_PAGE = 5;
+	// Timeline page size. 20, not 5: each GET /timeline rebuilds every
+	// earlier page on the server, so fewer, larger pages mean fewer
+	// requests and less repeated work while scrolling.
+	const RECENT_PER_PAGE = 20;
+
+	// Search's page size, also used for its infinite scroll.
+	const SEARCH_PER_PAGE = 20;
 
 	// Search's type-filter chips, mapped to _daymark_primary_type values
 	// ('' = every type). Wired to GET /timeline?s=&type=.
@@ -1746,8 +1752,10 @@
 				(screen && screen._bySubId && screen._bySubId.get(String(id))) ||
 				null;
 			const isSubscriptionPost = 'subscription_post' === kind;
+			// background=1: caching a bookmark (often many at app start)
+			// must not spend the allowance opening a post needs.
 			const response = await apiGet(
-				isSubscriptionPost ? 'subscription-posts/' + id : 'marks/' + id + '/content'
+				isSubscriptionPost ? 'subscription-posts/' + id + '?background=1' : 'marks/' + id + '/content'
 			);
 			const content = isSubscriptionPost ? response.body_content || '' : response.content || '';
 			// The full post view's featured block (see postviewFeaturedHtml())
@@ -2522,6 +2530,30 @@
 		return res.json();
 	}
 
+	// Like apiGet(), plus the X-WP-Total header (null when absent) for a
+	// request that asked for a count (GET /timeline?count=1).
+	async function apiGetWithTotal(path) {
+		const res = await fetch(config.restUrl + path, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		if (!res.ok) {
+			throw await readError(res);
+		}
+		const header = res.headers.get('X-WP-Total');
+		const total = null === header ? null : Number(header);
+		return { data: await res.json(), total: Number.isFinite(total) ? total : null };
+	}
+
+	// The message an infinite-scroll list shows when its next page fails to
+	// load, instead of stopping silently. `retry` is the data attribute its
+	// screen listens for.
+	function loadMoreErrorHtml(retryAttr) {
+		return `<span>${esc(__("Couldn't load more.", 'daymark'))}</span> <button type="button" class="daymark-btn daymark-btn--text" ${retryAttr}>${esc(
+			__('Retry', 'daymark')
+		)}</button>`;
+	}
+
 	async function apiPost(path, data) {
 		const res = await fetch(config.restUrl + path, {
 			method: 'POST',
@@ -3141,7 +3173,7 @@
 	//
 	// `title` carries the site's name and URL as a native on-hover tooltip
 	// (issue #181) — deliberately separate from `aria-label`, which
-	// describes the button's *action* ("Filter Timeline to..."), not the
+	// describes the button's *action* ("Show posts from..."), not the
 	// site itself; a screen reader announces the action, a sighted hover
 	// sees what site this actually is. `\n` renders as a real line break in
 	// every browser's native title tooltip, so the two read as separate
@@ -3216,7 +3248,7 @@
 			: renderSiteIconButton({
 					iconSrc: config.siteIconUrl || '',
 					iconAlt: config.siteTitle || __('Site', 'daymark'),
-					ariaLabel: __('Filter Timeline to your Marks', 'daymark'),
+					ariaLabel: __('Show your Marks', 'daymark'),
 					filterValue: 'mine',
 					siteUrl: config.siteUrl || '',
 			  });
@@ -3449,7 +3481,9 @@
 		}
 		screen._rehydrateInFlight = true;
 		try {
-			await apiGet('subscription-posts/' + id);
+			// background=1: spends the background allowance, never the one
+			// opening a post uses (see ACTION_SUBSCRIPTION_POST_OPEN).
+			await apiGet('subscription-posts/' + id + '?background=1');
 			screen._rehydrateAttempted.add(id);
 			const item = screen._bySubId.get(id);
 			if (item) {
@@ -5320,7 +5354,7 @@
 	// (GET /timeline caps per_page at 50). A multiple of RECENT_PER_PAGE, so
 	// infinite scroll carries on from the next page exactly. A marker older
 	// than this many items just opens at the top, as before.
-	const LAST_SEEN_SEARCH_LIMIT = 50;
+	const LAST_SEEN_SEARCH_LIMIT = 40;
 
 	// Debounced save of the newest card seen, so a scroll through many
 	// cards sends one request, not one per card.
@@ -5453,6 +5487,15 @@
 			const newPosts = root.querySelector('[data-new-posts]');
 			if (newPosts) {
 				newPosts.addEventListener('click', () => this.jumpToNewest());
+			}
+
+			const more = root.querySelector('[data-recent-more]');
+			if (more) {
+				more.addEventListener('click', (event) => {
+					if (event.target.closest('[data-recent-retry]')) {
+						this.retryLoadMore();
+					}
+				});
 			}
 
 			bindLauncher(this);
@@ -5725,12 +5768,29 @@
 					}
 				}
 			} catch (err) {
-				// Stop trying on error; keep whatever already loaded.
-				this.recentDone = true;
+				// Keep whatever already loaded, stop scrolling for more, and
+				// say so with a Retry button. Before, one failed page ended
+				// the feed silently behind the decorative end mark.
 				this.teardownObserver();
+				const more = root.querySelector('[data-recent-more]');
+				if (more && more.isConnected) {
+					more.innerHTML = loadMoreErrorHtml('data-recent-retry');
+					more.hidden = false;
+				}
 			} finally {
 				this.recentLoading = false;
 			}
+		},
+
+		// The Retry button under a failed page (see loadMorePage()).
+		retryLoadMore() {
+			const more = root.querySelector('[data-recent-more]');
+			if (more) {
+				more.hidden = true;
+				more.innerHTML = '';
+			}
+			this.setupObserver();
+			this.loadMorePage();
 		},
 
 		setupObserver() {
@@ -6154,10 +6214,13 @@
 				</p>
 				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
 					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">${esc(__('Results', 'daymark'))}</h2>
+					<p class="daymark-searchcount" data-search-count aria-live="polite" hidden></p>
 					<div class="daymark-recent__list" data-search-results aria-live="polite">
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
+					<div class="daymark-recent__sentinel" data-search-sentinel aria-hidden="true" hidden></div>
+					<p class="daymark-recent__more" data-search-more hidden></p>
 				</section>
 			</section>
 			${navFooterMarkup('search')}`;
@@ -6197,6 +6260,16 @@
 			if (list) {
 				list.addEventListener('click', (event) => onFeedListClick(this, event));
 				list.addEventListener('keydown', (event) => onFeedListKeydown(this, event));
+			}
+
+			const more = root.querySelector('[data-search-more]');
+			if (more) {
+				more.addEventListener('click', (event) => {
+					if (event.target.closest('[data-search-retry]')) {
+						more.hidden = true;
+						this.loadMoreResults();
+					}
+				});
 			}
 
 			const clearBookmarks = root.querySelector('[data-search-clear-bookmarks]');
@@ -6281,6 +6354,13 @@
 			list.innerHTML = this._items.map((item) => renderFeedItem(item)).join('');
 			observeLikeAvailability(this, list);
 			observeFeaturedImages(this, list);
+			this._searchParams = snapshot.searchParams || '';
+			this._searchPage = snapshot.searchPage || 1;
+			this._searchDone = snapshot.searchDone !== false;
+			this.showResultCount(undefined === snapshot.searchTotal ? null : snapshot.searchTotal);
+			if (!this._searchDone) {
+				this.setupSearchObserver();
+			}
 			// showScreen() focuses the header right after init() starts,
 			// which scrolls to the top. Position the card after that.
 			requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
@@ -6330,24 +6410,11 @@
 			}
 		},
 
-		async runSearch() {
-			const list = root.querySelector('[data-search-results]');
-			if (!list) {
-				return;
-			}
-			const seq = ++this._searchSeq;
-			list.innerHTML =
-				skeletonRows(2) + '<span class="daymark-visually-hidden">' + esc(__('Searching', 'daymark')) + '</span>';
-			// Targets the merged Timeline endpoint (not /marks) so a search
-			// covers subscription posts too by default; the Source filter
-			// narrows that down to just Marks (`mine=1`) or just one
-			// subscription's posts (`subscription_id`). No `status` param:
-			// unlike /marks, /timeline always returns published-only from
-			// both sources already. An empty query with no filters still
-			// runs — it's "everything", the same default Home's own first
-			// page shows.
+		// The filters as GET /timeline params, without paging. Kept on the
+		// screen (_searchParams) so later pages ask for exactly the same
+		// results.
+		buildSearchParams() {
 			const params = new URLSearchParams();
-			params.set('per_page', '20');
 			if (this.searchQuery) {
 				params.set('s', this.searchQuery);
 			}
@@ -6373,12 +6440,151 @@
 					}
 				}
 			}
+			return params;
+		},
+
+		// "34 results" above the list, from GET /timeline's X-WP-Total.
+		// Hidden when the total is unknown (the offline bookmarks fallback).
+		showResultCount(total) {
+			const count = root.querySelector('[data-search-count]');
+			if (!count) {
+				return;
+			}
+			this._searchTotal = total;
+			if (null === total || undefined === total) {
+				count.hidden = true;
+				count.textContent = '';
+				return;
+			}
+			count.textContent = sprintf(
+				/* translators: %d: number of search results */
+				_n('%d result', '%d results', total, 'daymark'),
+				total
+			);
+			count.hidden = false;
+		},
+
+		// Infinite scroll, the same way Home does it: load the next page
+		// when the sentinel under the list comes near the viewport.
+		setupSearchObserver() {
+			this.teardownSearchObserver();
+			const sentinel = root.querySelector('[data-search-sentinel]');
+			if (!sentinel) {
+				return;
+			}
+			sentinel.hidden = false;
+			if (!('IntersectionObserver' in window)) {
+				return;
+			}
+			this._searchObserver = new IntersectionObserver(
+				(entries) => {
+					if (entries.some((entry) => entry.isIntersecting)) {
+						this.loadMoreResults();
+					}
+				},
+				{ rootMargin: '200px' }
+			);
+			this._searchObserver.observe(sentinel);
+		},
+
+		teardownSearchObserver() {
+			if (this._searchObserver) {
+				this._searchObserver.disconnect();
+				this._searchObserver = null;
+			}
+			const sentinel = root.querySelector('[data-search-sentinel]');
+			if (sentinel) {
+				sentinel.hidden = true;
+			}
+		},
+
+		async loadMoreResults() {
+			if (this._searchLoading || this._searchDone) {
+				return;
+			}
+			const list = root.querySelector('[data-search-results]');
+			const more = root.querySelector('[data-search-more]');
+			if (!list || !list.isConnected) {
+				return;
+			}
+			this._searchLoading = true;
+			const seq = this._searchSeq;
+			const nextPage = this._searchPage + 1;
+			const params = new URLSearchParams(this._searchParams);
+			params.set('per_page', String(SEARCH_PER_PAGE));
+			params.set('page', String(nextPage));
 			try {
 				const items = await apiGet('timeline?' + params.toString());
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
 				const arr = Array.isArray(items) ? items : [];
+				this._searchPage = nextPage;
+				if (arr.length) {
+					this._items = this._items.concat(arr);
+					arr.forEach((item) => rememberItem(this, item));
+					list.insertAdjacentHTML('beforeend', arr.map((item) => renderFeedItem(item)).join(''));
+					observeLikeAvailability(this, list);
+					observeFeaturedImages(this, list);
+				}
+				if (arr.length < SEARCH_PER_PAGE) {
+					this._searchDone = true;
+					this.teardownSearchObserver();
+				}
+			} catch (err) {
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				// Stop scrolling for more until Retry, and say so.
+				this.teardownSearchObserver();
+				if (more) {
+					more.innerHTML = loadMoreErrorHtml('data-search-retry');
+					more.hidden = false;
+				}
+			} finally {
+				this._searchLoading = false;
+				if (!this._searchDone && more && more.hidden) {
+					this.setupSearchObserver();
+				}
+			}
+		},
+
+		async runSearch() {
+			const list = root.querySelector('[data-search-results]');
+			if (!list) {
+				return;
+			}
+			const seq = ++this._searchSeq;
+			this.teardownSearchObserver();
+			this._searchLoading = false;
+			this._searchDone = true;
+			const more = root.querySelector('[data-search-more]');
+			if (more) {
+				more.hidden = true;
+			}
+			list.innerHTML =
+				skeletonRows(2) + '<span class="daymark-visually-hidden">' + esc(__('Searching', 'daymark')) + '</span>';
+			// Targets the merged Timeline endpoint (not /marks) so a search
+			// covers subscription posts too by default; the Source filter
+			// narrows that down to just Marks (`mine=1`) or just one
+			// subscription's posts (`subscription_id`). No `status` param:
+			// unlike /marks, /timeline always returns published-only from
+			// both sources already. An empty query with no filters still
+			// runs — it's "everything", the same default Home's own first
+			// page shows.
+			const filters = this.buildSearchParams();
+			this._searchParams = filters.toString();
+			this._searchPage = 1;
+			const params = new URLSearchParams(this._searchParams);
+			params.set('per_page', String(SEARCH_PER_PAGE));
+			params.set('count', '1');
+			try {
+				const result = await apiGetWithTotal('timeline?' + params.toString());
+				if (seq !== this._searchSeq || !list.isConnected) {
+					return;
+				}
+				const arr = Array.isArray(result.data) ? result.data : [];
+				this.showResultCount(result.total);
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				teardownLikeAvailabilityObserver(this);
@@ -6395,10 +6601,15 @@
 				list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
 				observeLikeAvailability(this, list);
 				observeFeaturedImages(this, list);
+				this._searchDone = arr.length < SEARCH_PER_PAGE;
+				if (!this._searchDone) {
+					this.setupSearchObserver();
+				}
 			} catch (err) {
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
+				this.showResultCount(null);
 				// Only the Bookmarks-filtered view has a meaningful offline
 				// fallback — its whole point is content already cached for
 				// exactly this case (see cacheBookmarkOffline()); an
@@ -9415,7 +9626,7 @@
 							iconAlt: siteLabel,
 							ariaLabel: sprintf(
 								/* translators: %s: site name */
-								__('Filter Timeline to posts from %s', 'daymark'),
+								__('Show posts from %s', 'daymark'),
 								siteLabel
 							),
 							filterValue: String(item.subscription_id),
@@ -9683,6 +9894,10 @@
 				source: screen.searchSource,
 				bookmarked: screen.searchBookmarked,
 				date: screen.searchDate,
+				searchParams: screen._searchParams,
+				searchPage: screen._searchPage,
+				searchDone: screen._searchDone,
+				searchTotal: screen._searchTotal,
 			};
 		}
 		if (!hash || !Array.isArray(screen._items) || !screen._items.length) {

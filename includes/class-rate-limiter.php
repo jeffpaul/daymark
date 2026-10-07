@@ -70,18 +70,33 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SUBSCRIPTION_REFRESH = 'subscription_refresh';
 
 	/**
-	 * Per-item subscription post detail fetch
-	 * (GET /subscription-posts/{id}) — the same external-fetch risk class as
-	 * ACTION_SUBSCRIBE/ACTION_SUBSCRIPTION_REFRESH (an outbound
-	 * wp_safe_remote_get() via Daymark_Subscription_Poller::fetch_full_content()),
-	 * but this is a normal per-item read action a user triggers by opening
-	 * many individual Timeline cards while browsing, not a one-off admin
-	 * action like a manual refresh — so it gets the higher
-	 * ACTION_AI/ACTION_PUBLISH-tier ceiling of 20 rather than 10.
+	 * Background fetches for subscription posts, made while you scroll or
+	 * at app start: refilling a trimmed post's content
+	 * (GET /subscription-posts/{id}?background=1), caching a bookmark for
+	 * offline reading, link previews (GET /subscription-posts/{id}/oembed),
+	 * and the Like check (GET /subscription-posts/{id}/like-availability).
+	 * The same outbound-fetch risk class as ACTION_SUBSCRIBE, at the
+	 * ACTION_AI/ACTION_PUBLISH tier of 20. Each route charges it only when
+	 * it actually fetches from the other site; a cached answer is free.
 	 *
 	 * @var string
 	 */
 	public const ACTION_SUBSCRIPTION_POST_FETCH = 'subscription_post_fetch';
+
+	/**
+	 * Fetches you trigger by tapping a subscription post: opening it
+	 * (GET /subscription-posts/{id}), "Refresh content" (`refresh=1`), and
+	 * the Comment pre-check (GET /subscription-posts/{id}/comment-target).
+	 * Its own allowance, separate from ACTION_SUBSCRIPTION_POST_FETCH, so
+	 * background fetches while you scroll can never stop you opening a
+	 * post. Charged only when the server actually fetches from the other
+	 * site; opening a post that's already cached is free.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @var string
+	 */
+	public const ACTION_SUBSCRIPTION_POST_OPEN = 'subscription_post_open';
 
 	/**
 	 * Comment delivery to a subscription post's origin
@@ -170,6 +185,10 @@ class Daymark_Rate_Limiter {
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 		self::ACTION_SUBSCRIPTION_POST_FETCH => array(
+			'limit'  => 20,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SUBSCRIPTION_POST_OPEN  => array(
 			'limit'  => 20,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),

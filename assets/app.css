@@ -434,6 +434,19 @@ h2[tabindex='-1']:focus {
 	text-align: center;
 }
 
+/* "Couldn't load more. Retry" (loadMoreErrorHtml(), app.js). */
+.daymark-recent__more span {
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+}
+
+/* Search's "34 results" line, above the list. */
+.daymark-searchcount {
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
 /* --- Sticky footer action bar --- */
 .daymark-actionbar {
 	position: sticky;
