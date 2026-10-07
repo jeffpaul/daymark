@@ -32,15 +32,15 @@ can't act on them.
 ### Changed
 
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
-- Search now loads more results as you scroll, instead of stopping at 20, and shows how many there are. Bookmarks and My Marks, which open in Search, load more too. A site's icon on a Timeline card now says "Show posts from" that site, which is what it does.
-- The Timeline loads 20 posts at a time instead of 5, so scrolling makes fewer requests.
+- Search now loads more results as you scroll, instead of stopping at 20, and shows how many there are. Bookmarks and My Marks, which open in Search, load more too. A site's icon on a Timeline card now says "Show posts from" that site, which is what it does. ([#486](https://github.com/jeffpaul/daymark/pull/486))
+- The Timeline loads 20 posts at a time instead of 5, so scrolling makes fewer requests. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 
 ### Fixed
 
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
-- After a long scroll through the Timeline, opening a post from a site you follow could fail with "Couldn't load full content." Background work while scrolling used up the same request allowance that opening a post needs. Opening a post now has its own allowance, and a post that's already saved on your site opens without using any.
-- When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently.
+- After a long scroll through the Timeline, opening a post from a site you follow could fail with "Couldn't load full content." Background work while scrolling used up the same request allowance that opening a post needs. Opening a post now has its own allowance, and a post that's already saved on your site opens without using any. ([#486](https://github.com/jeffpaul/daymark/pull/486))
+- When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently. ([#486](https://github.com/jeffpaul/daymark/pull/486))
 
 ## [0.19.0] - 2026-10-02
 
