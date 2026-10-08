@@ -402,6 +402,43 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'href="javascript:', $html );
 	}
 
+	/**
+	 * Render the profile screen's Daymark section for a user.
+	 *
+	 * @param WP_User $user Profile being shown.
+	 * @return string
+	 */
+	private function render_profile_section( WP_User $user ): string {
+		ob_start();
+		( new Daymark_Microformats() )->render_rel_me_field( $user );
+
+		return (string) ob_get_clean();
+	}
+
+	public function test_own_profile_offers_the_bookmarklet() {
+		$html = $this->render_profile_section( wp_get_current_user() );
+
+		$this->assertStringContainsString( 'Bookmarklet', $html );
+		$this->assertStringContainsString( 'href="javascript:', $html );
+	}
+
+	public function test_someone_elses_profile_does_not_offer_the_bookmarklet() {
+		$other = self::factory()->user->create_and_get( array( 'role' => 'author' ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$html = $this->render_profile_section( $other );
+
+		$this->assertStringContainsString( 'rel=me link', $html );
+		$this->assertStringNotContainsString( 'href="javascript:', $html );
+	}
+
+	public function test_profile_of_a_user_who_cannot_write_marks_has_no_bookmarklet() {
+		$subscriber = self::factory()->user->create_and_get( array( 'role' => 'subscriber' ) );
+		wp_set_current_user( $subscriber->ID );
+
+		$this->assertStringNotContainsString( 'href="javascript:', $this->render_profile_section( $subscriber ) );
+	}
+
 	public function test_app_config_carries_the_bookmarklet_url() {
 		$config = Daymark_Routes::build_app_config();
 

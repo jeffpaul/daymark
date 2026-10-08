@@ -184,7 +184,7 @@ iPhone and iPad don't support sharing to a web app yet, so Daymark doesn't appea
 
 = Can I Reblog or Like a post I'm reading on another site? =
 
-Yes, with the Daymark bookmarklet. Drag the Daymark button to your browser's bookmarks bar. You'll find it in Settings -> Daymark -> General, or under Me -> Reblog from anywhere in the app. On any post you're reading, click Daymark in the bookmarks bar. A small window opens on your own site with the post at the top. Write your thoughts below it, change the title if you like, and tap Reblog: the Reblog is published on your site, with the post embedded when it offers an embed. Like works when the post's site can receive one, the same as in the app. You need to be logged in to your site in that browser.
+Yes, with the Daymark bookmarklet. Drag the Daymark button to your browser's bookmarks bar. You'll find it in the Daymark section of your profile page (Users -> Profile), in Settings -> Daymark -> General, or under Me -> Reblog from anywhere in the app. On any post you're reading, click Daymark in the bookmarks bar. A small window opens on your own site with the post at the top. Write your thoughts below it, change the title if you like, and tap Reblog: the Reblog is published on your site, with the post embedded when it offers an embed. Like works when the post's site can receive one, the same as in the app. You need to be logged in to your site in that browser.
 
 = Can I create a Mark while offline? =
 
