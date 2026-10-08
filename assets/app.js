@@ -6278,11 +6278,84 @@
 	// moves the marker to a newer item.
 	let timelineLastSeen = config.timelineLastSeen || null;
 
-	// How far back a fresh load looks for the marker: one request this size
-	// (GET /timeline caps per_page at 50). A multiple of RECENT_PER_PAGE, so
-	// infinite scroll carries on from the next page exactly. A marker older
-	// than this many items just opens at the top, as before.
+	// --- Timeline reading position ---
+	//
+	// The item at the top of the screen when this user last looked at Home,
+	// also stored on the server (Daymark_Timeline_Position) so it follows
+	// them across devices. A fresh Home load opens on it. Unlike the
+	// last-seen marker above, it moves both ways: it records where the
+	// reader was, so scrolling down into older posts moves it down too. The
+	// last-seen marker still decides how many posts count as new.
+	let timelinePosition = config.timelinePosition || null;
+
+	// How far back a fresh load looks for the reading position: requests of
+	// this size (GET /timeline caps per_page at 50), up to
+	// ANCHOR_SEARCH_PAGES of them. A multiple of RECENT_PER_PAGE, so
+	// infinite scroll carries on from the next page exactly. A position
+	// further back than that opens at the top instead.
 	const LAST_SEEN_SEARCH_LIMIT = 40;
+	const ANCHOR_SEARCH_PAGES = 5;
+
+	// Debounced save of the reading position: one request after scrolling
+	// stops, not one per card that passes the top of the screen.
+	const POSITION_SAVE_DELAY = 1500;
+	let positionSaveTimer = null;
+	let positionPendingRef = null;
+
+	function queuePositionSave(ref) {
+		positionPendingRef = ref;
+		if (positionSaveTimer) {
+			clearTimeout(positionSaveTimer);
+		}
+		positionSaveTimer = setTimeout(() => flushPositionSave(false), POSITION_SAVE_DELAY);
+	}
+
+	// `leaving` uses a keepalive request, which the browser finishes even
+	// as the page is hidden or closed.
+	function flushPositionSave(leaving) {
+		if (positionSaveTimer) {
+			clearTimeout(positionSaveTimer);
+			positionSaveTimer = null;
+		}
+		const ref = positionPendingRef;
+		positionPendingRef = null;
+		if (!ref || !config.nonce) {
+			return;
+		}
+		// Keep the local copy current right away, so returning to Home in
+		// this same session opens here even before the server answers.
+		timelinePosition = ref;
+		fetch(config.restUrl + 'timeline/position', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ id: Number(ref.id) }),
+			keepalive: !!leaving,
+		}).catch(() => {
+			// Best effort: a lost save only means the next visit opens
+			// where the reader was a little earlier.
+		});
+	}
+
+	// The Timeline item a card wrapper holds, as { id, item_type }.
+	function feedWrapRef(wrap) {
+		const trigger = wrap && wrap.querySelector('[data-subpost], [data-expand-post]');
+		if (!trigger) {
+			return null;
+		}
+		return trigger.hasAttribute('data-subpost')
+			? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
+			: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
+	}
+
+	function sameTimelineRef(a, b) {
+		return (
+			!!a &&
+			!!b &&
+			String(a.id) === String(b.id) &&
+			('subscription_post' === a.item_type) === ('subscription_post' === b.item_type)
+		);
+	}
 
 	// Debounced save of the newest card seen, so a scroll through many
 	// cards sends one request, not one per card.
@@ -6516,6 +6589,32 @@
 				newPosts.addEventListener('click', () => this.jumpToNewest());
 			}
 
+			// Back to the newest post: tap an empty part of the header (the
+			// web version of tapping a phone's status bar), the Daymark
+			// wordmark, or the Timeline tab while already on the Timeline.
+			// Those two links point at #home, so on their own they would do
+			// nothing here.
+			const topbar = root.querySelector('.daymark-topbar');
+			if (topbar) {
+				topbar.addEventListener('click', (event) => {
+					const control = event.target.closest('a, button');
+					if (control && !control.classList.contains('daymark-homelink')) {
+						return;
+					}
+					event.preventDefault();
+					this.jumpToNewest();
+				});
+			}
+			const timelineTab = root.querySelector('.daymark-bottomnav__link[aria-current="page"]');
+			if (timelineTab) {
+				timelineTab.addEventListener('click', (event) => {
+					event.preventDefault();
+					this.jumpToNewest();
+				});
+			}
+
+			this.bindPositionTracking();
+
 			const more = root.querySelector('[data-recent-more]');
 			if (more) {
 				more.addEventListener('click', (event) => {
@@ -6530,6 +6629,10 @@
 		},
 
 		async init() {
+			// No reading-position saves until the Timeline has loaded and
+			// been placed; until then the top of the screen says nothing
+			// about where the reader is.
+			this._positionReady = false;
 			this.teardownSeenObserver();
 			this.watchForUserScroll();
 			this._searchSeq = 0;
@@ -6567,9 +6670,11 @@
 				// have pushed it down; put the opened card back in place.
 				scrollFeedToAnchor(snapshot, true);
 				this.observeSeen();
+				this._positionReady = true;
 				return;
 			}
 			await this.loadRecent({ anchor: true });
+			this._positionReady = true;
 		},
 
 		// Drafts are counted separately so they stay reachable no matter
@@ -6716,23 +6821,39 @@
 				if (this._pendingPublishCount) {
 					anchor = false;
 				}
-				let anchorIndex = anchor ? timelineItemIndex(arr, timelineLastSeen) : -1;
-				if (anchor && timelineLastSeen && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
-					// Not at the very top: load further back in one request,
-					// both to find the marker when it is past the first page
-					// and so there is enough below it to scroll it to the
-					// top (a short list would leave the newer cards above it
-					// on screen, and they would count as seen).
+				// Open on the reading position; a user who has only a
+				// last-seen marker (saved before the reading position
+				// existed) opens on that instead.
+				const anchorRef = anchor ? timelinePosition || timelineLastSeen : null;
+				let anchorIndex = anchorRef ? timelineItemIndex(arr, anchorRef) : -1;
+				if (anchorRef && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
+					// Not at the very top: load further back, both to find
+					// the item when it is past the first page and so there
+					// is enough below it to scroll it to the top (a short
+					// list would leave the newer cards above it on screen,
+					// and they would count as seen).
 					try {
-						const wide = await apiGet('timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=1');
-						if (seq !== this._searchSeq || !list.isConnected) {
-							return;
+						let wideArr = [];
+						let pages = 0;
+						let wideIndex = -1;
+						while (pages < ANCHOR_SEARCH_PAGES) {
+							pages += 1;
+							const wide = await apiGet(
+								'timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=' + pages
+							);
+							if (seq !== this._searchSeq || !list.isConnected) {
+								return;
+							}
+							const pageArr = Array.isArray(wide) ? wide : [];
+							wideArr = wideArr.concat(pageArr);
+							wideIndex = timelineItemIndex(wideArr, anchorRef);
+							if (wideIndex >= 0 || pageArr.length < LAST_SEEN_SEARCH_LIMIT) {
+								break;
+							}
 						}
-						const wideArr = Array.isArray(wide) ? wide : [];
-						const wideIndex = timelineItemIndex(wideArr, timelineLastSeen);
 						if (wideIndex >= 0) {
 							arr = wideArr;
-							loaded = LAST_SEEN_SEARCH_LIMIT;
+							loaded = pages * LAST_SEEN_SEARCH_LIMIT;
 							anchorIndex = wideIndex;
 						}
 					} catch (err) {
@@ -6765,7 +6886,11 @@
 				// move the page out from under them.
 				if (anchorIndex > 0 && !this._userScrolled) {
 					this.scrollToItem(arr[anchorIndex]);
-					this.showNewPosts(anchorIndex);
+					// "New" means newer than the newest post seen before,
+					// not everything above the reading position: posts the
+					// reader already scrolled past are not new.
+					const seenIndex = timelineItemIndex(arr, timelineLastSeen);
+					this.showNewPosts(seenIndex >= 0 ? Math.min(seenIndex, anchorIndex) : anchorIndex);
 				}
 				this.observeSeen();
 
@@ -6988,13 +7113,10 @@
 		},
 
 		noteSeen(wrap) {
-			const trigger = wrap.querySelector('[data-subpost], [data-expand-post]');
-			if (!trigger) {
+			const ref = feedWrapRef(wrap);
+			if (!ref) {
 				return;
 			}
-			const ref = trigger.hasAttribute('data-subpost')
-				? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
-				: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
 			const index = timelineItemIndex(this._items, ref);
 			if (index < 0 || index >= this._newestSeenIndex) {
 				return;
@@ -7008,6 +7130,62 @@
 				return;
 			}
 			queueLastSeenSave(Number(ref.id));
+		},
+
+		// Save the reading position as the reader scrolls. Re-bound on
+		// every render; the previous listener is removed first so they
+		// don't pile up across visits to Home.
+		bindPositionTracking() {
+			if (this._onPositionScroll) {
+				window.removeEventListener('scroll', this._onPositionScroll);
+			}
+			let ticking = false;
+			this._onPositionScroll = () => {
+				if (ticking) {
+					return;
+				}
+				ticking = true;
+				window.requestAnimationFrame(() => {
+					ticking = false;
+					this.notePosition();
+				});
+			};
+			window.addEventListener('scroll', this._onPositionScroll, { passive: true });
+		},
+
+		// The first Timeline card still showing below the header.
+		topVisibleRef() {
+			const list = root.querySelector('[data-recent-list]');
+			if (!list || !list.isConnected) {
+				return null;
+			}
+			const header = root.querySelector('.daymark-topbar');
+			// A hidden header slides up out of view, so its bottom edge is
+			// then at or above 0.
+			const top = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+			// A card counts once more than a sliver of it shows.
+			const minVisible = 24;
+			for (const wrap of list.querySelectorAll('.daymark-recent__item-wrap')) {
+				if (wrap.getBoundingClientRect().bottom > top + minVisible) {
+					return feedWrapRef(wrap);
+				}
+			}
+			return null;
+		},
+
+		notePosition() {
+			if (!this._positionReady) {
+				return;
+			}
+			const ref = this.topVisibleRef();
+			if (!ref) {
+				return;
+			}
+			const current = positionPendingRef || timelinePosition;
+			if (sameTimelineRef(ref, current)) {
+				return;
+			}
+			queuePositionSave(ref);
 		},
 
 		// The "new posts" button: how many newer posts sit above the card
@@ -7127,6 +7305,10 @@
 			}
 
 			await this.loadRecent();
+			// A refresh shows the newest posts, so start at the top and make
+			// that the reading position too.
+			window.scrollTo(0, 0);
+			this.notePosition();
 
 			this._refreshing = false;
 			if (indicator) {
@@ -13316,6 +13498,7 @@
 	document.addEventListener('visibilitychange', () => {
 		if ('hidden' === document.visibilityState) {
 			flushLastSeenSave(true);
+			flushPositionSave(true);
 		} else {
 			checkUnreadNotifications();
 			// iOS drops a backgrounded app's requests; retry uploads now.

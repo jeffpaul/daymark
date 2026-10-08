@@ -626,6 +626,9 @@ class Daymark_Routes {
 			// Home can open anchored on it with newer posts above — see
 			// Daymark_Timeline_Position.
 			'timelineLastSeen'       => Daymark_Timeline_Position::get( (int) $user->ID ),
+			// The item at the top of this user's screen when they last
+			// looked at Home (or null): where Home opens next time.
+			'timelinePosition'       => Daymark_Timeline_Position::get_position( (int) $user->ID ),
 			// Interaction-row hint keys this user has already seen on any
 			// device — see Daymark_Interaction_Hints.
 			'interactionHintsSeen'   => Daymark_Interaction_Hints::get_seen( (int) $user->ID ),

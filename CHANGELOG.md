@@ -46,6 +46,7 @@ can't act on them.
 
 ### Changed
 
+- The Timeline now opens on the post that was at the top of your screen when you last left it, even if you had scrolled down into older posts. Newer posts are above it, and the "new posts" button counts only the ones you haven't seen. To jump back to the newest post, tap an empty part of the header, the Daymark name, or the Timeline tab. Refreshing the Timeline also starts you at the top. ([#501](https://github.com/jeffpaul/daymark/pull/501))
 - Explore hides the "On this day" section when there are no Marks from this date in a prior year. ([#499](https://github.com/jeffpaul/daymark/pull/499))
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
 - A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it. ([#485](https://github.com/jeffpaul/daymark/pull/485))
