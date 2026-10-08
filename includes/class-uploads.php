@@ -465,15 +465,14 @@ class Daymark_Uploads {
 
 		$stale = get_posts(
 			array(
-				'post_type'        => 'attachment',
-				'post_status'      => 'inherit',
-				'post_parent'      => 0,
-				'fields'           => 'ids',
-				'posts_per_page'   => 100,
-				'no_found_rows'    => true,
-				'suppress_filters' => true,
+				'post_type'      => 'attachment',
+				'post_status'    => 'inherit',
+				'post_parent'    => 0,
+				'fields'         => 'ids',
+				'posts_per_page' => 100,
+				'no_found_rows'  => true,
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Daily cron, bounded to 100 rows.
-				'meta_query'       => array(
+				'meta_query'     => array(
 					array(
 						'key'     => self::STAGED_AT_META,
 						'value'   => time() - $staged_ttl,
