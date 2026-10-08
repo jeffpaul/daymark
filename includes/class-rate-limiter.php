@@ -155,6 +155,15 @@ class Daymark_Rate_Limiter {
 	public const ACTION_BOOKMARK_IMAGE = 'bookmark_image';
 
 	/**
+	 * Start a chunked composer upload (POST /uploads, issue #483). Charged
+	 * once per file, not per part: the parts of one session are bounded by
+	 * its declared size. Roomy, since a gallery starts one per photo.
+	 *
+	 * @var string
+	 */
+	public const ACTION_UPLOAD = 'upload';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -209,6 +218,10 @@ class Daymark_Rate_Limiter {
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
 		self::ACTION_BOOKMARK_IMAGE          => array(
+			'limit'  => 60,
+			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_UPLOAD                  => array(
 			'limit'  => 60,
 			'window' => 5 * MINUTE_IN_SECONDS,
 		),
