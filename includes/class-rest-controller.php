@@ -55,6 +55,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const CARD_QUOTE_MAX_CHARS = 280;
 
 	/**
+	 * Words a Timeline card shows from a post's text when the post has no
+	 * excerpt (see card_excerpt()). Matches the length the publisher uses
+	 * for a Mark's own excerpt.
+	 *
+	 * @var int
+	 */
+	private const CARD_EXCERPT_WORDS = 24;
+
+	/**
 	 * Register REST routes. Hooked to rest_api_init.
 	 *
 	 * @return void
@@ -4635,7 +4644,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				ENT_QUOTES,
 				'UTF-8'
 			),
-			'excerpt'             => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
+			'excerpt'             => $this->card_excerpt( $post_id, (string) get_post_meta( $post_id, 'body_content', true ) ),
 			'author'              => sanitize_text_field( (string) get_post_meta( $post_id, 'author', true ) ),
 			// The *source* site's URL for this post — for a future in-app
 			// "open this" action, not a link to render directly on this
@@ -4805,7 +4814,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// previously exposed here, so a Timeline card had no way to show
 			// a Note Mark's actual text, only its (often timestamp-fallback)
 			// title.
-			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
+			'excerpt'            => $this->card_excerpt( $post_id ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
@@ -5099,6 +5108,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return count( $comments ) + $local_uncounted;
+	}
+
+	/**
+	 * Words shown under a Timeline card's title for a post with no excerpt.
+	 *
+	 * A post's own excerpt wins. Without one, the card shows the first
+	 * CARD_EXCERPT_WORDS words of the post's text, so an ordinary post
+	 * written in the block editor (or a followed post whose feed carried
+	 * no summary) still shows what it is about. A Mark is left alone: its
+	 * excerpt is always its caption, and a Mark with no caption (a photo,
+	 * a Check In) has nothing in its content worth repeating as text.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $html    Content to fall back to. Defaults to the
+	 *                        post's own post_content.
+	 * @return string Plain-text excerpt, or '' when there's no text.
+	 */
+	private function card_excerpt( int $post_id, string $html = '' ): string {
+		$excerpt = sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) );
+
+		if ( '' !== $excerpt || get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+			return $excerpt;
+		}
+
+		if ( '' === $html ) {
+			// Drops image, embed, and other non-text blocks, as core's own
+			// automatic excerpt does.
+			$html = excerpt_remove_blocks( (string) get_post_field( 'post_content', $post_id ) );
+		}
+
+		$text = wp_strip_all_tags( strip_shortcodes( $html ), true );
+		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
+
+		return sanitize_text_field( wp_trim_words( $text, self::CARD_EXCERPT_WORDS, '…' ) );
 	}
 
 	/**

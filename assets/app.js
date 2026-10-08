@@ -4115,7 +4115,7 @@
 		// instead (see openPostView()/onFeedListClick()), the same as a
 		// subscription post's card; it never navigates away to the real
 		// permalink.
-		const title = item.title || __('Untitled Mark', 'daymark');
+		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
 		const isDraft = item.status && 'publish' !== item.status;
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
@@ -10673,6 +10673,17 @@
 	// this implies.
 	const CARD_KIND_LINK_WORD_THRESHOLD = 20;
 
+	// WordPress post formats an ordinary post on this site shows as a Note.
+	const NOTE_POST_FORMATS = ['aside', 'status', 'chat'];
+
+	// A card's title. A post with no title uses its text instead (the
+	// excerpt, which the server builds from the post's first words when the
+	// post has none), so an untitled note shows what it says rather than
+	// "Untitled". The fallback is used only when there's no text either.
+	function cardTitle(item, fallback) {
+		return item.title || toPlainText(item.excerpt || '').trim() || fallback;
+	}
+
 	function resolveCardKind(item) {
 		if ('subscription_post' !== item.item_type) {
 			if (item.type) {
@@ -10696,6 +10707,17 @@
 			// way an actual Image Mark's photo is.
 			if (item.post_format && MEDIA_DOMINANT_KINDS.includes(item.post_format)) {
 				return item.post_format;
+			}
+			// Aside, Status, and Chat posts are short text, so they read as
+			// a Note, the same mapping a followed WordPress site's posts get
+			// (Daymark_Subscription_Content_Sniffer::wordpress_format()).
+			if (NOTE_POST_FORMATS.includes(item.post_format)) {
+				return 'note';
+			}
+			// A post with no title and no image is short text too: a Note.
+			// Its card shows the post's text as the title (cardTitle()).
+			if (!item.thumbnail && !(item.title || '').trim()) {
+				return 'note';
 			}
 			const plainExcerpt = toPlainText(item.excerpt || '').trim();
 			if (plainExcerpt) {
@@ -11189,7 +11211,7 @@
 	// in one place is what "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item, titleId) {
 		const kind = resolveCardKind(item);
-		const title = item.title || __('Untitled Mark', 'daymark');
+		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
 		// A Draft's own card renders with no "Draft" chip (issue #405) —
 		// every caller that renders one (Home's Drafts row, Me's own Drafts
 		// list) already puts it inside its own "Drafts" section, so the
@@ -11204,7 +11226,7 @@
 		// show it as a secondary line; a short caption's title already
 		// *is* the whole caption, so repeating it as an "excerpt" would
 		// just be noise.
-		const excerpt = toPlainText(item.excerpt || '');
+		const excerpt = toPlainText(item.excerpt || '').trim();
 		const showExcerpt = excerpt && excerpt !== title;
 		// The stats/timestamp rows render as a sibling of .daymark-recent__body,
 		// not nested inside it — a kind with a small leading thumbnail (article
@@ -11246,14 +11268,14 @@
 	// already exists — see toggleComment()/renderCommentToggle().
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
-		const title = item.title || __('Untitled post', 'daymark');
-		const excerpt = toPlainText(item.excerpt || '');
+		const title = cardTitle(item, __('Untitled post', 'daymark'));
+		const excerpt = toPlainText(item.excerpt || '').trim();
 		// Every kind but the media-dominant ones shows its excerpt — an
 		// image/video/gallery/mixed card already carries the point in its
 		// own banner, so a caption stays secondary the same way a Mark's
 		// own excerpt does; article/link/audio/note all lean on the text.
 		// A quote post's quote is already its banner (issue #168).
-		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind) && 'quote' !== kind;
+		const showExcerpt = excerpt && excerpt !== title && !MEDIA_DOMINANT_KINDS.includes(kind) && 'quote' !== kind;
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
