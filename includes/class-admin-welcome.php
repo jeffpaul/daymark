@@ -109,6 +109,22 @@ class Daymark_Admin_Welcome {
 	}
 
 	/**
+	 * A QR code of the app's address, so it can be opened on a phone by
+	 * pointing the camera at the screen. Shared by this notice and
+	 * Settings -> Daymark -> General.
+	 *
+	 * @param int $size Width and height in pixels.
+	 * @return string SVG markup, or '' if the address is too long to encode.
+	 */
+	public static function app_qr_code( int $size = 128 ): string {
+		return Daymark_QR_Code::svg(
+			Daymark_Routes::app_url(),
+			$size,
+			__( 'QR code for the Daymark app address', 'daymark' )
+		);
+	}
+
+	/**
 	 * Render the notice: where the app is, and two things worth doing first.
 	 *
 	 * @return void
@@ -119,15 +135,17 @@ class Daymark_Admin_Welcome {
 		}
 
 		$app_url = Daymark_Routes::app_url();
+		$qr_code = self::app_qr_code();
 		?>
-		<div class="notice notice-info daymark-welcome">
+		<div class="notice notice-info daymark-welcome" style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:0 2em;">
+			<div style="flex:1 1 24em;">
 			<p><strong><?php esc_html_e( 'Daymark is ready. Here is how to start:', 'daymark' ); ?></strong></p>
 			<ol>
 				<li>
 					<?php
 					printf(
 						/* translators: %s: the Daymark app's address, as a link */
-						esc_html__( 'Open Daymark on your phone at %s and sign in. Then add it to your home screen, so it opens like an app.', 'daymark' ),
+						esc_html__( 'Open Daymark on your phone at %s, or scan the code, and sign in. Then add it to your home screen, so it opens like an app.', 'daymark' ),
 						'<a href="' . esc_url( $app_url ) . '">' . esc_html( $app_url ) . '</a>'
 					);
 					?>
@@ -155,6 +173,13 @@ class Daymark_Admin_Welcome {
 				<a class="button button-primary" href="<?php echo esc_url( $app_url ); ?>"><?php esc_html_e( 'Open Daymark', 'daymark' ); ?></a>
 				<a class="button" href="<?php echo esc_url( self::dismiss_url() ); ?>"><?php esc_html_e( 'Dismiss', 'daymark' ); ?></a>
 			</p>
+			</div>
+			<?php if ( '' !== $qr_code ) : ?>
+				<figure style="margin:0.75em 0;text-align:center;">
+					<?php echo $qr_code; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- SVG built by Daymark_QR_Code from numbers only; its one text attribute is escaped there. ?>
+					<figcaption class="description" style="max-width:128px;"><?php esc_html_e( 'Scan with your phone\'s camera to open Daymark.', 'daymark' ); ?></figcaption>
+				</figure>
+			<?php endif; ?>
 		</div>
 		<?php
 	}
