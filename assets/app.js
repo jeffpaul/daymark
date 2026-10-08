@@ -11917,7 +11917,7 @@
 	// Replaces the old TextPromptSheet-based instant-publish flow
 	// (toggleRepost()'s create branch used to open a small sheet and
 	// publish immediately on Submit/Skip) with a real preview: the
-	// reblogged post rendered as a genuine quote, an editable
+	// reblogged post previewed as the embed card it will publish as, an editable
 	// "Reblog: {title}" title, and a field for the reader's own thoughts —
 	// all visible before the Mark actually exists. A client-side-only
 	// screen (like #create/#post — no PHP route; see
@@ -11959,8 +11959,13 @@
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
-			// Credit the author as well as the site, as the published quote does.
+			// Credit the author as well as the site, as the published embed's
+			// caption does.
 			const source = [item.author, subscriptionSiteLabel(item)].filter(Boolean).join(', ');
+			// The published Reblog leads with a core/embed block, which shows
+			// as the original's own embed card. This card previews it from
+			// what the Timeline already has, with no extra request.
+			const image = item.featured_image_url || '';
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
@@ -11969,12 +11974,16 @@
 			<section class="daymark-screen">
 				<div class="daymark-field">
 					<div class="daymark-field__label">${esc(__('Reblogged post', 'daymark'))}</div>
-					<blockquote class="daymark-reblog-quote">
-						<p><a href="${esc(item.permalink || '#')}" target="_blank" rel="noopener noreferrer">${esc(
-				linkText
-			)}</a></p>
-						<cite>${esc(source)}</cite>
-					</blockquote>
+					<a class="daymark-reblog-embed" href="${esc(
+						item.permalink || '#'
+					)}" target="_blank" rel="noopener noreferrer">
+						${image ? `<img class="daymark-reblog-embed__image" src="${esc(image)}" alt="" loading="lazy">` : ''}
+						<span class="daymark-reblog-embed__text">
+							<span class="daymark-reblog-embed__title">${esc(linkText)}</span>
+							${item.excerpt ? `<span class="daymark-reblog-embed__excerpt">${esc(item.excerpt)}</span>` : ''}
+							<span class="daymark-reblog-embed__source">${esc(source)}</span>
+						</span>
+					</a>
 				</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-reblog-comment">${esc(__('Your thoughts', 'daymark'))}</label>
@@ -12058,9 +12067,8 @@
 			const formData = new FormData();
 			formData.append('title', title);
 			formData.append('caption', comment);
-			formData.append('quote_title', this.item.title || this.item.permalink || '');
 			if (this.item.author) {
-				formData.append('quote_author', this.item.author);
+				formData.append('reblog_author', this.item.author);
 			}
 			formData.append('primary_type', 'note');
 			formData.append('status', 'publish');
