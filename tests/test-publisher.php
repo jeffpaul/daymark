@@ -723,62 +723,68 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The Reblog preview screen (issue #393) sends `quote_title` alongside
-	 * `repost_of` so the published Mark's content leads with a real
-	 * core/quote block — the reblogged post as a link, plus a short
-	 * attribution derived from the URL's own host — rather than a plain
-	 * link paragraph. The reader's own "Your thoughts" text (sent as
-	 * `caption`) still follows as an ordinary paragraph after it.
+	 * A Reblog Mark's content leads with a core/embed block for the
+	 * reblogged post, with a caption crediting the source, ahead of the
+	 * reader's own thoughts.
 	 */
-	public function test_repost_with_quote_title_renders_a_real_quote_block() {
+	public function test_reblog_leads_with_an_embed_block() {
 		$publisher = new Daymark_Publisher();
 		$post_id   = (int) $publisher->publish(
 			array(
-				'caption'      => 'Excited to see this back in Miami.',
-				'title'        => 'Reblog: CloudFest Americas Returns to Miami',
-				'primary_type' => 'note',
-				'repost_of'    => 'https://nomad.blog/cloudfest-americas/',
-				'quote_title'  => 'CloudFest Americas Returns to Miami',
+				'caption'       => 'Excited to see this back in Miami.',
+				'title'         => 'Reblog: CloudFest Americas Returns to Miami',
+				'primary_type'  => 'note',
+				'repost_of'     => 'https://nomad.blog/cloudfest-americas/',
+				'reblog_author' => 'Jane Doe',
 			)
 		);
 
-		$post = get_post( $post_id );
+		$content = get_post( $post_id )->post_content;
 
-		$this->assertStringContainsString( '<!-- wp:quote -->', $post->post_content );
-		$this->assertStringContainsString( '<blockquote class="wp-block-quote">', $post->post_content );
+		$this->assertStringContainsString( '<!-- wp:embed {"url":"https://nomad.blog/cloudfest-americas/"} -->', $content );
 		$this->assertStringContainsString(
-			'<a href="https://nomad.blog/cloudfest-americas/">CloudFest Americas Returns to Miami</a>',
-			$post->post_content
+			"<div class=\"wp-block-embed__wrapper\">\nhttps://nomad.blog/cloudfest-americas/\n</div>",
+			$content
 		);
-		$this->assertStringContainsString( '<cite>nomad.blog</cite>', $post->post_content );
-		$this->assertStringContainsString( 'Excited to see this back in Miami.', $post->post_content );
-		// The quote block always leads, ahead of the reader's own paragraph.
+		$this->assertStringContainsString(
+			'Reblogged from <a href="https://nomad.blog/cloudfest-americas/">Jane Doe, nomad.blog</a>',
+			$content
+		);
+		$this->assertStringNotContainsString( 'wp:quote', $content );
+		// The embed leads, ahead of the reader's own paragraph.
 		$this->assertLessThan(
-			strpos( $post->post_content, 'Excited to see this back in Miami.' ),
-			strpos( $post->post_content, '<!-- wp:quote -->' )
+			strpos( $content, 'Excited to see this back in Miami.' ),
+			strpos( $content, '<!-- wp:embed' )
 		);
+
+		// It parses back as a real core/embed block carrying the URL.
+		$blocks = array_values( array_filter( parse_blocks( $content ), static fn( $block ) => null !== $block['blockName'] ) );
+		$this->assertSame( 'core/embed', $blocks[0]['blockName'] );
+		$this->assertSame( 'https://nomad.blog/cloudfest-americas/', $blocks[0]['attrs']['url'] );
 	}
 
-	/**
-	 * A repost_of sent with no quote_title (an older client, or a direct
-	 * API caller) falls back to the previous plain-caption behavior —
-	 * no quote block, and whatever the caller put in `caption` renders as
-	 * ordinary paragraphs.
-	 */
-	public function test_repost_without_quote_title_has_no_quote_block() {
+	/** With no author sent, the caption credits the site alone. */
+	public function test_reblog_embed_credits_the_site_without_an_author() {
+		// An administrator, so WordPress's own content filter (which encodes
+		// `&` in block attributes for other roles) leaves the markup as built.
+		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
 		$publisher = new Daymark_Publisher();
 		$post_id   = (int) $publisher->publish(
 			array(
-				'caption'      => '<a href="https://nomad.blog/cloudfest-americas/">CloudFest Americas Returns to Miami</a>',
+				'caption'      => '',
+				'title'        => 'Reblog: a post',
 				'primary_type' => 'note',
-				'repost_of'    => 'https://nomad.blog/cloudfest-americas/',
+				'repost_of'    => 'https://nomad.blog/a-post/?a=1&b=2',
 			)
 		);
 
-		$post = get_post( $post_id );
+		$content = get_post( $post_id )->post_content;
 
-		$this->assertStringNotContainsString( 'wp:quote', $post->post_content );
-		$this->assertStringContainsString( 'wp:paragraph', $post->post_content );
+		$this->assertStringContainsString( 'Reblogged from <a href="https://nomad.blog/a-post/?a=1&#038;b=2">nomad.blog</a>', $content );
+		// The URL line stays readable by WordPress's auto-embed.
+		$this->assertStringContainsString( "\nhttps://nomad.blog/a-post/?a=1&amp;b=2\n", $content );
+		$this->assertStringContainsString( '"url":"https://nomad.blog/a-post/?a=1\\u0026b=2"', $content );
 	}
 
 	/** An ordinary Mark with no repost_of sent never gets the meta at all. */

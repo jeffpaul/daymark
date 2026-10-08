@@ -893,10 +893,10 @@
 			)}</p>`;
 		}
 		return `<p class="daymark-empty">${sprintf(
-			/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+			/* translators: 1: "Publish a Mark" link, 2: "follow a site" button */
 			__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
 			'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-			`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('subscribe to a site', 'daymark'))}</a>`
+			`<button type="button" class="daymark-linkbtn" data-follow-site>${esc(__('follow a site', 'daymark'))}</button>`
 		)}</p>`;
 	}
 
@@ -6278,11 +6278,84 @@
 	// moves the marker to a newer item.
 	let timelineLastSeen = config.timelineLastSeen || null;
 
-	// How far back a fresh load looks for the marker: one request this size
-	// (GET /timeline caps per_page at 50). A multiple of RECENT_PER_PAGE, so
-	// infinite scroll carries on from the next page exactly. A marker older
-	// than this many items just opens at the top, as before.
+	// --- Timeline reading position ---
+	//
+	// The item at the top of the screen when this user last looked at Home,
+	// also stored on the server (Daymark_Timeline_Position) so it follows
+	// them across devices. A fresh Home load opens on it. Unlike the
+	// last-seen marker above, it moves both ways: it records where the
+	// reader was, so scrolling down into older posts moves it down too. The
+	// last-seen marker still decides how many posts count as new.
+	let timelinePosition = config.timelinePosition || null;
+
+	// How far back a fresh load looks for the reading position: requests of
+	// this size (GET /timeline caps per_page at 50), up to
+	// ANCHOR_SEARCH_PAGES of them. A multiple of RECENT_PER_PAGE, so
+	// infinite scroll carries on from the next page exactly. A position
+	// further back than that opens at the top instead.
 	const LAST_SEEN_SEARCH_LIMIT = 40;
+	const ANCHOR_SEARCH_PAGES = 5;
+
+	// Debounced save of the reading position: one request after scrolling
+	// stops, not one per card that passes the top of the screen.
+	const POSITION_SAVE_DELAY = 1500;
+	let positionSaveTimer = null;
+	let positionPendingRef = null;
+
+	function queuePositionSave(ref) {
+		positionPendingRef = ref;
+		if (positionSaveTimer) {
+			clearTimeout(positionSaveTimer);
+		}
+		positionSaveTimer = setTimeout(() => flushPositionSave(false), POSITION_SAVE_DELAY);
+	}
+
+	// `leaving` uses a keepalive request, which the browser finishes even
+	// as the page is hidden or closed.
+	function flushPositionSave(leaving) {
+		if (positionSaveTimer) {
+			clearTimeout(positionSaveTimer);
+			positionSaveTimer = null;
+		}
+		const ref = positionPendingRef;
+		positionPendingRef = null;
+		if (!ref || !config.nonce) {
+			return;
+		}
+		// Keep the local copy current right away, so returning to Home in
+		// this same session opens here even before the server answers.
+		timelinePosition = ref;
+		fetch(config.restUrl + 'timeline/position', {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ id: Number(ref.id) }),
+			keepalive: !!leaving,
+		}).catch(() => {
+			// Best effort: a lost save only means the next visit opens
+			// where the reader was a little earlier.
+		});
+	}
+
+	// The Timeline item a card wrapper holds, as { id, item_type }.
+	function feedWrapRef(wrap) {
+		const trigger = wrap && wrap.querySelector('[data-subpost], [data-expand-post]');
+		if (!trigger) {
+			return null;
+		}
+		return trigger.hasAttribute('data-subpost')
+			? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
+			: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
+	}
+
+	function sameTimelineRef(a, b) {
+		return (
+			!!a &&
+			!!b &&
+			String(a.id) === String(b.id) &&
+			('subscription_post' === a.item_type) === ('subscription_post' === b.item_type)
+		);
+	}
 
 	// Debounced save of the newest card seen, so a scroll through many
 	// cards sends one request, not one per card.
@@ -6516,6 +6589,32 @@
 				newPosts.addEventListener('click', () => this.jumpToNewest());
 			}
 
+			// Back to the newest post: tap an empty part of the header (the
+			// web version of tapping a phone's status bar), the Daymark
+			// wordmark, or the Timeline tab while already on the Timeline.
+			// Those two links point at #home, so on their own they would do
+			// nothing here.
+			const topbar = root.querySelector('.daymark-topbar');
+			if (topbar) {
+				topbar.addEventListener('click', (event) => {
+					const control = event.target.closest('a, button');
+					if (control && !control.classList.contains('daymark-homelink')) {
+						return;
+					}
+					event.preventDefault();
+					this.jumpToNewest();
+				});
+			}
+			const timelineTab = root.querySelector('.daymark-bottomnav__link[aria-current="page"]');
+			if (timelineTab) {
+				timelineTab.addEventListener('click', (event) => {
+					event.preventDefault();
+					this.jumpToNewest();
+				});
+			}
+
+			this.bindPositionTracking();
+
 			const more = root.querySelector('[data-recent-more]');
 			if (more) {
 				more.addEventListener('click', (event) => {
@@ -6530,6 +6629,10 @@
 		},
 
 		async init() {
+			// No reading-position saves until the Timeline has loaded and
+			// been placed; until then the top of the screen says nothing
+			// about where the reader is.
+			this._positionReady = false;
 			this.teardownSeenObserver();
 			this.watchForUserScroll();
 			this._searchSeq = 0;
@@ -6567,9 +6670,11 @@
 				// have pushed it down; put the opened card back in place.
 				scrollFeedToAnchor(snapshot, true);
 				this.observeSeen();
+				this._positionReady = true;
 				return;
 			}
 			await this.loadRecent({ anchor: true });
+			this._positionReady = true;
 		},
 
 		// Drafts are counted separately so they stay reachable no matter
@@ -6716,23 +6821,39 @@
 				if (this._pendingPublishCount) {
 					anchor = false;
 				}
-				let anchorIndex = anchor ? timelineItemIndex(arr, timelineLastSeen) : -1;
-				if (anchor && timelineLastSeen && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
-					// Not at the very top: load further back in one request,
-					// both to find the marker when it is past the first page
-					// and so there is enough below it to scroll it to the
-					// top (a short list would leave the newer cards above it
-					// on screen, and they would count as seen).
+				// Open on the reading position; a user who has only a
+				// last-seen marker (saved before the reading position
+				// existed) opens on that instead.
+				const anchorRef = anchor ? timelinePosition || timelineLastSeen : null;
+				let anchorIndex = anchorRef ? timelineItemIndex(arr, anchorRef) : -1;
+				if (anchorRef && anchorIndex !== 0 && arr.length === RECENT_PER_PAGE) {
+					// Not at the very top: load further back, both to find
+					// the item when it is past the first page and so there
+					// is enough below it to scroll it to the top (a short
+					// list would leave the newer cards above it on screen,
+					// and they would count as seen).
 					try {
-						const wide = await apiGet('timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=1');
-						if (seq !== this._searchSeq || !list.isConnected) {
-							return;
+						let wideArr = [];
+						let pages = 0;
+						let wideIndex = -1;
+						while (pages < ANCHOR_SEARCH_PAGES) {
+							pages += 1;
+							const wide = await apiGet(
+								'timeline?per_page=' + LAST_SEEN_SEARCH_LIMIT + '&page=' + pages
+							);
+							if (seq !== this._searchSeq || !list.isConnected) {
+								return;
+							}
+							const pageArr = Array.isArray(wide) ? wide : [];
+							wideArr = wideArr.concat(pageArr);
+							wideIndex = timelineItemIndex(wideArr, anchorRef);
+							if (wideIndex >= 0 || pageArr.length < LAST_SEEN_SEARCH_LIMIT) {
+								break;
+							}
 						}
-						const wideArr = Array.isArray(wide) ? wide : [];
-						const wideIndex = timelineItemIndex(wideArr, timelineLastSeen);
 						if (wideIndex >= 0) {
 							arr = wideArr;
-							loaded = LAST_SEEN_SEARCH_LIMIT;
+							loaded = pages * LAST_SEEN_SEARCH_LIMIT;
 							anchorIndex = wideIndex;
 						}
 					} catch (err) {
@@ -6765,7 +6886,11 @@
 				// move the page out from under them.
 				if (anchorIndex > 0 && !this._userScrolled) {
 					this.scrollToItem(arr[anchorIndex]);
-					this.showNewPosts(anchorIndex);
+					// "New" means newer than the newest post seen before,
+					// not everything above the reading position: posts the
+					// reader already scrolled past are not new.
+					const seenIndex = timelineItemIndex(arr, timelineLastSeen);
+					this.showNewPosts(seenIndex >= 0 ? Math.min(seenIndex, anchorIndex) : anchorIndex);
 				}
 				this.observeSeen();
 
@@ -6988,13 +7113,10 @@
 		},
 
 		noteSeen(wrap) {
-			const trigger = wrap.querySelector('[data-subpost], [data-expand-post]');
-			if (!trigger) {
+			const ref = feedWrapRef(wrap);
+			if (!ref) {
 				return;
 			}
-			const ref = trigger.hasAttribute('data-subpost')
-				? { id: trigger.getAttribute('data-subpost'), item_type: 'subscription_post' }
-				: { id: trigger.getAttribute('data-expand-post'), item_type: 'mark' };
 			const index = timelineItemIndex(this._items, ref);
 			if (index < 0 || index >= this._newestSeenIndex) {
 				return;
@@ -7008,6 +7130,62 @@
 				return;
 			}
 			queueLastSeenSave(Number(ref.id));
+		},
+
+		// Save the reading position as the reader scrolls. Re-bound on
+		// every render; the previous listener is removed first so they
+		// don't pile up across visits to Home.
+		bindPositionTracking() {
+			if (this._onPositionScroll) {
+				window.removeEventListener('scroll', this._onPositionScroll);
+			}
+			let ticking = false;
+			this._onPositionScroll = () => {
+				if (ticking) {
+					return;
+				}
+				ticking = true;
+				window.requestAnimationFrame(() => {
+					ticking = false;
+					this.notePosition();
+				});
+			};
+			window.addEventListener('scroll', this._onPositionScroll, { passive: true });
+		},
+
+		// The first Timeline card still showing below the header.
+		topVisibleRef() {
+			const list = root.querySelector('[data-recent-list]');
+			if (!list || !list.isConnected) {
+				return null;
+			}
+			const header = root.querySelector('.daymark-topbar');
+			// A hidden header slides up out of view, so its bottom edge is
+			// then at or above 0.
+			const top = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+			// A card counts once more than a sliver of it shows.
+			const minVisible = 24;
+			for (const wrap of list.querySelectorAll('.daymark-recent__item-wrap')) {
+				if (wrap.getBoundingClientRect().bottom > top + minVisible) {
+					return feedWrapRef(wrap);
+				}
+			}
+			return null;
+		},
+
+		notePosition() {
+			if (!this._positionReady) {
+				return;
+			}
+			const ref = this.topVisibleRef();
+			if (!ref) {
+				return;
+			}
+			const current = positionPendingRef || timelinePosition;
+			if (sameTimelineRef(ref, current)) {
+				return;
+			}
+			queuePositionSave(ref);
 		},
 
 		// The "new posts" button: how many newer posts sit above the card
@@ -7127,6 +7305,10 @@
 			}
 
 			await this.loadRecent();
+			// A refresh shows the newest posts, so start at the top and make
+			// that the reading position too.
+			window.scrollTo(0, 0);
+			this.notePosition();
 
 			this._refreshing = false;
 			if (indicator) {
@@ -7801,9 +7983,18 @@
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
-					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
-						__('Following', 'daymark')
-					)}</h2>
+					<div class="daymark-follow__heading">
+						<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
+							__('Following', 'daymark')
+						)}</h2>
+						${
+							config.canManageSubscriptions
+								? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
+										__('+ Follow a site', 'daymark')
+								  )}</button>`
+								: ''
+						}
+					</div>
 					<div class="daymark-recent__list" data-explore-following>
 						${skeletonRows(2)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
@@ -7896,11 +8087,9 @@
 				return;
 			}
 			if (!subscriptions.length) {
-				list.innerHTML = config.adminSubscriptionsUrl
-					? `<p class="daymark-empty">${sprintf(
-							/* translators: %s: "Subscribe to one" link */
-							__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
-							`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('Subscribe to one', 'daymark'))}</a>`
+				list.innerHTML = config.canManageSubscriptions
+					? `<p class="daymark-empty">${esc(
+							__("You're not following any sites yet. Tap Follow a site to see a site's posts here.", 'daymark')
 					  )}</p>`
 					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
 				return;
@@ -7995,6 +8184,11 @@
 				</div>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
 					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
+					${
+						config.canManageSubscriptions
+							? `<button type="button" class="daymark-melink" data-follow-site>${esc(__('Follow a site', 'daymark'))}</button>`
+							: ''
+					}
 					<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
@@ -9578,6 +9772,224 @@
 	// default thing" path makes sense (Reblog — Skip publishes just the
 	// reblogged post's own link, with no added comment; Comment has no such
 	// default, so it gets no Skip button at all), onSkip too.
+	// "Follow a site" (admins only, config.canManageSubscriptions): paste an
+	// address, pick one of the feeds the site offers, follow it. The same
+	// discovery and subscribe logic as Settings -> Daymark, through
+	// POST /subscriptions/discover and /subscriptions/follow. The second
+	// step sends only the index of a feed the server found, never a URL.
+	const FollowSiteSheet = {
+		el: null,
+		opener: null,
+		onFollowed: null,
+		busy: false,
+
+		show(opener, onFollowed) {
+			this.opener = opener || null;
+			this.onFollowed = onFollowed || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			syncSheetsToVisualViewport();
+			this.renderAddressStep('');
+			this.onKeydown = (event) => {
+				if (event.key === 'Escape') {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+		},
+
+		frame(body) {
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Close Follow a site', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-follow-title">
+				<h2 class="daymark-sheet__title" id="daymark-follow-title" tabindex="-1">${esc(__('Follow a site', 'daymark'))}</h2>
+				<div class="daymark-sheet__body">${body}</div>
+			</div>`;
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+		},
+
+		renderAddressStep(value) {
+			this.frame(`
+				<label class="daymark-field__label" for="daymark-follow-url">${esc(__('Site address', 'daymark'))}</label>
+				<input type="url" id="daymark-follow-url" class="daymark-input" data-follow-url inputmode="url" autocomplete="url" placeholder="${esc(
+					__('example.com', 'daymark')
+				)}" value="${esc(value)}" />
+				<p class="daymark-follow__hint">${esc(
+					__('Daymark finds the site\'s feed, and its new posts show up in your Timeline.', 'daymark')
+				)}</p>
+				<p class="daymark-status" data-follow-status aria-live="polite"></p>
+				<div class="daymark-sheet__actions">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-find>${esc(__('Find feeds', 'daymark'))}</button>
+				</div>`);
+			const input = this.el.querySelector('[data-follow-url]');
+			const find = () => this.find(input.value.trim());
+			this.el.querySelector('[data-follow-find]').addEventListener('click', find);
+			input.addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					event.preventDefault();
+					find();
+				}
+			});
+			input.focus();
+		},
+
+		async find(address) {
+			const status = this.el.querySelector('[data-follow-status]');
+			const button = this.el.querySelector('[data-follow-find]');
+			if (!address) {
+				status.textContent = __('Enter a site address.', 'daymark');
+				return;
+			}
+			if (this.busy) {
+				return;
+			}
+			this.busy = true;
+			button.disabled = true;
+			button.textContent = __('Looking for feeds…', 'daymark');
+			status.textContent = '';
+			try {
+				const result = await apiPost('subscriptions/discover', { site_url: address });
+				if (!this.el || this.el.hidden) {
+					return;
+				}
+				this.renderFeedStep(address, result);
+			} catch (err) {
+				if (!this.el || this.el.hidden) {
+					return;
+				}
+				status.textContent = (err && err.message) || __('Could not look up that site.', 'daymark');
+				button.disabled = false;
+				button.textContent = __('Find feeds', 'daymark');
+			} finally {
+				this.busy = false;
+			}
+		},
+
+		renderFeedStep(address, result) {
+			const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+			const open = candidates.filter((c) => !c.subscribed);
+			if (!open.length) {
+				this.renderAddressStep(address);
+				this.el.querySelector('[data-follow-status]').textContent = __(
+					'You already follow every feed this site offers.',
+					'daymark'
+				);
+				return;
+			}
+			const recommended = open.some((c) => c.index === result.default_index);
+			const defaultIndex = recommended ? result.default_index : open[0].index;
+			// With more than one feed to choose from, name the one Daymark
+			// would pick (the server's default_index), so the preselection
+			// isn't a mystery.
+			const showRecommended = recommended && candidates.length > 1;
+			const options = candidates
+				.map(
+					(c) => `
+				<label class="daymark-follow__option">
+					<input type="radio" name="daymark-follow-feed" value="${esc(String(c.index))}"${
+						c.index === defaultIndex ? ' checked' : ''
+					}${c.subscribed ? ' disabled' : ''} />
+					<span class="daymark-follow__optiontext">
+						<span class="daymark-follow__name"><strong>${esc(c.label || __('Feed', 'daymark'))}</strong>${
+							showRecommended && c.index === result.default_index
+								? ` <span class="daymark-follow__recommended">${esc(__('(recommended)', 'daymark'))}</span>`
+								: ''
+						}${c.subscribed ? ` <em>${esc(__('(already following)', 'daymark'))}</em>` : ''}</span>
+						<span class="daymark-follow__url">${esc(c.url)}</span>
+					</span>
+				</label>`
+				)
+				.join('');
+			this.frame(`
+				<fieldset class="daymark-follow__feeds">
+					<legend class="daymark-field__label">${esc(
+						candidates.length > 1 ? __('Choose a feed', 'daymark') : __('Feed', 'daymark')
+					)}</legend>
+					${options}
+				</fieldset>
+				<label class="daymark-field__label" for="daymark-follow-name">${esc(__('Name', 'daymark'))}</label>
+				<input type="text" id="daymark-follow-name" class="daymark-input" data-follow-name value="${esc(
+					result.site_title || ''
+				)}" placeholder="${esc(result.site_url || address)}" />
+				<p class="daymark-status" data-follow-status aria-live="polite"></p>
+				<div class="daymark-sheet__actions">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-submit>${esc(__('Follow', 'daymark'))}</button>
+					<button type="button" class="daymark-btn daymark-btn--text" data-follow-back>${esc(__('Back', 'daymark'))}</button>
+				</div>`);
+			this.el.querySelector('[data-follow-back]').addEventListener('click', () => this.renderAddressStep(address));
+			this.el.querySelector('[data-follow-submit]').addEventListener('click', () => this.follow());
+			this.el.querySelector('#daymark-follow-title').focus();
+		},
+
+		async follow() {
+			const picked = this.el.querySelector('input[name="daymark-follow-feed"]:checked');
+			const status = this.el.querySelector('[data-follow-status]');
+			const button = this.el.querySelector('[data-follow-submit]');
+			if (!picked) {
+				status.textContent = __('Choose a feed to follow.', 'daymark');
+				return;
+			}
+			if (this.busy) {
+				return;
+			}
+			this.busy = true;
+			button.disabled = true;
+			button.textContent = __('Following…', 'daymark');
+			status.textContent = '';
+			try {
+				const subscription = await apiPost('subscriptions/follow', {
+					index: Number(picked.value),
+					site_title: this.el.querySelector('[data-follow-name]').value.trim(),
+				});
+				const handler = this.onFollowed;
+				const name = (subscription && (subscription.site_title || subscription.site_url)) || '';
+				this.hide();
+				announce(
+					sprintf(
+						/* translators: %s: site name */
+						__('Following %s. New posts will show up in your Timeline.', 'daymark'),
+						name
+					)
+				);
+				// The next Home visit loads fresh, so the new posts appear.
+				discardFeedSnapshot();
+				if (handler) {
+					handler(subscription);
+				}
+			} catch (err) {
+				status.textContent = (err && err.message) || __('Could not follow that site.', 'daymark');
+				button.disabled = false;
+				button.textContent = __('Follow', 'daymark');
+			} finally {
+				this.busy = false;
+			}
+		},
+
+		hide() {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			this.busy = false;
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
+			this.onFollowed = null;
+		},
+	};
+
 	const TextPromptSheet = {
 		el: null,
 		opener: null,
@@ -11483,7 +11895,7 @@
 	// Replaces the old TextPromptSheet-based instant-publish flow
 	// (toggleRepost()'s create branch used to open a small sheet and
 	// publish immediately on Submit/Skip) with a real preview: the
-	// reblogged post rendered as a genuine quote, an editable
+	// reblogged post previewed as the embed card it will publish as, an editable
 	// "Reblog: {title}" title, and a field for the reader's own thoughts —
 	// all visible before the Mark actually exists. A client-side-only
 	// screen (like #create/#post — no PHP route; see
@@ -11525,8 +11937,13 @@
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
-			// Credit the author as well as the site, as the published quote does.
+			// Credit the author as well as the site, as the published embed's
+			// caption does.
 			const source = [item.author, subscriptionSiteLabel(item)].filter(Boolean).join(', ');
+			// The published Reblog leads with a core/embed block, which shows
+			// as the original's own embed card. This card previews it from
+			// what the Timeline already has, with no extra request.
+			const image = item.featured_image_url || '';
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
@@ -11535,12 +11952,16 @@
 			<section class="daymark-screen">
 				<div class="daymark-field">
 					<div class="daymark-field__label">${esc(__('Reblogged post', 'daymark'))}</div>
-					<blockquote class="daymark-reblog-quote">
-						<p><a href="${esc(item.permalink || '#')}" target="_blank" rel="noopener noreferrer">${esc(
-				linkText
-			)}</a></p>
-						<cite>${esc(source)}</cite>
-					</blockquote>
+					<a class="daymark-reblog-embed" href="${esc(
+						item.permalink || '#'
+					)}" target="_blank" rel="noopener noreferrer">
+						${image ? `<img class="daymark-reblog-embed__image" src="${esc(image)}" alt="" loading="lazy">` : ''}
+						<span class="daymark-reblog-embed__text">
+							<span class="daymark-reblog-embed__title">${esc(linkText)}</span>
+							${item.excerpt ? `<span class="daymark-reblog-embed__excerpt">${esc(item.excerpt)}</span>` : ''}
+							<span class="daymark-reblog-embed__source">${esc(source)}</span>
+						</span>
+					</a>
 				</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-reblog-comment">${esc(__('Your thoughts', 'daymark'))}</label>
@@ -11624,9 +12045,8 @@
 			const formData = new FormData();
 			formData.append('title', title);
 			formData.append('caption', comment);
-			formData.append('quote_title', this.item.title || this.item.permalink || '');
 			if (this.item.author) {
-				formData.append('quote_author', this.item.author);
+				formData.append('reblog_author', this.item.author);
 			}
 			formData.append('primary_type', 'note');
 			formData.append('status', 'publish');
@@ -12973,6 +13393,23 @@
 	// Create), since the cost of getting it wrong (a lost draft) is the
 	// same everywhere; the picker zone's own dragover/drop handlers
 	// (CreateScreen.bindEvents()) still run first and do the real work.
+	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
+	// Timeline). After following, Explore and Home reload so the new site
+	// and its posts appear.
+	root.addEventListener('click', (event) => {
+		const trigger = event.target.closest('[data-follow-site]');
+		if (!trigger || !config.canManageSubscriptions) {
+			return;
+		}
+		event.preventDefault();
+		FollowSiteSheet.show(trigger, () => {
+			const hash = window.location.hash || '#home';
+			if ('#explore' === hash || '#home' === hash) {
+				showScreen(hash);
+			}
+		});
+	});
+
 	window.addEventListener('dragover', (event) => event.preventDefault());
 	window.addEventListener('drop', (event) => event.preventDefault());
 
@@ -13071,6 +13508,7 @@
 	document.addEventListener('visibilitychange', () => {
 		if ('hidden' === document.visibilityState) {
 			flushLastSeenSave(true);
+			flushPositionSave(true);
 		} else {
 			checkUnreadNotifications();
 			// iOS drops a backgrounded app's requests; retry uploads now.

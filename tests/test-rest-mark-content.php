@@ -290,6 +290,66 @@ class Test_Rest_Mark_Content extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A Reblog Mark's embed block.
+	 *
+	 * @param string $url Reblogged post URL.
+	 * @return string Block markup.
+	 */
+	private function reblog_embed_block( string $url ): string {
+		return '<!-- wp:embed {"url":"' . $url . '"} -->' . "\n"
+			. '<figure class="wp-block-embed"><div class="wp-block-embed__wrapper">' . "\n" . $url . "\n" . '</div>'
+			. '<figcaption class="wp-element-caption">Reblogged from <a href="' . $url . '">example.com</a></figcaption></figure>' . "\n"
+			. '<!-- /wp:embed -->';
+	}
+
+	/**
+	 * An embed WordPress resolved keeps showing in the app: its iframe,
+	 * which wp_kses_post() would remove, comes back rebuilt from allowlisted
+	 * attributes, and the caption stays.
+	 */
+	public function test_resolved_embed_is_kept_as_a_safe_iframe() {
+		$url     = 'https://example.com/a-post/';
+		$post_id = $this->published_post( $this->reblog_embed_block( $url ) );
+
+		$filter = static function () {
+			return '<blockquote class="wp-embedded-content"><a href="https://example.com/a-post/">A post</a></blockquote>'
+				. '<iframe class="wp-embedded-content" src="https://example.com/a-post/embed/" width="600" height="338" title="A post" onload="alert(1)"></iframe>';
+		};
+		add_filter( 'pre_oembed_result', $filter );
+		$response = rest_do_request( $this->request_for( $post_id ) );
+		remove_filter( 'pre_oembed_result', $filter );
+
+		$this->assertSame( 200, $response->get_status() );
+
+		$html = $response->get_data()['content'];
+
+		$this->assertStringContainsString( '<div class="daymark-oembed-preview"><iframe src="https://example.com/a-post/embed/"', $html );
+		$this->assertStringContainsString( 'aspect-ratio:600/338', $html );
+		$this->assertStringNotContainsString( 'onload', $html );
+		$this->assertStringNotContainsString( 'DAYMARKEMBEDSLOT', $html );
+		$this->assertStringContainsString( 'Reblogged from', $html );
+	}
+
+	/** An embed WordPress couldn't resolve is left as its plain link. */
+	public function test_unresolved_embed_stays_a_link() {
+		$url     = 'https://example.com/not-embeddable/';
+		$post_id = $this->published_post( $this->reblog_embed_block( $url ) );
+
+		$filter = static function () {
+			return false;
+		};
+		add_filter( 'pre_oembed_result', $filter );
+		$response = rest_do_request( $this->request_for( $post_id ) );
+		remove_filter( 'pre_oembed_result', $filter );
+
+		$html = $response->get_data()['content'];
+
+		$this->assertStringNotContainsString( 'daymark-oembed-preview', $html );
+		$this->assertStringNotContainsString( 'DAYMARKEMBEDSLOT', $html );
+		$this->assertStringContainsString( 'href="' . $url . '"', $html );
+	}
+
+	/**
 	 * Another Author's post cannot carry Daymark's own overlay classes into an
 	 * Editor's app (a `daymark-sheet` is a fixed, full-screen layer through
 	 * app.css). Unrelated classes and the Check In map preview's own classes

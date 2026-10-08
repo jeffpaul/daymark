@@ -746,4 +746,107 @@ XML;
 
 		$this->assertSame( 401, $response->get_status() );
 	}
+
+	// -----------------------------------------------------------------
+	// Following a site from the app: POST /subscriptions/discover, then
+	// POST /subscriptions/follow.
+	// -----------------------------------------------------------------
+
+	/**
+	 * Run discovery for example.com as the current user.
+	 *
+	 * @return WP_REST_Response
+	 */
+	private function discover_example(): WP_REST_Response {
+		$this->mock_response( 'https://example.com/', $this->html_with_feed_and_icon() );
+
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/discover' );
+		$request->set_param( 'site_url', 'https://example.com/' );
+
+		return rest_do_request( $request );
+	}
+
+	/**
+	 * Follow a discovered feed by index.
+	 *
+	 * @param int    $index Candidate index.
+	 * @param string $title Site name to set, or '' for none.
+	 * @return WP_REST_Response
+	 */
+	private function follow( int $index, string $title = '' ): WP_REST_Response {
+		$request = $this->request( 'POST', '/daymark/v1/subscriptions/follow' );
+		$request->set_param( 'index', $index );
+		if ( '' !== $title ) {
+			$request->set_param( 'site_title', $title );
+		}
+
+		return rest_do_request( $request );
+	}
+
+	/** Discovery lists the site's feeds, its name, and which one to pick by default. */
+	public function test_discover_lists_feeds(): void {
+		wp_set_current_user( $this->admin_user );
+
+		$response = $this->discover_example();
+		$data     = $response->get_data();
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'Example', $data['site_title'] );
+		$urls = wp_list_pluck( $data['candidates'], 'url' );
+		$this->assertContains( 'https://example.com/feed/', $urls );
+		$this->assertArrayHasKey( $data['default_index'], $data['candidates'] );
+		$this->assertFalse( $data['candidates'][0]['subscribed'] );
+	}
+
+	/** Following a discovered feed creates the subscription, with an edited name. */
+	public function test_follow_creates_subscription_with_name(): void {
+		wp_set_current_user( $this->admin_user );
+		$data  = $this->discover_example()->get_data();
+		$index = array_search( 'https://example.com/feed/', wp_list_pluck( $data['candidates'], 'url' ), true );
+
+		$response = $this->follow( (int) $index, 'My Friend' );
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 'https://example.com/feed/', $response->get_data()['feed_url'] );
+		$this->assertSame( 'My Friend', $response->get_data()['site_title'] );
+	}
+
+	/** A discovery can be used once: following again needs a fresh lookup. */
+	public function test_follow_uses_discovery_once(): void {
+		wp_set_current_user( $this->admin_user );
+		$this->discover_example();
+
+		$this->assertSame( 201, $this->follow( 0 )->get_status() );
+		$this->assertSame( 410, $this->follow( 0 )->get_status() );
+	}
+
+	/** Following with no discovery first, or an index it didn't find, is refused. */
+	public function test_follow_requires_a_discovered_feed(): void {
+		wp_set_current_user( $this->admin_user );
+
+		$this->assertSame( 410, $this->follow( 0 )->get_status() );
+
+		$this->discover_example();
+		$response = $this->follow( 99 );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'daymark_follow_invalid_feed', $response->get_data()['code'] );
+	}
+
+	/** An Author can't follow sites, the same as on Settings -> Daymark. */
+	public function test_follow_routes_need_manage_options(): void {
+		wp_set_current_user( $this->author_a );
+
+		$this->assertSame( 403, $this->discover_example()->get_status() );
+		$this->assertSame( 403, $this->follow( 0 )->get_status() );
+	}
+
+	/** One user's discovery can't be followed by another user. */
+	public function test_discovery_is_per_user(): void {
+		wp_set_current_user( $this->admin_user );
+		$this->discover_example();
+
+		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$this->assertSame( 410, $this->follow( 0 )->get_status() );
+	}
 }

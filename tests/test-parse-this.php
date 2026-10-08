@@ -362,25 +362,27 @@ class Test_Parse_This extends WP_UnitTestCase {
 		$this->assertSame( 'https://other.example/original', $data['url'] );
 	}
 
-	/** A Reblog's quote credits the author and the site. */
-	public function test_reblog_quote_credits_the_author() {
+	/** A Reblog's embed caption credits the author and the site. */
+	public function test_reblog_embed_credits_the_author() {
 		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
-		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
-		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
-		$request->set_param( 'caption', 'Worth reading.' );
-		$request->set_param( 'primary_type', 'note' );
-		$request->set_param( 'status', 'publish' );
-		$request->set_param( 'repost_of', 'https://blog.example/great-post' );
-		$request->set_param( 'quote_title', 'A Great Post' );
-		$request->set_param( 'quote_author', 'Jane Doe' );
+		foreach ( array( 'reblog_author', 'quote_author' ) as $param ) {
+			$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+			$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+			$request->set_param( 'caption', 'Worth reading.' );
+			$request->set_param( 'primary_type', 'note' );
+			$request->set_param( 'status', 'publish' );
+			$request->set_param( 'repost_of', 'https://blog.example/great-post-' . $param );
+			// quote_author is the name an app cached before the embed change sends.
+			$request->set_param( $param, 'Jane Doe' );
 
-		$response = rest_do_request( $request );
-		$this->assertLessThan( 300, $response->get_status() );
+			$response = rest_do_request( $request );
+			$this->assertLessThan( 300, $response->get_status() );
 
-		$content = (string) get_post_field( 'post_content', (int) $response->get_data()['id'] );
+			$content = (string) get_post_field( 'post_content', (int) $response->get_data()['id'] );
 
-		$this->assertStringContainsString( '<!-- wp:quote -->', $content );
-		$this->assertStringContainsString( '<cite>Jane Doe, blog.example</cite>', $content );
+			$this->assertStringContainsString( '<!-- wp:embed', $content );
+			$this->assertStringContainsString( '>Jane Doe, blog.example</a>', $content );
+		}
 	}
 }

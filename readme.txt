@@ -136,7 +136,7 @@ Turning off Check In location also stops the weather lookup, since weather needs
 
 = How do I follow a site? =
 
-Go to Settings -> Daymark -> Subscriptions, paste the site's address, and click Subscribe. Daymark finds the site's feed and shows you the feeds it found, so you can pick one. New posts from the site then appear in your Daymark Timeline. Settings -> Daymark -> General sets how often Daymark checks for new posts.
+In the Daymark app, tap "+ Follow a site" in Explore's Following section, or "Follow a site" on the Me screen. Paste the site's address, pick one of the feeds Daymark finds, and tap Follow. You can do the same in Settings -> Daymark -> Subscriptions. New posts from the site then appear in your Daymark Timeline. Settings -> Daymark -> General sets how often Daymark checks for new posts.
 
 To follow many sites at once, import an OPML file from your feed reader on the Import / Export tab. With Jetpack and a linked WordPress.com account, you can also import the sites you follow in the WordPress.com Reader. Following sites needs an administrator, since the list is shared by everyone on the site.
 
@@ -145,6 +145,16 @@ To follow many sites at once, import an OPML file from your feed reader on the I
 Yes, if you want to. In Settings -> Daymark -> General, check "Share the sites you follow as a public blogroll". Daymark then publishes your active subscriptions as an OPML file that feed readers can import, and links to it from every page of your site with `<link rel="blogroll">`. To show the list on a page, add the Blogroll block. It's off by default.
 
 If your site still has entries in WordPress's old Links (blogroll) list, Settings -> Daymark -> Import / Export offers to import them as subscriptions.
+
+= Can I keep Notes off my blog's home page? =
+
+Yes. Notes show on the home page and in the main feed by default, like any other post. To keep them off, check "Keep Notes off your blog's home page and main feed" in Settings -> Daymark -> General. A Note is any post with the Aside post format: Notes you post from Daymark, including reblogs and replies, and Aside posts you write in the block editor. Notes then stay off the home page and the main RSS feed, but keep their own pages and still appear in archives, search, and Daymark's Timeline. Notes stay ordinary posts, so nothing changes if you deactivate Daymark. A block theme's home page follows this setting when its Query Loop block inherits the template's query, which is the usual setup.
+
+You don't need to give a Note a title in the block editor. When you publish an Aside post with no title, Daymark gives it one from its first few words, the same way the app titles a Note, so it gets a readable web address and a title in feeds.
+
+= What's the character count on Notes in the block editor? =
+
+When you write a post with the Aside format, or a Standard post with no title, the block editor's Post sidebar counts down from 300 characters, the length of one Bluesky post. Up to 300 characters, it's a short post: plugins that share to Bluesky, such as ATmosphere, post its text as an ordinary social post, without a title. Past 300, it's a long post, which ATmosphere shares as a link card to it instead of its full text. If it has images, ATmosphere still posts it with its images and shortens the text. A Standard post with a title is always shared as a link card, so the counter doesn't show for it. The count runs in your browser and can differ from ATmosphere's by a few characters; ATmosphere's own panel when you click Publish is the exact check. The counter shows whether or not a Bluesky plugin is active.
 
 = What's a Check In? =
 

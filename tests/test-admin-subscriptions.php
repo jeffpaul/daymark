@@ -2352,6 +2352,35 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_blogroll_public' );
 	}
 
+	/** The General tab offers the Notes setting, off by default so Notes show on the home page. */
+	public function test_general_tab_renders_notes_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_hide_notes_on_home"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_hide_notes_on_home"[^>]*checked/', $output );
+	}
+
+	/** Saving the Notes setting checked turns it on and returns to the General tab. */
+	public function test_notes_save_turns_setting_on(): void {
+		$location = $this->call_handler( 'handle_notes_save', 'daymark_notes_save', array( 'daymark_hide_notes_on_home' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::hide_notes_on_home() );
+		$this->assertMatchesRegularExpression( '/name="daymark_hide_notes_on_home"[^>]*checked/', $this->render( 'general' ) );
+
+		delete_option( 'daymark_hide_notes_on_home' );
+	}
+
+	/** A filter that overrides the Notes setting disables the checkbox and says so. */
+	public function test_notes_setting_overridden_by_filter_is_disabled(): void {
+		add_filter( 'daymark_hide_notes_on_home', '__return_true' );
+		$output = $this->render( 'general' );
+		remove_filter( 'daymark_hide_notes_on_home', '__return_true' );
+
+		$this->assertMatchesRegularExpression( '/name="daymark_hide_notes_on_home"[^>]*disabled/', $output );
+		$this->assertStringContainsString( 'Turned on by code on this site', $output );
+	}
+
 	/** The Failing view lists only subscriptions having trouble, and the view links count both. */
 	public function test_failing_view_lists_only_failing_subscriptions(): void {
 		$this->subscriptions->create(
