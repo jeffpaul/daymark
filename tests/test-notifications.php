@@ -655,7 +655,7 @@ class Test_Notifications extends WP_UnitTestCase {
 
 	/** An active, undismissed overlap surfaces as a plugin_overlap notification item. */
 	public function test_active_overlap_appears_as_plugin_overlap_notification() {
-		$user_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
 		$this->activate_fake_overlap();
 
@@ -674,6 +674,16 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertCount( 1, $matching );
 		$this->assertSame( 'Syndication Links', $matching[0]['label'] );
 		$this->assertNotEmpty( $matching[0]['message'] );
+	}
+
+	/** Someone who can't deactivate plugins (an Editor) isn't told to deactivate one. */
+	public function test_overlap_hidden_from_users_who_cannot_manage_plugins() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		$this->activate_fake_overlap();
+
+		$items = ( new Daymark_Notifications() )->get_notifications();
+
+		$this->assertNotContains( 'plugin_overlap', wp_list_pluck( $items, 'type' ) );
 	}
 
 	/** Dismissing a plugin overlap removes it from get_notifications() for that user. */
@@ -699,8 +709,8 @@ class Test_Notifications extends WP_UnitTestCase {
 
 	/** Dismissal is per-user: a different user still sees the same active overlap. */
 	public function test_overlap_dismissal_is_scoped_per_user() {
-		$dismisser = self::factory()->user->create( array( 'role' => 'editor' ) );
-		$other     = self::factory()->user->create( array( 'role' => 'editor' ) );
+		$dismisser = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		$other     = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		$this->activate_fake_overlap();
 
 		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'syndication-links' );

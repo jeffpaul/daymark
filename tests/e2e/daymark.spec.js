@@ -848,6 +848,66 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 	expect(fetchedUrls[0]).not.toContain('refresh=1');
 });
 
+// When a followed site turns out not to accept Likes, the Like icon is
+// replaced by an invisible placeholder of the same size, so the Comment
+// icon beside it doesn't shift left.
+test('an unavailable Like keeps its space so the other icons stay put', async ({ page }) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999002,
+		subscription_id: 1,
+		title: `E2E like placeholder ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/like-placeholder/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		like_available: null,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([fakeItem]) });
+	});
+
+	let release;
+	const answered = new Promise((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/daymark/v1/subscription-posts/**', async (route) => {
+		if (route.request().url().includes('/like-availability')) {
+			await answered;
+			await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false }) });
+			return;
+		}
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fakeItem) });
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999002"]').locator('xpath=ancestor::*[contains(@class, "daymark-recent__item-wrap")][1]');
+	const like = card.locator('[data-like-toggle="999002"]');
+	const comment = card.locator('[data-comment-toggle]');
+	await expect(like).toBeVisible();
+	const before = await comment.boundingBox();
+
+	release();
+	await expect(like).toHaveCount(0);
+	await expect(card.locator('.daymark-stat--placeholder')).toHaveCount(1);
+	const after = await comment.boundingBox();
+	expect(Math.round(after.x)).toBe(Math.round(before.x));
+});
+
 // Timeline card meta line (issue #285): a subscription post's own author
 // used to render directly under the title — for most single-author sites
 // that duplicated the site name already shown on the card's own bottom row.
@@ -2833,12 +2893,12 @@ test('publish is optimistic: Success shows immediately and upgrades once the upl
 });
 
 // Regression for the race surfaced (but left unfixed as out of scope) while
-// building the optimistic-publish flow above: picking a file fires an
-// immediate background autosave upload for it (runAutosave(), not the
-// debounced path) before entry.uploadedId is known. Tapping Publish while
-// that upload is still in flight used to build its own payload from the
-// same stale entry and re-send the file, attaching it to the post twice.
-// The fix makes Publish await any in-flight autosave first.
+// building the optimistic-publish flow above: picking a file used to fire
+// an autosave that carried the file itself, and tapping Publish while it
+// was in flight re-sent the file, attaching it to the post twice. Files now
+// upload on their own (issue #483) and a save names them by attachment ID,
+// so a save that names a file the draft already holds attaches nothing new;
+// Publish also still waits for an in-flight autosave first.
 test('publish does not re-upload a file whose autosave is still in flight', async ({ page }) => {
 	const caption = `E2E race ${RUN_ID}`;
 
@@ -2894,6 +2954,170 @@ test('publish does not re-upload a file whose autosave is still in flight', asyn
 	// here shows up as three: file2 attached by both the autosave and the
 	// unguarded Publish request.
 	expect(media).toHaveLength(2);
+});
+
+// A WAV file with this many bytes of silence. The E2E site uploads in
+// 256 KB parts (fixtures/daymark-e2e-upload-chunks.php), so a file of a few
+// hundred KB splits into several parts without a large fixture on disk.
+function wavBuffer(dataBytes) {
+	const header = Buffer.alloc(44);
+	header.write('RIFF', 0);
+	header.writeUInt32LE(36 + dataBytes, 4);
+	header.write('WAVE', 8);
+	header.write('fmt ', 12);
+	header.writeUInt32LE(16, 16);
+	header.writeUInt16LE(1, 20); // PCM
+	header.writeUInt16LE(1, 22); // mono
+	header.writeUInt32LE(8000, 24);
+	header.writeUInt32LE(16000, 28);
+	header.writeUInt16LE(2, 32);
+	header.writeUInt16LE(16, 34);
+	header.write('data', 36);
+	header.writeUInt32LE(dataBytes, 40);
+	return Buffer.concat([header, Buffer.alloc(dataBytes)]);
+}
+
+// The newest Mark with this caption, with its media.
+function findMarkByCaption(page, caption) {
+	return page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		const headers = { 'X-WP-Nonce': config.nonce };
+		const listRes = await fetch(`${config.restUrl}marks?per_page=10`, { headers, credentials: 'same-origin' });
+		const marks = await listRes.json();
+		// The list carries the title (from the caption) and the excerpt.
+		const match = marks.find((mark) => `${mark.title || ''} ${mark.excerpt || ''}`.includes(cap));
+		if (!match) {
+			return null;
+		}
+		const markRes = await fetch(`${config.restUrl}marks/${match.id}`, { headers, credentials: 'same-origin' });
+		return markRes.json();
+	}, caption);
+}
+
+// Resumable uploads (issue #483): when the connection drops partway through
+// a file, the upload waits, then carries on from the last part the site
+// stored. The first part is never sent a second time.
+test('an upload carries on after the connection drops, without starting the file over', async ({
+	page,
+	context,
+}) => {
+	const caption = `E2E resume drop ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+
+	const ranges = [];
+	let dropped = false;
+	await page.route('**/daymark/v1/uploads/*', async (route) => {
+		const request = route.request();
+		if ('POST' !== request.method()) {
+			await route.continue();
+			return;
+		}
+		const range = request.headers()['content-range'] || '';
+		ranges.push(range);
+		if (!dropped && !range.startsWith('bytes 0-')) {
+			// Drop the connection while the second part is on its way.
+			dropped = true;
+			await context.setOffline(true);
+			await route.abort('internetdisconnected');
+			setTimeout(() => {
+				context.setOffline(false).catch(() => {});
+			}, 1500);
+			return;
+		}
+		await route.continue();
+	});
+
+	await page.setInputFiles('#daymark-file-input', {
+		name: 'resume-drop.wav',
+		mimeType: 'audio/wav',
+		buffer: wavBuffer(700 * 1024),
+	});
+
+	await expect(page.locator('[data-upload-status-for]')).toHaveText('Uploaded', { timeout: 30000 });
+	expect(dropped).toBe(true);
+	expect(ranges.filter((range) => range.startsWith('bytes 0-'))).toHaveLength(1);
+
+	await page.unroute('**/daymark/v1/uploads/*');
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible({ timeout: 15000 });
+
+	const mark = await findMarkByCaption(page, caption);
+	expect(mark).not.toBeNull();
+	expect(mark.media).toHaveLength(1);
+});
+
+// Resumable uploads (issue #483): a Mark published while its file was still
+// uploading survives the app being reloaded. After the reload, the queue
+// picks the upload up at the part where it stopped, and the Mark publishes
+// with its file.
+test('a published Mark whose upload was interrupted by a reload resumes partway', async ({ page }) => {
+	const caption = `E2E resume reload ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+
+	// Let the first part through, then refuse the rest, so the upload is
+	// partway done when the app reloads.
+	let firstPartStored;
+	const firstPart = new Promise((resolve) => {
+		firstPartStored = resolve;
+	});
+	await page.route('**/daymark/v1/uploads/*', async (route) => {
+		const request = route.request();
+		if ('POST' !== request.method()) {
+			await route.continue();
+			return;
+		}
+		const range = request.headers()['content-range'] || '';
+		if (range.startsWith('bytes 0-')) {
+			const response = await route.fetch();
+			await route.fulfill({ response });
+			firstPartStored();
+			return;
+		}
+		await route.abort('failed');
+	});
+
+	await page.setInputFiles('#daymark-file-input', {
+		name: 'resume-reload.wav',
+		mimeType: 'audio/wav',
+		buffer: wavBuffer(700 * 1024),
+	});
+	await firstPart;
+
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('already at the top of your Timeline')).toBeVisible();
+	// Give the progress record a moment to be written.
+	await page.waitForTimeout(500);
+
+	await page.unroute('**/daymark/v1/uploads/*');
+	const rangesAfterReload = [];
+	await page.route('**/daymark/v1/uploads/*', async (route) => {
+		const request = route.request();
+		if ('POST' === request.method()) {
+			rangesAfterReload.push(request.headers()['content-range'] || '');
+		}
+		await route.continue();
+	});
+
+	await page.reload();
+
+	await expect.poll(() => findMarkByCaption(page, caption), { timeout: 30000 }).not.toBeNull();
+	await expect
+		.poll(async () => ((await findMarkByCaption(page, caption)) || {}).media?.length || 0, { timeout: 30000 })
+		.toBe(1);
+
+	// Carried on from the second part: the first was never sent again.
+	expect(rangesAfterReload.length).toBeGreaterThan(0);
+	expect(rangesAfterReload.filter((range) => range.startsWith('bytes 0-'))).toHaveLength(0);
 });
 
 // Home IS the merged Timeline feed (Marks + subscribed posts) now — there's

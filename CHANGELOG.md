@@ -40,6 +40,7 @@ can't act on them.
 - After you first activate Daymark, a notice in wp-admin links to the app and lists three first steps: open it on your phone, follow a few sites, and review Connectors. A QR code in the notice, and on Settings -> Daymark -> General, opens the app when you point your phone's camera at it. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - Home shows an Install card until Daymark is on your home screen, and Me has an Install Daymark row. On Android, and in desktop Chrome or Edge, it opens the browser's install prompt; on an iPhone or iPad it shows the Add to Home Screen steps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- Videos and audio now upload in small parts, so a weak or dropped connection no longer starts the file over. The upload carries on from where it stopped, even after you close the app once you've tapped Publish, and the Timeline card shows how far along it is. Videos and audio can now be up to 500 MB each; photos stay at 50 MB. ([#494](https://github.com/jeffpaul/daymark/pull/494))
 
 ### Changed
 
@@ -58,6 +59,8 @@ can't act on them.
 - When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 - The Like and Comment hints no longer promise that the other site always receives your like or comment, and say what happens when it can't. The readme now explains how to follow a site, and that sharing to Daymark from other apps works on Android only, since iPhone and iPad don't support it for web apps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- The Connectors tab now says when Jetpack is active but your WordPress.com account isn't linked, or the site isn't connected to WordPress.com, with a link to fix it. Before, it said "Active" either way, though liking and commenting through WordPress.com need the link. ([#495](https://github.com/jeffpaul/daymark/pull/495))
+- Notifications about plugins that overlap with Daymark now go only to people who can deactivate plugins, since that's what they suggest. ([#495](https://github.com/jeffpaul/daymark/pull/495))
 
 ### Fixed
 
@@ -71,6 +74,13 @@ can't act on them.
 - Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 - Refreshing the Timeline with the header button now shows one loading animation, the spinning button, instead of also showing the pull-down spinner below it. ([#490](https://github.com/jeffpaul/daymark/pull/490))
+- When a followed site can't receive Likes, the Like icon now leaves an empty space instead of disappearing, so the icons beside it no longer jump left as you scroll. ([#495](https://github.com/jeffpaul/daymark/pull/495))
+- Someone who can't publish on the site (a Contributor) no longer sees "Published to your site" for a Mark the site saved as a draft. The Success screen now follows what the site actually did, and explains that an editor needs to publish it. ([#495](https://github.com/jeffpaul/daymark/pull/495))
+- Tapping Publish right after picking a video no longer waits for the video to finish uploading, and a file picked while autosave was running can no longer be attached twice. ([#494](https://github.com/jeffpaul/daymark/pull/494))
+
+### Developer
+
+- New `/daymark/v1/uploads` routes upload one file in parts and resume it, and `POST /marks` and `PUT /marks/{id}` accept the finished files as `media_ids[]`. Each ID must be the current user's own unused upload, or a file already on the Mark. `files[]` still works. New filters: `daymark_upload_chunk_bytes`, `daymark_upload_session_ttl`, `daymark_staged_upload_ttl`; `daymark_upload_max_bytes` now also receives the file's MIME type. ([#494](https://github.com/jeffpaul/daymark/pull/494))
 
 ## [0.19.0] - 2026-10-02
 

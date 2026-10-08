@@ -8,7 +8,7 @@ Stable tag:        0.19.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
-Publish to your own site as fast as you'd post to a social app — photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
+Publish to your own site as fast as you'd post to a social app: photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
 
 == Description ==
 
@@ -164,6 +164,8 @@ Your work is always safe. The composer autosaves your caption, media, alt text, 
 = Why doesn't Publish make me wait for a big video or gallery to finish uploading? =
 
 It never does, for any Mark, whether or not there's a big upload involved. Tapping Publish (or Save as Draft) saves your Mark right away and takes you straight to the confirmation screen; the actual upload and any syndication happen in the background afterward. It shows at the top of your Timeline right away, marked "Uploading…", and becomes the finished post the moment the upload is done (a draft shows under Pending on Home, then moves to Drafts) — usually fast enough that you'll never even notice, but for a large video or podcast file it's the difference between an instant tap and a long wait staring at a spinner.
+
+Files upload in small parts, starting the moment you pick them. If your connection drops, or you close the app after tapping Publish, the upload carries on from where it stopped instead of starting over. Videos and audio can be up to 500 MB each, and photos up to 50 MB.
 
 = Can I share a photo to Daymark from another app? =
 

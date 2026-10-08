@@ -699,12 +699,15 @@ class Daymark_Notifications {
 	 * get_notifications() and has_unread() (which deliberately does NOT
 	 * use this — see has_unread()'s own docblock).
 	 *
+	 * Only someone who can activate and deactivate plugins sees these,
+	 * since the only action they suggest is deactivating one.
+	 *
 	 * @return array<string, array{label: string, overlaps: string}>
 	 */
 	private function get_undismissed_plugin_overlaps(): array {
 		$user_id = get_current_user_id();
 
-		if ( ! $user_id ) {
+		if ( ! $user_id || ! current_user_can( 'activate_plugins' ) ) {
 			return array();
 		}
 
