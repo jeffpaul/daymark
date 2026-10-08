@@ -896,6 +896,66 @@ test('Follow a site from the Me screen picks a feed and follows it', async ({ pa
 	expect(followBody).toEqual({ index: 1, site_title: 'My Friend' });
 });
 
+// When a followed site turns out not to accept Likes, the Like icon is
+// replaced by an invisible placeholder of the same size, so the Comment
+// icon beside it doesn't shift left.
+test('an unavailable Like keeps its space so the other icons stay put', async ({ page }) => {
+	await loginAs(page);
+
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999002,
+		subscription_id: 1,
+		title: `E2E like placeholder ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink: 'https://example.invalid/like-placeholder/',
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		like_available: null,
+		reposted_mark_id: 0,
+	};
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([fakeItem]) });
+	});
+
+	let release;
+	const answered = new Promise((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/daymark/v1/subscription-posts/**', async (route) => {
+		if (route.request().url().includes('/like-availability')) {
+			await answered;
+			await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: false }) });
+			return;
+		}
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(fakeItem) });
+	});
+
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-subpost="999002"]').locator('xpath=ancestor::*[contains(@class, "daymark-recent__item-wrap")][1]');
+	const like = card.locator('[data-like-toggle="999002"]');
+	const comment = card.locator('[data-comment-toggle]');
+	await expect(like).toBeVisible();
+	const before = await comment.boundingBox();
+
+	release();
+	await expect(like).toHaveCount(0);
+	await expect(card.locator('.daymark-stat--placeholder')).toHaveCount(1);
+	const after = await comment.boundingBox();
+	expect(Math.round(after.x)).toBe(Math.round(before.x));
+});
+
 // Timeline card meta line (issue #285): a subscription post's own author
 // used to render directly under the title — for most single-author sites
 // that duplicated the site name already shown on the card's own bottom row.

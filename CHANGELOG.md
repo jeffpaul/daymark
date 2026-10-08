@@ -59,6 +59,8 @@ can't act on them.
 - When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 - The Like and Comment hints no longer promise that the other site always receives your like or comment, and say what happens when it can't. The readme now explains how to follow a site, and that sharing to Daymark from other apps works on Android only, since iPhone and iPad don't support it for web apps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- The Connectors tab now says when Jetpack is active but your WordPress.com account isn't linked, or the site isn't connected to WordPress.com, with a link to fix it. Before, it said "Active" either way, though liking and commenting through WordPress.com need the link. ([#495](https://github.com/jeffpaul/daymark/pull/495))
+- Notifications about plugins that overlap with Daymark now go only to people who can deactivate plugins, since that's what they suggest. ([#495](https://github.com/jeffpaul/daymark/pull/495))
 
 ### Fixed
 
@@ -72,6 +74,8 @@ can't act on them.
 - Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types. ([#488](https://github.com/jeffpaul/daymark/pull/488))
 - Refreshing the Timeline with the header button now shows one loading animation, the spinning button, instead of also showing the pull-down spinner below it. ([#490](https://github.com/jeffpaul/daymark/pull/490))
+- When a followed site can't receive Likes, the Like icon now leaves an empty space instead of disappearing, so the icons beside it no longer jump left as you scroll. ([#495](https://github.com/jeffpaul/daymark/pull/495))
+- Someone who can't publish on the site (a Contributor) no longer sees "Published to your site" for a Mark the site saved as a draft. The Success screen now follows what the site actually did, and explains that an editor needs to publish it. ([#495](https://github.com/jeffpaul/daymark/pull/495))
 - Tapping Publish right after picking a video no longer waits for the video to finish uploading, and a file picked while autosave was running can no longer be attached twice. ([#494](https://github.com/jeffpaul/daymark/pull/494))
 
 ### Developer

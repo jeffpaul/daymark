@@ -3152,7 +3152,9 @@ class Daymark_Admin_Subscriptions {
 			<?php else : ?>
 				<?php $status = $this->connector_status( $connector ); ?>
 				<p>
-					<?php if ( 'active' === $status ) : ?>
+					<?php if ( 'active' === $status && 'jetpack' === ( $connector['folder_slug'] ?? '' ) ) : ?>
+						<?php $this->render_jetpack_link_state(); ?>
+					<?php elseif ( 'active' === $status ) : ?>
 						<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
 						<?php esc_html_e( 'Active', 'daymark' ); ?>
 					<?php elseif ( 'inactive' === $status ) : ?>
@@ -3169,6 +3171,69 @@ class Daymark_Admin_Subscriptions {
 				</p>
 			<?php endif; ?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * How far Jetpack's WordPress.com connection reaches for the current
+	 * user: 'site' (this site isn't connected), 'user' (the site is, but
+	 * this user hasn't linked their own account), or 'linked'. Liking and
+	 * commenting through WordPress.com, and the Reader import, need
+	 * 'linked'.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return string
+	 */
+	private static function jetpack_link_state(): string {
+		if ( ! Daymark_Jetpack_Engagement::site_connected() ) {
+			$state = 'site';
+		} elseif ( ! Daymark_Jetpack_Engagement::current_user_connected() ) {
+			$state = 'user';
+		} else {
+			$state = 'linked';
+		}
+
+		/**
+		 * Filters the Jetpack connection state the Connectors tab shows.
+		 * Mainly for tests, which can't load Jetpack.
+		 *
+		 * @since 0.20.0
+		 *
+		 * @param string $state 'site', 'user', or 'linked'.
+		 */
+		$state = (string) apply_filters( 'daymark_jetpack_link_state', $state );
+
+		return in_array( $state, array( 'site', 'user', 'linked' ), true ) ? $state : 'site';
+	}
+
+	/**
+	 * The Jetpack card's status line. "Active" alone hid that the Daymark
+	 * features it lists also need your own WordPress.com account linked.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_jetpack_link_state(): void {
+		$state = self::jetpack_link_state();
+
+		if ( 'linked' === $state ) {
+			?>
+			<span class="dashicons dashicons-yes-alt" style="color:#00a32a;"></span>
+			<?php esc_html_e( 'Active, and your WordPress.com account is linked.', 'daymark' ); ?>
+			<?php
+			return;
+		}
+		?>
+		<span class="dashicons dashicons-warning" style="color:#dba617;"></span>
+		<?php if ( 'site' === $state ) : ?>
+			<?php esc_html_e( 'Active, but this site isn\'t connected to WordPress.com yet.', 'daymark' ); ?>
+			<a href="<?php echo esc_url( Daymark_Jetpack_Engagement::connect_account_url() ); ?>" class="button button-secondary"><?php esc_html_e( 'Connect', 'daymark' ); ?></a>
+		<?php else : ?>
+			<?php esc_html_e( 'Active, but your WordPress.com account isn\'t linked, so likes and comments won\'t go through WordPress.com.', 'daymark' ); ?>
+			<a href="<?php echo esc_url( Daymark_Jetpack_Engagement::connect_account_url() ); ?>" class="button button-secondary"><?php esc_html_e( 'Link your account', 'daymark' ); ?></a>
+		<?php endif; ?>
 		<?php
 	}
 

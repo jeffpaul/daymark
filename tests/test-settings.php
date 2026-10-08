@@ -90,6 +90,15 @@ class Test_Settings extends WP_UnitTestCase {
 		$this->assertIsArray( $config['reach'] );
 	}
 
+	/** The app knows whether the user can publish, so a Contributor isn't told a draft was published. */
+	public function test_app_config_says_whether_user_can_publish(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'contributor' ) ) );
+		$this->assertFalse( Daymark_Routes::build_app_config()['canPublish'] );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->assertTrue( Daymark_Routes::build_app_config()['canPublish'] );
+	}
+
 	/** An Author gets no links into Settings -> Daymark, which they can't open. */
 	public function test_app_config_omits_settings_links_for_non_admin(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
