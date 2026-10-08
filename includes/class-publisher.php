@@ -136,11 +136,30 @@ class Daymark_Publisher {
 	public const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB.
 
 	/**
-	 * Maximum accepted total size, in bytes, across all files in one request.
+	 * Maximum accepted size, in bytes, for a single video or audio file.
+	 *
+	 * Larger than MAX_FILE_BYTES because the composer uploads files in parts
+	 * (Daymark_Uploads, issue #483), so the host's own request-size limit
+	 * no longer caps a file. About three minutes of 4K phone video.
+	 *
+	 * @since 0.20.0
 	 *
 	 * @var int
 	 */
-	public const MAX_TOTAL_FILE_BYTES = 200 * 1024 * 1024; // 200 MB.
+	public const MAX_MEDIA_FILE_BYTES = 500 * 1024 * 1024; // 500 MB.
+
+	/**
+	 * Maximum accepted total size, in bytes, across all files in one
+	 * multipart request.
+	 *
+	 * Applies only to files sent in the request itself (`files[]`, used by
+	 * API callers and the share sheet). The composer uploads each file on
+	 * its own through Daymark_Uploads, so its Marks have no request total.
+	 * Matches MAX_MEDIA_FILE_BYTES so one allowed video always fits.
+	 *
+	 * @var int
+	 */
+	public const MAX_TOTAL_FILE_BYTES = 500 * 1024 * 1024; // 500 MB.
 
 	/**
 	 * Character-count backstop for a generated title.
@@ -336,6 +355,60 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * The largest accepted size, in bytes, for one file of a given type.
+	 *
+	 * Video and audio may be up to MAX_MEDIA_FILE_BYTES; everything else
+	 * (images) up to MAX_FILE_BYTES.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param string $mime The file's content MIME type.
+	 * @return int Maximum size in bytes, at least 1.
+	 */
+	public static function max_bytes_for_mime( string $mime ): int {
+		$family  = strtok( $mime, '/' );
+		$default = in_array( $family, array( 'video', 'audio' ), true ) ? self::MAX_MEDIA_FILE_BYTES : self::MAX_FILE_BYTES;
+
+		/**
+		 * Filters the maximum accepted size of a single uploaded file, in bytes.
+		 *
+		 * @param int    $max_bytes Defaults to Daymark_Publisher::MAX_MEDIA_FILE_BYTES
+		 *                          for video and audio, MAX_FILE_BYTES otherwise.
+		 * @param string $mime      The file's content MIME type (since 0.20.0).
+		 */
+		$max = (int) apply_filters( 'daymark_upload_max_bytes', $default, $mime );
+
+		return max( 1, $max );
+	}
+
+	/**
+	 * The MIME type of a file, read from its content.
+	 *
+	 * Uses finfo, then core's own byte check for image formats an older
+	 * libmagic may not know (AVIF, HEIC). The file name is never used.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param string $path Path to a readable file.
+	 * @return string Canonical MIME type, or '' when it can't be read.
+	 */
+	public static function sniff_mime( string $path ): string {
+		if ( '' === $path || ! is_readable( $path ) ) {
+			return '';
+		}
+
+		$finfo        = new finfo( FILEINFO_MIME_TYPE );
+		$content_mime = self::canonical_mime( (string) $finfo->file( $path ) );
+
+		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
+			$image_mime   = (string) wp_get_image_mime( $path );
+			$content_mime = '' !== $image_mime ? self::canonical_mime( $image_mime ) : $content_mime;
+		}
+
+		return $content_mime;
+	}
+
+	/**
 	 * Publish a Mark.
 	 *
 	 * Validates and sideloads media, detects the primary Mark type,
@@ -346,7 +419,9 @@ class Daymark_Publisher {
 	 *                                                   caption, title, primary_type,
 	 *                                                   syndication_targets, default_destinations,
 	 *                                                   ai_assist_used, captured_at, location_lat,
-	 *                                                   location_lng, location_accuracy.
+	 *                                                   location_lng, location_accuracy,
+	 *                                                   media_ids (files already uploaded
+	 *                                                   through Daymark_Uploads).
 	 * @param array<string, array<string, mixed>> $files $_FILES-style array of uploaded media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -368,9 +443,18 @@ class Daymark_Publisher {
 		$place_name = $this->resolve_place_name( $data );
 		$location   = $this->resolve_location( $data );
 
+		// Files the composer already uploaded through Daymark_Uploads
+		// (issue #483). Each must be the current user's own staged upload;
+		// see Daymark_Uploads::resolve_media_ids().
+		$requested = Daymark_Uploads::resolve_media_ids( $data['media_ids'] ?? null, 0, get_current_user_id() );
+
+		if ( is_wp_error( $requested ) ) {
+			return $requested;
+		}
+
 		$file_list = $this->normalize_files( $files );
 
-		if ( empty( $file_list ) && '' === $caption && null === $place_name ) {
+		if ( empty( $file_list ) && empty( $requested['ids'] ) && '' === $caption && null === $place_name ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -385,11 +469,16 @@ class Daymark_Publisher {
 			return $valid;
 		}
 
-		$media_ids = $this->sideload_files( $file_list );
+		$sideloaded = $this->sideload_files( $file_list );
 
-		if ( is_wp_error( $media_ids ) ) {
-			return $media_ids;
+		if ( is_wp_error( $sideloaded ) ) {
+			return $sideloaded;
 		}
+
+		// Already-uploaded files first, in the order the client sent them,
+		// then any sent in this request. The client sends alt[] in the same
+		// order, so positional alt text lines up with this list.
+		$media_ids = array_merge( $requested['new'], $sideloaded );
 
 		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 		$type           = $this->detect_primary_type( $media_ids, $requested_type );
@@ -454,7 +543,9 @@ class Daymark_Publisher {
 			$existing_id = $this->find_published_mark_by_target_url( '_daymark_like_of', $like_of );
 
 			if ( 0 !== $existing_id ) {
-				foreach ( $media_ids as $attachment_id ) {
+				// Only files sent in this request. A staged upload stays
+				// staged, and the cleanup cron removes it if nothing uses it.
+				foreach ( $sideloaded as $attachment_id ) {
 					wp_delete_attachment( $attachment_id, true );
 				}
 
@@ -466,7 +557,9 @@ class Daymark_Publisher {
 			$existing_id = $this->find_published_mark_by_target_url( '_daymark_repost_of', $repost_of );
 
 			if ( 0 !== $existing_id ) {
-				foreach ( $media_ids as $attachment_id ) {
+				// Only files sent in this request. A staged upload stays
+				// staged, and the cleanup cron removes it if nothing uses it.
+				foreach ( $sideloaded as $attachment_id ) {
 					wp_delete_attachment( $attachment_id, true );
 				}
 
@@ -587,8 +680,10 @@ class Daymark_Publisher {
 		$post_id = wp_insert_post( $post_data, true );
 
 		if ( is_wp_error( $post_id ) ) {
-			// Clean up orphaned attachments so failed publishes leave no debris.
-			foreach ( $media_ids as $attachment_id ) {
+			// Clean up orphaned attachments so failed publishes leave no
+			// debris. Staged uploads are left for a retry; the cleanup cron
+			// removes them if nothing ever uses them.
+			foreach ( $sideloaded as $attachment_id ) {
 				wp_delete_attachment( $attachment_id, true );
 			}
 
@@ -598,6 +693,7 @@ class Daymark_Publisher {
 		}
 
 		$this->attach_media( $post_id, $media_ids, $type );
+		Daymark_Uploads::release_staged( $requested['new'] );
 
 		if ( $selection_provided ) {
 			$this->remember_destination_prefs( $type, $targets );
@@ -790,7 +886,9 @@ class Daymark_Publisher {
 	 *                                                     primary_type, syndication_targets,
 	 *                                                     status, tags, alt_text, captured_at,
 	 *                                                     location_lat, location_lng,
-	 *                                                     location_accuracy, media_order.
+	 *                                                     location_accuracy, media_order,
+	 *                                                     media_ids (files already uploaded
+	 *                                                     through Daymark_Uploads).
 	 * @param array<string, array<string, mixed>> $files   $_FILES-style array of new media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -816,17 +914,19 @@ class Daymark_Publisher {
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
 
-		// Manual gallery reordering (issue #250): a client-chosen order for
-		// media already attached to this Mark. Newly uploaded files below
-		// are still appended after this, in upload order — interleaving a
-		// reorder with brand-new uploads in one request is out of scope.
-		if ( ! empty( $existing_media ) ) {
-			$existing_media = $this->apply_media_order( $existing_media, $data['media_order'] ?? null );
+		// Files the composer already uploaded through Daymark_Uploads
+		// (issue #483): either staged uploads to attach now, or files an
+		// earlier save already attached to this Mark (sent again, since the
+		// composer can't tell which save reached the server).
+		$requested = Daymark_Uploads::resolve_media_ids( $data['media_ids'] ?? null, $post_id, get_current_user_id() );
+
+		if ( is_wp_error( $requested ) ) {
+			return $requested;
 		}
 
 		$file_list = $this->normalize_files( $files );
 
-		if ( '' === $caption && empty( $existing_media ) && empty( $file_list ) && null === $place_name ) {
+		if ( '' === $caption && empty( $existing_media ) && empty( $requested['ids'] ) && empty( $file_list ) && null === $place_name ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -840,13 +940,29 @@ class Daymark_Publisher {
 			return $valid;
 		}
 
-		$new_ids = $this->sideload_files( $file_list );
+		$sideloaded = $this->sideload_files( $file_list );
 
-		if ( is_wp_error( $new_ids ) ) {
-			return $new_ids;
+		if ( is_wp_error( $sideloaded ) ) {
+			return $sideloaded;
 		}
 
-		$media_ids = array_merge( $existing_media, array_map( 'intval', $new_ids ) );
+		// Newly attached media: staged uploads first, then files sent in
+		// this request, appended after what the Mark already has.
+		$new_ids = array_merge( $requested['new'], array_map( 'intval', $sideloaded ) );
+
+		// Manual gallery reordering (issue #250). The client's order may
+		// cover everything (existing plus the files attached now, which is
+		// what the composer sends) or only the existing media (older
+		// clients). Either is honored only as an exact permutation; anything
+		// else keeps the stored order with new files appended.
+		$media_ids = array_merge( $existing_media, $new_ids );
+		$ordered   = $this->apply_media_order( $media_ids, $data['media_order'] ?? null );
+
+		if ( $ordered === $media_ids && ! empty( $existing_media ) ) {
+			$ordered = array_merge( $this->apply_media_order( $existing_media, $data['media_order'] ?? null ), $new_ids );
+		}
+
+		$media_ids = $ordered;
 
 		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
 
@@ -902,7 +1018,8 @@ class Daymark_Publisher {
 		}
 
 		if ( ! empty( $new_ids ) ) {
-			$this->attach_media( $post_id, array_map( 'intval', $new_ids ), $type );
+			$this->attach_media( $post_id, $new_ids, $type );
+			Daymark_Uploads::release_staged( $requested['new'] );
 		}
 
 		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
@@ -910,11 +1027,13 @@ class Daymark_Publisher {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
-		// Alt text: positional for the newly added files, plus a map keyed
-		// by attachment ID for media already on the Mark (edited in place).
-		// The map is scoped to the Mark's own media so an edit can never
-		// overwrite alt text on an attachment that belongs elsewhere.
-		$this->apply_positional_alt( array_map( 'intval', $new_ids ), $data['alt'] ?? null );
+		// Alt text: positional for the files named in this request
+		// (media_ids[] in the client's order, then files[]), plus a map
+		// keyed by attachment ID for media already on the Mark (edited in
+		// place). Both are scoped to this Mark's own media or the user's own
+		// staged uploads, so an edit can never overwrite alt text on an
+		// attachment that belongs elsewhere.
+		$this->apply_positional_alt( array_merge( $requested['ids'], array_map( 'intval', $sideloaded ) ), $data['alt'] ?? null );
 		$this->apply_alt_map( $data['existing_alt'] ?? null, $media_ids );
 
 		$alt_text = sanitize_text_field( (string) ( $data['alt_text'] ?? '' ) );
@@ -1142,6 +1261,20 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * Validate one file that arrived outside a multipart request — the
+	 * assembled file of a Daymark_Uploads session — with exactly the same
+	 * checks as a file in `files[]`.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param array<string, mixed> $file $_FILES-style entry (name, tmp_name, size, error).
+	 * @return true|WP_Error
+	 */
+	public function validate_upload( array $file ) {
+		return $this->validate_file( $file );
+	}
+
+	/**
 	 * Validate a single uploaded file: upload status and real MIME type.
 	 *
 	 * MIME is validated from file CONTENT (finfo) and cross-checked with
@@ -1167,13 +1300,11 @@ class Daymark_Publisher {
 			);
 		}
 
-		/**
-		 * Filters the maximum accepted size of a single uploaded file, in bytes.
-		 *
-		 * @param int $max_bytes Defaults to Daymark_Publisher::MAX_FILE_BYTES.
-		 */
-		$max_file_bytes = (int) apply_filters( 'daymark_upload_max_bytes', self::MAX_FILE_BYTES );
-		$max_file_bytes = max( 1, $max_file_bytes );
+		// 1) Content-based MIME sniff.
+		$content_mime = self::sniff_mime( $file['tmp_name'] );
+
+		// The size cap depends on the type: video and audio may be larger.
+		$max_file_bytes = self::max_bytes_for_mime( $content_mime );
 
 		if ( (int) ( $file['size'] ?? 0 ) > $max_file_bytes ) {
 			return new WP_Error(
@@ -1186,18 +1317,6 @@ class Daymark_Publisher {
 				),
 				array( 'status' => 400 )
 			);
-		}
-
-		// 1) Content-based MIME sniff.
-		$finfo        = new finfo( FILEINFO_MIME_TYPE );
-		$content_mime = (string) $finfo->file( $file['tmp_name'] );
-		$content_mime = self::canonical_mime( $content_mime );
-
-		// An older libmagic may not recognize AVIF or HEIC. Core's own
-		// check reads the file's bytes too, so it is still a content check.
-		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
-			$image_mime   = (string) wp_get_image_mime( $file['tmp_name'] );
-			$content_mime = '' !== $image_mime ? self::canonical_mime( $image_mime ) : $content_mime;
 		}
 
 		if ( in_array( $content_mime, self::HEIC_MIME_TYPES, true ) && ! self::accepts_heic() ) {

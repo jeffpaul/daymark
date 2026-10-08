@@ -61,6 +61,7 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+wp_clear_scheduled_hook( 'daymark_uploads_cleanup' );
 // Per-subscription WebSub retry checks carry an argument, so clear every one.
 wp_unschedule_hook( 'daymark_websub_verify_timeout' );
 // Pending Featured Content share-image lookups (one per post, with an argument).
@@ -139,3 +140,26 @@ foreach ( $daymark_subscription_post_ids as $daymark_subscription_post_id ) {
 // so uninstall drops it outright.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time removal of the plugin's own table.
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}daymark_subscriptions" );
+
+// Unfinished composer uploads (issue #483): parts of files that never
+// finished uploading. A finished upload is an ordinary attachment and stays
+// in the Media Library; only its "not used by a Mark yet" markers go.
+delete_post_meta_by_key( '_daymark_staged_upload' );
+delete_post_meta_by_key( '_daymark_staged_at' );
+
+$daymark_upload_dir = wp_upload_dir( null, false );
+
+if ( empty( $daymark_upload_dir['error'] ) && ! empty( $daymark_upload_dir['basedir'] ) ) {
+	$daymark_parts_dir = trailingslashit( $daymark_upload_dir['basedir'] ) . 'daymark-uploads';
+
+	if ( is_dir( $daymark_parts_dir ) ) {
+		$daymark_part_files = glob( $daymark_parts_dir . '/*' );
+
+		foreach ( is_array( $daymark_part_files ) ? $daymark_part_files : array() as $daymark_part_file ) {
+			wp_delete_file( $daymark_part_file );
+		}
+
+		wp_delete_file( $daymark_parts_dir . '/.htaccess' );
+		@rmdir( $daymark_parts_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort; a non-empty folder is left alone.
+	}
+}
