@@ -466,8 +466,17 @@ class Daymark_Subscription_Poller {
 		}
 
 		$format = sanitize_key( (string) ( $normalized['post_format'] ?? '' ) );
+		$stored = (string) get_post_meta( $post_id, 'post_format', true );
 
-		if ( 'standard' !== get_post_meta( $post_id, 'post_format', true ) || ! in_array( $format, array( 'note', 'link', 'quote' ), true ) ) {
+		// A followed Daymark site's Check In was stored as a note (its
+		// `status` format) before that site said what it was (the `daymark`
+		// REST field, Daymark_Post_Export).
+		if ( 'checkin' === $format && in_array( $stored, array( 'standard', 'note' ), true ) ) {
+			update_post_meta( $post_id, 'post_format', 'checkin' );
+			return;
+		}
+
+		if ( 'standard' !== $stored || ! in_array( $format, array( 'note', 'link', 'quote' ), true ) ) {
 			return;
 		}
 

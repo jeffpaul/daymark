@@ -82,3 +82,11 @@ require_once __DIR__ . '/parse-this-stub/load.php';
 // See tests/activitypub-stub/load.php's own docblock — an inert-by-default
 // stand-in for the ActivityPub plugin's outbox API (issue #439).
 require_once __DIR__ . '/activitypub-stub/load.php';
+
+// Daymark's built-in Webmention support is on by default on a real site,
+// but off for the suite: most tests describe a site with no Webmention at
+// all (the native-comment fallback, the hidden Like icon, the redirect to
+// the origin's comment form), and the built-in sender would otherwise
+// schedule cron events on every publish. Tests for the built-in sender and
+// receiver turn it on with a priority-20 filter of their own.
+add_filter( 'daymark_builtin_webmention', '__return_false' );

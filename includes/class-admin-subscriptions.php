@@ -2912,11 +2912,11 @@ class Daymark_Admin_Subscriptions {
 		return array(
 			'webmention'      => array(
 				'label'       => 'Webmention',
-				'group'       => 'start',
+				'group'       => 'optional',
 				'wporg_slug'  => 'webmention',
 				'folder_slug' => 'webmention',
-				'summary'     => __( 'Lets your Likes, comments, and Reblogs reach other sites, and brings their replies back to your Notifications.', 'daymark' ),
-				'details'     => __( 'Sends a Webmention to every site your Mark links to when you publish, and receives the ones other sites send you as ordinary comments, which Daymark labels in Notifications. It is one of the ways a Like can reach a post you follow; without it, the ActivityPub plugin, or Jetpack, followed posts show no Like button. It also lets other Daymark users comment on your posts from their own app.', 'daymark' ),
+				'summary'     => __( 'Daymark already sends and receives Webmentions itself. Install this plugin if you want its extra settings and tools.', 'daymark' ),
+				'details'     => __( 'Without this plugin, Daymark sends a Webmention to every site a post links to and receives the ones other sites send, as ordinary comments labeled in Notifications. That is how Likes, comments, and Reblogs travel between Daymark sites. When this plugin is active, Daymark turns its own Webmention support off and the plugin does the same job, with its own settings screen.', 'daymark' ),
 			),
 			'activitypub'     => array(
 				'label'       => 'ActivityPub',
@@ -3604,7 +3604,7 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_bridgy_fed_form(): void {
-		$webmention = Daymark_Plugin_Detector::is_active( 'webmention' );
+		$webmention = Daymark_Webmention::can_send();
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="daymark_bridgy_fed_save" />
@@ -3618,7 +3618,7 @@ class Daymark_Admin_Subscriptions {
 			<p class="description">
 				<?php esc_html_e( 'When checked, liking or reblogging a fediverse or Bluesky post you follow sends it through Bridgy Fed. Posts on sites that accept Webmentions still get them directly.', 'daymark' ); ?>
 				<?php if ( ! $webmention ) : ?>
-					<?php esc_html_e( 'Needs the Webmention plugin above to be active.', 'daymark' ); ?>
+					<?php esc_html_e( 'Needs Webmention, which is turned off on this site.', 'daymark' ); ?>
 				<?php endif; ?>
 			</p>
 			<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'submit', false ); ?>
