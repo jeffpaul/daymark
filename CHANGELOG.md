@@ -75,6 +75,7 @@ can't act on them.
 
 ### Fixed
 
+- Your Reblogs now show on your Timeline. They were left out by an old rule from when a Reblog had no content of its own. ([#502](https://github.com/jeffpaul/daymark/pull/502))
 - "Reblog without comment" failed with "A Mark needs media or text". It now publishes the reblogged post on its own. Backslashes typed in a caption are also kept now, where they used to be dropped. ([#500](https://github.com/jeffpaul/daymark/pull/500))
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))

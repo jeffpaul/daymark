@@ -1654,13 +1654,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * stay scoped to Daymark's own type vocabulary, not a guess at an
 	 * arbitrary post's content.
 	 *
-	 * A Mark carrying `_daymark_like_of` or `_daymark_repost_of` (the
-	 * Like/Repost toggle's own auto-published Mark — see "Subscribed-post
-	 * engagement", CLAUDE.md) is unconditionally excluded from the Marks
-	 * side of this query: it exists purely to carry an outbound
-	 * `u-like-of`/`u-repost-of` link for a federation plugin to send, not
-	 * as content meant to appear on the Timeline. This is a Timeline-only
-	 * exclusion — the Mark itself is untouched everywhere else.
+	 * A Like Mark (`_daymark_like_of`) is excluded from the Marks side of
+	 * this query: it only carries an outbound `u-like-of` link, it isn't
+	 * content to read. A Reblog Mark (`_daymark_repost_of`) is shown like
+	 * any other Mark, since it carries the reblogged post's embed and the
+	 * author's own comment.
 	 *
 
 	 * Five optional filter params, combinable with the pagination params
@@ -1788,23 +1786,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'no_found_rows'  => ! $want_total,
 			);
 
-			// A Like/Repost toggle's own Mark (_daymark_like_of/_daymark_repost_of
-			// — see the "Subscribed-post engagement" decision, CLAUDE.md) exists
-			// purely to give an outbound u-like-of/u-repost-of link for a
-			// federation plugin to send; it's not content meant to be read on
-			// the Timeline, so both are excluded here unconditionally. Only the
-			// Timeline listing is affected — the underlying Mark is still a
-			// normal published post everywhere else (Search, wp-admin, the REST
-			// API directly).
+			// A Like Mark carries only an outbound u-like-of link, so it isn't
+			// shown on the Timeline. Like Marks now live on their own post
+			// type; this catches any older one still stored as a `post`. A
+			// Reblog Mark is real content (the reblogged post plus the
+			// author's comment) and is shown like any other Mark.
 			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 			$marks_args['meta_query'] = array(
 				'relation' => 'AND',
 				array(
 					'key'     => '_daymark_like_of',
-					'compare' => 'NOT EXISTS',
-				),
-				array(
-					'key'     => '_daymark_repost_of',
 					'compare' => 'NOT EXISTS',
 				),
 			);

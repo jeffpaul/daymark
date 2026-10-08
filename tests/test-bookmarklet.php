@@ -193,6 +193,16 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Jane Writer, example.com', $post->post_content );
 	}
 
+	public function test_reblog_appears_on_the_timeline() {
+		$post_id = Daymark_Bookmarklet::reblog( $this->target(), '', 'Worth a read.' );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/timeline' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$ids = array_column( rest_do_request( $request )->get_data(), 'id' );
+
+		$this->assertContains( $post_id, $ids );
+	}
+
 	public function test_reblog_without_a_title_uses_the_default() {
 		$post_id = Daymark_Bookmarklet::reblog( $this->target(), '', 'Great.' );
 
