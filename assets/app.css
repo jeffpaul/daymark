@@ -2254,6 +2254,19 @@ button.daymark-stat {
 	color: var(--daymark-text-secondary);
 }
 
+/* Upload state beside a picked file (issue #483). */
+.daymark-filelist__upload {
+	flex-shrink: 0;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+	white-space: nowrap;
+}
+
+.daymark-filelist__upload--error {
+	color: var(--daymark-error);
+	white-space: normal;
+}
+
 .daymark-filelist__clear {
 	min-height: var(--daymark-tap-min);
 	min-width: var(--daymark-tap-min);
@@ -2662,8 +2675,36 @@ button.daymark-stat {
 
 .daymark-recent__pendingstatus {
 	display: inline-flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 6px;
+}
+
+/* Upload progress on a pending card (issue #483). */
+.daymark-progress {
+	width: 96px;
+	height: 6px;
+	border: none;
+	border-radius: 3px;
+	background: var(--daymark-accent-wash);
+	accent-color: var(--daymark-accent);
+	vertical-align: middle;
+	appearance: none;
+}
+
+.daymark-progress::-webkit-progress-bar {
+	border-radius: 3px;
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-progress::-webkit-progress-value {
+	border-radius: 3px;
+	background: var(--daymark-accent);
+}
+
+.daymark-progress::-moz-progress-bar {
+	border-radius: 3px;
+	background: var(--daymark-accent);
 }
 
 @keyframes daymark-spin {
