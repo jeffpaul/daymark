@@ -39,6 +39,7 @@ can't act on them.
 - After you first activate Daymark, a notice in wp-admin links to the app and lists three first steps: open it on your phone, follow a few sites, and review Connectors. A QR code in the notice, and on Settings -> Daymark -> General, opens the app when you point your phone's camera at it. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - Home shows an Install card until Daymark is on your home screen, and Me has an Install Daymark row. On Android, and in desktop Chrome or Edge, it opens the browser's install prompt; on an iPhone or iPad it shows the Add to Home Screen steps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- You can now follow a site from the app: tap "+ Follow a site" in Explore's Following section or on the Me screen, paste the address, pick a feed, and tap Follow. Before, following a site was only possible in wp-admin. Like Settings -> Daymark, it's for administrators. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 
 ### Changed
 

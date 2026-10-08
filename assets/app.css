@@ -2480,6 +2480,75 @@ button.daymark-stat {
 	min-height: 112px;
 }
 
+/* "Follow a site" sheet (FollowSiteSheet, app.js). */
+.daymark-follow__heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-follow__open {
+	width: auto;
+	padding: 0 var(--daymark-spacing-md);
+}
+
+/* An inline button inside running text (the empty Timeline's
+   "follow a site"), styled like the link beside it. */
+.daymark-linkbtn {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--daymark-accent);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.daymark-follow__hint {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 14px;
+	line-height: 1.45;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-follow__feeds {
+	margin: 0 0 var(--daymark-spacing-md);
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.daymark-follow__option {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-xs) 0;
+	cursor: pointer;
+}
+
+.daymark-follow__option input {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	margin-top: 2px;
+	accent-color: var(--daymark-accent);
+}
+
+.daymark-follow__optiontext {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-follow__url {
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+	overflow-wrap: anywhere;
+}
+
 /* Reblog preview screen (issue #393): the reblogged post rendered as a
    real quote, distinct from the app's own chrome — mirrors the
    accent-washed quote block Daymark_Publisher::build_quote_block() stores

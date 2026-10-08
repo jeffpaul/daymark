@@ -848,6 +848,54 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 	expect(fetchedUrls[0]).not.toContain('refresh=1');
 });
 
+// Following a site from the app: Me's "Follow a site" opens a sheet that
+// looks up the site's feeds, preselects one, and follows it by index. Both
+// routes are mocked, so this checks the app's flow, not a real site.
+test('Follow a site from the Me screen picks a feed and follows it', async ({ page }) => {
+	await loginAs(page);
+
+	await page.route('**/daymark/v1/subscriptions/discover', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				site_url: 'https://follow.example/',
+				site_title: 'Follow Example',
+				default_index: 1,
+				candidates: [
+					{ index: 0, label: 'RSS/Atom Feed', title: '', url: 'https://follow.example/comments/feed/', subscribed: false },
+					{ index: 1, label: 'WordPress REST API', title: '', url: 'https://follow.example/wp-json/wp/v2/posts', subscribed: false },
+				],
+			}),
+		});
+	});
+	let followBody = null;
+	await page.route('**/daymark/v1/subscriptions/follow', async (route) => {
+		followBody = route.request().postDataJSON();
+		await route.fulfill({
+			status: 201,
+			contentType: 'application/json',
+			body: JSON.stringify({ id: 4242, site_url: 'https://follow.example/', site_title: followBody.site_title }),
+		});
+	});
+
+	await page.goto('/daymark/me');
+	await page.locator('.daymark-melinks [data-follow-site]').click();
+
+	const sheet = page.locator('.daymark-sheet__panel');
+	await expect(sheet.locator('#daymark-follow-title')).toHaveText('Follow a site');
+	await sheet.locator('[data-follow-url]').fill('follow.example');
+	await sheet.locator('[data-follow-find]').click();
+
+	await expect(sheet.locator('input[name="daymark-follow-feed"][value="1"]')).toBeChecked();
+	await expect(sheet.locator('[data-follow-name]')).toHaveValue('Follow Example');
+	await sheet.locator('[data-follow-name]').fill('My Friend');
+	await sheet.locator('[data-follow-submit]').click();
+
+	await expect(page.locator('[data-follow-submit]')).toHaveCount(0);
+	expect(followBody).toEqual({ index: 1, site_title: 'My Friend' });
+});
+
 // Timeline card meta line (issue #285): a subscription post's own author
 // used to render directly under the title — for most single-author sites
 // that duplicated the site name already shown on the card's own bottom row.

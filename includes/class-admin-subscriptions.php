@@ -1820,7 +1820,7 @@ class Daymark_Admin_Subscriptions {
 			$candidate_url   = isset( $candidate['url'] ) ? (string) $candidate['url'] : '';
 			$source_label    = isset( $candidate['source_label'] ) ? (string) $candidate['source_label'] : '';
 			$candidate_title = isset( $candidate['title'] ) ? (string) $candidate['title'] : '';
-			$language_name   = $this->language_display_name( isset( $candidate['language'] ) ? (string) $candidate['language'] : '' );
+			$language_name   = self::language_display_name( isset( $candidate['language'] ) ? (string) $candidate['language'] : '' );
 			$is_current      = '' !== $candidate_url && $candidate_url === $current_feed_url;
 			$already         = '' !== $candidate_url && null !== $subscriptions->get_by_feed_url( $candidate_url );
 			$checked         = $multiple
@@ -1870,7 +1870,7 @@ class Daymark_Admin_Subscriptions {
 	 * @param string $language Raw `language` value from a candidate, or ''.
 	 * @return string Human-readable name, or '' when $language is empty.
 	 */
-	private function language_display_name( string $language ): string {
+	public static function language_display_name( string $language ): string {
 		$language = strtolower( trim( $language ) );
 
 		if ( '' === $language ) {
