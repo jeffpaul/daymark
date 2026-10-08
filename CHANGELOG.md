@@ -44,6 +44,7 @@ can't act on them.
 
 ### Changed
 
+- Explore hides the "On this day" section when there are no Marks from this date in a prior year. ([#499](https://github.com/jeffpaul/daymark/pull/499))
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
 - A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it. ([#485](https://github.com/jeffpaul/daymark/pull/485))
 - Your own posts are labelled "You", and other people's likes, comments, and reblogs on them show as text ("1 comment") instead of the same icons that are buttons on posts you follow. ([#485](https://github.com/jeffpaul/daymark/pull/485))

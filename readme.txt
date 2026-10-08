@@ -8,7 +8,7 @@ Stable tag:        0.19.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
-Publish to your own site as fast as you'd post to a social app — photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
+Publish to your own site as fast as you'd post to a social app: photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
 
 == Description ==
 
