@@ -84,6 +84,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-reader-import.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-activitypub-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmarklet.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-qr-code.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-welcome.php';

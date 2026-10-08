@@ -4079,36 +4079,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $jetpack;
 		}
 
-		$existing = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
-
-		if ( $existing > 0 ) {
-			return rest_ensure_response(
-				array(
-					'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
-					'liked'    => true,
-					'mark_id'  => $existing,
-					'delivery' => Daymark_Like_Delivery::like_state( false, $existing, $permalink ),
-				)
-			);
-		}
-
-		// ActivityPub route (issue #439): queue a real `Like` through the
-		// ActivityPub plugin's outbox. The local Like Mark is still published
-		// below (the liked-state UI reads it), but its Webmention is
-		// suppressed so the origin receives exactly one Like. 0 when the
-		// route isn't available or the queue failed — then Webmention alone.
-		$outbox_id = '' !== $permalink && $availability['activitypub']
-			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
-			: 0;
-
-		// Never create a local Like Mark nothing can deliver: without an
-		// ActivityPub, Webmention, or Bridgy Fed route (and with the Jetpack
-		// route unavailable or just failed), the origin's author would never
-		// see it. The client hides the icon on this code; the check is
-		// repeated here so it never has to be trusted. A Bridgy Fed Like is
-		// an ordinary Like Mark; Daymark_Bridgy_Fed marks it for Bridgy Fed
-		// when it's published.
-		if ( 0 === $outbox_id && ! $availability['webmention'] && ! $availability['bridgy_fed'] ) {
+		if ( '' === $permalink ) {
 			return new WP_Error(
 				'daymark_like_undeliverable',
 				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
@@ -4116,44 +4087,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		$title   = html_entity_decode( sanitize_text_field( get_the_title( $post_id ) ), ENT_QUOTES, 'UTF-8' );
-		$caption = sprintf(
-			/* translators: %s: title of the liked post */
-			__( 'Liked "%s"', 'daymark' ),
-			'' !== $title ? $title : $permalink
-		);
+		$title  = html_entity_decode( sanitize_text_field( get_the_title( $post_id ) ), ENT_QUOTES, 'UTF-8' );
+		$result = Daymark_Like_Delivery::publish_like( $permalink, $title, $availability );
 
-		$mark_id = Daymark_Plugin::instance()->publisher->publish(
-			array(
-				'caption'        => $caption,
-				'primary_type'   => 'note',
-				'status'         => 'publish',
-				'ai_assist_used' => false,
-				'like_of'        => $permalink,
-			)
-		);
-
-		if ( is_wp_error( $mark_id ) ) {
-			// Don't leave a queued Like with no local record to undo it from.
-			if ( $outbox_id > 0 ) {
-				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
-			}
-
-			return $mark_id;
-		}
-
-		if ( $outbox_id > 0 ) {
-			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
-		}
-
-		return rest_ensure_response(
-			array(
-				'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
-				'liked'    => true,
-				'mark_id'  => $mark_id,
-				'delivery' => Daymark_Like_Delivery::like_state( false, (int) $mark_id, $permalink ),
-			)
-		);
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
 	/**
@@ -4449,29 +4386,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return int Mark post ID, or 0 when absent/no match.
 	 */
 	private function find_own_mark_id_by_target_url( string $meta_key, string $url ): int {
-		if ( '' === $url ) {
-			return 0;
-		}
-
-		$found = get_posts(
-			array(
-				// Both types: a Like Mark lives on its own post type (see
-				// Daymark_Like_Visibility::POST_TYPE); a legacy one may not
-				// have been migrated off 'post' yet.
-				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
-				'post_status'    => array( 'publish', 'draft' ),
-				'author'         => get_current_user_id(),
-				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
-				'meta_value'     => $url, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact match is the point; see docblock above for scale reasoning.
-				'posts_per_page' => 1,
-				'orderby'        => 'ID',
-				'order'          => 'DESC',
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			)
-		);
-
-		return ! empty( $found ) ? absint( $found[0] ) : 0;
+		return Daymark_Like_Delivery::own_mark_id( $meta_key, $url );
 	}
 
 	/**

@@ -40,6 +40,7 @@ can't act on them.
 - Home shows an Install card until Daymark is on your home screen, and Me has an Install Daymark row. On Android, and in desktop Chrome or Edge, it opens the browser's install prompt; on an iPhone or iPad it shows the Add to Home Screen steps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - Videos and audio now upload in small parts, so a weak or dropped connection no longer starts the file over. The upload carries on from where it stopped, even after you close the app once you've tapped Publish, and the Timeline card shows how far along it is. Videos and audio can now be up to 500 MB each; photos stay at 50 MB. ([#494](https://github.com/jeffpaul/daymark/pull/494))
+- A new Daymark bookmarklet lets you Reblog or Like a post while you read it anywhere on the web. It opens a small window on your own site with the post at the top, embedded when it offers an embed, then your thoughts and an editable title. The Reblog is published on your site. Find it under Me -> Reblog from anywhere. ([#502](https://github.com/jeffpaul/daymark/pull/502))
 
 ### Changed
 
@@ -64,6 +65,7 @@ can't act on them.
 
 ### Fixed
 
+- Reblogging a post without adding a comment of your own no longer fails with "A Mark needs media or text." ([#502](https://github.com/jeffpaul/daymark/pull/502))
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
 - The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did. ([#485](https://github.com/jeffpaul/daymark/pull/485))

@@ -17,6 +17,7 @@ class Test_Routes extends WP_UnitTestCase {
 		delete_option( Daymark_Routes::OPTION_LEGACY_APP_BASE );
 		delete_option( 'daymark_legacy_content_pages' );
 		delete_option( 'daymark_nav_routes_added' );
+		delete_option( 'daymark_bookmarklet_route_added' );
 	}
 
 	private function registered_rule_patterns(): array {

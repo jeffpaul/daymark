@@ -7997,6 +7997,13 @@
 					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
 					<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
 					${
+						config.bookmarkletUrl
+							? `<a class="daymark-melink" href="${esc(config.bookmarkletUrl)}">${esc(
+									__('Reblog from anywhere (bookmarklet)', 'daymark')
+							  )}</a>`
+							: ''
+					}
+					${
 						config.adminSubscriptionsUrl
 							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
 									__('Subscriptions', 'daymark')

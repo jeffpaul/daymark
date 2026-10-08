@@ -32,6 +32,7 @@ delete_option( 'daymark_app_base' );
 delete_option( 'daymark_legacy_app_base' );
 delete_option( 'daymark_redirect_rule_added' );
 delete_option( 'daymark_nav_routes_added' );
+delete_option( 'daymark_bookmarklet_route_added' );
 delete_option( 'daymark_subscriptions_db_version' );
 delete_option( 'daymark_bridgy_fed_bridged' );
 // Settings -> Daymark's own settings (Daymark_Settings::options()).

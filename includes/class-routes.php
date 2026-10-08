@@ -71,6 +71,7 @@ class Daymark_Routes {
 		add_rewrite_rule( '^' . $base . '/me/?$', 'index.php?' . self::QUERY_VAR . '=me', 'top' );
 		add_rewrite_rule( '^' . $base . '/manifest\.json$', 'index.php?' . self::QUERY_VAR . '=manifest', 'top' );
 		add_rewrite_rule( '^' . $base . '/share/?$', 'index.php?' . self::QUERY_VAR . '=share', 'top' );
+		add_rewrite_rule( '^' . $base . '/bookmarklet/?$', 'index.php?' . self::QUERY_VAR . '=bookmarklet', 'top' );
 		// Cold-offline-load support (issue #126) — see maybe_load_app_shell()
 		// for what each of these three actually serves.
 		add_rewrite_rule( '^' . $base . '/config\.json$', 'index.php?' . self::QUERY_VAR . '=config', 'top' );
@@ -114,15 +115,18 @@ class Daymark_Routes {
 		// permalink resave. An install upgrading into the Explore/Search/Me
 		// routes (and any legacy content-page redirect) needs the same
 		// one-time flush for the same reason — daymark_nav_routes_added
-		// covers both, added together in the same release.
+		// covers both, added together in the same release. The bookmarklet
+		// route has its own flag for the same reason.
 		if (
 			$base_was_unresolved
 			|| $base_was_self_healed
 			|| ( $needs_redirect && ! get_option( 'daymark_redirect_rule_added' ) )
 			|| ! get_option( 'daymark_nav_routes_added' )
+			|| ! get_option( 'daymark_bookmarklet_route_added' )
 		) {
 			update_option( 'daymark_redirect_rule_added', 1 );
 			update_option( 'daymark_nav_routes_added', 1 );
+			update_option( 'daymark_bookmarklet_route_added', 1 );
 			flush_rewrite_rules( false );
 		}
 	}
@@ -556,6 +560,7 @@ class Daymark_Routes {
 			// registration scope (issue #126) needs a directory-shaped
 			// URL, not app_url()'s own bare (no trailing slash) form.
 			'appUrl'                 => esc_url_raw( self::app_url() . '/' ),
+			'bookmarkletUrl'         => esc_url_raw( Daymark_Bookmarklet::popup_url() ),
 			'nonce'                  => wp_create_nonce( 'wp_rest' ),
 			'siteUrl'                => esc_url_raw( home_url( '/' ) ),
 			'siteTitle'              => sanitize_text_field( get_bloginfo( 'name' ) ),
@@ -779,6 +784,12 @@ class Daymark_Routes {
 		// failure), so nothing after this point ever runs for this screen.
 		if ( 'share' === $screen ) {
 			Daymark_Plugin::instance()->share_target->handle();
+		}
+
+		// The bookmarklet's popup (Daymark_Bookmarklet) — its own small page,
+		// not an app screen. handle() always exits.
+		if ( 'bookmarklet' === $screen ) {
+			Daymark_Plugin::instance()->bookmarklet->handle();
 		}
 
 		// /daymark on a migrated install (base still the legacy value):

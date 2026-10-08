@@ -223,6 +223,15 @@ final class Daymark_Plugin {
 	public Daymark_Share_Target $share_target;
 
 	/**
+	 * Bookmarklet popup: Reblog or Like the page you're reading on another
+	 * site. Invoked directly by Daymark_Routes::maybe_load_app_shell() on
+	 * the /bookmarklet route; no hooks of its own to register.
+	 *
+	 * @var Daymark_Bookmarklet
+	 */
+	public Daymark_Bookmarklet $bookmarklet;
+
+	/**
 	 * Admin bar shortcuts: "Open Daymark" under the site-name node, and
 	 * "Daymark" (pre-set to an image Mark) under the "+New" menu.
 	 *
@@ -325,6 +334,7 @@ final class Daymark_Plugin {
 		$this->subscription_poller          = new Daymark_Subscription_Poller();
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 		$this->share_target                 = new Daymark_Share_Target();
+		$this->bookmarklet                  = new Daymark_Bookmarklet();
 		$this->admin_bar                    = new Daymark_Admin_Bar();
 		$this->admin_welcome                = new Daymark_Admin_Welcome();
 		$this->admin_post_format_icon       = new Daymark_Admin_Post_Format_Icon();

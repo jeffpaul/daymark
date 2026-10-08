@@ -454,7 +454,13 @@ class Daymark_Publisher {
 
 		$file_list = $this->normalize_files( $files );
 
-		if ( empty( $file_list ) && empty( $requested['ids'] ) && '' === $caption && null === $place_name ) {
+		// A Reblog with a quoted post is content on its own, even with no
+		// comment of the reader's (the Reblog screen's "Reblog without
+		// comment").
+		$has_quote = null !== $this->resolve_repost_of( $data )
+			&& '' !== sanitize_text_field( (string) ( $data['quote_title'] ?? '' ) );
+
+		if ( empty( $file_list ) && empty( $requested['ids'] ) && '' === $caption && null === $place_name && ! $has_quote ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -526,6 +532,10 @@ class Daymark_Publisher {
 						/* translators: 1: author name, 2: site, e.g. example.com */
 						? sprintf( __( '%1$s, %2$s', 'daymark' ), $author, $host )
 						: ( '' !== $author ? $author : $host ),
+					// Lead with a core/embed block instead of a quote. Only
+					// the bookmarklet sets this, after checking the URL has
+					// an oEmbed; POST /marks never forwards it.
+					'embed'  => ! empty( $data['quote_embed'] ),
 				);
 			}
 		}
@@ -1533,8 +1543,8 @@ class Daymark_Publisher {
 	 *
 	 * @param int[]                                                                   $media_ids Attachment IDs.
 	 * @param string                                                                  $caption   Caption text (already run through wp_kses_post).
-	 * @param array{url: string, title: string, source?: string}|null                 $quote Reblogged-post quote block
-	 *                                                                                        to lead with, or null for none.
+	 * @param array{url: string, title: string, source?: string, embed?: bool}|null   $quote Reblogged-post quote (or
+	 *                                                                                       embed) block to lead with, or null for none.
 	 * @param array{place: string, location: array{lat: float, lng: float}|null}|null $checkin Checkin place block
 	 *                                                                        to lead with, or null for none.
 	 * @return string Block markup.
@@ -1551,7 +1561,9 @@ class Daymark_Publisher {
 		}
 
 		if ( $quote ) {
-			$blocks[] = $this->build_quote_block( $quote['url'], $quote['title'], $quote['source'] ?? '' );
+			$blocks[] = ! empty( $quote['embed'] )
+				? $this->build_embed_block( $quote['url'] )
+				: $this->build_quote_block( $quote['url'], $quote['title'], $quote['source'] ?? '' );
 		}
 
 		if ( count( $groups['image'] ) > 1 ) {
@@ -1606,6 +1618,23 @@ class Daymark_Publisher {
 			"<!-- wp:quote -->\n<blockquote class=\"wp-block-quote\"><p>%s</p>%s</blockquote>\n<!-- /wp:quote -->",
 			$link,
 			$cite
+		);
+	}
+
+	/**
+	 * Build a core/embed block for the post a Reblog Mark reblogs — used
+	 * instead of build_quote_block() when the bookmarklet found an oEmbed
+	 * for the URL. WordPress renders the embed when the post is shown; if
+	 * the URL later stops offering one, core falls back to a plain link.
+	 *
+	 * @param string $url The reblogged post's URL (already validated by resolve_repost_of()).
+	 * @return string Block markup.
+	 */
+	private function build_embed_block( string $url ): string {
+		return sprintf(
+			"<!-- wp:embed %s -->\n<figure class=\"wp-block-embed\"><div class=\"wp-block-embed__wrapper\">\n%s\n</div></figure>\n<!-- /wp:embed -->",
+			serialize_block_attributes( array( 'url' => $url ) ),
+			esc_url( $url )
 		);
 	}
 

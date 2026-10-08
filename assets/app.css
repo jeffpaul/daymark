@@ -4265,3 +4265,59 @@ button.daymark-stat {
 	outline: 2px solid var(--daymark-accent-deep, #9e2a02);
 	outline-offset: 2px;
 }
+
+/* --- Bookmarklet popup (templates/bookmarklet.php) ---
+   A small standalone page on this site, opened by the bookmarklet from any
+   other site. No bottom nav, so the screen keeps its own bottom padding. */
+.daymark-bookmarklet__screen {
+	gap: var(--daymark-spacing-md);
+	padding: var(--daymark-spacing-md);
+	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
+}
+
+.daymark-bookmarklet__icon {
+	flex: none;
+	border-radius: 6px;
+}
+
+.daymark-bookmarklet__close {
+	margin-left: auto;
+}
+
+.daymark-bookmarklet__close[hidden] {
+	display: none;
+}
+
+.daymark-bookmarklet__screen p,
+.daymark-bookmarklet__steps {
+	margin: 0;
+}
+
+.daymark-bookmarklet__embed {
+	margin-top: 0;
+}
+
+.daymark-bookmarklet__reblog {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-md);
+}
+
+/* Dragged to the bookmarks bar, not clicked; the cursor says so. */
+.daymark-bookmarklet__link {
+	display: inline-flex;
+	cursor: grab;
+	text-decoration: none;
+}
+
+.daymark-bookmarklet__notice {
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-text-primary);
+}
+
+.daymark-bookmarklet__notice--error {
+	background: var(--daymark-danger-bg);
+	color: #fff;
+}
