@@ -38,6 +38,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-federated-comments.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-links.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-visibility.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notes.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-note-length.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-microformats.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-backflow-sync.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/connectors/interface-syndication-connector.php';
