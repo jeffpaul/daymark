@@ -4,6 +4,16 @@ title: "[Enhancement]: "
 labels: ["enhancement"]
 body:
   - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: >-
+        Two to four plain sentences a middle-school student could follow.
+        What you want Daymark to do, who it helps, and why. Skip code names and jargon; put the details in the fields below.
+      placeholder: "I'd like to schedule a Mark to publish later, so I can write it now and share it at a better time."
+    validations:
+      required: true
+  - type: textarea
     id: problem
     attributes:
       label: What problem would this solve?

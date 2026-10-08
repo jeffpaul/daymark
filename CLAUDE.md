@@ -48,6 +48,17 @@ description as the commit message, so this keeps `git log` on `main` as
 scannable as the changelog itself instead of relying on whatever length of
 prose the rest of the description happens to be.
 
+## Working agreement: plain-language summaries
+
+Every issue and PR Claude opens in this repo starts with a `## Summary`
+section: two to four plain sentences that a middle-school student could
+follow. Say what is wrong or what changes, who notices it, and why it
+matters, with no class names, file paths, or jargon. The detailed write-up
+goes below it. Jeff uses this summary to judge agent-written issues and PRs
+in one read, so write it for him first. See CONTRIBUTING.md's "Start with a
+plain-language summary" section, and the Summary fields in the issue forms
+and PR template.
+
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
