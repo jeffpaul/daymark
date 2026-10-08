@@ -1093,8 +1093,13 @@ test.describe('with a mouse', () => {
 		await page.goto('/daymark');
 
 		const button = page.getByRole('button', { name: 'Refresh Timeline' });
+		const indicator = page.locator('[data-pull-indicator]');
 		await expect(button).toBeVisible();
 		await button.click();
+		// The button spins its own icon, so the pull indicator never shows:
+		// one loading animation per refresh, not two.
+		await expect(button).toHaveAttribute('aria-busy', 'true');
+		await expect(indicator).not.toHaveClass(/is-visible/);
 		await expect(page.locator('[data-recent-refresh-status]')).not.toHaveText('', { timeout: 20000 });
 		await expect(button).toBeEnabled();
 	});
