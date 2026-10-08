@@ -2088,6 +2088,11 @@ test('a failed Timeline page shows Retry, and Retry loads it', async ({ page }) 
 		}
 	});
 
+	// The seeded Marks are newer than this account's last-seen post, so the
+	// reload would open on that post with 40 posts loaded in one request,
+	// and page 2 would never be asked for. Start at the top instead.
+	await markNewestTimelineItemSeen(page);
+
 	// Fail the second page once.
 	let failed = false;
 	await page.route(/\/daymark\/v1\/timeline\?per_page=20&page=2/, async (route) => {
