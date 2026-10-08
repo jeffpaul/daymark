@@ -454,13 +454,10 @@ class Daymark_Publisher {
 
 		$file_list = $this->normalize_files( $files );
 
-		// A Reblog with a quoted post is content on its own, even with no
-		// comment of the reader's (the Reblog screen's "Reblog without
-		// comment").
-		$has_quote = null !== $this->resolve_repost_of( $data )
-			&& '' !== sanitize_text_field( (string) ( $data['quote_title'] ?? '' ) );
-
-		if ( empty( $file_list ) && empty( $requested['ids'] ) && '' === $caption && null === $place_name && ! $has_quote ) {
+		// A Reblog with no comment of its own is still content: it leads
+		// with an embed of the reblogged post (see build_reblog_embed_block()).
+		if ( empty( $file_list ) && empty( $requested['ids'] ) && '' === $caption && null === $place_name
+			&& null === $this->resolve_repost_of( $data ) ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -509,35 +506,24 @@ class Daymark_Publisher {
 		$repost_of  = $this->resolve_repost_of( $data );
 		$is_like_of = null !== $like_of;
 
-		// The Reblog preview screen (issue #393) sends the reblogged post's
-		// own title alongside repost_of, so its content can lead with a real
-		// core/quote block instead of a plain link paragraph — see
-		// build_quote_block(). A repost_of with no quote_title (an older
-		// client, or a direct API caller) falls back to the previous plain-
-		// caption behavior untouched.
-		$quote = null;
+		// A Reblog Mark leads with a core/embed block for the reblogged
+		// post, so it shows as the original's own embed card wherever
+		// WordPress can embed it, and as a plain link where it can't. The
+		// caption credits the source: "Author, example.com" when the
+		// Reblog screen sent the author, otherwise just the site.
+		$reblog = null;
 
 		if ( null !== $repost_of ) {
-			$quote_title = sanitize_text_field( (string) ( $data['quote_title'] ?? '' ) );
+			$host   = (string) wp_parse_url( $repost_of, PHP_URL_HOST );
+			$author = sanitize_text_field( (string) ( $data['reblog_author'] ?? '' ) );
 
-			if ( '' !== $quote_title ) {
-				$host   = (string) wp_parse_url( $repost_of, PHP_URL_HOST );
-				$author = sanitize_text_field( (string) ( $data['quote_author'] ?? '' ) );
-
-				$quote = array(
-					'url'    => $repost_of,
-					'title'  => $quote_title,
-					// "Author, example.com" when the author is known.
-					'source' => '' !== $author && '' !== $host
-						/* translators: 1: author name, 2: site, e.g. example.com */
-						? sprintf( __( '%1$s, %2$s', 'daymark' ), $author, $host )
-						: ( '' !== $author ? $author : $host ),
-					// Lead with a core/embed block instead of a quote. Only
-					// the bookmarklet sets this, after checking the URL has
-					// an oEmbed; POST /marks never forwards it.
-					'embed'  => ! empty( $data['quote_embed'] ),
-				);
-			}
+			$reblog = array(
+				'url'    => $repost_of,
+				'source' => '' !== $author && '' !== $host
+					/* translators: 1: author name, 2: site, e.g. example.com */
+					? sprintf( __( '%1$s, %2$s', 'daymark' ), $author, $host )
+					: ( '' !== $author ? $author : $host ),
+			);
 		}
 
 		// Idempotency guard: Like/Repost are instant, tap-to-toggle actions
@@ -675,7 +661,10 @@ class Daymark_Publisher {
 			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
-			'post_content' => $this->build_block_markup( $media_ids, $caption, $quote, $checkin ),
+			// wp_insert_post() strips backslashes, so the markup is slashed
+			// first: a block's encoded attributes (an embed URL's `\u0026`)
+			// and any backslash in the caption would otherwise be lost.
+			'post_content' => wp_slash( $this->build_block_markup( $media_ids, $caption, $reblog, $checkin ) ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 		);
 
@@ -1091,7 +1080,8 @@ class Daymark_Publisher {
 		$update_data = array(
 			'ID'           => $post_id,
 			'post_title'   => $title,
-			'post_content' => $this->build_block_markup( $media_ids, $caption, null, $checkin ),
+			// Slashed for the same reason as in publish().
+			'post_content' => wp_slash( $this->build_block_markup( $media_ids, $caption, null, $checkin ) ),
 			'post_excerpt' => wp_trim_words( wp_strip_all_tags( $caption ), 24, '…' ),
 			'post_status'  => $new_status,
 		);
@@ -1538,18 +1528,18 @@ class Daymark_Publisher {
 	/**
 	 * Build standard block markup for the Mark content.
 	 *
-	 * Uses core/image, core/gallery, core/video, core/audio, core/quote,
+	 * Uses core/image, core/gallery, core/video, core/audio, core/embed,
 	 * and core/paragraph so the Mark renders in any theme.
 	 *
 	 * @param int[]                                                                   $media_ids Attachment IDs.
 	 * @param string                                                                  $caption   Caption text (already run through wp_kses_post).
-	 * @param array{url: string, title: string, source?: string, embed?: bool}|null   $quote Reblogged-post quote (or
-	 *                                                                                       embed) block to lead with, or null for none.
+	 * @param array{url: string, source?: string}|null                                $reblog Reblogged post to lead
+	 *                                                                                         with as an embed, or null for none.
 	 * @param array{place: string, location: array{lat: float, lng: float}|null}|null $checkin Checkin place block
 	 *                                                                        to lead with, or null for none.
 	 * @return string Block markup.
 	 */
-	private function build_block_markup( array $media_ids, string $caption, ?array $quote = null, ?array $checkin = null ): string {
+	private function build_block_markup( array $media_ids, string $caption, ?array $reblog = null, ?array $checkin = null ): string {
 		$groups = $this->group_media_ids( $media_ids );
 		$blocks = array();
 
@@ -1560,10 +1550,8 @@ class Daymark_Publisher {
 			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'] );
 		}
 
-		if ( $quote ) {
-			$blocks[] = ! empty( $quote['embed'] )
-				? $this->build_embed_block( $quote['url'] )
-				: $this->build_quote_block( $quote['url'], $quote['title'], $quote['source'] ?? '' );
+		if ( $reblog ) {
+			$blocks[] = $this->build_reblog_embed_block( $reblog['url'], $reblog['source'] ?? '' );
 		}
 
 		if ( count( $groups['image'] ) > 1 ) {
@@ -1599,42 +1587,42 @@ class Daymark_Publisher {
 	}
 
 	/**
-	 * Build a core/quote block linking to the post a Reblog Mark quotes
-	 * (issue #393 — the Reblog preview screen). Leads build_block_markup()'s
-	 * own output, ahead of any media and of the reader's own commentary
-	 * paragraphs, matching the screen's own layout: the reblogged post
-	 * first, the reader's own thoughts after it.
+	 * Build the core/embed block a Reblog Mark leads with: the reblogged
+	 * post's URL, which WordPress turns into that post's own embed card
+	 * when it renders the content (oEmbed; any WordPress site, YouTube,
+	 * Mastodon, and so on), or into a plain link when the site can't be
+	 * embedded. It comes ahead of any media and of the reader's own
+	 * thoughts, matching the Reblog screen's layout.
 	 *
-	 * @param string $url    The reblogged post's own permalink (already validated by resolve_repost_of()).
-	 * @param string $title  The reblogged post's own title (already sanitized).
-	 * @param string $source A short attribution — e.g. the origin site's host — or '' to omit it.
+	 * The block carries only its `url` attribute. The provider and embed
+	 * type aren't known without fetching the URL, and the block editor
+	 * fills them in itself if the post is opened there. The caption
+	 * credits the source and links to the post, so a reader can still
+	 * reach it when no embed card renders.
+	 *
+	 * @param string $url    The reblogged post's permalink (already validated by resolve_repost_of()).
+	 * @param string $source A short credit, e.g. "Author, example.com", or '' to omit the caption.
 	 * @return string Block markup.
 	 */
-	private function build_quote_block( string $url, string $title, string $source = '' ): string {
-		$link = sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $title ) );
-		$cite = '' !== $source ? sprintf( '<cite>%s</cite>', esc_html( $source ) ) : '';
+	private function build_reblog_embed_block( string $url, string $source = '' ): string {
+		$caption = '' !== $source
+			? sprintf(
+				'<figcaption class="wp-element-caption">%s</figcaption>',
+				sprintf(
+					/* translators: %s: linked credit for the reblogged post, e.g. "Jane Doe, example.com" */
+					__( 'Reblogged from %s', 'daymark' ),
+					sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $source ) )
+				)
+			)
+			: '';
 
 		return sprintf(
-			"<!-- wp:quote -->\n<blockquote class=\"wp-block-quote\"><p>%s</p>%s</blockquote>\n<!-- /wp:quote -->",
-			$link,
-			$cite
-		);
-	}
-
-	/**
-	 * Build a core/embed block for the post a Reblog Mark reblogs — used
-	 * instead of build_quote_block() when the bookmarklet found an oEmbed
-	 * for the URL. WordPress renders the embed when the post is shown; if
-	 * the URL later stops offering one, core falls back to a plain link.
-	 *
-	 * @param string $url The reblogged post's URL (already validated by resolve_repost_of()).
-	 * @return string Block markup.
-	 */
-	private function build_embed_block( string $url ): string {
-		return sprintf(
-			"<!-- wp:embed %s -->\n<figure class=\"wp-block-embed\"><div class=\"wp-block-embed__wrapper\">\n%s\n</div></figure>\n<!-- /wp:embed -->",
+			"<!-- wp:embed %s -->\n<figure class=\"wp-block-embed\"><div class=\"wp-block-embed__wrapper\">\n%s\n</div>%s</figure>\n<!-- /wp:embed -->",
 			serialize_block_attributes( array( 'url' => $url ) ),
-			esc_url( $url )
+			// Plain text, not esc_url(): WordPress's auto-embed reads this
+			// line as the URL and decodes only `&amp;`, not `&#038;`.
+			esc_html( $url ),
+			$caption
 		);
 	}
 

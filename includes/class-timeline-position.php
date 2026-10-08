@@ -1,17 +1,17 @@
 <?php
 /**
- * Per-user "last seen" marker for Home's Timeline.
+ * Per-user reading position on Home's Timeline.
  *
- * Records the newest Timeline item a user has actually seen on screen, so a
- * later visit can open the Timeline anchored on that item — newer posts sit
- * above it, one scroll or one tap away — instead of always starting at the
- * newest post. Stored as one `daymark_timeline_last_seen` user meta value,
- * so it follows the user across devices.
+ * Two markers, each one user meta value, so both follow the user across
+ * devices:
  *
- * The marker only moves forward: an item replaces it only when it sorts
- * newer on the Timeline. Scrolling back down through older posts never
- * moves it backward, the same "newest thing you've read" rule a chat app's
- * unread marker follows.
+ * - The reading position (`daymark_timeline_position`): the item at the top
+ *   of the screen when the user last looked at Home. A later visit opens the
+ *   Timeline on that item, with newer posts above it. It moves both ways,
+ *   because it records where the user was, not how far they have read.
+ * - The last-seen marker (`daymark_timeline_last_seen`): the newest item the
+ *   user has seen. It only moves forward, like a chat app's unread marker.
+ *   The app uses it to count the posts that are new since then.
  *
  * @package Daymark
  */
@@ -31,6 +31,14 @@ class Daymark_Timeline_Position {
 	 * @var string
 	 */
 	public const META_KEY = 'daymark_timeline_last_seen';
+
+	/**
+	 * User meta key for the reading position. A single array value: id,
+	 * item_type, saved_at.
+	 *
+	 * @var string
+	 */
+	public const POSITION_META_KEY = 'daymark_timeline_position';
 
 	/**
 	 * The marker as the app shell needs it, or null when there is none (or
@@ -97,13 +105,64 @@ class Daymark_Timeline_Position {
 	}
 
 	/**
-	 * The stored marker, shape-checked, or null.
+	 * The reading position as the app shell needs it, or null when there is
+	 * none (or the item it pointed at is no longer on the Timeline).
 	 *
 	 * @param int $user_id User ID.
 	 * @return array{id: int, item_type: string}|null
 	 */
-	private static function stored( int $user_id ): ?array {
-		$value = get_user_meta( $user_id, self::META_KEY, true );
+	public static function get_position( int $user_id ): ?array {
+		$stored = self::stored( $user_id, self::POSITION_META_KEY );
+
+		if ( null === $stored || null === self::sort_key( $stored['id'] ) ) {
+			return null;
+		}
+
+		return $stored;
+	}
+
+	/**
+	 * Record the item at the top of a user's screen on Home. Unlike
+	 * mark_seen(), this replaces the stored item whichever way it sorts.
+	 *
+	 * @param int $user_id User ID.
+	 * @param int $post_id A published Mark/post or subscription post.
+	 * @return array{id: int, item_type: string}|WP_Error The position after
+	 *                                                    the update, or an
+	 *                                                    error for an
+	 *                                                    unknown item.
+	 */
+	public static function set_position( int $user_id, int $post_id ) {
+		if ( null === self::sort_key( $post_id ) ) {
+			return new WP_Error(
+				'daymark_not_found',
+				__( 'Post not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		update_user_meta(
+			$user_id,
+			self::POSITION_META_KEY,
+			array(
+				'id'        => $post_id,
+				'item_type' => self::item_type( $post_id ),
+				'saved_at'  => gmdate( 'Y-m-d H:i:s' ),
+			)
+		);
+
+		return self::get_position( $user_id );
+	}
+
+	/**
+	 * A stored marker, shape-checked, or null.
+	 *
+	 * @param int    $user_id  User ID.
+	 * @param string $meta_key META_KEY or POSITION_META_KEY.
+	 * @return array{id: int, item_type: string}|null
+	 */
+	private static function stored( int $user_id, string $meta_key = self::META_KEY ): ?array {
+		$value = get_user_meta( $user_id, $meta_key, true );
 
 		if ( ! is_array( $value ) || empty( $value['id'] ) ) {
 			return null;

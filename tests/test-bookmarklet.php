@@ -173,7 +173,7 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertSame( 200, mb_strlen( $target['title'] ) );
 	}
 
-	public function test_reblog_without_an_embed_leads_with_a_quote_then_the_comment() {
+	public function test_reblog_leads_with_an_embed_then_the_comment() {
 		$post_id = Daymark_Bookmarklet::reblog( $this->target(), 'My edited title', "Worth a read.\n\nSecond thought." );
 
 		$this->assertIsInt( $post_id );
@@ -184,45 +184,26 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertSame( 'My edited title', $post->post_title );
 		$this->assertSame( $this->url, get_post_meta( $post_id, '_daymark_repost_of', true ) );
 
-		$quote   = strpos( $post->post_content, '<!-- wp:quote -->' );
-		$comment = strpos( $post->post_content, 'Worth a read.' );
-
-		$this->assertNotFalse( $quote );
-		$this->assertNotFalse( $comment );
-		$this->assertLessThan( $comment, $quote, 'The reblogged post comes first, the comment after it.' );
-		$this->assertStringContainsString( 'Jane Writer, example.com', $post->post_content );
-		$this->assertStringContainsString( 'Second thought.', $post->post_content );
-		$this->assertStringNotContainsString( 'wp:embed', $post->post_content );
-	}
-
-	public function test_reblog_with_a_cached_oembed_leads_with_an_embed_block() {
-		set_transient(
-			'daymark_oembed_' . md5( $this->url ),
-			array(
-				'type' => 'iframe',
-				'html' => '<iframe src="https://example.com/embed/"></iframe>',
-			),
-			HOUR_IN_SECONDS
-		);
-
-		$post_id = Daymark_Bookmarklet::reblog( $this->target(), '', 'Great.' );
-		$content = get_post( $post_id )->post_content;
-
-		$this->assertStringStartsWith( '<!-- wp:embed {"url":"https://example.com/a-great-post/"} -->', $content );
-		$this->assertStringNotContainsString( 'wp:quote', $content );
-		$this->assertLessThan( strpos( $content, 'Great.' ), strpos( $content, '<!-- /wp:embed -->' ) );
-		$this->assertSame( 'Reblog: A Great Post', get_the_title( $post_id ) );
-
-		$blocks = parse_blocks( $content );
+		$blocks = array_values( array_filter( parse_blocks( $post->post_content ), static fn( $block ) => null !== $block['blockName'] ) );
 		$this->assertSame( 'core/embed', $blocks[0]['blockName'] );
 		$this->assertSame( $this->url, $blocks[0]['attrs']['url'] );
+		$this->assertSame( 'core/paragraph', $blocks[1]['blockName'], 'The comment comes after the embed.' );
+		$this->assertStringContainsString( 'Worth a read.', $blocks[1]['innerHTML'] );
+		$this->assertStringContainsString( 'Second thought.', $post->post_content );
+		$this->assertStringContainsString( 'Jane Writer, example.com', $post->post_content );
+	}
+
+	public function test_reblog_without_a_title_uses_the_default() {
+		$post_id = Daymark_Bookmarklet::reblog( $this->target(), '', 'Great.' );
+
+		$this->assertSame( 'Reblog: A Great Post', get_the_title( $post_id ) );
 	}
 
 	public function test_reblog_without_a_comment_still_publishes() {
 		$post_id = Daymark_Bookmarklet::reblog( $this->target(), '', '' );
 
 		$this->assertIsInt( $post_id );
-		$this->assertStringContainsString( '<!-- wp:quote -->', get_post( $post_id )->post_content );
+		$this->assertStringContainsString( '<!-- wp:embed', get_post( $post_id )->post_content );
 	}
 
 	public function test_reblog_needs_a_url() {

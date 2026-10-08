@@ -2501,32 +2501,127 @@ button.daymark-stat {
 	min-height: 112px;
 }
 
-/* Reblog preview screen (issue #393): the reblogged post rendered as a
-   real quote, distinct from the app's own chrome — mirrors the
-   accent-washed quote block Daymark_Publisher::build_quote_block() stores
-   server-side once published. */
-.daymark-reblog-quote {
-	margin: 0;
-	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
-	border-left: 3px solid var(--daymark-accent);
-	background: var(--daymark-accent-wash);
-	border-radius: 0 var(--daymark-radius-sm) var(--daymark-radius-sm) 0;
+/* "Follow a site" sheet (FollowSiteSheet, app.js). */
+.daymark-follow__heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-sm);
 }
 
-.daymark-reblog-quote p {
-	margin: 0;
-	font-weight: 600;
+.daymark-follow__open {
+	width: auto;
+	padding: 0 var(--daymark-spacing-md);
 }
 
-.daymark-reblog-quote a {
-	color: var(--daymark-accent-deep);
+/* An inline button inside running text (the empty Timeline's
+   "follow a site"), styled like the link beside it. */
+.daymark-linkbtn {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--daymark-accent);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
 }
 
-.daymark-reblog-quote cite {
-	display: block;
-	margin-top: var(--daymark-spacing-xs);
+.daymark-follow__hint {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 14px;
+	line-height: 1.45;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-follow__feeds {
+	margin: 0 0 var(--daymark-spacing-md);
+	padding: 0;
+	border: 0;
+	min-width: 0;
+}
+
+.daymark-follow__option {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-xs) 0;
+	cursor: pointer;
+}
+
+.daymark-follow__option input {
+	flex: none;
+	width: 20px;
+	height: 20px;
+	margin-top: 2px;
+	accent-color: var(--daymark-accent);
+}
+
+.daymark-follow__optiontext {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-follow__recommended {
+	font-weight: 400;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-follow__url {
 	font-size: 13px;
-	font-style: normal;
+	color: var(--daymark-text-muted);
+	overflow-wrap: anywhere;
+}
+
+/* Reblog preview screen (issue #393): the reblogged post shown as a
+   link card, previewing the embed card the published Reblog leads with
+   (Daymark_Publisher::build_reblog_embed_block()). */
+.daymark-reblog-embed {
+	display: block;
+	overflow: hidden;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
+	color: inherit;
+	text-decoration: none;
+}
+
+.daymark-reblog-embed:hover,
+.daymark-reblog-embed:focus-visible {
+	border-color: var(--daymark-accent);
+}
+
+.daymark-reblog-embed__image {
+	display: block;
+	width: 100%;
+	aspect-ratio: 1.91 / 1;
+	object-fit: cover;
+}
+
+.daymark-reblog-embed__text {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-xs);
+	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+}
+
+.daymark-reblog-embed__title {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.daymark-reblog-embed__excerpt {
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-reblog-embed__source {
+	font-size: 13px;
 	color: var(--daymark-text-secondary);
 }
 

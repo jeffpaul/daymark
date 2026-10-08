@@ -617,6 +617,47 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Following a site from the app: find a site's feeds, then follow
+		// one of them. Same capability as Settings -> Daymark, which does
+		// the same job.
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/discover',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'discover_subscription' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
+				'args'                => array(
+					'site_url' => array(
+						'type'              => 'string',
+						'required'          => true,
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/follow',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'follow_discovered_feed' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
+				'args'                => array(
+					'index'      => array(
+						'type'     => 'integer',
+						'required' => true,
+						'minimum'  => 0,
+					),
+					'site_title' => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/subscriptions/(?P<id>\d+)',
@@ -951,6 +992,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// A pure local write (per-user meta, no outbound request),
 				// debounced client-side, same posture as dismissing a
 				// plugin-overlap notice — no rate-limit bucket.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/timeline/position',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'save_timeline_position' ),
+				// Same posture as /timeline/last-seen: a debounced, local
+				// per-user meta write with no outbound request.
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
 					'id' => array(
@@ -1431,10 +1491,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Daymark_Publisher::resolve_repost_of()/resolve_like_of().
 			'repost_of'            => (string) $request->get_param( 'repost_of' ),
 			'like_of'              => (string) $request->get_param( 'like_of' ),
-			// The Reblog screen's quote of the reblogged post (issue #393):
-			// its title and author, for Daymark_Publisher's core/quote block.
-			'quote_title'          => sanitize_text_field( (string) $request->get_param( 'quote_title' ) ),
-			'quote_author'         => sanitize_text_field( (string) $request->get_param( 'quote_author' ) ),
+			// The Reblog screen's credit for the reblogged post's author, shown
+			// in the caption of Daymark_Publisher's core/embed block.
+			// `quote_author` is the name an app cached before this change
+			// still sends.
+			'reblog_author'        => sanitize_text_field(
+				(string) ( $request->get_param( 'reblog_author' ) ?? $request->get_param( 'quote_author' ) )
+			),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -2813,10 +2876,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return '<p>' . $slot_token . ( count( $gallery_slots ) - 1 ) . '</p>';
 		};
 
+		// An embed (a Reblog Mark's reblogged post, or a video pasted into
+		// any post) arrives as the provider's iframe, which wp_kses_post()
+		// removes. Each one is swapped for a placeholder and later for the
+		// same rebuilt, allowlisted iframe or image the app's link previews
+		// use. Its caption is kept. An embed WordPress couldn't resolve is
+		// just a link, and is left as it is.
+		$embed_slots = array();
+		$embed_token = 'DAYMARKEMBEDSLOT' . wp_generate_password( 12, false );
+		$swap_embed  = static function ( $block_content ) use ( &$embed_slots, $embed_token ) {
+			$block_content = (string) $block_content;
+			$caption_at    = stripos( $block_content, '<figcaption' );
+			$body          = false === $caption_at ? $block_content : substr( $block_content, 0, $caption_at );
+			$embed         = Daymark_Subscription_Oembed::safe_embed_from_html( $body );
+
+			if ( empty( $embed['html'] ) ) {
+				return $block_content;
+			}
+
+			$embed_slots[] = $embed['html'];
+			$caption       = '';
+
+			if ( false !== $caption_at && preg_match( '#<figcaption\b[^>]*>.*?</figcaption>#is', $block_content, $found ) ) {
+				$caption = $found[0];
+			}
+
+			return '<figure class="wp-block-embed"><p>' . $embed_token . ( count( $embed_slots ) - 1 ) . '</p>' . $caption . '</figure>';
+		};
+
 		add_filter( 'render_block_core/gallery', $swap_gallery, 10, 2 );
+		add_filter( 'render_block_core/embed', $swap_embed, 10, 1 );
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 		remove_filter( 'render_block_core/gallery', $swap_gallery, 10 );
+		remove_filter( 'render_block_core/embed', $swap_embed, 10 );
 
 		// A Mark's content is written by whichever user published it, and
 		// wp_kses_post() keeps `class`, so an Author could otherwise give a
@@ -2837,6 +2930,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'#<p>\s*' . preg_quote( $slot_token, '#' ) . '(\d+)\s*</p>#',
 				static function ( $found ) use ( $gallery_slots ) {
 					return $gallery_slots[ (int) $found[1] ] ?? '';
+				},
+				$content
+			);
+		}
+
+		if ( ! empty( $embed_slots ) ) {
+			$content = (string) preg_replace_callback(
+				'#<p>\s*' . preg_quote( $embed_token, '#' ) . '(\d+)\s*</p>#',
+				static function ( $found ) use ( $embed_slots ) {
+					$html = $embed_slots[ (int) $found[1] ] ?? '';
+
+					return '' === $html ? '' : '<div class="daymark-oembed-preview">' . $html . '</div>';
 				},
 				$content
 			);
@@ -3111,6 +3216,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( array( 'last_seen' => $marker ) );
+	}
+
+	/**
+	 * POST /daymark/v1/timeline/position — record the Timeline item at the
+	 * top of the current user's screen on Home, so the next visit opens
+	 * there (see Daymark_Timeline_Position::set_position()).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function save_timeline_position( WP_REST_Request $request ) {
+		$position = Daymark_Timeline_Position::set_position(
+			get_current_user_id(),
+			absint( $request->get_param( 'id' ) )
+		);
+
+		if ( is_wp_error( $position ) ) {
+			return $position;
+		}
+
+		return rest_ensure_response( array( 'position' => $position ) );
 	}
 
 	/**
@@ -3432,6 +3558,142 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription = Daymark_Plugin::instance()->subscriptions->get( $subscription_id );
 
 		$response = rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
+		$response->set_status( 201 );
+
+		return $response;
+	}
+
+	/**
+	 * Per-user transient key holding the app's last feed discovery, so
+	 * POST /subscriptions/follow can only follow a feed discovery found.
+	 *
+	 * @return string
+	 */
+	private static function follow_transient_key(): string {
+		return 'daymark_app_follow_candidates_' . get_current_user_id();
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions/discover — find the feeds a site offers,
+	 * for the app's "Follow a site" sheet. The same discovery Settings ->
+	 * Daymark runs (Daymark_Subscriptions::discover_candidates()). The
+	 * result is kept for this user for 15 minutes, and the follow route
+	 * reads it back by index.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function discover_subscription( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$resolved      = null;
+		$candidates    = $subscriptions->discover_candidates( (string) $request->get_param( 'site_url' ), $resolved );
+
+		if ( is_wp_error( $candidates ) ) {
+			return $candidates;
+		}
+
+		$site_url = is_string( $resolved ) && '' !== $resolved ? $resolved : (string) $request->get_param( 'site_url' );
+
+		set_transient(
+			self::follow_transient_key(),
+			array(
+				'site_url'   => $site_url,
+				'candidates' => $candidates,
+			),
+			15 * MINUTE_IN_SECONDS
+		);
+
+		$feed_source = Daymark_Plugin::instance()->subscription_source_registry->get_source( 'feed' );
+		$site_title  = $feed_source instanceof Daymark_Subscription_Source_Feed ? $feed_source->get_site_title( $site_url ) : '';
+		$list        = array();
+
+		foreach ( array_values( $candidates ) as $index => $candidate ) {
+			$url      = (string) ( $candidate['url'] ?? '' );
+			$language = Daymark_Admin_Subscriptions::language_display_name( (string) ( $candidate['language'] ?? '' ) );
+			$label    = (string) ( $candidate['source_label'] ?? '' );
+
+			$list[] = array(
+				'index'      => $index,
+				'label'      => '' !== $language ? sprintf( '%1$s (%2$s)', $label, $language ) : $label,
+				'title'      => sanitize_text_field( (string) ( $candidate['title'] ?? '' ) ),
+				'url'        => esc_url_raw( $url ),
+				'subscribed' => '' !== $url && null !== $subscriptions->get_by_feed_url( $url ),
+			);
+		}
+
+		return rest_ensure_response(
+			array(
+				'site_url'      => esc_url_raw( $site_url ),
+				'site_title'    => sanitize_text_field( $site_title ),
+				'candidates'    => $list,
+				'default_index' => empty( $list ) ? 0 : Daymark_Subscriptions::most_optimal_candidate_index( array_values( $candidates ) ),
+			)
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/subscriptions/follow — follow one feed from this
+	 * user's last discovery, by its index. Never a URL the client sends:
+	 * only a feed discovery itself found can be followed. Fetches the new
+	 * subscription's posts right away, like subscribing in Settings ->
+	 * Daymark, and applies an edited site name when one is sent.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function follow_discovered_feed( WP_REST_Request $request ) {
+		$stash = get_transient( self::follow_transient_key() );
+
+		if ( ! is_array( $stash ) || empty( $stash['candidates'] ) || ! is_array( $stash['candidates'] ) ) {
+			return new WP_Error(
+				'daymark_follow_expired',
+				__( 'That search has expired. Look up the site again.', 'daymark' ),
+				array( 'status' => 410 )
+			);
+		}
+
+		$candidates = array_values( $stash['candidates'] );
+		$index      = (int) $request->get_param( 'index' );
+
+		if ( ! isset( $candidates[ $index ] ) || ! is_array( $candidates[ $index ] ) ) {
+			return new WP_Error(
+				'daymark_follow_invalid_feed',
+				__( 'Choose one of the feeds found for this site.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$created       = $subscriptions->subscribe_to_candidate( (string) $stash['site_url'], $candidates[ $index ] );
+
+		if ( is_wp_error( $created ) ) {
+			return $created;
+		}
+
+		delete_transient( self::follow_transient_key() );
+
+		$subscription_id = (int) $created;
+		$title           = $request->get_param( 'site_title' );
+
+		if ( is_string( $title ) && '' !== trim( $title ) ) {
+			$subscriptions->update( $subscription_id, array( 'site_title' => trim( $title ) ) );
+		}
+
+		// Best-effort first fetch, as create_subscription() does.
+		Daymark_Plugin::instance()->subscription_poller->manual_refresh( $subscription_id );
+
+		$subscription = $subscriptions->get( $subscription_id );
+		$response     = rest_ensure_response( $this->prepare_subscription( is_array( $subscription ) ? $subscription : array() ) );
 		$response->set_status( 201 );
 
 		return $response;

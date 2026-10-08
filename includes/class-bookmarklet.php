@@ -20,9 +20,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * The popup offers:
  *
- * - **Reblog**: a preview of the post (a real embed when the URL has an
- *   oEmbed, else the same quote the in-app Reblog screen uses), then an
- *   editable "Your thoughts" field and Title. Publishing goes through
+ * - **Reblog**: a preview of the post (its oEmbed when it has one, else a
+ *   linked title), then an editable "Your thoughts" field and Title. Publishing goes through
  *   Daymark_Publisher::publish() exactly like the in-app Reblog screen, so
  *   the Reblog Mark lands on this site with `_daymark_repost_of`, and the
  *   usual Webmention / ActivityPub Announce routes apply.
@@ -196,12 +195,10 @@ class Daymark_Bookmarklet {
 	}
 
 	/**
-	 * Publish a Reblog Mark for the page.
-	 *
-	 * Leads with a core/embed block when the URL has an oEmbed (read from
-	 * the cache the popup's own preview filled; never fetched here), else
-	 * the quote block the in-app Reblog screen publishes. The reader's
-	 * comment follows, then their title.
+	 * Publish a Reblog Mark for the page, the same Reblog the in-app Reblog
+	 * screen publishes: it leads with an embed of the post (a plain link
+	 * where WordPress can't embed it), then the reader's comment, under
+	 * the reader's title.
 	 *
 	 * @param array{url: string, title: string, author: string} $target  A read_target() result.
 	 * @param string                                            $title   The Reblog Mark's title; '' for the default.
@@ -213,7 +210,6 @@ class Daymark_Bookmarklet {
 			return new WP_Error( 'daymark_bookmarklet_no_url', __( 'Daymark could not read the address of this page.', 'daymark' ), array( 'status' => 400 ) );
 		}
 
-		$embed = Daymark_Subscription_Oembed::cached( $target['url'] );
 		$title = sanitize_text_field( $title );
 
 		return Daymark_Plugin::instance()->publisher->publish(
@@ -224,9 +220,7 @@ class Daymark_Bookmarklet {
 				'status'         => 'publish',
 				'ai_assist_used' => false,
 				'repost_of'      => $target['url'],
-				'quote_title'    => $target['title'],
-				'quote_author'   => $target['author'],
-				'quote_embed'    => ! empty( $embed['html'] ),
+				'reblog_author'  => $target['author'],
 			)
 		);
 	}
