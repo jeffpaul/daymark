@@ -36,6 +36,7 @@ can't act on them.
 - The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - Settings -> Daymark -> General can now set which destinations and categories each type of Mark starts with. Before, destinations could only be changed in code, and categories had no site default. ([#488](https://github.com/jeffpaul/daymark/pull/488))
+- Settings -> Daymark -> General can now keep Notes off your blog's home page and main feed. A Note is any post with the Aside format, from Daymark or the block editor, and it still has its own page and appears in archives, search, and the Timeline. An Aside post published without a title now gets one from its first words, as Notes from the app already do. ([#493](https://github.com/jeffpaul/daymark/pull/493))
 
 ### Changed
 
