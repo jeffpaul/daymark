@@ -661,6 +661,7 @@ class Daymark_Admin_Subscriptions {
 	private function render_general_tab(): void {
 		?>
 		<?php $this->render_open_on_phone(); ?>
+		<?php $this->render_bookmarklet(); ?>
 		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
 		<?php $this->render_blogroll_form(); ?>
@@ -696,6 +697,22 @@ class Daymark_Admin_Subscriptions {
 				<p class="description"><?php esc_html_e( 'Sign in there, then add Daymark to your home screen so it opens like an app.', 'daymark' ); ?></p>
 			</div>
 		</div>
+		<?php
+	}
+
+	/**
+	 * "Reblog and Like from your browser": the draggable bookmarklet, for
+	 * the desktop. The same button is on the bookmarklet's own install page,
+	 * which the app's Me screen links to.
+	 *
+	 * @return void
+	 */
+	private function render_bookmarklet(): void {
+		?>
+		<h2><?php esc_html_e( 'Reblog and Like from your browser', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site or Like it.', 'daymark' ); ?></p>
+		<p><?php echo Daymark_Bookmarklet::button_html( 'button-primary' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html(). ?></p>
+		<p class="description"><?php esc_html_e( 'Show the bookmarks bar first if it\'s hidden. Everyone who can write Marks on this site can use it, signed in as themselves.', 'daymark' ); ?></p>
 		<?php
 	}
 

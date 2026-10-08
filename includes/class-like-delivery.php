@@ -129,6 +129,155 @@ class Daymark_Like_Delivery {
 	}
 
 	/**
+	 * Resolve, live if needed, whether a Like on any http(s) URL can reach
+	 * it, and by which route(s) — resolve() for a page that isn't a cached
+	 * subscription post (the bookmarklet, on a page someone is reading
+	 * outside Daymark). Same cached discovery, so a URL already looked up
+	 * costs nothing.
+	 *
+	 * @param string $url Target URL.
+	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool, bridgy_fed: bool}
+	 */
+	public static function resolve_url( string $url ): array {
+		if ( '' === $url || ! self::mechanisms_exist() ) {
+			return self::result( false, false, false, false );
+		}
+
+		$activitypub = Daymark_ActivityPub_Engagement::available_for_user()
+			&& null !== Daymark_ActivityPub_Engagement::resolve_target( $url );
+
+		$signals = self::page_mechanisms_exist()
+			? Daymark_Comment_Delivery::origin_signals_for_url( $url )
+			: array();
+
+		if ( is_wp_error( $signals ) ) {
+			return self::result( false, $activitypub, false, false );
+		}
+
+		return self::evaluate( $signals, $activitypub );
+	}
+
+	/**
+	 * Like a URL with a local Like Mark: an ActivityPub `Like` when that
+	 * route exists (the Mark's own Webmention is then suppressed, so the
+	 * origin receives one Like), otherwise the Mark's Webmention, sent
+	 * directly or through Bridgy Fed. Shared by the subscription-post Like
+	 * route (after its Jetpack attempt) and the bookmarklet.
+	 *
+	 * Never creates a Like Mark nothing can deliver. Reuses an existing
+	 * published Like Mark for the same URL instead of creating a second one.
+	 *
+	 * @param string               $permalink    The liked post's URL (already validated).
+	 * @param string               $title        The liked post's title, for the Mark's caption; '' for none.
+	 * @param array<string, mixed> $availability A resolve()/resolve_url() result.
+	 * @return array{method: string, liked: bool, mark_id: int, delivery: string}|WP_Error
+	 */
+	public static function publish_like( string $permalink, string $title, array $availability ) {
+		$existing = self::own_mark_id( '_daymark_like_of', $permalink );
+
+		if ( $existing > 0 ) {
+			return array(
+				'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
+				'liked'    => true,
+				'mark_id'  => $existing,
+				'delivery' => self::like_state( false, $existing, $permalink ),
+			);
+		}
+
+		// ActivityPub route (issue #439): queue a real `Like` through the
+		// ActivityPub plugin's outbox. The local Like Mark is still published
+		// below (the liked-state UI reads it), but its Webmention is
+		// suppressed so the origin receives exactly one Like. 0 when the
+		// route isn't available or the queue failed — then Webmention alone.
+		$outbox_id = ! empty( $availability['activitypub'] )
+			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
+			: 0;
+
+		// Without an ActivityPub, Webmention, or Bridgy Fed route the
+		// origin's author would never see the Like. A Bridgy Fed Like is an
+		// ordinary Like Mark; Daymark_Bridgy_Fed marks it for Bridgy Fed
+		// when it's published.
+		if ( 0 === $outbox_id && empty( $availability['webmention'] ) && empty( $availability['bridgy_fed'] ) ) {
+			return new WP_Error(
+				'daymark_like_undeliverable',
+				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$caption = sprintf(
+			/* translators: %s: title of the liked post */
+			__( 'Liked "%s"', 'daymark' ),
+			'' !== $title ? $title : $permalink
+		);
+
+		$mark_id = Daymark_Plugin::instance()->publisher->publish(
+			array(
+				'caption'        => $caption,
+				'primary_type'   => 'note',
+				'status'         => 'publish',
+				'ai_assist_used' => false,
+				'like_of'        => $permalink,
+			)
+		);
+
+		if ( is_wp_error( $mark_id ) ) {
+			// Don't leave a queued Like with no local record to undo it from.
+			if ( $outbox_id > 0 ) {
+				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
+			}
+
+			return $mark_id;
+		}
+
+		if ( $outbox_id > 0 ) {
+			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
+		}
+
+		return array(
+			'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
+			'liked'    => true,
+			'mark_id'  => (int) $mark_id,
+			'delivery' => self::like_state( false, (int) $mark_id, $permalink ),
+		);
+	}
+
+	/**
+	 * The ID of the current user's own Mark, if any, carrying the given
+	 * target-URL meta value (a published or draft Like, Reblog, or reply).
+	 * A plain per-call lookup, fine at personal-site scale.
+	 *
+	 * @param string $meta_key One of '_daymark_in_reply_to', '_daymark_like_of', '_daymark_repost_of'.
+	 * @param string $url      The target URL to match.
+	 * @return int Mark post ID, or 0 when absent or no match.
+	 */
+	public static function own_mark_id( string $meta_key, string $url ): int {
+		if ( '' === $url ) {
+			return 0;
+		}
+
+		$found = get_posts(
+			array(
+				// Both types: a Like Mark lives on its own post type (see
+				// Daymark_Like_Visibility::POST_TYPE); a legacy one may not
+				// have been migrated off 'post' yet.
+				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
+				'post_status'    => array( 'publish', 'draft' ),
+				'author'         => get_current_user_id(),
+				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
+				'meta_value'     => $url, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact match is the point; personal-site scale.
+				'posts_per_page' => 1,
+				'orderby'        => 'ID',
+				'order'          => 'DESC',
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		return ! empty( $found ) ? absint( $found[0] ) : 0;
+	}
+
+	/**
 	 * Like availability from cache only, for a Timeline row: false when no
 	 * mechanism exists at all, null when the origin hasn't been looked up
 	 * yet (the client resolves it lazily), else the cached answer.

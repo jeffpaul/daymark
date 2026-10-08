@@ -1654,13 +1654,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * stay scoped to Daymark's own type vocabulary, not a guess at an
 	 * arbitrary post's content.
 	 *
-	 * A Mark carrying `_daymark_like_of` or `_daymark_repost_of` (the
-	 * Like/Repost toggle's own auto-published Mark — see "Subscribed-post
-	 * engagement", CLAUDE.md) is unconditionally excluded from the Marks
-	 * side of this query: it exists purely to carry an outbound
-	 * `u-like-of`/`u-repost-of` link for a federation plugin to send, not
-	 * as content meant to appear on the Timeline. This is a Timeline-only
-	 * exclusion — the Mark itself is untouched everywhere else.
+	 * A Like Mark (`_daymark_like_of`) is excluded from the Marks side of
+	 * this query: it only carries an outbound `u-like-of` link, it isn't
+	 * content to read. A Reblog Mark (`_daymark_repost_of`) is shown like
+	 * any other Mark, since it carries the reblogged post's embed and the
+	 * author's own comment.
 	 *
 
 	 * Five optional filter params, combinable with the pagination params
@@ -1788,23 +1786,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'no_found_rows'  => ! $want_total,
 			);
 
-			// A Like/Repost toggle's own Mark (_daymark_like_of/_daymark_repost_of
-			// — see the "Subscribed-post engagement" decision, CLAUDE.md) exists
-			// purely to give an outbound u-like-of/u-repost-of link for a
-			// federation plugin to send; it's not content meant to be read on
-			// the Timeline, so both are excluded here unconditionally. Only the
-			// Timeline listing is affected — the underlying Mark is still a
-			// normal published post everywhere else (Search, wp-admin, the REST
-			// API directly).
+			// A Like Mark carries only an outbound u-like-of link, so it isn't
+			// shown on the Timeline. Like Marks now live on their own post
+			// type; this catches any older one still stored as a `post`. A
+			// Reblog Mark is real content (the reblogged post plus the
+			// author's comment) and is shown like any other Mark.
 			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Personal-site-scale Mark lookup.
 			$marks_args['meta_query'] = array(
 				'relation' => 'AND',
 				array(
 					'key'     => '_daymark_like_of',
-					'compare' => 'NOT EXISTS',
-				),
-				array(
-					'key'     => '_daymark_repost_of',
 					'compare' => 'NOT EXISTS',
 				),
 			);
@@ -4368,36 +4359,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $jetpack;
 		}
 
-		$existing = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
-
-		if ( $existing > 0 ) {
-			return rest_ensure_response(
-				array(
-					'method'   => absint( get_post_meta( $existing, Daymark_ActivityPub_Engagement::OUTBOX_META, true ) ) > 0 ? 'activitypub' : 'classic',
-					'liked'    => true,
-					'mark_id'  => $existing,
-					'delivery' => Daymark_Like_Delivery::like_state( false, $existing, $permalink ),
-				)
-			);
-		}
-
-		// ActivityPub route (issue #439): queue a real `Like` through the
-		// ActivityPub plugin's outbox. The local Like Mark is still published
-		// below (the liked-state UI reads it), but its Webmention is
-		// suppressed so the origin receives exactly one Like. 0 when the
-		// route isn't available or the queue failed — then Webmention alone.
-		$outbox_id = '' !== $permalink && $availability['activitypub']
-			? Daymark_ActivityPub_Engagement::like( get_current_user_id(), $permalink )
-			: 0;
-
-		// Never create a local Like Mark nothing can deliver: without an
-		// ActivityPub, Webmention, or Bridgy Fed route (and with the Jetpack
-		// route unavailable or just failed), the origin's author would never
-		// see it. The client hides the icon on this code; the check is
-		// repeated here so it never has to be trusted. A Bridgy Fed Like is
-		// an ordinary Like Mark; Daymark_Bridgy_Fed marks it for Bridgy Fed
-		// when it's published.
-		if ( 0 === $outbox_id && ! $availability['webmention'] && ! $availability['bridgy_fed'] ) {
+		if ( '' === $permalink ) {
 			return new WP_Error(
 				'daymark_like_undeliverable',
 				__( "This post's site can't receive a Like from Daymark.", 'daymark' ),
@@ -4405,44 +4367,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		$title   = html_entity_decode( sanitize_text_field( get_the_title( $post_id ) ), ENT_QUOTES, 'UTF-8' );
-		$caption = sprintf(
-			/* translators: %s: title of the liked post */
-			__( 'Liked "%s"', 'daymark' ),
-			'' !== $title ? $title : $permalink
-		);
+		$title  = html_entity_decode( sanitize_text_field( get_the_title( $post_id ) ), ENT_QUOTES, 'UTF-8' );
+		$result = Daymark_Like_Delivery::publish_like( $permalink, $title, $availability );
 
-		$mark_id = Daymark_Plugin::instance()->publisher->publish(
-			array(
-				'caption'        => $caption,
-				'primary_type'   => 'note',
-				'status'         => 'publish',
-				'ai_assist_used' => false,
-				'like_of'        => $permalink,
-			)
-		);
-
-		if ( is_wp_error( $mark_id ) ) {
-			// Don't leave a queued Like with no local record to undo it from.
-			if ( $outbox_id > 0 ) {
-				Daymark_ActivityPub_Engagement::undo_outbox_item( $outbox_id );
-			}
-
-			return $mark_id;
-		}
-
-		if ( $outbox_id > 0 ) {
-			Daymark_ActivityPub_Engagement::attach_to_mark( (int) $mark_id, $outbox_id, 'Like' );
-		}
-
-		return rest_ensure_response(
-			array(
-				'method'   => $outbox_id > 0 ? 'activitypub' : 'classic',
-				'liked'    => true,
-				'mark_id'  => $mark_id,
-				'delivery' => Daymark_Like_Delivery::like_state( false, (int) $mark_id, $permalink ),
-			)
-		);
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
 	/**
@@ -4753,29 +4681,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return int Mark post ID, or 0 when absent/no match.
 	 */
 	private function find_own_mark_id_by_target_url( string $meta_key, string $url ): int {
-		if ( '' === $url ) {
-			return 0;
-		}
-
-		$found = get_posts(
-			array(
-				// Both types: a Like Mark lives on its own post type (see
-				// Daymark_Like_Visibility::POST_TYPE); a legacy one may not
-				// have been migrated off 'post' yet.
-				'post_type'      => array( 'post', Daymark_Like_Visibility::POST_TYPE ),
-				'post_status'    => array( 'publish', 'draft' ),
-				'author'         => get_current_user_id(),
-				'meta_key'       => $meta_key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- exact-match lookup on a single-value meta key, no alternative query shape.
-				'meta_value'     => $url, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact match is the point; see docblock above for scale reasoning.
-				'posts_per_page' => 1,
-				'orderby'        => 'ID',
-				'order'          => 'DESC',
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			)
-		);
-
-		return ! empty( $found ) ? absint( $found[0] ) : 0;
+		return Daymark_Like_Delivery::own_mark_id( $meta_key, $url );
 	}
 
 	/**

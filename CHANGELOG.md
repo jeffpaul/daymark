@@ -46,6 +46,7 @@ can't act on them.
 - The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - You can now follow a site from the app: tap "+ Follow a site" in Explore's Following section or on the Me screen, paste the address, pick a feed, and tap Follow. Before, following a site was only possible in wp-admin. Like Settings -> Daymark, it's for administrators. ([#497](https://github.com/jeffpaul/daymark/pull/497))
 - Videos and audio now upload in small parts, so a weak or dropped connection no longer starts the file over. The upload carries on from where it stopped, even after you close the app once you've tapped Publish, and the Timeline card shows how far along it is. Videos and audio can now be up to 500 MB each; photos stay at 50 MB. ([#494](https://github.com/jeffpaul/daymark/pull/494))
+- A new Daymark bookmarklet lets you Reblog or Like a post while you read it anywhere on the web. It opens a small window on your own site with the post at the top, then your thoughts and an editable title. The Reblog is published on your site, with the post embedded the same way as a Reblog from the app. Find it on your profile page, in Settings -> Daymark -> General, in the welcome notice, or under Me -> Reblog from anywhere. ([#502](https://github.com/jeffpaul/daymark/pull/502))
 - Settings -> Daymark -> General can now keep Notes off your blog's home page and main feed. A Note is any post with the Aside format, from Daymark or the block editor, and it still has its own page and appears in archives, search, and the Timeline. An Aside post published without a title now gets one from its first words, as Notes from the app already do. ([#493](https://github.com/jeffpaul/daymark/pull/493))
 
 ### Changed
@@ -74,6 +75,7 @@ can't act on them.
 
 ### Fixed
 
+- Your Reblogs now show on your Timeline. They were left out by an old rule from when a Reblog had no content of its own. ([#502](https://github.com/jeffpaul/daymark/pull/502))
 - "Reblog without comment" failed with "A Mark needs media or text". It now publishes the reblogged post on its own. Backslashes typed in a caption are also kept now, where they used to be dropped. ([#500](https://github.com/jeffpaul/daymark/pull/500))
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))

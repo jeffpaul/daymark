@@ -461,7 +461,8 @@ class Daymark_Microformats {
 	}
 
 	/**
-	 * Render the rel=me URL field on a user's profile screen.
+	 * Render the profile screen's Daymark section: the rel=me URL field, and
+	 * on your own profile the bookmarklet button.
 	 *
 	 * @param WP_User $user The user being edited.
 	 * @return void
@@ -480,6 +481,20 @@ class Daymark_Microformats {
 					<p class="description"><?php esc_html_e( 'A profile URL to publish as rel="me" next to your Marks — for example a Mastodon or GitHub profile, so identity-verification tools can confirm this site is yours.', 'daymark' ); ?></p>
 				</td>
 			</tr>
+			<?php
+			// Only on your own profile: the bookmarklet acts as whoever is
+			// signed in, so offering it on someone else's profile would
+			// suggest it acts as them.
+			if ( get_current_user_id() === $user->ID && current_user_can( 'edit_posts' ) ) :
+				?>
+				<tr>
+					<th><?php esc_html_e( 'Bookmarklet', 'daymark' ); ?></th>
+					<td>
+						<?php echo Daymark_Bookmarklet::button_html(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html(). ?>
+						<p class="description"><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site or Like it.', 'daymark' ); ?></p>
+					</td>
+				</tr>
+			<?php endif; ?>
 		</table>
 		<?php
 	}
