@@ -893,10 +893,10 @@
 			)}</p>`;
 		}
 		return `<p class="daymark-empty">${sprintf(
-			/* translators: 1: "Publish a Mark" link, 2: "subscribe to a site" link */
+			/* translators: 1: "Publish a Mark" link, 2: "follow a site" button */
 			__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
 			'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-			`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('subscribe to a site', 'daymark'))}</a>`
+			`<button type="button" class="daymark-linkbtn" data-follow-site>${esc(__('follow a site', 'daymark'))}</button>`
 		)}</p>`;
 	}
 
@@ -7983,9 +7983,18 @@
 					</div>
 				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-explore-following-heading">
-					<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
-						__('Following', 'daymark')
-					)}</h2>
+					<div class="daymark-follow__heading">
+						<h2 id="daymark-explore-following-heading" class="daymark-section-heading">${esc(
+							__('Following', 'daymark')
+						)}</h2>
+						${
+							config.canManageSubscriptions
+								? `<button type="button" class="daymark-btn daymark-btn--secondary daymark-follow__open" data-follow-site>${esc(
+										__('+ Follow a site', 'daymark')
+								  )}</button>`
+								: ''
+						}
+					</div>
 					<div class="daymark-recent__list" data-explore-following>
 						${skeletonRows(2)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
@@ -8078,11 +8087,9 @@
 				return;
 			}
 			if (!subscriptions.length) {
-				list.innerHTML = config.adminSubscriptionsUrl
-					? `<p class="daymark-empty">${sprintf(
-							/* translators: %s: "Subscribe to one" link */
-							__("You're not following any sites yet. %s to see its posts here.", 'daymark'),
-							`<a href="${esc(config.adminSubscriptionsUrl)}">${esc(__('Subscribe to one', 'daymark'))}</a>`
+				list.innerHTML = config.canManageSubscriptions
+					? `<p class="daymark-empty">${esc(
+							__("You're not following any sites yet. Tap Follow a site to see a site's posts here.", 'daymark')
 					  )}</p>`
 					: `<p class="daymark-empty">${esc(__("You're not following any sites yet.", 'daymark'))}</p>`;
 				return;
@@ -8177,6 +8184,11 @@
 				</div>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
 					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
+					${
+						config.canManageSubscriptions
+							? `<button type="button" class="daymark-melink" data-follow-site>${esc(__('Follow a site', 'daymark'))}</button>`
+							: ''
+					}
 					<button type="button" class="daymark-melink" data-me-install hidden>${esc(__('Install Daymark', 'daymark'))}</button>
 					${
 						config.adminSubscriptionsUrl
@@ -9760,6 +9772,224 @@
 	// default thing" path makes sense (Reblog — Skip publishes just the
 	// reblogged post's own link, with no added comment; Comment has no such
 	// default, so it gets no Skip button at all), onSkip too.
+	// "Follow a site" (admins only, config.canManageSubscriptions): paste an
+	// address, pick one of the feeds the site offers, follow it. The same
+	// discovery and subscribe logic as Settings -> Daymark, through
+	// POST /subscriptions/discover and /subscriptions/follow. The second
+	// step sends only the index of a feed the server found, never a URL.
+	const FollowSiteSheet = {
+		el: null,
+		opener: null,
+		onFollowed: null,
+		busy: false,
+
+		show(opener, onFollowed) {
+			this.opener = opener || null;
+			this.onFollowed = onFollowed || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			syncSheetsToVisualViewport();
+			this.renderAddressStep('');
+			this.onKeydown = (event) => {
+				if (event.key === 'Escape') {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+		},
+
+		frame(body) {
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Close Follow a site', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-follow-title">
+				<h2 class="daymark-sheet__title" id="daymark-follow-title" tabindex="-1">${esc(__('Follow a site', 'daymark'))}</h2>
+				<div class="daymark-sheet__body">${body}</div>
+			</div>`;
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+		},
+
+		renderAddressStep(value) {
+			this.frame(`
+				<label class="daymark-field__label" for="daymark-follow-url">${esc(__('Site address', 'daymark'))}</label>
+				<input type="url" id="daymark-follow-url" class="daymark-input" data-follow-url inputmode="url" autocomplete="url" placeholder="${esc(
+					__('example.com', 'daymark')
+				)}" value="${esc(value)}" />
+				<p class="daymark-follow__hint">${esc(
+					__('Daymark finds the site\'s feed, and its new posts show up in your Timeline.', 'daymark')
+				)}</p>
+				<p class="daymark-status" data-follow-status aria-live="polite"></p>
+				<div class="daymark-sheet__actions">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-find>${esc(__('Find feeds', 'daymark'))}</button>
+				</div>`);
+			const input = this.el.querySelector('[data-follow-url]');
+			const find = () => this.find(input.value.trim());
+			this.el.querySelector('[data-follow-find]').addEventListener('click', find);
+			input.addEventListener('keydown', (event) => {
+				if (event.key === 'Enter') {
+					event.preventDefault();
+					find();
+				}
+			});
+			input.focus();
+		},
+
+		async find(address) {
+			const status = this.el.querySelector('[data-follow-status]');
+			const button = this.el.querySelector('[data-follow-find]');
+			if (!address) {
+				status.textContent = __('Enter a site address.', 'daymark');
+				return;
+			}
+			if (this.busy) {
+				return;
+			}
+			this.busy = true;
+			button.disabled = true;
+			button.textContent = __('Looking for feeds…', 'daymark');
+			status.textContent = '';
+			try {
+				const result = await apiPost('subscriptions/discover', { site_url: address });
+				if (!this.el || this.el.hidden) {
+					return;
+				}
+				this.renderFeedStep(address, result);
+			} catch (err) {
+				if (!this.el || this.el.hidden) {
+					return;
+				}
+				status.textContent = (err && err.message) || __('Could not look up that site.', 'daymark');
+				button.disabled = false;
+				button.textContent = __('Find feeds', 'daymark');
+			} finally {
+				this.busy = false;
+			}
+		},
+
+		renderFeedStep(address, result) {
+			const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+			const open = candidates.filter((c) => !c.subscribed);
+			if (!open.length) {
+				this.renderAddressStep(address);
+				this.el.querySelector('[data-follow-status]').textContent = __(
+					'You already follow every feed this site offers.',
+					'daymark'
+				);
+				return;
+			}
+			const recommended = open.some((c) => c.index === result.default_index);
+			const defaultIndex = recommended ? result.default_index : open[0].index;
+			// With more than one feed to choose from, name the one Daymark
+			// would pick (the server's default_index), so the preselection
+			// isn't a mystery.
+			const showRecommended = recommended && candidates.length > 1;
+			const options = candidates
+				.map(
+					(c) => `
+				<label class="daymark-follow__option">
+					<input type="radio" name="daymark-follow-feed" value="${esc(String(c.index))}"${
+						c.index === defaultIndex ? ' checked' : ''
+					}${c.subscribed ? ' disabled' : ''} />
+					<span class="daymark-follow__optiontext">
+						<span class="daymark-follow__name"><strong>${esc(c.label || __('Feed', 'daymark'))}</strong>${
+							showRecommended && c.index === result.default_index
+								? ` <span class="daymark-follow__recommended">${esc(__('(recommended)', 'daymark'))}</span>`
+								: ''
+						}${c.subscribed ? ` <em>${esc(__('(already following)', 'daymark'))}</em>` : ''}</span>
+						<span class="daymark-follow__url">${esc(c.url)}</span>
+					</span>
+				</label>`
+				)
+				.join('');
+			this.frame(`
+				<fieldset class="daymark-follow__feeds">
+					<legend class="daymark-field__label">${esc(
+						candidates.length > 1 ? __('Choose a feed', 'daymark') : __('Feed', 'daymark')
+					)}</legend>
+					${options}
+				</fieldset>
+				<label class="daymark-field__label" for="daymark-follow-name">${esc(__('Name', 'daymark'))}</label>
+				<input type="text" id="daymark-follow-name" class="daymark-input" data-follow-name value="${esc(
+					result.site_title || ''
+				)}" placeholder="${esc(result.site_url || address)}" />
+				<p class="daymark-status" data-follow-status aria-live="polite"></p>
+				<div class="daymark-sheet__actions">
+					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-submit>${esc(__('Follow', 'daymark'))}</button>
+					<button type="button" class="daymark-btn daymark-btn--text" data-follow-back>${esc(__('Back', 'daymark'))}</button>
+				</div>`);
+			this.el.querySelector('[data-follow-back]').addEventListener('click', () => this.renderAddressStep(address));
+			this.el.querySelector('[data-follow-submit]').addEventListener('click', () => this.follow());
+			this.el.querySelector('#daymark-follow-title').focus();
+		},
+
+		async follow() {
+			const picked = this.el.querySelector('input[name="daymark-follow-feed"]:checked');
+			const status = this.el.querySelector('[data-follow-status]');
+			const button = this.el.querySelector('[data-follow-submit]');
+			if (!picked) {
+				status.textContent = __('Choose a feed to follow.', 'daymark');
+				return;
+			}
+			if (this.busy) {
+				return;
+			}
+			this.busy = true;
+			button.disabled = true;
+			button.textContent = __('Following…', 'daymark');
+			status.textContent = '';
+			try {
+				const subscription = await apiPost('subscriptions/follow', {
+					index: Number(picked.value),
+					site_title: this.el.querySelector('[data-follow-name]').value.trim(),
+				});
+				const handler = this.onFollowed;
+				const name = (subscription && (subscription.site_title || subscription.site_url)) || '';
+				this.hide();
+				announce(
+					sprintf(
+						/* translators: %s: site name */
+						__('Following %s. New posts will show up in your Timeline.', 'daymark'),
+						name
+					)
+				);
+				// The next Home visit loads fresh, so the new posts appear.
+				discardFeedSnapshot();
+				if (handler) {
+					handler(subscription);
+				}
+			} catch (err) {
+				status.textContent = (err && err.message) || __('Could not follow that site.', 'daymark');
+				button.disabled = false;
+				button.textContent = __('Follow', 'daymark');
+			} finally {
+				this.busy = false;
+			}
+		},
+
+		hide() {
+			if (!this.el || this.el.hidden) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			this.busy = false;
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (this.opener && this.opener.isConnected) {
+				this.opener.focus();
+			}
+			this.opener = null;
+			this.onFollowed = null;
+		},
+	};
+
 	const TextPromptSheet = {
 		el: null,
 		opener: null,
@@ -13161,6 +13391,23 @@
 	// Create), since the cost of getting it wrong (a lost draft) is the
 	// same everywhere; the picker zone's own dragover/drop handlers
 	// (CreateScreen.bindEvents()) still run first and do the real work.
+	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
+	// Timeline). After following, Explore and Home reload so the new site
+	// and its posts appear.
+	root.addEventListener('click', (event) => {
+		const trigger = event.target.closest('[data-follow-site]');
+		if (!trigger || !config.canManageSubscriptions) {
+			return;
+		}
+		event.preventDefault();
+		FollowSiteSheet.show(trigger, () => {
+			const hash = window.location.hash || '#home';
+			if ('#explore' === hash || '#home' === hash) {
+				showScreen(hash);
+			}
+		});
+	});
+
 	window.addEventListener('dragover', (event) => event.preventDefault());
 	window.addEventListener('drop', (event) => event.preventDefault());
 
