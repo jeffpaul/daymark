@@ -43,7 +43,7 @@ can't act on them.
 
 ### Changed
 
-- A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text.
+- A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text. ([#503](https://github.com/jeffpaul/daymark/pull/503))
 - Explore hides the "On this day" section when there are no Marks from this date in a prior year. ([#499](https://github.com/jeffpaul/daymark/pull/499))
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
 - A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it. ([#485](https://github.com/jeffpaul/daymark/pull/485))
