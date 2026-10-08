@@ -25,7 +25,7 @@
 	// throws" posture elsewhere — English-only output is an acceptable
 	// trade for a resilience fallback that exists for when nothing else is
 	// working either. sprintf's own subset (this file only ever uses %s,
-	// %d, and positional %1$s/%2$s) is small enough to reimplement
+	// %d, positional %1$s/%2$s, and %% for a literal percent sign) is small enough to reimplement
 	// directly rather than pull in a library for a path that only runs
 	// offline.
 	const i18n = (window.wp && window.wp.i18n) || {
@@ -34,7 +34,10 @@
 		_x: (text) => text,
 		sprintf: (format, ...args) => {
 			let next = 0;
-			return format.replace(/%(\d+\$)?[sd]/g, (match, position) => {
+			return format.replace(/%%|%(\d+\$)?[sd]/g, (match, position) => {
+				if ('%%' === match) {
+					return '%';
+				}
 				const index = position ? parseInt(position, 10) - 1 : next++;
 				return args[index];
 			});
@@ -1423,9 +1426,35 @@
 	// wipes it immediately after. See runAutosave()'s composerGeneration
 	// check for why the (possibly slow) response can never corrupt
 	// whatever the composer does next.
+	//
+	// With a file still uploading, a plain autosave would save the draft
+	// without it (and nothing would attach it later), so the draft goes to
+	// the offline queue instead, the way Publish does: the queue waits for
+	// the upload and then saves the draft with the file.
 	function abandonComposer() {
-		runAutosave().catch(() => {});
+		if (!state.files.some((entry) => !entry.uploadedId)) {
+			runAutosave().catch(() => {});
+			resetComposer();
+			return;
+		}
+		clearTimeout(autosaveState.timer);
+		autosaveState.timer = null;
+		const generation = composerGeneration;
+		const payload = buildMarkPayload('draft', { autosave: true });
+		const editingId = state.editing ? state.editing.id : null;
+		const queueId = state.offlineQueueId;
 		resetComposer();
+		(async () => {
+			// An autosave already running may be creating this draft, or
+			// queuing it; use what it made rather than make a second.
+			await waitForPendingAutosave();
+			const last = autosaveState.lastResult;
+			const own = last && last.generation === generation ? last : null;
+			const targetId = editingId || (own && own.id) || null;
+			const path = targetId ? 'marks/' + targetId : 'marks';
+			await publishInBackground(path, targetId, payload, queueId || (own && own.queueId) || null);
+			refreshPendingSection();
+		})().catch(() => {});
 	}
 
 	// --- Autosave ---
@@ -1455,6 +1484,9 @@
 		// `finally`, so there's never a window where `saving` is true but
 		// this is stale or missing.
 		inFlight: null,
+		// { generation, id, queueId } of the most recent save, even one
+		// that finished after the composer moved on.
+		lastResult: null,
 	};
 
 	function setAutosaveStatus(kind) {
@@ -1517,10 +1549,12 @@
 	// v2 adds BOOKMARK_STORE (see "Bookmarks" below) — the existing
 	// OFFLINE_STORE is untouched, so onupgradeneeded's own existence check
 	// (unchanged) still leaves an existing 'pending' store alone on
-	// upgrade; only the new store is created.
-	const OFFLINE_DB_VERSION = 2;
+	// upgrade; only the new store is created. v3 adds UPLOAD_STORE (see
+	// "Resumable uploads" below) the same way.
+	const OFFLINE_DB_VERSION = 3;
 	const OFFLINE_STORE = 'pending';
 	const BOOKMARK_STORE = 'bookmarks';
+	const UPLOAD_STORE = 'uploads';
 
 	// A short, stable, non-cryptographic hash (FNV-1a) — only ever used to
 	// tell two sites on one origin apart in a database name.
@@ -1564,6 +1598,13 @@
 					// keying on it directly is what makes put()-to-update and
 					// delete()-on-unbookmark idempotent.
 					db.createObjectStore(BOOKMARK_STORE, { keyPath: 'id' });
+				}
+				if (!db.objectStoreNames.contains(UPLOAD_STORE)) {
+					// One small record per file upload, keyed by the file's
+					// upload key — kept apart from OFFLINE_STORE so saving
+					// progress after every part never rewrites a pending
+					// Mark's (possibly very large) file Blobs.
+					db.createObjectStore(UPLOAD_STORE, { keyPath: 'key' });
 				}
 			};
 			request.onsuccess = () => resolve(request.result);
@@ -1820,6 +1861,59 @@
 		}
 	}
 
+	// --- Upload progress (issue #483) ---
+	//
+	// Where each file's chunked upload stands: { key, sessionId, received,
+	// size, attachmentId, updatedAt }. Read when an upload starts, so one
+	// interrupted by a reload or a closed app resumes partway instead of
+	// starting over. Every function here is best-effort; without IndexedDB
+	// an upload simply can't resume across a reload.
+	async function getUploadProgress(key) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(UPLOAD_STORE, 'readonly').objectStore(UPLOAD_STORE);
+			return (await idbRequest(store.get(String(key)))) || null;
+		} catch (err) {
+			return null;
+		}
+	}
+
+	async function putUploadProgress(record) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(UPLOAD_STORE, 'readwrite').objectStore(UPLOAD_STORE);
+			await idbRequest(store.put(Object.assign({}, record, { updatedAt: Date.now() })));
+		} catch (err) {
+			// Progress just won't survive a reload.
+		}
+	}
+
+	async function deleteUploadProgress(keys) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(UPLOAD_STORE, 'readwrite').objectStore(UPLOAD_STORE);
+			await Promise.all(keys.filter(Boolean).map((key) => idbRequest(store.delete(String(key)))));
+		} catch (err) {
+			// Nothing to clean up, or nowhere to clean it up from.
+		}
+	}
+
+	// Drops progress records older than maxAgeMs — longer than the server
+	// keeps an unused upload, so a record this old points at nothing.
+	async function pruneUploadProgress(maxAgeMs) {
+		try {
+			const db = await openOfflineDB();
+			const store = db.transaction(UPLOAD_STORE, 'readwrite').objectStore(UPLOAD_STORE);
+			const all = (await idbRequest(store.getAll())) || [];
+			const cutoff = Date.now() - maxAgeMs;
+			await Promise.all(
+				all.filter((record) => (record.updatedAt || 0) < cutoff).map((record) => idbRequest(store.delete(record.key)))
+			);
+		} catch (err) {
+			// Best-effort.
+		}
+	}
+
 	// <<< offline-db
 
 	// Every <img src> an item's cached content markup references — walked
@@ -2018,41 +2112,36 @@
 
 	// The current composer state as a plain, structured-cloneable object —
 	// serializable to IndexedDB, and the single source of truth
-	// payloadToFormData() turns into the multipart body either a live
-	// request or a queued replay sends. Picked-but-not-yet-uploaded files
-	// carry their real Blob (IndexedDB stores these natively); a file this
-	// same session already uploaded (has entry.uploadedId) is folded into
-	// existingAlt instead.
+	// payloadToFormData() turns into the request body either a live
+	// request or a queued replay sends. Every picked file carries its real
+	// Blob (IndexedDB stores these natively) and its upload key; one this
+	// session already finished uploading also carries its attachmentId (see
+	// "Resumable uploads"). The Blob stays even then, so a queued Mark can
+	// upload the file again if the site no longer has it.
 	function buildMarkPayload(status, opts) {
 		opts = opts || {};
 		const existingAlt = {};
 		// The author's chosen order for already-attached media (issue #250)
 		// — state.editing.media's own array order, which moveExistingMedia()
-		// mutates in place. Empty when there's nothing existing to reorder.
-		const mediaOrder = [];
+		// mutates in place. Newly uploaded files follow, in the composer's
+		// own order (see payloadToFormData()).
+		const existingMediaIds = [];
 		if (state.editing && Array.isArray(state.editing.media)) {
 			state.editing.media.forEach((m) => {
 				if (m.kind === 'image') {
 					existingAlt[m.id] = m.alt || '';
 				}
-				mediaOrder.push(m.id);
+				existingMediaIds.push(m.id);
 			});
 		}
-		const newFiles = [];
-		state.files.forEach((entry) => {
-			if (entry.uploadedId) {
-				if (entry.kind === 'image') {
-					existingAlt[entry.uploadedId] = entry.alt || '';
-				}
-				return;
-			}
-			newFiles.push({
-				blob: entry.file,
-				name: entry.file.name,
-				kind: entry.kind,
-				alt: entry.kind === 'image' ? entry.alt || '' : '',
-			});
-		});
+		const newFiles = state.files.map((entry) => ({
+			key: entry.key,
+			blob: entry.file,
+			name: entry.file.name,
+			kind: entry.kind,
+			alt: entry.kind === 'image' ? entry.alt || '' : '',
+			attachmentId: entry.uploadedId || null,
+		}));
 		return {
 			status,
 			autosave: !!opts.autosave,
@@ -2078,13 +2167,15 @@
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
-			mediaOrder,
+			existingMediaIds,
 		};
 	}
 
 	// The exact FormData a real Publish/Save as Draft, a live autosave, and
 	// an offline-queue replay all send — one mapping, so none of the three
-	// can drift apart.
+	// can drift apart. Files are never sent here: each is uploaded on its
+	// own first (sendMarkPayload()), and only its attachment ID goes in
+	// media_ids[]. A file still uploading is left out until a later save.
 	function payloadToFormData(payload) {
 		const formData = new FormData();
 		formData.append('caption', payload.caption);
@@ -2102,15 +2193,22 @@
 		if (payload.helpers !== null) {
 			formData.append('publish_helpers', JSON.stringify(payload.helpers));
 		}
-		payload.newFiles.forEach((f) => {
-			formData.append('files[]', f.blob, f.name);
-			formData.append('alt[]', f.kind === 'image' ? f.alt : '');
+		// alt[] lines up with media_ids[], position by position.
+		const ready = (payload.newFiles || []).filter((f) => f.attachmentId);
+		ready.forEach((f) => {
+			formData.append('media_ids[]', String(f.attachmentId));
+			formData.append('alt[]', f.kind === 'image' ? f.alt || '' : '');
 		});
-		if (Object.keys(payload.existingAlt).length) {
+		if (Object.keys(payload.existingAlt || {}).length) {
 			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
 		}
-		if (payload.mediaOrder && payload.mediaOrder.length) {
-			formData.append('media_order', JSON.stringify(payload.mediaOrder));
+		// Media already on the Mark, then the uploaded files. A Mark queued
+		// before 0.20.0 carries mediaOrder instead of existingMediaIds.
+		const mediaOrder = (payload.existingMediaIds || payload.mediaOrder || []).concat(
+			ready.map((f) => f.attachmentId)
+		);
+		if (mediaOrder.length) {
+			formData.append('media_order', JSON.stringify(mediaOrder));
 		}
 		payload.tags.forEach((tag) => formData.append('tags[]', tag));
 		if (payload.capturedAt) {
@@ -2135,16 +2233,446 @@
 		return formData;
 	}
 
+	// --- Resumable uploads (issue #483) ---
+	//
+	// Each picked file goes up on its own, in parts, before the Mark that
+	// uses it is saved (POST /uploads, then one POST /uploads/{id} per part;
+	// see Daymark_Uploads). A dropped connection costs one part, not the
+	// whole file, and the site's own request-size limit no longer caps a
+	// video. The finished file becomes an attachment the Mark names in
+	// media_ids[].
+	//
+	// One runner serves every caller: the composer starts an upload the
+	// moment a file is picked, and a queued Mark (Publish, an offline
+	// autosave, a replay at boot) waits for the same upload rather than
+	// starting a second one. Uploads are keyed by a per-file upload key
+	// that travels in the Mark's payload, and their progress is saved in
+	// UPLOAD_STORE after every part, so a queued Mark whose app was closed
+	// mid-upload picks up where it stopped.
+	//
+	// While offline (or after a failed part) the runner waits and retries:
+	// 1 second, doubling to 60, sooner when the connection comes back or
+	// the app returns to the foreground. A real error from the site — a
+	// file it refuses — stops the upload and is reported to the caller.
+	const UPLOAD_CONCURRENCY = 2;
+	const UPLOAD_RETRY_START_MS = 1000;
+	const UPLOAD_RETRY_MAX_MS = 60000;
+	const UPLOAD_MIN_CHUNK_BYTES = 256 * 1024;
+	// Retries for a 5xx (or a response with no status) before giving up.
+	const UPLOAD_SERVER_ERROR_ATTEMPTS = 6;
+	// Longer than the site keeps a finished upload no Mark used (7 days).
+	const UPLOAD_PROGRESS_MAX_AGE_MS = 8 * 24 * 60 * 60 * 1000;
+
+	const uploadJobs = new Map();
+	const uploadSlotWaiters = [];
+	let activeUploadCount = 0;
+	let uploadWakers = new Set();
+
+	function newUploadKey() {
+		return 'u-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+	}
+
+	// Ends every current upload wait early: the connection came back, or
+	// the app returned to the foreground (iOS drops a backgrounded app's
+	// requests, so its next attempt should start right away).
+	function wakeUploads() {
+		const wakers = uploadWakers;
+		uploadWakers = new Set();
+		wakers.forEach((wake) => wake());
+	}
+
+	function uploadPause(ms) {
+		return new Promise((resolve) => {
+			const done = () => {
+				clearTimeout(timer);
+				uploadWakers.delete(done);
+				resolve();
+			};
+			const timer = setTimeout(done, ms);
+			uploadWakers.add(done);
+		});
+	}
+
+	async function waitForConnection() {
+		while (!navigator.onLine) {
+			await uploadPause(UPLOAD_RETRY_MAX_MS);
+		}
+	}
+
+	async function acquireUploadSlot() {
+		if (activeUploadCount < UPLOAD_CONCURRENCY) {
+			activeUploadCount += 1;
+			return;
+		}
+		await new Promise((resolve) => uploadSlotWaiters.push(resolve));
+	}
+
+	function releaseUploadSlot() {
+		const next = uploadSlotWaiters.shift();
+		if (next) {
+			next(); // The slot passes straight to the next upload.
+		} else {
+			activeUploadCount -= 1;
+		}
+	}
+
+	function uploadCancelledError() {
+		const error = new Error(__('Upload cancelled.', 'daymark'));
+		error.cancelled = true;
+		return error;
+	}
+
+	// Sends one part. POST, not PUT: some hosts' firewalls refuse a PUT
+	// body. Content-Range says where the bytes go.
+	async function sendUploadChunk(sessionId, chunk, start, total) {
+		const res = await fetch(config.restUrl + 'uploads/' + sessionId, {
+			method: 'POST',
+			headers: {
+				'X-WP-Nonce': config.nonce,
+				'Content-Type': 'application/octet-stream',
+				'Content-Range': 'bytes ' + start + '-' + (start + chunk.size - 1) + '/' + total,
+			},
+			credentials: 'same-origin',
+			body: chunk,
+		});
+		if (!res.ok) {
+			throw await readError(res);
+		}
+		return res.json();
+	}
+
+	function notifyUploadProgress(job) {
+		job.listeners.forEach((listener) => {
+			try {
+				listener(job.received, job.size);
+			} catch (err) {
+				// A listener's own failure never stops the upload.
+			}
+		});
+	}
+
+	function saveUploadProgress(job) {
+		return putUploadProgress({
+			key: job.key,
+			sessionId: job.sessionId,
+			received: job.received,
+			size: job.size,
+			attachmentId: job.attachmentId || null,
+		});
+	}
+
+	async function runUploadJob(job) {
+		const saved = await getUploadProgress(job.key);
+		if (saved && saved.attachmentId) {
+			job.attachmentId = Number(saved.attachmentId);
+			job.received = job.size;
+			notifyUploadProgress(job);
+			return job.attachmentId;
+		}
+		if (saved && saved.sessionId) {
+			job.sessionId = saved.sessionId;
+			job.received = Number(saved.received) || 0;
+			notifyUploadProgress(job);
+		}
+
+		await acquireUploadSlot();
+		try {
+			let chunkSize = 0;
+			// Whether job.received is known to match the site's copy.
+			let synced = false;
+			let delay = UPLOAD_RETRY_START_MS;
+			let serverErrors = 0;
+			let restarts = 0;
+			for (;;) {
+				if (job.cancelled) {
+					throw uploadCancelledError();
+				}
+				try {
+					await waitForConnection();
+					if (!job.sessionId) {
+						const session = await apiPost('uploads', { name: job.name, size: job.size });
+						job.sessionId = session.id;
+						job.received = 0;
+						chunkSize = Number(session.chunk_size) || 0;
+						synced = true;
+						await saveUploadProgress(job);
+					} else if (!synced || !chunkSize) {
+						const session = await apiGet('uploads/' + job.sessionId);
+						job.received = Number(session.received) || 0;
+						chunkSize = chunkSize || Number(session.chunk_size) || 0;
+						synced = true;
+						notifyUploadProgress(job);
+						if (session.attachment_id) {
+							job.attachmentId = Number(session.attachment_id);
+							break;
+						}
+					}
+					chunkSize = Math.max(UPLOAD_MIN_CHUNK_BYTES, chunkSize || UPLOAD_MIN_CHUNK_BYTES);
+					let finishedId = null;
+					while (job.received < job.size) {
+						if (job.cancelled) {
+							throw uploadCancelledError();
+						}
+						const end = Math.min(job.size, job.received + chunkSize);
+						const session = await sendUploadChunk(
+							job.sessionId,
+							job.blob.slice(job.received, end),
+							job.received,
+							job.size
+						);
+						job.received = Number(session.received) || end;
+						delay = UPLOAD_RETRY_START_MS;
+						serverErrors = 0;
+						notifyUploadProgress(job);
+						if (session.attachment_id) {
+							finishedId = Number(session.attachment_id);
+							break;
+						}
+						saveUploadProgress(job);
+					}
+					if (finishedId) {
+						job.attachmentId = finishedId;
+						break;
+					}
+					// Every byte sent, but the finishing response was lost:
+					// ask the site where it stands.
+					synced = false;
+				} catch (err) {
+					if (err.cancelled) {
+						throw err;
+					}
+					if (err instanceof TypeError || !navigator.onLine) {
+						synced = false;
+						await uploadPause(delay);
+						delay = Math.min(delay * 2, UPLOAD_RETRY_MAX_MS);
+						continue;
+					}
+					if (409 === err.status && err.data && typeof err.data.received === 'number') {
+						// Out of step (an earlier part arrived after all):
+						// carry on from the site's count.
+						job.received = err.data.received;
+						synced = true;
+						continue;
+					}
+					if (413 === err.status && chunkSize > UPLOAD_MIN_CHUNK_BYTES) {
+						// A proxy in front of the site refuses parts this size.
+						chunkSize = Math.max(UPLOAD_MIN_CHUNK_BYTES, Math.floor(chunkSize / 2));
+						synced = false;
+						continue;
+					}
+					if (404 === err.status && job.sessionId && restarts < 3) {
+						// The site no longer has this session (cleaned up
+						// after a day, or lost by the host): start over.
+						restarts += 1;
+						job.sessionId = null;
+						job.received = 0;
+						synced = false;
+						continue;
+					}
+					if (429 === err.status) {
+						await uploadPause(Math.max(UPLOAD_RETRY_START_MS, (err.retryAfter || 30) * 1000));
+						continue;
+					}
+					if ((!err.status || err.status >= 500) && serverErrors < UPLOAD_SERVER_ERROR_ATTEMPTS) {
+						serverErrors += 1;
+						synced = false;
+						await uploadPause(delay);
+						delay = Math.min(delay * 2, UPLOAD_RETRY_MAX_MS);
+						continue;
+					}
+					throw err;
+				}
+			}
+		} finally {
+			releaseUploadSlot();
+		}
+
+		job.received = job.size;
+		notifyUploadProgress(job);
+		await saveUploadProgress(job);
+		return job.attachmentId;
+	}
+
+	// Uploads one file, or joins the upload already running for its key.
+	// Resolves with the attachment ID. `file` is { key, blob, name };
+	// onProgress(received, size) is called as parts land.
+	function ensureUpload(file, onProgress) {
+		let job = uploadJobs.get(file.key);
+		if (!job) {
+			job = {
+				key: file.key,
+				blob: file.blob,
+				name: file.name || (file.blob && file.blob.name) || 'upload',
+				size: file.blob.size,
+				received: 0,
+				sessionId: null,
+				attachmentId: null,
+				cancelled: false,
+				listeners: new Set(),
+			};
+			const started = job;
+			uploadJobs.set(file.key, job);
+			job.promise = runUploadJob(job).finally(() => {
+				if (uploadJobs.get(started.key) === started) {
+					uploadJobs.delete(started.key);
+				}
+			});
+		}
+		if (onProgress) {
+			job.listeners.add(onProgress);
+			onProgress(job.received, job.size);
+		}
+		return job.promise;
+	}
+
+	// Stops an upload the composer no longer needs (its file was removed)
+	// and asks the site to discard what it has. Best-effort.
+	async function cancelUpload(key) {
+		const job = uploadJobs.get(key);
+		let sessionId = job ? job.sessionId : null;
+		if (job) {
+			job.cancelled = true;
+			wakeUploads();
+		}
+		const saved = await getUploadProgress(key);
+		sessionId = sessionId || (saved && saved.sessionId) || null;
+		await deleteUploadProgress([key]);
+		if (sessionId) {
+			apiDelete('uploads/' + sessionId).catch(() => {});
+		}
+	}
+
+	// Forgets the upload progress of a Mark the site has confirmed.
+	function forgetUploads(payload) {
+		const keys = ((payload && payload.newFiles) || []).map((f) => f.key);
+		deleteUploadProgress(keys);
+	}
+
+	// Saves a Mark: uploads its files first (when waitForUploads is set),
+	// then sends the Mark with their attachment IDs. Used by every save —
+	// a live autosave passes waitForUploads false and sends only the files
+	// already uploaded; a queued Mark waits for all of them.
+	//
+	// Two errors are handled here rather than reported:
+	// - daymark_upload_expired: the site deleted a staged file no Mark used
+	//   in time (a long offline stretch). It's uploaded again from the
+	//   Blob the payload still carries.
+	// - daymark_media_in_use on a create: an earlier attempt created this
+	//   Mark and only its response was lost. That Mark is the result.
+	async function sendMarkPayload(path, payload, opts) {
+		opts = opts || {};
+		const files = Array.isArray(payload.newFiles) ? payload.newFiles : [];
+		if (opts.waitForUploads) {
+			for (let i = 0; i < files.length; i++) {
+				const f = files[i];
+				if (!f.key) {
+					// Queued before 0.20.0: a stable key per record and file.
+					f.key = (opts.keyPrefix || 'legacy') + '-' + i;
+				}
+				if (!f.attachmentId && f.blob) {
+					f.attachmentId = await ensureUpload(
+						f,
+						opts.onProgress ? (received, size) => opts.onProgress(i, received, size) : null
+					);
+				}
+			}
+		}
+		try {
+			return await apiUpload(path, payloadToFormData(payload));
+		} catch (err) {
+			const data = err.data || {};
+			const reuploads = opts.reuploads || 0;
+			if ('daymark_upload_expired' === err.code && opts.waitForUploads && reuploads < files.length) {
+				const expired = files.find((f) => Number(f.attachmentId) === Number(data.media_id));
+				if (expired && expired.blob) {
+					expired.attachmentId = null;
+					await deleteUploadProgress([expired.key]);
+					return sendMarkPayload(path, payload, Object.assign({}, opts, { reuploads: reuploads + 1 }));
+				}
+			}
+			if ('daymark_media_in_use' === err.code && 'marks' === path && data.post_id) {
+				return apiGet('marks/' + Number(data.post_id));
+			}
+			throw err;
+		}
+	}
+
+	// Whether a live save has anything the site would accept: text, a
+	// Check In's place, an uploaded file, or an existing Mark to update.
+	// A Mark with only files still uploading waits for the first to finish.
+	function payloadHasContent(payload, targetId) {
+		return (
+			!!targetId ||
+			!!(payload.caption || '').trim() ||
+			!!(payload.placeName || '').trim() ||
+			(payload.newFiles || []).some((f) => f.attachmentId)
+		);
+	}
+
+	// Progress of the queued Marks being sent right now, for their pending
+	// cards: record id => { received, size } summed over the Mark's files.
+	const pendingUploadProgress = new Map();
+	// Records a sync is working on right now, so the 'online' flush and a
+	// Publish's own background sync never send the same Mark twice.
+	const syncingPendingIds = new Set();
+
+	function pendingProgressTracker(recordId, payload) {
+		const files = (payload && payload.newFiles) || [];
+		const perFile = files.map((f) => {
+			const size = (f.blob && f.blob.size) || 0;
+			return { received: f.attachmentId ? size : 0, size };
+		});
+		return (index, received, size) => {
+			perFile[index] = { received, size };
+			const totals = perFile.reduce(
+				(sum, f) => ({ received: sum.received + f.received, size: sum.size + f.size }),
+				{ received: 0, size: 0 }
+			);
+			pendingUploadProgress.set(recordId, totals);
+			updatePendingProgressDom(recordId);
+		};
+	}
+
+	function pendingProgressPercent(recordId) {
+		const progress = pendingUploadProgress.get(recordId);
+		if (!progress || !progress.size) {
+			return null;
+		}
+		return Math.min(100, Math.floor((progress.received / progress.size) * 100));
+	}
+
+	function updatePendingProgressDom(recordId) {
+		const percent = pendingProgressPercent(recordId);
+		if (null === percent) {
+			return;
+		}
+		root.querySelectorAll('[data-pending-progress="' + recordId + '"]').forEach((bar) => {
+			bar.value = percent;
+		});
+		root.querySelectorAll('[data-pending-percent="' + recordId + '"]').forEach((label) => {
+			label.textContent = sprintf(
+				/* translators: %d: upload progress, 0-100 */
+				__('Uploading… %d%%', 'daymark'),
+				percent
+			);
+		});
+	}
+
 	// Tries the real request first; falls back to the offline queue only
 	// when the failure looks like a connectivity problem (navigator.onLine
 	// already false, or fetch itself threw — the TypeError browsers use for
 	// a request that never reached a server — as opposed to a well-formed
 	// HTTP error response, which always carries `.status` via readError()
 	// and is rethrown so the caller's normal error handling still applies).
+	//
+	// Online, it sends only the files already uploaded (a live autosave
+	// never waits on an upload; the composer saves again when one
+	// finishes). Queued, the payload keeps every file's Blob, and the
+	// replay waits for all of them.
 	async function submitOrQueue(path, targetId, payload, existingQueueId) {
 		if (navigator.onLine) {
 			try {
-				const response = await apiUpload(path, payloadToFormData(payload));
+				const response = await sendMarkPayload(path, payload);
 				if (existingQueueId) {
 					deletePendingMark(existingQueueId).catch(() => {});
 				}
@@ -2207,13 +2735,23 @@
 	// record and, if the user is still looking at the Success screen this
 	// exact publish produced, upgrades it in place with the real server
 	// data (permalink, syndication status) it couldn't have shown yet.
+	//
+	// Uploading the Mark's files is part of this: sendMarkPayload() waits
+	// for each (resuming any upload already running for it), so a large
+	// video can take minutes here without blocking anything else.
 	async function syncPendingMark(pendingId, path, targetId, payload) {
-		if (!navigator.onLine) {
-			return; // Left 'queued' — nothing to attempt right now.
+		if (!navigator.onLine || syncingPendingIds.has(pendingId)) {
+			return; // Left 'queued', or already being sent.
 		}
+		syncingPendingIds.add(pendingId);
 		try {
-			const response = await apiUpload(path, payloadToFormData(payload));
+			const response = await sendMarkPayload(path, payload, {
+				waitForUploads: true,
+				keyPrefix: 'pending-' + pendingId,
+				onProgress: pendingProgressTracker(pendingId, payload),
+			});
 			await deletePendingMark(pendingId);
+			forgetUploads(payload);
 			SuccessScreen.upgrade(pendingId, response);
 			onMarkSaved(response);
 		} catch (err) {
@@ -2223,6 +2761,8 @@
 				await markPendingError(pendingId, err.message).catch(() => {});
 			}
 		} finally {
+			syncingPendingIds.delete(pendingId);
+			pendingUploadProgress.delete(pendingId);
 			refreshPendingSection();
 		}
 	}
@@ -2248,13 +2788,20 @@
 				// next debounce/tap now that navigator.onLine is true)
 				// rather than racing a background flush against in-memory
 				// edits newer than what was last written to IndexedDB.
-				if (record.id === state.offlineQueueId) {
+				if (record.id === state.offlineQueueId || syncingPendingIds.has(record.id)) {
 					continue;
 				}
+				syncingPendingIds.add(record.id);
+				refreshPendingSection();
 				try {
 					const path = record.targetId ? 'marks/' + record.targetId : 'marks';
-					const response = await apiUpload(path, payloadToFormData(record.payload));
+					const response = await sendMarkPayload(path, record.payload, {
+						waitForUploads: true,
+						keyPrefix: 'pending-' + record.id,
+						onProgress: pendingProgressTracker(record.id, record.payload),
+					});
 					await deletePendingMark(record.id);
+					forgetUploads(record.payload);
 					onMarkSaved(response);
 				} catch (err) {
 					if (err instanceof TypeError || !navigator.onLine) {
@@ -2265,6 +2812,9 @@
 					// connectivity) and keep going so it doesn't block the
 					// rest.
 					await markPendingError(record.id, err.message).catch(() => {});
+				} finally {
+					syncingPendingIds.delete(record.id);
+					pendingUploadProgress.delete(record.id);
 				}
 			}
 		} finally {
@@ -2333,18 +2883,23 @@
 		state.location = payload.location || null;
 		state.locationRequested = true;
 		state.primaryType = payload.primaryType || 'note';
-		state.files = (payload.newFiles || []).map((f) => {
+		state.files = (payload.newFiles || []).map((f, index) => {
 			state.fileCounter += 1;
 			return {
 				id: 'f' + state.fileCounter,
+				// The same key the queue uses for this file (see
+				// sendMarkPayload()), so the composer resumes that upload.
+				key: f.key || 'pending-' + record.id + '-' + index,
 				file: f.blob,
 				url: f.kind === 'image' ? URL.createObjectURL(f.blob) : '',
 				kind: f.kind,
 				alt: f.alt || '',
 				altStatus: 'idle',
 				altEdited: true, // Already-typed alt: never overwrite with a fresh AI suggestion.
+				uploadedId: null,
 			};
 		});
+		state.files.forEach((entry) => startComposerUpload(entry));
 		navigate('#create');
 	}
 
@@ -2364,10 +2919,17 @@
 		}
 
 		const generation = composerGeneration;
-		const newFileCount = state.files.filter((entry) => !entry.uploadedId).length;
 		const payload = buildMarkPayload('draft', { autosave: true });
 		const path = state.editing ? 'marks/' + state.editing.id : 'marks';
 		const targetId = state.editing ? state.editing.id : null;
+
+		// Only files still uploading, and no text yet: nothing the site
+		// would accept. Each finished upload saves again (see
+		// startComposerUpload()). Offline, the queue takes it as it is,
+		// files and all.
+		if (navigator.onLine && !payloadHasContent(payload, targetId)) {
+			return;
+		}
 
 		autosaveState.saving = true;
 		let resolveInFlight;
@@ -2377,6 +2939,14 @@
 		setAutosaveStatus('saving');
 		try {
 			const result = await submitOrQueue(path, targetId, payload, state.offlineQueueId);
+			// Kept even when the composer has moved on, so leaving the
+			// composer mid-save can still find the draft this created (see
+			// abandonComposer()).
+			autosaveState.lastResult = {
+				generation,
+				id: result.queued ? null : result.response.id,
+				queueId: result.queued ? result.id : null,
+			};
 			if (generation !== composerGeneration) {
 				return; // The composer has moved on; drop this stale response.
 			}
@@ -2389,39 +2959,6 @@
 			const response = result.response;
 			if (!state.editing) {
 				state.editing = { id: response.id, type: response.type || state.primaryType, media: [] };
-			}
-			if (newFileCount > 0) {
-				// The file(s) are already attached server-side at this point
-				// (the upload above succeeded) — this follow-up GET only
-				// learns their attachment IDs so payloadToFormData() never
-				// re-sends them. Kept in its own try/catch: if just this GET
-				// fails, the save itself still succeeded and shouldn't be
-				// reported as an error. A file left without an uploadedId
-				// here is retried as a fresh upload next time, which is safe
-				// (nothing lost) but can attach it twice in the rare case
-				// this GET is what fails right after a successful upload.
-				try {
-					// The publisher appends newly uploaded attachments in the
-					// same order files[] was sent (the same invariant
-					// apply_positional_alt() relies on server-side) — so the
-					// last newFileCount entries of a fresh GET are, in order,
-					// the files just autosaved.
-					const fresh = await apiGet('marks/' + state.editing.id);
-					if (generation !== composerGeneration) {
-						return;
-					}
-					const media = Array.isArray(fresh.media) ? fresh.media : [];
-					const uploaded = media.slice(media.length - newFileCount);
-					let cursor = 0;
-					state.files.forEach((entry) => {
-						if (!entry.uploadedId && uploaded[cursor]) {
-							entry.uploadedId = uploaded[cursor].id;
-							cursor += 1;
-						}
-					});
-				} catch (err) {
-					// The upload succeeded; only this ID lookup failed.
-				}
 			}
 			setAutosaveStatus('saved');
 		} catch (err) {
@@ -2436,6 +2973,41 @@
 				runAutosave();
 			}
 		}
+	}
+
+	// Starts (or resumes) one composer file's upload, and keeps its row in
+	// the file list up to date. When it finishes, the draft is saved again
+	// so the file is attached to it straight away — but only if the
+	// composer is still on the same Mark; a Mark already handed to the
+	// queue (Publish, or leaving the composer) attaches it itself.
+	function startComposerUpload(entry) {
+		const generation = composerGeneration;
+		entry.uploadStatus = 'uploading';
+		entry.uploadError = '';
+		ensureUpload({ key: entry.key, blob: entry.file, name: entry.file.name }, (received, size) => {
+			entry.uploadReceived = received;
+			entry.uploadSize = size;
+			CreateScreen.refreshUploadStatus(entry);
+		})
+			.then((attachmentId) => {
+				if (entry.removed) {
+					return;
+				}
+				entry.uploadedId = attachmentId;
+				entry.uploadStatus = 'done';
+				CreateScreen.refreshUploadStatus(entry);
+				if (generation === composerGeneration) {
+					runAutosave();
+				}
+			})
+			.catch((err) => {
+				if ((err && err.cancelled) || entry.removed) {
+					return;
+				}
+				entry.uploadStatus = 'error';
+				entry.uploadError = (err && err.message) || '';
+				CreateScreen.refreshUploadStatus(entry);
+			});
 	}
 
 	function scheduleAutosave() {
@@ -2707,6 +3279,9 @@
 		if (data && typeof data.retry_after !== 'undefined') {
 			error.retryAfter = Number(data.retry_after);
 		}
+		// The rest of the error's data (e.g. an upload's `received` offset,
+		// or the `post_id` of a Mark that already holds a file).
+		error.data = data;
 		return error;
 	}
 
@@ -3212,7 +3787,9 @@
 			bubble.addEventListener('click', () => {
 				const type = bubble.getAttribute('data-launcher-type');
 				screen.closeLauncher();
-				resetComposer();
+				// Not a bare reset: a Mark left in the composer is saved
+				// first, with any file still uploading (see abandonComposer()).
+				abandonComposer();
 				state.pendingType = type;
 				navigate('#create');
 			});
@@ -5377,6 +5954,38 @@
 	// nothing useful to resume — it's transient and will resolve on its
 	// own within moments — so it renders as a plain, non-interactive row
 	// instead of a link.
+	// A pending record's status as its card should show it: a record the
+	// queue is sending right now counts as uploading, unless the device is
+	// offline, when it is waiting like any other queued Mark.
+	function pendingDisplayStatus(record) {
+		const status = record.status || 'queued';
+		if ('error' === status) {
+			return 'error';
+		}
+		if ('uploading' === status || syncingPendingIds.has(record.id)) {
+			return navigator.onLine ? 'uploading' : 'queued';
+		}
+		return status;
+	}
+
+	// The "Uploading… 45%" label and bar for a record whose files are going
+	// up. Updated in place as parts land (updatePendingProgressDom()).
+	function pendingUploadingMarkup(record, label) {
+		const percent = pendingProgressPercent(record.id);
+		if (null === percent) {
+			return label;
+		}
+		return `<span data-pending-percent="${esc(String(record.id))}">${esc(
+			sprintf(
+				/* translators: %d: upload progress, 0-100 */
+				__('Uploading… %d%%', 'daymark'),
+				percent
+			)
+		)}</span> <progress class="daymark-progress" max="100" value="${percent}" data-pending-progress="${esc(
+			String(record.id)
+		)}" aria-label="${esc(__('Upload progress', 'daymark'))}"></progress>`;
+	}
+
 	function renderPendingItem(record) {
 		const payload = record.payload || {};
 		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
@@ -5391,7 +6000,7 @@
 				thumb = '';
 			}
 		}
-		const status = record.status || 'queued';
+		const status = pendingDisplayStatus(record);
 		const meta =
 			status === 'error'
 				? `<span class="daymark-chip daymark-chip--danger">${esc(
@@ -5400,7 +6009,7 @@
 				: status === 'uploading'
 				? `<span class="daymark-chip daymark-chip--muted">${esc(
 						__('Uploading', 'daymark')
-				  )}</span> ${esc(__('Publishing now…', 'daymark'))}`
+				  )}</span> ${pendingUploadingMarkup(record, esc(__('Saving now…', 'daymark')))}`
 				: `<span class="daymark-chip daymark-chip--draft">${esc(__('Offline', 'daymark'))}</span> ${esc(
 						__("Will sync when you're back online", 'daymark')
 				  )}`;
@@ -5444,15 +6053,16 @@
 				media = '';
 			}
 		}
-		const status = record.status || 'queued';
+		const status = pendingDisplayStatus(record);
 		let chip;
 		if ('error' === status) {
 			chip = `<span class="daymark-chip daymark-chip--danger">${esc(
 				__("Couldn't publish", 'daymark')
 			)}</span> ${esc(__('Tap to review and retry', 'daymark'))}`;
 		} else if ('uploading' === status) {
-			chip = `<span class="daymark-spinner daymark-spinner--inline" aria-hidden="true"></span> ${esc(
-				__('Uploading…', 'daymark')
+			chip = `<span class="daymark-spinner daymark-spinner--inline" aria-hidden="true"></span> ${pendingUploadingMarkup(
+				record,
+				esc(__('Uploading…', 'daymark'))
 			)}`;
 		} else {
 			chip = `<span class="daymark-chip daymark-chip--draft">${esc(__('Offline', 'daymark'))}</span> ${esc(
@@ -8101,6 +8711,9 @@
 				const isImage = file.type.indexOf('image/') === 0;
 				const entry = {
 					id: 'f' + state.fileCounter,
+					// Identifies this file's upload everywhere it goes —
+					// the composer, a queued Mark, the progress store.
+					key: newUploadKey(),
 					file,
 					url: isImage ? URL.createObjectURL(file) : '',
 					kind: (file.type || '').split('/')[0] || 'file',
@@ -8122,12 +8735,58 @@
 				}
 			});
 			this.refreshMedia();
-			// Protect the actual picked media as soon as possible — don't
-			// wait for Publish/Save as Draft to upload it.
+			// Protect the actual picked media as soon as possible: upload it
+			// now, in the background (issue #483), rather than waiting for
+			// Publish/Save as Draft. Each finished upload saves the draft.
+			state.files.forEach((entry) => {
+				if (!entry.uploadStatus) {
+					startComposerUpload(entry);
+				}
+			});
+			// Save any text now; the files follow as they finish.
 			runAutosave();
 			// Picked media alone is enough to ground a quiet tag
 			// suggestion (same bar as the caption trigger below).
 			scheduleQuietTagSuggestion();
+		},
+
+		// The short status beside a file in the composer's file list.
+		uploadStatusText(entry) {
+			if ('done' === entry.uploadStatus) {
+				return __('Uploaded', 'daymark');
+			}
+			if ('error' === entry.uploadStatus) {
+				return entry.uploadError
+					? sprintf(
+							/* translators: %s: error message */
+							__('Upload failed: %s', 'daymark'),
+							entry.uploadError
+					  )
+					: __('Upload failed', 'daymark');
+			}
+			if ('uploading' !== entry.uploadStatus) {
+				return '';
+			}
+			if (!navigator.onLine) {
+				return __('Waiting for a connection', 'daymark');
+			}
+			const size = entry.uploadSize || (entry.file && entry.file.size) || 0;
+			const percent = size ? Math.min(100, Math.floor(((entry.uploadReceived || 0) / size) * 100)) : 0;
+			return sprintf(
+				/* translators: %d: upload progress, 0-100 */
+				__('Uploading… %d%%', 'daymark'),
+				percent
+			);
+		},
+
+		// Updates one file's status in place, without re-rendering the
+		// list (which would interrupt typing in an alt-text field).
+		refreshUploadStatus(entry) {
+			const el = root.querySelector('[data-upload-status-for="' + entry.id + '"]');
+			if (el) {
+				el.textContent = this.uploadStatusText(entry);
+				el.classList.toggle('daymark-filelist__upload--error', 'error' === entry.uploadStatus);
+			}
 		},
 
 		refreshMedia() {
@@ -8179,6 +8838,11 @@
 				<li class="daymark-filelist__item">
 					<div class="daymark-filelist__row">
 						<span class="daymark-filelist__name">${esc(entry.file.name)}</span>
+						<span class="daymark-filelist__upload${
+							'error' === entry.uploadStatus ? ' daymark-filelist__upload--error' : ''
+						}" data-upload-status-for="${esc(entry.id)}" aria-live="polite">${esc(
+						this.uploadStatusText(entry)
+					)}</span>
 						<button type="button" class="daymark-filelist__clear" data-clear-file="${esc(
 							entry.id
 						)}" aria-label="${esc(
@@ -8215,6 +8879,12 @@
 					const entry = state.files.find((f) => f.id === id);
 					if (entry && entry.url) {
 						URL.revokeObjectURL(entry.url);
+					}
+					if (entry) {
+						// Stop its upload and have the site discard it,
+						// unless an earlier save already attached it.
+						entry.removed = true;
+						cancelUpload(entry.key);
 					}
 					state.files = state.files.filter((f) => f.id !== id);
 					this.refreshMedia();
@@ -11576,10 +12246,12 @@
 
 			// A real Publish/Save as Draft supersedes any pending autosave —
 			// cancel it so it can't fire mid-request against the same draft.
-			// If an autosave upload for a just-picked file is already in
-			// flight, wait for it first (see waitForPendingAutosave()) so
-			// buildMarkPayload() below sees entry.uploadedId already set
-			// instead of re-sending — and re-attaching — the same file.
+			// If an autosave is already in flight, wait for it first (see
+			// waitForPendingAutosave()), so a first autosave that is
+			// creating the draft finishes before this updates it. Autosave
+			// no longer carries files (they upload on their own), so this
+			// wait is short; files still uploading are finished by the
+			// queue after the tap.
 			clearTimeout(autosaveState.timer);
 			autosaveState.timer = null;
 			await waitForPendingAutosave();
@@ -11610,7 +12282,8 @@
 				// private mode, storage disabled, …). Fall back to waiting on
 				// the real request directly rather than risk losing the Mark.
 				try {
-					const response = await apiUpload(path, payloadToFormData(payload));
+					const response = await sendMarkPayload(path, payload, { waitForUploads: true });
+					forgetUploads(payload);
 					onMarkSaved(response);
 					state.lastPublish = {
 						response,
@@ -12587,6 +13260,8 @@
 			flushLastSeenSave(true);
 		} else {
 			checkUnreadNotifications();
+			// iOS drops a backgrounded app's requests; retry uploads now.
+			wakeUploads();
 		}
 	});
 
@@ -12595,9 +13270,21 @@
 			window.location.reload();
 			return;
 		}
+		wakeUploads();
 		flushOfflineQueue().catch(() => {});
 		syncInteractionHints();
+		refreshPendingSection();
 	});
+
+	// A pending card being sent shows "waiting" rather than "uploading"
+	// while the device is offline.
+	window.addEventListener('offline', () => {
+		refreshPendingSection();
+		state.files.forEach((entry) => CreateScreen.refreshUploadStatus(entry));
+	});
+
+	// Progress records for uploads the site has long since discarded.
+	pruneUploadProgress(UPLOAD_PROGRESS_MAX_AGE_MS);
 	// Send any interaction hint this device saw while it couldn't reach
 	// the server, and claim pre-#322 device-wide hint keys.
 	syncInteractionHints();

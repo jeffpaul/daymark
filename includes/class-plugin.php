@@ -101,6 +101,13 @@ final class Daymark_Plugin {
 	public Daymark_Bookmarks $bookmarks;
 
 	/**
+	 * Chunked, resumable composer uploads (issue #483).
+	 *
+	 * @var Daymark_Uploads
+	 */
+	public Daymark_Uploads $uploads;
+
+	/**
 	 * Overlapping-IndieWeb-plugin detection + per-user dismissal.
 	 *
 	 * @var Daymark_Plugin_Overlap
@@ -305,6 +312,7 @@ final class Daymark_Plugin {
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
 		$this->bookmarks                    = new Daymark_Bookmarks();
+		$this->uploads                      = new Daymark_Uploads();
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
@@ -409,6 +417,7 @@ final class Daymark_Plugin {
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->bookmarks->register();
+		$this->uploads->register();
 		$this->subscription_post_type->register();
 		$this->subscription_poller->register();
 		$this->admin_subscriptions->register();
@@ -506,6 +515,7 @@ final class Daymark_Plugin {
 	public static function deactivate(): void {
 		Daymark_Backflow_Sync::unschedule();
 		Daymark_Subscription_Poller::unschedule();
+		Daymark_Uploads::unschedule();
 		flush_rewrite_rules();
 	}
 

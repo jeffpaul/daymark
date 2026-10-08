@@ -878,6 +878,52 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/uploads',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'create_upload' ),
+				'permission_callback' => array( $this, 'permissions_check_upload' ),
+				'args'                => array(
+					'name' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'size' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/uploads/(?P<id>[a-f0-9]{32})',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_upload' ),
+					'permission_callback' => array( $this, 'permissions_check_upload' ),
+				),
+				array(
+					// PUT is the natural verb; POST is accepted too because
+					// some hosts' firewalls refuse PUT request bodies. The
+					// app sends POST.
+					'methods'             => 'POST, PUT',
+					'callback'            => array( $this, 'append_upload_chunk' ),
+					'permission_callback' => array( $this, 'permissions_check_upload' ),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'cancel_upload' ),
+					'permission_callback' => array( $this, 'permissions_check_upload' ),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/bookmarks/(?P<id>\d+)',
 			array(
 				array(
@@ -1131,6 +1177,32 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Permission check for the chunked upload routes (issue #483): the
+	 * shared check plus `upload_files`, the same capability a Mark save
+	 * already needs before it accepts files.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return true|WP_Error
+	 */
+	public function permissions_check_upload( WP_REST_Request $request ) {
+		$allowed = $this->permissions_check( $request );
+
+		if ( is_wp_error( $allowed ) ) {
+			return $allowed;
+		}
+
+		if ( ! current_user_can( 'upload_files' ) ) {
+			return new WP_Error(
+				'rest_cannot_upload',
+				__( 'You are not allowed to upload media.', 'daymark' ),
+				array( 'status' => rest_authorization_required_code() )
+			);
+		}
+
+		return true;
+	}
+
+	/**
 	 * Apply the per-user rate limit for an expensive action.
 	 *
 	 * Callers return the WP_Error verbatim so a 429 carries its
@@ -1218,6 +1290,114 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/uploads — start a chunked upload for one file.
+	 *
+	 * @param WP_REST_Request $request The request (`name`, `size`).
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function create_upload( WP_REST_Request $request ) {
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_UPLOAD );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$session = Daymark_Plugin::instance()->uploads->create_session(
+			(string) $request->get_param( 'name' ),
+			(int) $request->get_param( 'size' ),
+			get_current_user_id()
+		);
+
+		if ( is_wp_error( $session ) ) {
+			return $session;
+		}
+
+		return new WP_REST_Response( $session, 201 );
+	}
+
+	/**
+	 * GET /daymark/v1/uploads/{id} — how much of a file the site has, so
+	 * the client can resume.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_upload( WP_REST_Request $request ) {
+		$session = Daymark_Plugin::instance()->uploads->get_session( (string) $request['id'], get_current_user_id() );
+
+		if ( is_wp_error( $session ) ) {
+			return $session;
+		}
+
+		return rest_ensure_response( $session );
+	}
+
+	/**
+	 * PUT (or POST) /daymark/v1/uploads/{id} — append one part.
+	 *
+	 * The body is the part's raw bytes. A `Content-Range: bytes
+	 * {start}-{end}/{total}` header says where it goes.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function append_upload_chunk( WP_REST_Request $request ) {
+		$range = (string) $request->get_header( 'content_range' );
+
+		if ( ! preg_match( '/^bytes (\d+)-(\d+)\/(\d+)$/', trim( $range ), $matches ) ) {
+			return new WP_Error(
+				'daymark_upload_bad_chunk',
+				__( 'This part of the upload is missing its position.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$start = (int) $matches[1];
+		$end   = (int) $matches[2];
+		$total = (int) $matches[3];
+		$bytes = (string) $request->get_body();
+
+		if ( $end < $start || strlen( $bytes ) !== $end - $start + 1 ) {
+			return new WP_Error(
+				'daymark_upload_bad_chunk',
+				__( 'This part of the upload is the wrong size.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$session = Daymark_Plugin::instance()->uploads->append_chunk(
+			(string) $request['id'],
+			get_current_user_id(),
+			$start,
+			$total,
+			$bytes
+		);
+
+		if ( is_wp_error( $session ) ) {
+			return $session;
+		}
+
+		return rest_ensure_response( $session );
+	}
+
+	/**
+	 * DELETE /daymark/v1/uploads/{id} — cancel an upload the composer no
+	 * longer needs (the file was removed before the Mark was saved).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function cancel_upload( WP_REST_Request $request ) {
+		$result = Daymark_Plugin::instance()->uploads->cancel_session( (string) $request['id'], get_current_user_id() );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response( array( 'deleted' => true ) );
+	}
+
+	/**
 	 * POST /daymark/v1/marks — create a Mark.
 	 *
 	 * Accepts multipart file uploads plus caption/type/target fields and
@@ -1237,9 +1417,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$files = $request->get_file_params();
+		$files     = $request->get_file_params();
+		$media_ids = $request->get_param( 'media_ids' );
 
-		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
+		if ( ( ! empty( $files ) || ! empty( $media_ids ) ) && ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error(
 				'rest_cannot_upload',
 				__( 'You are not allowed to upload media.', 'daymark' ),
@@ -1264,8 +1445,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'categories'           => $request->get_param( 'categories' ),
 			'ai_assist_used'       => rest_sanitize_boolean( $request->get_param( 'ai_assist_used' ) ),
 			'alt_text'             => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
-			// Per-image alt: positional array aligned to files[] order.
+			// Per-image alt: positional array aligned to media_ids[] and
+			// then files[] order.
 			'alt'                  => $request->get_param( 'alt' ),
+			// Files already uploaded through Daymark_Uploads (issue #483),
+			// checked by Daymark_Uploads::resolve_media_ids().
+			'media_ids'            => $media_ids,
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 			'transcript'           => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture: date/time + optional location, both
@@ -3041,9 +3226,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $rate;
 		}
 
-		$files = $request->get_file_params();
+		$files     = $request->get_file_params();
+		$media_ids = $request->get_param( 'media_ids' );
 
-		if ( ! empty( $files ) && ! current_user_can( 'upload_files' ) ) {
+		if ( ( ! empty( $files ) || ! empty( $media_ids ) ) && ! current_user_can( 'upload_files' ) ) {
 			return new WP_Error(
 				'rest_cannot_upload',
 				__( 'You are not allowed to upload media.', 'daymark' ),
@@ -3072,6 +3258,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// when it's an exact permutation of the stored media list. See
 			// Daymark_Publisher::apply_media_order().
 			'media_order'         => $request->get_param( 'media_order' ),
+			// Files already uploaded through Daymark_Uploads (issue #483).
+			'media_ids'           => $media_ids,
 			'tags'                => $request->get_param( 'tags' ),
 			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture — see create_mark()'s matching comment.
