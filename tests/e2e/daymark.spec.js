@@ -208,51 +208,61 @@ let subscriptionSetup = null;
 
 function ensureSubscription(page) {
 	if (!subscriptionSetup) {
-		subscriptionSetup = page.evaluate(async () => {
-			const config = window.daymarkApp;
-			const headers = { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' };
-			const subRes = await fetch(`${config.restUrl}subscriptions`, {
-				method: 'POST',
-				headers,
-				credentials: 'same-origin',
-				body: JSON.stringify({ site_url: 'https://wordpress.org/news/' }),
-			});
-			let subscription = await subRes.json();
-
-			// A retried test in this same worker can re-enter this branch
-			// (subscriptionSetup only guards against concurrent calls within
-			// one module lifetime, not a fresh one after a retry) against a
-			// subscription this exact URL already created — that's a real
-			// 409, not a bug, so fall back to looking the existing row up
-			// rather than propagating a body with no `id`.
-			if (!subscription || !subscription.id) {
-				const listRes = await fetch(`${config.restUrl}subscriptions`, {
-					headers,
-					credentials: 'same-origin',
-				});
-				const list = await listRes.json();
-				subscription = (Array.isArray(list) ? list : []).find((s) => {
-					if (!s.feed_url) {
-						return false;
-					}
-					try {
-						const parsed = new URL(s.feed_url);
-						return parsed.hostname === 'wordpress.org' && parsed.pathname.startsWith('/news/');
-					} catch {
-						return false;
-					}
-				});
-			}
-
-			await fetch(`${config.restUrl}subscriptions/${subscription.id}/refresh`, {
-				method: 'POST',
-				headers,
-				credentials: 'same-origin',
-			});
-			return subscription;
-		});
+		subscriptionSetup = seedSubscription(page);
 	}
 	return subscriptionSetup;
+}
+
+async function seedSubscription(page) {
+	// A retried test runs in a fresh worker, so it can be the first to
+	// call this, straight after loginAs() leaves the page on wp-admin,
+	// where window.daymarkApp doesn't exist. Open the app first.
+	if (!(await page.evaluate(() => !!window.daymarkApp))) {
+		await page.goto('/daymark');
+	}
+	return page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const headers = { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' };
+		const subRes = await fetch(`${config.restUrl}subscriptions`, {
+			method: 'POST',
+			headers,
+			credentials: 'same-origin',
+			body: JSON.stringify({ site_url: 'https://wordpress.org/news/' }),
+		});
+		let subscription = await subRes.json();
+
+		// A retried test in this same worker can re-enter this branch
+		// (subscriptionSetup only guards against concurrent calls within
+		// one module lifetime, not a fresh one after a retry) against a
+		// subscription this exact URL already created — that's a real
+		// 409, not a bug, so fall back to looking the existing row up
+		// rather than propagating a body with no `id`.
+		if (!subscription || !subscription.id) {
+			const listRes = await fetch(`${config.restUrl}subscriptions`, {
+				headers,
+				credentials: 'same-origin',
+			});
+			const list = await listRes.json();
+			subscription = (Array.isArray(list) ? list : []).find((s) => {
+				if (!s.feed_url) {
+					return false;
+				}
+				try {
+					const parsed = new URL(s.feed_url);
+					return parsed.hostname === 'wordpress.org' && parsed.pathname.startsWith('/news/');
+				} catch {
+					return false;
+				}
+			});
+		}
+
+		await fetch(`${config.restUrl}subscriptions/${subscription.id}/refresh`, {
+			method: 'POST',
+			headers,
+			credentials: 'same-origin',
+		});
+		return subscription;
+	});
 }
 
 // Scrolls the recent list's infinite-scroll sentinel into view repeatedly
