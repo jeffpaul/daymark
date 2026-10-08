@@ -1065,6 +1065,12 @@
 		return liked ? withDeliveryStatus(__('Unlike', 'daymark'), delivery) : __('Like', 'daymark');
 	}
 
+	// Liked only through the IndieBlocks plugin, which Daymark reads but
+	// never removes (see Daymark_IndieBlocks_Likes).
+	function likedOnlyWithIndieBlocks(item) {
+		return !!item.indieblocks_like_id && !item.liked_mark_id && !item.jetpack_liked;
+	}
+
 	// The Like toggle for a subscription post — a real <button>, like every
 	// other entry in the row (see renderBookmarkToggle()). Unlike Bookmark,
 	// activating this publishes (or, to undo,
@@ -1083,7 +1089,8 @@
 		// with no local post at all (jetpack_liked) — either counts as
 		// "liked" for display purposes; toggleLike() below resolves which
 		// one to undo entirely server-side.
-		const liked = !!item.liked_mark_id || !!item.jetpack_liked;
+		// A Like made with the IndieBlocks plugin counts too (read-only).
+		const liked = !!item.liked_mark_id || !!item.jetpack_liked || !!item.indieblocks_like_id;
 		// Only offered when a Like can actually reach the origin (see
 		// Daymark_Like_Delivery): `like_available` is false when nothing
 		// could deliver one, null while still unknown (kept visible;
@@ -1095,7 +1102,9 @@
 		}
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
-		const label = likeToggleLabel(liked, item.like_delivery);
+		const label = likedOnlyWithIndieBlocks(item)
+			? __('Liked with IndieBlocks', 'daymark')
+			: likeToggleLabel(liked, item.like_delivery);
 		return `<button type="button" class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
 		}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
@@ -4106,7 +4115,7 @@
 		// instead (see openPostView()/onFeedListClick()), the same as a
 		// subscription post's card; it never navigates away to the real
 		// permalink.
-		const title = item.title || __('Untitled Mark', 'daymark');
+		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
 		const isDraft = item.status && 'publish' !== item.status;
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
@@ -4978,7 +4987,9 @@
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
 		const label =
 			'like' === kind
-				? likeToggleLabel(active, active && item ? item.like_delivery : '')
+				? active && item && item.indieblocks_like_id && !markId && !item.jetpack_liked
+					? __('Liked with IndieBlocks', 'daymark')
+					: likeToggleLabel(active, active && item ? item.like_delivery : '')
 				: active
 				? __('Undo reblog', 'daymark')
 				: __('Reblog', 'daymark');
@@ -5020,6 +5031,11 @@
 			return;
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
+		// Daymark can't undo an IndieBlocks Like; say where to do it.
+		if (wasLiked && likedOnlyWithIndieBlocks(item)) {
+			showFlashBubble(trigger, __('Liked with IndieBlocks. Remove it in WordPress.', 'daymark'));
+			return;
+		}
 		trigger.setAttribute('data-like-busy', 'true');
 		// Not yet known whether a Like can reach this origin: check first
 		// (the same answer observeLikeAvailability() would have fetched),
@@ -5037,11 +5053,17 @@
 			if (!wasLiked) {
 				const result = await apiPost('subscription-posts/' + id + '/like', {});
 				item.like_delivery = result.delivery || '';
+				if ('indieblocks' === result.method && !item.indieblocks_like_id) {
+					// Liked with IndieBlocks since this card loaded.
+					item.indieblocks_like_id = -1;
+				}
 				setEngagementToggleState(trigger, 'like', true, result.mark_id || 0, item);
 			} else {
-				await apiDelete('subscription-posts/' + id + '/like');
+				const result = await apiDelete('subscription-posts/' + id + '/like');
 				item.like_delivery = '';
-				setEngagementToggleState(trigger, 'like', false, 0, item);
+				item.jetpack_liked = false;
+				// Still liked when an IndieBlocks Like remains.
+				setEngagementToggleState(trigger, 'like', !!(result && result.liked), 0, item);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
@@ -5052,6 +5074,8 @@
 			if (err && 'daymark_like_undeliverable' === err.code) {
 				item.like_available = false;
 				hideUnavailableLikeToggle(trigger);
+			} else if (err && 'daymark_like_from_indieblocks' === err.code) {
+				showFlashBubble(trigger, __('Liked with IndieBlocks. Remove it in WordPress.', 'daymark'));
 			}
 		} finally {
 			trigger.removeAttribute('data-like-busy');
@@ -10656,6 +10680,17 @@
 	// this implies.
 	const CARD_KIND_LINK_WORD_THRESHOLD = 20;
 
+	// WordPress post formats an ordinary post on this site shows as a Note.
+	const NOTE_POST_FORMATS = ['aside', 'status', 'chat'];
+
+	// A card's title. A post with no title uses its text instead (the
+	// excerpt, which the server builds from the post's first words when the
+	// post has none), so an untitled note shows what it says rather than
+	// "Untitled". The fallback is used only when there's no text either.
+	function cardTitle(item, fallback) {
+		return item.title || toPlainText(item.excerpt || '').trim() || fallback;
+	}
+
 	function resolveCardKind(item) {
 		if ('subscription_post' !== item.item_type) {
 			if (item.type) {
@@ -10679,6 +10714,17 @@
 			// way an actual Image Mark's photo is.
 			if (item.post_format && MEDIA_DOMINANT_KINDS.includes(item.post_format)) {
 				return item.post_format;
+			}
+			// Aside, Status, and Chat posts are short text, so they read as
+			// a Note, the same mapping a followed WordPress site's posts get
+			// (Daymark_Subscription_Content_Sniffer::wordpress_format()).
+			if (NOTE_POST_FORMATS.includes(item.post_format)) {
+				return 'note';
+			}
+			// A post with no title and no image is short text too: a Note.
+			// Its card shows the post's text as the title (cardTitle()).
+			if (!item.thumbnail && !(item.title || '').trim()) {
+				return 'note';
 			}
 			const plainExcerpt = toPlainText(item.excerpt || '').trim();
 			if (plainExcerpt) {
@@ -11172,7 +11218,7 @@
 	// in one place is what "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item, titleId) {
 		const kind = resolveCardKind(item);
-		const title = item.title || __('Untitled Mark', 'daymark');
+		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
 		// A Draft's own card renders with no "Draft" chip (issue #405) —
 		// every caller that renders one (Home's Drafts row, Me's own Drafts
 		// list) already puts it inside its own "Drafts" section, so the
@@ -11187,7 +11233,7 @@
 		// show it as a secondary line; a short caption's title already
 		// *is* the whole caption, so repeating it as an "excerpt" would
 		// just be noise.
-		const excerpt = toPlainText(item.excerpt || '');
+		const excerpt = toPlainText(item.excerpt || '').trim();
 		const showExcerpt = excerpt && excerpt !== title;
 		// The stats/timestamp rows render as a sibling of .daymark-recent__body,
 		// not nested inside it — a kind with a small leading thumbnail (article
@@ -11229,14 +11275,14 @@
 	// already exists — see toggleComment()/renderCommentToggle().
 	function renderSubscriptionPostCard(item) {
 		const kind = resolveCardKind(item);
-		const title = item.title || __('Untitled post', 'daymark');
-		const excerpt = toPlainText(item.excerpt || '');
+		const title = cardTitle(item, __('Untitled post', 'daymark'));
+		const excerpt = toPlainText(item.excerpt || '').trim();
 		// Every kind but the media-dominant ones shows its excerpt — an
 		// image/video/gallery/mixed card already carries the point in its
 		// own banner, so a caption stays secondary the same way a Mark's
 		// own excerpt does; article/link/audio/note all lean on the text.
 		// A quote post's quote is already its banner (issue #168).
-		const showExcerpt = excerpt && !MEDIA_DOMINANT_KINDS.includes(kind) && 'quote' !== kind;
+		const showExcerpt = excerpt && excerpt !== title && !MEDIA_DOMINANT_KINDS.includes(kind) && 'quote' !== kind;
 		const id = esc(String(item.id));
 		// A <button> can't contain another interactive <button> — the
 		// existing subscription-post button (unchanged below) becomes a
@@ -11254,8 +11300,10 @@
 		// own. Its excerpt still shows (showExcerpt above reads the real
 		// kind), and the rail icon still says "Article".
 		// A quote post with no quote text to show at all lays out as a
-		// plain note instead of an empty banner.
-		let layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		// plain note instead of an empty banner. A followed Daymark site's
+		// Check In with a photo shows the photo, as the origin's own card
+		// does (a followed post has no coordinates for a map).
+		let layoutKind = ('article' === kind || 'checkin' === kind) && item.featured_image_url ? 'image' : kind;
 		if ('quote' === kind && !quoteForItem(item).text) {
 			layoutKind = 'note';
 		}

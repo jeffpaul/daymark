@@ -336,7 +336,7 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 				'credit' => '',
 			);
 
-		return array(
+		$normalized = array(
 			'title'              => $title,
 			'excerpt'            => $excerpt,
 			'author'             => $author,
@@ -353,6 +353,99 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			'quote_text'         => $quote['text'],
 			'quote_credit'       => $quote['credit'],
 		);
+
+		return self::apply_daymark_field( $normalized, $raw_item['daymark'] ?? null );
+	}
+
+	/**
+	 * Overlay what another Daymark site says about its own post (the
+	 * `daymark` field, Daymark_Post_Export) on top of what normalize()
+	 * worked out from WordPress's own fields. The origin knows its Mark type,
+	 * reblog or reply target, place name, and Featured Content for certain;
+	 * the guesses above are only right some of the time.
+	 *
+	 * Featured Content wins over the Mark's own type for audio, video,
+	 * gallery, and quote, the same rule the origin's own Timeline card
+	 * follows (mediaKindForItem() in assets/app.js). A post from any other
+	 * WordPress site has no field and comes back unchanged.
+	 *
+	 * @param array<string, mixed> $normalized normalize()'s result so far.
+	 * @param mixed                $field      The post's raw `daymark` field.
+	 * @return array<string, mixed>
+	 */
+	private static function apply_daymark_field( array $normalized, $field ): array {
+		if ( ! is_array( $field ) || (int) ( $field['version'] ?? 0 ) < 1 ) {
+			return $normalized;
+		}
+
+		$interaction = is_array( $field['interaction'] ?? null ) ? $field['interaction'] : array();
+		$normalized += Daymark_Subscription_Interaction::sanitize(
+			(string) ( $interaction['type'] ?? '' ),
+			(string) ( $interaction['url'] ?? '' )
+		);
+
+		$type = sanitize_key( (string) ( $field['type'] ?? '' ) );
+
+		if ( in_array( $type, array( 'image', 'video', 'audio', 'gallery', 'note', 'checkin' ), true ) ) {
+			$normalized['post_format'] = $type;
+		}
+
+		$fc = is_array( $field['featured_content'] ?? null ) ? $field['featured_content'] : array();
+
+		switch ( (string) ( $fc['type'] ?? '' ) ) {
+			case 'audio':
+			case 'video':
+				$normalized['post_format'] = (string) $fc['type'];
+				$media_url                 = esc_url_raw( (string) ( $fc['url'] ?? '' ), array( 'http', 'https' ) );
+				$image_url                 = esc_url_raw( (string) ( $fc['image'] ?? '' ), array( 'http', 'https' ) );
+
+				if ( '' !== $image_url ) {
+					$normalized['featured_image_url'] = $image_url;
+				}
+
+				$normalized['raw_media'] = array_values( array_filter( array( $media_url, $normalized['featured_image_url'] ) ) );
+				break;
+
+			case 'gallery':
+				$images = Daymark_Subscription_Content_Sniffer::gallery_images( '', array_map( 'strval', (array) ( $fc['images'] ?? array() ) ) );
+
+				if ( ! empty( $images ) ) {
+					$normalized['post_format']    = 'gallery';
+					$normalized['gallery_images'] = $images;
+
+					if ( '' === $normalized['featured_image_url'] ) {
+						$normalized['featured_image_url'] = $images[0];
+					}
+
+					$normalized['raw_media'] = $images;
+				}
+				break;
+
+			case 'quote':
+				$text = sanitize_text_field( (string) ( $fc['text'] ?? '' ) );
+
+				if ( '' !== $text ) {
+					if ( mb_strlen( $text ) > Daymark_Subscription_Content_Sniffer::QUOTE_MAX_CHARS ) {
+						$text = rtrim( mb_substr( $text, 0, Daymark_Subscription_Content_Sniffer::QUOTE_MAX_CHARS - 1 ) ) . "\u{2026}";
+					}
+
+					$normalized['post_format']  = 'quote';
+					$normalized['quote_text']   = $text;
+					$normalized['quote_credit'] = sanitize_text_field( (string) ( $fc['credit'] ?? '' ) );
+				}
+				break;
+
+			case 'link':
+				$link_url = esc_url_raw( (string) ( $fc['url'] ?? '' ), array( 'http', 'https' ) );
+
+				if ( '' !== $link_url ) {
+					$normalized['post_format'] = 'link';
+					$normalized['link_url']    = $link_url;
+				}
+				break;
+		}
+
+		return $normalized;
 	}
 
 	/**

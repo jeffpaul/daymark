@@ -680,6 +680,75 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * An ordinary post with no excerpt shows the first words of its text,
+	 * with image blocks and markup left out.
+	 */
+	public function test_post_without_excerpt_falls_back_to_its_first_words() {
+		wp_set_current_user( $this->author_a );
+
+		$words = array();
+		for ( $i = 1; $i <= 40; $i++ ) {
+			$words[] = 'word' . $i;
+		}
+
+		self::factory()->post->create(
+			array(
+				'post_author'  => $this->author_a,
+				'post_status'  => 'publish',
+				'post_title'   => 'No Excerpt Here',
+				'post_excerpt' => '',
+				'post_content' => "<!-- wp:image -->\n<figure class=\"wp-block-image\"><img src=\"https://example.com/a.jpg\" alt=\"\"/><figcaption>Photo caption</figcaption></figure>\n<!-- /wp:image -->\n\n<!-- wp:paragraph -->\n<p>Tom &amp; <strong>Jerry</strong> " . implode( ' ', $words ) . "</p>\n<!-- /wp:paragraph -->",
+			)
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( 'Tom & Jerry word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19 word20 word21…', $items[0]['excerpt'] );
+	}
+
+	/**
+	 * A Mark with no caption keeps an empty excerpt: its content is media
+	 * or a place block, not text worth repeating on the card.
+	 */
+	public function test_mark_without_caption_does_not_fall_back_to_content() {
+		wp_set_current_user( $this->author_a );
+
+		$mark_id = $this->create_mark( '2024-01-01 00:00:00', 'Checked in somewhere', 'checkin' );
+		wp_update_post(
+			array(
+				'ID'           => $mark_id,
+				'post_excerpt' => '',
+			)
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( '', $items[0]['excerpt'] );
+	}
+
+	/**
+	 * A followed post whose feed carried no summary falls back to the first
+	 * words of its cached body.
+	 */
+	public function test_subscription_post_without_excerpt_falls_back_to_its_body() {
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_subscription_post( $subscription_id, '2024-01-02 00:00:00', 'Untitled Thought', 'full' );
+		wp_update_post(
+			array(
+				'ID'           => $post_id,
+				'post_excerpt' => '',
+			)
+		);
+		update_post_meta( $post_id, 'body_content', '<p>Short body from the <em>feed</em>.</p>' );
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( 'Short body from the feed.', $items[0]['excerpt'] );
+	}
+
+	/**
 	 * An ordinary post's own real WordPress post format is reported
 	 * (defaulting to 'standard' when never set) so the app shell can tell
 	 * a Standard post that merely carries a featured image apart from a

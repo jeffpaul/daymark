@@ -55,6 +55,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const CARD_QUOTE_MAX_CHARS = 280;
 
 	/**
+	 * Words a Timeline card shows from a post's text when the post has no
+	 * excerpt (see card_excerpt()). Matches the length the publisher uses
+	 * for a Mark's own excerpt.
+	 *
+	 * @var int
+	 */
+	private const CARD_EXCERPT_WORDS = 24;
+
+	/**
 	 * Register REST routes. Hooked to rest_api_init.
 	 *
 	 * @return void
@@ -4333,7 +4342,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $check;
 		}
 
-		$permalink    = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+
+		// Already liked with IndieBlocks (Daymark_IndieBlocks_Likes): report
+		// it as liked and send nothing, so the origin never gets a second
+		// Like. A Like Mark of Daymark's own still wins, below.
+		if (
+			Daymark_IndieBlocks_Likes::find_like_id( get_current_user_id(), $permalink ) > 0
+			&& 0 === $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink )
+		) {
+			return rest_ensure_response(
+				array(
+					'method'   => 'indieblocks',
+					'liked'    => true,
+					'mark_id'  => 0,
+					'delivery' => '',
+				)
+			);
+		}
+
 		$availability = Daymark_Like_Delivery::resolve( $post_id );
 		$jetpack      = '' !== $permalink && $availability['jetpack'] ? $this->maybe_jetpack_like( $post_id, $permalink ) : null;
 
@@ -4379,11 +4406,15 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $check;
 		}
 
-		$user_id = get_current_user_id();
+		$user_id   = get_current_user_id();
+		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
+
+		// Daymark never removes a Like made with IndieBlocks (it only reads
+		// them), so the post stays liked while one exists.
+		$indieblocks_liked = Daymark_IndieBlocks_Likes::find_like_id( $user_id, $permalink ) > 0;
 
 		if ( Daymark_Jetpack_Engagement::is_liked( $user_id, $post_id ) ) {
-			$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
-			$origin    = '' !== $permalink ? Daymark_Jetpack_Engagement::resolve_origin( $permalink ) : null;
+			$origin = '' !== $permalink ? Daymark_Jetpack_Engagement::resolve_origin( $permalink ) : null;
 
 			if ( null !== $origin ) {
 				$result = Daymark_Jetpack_Engagement::unlike( $origin['site_id'], $origin['post_id'] );
@@ -4400,13 +4431,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response(
 				array(
 					'method' => 'jetpack',
-					'liked'  => false,
+					'liked'  => $indieblocks_liked,
 				)
 			);
 		}
 
-		$permalink = esc_url_raw( (string) get_post_meta( $post_id, 'permalink', true ) );
-		$existing  = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
+		$existing = '' !== $permalink ? $this->find_own_mark_id_by_target_url( '_daymark_like_of', $permalink ) : 0;
+
+		if ( 0 === $existing && $indieblocks_liked ) {
+			return new WP_Error(
+				'daymark_like_from_indieblocks',
+				__( 'You liked this with IndieBlocks. To remove that Like, delete it in WordPress.', 'daymark' ),
+				array( 'status' => 409 )
+			);
+		}
 
 		// Trashing the Mark also queues an ActivityPub `Undo` when it
 		// carried a queued Like (Daymark_ActivityPub_Engagement::maybe_undo()
@@ -4417,8 +4455,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		return rest_ensure_response(
 			array(
-				'method' => 'classic',
-				'liked'  => false,
+				'method' => $indieblocks_liked ? 'indieblocks' : 'classic',
+				'liked'  => $indieblocks_liked,
 			)
 		);
 	}
@@ -4535,55 +4573,55 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// the same key for a different meaning on the same endpoint
 			// would be confusing at best. `post_format` below is this item
 			// shape's closest equivalent to a Mark's `type`.
-			'item_type'          => 'subscription_post',
-			'id'                 => absint( $post_id ),
-			'subscription_id'    => $subscription_id,
-			'title'              => html_entity_decode(
+			'item_type'           => 'subscription_post',
+			'id'                  => absint( $post_id ),
+			'subscription_id'     => $subscription_id,
+			'title'               => html_entity_decode(
 				sanitize_text_field( get_the_title( $post_id ) ),
 				ENT_QUOTES,
 				'UTF-8'
 			),
-			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
-			'author'             => sanitize_text_field( (string) get_post_meta( $post_id, 'author', true ) ),
+			'excerpt'             => $this->card_excerpt( $post_id, (string) get_post_meta( $post_id, 'body_content', true ) ),
+			'author'              => sanitize_text_field( (string) get_post_meta( $post_id, 'author', true ) ),
 			// The *source* site's URL for this post — for a future in-app
 			// "open this" action, not a link to render directly on this
 			// site (this CPT has no permalink of its own; see
 			// Daymark_Subscription_Post_Type's class docblock).
-			'permalink'          => $permalink,
+			'permalink'           => $permalink,
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
-			'date'               => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
-			'post_format'        => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
-			'featured_image_url' => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
+			'date'                => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
+			'post_format'         => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
+			'featured_image_url'  => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
 			// The item's own detected outbound link, when it had no
 			// confirmed media of its own — see
 			// Daymark_Subscription_Content_Sniffer::sniff(). '' most of the
 			// time; present, the app shell's full-screen post view offers
 			// an oEmbed preview of it via GET /subscription-posts/{id}/oembed.
-			'link_url'           => esc_url_raw( (string) get_post_meta( $post_id, 'link_url', true ) ),
+			'link_url'            => esc_url_raw( (string) get_post_meta( $post_id, 'link_url', true ) ),
 			// What this post does to another post — reply, repost, like,
 			// bookmark, or rsvp — with that post's URL and an RSVP's
 			// answer (issue #168). Empty strings for most posts. The card
 			// shows a context line; the post view previews `url`.
-			'interaction'        => Daymark_Subscription_Interaction::from_post( $post_id ),
+			'interaction'         => Daymark_Subscription_Interaction::from_post( $post_id ),
 			// A quote post's quote and credit, for its card's quote banner
 			// (issue #168). '' unless the post is quote-format and its
 			// content had a blockquote.
-			'quote_text'         => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_text', true ) ),
-			'quote_credit'       => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_credit', true ) ),
-			'content_state'      => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
+			'quote_text'          => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_text', true ) ),
+			'quote_credit'        => sanitize_text_field( (string) get_post_meta( $post_id, 'quote_credit', true ) ),
+			'content_state'       => in_array( $content_state, array( 'full', 'excerpt_only', 'pruned' ), true ) ? $content_state : 'excerpt_only',
 			// The subscription's cached favicon, used as a pruned
 			// rich-media post's Timeline placeholder in place of its
 			// cleared embed (per the PRD). '' when the subscription row is
 			// gone (should not normally happen while its posts still
 			// exist) or never had a favicon resolved.
-			'site_icon_url'      => esc_url_raw( (string) ( $subscription['site_icon_url'] ?? '' ) ),
+			'site_icon_url'       => esc_url_raw( (string) ( $subscription['site_icon_url'] ?? '' ) ),
 			// The subscribed site's own URL and title, for a tap on this
 			// item's avatar to offer "visit this site" and "show only this
 			// site's posts" — both read from the row already fetched above,
 			// no extra lookup.
-			'site_url'           => esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) ),
-			'site_title'         => sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) ),
-			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
+			'site_url'            => esc_url_raw( (string) ( $subscription['site_url'] ?? '' ) ),
+			'site_title'          => sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) ),
+			'bookmarked'          => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 			// Whether the current user has already published a Mark engaging
 			// with this exact post (issue #41 follow-up: "show whether I've
 			// liked, commented on, or reblogged a subscribed post"). '' when
@@ -4593,27 +4631,31 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// a reliable like/repost count for someone else's post), so this
 			// is the buildable fallback: Daymark's own record of the user's
 			// own engagement, not the origin site's real totals.
-			'replied_mark_id'    => $replied_mark_id,
-			'liked_mark_id'      => $liked_mark_id,
-			'reposted_mark_id'   => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
+			'replied_mark_id'     => $replied_mark_id,
+			'liked_mark_id'       => $liked_mark_id,
+			'reposted_mark_id'    => $this->find_own_mark_id_by_target_url( '_daymark_repost_of', $permalink ),
 			// Jetpack-native equivalents of the two fields above (issue #391)
 			// — set only when the Like/Comment was delivered directly to
 			// WordPress.com's own API rather than via a local Mark, so
 			// there's no Mark ID to key off of the way the classic path's
 			// own fields do.
-			'jetpack_liked'      => $jetpack_liked,
-			'jetpack_commented'  => $jetpack_commented,
+			'jetpack_liked'       => $jetpack_liked,
+			'jetpack_commented'   => $jetpack_commented,
+			// A Like the user already made with the IndieBlocks plugin
+			// (Daymark_IndieBlocks_Likes), 0 when none. Read-only: Daymark
+			// shows it as liked but never removes it.
+			'indieblocks_like_id' => Daymark_IndieBlocks_Likes::find_like_id( $user_id, $permalink ),
 			// Whether a Like can reach this post's origin at all (see
 			// Daymark_Like_Delivery). Cache-only, never a live fetch during
 			// a Timeline request: false when no mechanism exists, null when
 			// the origin hasn't been looked up yet (the client resolves it
 			// via GET .../like-availability), else the cached answer.
-			'like_available'     => Daymark_Like_Delivery::cached_availability( $permalink ),
+			'like_available'      => Daymark_Like_Delivery::cached_availability( $permalink ),
 			// Whether this user's own Like/Comment actually reached the
 			// origin: pending|sent|failed|not_sent, '' when there's nothing
 			// (or, for a native REST comment, nothing recorded) to report.
-			'like_delivery'      => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
-			'comment_delivery'   => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
+			'like_delivery'       => Daymark_Like_Delivery::like_state( $jetpack_liked, $liked_mark_id, $permalink ),
+			'comment_delivery'    => Daymark_Like_Delivery::comment_state( $jetpack_commented, $replied_mark_id, $permalink ),
 		);
 
 		// A gallery post's first four photos and photo count, for its card's
@@ -4687,7 +4729,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// previously exposed here, so a Timeline card had no way to show
 			// a Note Mark's actual text, only its (often timestamp-fallback)
 			// title.
-			'excerpt'            => sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) ),
+			'excerpt'            => $this->card_excerpt( $post_id ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
@@ -4981,6 +5023,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return count( $comments ) + $local_uncounted;
+	}
+
+	/**
+	 * Words shown under a Timeline card's title for a post with no excerpt.
+	 *
+	 * A post's own excerpt wins. Without one, the card shows the first
+	 * CARD_EXCERPT_WORDS words of the post's text, so an ordinary post
+	 * written in the block editor (or a followed post whose feed carried
+	 * no summary) still shows what it is about. A Mark is left alone: its
+	 * excerpt is always its caption, and a Mark with no caption (a photo,
+	 * a Check In) has nothing in its content worth repeating as text.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $html    Content to fall back to. Defaults to the
+	 *                        post's own post_content.
+	 * @return string Plain-text excerpt, or '' when there's no text.
+	 */
+	private function card_excerpt( int $post_id, string $html = '' ): string {
+		$excerpt = sanitize_text_field( (string) get_post_field( 'post_excerpt', $post_id ) );
+
+		if ( '' !== $excerpt || get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+			return $excerpt;
+		}
+
+		if ( '' === $html ) {
+			// Drops image, embed, and other non-text blocks, as core's own
+			// automatic excerpt does.
+			$html = excerpt_remove_blocks( (string) get_post_field( 'post_content', $post_id ) );
+		}
+
+		$text = wp_strip_all_tags( strip_shortcodes( $html ), true );
+		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
+
+		return sanitize_text_field( wp_trim_words( $text, self::CARD_EXCERPT_WORDS, '…' ) );
 	}
 
 	/**

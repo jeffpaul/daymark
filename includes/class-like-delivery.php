@@ -94,7 +94,7 @@ class Daymark_Like_Delivery {
 	 */
 	private static function page_mechanisms_exist( int $user_id = 0 ): bool {
 		return Daymark_Jetpack_Engagement::current_user_connected( $user_id )
-			|| Daymark_Plugin_Detector::is_active( 'webmention' );
+			|| Daymark_Webmention::can_send();
 	}
 
 	/**
@@ -327,7 +327,7 @@ class Daymark_Like_Delivery {
 			&& (int) ( $signals['jetpack_post_id'] ?? 0 ) > 0
 			&& Daymark_Jetpack_Engagement::current_user_connected();
 		$webmention = '' !== (string) ( $signals['webmention_endpoint'] ?? '' )
-			&& Daymark_Plugin_Detector::is_active( 'webmention' );
+			&& Daymark_Webmention::can_send();
 		$bridgy_fed = Daymark_Bridgy_Fed::available() && Daymark_Bridgy_Fed::target_needs_bridge( $signals );
 
 		return self::result( $jetpack, $activitypub, $webmention, $bridgy_fed );

@@ -189,6 +189,28 @@ final class Daymark_Plugin {
 	public Daymark_Blogroll $blogroll;
 
 	/**
+	 * The `daymark` field on `wp/v2/posts`, for Daymark sites that follow
+	 * this one.
+	 *
+	 * @var Daymark_Post_Export
+	 */
+	public Daymark_Post_Export $post_export;
+
+	/**
+	 * Built-in Webmention sender (off while the Webmention plugin is active).
+	 *
+	 * @var Daymark_Webmention
+	 */
+	public Daymark_Webmention $webmention;
+
+	/**
+	 * Built-in Webmention receiver (off while the Webmention plugin is active).
+	 *
+	 * @var Daymark_Webmention_Receiver
+	 */
+	public Daymark_Webmention_Receiver $webmention_receiver;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -363,6 +385,9 @@ final class Daymark_Plugin {
 		$this->featured_content_social      = new Daymark_Featured_Content_Social();
 		$this->bridgy_fed                   = new Daymark_Bridgy_Fed();
 		$this->blogroll                     = new Daymark_Blogroll();
+		$this->post_export                  = new Daymark_Post_Export();
+		$this->webmention                   = new Daymark_Webmention();
+		$this->webmention_receiver          = new Daymark_Webmention_Receiver();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -461,6 +486,9 @@ final class Daymark_Plugin {
 		$this->featured_content_social->register();
 		$this->bridgy_fed->register();
 		$this->blogroll->register();
+		$this->post_export->register();
+		$this->webmention->register();
+		$this->webmention_receiver->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

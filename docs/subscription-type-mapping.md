@@ -239,6 +239,25 @@ the `type` filter, and a reblog can also be a photo.
   promotes a stored `standard` to `note`/`link`/`quote`, for any post still
   in the source's feed. It never changes a real format.
 
+## Daymark-to-Daymark: the `daymark` REST field
+
+A followed site running Daymark adds a `daymark` field to each post in
+`wp/v2/posts` (`Daymark_Post_Export`). The `wordpress` source reads it
+after its own guessing, so a Daymark origin's own answer wins:
+
+- **Mark type**: image, video, audio, gallery, note, and checkin set
+  `post_format` directly. A Check In stays `checkin` instead of becoming
+  `note` through WordPress's `status` format.
+- **Interaction**: a Reblog or reply Mark reports `repost` or `reply` and
+  its target URL, the same keys the `microformats` source reports.
+- **Featured Content**: audio, video, gallery, quote, and link set the
+  format and their card data (thumbnail, gallery images, quote text and
+  credit, link URL). As on the origin's own card, it wins over the Mark
+  type.
+
+A post from any other WordPress site has no field and is read exactly as
+before.
+
 ## Remaining gaps in detection itself
 
 Lower priority than the two above, since none is a structured signal a site

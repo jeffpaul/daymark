@@ -109,16 +109,17 @@ how that works from a user's side.
 
 - WordPress 7.0+ (the bundled AI Client powers optional AI Assist)
 - PHP 8.2+
-- To like subscribed posts: the [Webmention](https://wordpress.org/plugins/webmention/)
-  plugin (for sites that accept Webmentions), [Jetpack](https://wordpress.org/plugins/jetpack/)
+- To like subscribed posts: nothing extra for sites that accept Webmentions,
+  which includes every Daymark site (Daymark sends and receives Webmentions
+  itself unless the [Webmention](https://wordpress.org/plugins/webmention/)
+  plugin is active). For other sites: [Jetpack](https://wordpress.org/plugins/jetpack/)
   with your own WordPress.com account linked (for WordPress.com and
   Jetpack-connected sites), or the [ActivityPub](https://wordpress.org/plugins/activitypub/)
   plugin 8.1.0+ with your user enabled as an author (for Mastodon and other
   fediverse posts). A site bridged with [Bridgy Fed](https://fed.brid.gy/)
-  can instead like fediverse and Bluesky posts through the Webmention plugin
-  (check "This site is bridged with Bridgy Fed" on the Connectors tab).
+  can instead like fediverse and Bluesky posts through Webmention (check "This site is bridged with Bridgy Fed" on the Connectors tab).
   Without any of these, subscribed posts show no Like icon.
-  All three are listed on Settings -> Daymark -> Connectors.
+  These plugins are listed on Settings -> Daymark -> Connectors.
 
 ### Extending Daymark
 

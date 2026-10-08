@@ -105,7 +105,7 @@ class Daymark_Bridgy_Fed {
 	 * @return bool
 	 */
 	public static function available(): bool {
-		return self::is_bridged() && Daymark_Plugin_Detector::is_active( 'webmention' );
+		return self::is_bridged() && Daymark_Webmention::can_send();
 	}
 
 	/**

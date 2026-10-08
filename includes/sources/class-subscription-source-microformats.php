@@ -285,6 +285,21 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 			return new WP_Error( 'daymark_subscription_mf2_fetch_failed', $body->get_error_message() );
 		}
 
+		return $this->parse_body( $body, $url );
+	}
+
+	/**
+	 * Parse a page or mf2 JSON body that was already fetched into raw
+	 * items, the same way fetch() does after its own request. Public so the
+	 * built-in Webmention receiver (Daymark_Webmention_Receiver) can read
+	 * the source page it already fetched to verify the link, without a
+	 * second request.
+	 *
+	 * @param string $body Fetched page HTML or mf2 JSON.
+	 * @param string $url  URL the body came from (relative URLs resolve against it).
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function parse_body( string $body, string $url ): array {
 		$json_entries = $this->decode_json_items( $body );
 
 		if ( null !== $json_entries ) {
@@ -320,6 +335,23 @@ class Daymark_Subscription_Source_Microformats implements Daymark_Subscription_S
 		}
 
 		return $raw_items;
+	}
+
+	/**
+	 * The inner HTML of the first element carrying a class token anywhere in
+	 * some HTML, with nesting balanced the same way entry parsing does.
+	 * Public for the Webmention receiver, which reads a source page's
+	 * e-content and author even when the theme never added an h-entry
+	 * wrapper.
+	 *
+	 * @param string $html        HTML.
+	 * @param string $class_token Class token, e.g. 'e-content'.
+	 * @return string Inner HTML, or ''.
+	 */
+	public function first_class_inner_html( string $html, string $class_token ): string {
+		$matches = $this->find_elements_by_class( $html, $class_token );
+
+		return (string) ( $matches[0]['inner_html'] ?? '' );
 	}
 
 	/**

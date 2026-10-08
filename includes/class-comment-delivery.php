@@ -93,7 +93,7 @@ class Daymark_Comment_Delivery {
 			// already fetched in the same discover_origin_signals() call.
 		}
 
-		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
+		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
 			return self::send_via_webmention( $permalink, $text );
 		}
 
@@ -147,7 +147,7 @@ class Daymark_Comment_Delivery {
 			return array( 'method' => 'jetpack' );
 		}
 
-		if ( '' !== $signals['webmention_endpoint'] && Daymark_Plugin_Detector::is_active( 'webmention' ) ) {
+		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
 			return array( 'method' => 'webmention' );
 		}
 
