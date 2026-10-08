@@ -46,7 +46,9 @@ likely to be asked to change direction even if it works correctly.
 - **Report a bug or request a feature** via
   [GitHub issues](https://github.com/jeffpaul/daymark/issues). Include your
   WordPress and PHP versions, the steps to reproduce, and what you expected
-  to happen. Search existing and closed issues first — with this many past
+  to happen. Start it with a short plain-language summary (see
+  [Start with a plain-language summary](#start-with-a-plain-language-summary)).
+  Search existing and closed issues first — with this many past
   reports, a duplicate is likely. **Found a security vulnerability?** Do not
   open a public issue — see [SECURITY.md](SECURITY.md) for private
   reporting instead.
@@ -66,6 +68,32 @@ likely to be asked to change direction even if it works correctly.
   (`daymark_register_connectors` + `daymark_import_network_responses`) is open
   to any network — a companion plugin can register a real destination
   without changing Daymark core.
+
+## Start with a plain-language summary
+
+Every issue and every pull request opens with a short **Summary**: two to
+four sentences that a middle-school student could follow. Say what is
+wrong or what changes, who notices it, and why it matters. Leave out class
+names, file paths, and jargon. The detailed write-up goes below it.
+
+The summary is how a maintainer decides, in one read, what a report or a
+change is about. This matters most when an AI coding agent wrote most of
+the issue or PR. Agent-written text is often long and dense, and the
+summary is the part a person must be able to check quickly. If you can't
+explain the change simply, it is probably not ready to submit yet.
+
+A good PR summary:
+
+> When you liked a post twice, Daymark saved two copies of your like.
+> This change makes Daymark notice the first like and reuse it, so you
+> only ever get one.
+
+A summary that is too technical:
+
+> Adds server-side idempotency to `Daymark_Publisher::publish()` keyed on
+> `_daymark_like_of` and fixes stale `liked_mark_id` state in `_bySubId`.
+
+Both issue forms and the PR template have a Summary section for this.
 
 ## Repository layout
 
@@ -299,7 +327,9 @@ after merge, as a red Hooks Docs run on `main` to fix in a follow-up commit.
    `.github/blueprints/sample-images/`).
 6. **Write the description as the commit message.** Merges here are squashed
    using the PR title and description verbatim, so that text becomes
-   permanent git history. Say what changed and why, and delete the
+   permanent git history. Open it with the plain-language summary described
+   in [Start with a plain-language summary](#start-with-a-plain-language-summary),
+   then say what changed and why in detail, and delete the
    template's HTML comment (and the `Fixes #` line if there is no issue).
    The PR template is deliberately almost empty for this reason — the
    review checklist, the Playground preview button, and contributor credit

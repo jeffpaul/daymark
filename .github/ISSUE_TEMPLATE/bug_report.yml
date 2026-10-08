@@ -4,6 +4,16 @@ title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: >-
+        Two to four plain sentences a middle-school student could follow.
+        What goes wrong, who runs into it, and why it matters. Skip code names and jargon; put the details in the fields below.
+      placeholder: "When I tap Like on a post twice, Daymark saves two copies of my like instead of one."
+    validations:
+      required: true
+  - type: textarea
     id: what-happened
     attributes:
       label: What happened?
