@@ -36,6 +36,9 @@ can't act on them.
 - The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - Settings -> Daymark -> General can now set which destinations and categories each type of Mark starts with. Before, destinations could only be changed in code, and categories had no site default. ([#488](https://github.com/jeffpaul/daymark/pull/488))
+- After you first activate Daymark, a notice in wp-admin links to the app and lists three first steps: open it on your phone, follow a few sites, and review Connectors. A QR code in the notice, and on Settings -> Daymark -> General, opens the app when you point your phone's camera at it. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- Home shows an Install card until Daymark is on your home screen, and Me has an Install Daymark row. On Android, and in desktop Chrome or Edge, it opens the browser's install prompt; on an iPhone or iPad it shows the Add to Home Screen steps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
+- The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 - Settings -> Daymark -> General can now keep Notes off your blog's home page and main feed. A Note is any post with the Aside format, from Daymark or the block editor, and it still has its own page and appears in archives, search, and the Timeline. An Aside post published without a title now gets one from its first words, as Notes from the app already do. ([#493](https://github.com/jeffpaul/daymark/pull/493))
 
 ### Changed
@@ -54,6 +57,7 @@ can't act on them.
 - With no social destination connected, the Publish screen now says your site is the destination and where the Mark also reaches through an active fediverse or Bluesky plugin. Before, it said "No social networks connected yet". ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing. ([#488](https://github.com/jeffpaul/daymark/pull/488))
+- The Like and Comment hints no longer promise that the other site always receives your like or comment, and say what happens when it can't. The readme now explains how to follow a site, and that sharing to Daymark from other apps works on Android only, since iPhone and iPad don't support it for web apps. ([#489](https://github.com/jeffpaul/daymark/pull/489))
 
 ### Fixed
 

@@ -20,7 +20,8 @@ Open Daymark on your phone, tap to capture a photo, a video, or a quick voice no
 
 * **It feels like your favorite social app — because your site deserves to.** Add Daymark to your phone's home screen and it opens like a real app: fast, focused, and built for one-handed use. No admin menus, no clutter — just capture, caption, and go.
 * **Your camera is one tap away.** Choose Photo, Video, or Audio and Daymark opens your camera or microphone right away, ready to capture the moment. Already have the shot? Grabbing it from your library is just as easy.
-* **Share to Daymark from anywhere on your phone.** Found something worth posting in Photos, Safari, or any other app? Use your phone's own Share button and send it straight to Daymark — it's waiting for your caption before you've even opened the app.
+* **Share to Daymark from other apps on Android.** Found something worth posting in Photos, Chrome, or any other app? Use your phone's own Share button and send it straight to Daymark — it's waiting for your caption before you've even opened the app. (iPhone and iPad don't let web apps receive shares yet.)
+* **Follow the sites you love.** Subscribe to any blog or site with a feed, and its new posts appear in your Daymark Timeline beside your own. Like, comment, reblog, or bookmark them without leaving the app.
 * **You never lose your work.** Start a caption, get interrupted, lose your signal on the subway — Daymark quietly saves everything as you go. Publish with no connection at all and it goes out the moment you're back online. Nothing you write is ever at risk of disappearing.
 * **Tap Publish and move on with your day.** You're never stuck staring at a spinner, even for a big video or a whole gallery of photos — Daymark confirms instantly and finishes the upload quietly in the background.
 * **It's genuinely yours, for good.** Everything you publish is a real WordPress post, not a locked-in, proprietary format. Your content works with your theme, your feeds, your backups — and stays exactly where it is even if you ever stop using Daymark.
@@ -93,7 +94,7 @@ Daymark only offers destinations that can actually publish (and pull replies bac
 
 If you run the ActivityPub, ATmosphere, or Webmention plugins, replies they deliver arrive as native WordPress comments and are recognized and labeled in Daymark notifications ("Reply from Bluesky", "Reply from the Fediverse", …) — by push, live, with no polling. When a polling connector is registered, an hourly background sync (plus a refresh whenever you view notifications) imports replies from your syndicated copies too, deduplicated per reply.
 
-Replying to a subscribed post works the same way, in reverse: tap "Reply" on an expanded Timeline card, write your reply, and publish it as a normal Mark. The published Mark's permalink carries a `u-in-reply-to` link to the source, and the Webmention plugin (if installed and active) notifies the source automatically the moment your reply goes live — Daymark itself never sends, receives, or verifies a Webmention, it just makes sure the markup a Webmention plugin looks for is there. For the best Daymark + IndieWeb experience, install the [Webmention plugin](https://wordpress.org/plugins/webmention/) (and ActivityPub/ATmosphere alongside it) so replies and mentions from across the web show up in your notifications automatically — Settings -> Daymark's Connectors tab lists all three with an Install/Activate button right there, no need to leave wp-admin. Don't want to install the ActivityPub plugin at all? [Bridgy Fed](https://fed.brid.gy/) is a free, hosted bridge — not a plugin — that gives your site a fediverse and Bluesky presence through the Webmention support above, under an auto-generated handle on its own domain rather than a native handle on yours; it's also listed on the Connectors tab, right alongside the plugin options.
+Commenting on a post from a site you follow works the other way round: tap Comment on the post, write your comment, and Daymark sends it. When both sites support Webmention, Daymark publishes your comment as a small Mark on your site with a `u-in-reply-to` link to the post, and the Webmention plugin notifies the other site. If you've linked a WordPress.com account through Jetpack, a comment on a WordPress.com site goes through WordPress.com. If the other site can't receive your comment, Daymark opens the post so you can comment on the site itself. Daymark never sends, receives, or verifies a Webmention itself; it makes sure the markup a Webmention plugin looks for is there. For the best Daymark + IndieWeb experience, install the [Webmention plugin](https://wordpress.org/plugins/webmention/) (and ActivityPub/ATmosphere alongside it) so replies and mentions from across the web show up in your notifications automatically — Settings -> Daymark's Connectors tab lists all three with an Install/Activate button right there, no need to leave wp-admin. Don't want to install the ActivityPub plugin at all? [Bridgy Fed](https://fed.brid.gy/) is a free, hosted bridge — not a plugin — that gives your site a fediverse and Bluesky presence through the Webmention support above, under an auto-generated handle on its own domain rather than a native handle on yours; it's also listed on the Connectors tab, right alongside the plugin options.
 
 = Why don't I see a Like icon on subscribed posts? =
 
@@ -130,6 +131,12 @@ A developer can also set these from code, which takes priority over the checkbox
 
 Turning off Check In location also stops the weather lookup, since weather needs a location. "Coordinates in page markup" (off by default) adds a Check In's exact coordinates to its page as machine-readable h-geo markup, for other sites and feed readers.
 
+= How do I follow a site? =
+
+Go to Settings -> Daymark -> Subscriptions, paste the site's address, and click Subscribe. Daymark finds the site's feed and shows you the feeds it found, so you can pick one. New posts from the site then appear in your Daymark Timeline. Settings -> Daymark -> General sets how often Daymark checks for new posts.
+
+To follow many sites at once, import an OPML file from your feed reader on the Import / Export tab. With Jetpack and a linked WordPress.com account, you can also import the sites you follow in the WordPress.com Reader. Following sites needs an administrator, since the list is shared by everyone on the site.
+
 = Can I share the sites I follow as a blogroll? =
 
 Yes, if you want to. In Settings -> Daymark -> General, check "Share the sites you follow as a public blogroll". Daymark then publishes your active subscriptions as an OPML file that feed readers can import, and links to it from every page of your site with `<link rel="blogroll">`. To show the list on a page, add the Blogroll block. It's off by default.
@@ -162,7 +169,9 @@ It never does, for any Mark, whether or not there's a big upload involved. Tappi
 
 = Can I share a photo to Daymark from another app? =
 
-Yes, once you've added Daymark to your home screen (required for the share sheet to offer it as an app to share to). Share a photo, video, a link, or selected text from Photos, Safari, or almost any other app, and pick Daymark — it creates a draft with whatever you shared and opens straight into the composer so you can add a caption and publish. You need to be logged in already; the share sheet has no way to log you in first.
+Yes, on Android, once you've installed Daymark to your home screen (the Install card on Home, or Install Daymark on the Me screen, does this in one tap). Share a photo, video, a link, or selected text from almost any app, and pick Daymark — it creates a draft with whatever you shared and opens straight into the composer so you can add a caption and publish. You need to be logged in already; the share sheet has no way to log you in first.
+
+iPhone and iPad don't support sharing to a web app yet, so Daymark doesn't appear in their share sheet. There, open Daymark and pick the photo from the composer instead.
 
 = Can I create a Mark while offline? =
 

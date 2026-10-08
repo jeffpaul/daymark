@@ -660,6 +660,7 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_general_tab(): void {
 		?>
+		<?php $this->render_open_on_phone(); ?>
 		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
 		<?php $this->render_blogroll_form(); ?>
@@ -667,6 +668,34 @@ class Daymark_Admin_Subscriptions {
 		<?php $this->render_publishing_defaults_form(); ?>
 		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
 		<?php $this->render_notes_form(); ?>
+		<?php
+	}
+
+	/**
+	 * "Open Daymark on your phone": the app's address and a QR code of it,
+	 * so a site owner on a laptop can get to the app on their phone.
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_open_on_phone(): void {
+		$app_url = Daymark_Routes::app_url();
+		$qr_code = Daymark_Admin_Welcome::app_qr_code( 160 );
+		?>
+		<h2><?php esc_html_e( 'Open Daymark on your phone', 'daymark' ); ?></h2>
+		<div style="display:flex;flex-wrap:wrap;align-items:center;gap:1em 2em;">
+			<?php if ( '' !== $qr_code ) : ?>
+				<?php echo $qr_code; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- SVG built by Daymark_QR_Code from numbers only; its one text attribute is escaped there. ?>
+			<?php endif; ?>
+			<div style="flex:1 1 20em;">
+				<p>
+					<?php esc_html_e( 'Point your phone\'s camera at the code, or go to this address on your phone:', 'daymark' ); ?>
+					<br /><a href="<?php echo esc_url( $app_url ); ?>"><strong><?php echo esc_html( $app_url ); ?></strong></a>
+				</p>
+				<p class="description"><?php esc_html_e( 'Sign in there, then add Daymark to your home screen so it opens like an app.', 'daymark' ); ?></p>
+			</div>
+		</div>
 		<?php
 	}
 

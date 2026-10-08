@@ -24,6 +24,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 delete_option( 'daymark_activated' );
+delete_option( 'daymark_welcome_pending' );
 delete_option( 'daymark_version' );
 delete_option( 'daymark_pages' );
 delete_option( 'daymark_legacy_content_pages' );
