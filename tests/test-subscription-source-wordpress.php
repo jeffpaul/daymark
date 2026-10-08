@@ -465,4 +465,120 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'feed', $row['source_type'] );
 		$this->assertSame( 'https://brokenrest.example/feed/', $row['feed_url'] );
 	}
+
+	/**
+	 * A raw `wp/v2/posts` item from another Daymark site.
+	 *
+	 * @param array<string, mixed> $daymark The `daymark` field.
+	 * @param string               $format  WordPress post format.
+	 * @return array<string, mixed>
+	 */
+	private function daymark_item( array $daymark, string $format = 'standard' ): array {
+		return array(
+			'title'    => array( 'rendered' => 'A Mark' ),
+			'excerpt'  => array( 'rendered' => '<p>Some words about it.</p>' ),
+			'content'  => array( 'rendered' => '<p>Some words about it.</p>' ),
+			'link'     => 'https://friend.example/a-mark/',
+			'date_gmt' => '2026-10-01T10:00:00',
+			'format'   => $format,
+			'daymark'  => $daymark + array( 'version' => 1 ),
+		);
+	}
+
+	/** A followed Daymark site's Reblog keeps its "Reblogged from" target. */
+	public function test_normalize_reads_a_daymark_reblog() {
+		$normalized = $this->source->normalize(
+			$this->daymark_item(
+				array(
+					'type'        => 'note',
+					'interaction' => array(
+						'type' => 'repost',
+						'url'  => 'https://third.example/post/',
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'repost', $normalized['interaction'] );
+		$this->assertSame( 'https://third.example/post/', $normalized['interaction_url'] );
+		$this->assertSame( 'note', $normalized['post_format'] );
+	}
+
+	/** A Check In stays a Check In instead of becoming a Note. */
+	public function test_normalize_reads_a_daymark_checkin() {
+		$normalized = $this->source->normalize(
+			$this->daymark_item(
+				array(
+					'type'       => 'checkin',
+					'place_name' => 'Wildcat Stadium',
+				),
+				'status'
+			)
+		);
+
+		$this->assertSame( 'checkin', $normalized['post_format'] );
+	}
+
+	/** Featured Content wins over the Mark's own type, as on the origin's card. */
+	public function test_normalize_reads_daymark_featured_content() {
+		$video = $this->source->normalize(
+			$this->daymark_item(
+				array(
+					'type'             => 'note',
+					'featured_content' => array(
+						'type'  => 'video',
+						'url'   => 'https://www.youtube.com/watch?v=abc',
+						'image' => 'https://i.ytimg.com/vi/abc/hqdefault.jpg',
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'video', $video['post_format'] );
+		$this->assertSame( 'https://i.ytimg.com/vi/abc/hqdefault.jpg', $video['featured_image_url'] );
+		$this->assertContains( 'https://www.youtube.com/watch?v=abc', $video['raw_media'] );
+
+		$gallery = $this->source->normalize(
+			$this->daymark_item(
+				array(
+					'featured_content' => array(
+						'type'   => 'gallery',
+						'images' => array( 'https://friend.example/a.jpg', 'https://friend.example/b.jpg' ),
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'gallery', $gallery['post_format'] );
+		$this->assertSame( array( 'https://friend.example/a.jpg', 'https://friend.example/b.jpg' ), $gallery['gallery_images'] );
+
+		$quote = $this->source->normalize(
+			$this->daymark_item(
+				array(
+					'featured_content' => array(
+						'type'   => 'quote',
+						'text'   => 'Be kind.',
+						'credit' => 'Ada',
+					),
+				)
+			)
+		);
+
+		$this->assertSame( 'quote', $quote['post_format'] );
+		$this->assertSame( 'Be kind.', $quote['quote_text'] );
+		$this->assertSame( 'Ada', $quote['quote_credit'] );
+	}
+
+	/** An unknown or missing version, or no field at all, changes nothing. */
+	public function test_normalize_ignores_a_missing_or_invalid_daymark_field() {
+		$item = $this->daymark_item( array( 'type' => 'checkin' ), 'status' );
+
+		$item['daymark']['version'] = 0;
+		$this->assertSame( 'note', $this->source->normalize( $item )['post_format'] );
+
+		unset( $item['daymark'] );
+		$normalized = $this->source->normalize( $item );
+		$this->assertSame( 'note', $normalized['post_format'] );
+		$this->assertArrayNotHasKey( 'interaction', $normalized );
+	}
 }

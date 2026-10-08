@@ -11293,8 +11293,10 @@
 		// own. Its excerpt still shows (showExcerpt above reads the real
 		// kind), and the rail icon still says "Article".
 		// A quote post with no quote text to show at all lays out as a
-		// plain note instead of an empty banner.
-		let layoutKind = 'article' === kind && item.featured_image_url ? 'image' : kind;
+		// plain note instead of an empty banner. A followed Daymark site's
+		// Check In with a photo shows the photo, as the origin's own card
+		// does (a followed post has no coordinates for a map).
+		let layoutKind = ('article' === kind || 'checkin' === kind) && item.featured_image_url ? 'image' : kind;
 		if ('quote' === kind && !quoteForItem(item).text) {
 			layoutKind = 'note';
 		}
