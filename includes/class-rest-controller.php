@@ -1431,10 +1431,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Daymark_Publisher::resolve_repost_of()/resolve_like_of().
 			'repost_of'            => (string) $request->get_param( 'repost_of' ),
 			'like_of'              => (string) $request->get_param( 'like_of' ),
-			// The Reblog screen's quote of the reblogged post (issue #393):
-			// its title and author, for Daymark_Publisher's core/quote block.
-			'quote_title'          => sanitize_text_field( (string) $request->get_param( 'quote_title' ) ),
-			'quote_author'         => sanitize_text_field( (string) $request->get_param( 'quote_author' ) ),
+			// The Reblog screen's credit for the reblogged post's author, shown
+			// in the caption of Daymark_Publisher's core/embed block.
+			// `quote_author` is the name an app cached before this change
+			// still sends.
+			'reblog_author'        => sanitize_text_field(
+				(string) ( $request->get_param( 'reblog_author' ) ?? $request->get_param( 'quote_author' ) )
+			),
 		);
 
 		// Only forward the helper selection when the client actually sent
@@ -2813,10 +2816,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return '<p>' . $slot_token . ( count( $gallery_slots ) - 1 ) . '</p>';
 		};
 
+		// An embed (a Reblog Mark's reblogged post, or a video pasted into
+		// any post) arrives as the provider's iframe, which wp_kses_post()
+		// removes. Each one is swapped for a placeholder and later for the
+		// same rebuilt, allowlisted iframe or image the app's link previews
+		// use. Its caption is kept. An embed WordPress couldn't resolve is
+		// just a link, and is left as it is.
+		$embed_slots = array();
+		$embed_token = 'DAYMARKEMBEDSLOT' . wp_generate_password( 12, false );
+		$swap_embed  = static function ( $block_content ) use ( &$embed_slots, $embed_token ) {
+			$block_content = (string) $block_content;
+			$caption_at    = stripos( $block_content, '<figcaption' );
+			$body          = false === $caption_at ? $block_content : substr( $block_content, 0, $caption_at );
+			$embed         = Daymark_Subscription_Oembed::safe_embed_from_html( $body );
+
+			if ( empty( $embed['html'] ) ) {
+				return $block_content;
+			}
+
+			$embed_slots[] = $embed['html'];
+			$caption       = '';
+
+			if ( false !== $caption_at && preg_match( '#<figcaption\b[^>]*>.*?</figcaption>#is', $block_content, $found ) ) {
+				$caption = $found[0];
+			}
+
+			return '<figure class="wp-block-embed"><p>' . $embed_token . ( count( $embed_slots ) - 1 ) . '</p>' . $caption . '</figure>';
+		};
+
 		add_filter( 'render_block_core/gallery', $swap_gallery, 10, 2 );
+		add_filter( 'render_block_core/embed', $swap_embed, 10, 1 );
 		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, not defining a new hook.
 		$content = apply_filters( 'the_content', $post->post_content );
 		remove_filter( 'render_block_core/gallery', $swap_gallery, 10 );
+		remove_filter( 'render_block_core/embed', $swap_embed, 10 );
 
 		// A Mark's content is written by whichever user published it, and
 		// wp_kses_post() keeps `class`, so an Author could otherwise give a
@@ -2837,6 +2870,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'#<p>\s*' . preg_quote( $slot_token, '#' ) . '(\d+)\s*</p>#',
 				static function ( $found ) use ( $gallery_slots ) {
 					return $gallery_slots[ (int) $found[1] ] ?? '';
+				},
+				$content
+			);
+		}
+
+		if ( ! empty( $embed_slots ) ) {
+			$content = (string) preg_replace_callback(
+				'#<p>\s*' . preg_quote( $embed_token, '#' ) . '(\d+)\s*</p>#',
+				static function ( $found ) use ( $embed_slots ) {
+					$html = $embed_slots[ (int) $found[1] ] ?? '';
+
+					return '' === $html ? '' : '<div class="daymark-oembed-preview">' . $html . '</div>';
 				},
 				$content
 			);

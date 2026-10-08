@@ -574,8 +574,8 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 	const titleInput = page.locator('[data-reblog-title]');
 	await expect(titleInput).toHaveValue(new RegExp(`^Reblog: ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 
-	const quote = page.locator('.daymark-reblog-quote');
-	await expect(quote.locator('a')).toHaveText(title);
+	const embed = page.locator('.daymark-reblog-embed');
+	await expect(embed.locator('.daymark-reblog-embed__title')).toHaveText(title);
 
 	await page.locator('[data-reblog-comment]').fill(`E2E reblog thoughts ${RUN_ID}`);
 	await page.locator('[data-action="reblog-publish"]').click();

@@ -320,6 +320,18 @@ class Daymark_Subscription_Oembed {
 	}
 
 	/**
+	 * Reduce embed HTML WordPress already produced (a core/embed block's
+	 * rendered output) to the same single, allowlisted `<iframe>` or
+	 * `<img>` resolve() returns, without fetching anything.
+	 *
+	 * @param string $html Rendered embed HTML.
+	 * @return array{type: string, html: string}|array{} Empty when there is no iframe or image.
+	 */
+	public static function safe_embed_from_html( string $html ): array {
+		return self::extract_safe_embed( $html );
+	}
+
+	/**
 	 * Reduce a provider's raw oEmbed HTML to a single, minimal,
 	 * attribute-allowlisted `<iframe>` or `<img>` this class rebuilds
 	 * itself — see class docblock for why the provider's own markup is

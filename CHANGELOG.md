@@ -43,6 +43,7 @@ can't act on them.
 
 ### Changed
 
+- A Reblog now shows the reblogged post as an embed of the original, the same card WordPress shows when you paste a link into a post, instead of a quote. The Reblog screen previews it as a card, and a caption credits the author and site. A site that can't be embedded shows a link. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 - Explore hides the "On this day" section when there are no Marks from this date in a prior year. ([#499](https://github.com/jeffpaul/daymark/pull/499))
 - The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop. ([#477](https://github.com/jeffpaul/daymark/pull/477))
 - A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it. ([#485](https://github.com/jeffpaul/daymark/pull/485))
@@ -64,6 +65,7 @@ can't act on them.
 
 ### Fixed
 
+- "Reblog without comment" failed with "A Mark needs media or text". It now publishes the reblogged post on its own. Backslashes typed in a caption are also kept now, where they used to be dropped. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 - A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size. ([#484](https://github.com/jeffpaul/daymark/pull/484))
 - The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did. ([#485](https://github.com/jeffpaul/daymark/pull/485))
