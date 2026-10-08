@@ -5870,7 +5870,7 @@
 			this.bindPullGesture();
 			const refreshBtn = root.querySelector('[data-refresh-timeline]');
 			if (refreshBtn) {
-				refreshBtn.addEventListener('click', () => this.pullRefresh());
+				refreshBtn.addEventListener('click', () => this.pullRefresh({ fromButton: true }));
 			}
 			// Close any open item menu or the launcher on an outside click
 			// or Escape (with focus returned to the launcher's own trigger —
@@ -6451,12 +6451,15 @@
 		// recently", and any it ran out of time for as "updating in the
 		// background".
 
-		async pullRefresh() {
+		// `fromButton`: the header button spins its own icon while the
+		// refresh runs, so the pull indicator stays hidden. Showing both
+		// would put two loading animations on screen for one refresh.
+		async pullRefresh({ fromButton = false } = {}) {
 			if (this._refreshing) {
 				return;
 			}
 			this._refreshing = true;
-			const indicator = root.querySelector('[data-pull-indicator]');
+			const indicator = fromButton ? null : root.querySelector('[data-pull-indicator]');
 			const button = root.querySelector('[data-refresh-timeline]');
 			if (indicator) {
 				indicator.classList.add('is-visible', 'is-settling');

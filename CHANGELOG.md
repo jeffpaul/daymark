@@ -69,6 +69,7 @@ can't act on them.
 - Unchecking a feed in "Choose from available feeds" no longer unfollows it unless you also tick "Also unfollow the feeds I unchecked". Before, one stray click could unfollow a site and move its saved posts to Trash. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message. ([#487](https://github.com/jeffpaul/daymark/pull/487))
 - If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types. ([#488](https://github.com/jeffpaul/daymark/pull/488))
+- Refreshing the Timeline with the header button now shows one loading animation, the spinning button, instead of also showing the pull-down spinner below it. ([#490](https://github.com/jeffpaul/daymark/pull/490))
 
 ## [0.19.0] - 2026-10-02
 

@@ -3737,10 +3737,11 @@ button.daymark-stat {
 	opacity: 1;
 }
 
-/* Only the button-triggered refresh (pullRefresh() called directly, not via
-   a drag) animates its transform — the touch-drag handlers manage their own
-   transition inline (none while actively tracking a finger) and never set
-   this class. */
+/* Set by pullRefresh() after a pull, to hold the spinner in place while
+   the refresh runs. The touch-drag handlers manage their own transition
+   inline (none while tracking a finger) and never set this class. The
+   header refresh button never shows this indicator; it spins its own icon
+   instead. */
 .daymark-pullrefresh.is-settling {
 	transition: opacity 0.15s ease, transform 0.2s ease;
 }
