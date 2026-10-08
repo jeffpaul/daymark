@@ -7932,8 +7932,7 @@
 		// uses — renderFeedItem() for the cards, rememberItem() so taps can
 		// hand openPostView() the item, no group headers (the section has
 		// its own heading; a single "this day" bucket would add nothing).
-		// A genuinely empty result keeps the section visible with a
-		// friendly note rather than removing it; a fetch failure shows an
+		// An empty result removes the whole section; a fetch failure shows an
 		// inline error, same shape as the Following list's own loading
 		// states.
 		async loadMemories(list) {
@@ -7958,15 +7957,7 @@
 			this._items = arr.slice();
 			arr.forEach((item) => rememberItem(this, item));
 			if (!arr.length) {
-				list.innerHTML =
-					'<p class="daymark-empty">' +
-					esc(
-						__(
-							'No memories from this day yet. Marks you publish today will appear here next year.',
-							'daymark'
-						)
-					) +
-					'</p>';
+				list.closest('section').remove();
 				return;
 			}
 			list.innerHTML = arr.map((item) => renderFeedItem(item)).join('');
