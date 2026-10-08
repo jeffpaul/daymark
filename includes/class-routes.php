@@ -618,6 +618,9 @@ class Daymark_Routes {
 			'adminSubscriptionsUrl'  => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'subscriptions' ) ) : '',
 			'adminConnectorsUrl'     => $can_manage_subscriptions ? esc_url_raw( Daymark_Admin_Subscriptions::tab_url( 'connectors' ) ) : '',
 			'canManageSubscriptions' => $can_manage_subscriptions,
+			// False for someone who can't publish (a Contributor): the server
+			// saves their Mark as a draft, and the app says so.
+			'canPublish'             => current_user_can( 'publish_posts' ),
 			'pluginsUrl'             => esc_url_raw( admin_url( 'plugins.php' ) ),
 			// The newest Timeline item this user has seen (or null), so
 			// Home can open anchored on it with newer posts above — see
