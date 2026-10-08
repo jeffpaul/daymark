@@ -35,6 +35,10 @@ const RUN_ID = `${Date.now()}`.slice(-6);
 // before the launcher opens and before the Check In composer asks for
 // location, which would block every test that creates a Mark. Their own
 // test below adds showAllHints() to see them.
+//
+// The Timeline reading position is blanked for the same reason: a test
+// that scrolls down Home would otherwise make the next test's Home open
+// partway down. The reading-position test below sets its own.
 function hideServerSeenHints() {
 	let stored;
 	Object.defineProperty(window, 'daymarkApp', {
@@ -43,6 +47,7 @@ function hideServerSeenHints() {
 		set: (value) => {
 			if (value && typeof value === 'object') {
 				value.interactionHintsSeen = ['launcher', 'checkin'];
+				value.timelinePosition = null;
 			}
 			stored = value;
 		},
@@ -1759,10 +1764,10 @@ test('home CTA sits in the thumb zone', async ({ page }) => {
 // keyboard focus reaches one of its own controls. The header does the
 // opposite — hides on scroll-up, reappears on scroll-down — so the two
 // chrome bars never both cost their height back at once.
-// Sets the current user's Timeline last-seen marker to the newest
-// Timeline item, so the next Home load opens at the top, not anchored
-// further down (see Daymark_Timeline_Position). For a test that seeds new
-// Marks and then needs Home's plain first-page layout.
+// Sets the current user's Timeline last-seen marker and reading position
+// to the newest Timeline item, so the next Home load opens at the top, not
+// anchored further down (see Daymark_Timeline_Position). For a test that
+// seeds new Marks and then needs Home's plain first-page layout.
 async function markNewestTimelineItemSeen(page) {
 	await page.evaluate(async () => {
 		const config = window.daymarkApp;
@@ -1774,14 +1779,114 @@ async function markNewestTimelineItemSeen(page) {
 		if (!Array.isArray(items) || !items.length) {
 			return;
 		}
-		await fetch(`${config.restUrl}timeline/last-seen`, {
-			method: 'POST',
-			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
-			credentials: 'same-origin',
-			body: JSON.stringify({ id: items[0].id }),
-		});
+		for (const route of ['timeline/last-seen', 'timeline/position']) {
+			await fetch(`${config.restUrl}${route}`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ id: items[0].id }),
+			});
+		}
 	});
 }
+
+// Home opens on the item that was at the top of the screen last time, with
+// a count of only the posts newer than the newest one seen before. Tapping
+// the header, or the Timeline tab, goes back to the top, and the reading
+// position follows the scroll. GET /timeline is mocked with 40 synthetic
+// posts so the positions are known; the two save routes are mocked so this
+// test doesn't move the real account's markers.
+test('Home opens at the saved reading position and taps return to the top', async ({ page }) => {
+	await loginAs(page);
+
+	const items = Array.from({ length: 40 }, (_, i) => ({
+		item_type: 'subscription_post',
+		id: 990000 + i,
+		subscription_id: 1,
+		title: `E2E position ${i} ${RUN_ID}`,
+		excerpt: 'A synthetic post for the reading-position test.',
+		author: '',
+		permalink: `https://example.invalid/position-${i}/`,
+		date: new Date(Date.now() - i * 60 * 1000).toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		like_available: false,
+		reposted_mark_id: 0,
+	}));
+
+	await page.route((url) => url.pathname.endsWith('/daymark/v1/timeline'), async (route) => {
+		const url = new URL(route.request().url());
+		const perPage = Number(url.searchParams.get('per_page') || 20);
+		const pageNum = Number(url.searchParams.get('page') || 1);
+		const slice = items.slice((pageNum - 1) * perPage, pageNum * perPage);
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(slice) });
+	});
+
+	const savedPositions = [];
+	await page.route('**/daymark/v1/timeline/position', async (route) => {
+		savedPositions.push(JSON.parse(route.request().postData() || '{}').id);
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '{"position":null}' });
+	});
+	await page.route('**/daymark/v1/timeline/last-seen', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '{"last_seen":null}' });
+	});
+
+	// Reading position: item 25. Newest seen before: item 10.
+	await page.addInitScript(() => {
+		let stored;
+		Object.defineProperty(window, 'daymarkApp', {
+			configurable: true,
+			get: () => stored,
+			set: (value) => {
+				if (value && typeof value === 'object') {
+					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.timelinePosition = { id: 990025, item_type: 'subscription_post' };
+					value.timelineLastSeen = { id: 990010, item_type: 'subscription_post' };
+				}
+				stored = value;
+			},
+		});
+	});
+
+	await page.goto('/daymark');
+
+	const anchored = page.locator('[data-subpost="990025"]');
+	await expect(anchored).toBeVisible();
+	await expect
+		.poll(async () => (await anchored.boundingBox()).y, { timeout: 5000 })
+		.toBeLessThan(250);
+	// Only the 10 posts above the newest one seen before count as new.
+	await expect(page.locator('[data-new-posts]')).toContainText('10 new posts');
+
+	// Tapping an empty part of the header goes back to the newest post,
+	// and the reading position follows.
+	const title = page.locator('.daymark-topbar__title');
+	const box = await title.boundingBox();
+	await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
+	await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 5000 }).toBe(0);
+	await expect.poll(() => savedPositions.at(-1), { timeout: 5000 }).toBe(990000);
+
+	// Scrolling down moves the reading position down with it.
+	await page.evaluate(() => {
+		const card = document.querySelector('[data-subpost="990012"]').closest('.daymark-recent__item-wrap');
+		const header = document.querySelector('.daymark-topbar');
+		const top = card.getBoundingClientRect().top + window.scrollY - header.offsetHeight;
+		window.scrollTo(0, top);
+	});
+	await expect.poll(() => savedPositions.at(-1), { timeout: 5000 }).toBe(990012);
+
+	// The Timeline tab, tapped while already on the Timeline, also goes to
+	// the top instead of doing nothing.
+	await page.locator('.daymark-bottomnav__link[aria-current="page"]').click();
+	await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 5000 }).toBe(0);
+});
 
 test('home header/footer auto-hide in opposite directions and return on scroll or focus', async ({ page }) => {
 	await loginAs(page);
@@ -1982,6 +2087,11 @@ test('a failed Timeline page shows Retry, and Retry loads it', async ({ page }) 
 			});
 		}
 	});
+
+	// The seeded Marks are newer than this account's last-seen post, so the
+	// reload would open on that post with 40 posts loaded in one request,
+	// and page 2 would never be asked for. Start at the top instead.
+	await markNewestTimelineItemSeen(page);
 
 	// Fail the second page once.
 	let failed = false;
