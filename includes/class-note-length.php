@@ -3,12 +3,12 @@
  * Note length counter in the block editor.
  *
  * Loads assets/note-length-editor.js, which shows, for an Aside-format post
- * (a Note), how many characters are left before the 300-character length of
- * one Bluesky post, and whether the Note will be shared as a short note
- * (its text, no title) or a long note (its title and a link). See that file
- * for the rule and how it counts.
+ * (a Note) or a Standard post with no title, how many characters are left
+ * before the 300-character length of one Bluesky post, and whether the post
+ * will be shared as a short post (its text, no title) or a long post (a link
+ * card to it). See that file for the rule and how it counts.
  *
- * It shows on every Aside post, whether or not a plugin that posts to
+ * It shows on those posts whether or not a plugin that posts to
  * Bluesky is active. When ATmosphere is connected and set to publish
  * automatically, the help text names Bluesky's exact behavior; otherwise it
  * describes what sharing tools usually do.
@@ -45,7 +45,8 @@ class Daymark_Note_Length {
 
 	/**
 	 * Load the counter in the block editor for a post type with post formats.
-	 * The script itself shows the counter only while the format is Aside.
+	 * The script itself shows the counter only for an Aside post or an
+	 * untitled Standard post.
 	 *
 	 * @return void
 	 */

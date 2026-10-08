@@ -1,18 +1,20 @@
 /**
  * Note length counter for the block editor.
  *
- * While an Aside-format post (a Note) is open in the block editor, a row in
- * the Post sidebar's summary counts down from 300 characters, the length of
- * one Bluesky post, and says whether the Note will be shared as a short note
- * (its text as an ordinary social post, with no title) or a long note (its
- * title and a link).
+ * While an Aside-format post (a Note), or a Standard post with no title, is
+ * open in the block editor, a row in the Post sidebar's summary counts down
+ * from 300 characters, the length of one Bluesky post. It says whether the
+ * post will be shared as a short post (its text as an ordinary social post,
+ * with no title) or a long post (a link card to it).
  *
  * The rule copies the ATmosphere plugin (checked against 2.4.1,
- * includes/transformer/class-post.php, is_short_form()): an Aside post whose
- * text is at most 300 characters is short form; a longer one is long form
- * (a link card with the title), unless it has image blocks, in which case it
- * stays short form with its images and the text is shortened. The ActivityPub
- * plugin sends an Aside post as a plain note at any length.
+ * includes/transformer/class-post.php, is_short_form()). A post with a title
+ * and no post format is always long form, so the counter doesn't show for
+ * it. A post with a post format, or with no title, is short form when its
+ * text is at most 300 characters; a longer one is long form (a link card),
+ * unless it has image blocks, in which case it stays short form with its
+ * images and the text is shortened. The ActivityPub plugin sends an Aside
+ * post, or an untitled post, as a plain note at any length.
  *
  * The count also copies ATmosphere's: the post's text with tags removed,
  * entities decoded, and runs of whitespace collapsed to one space, counted in
@@ -35,6 +37,27 @@
 	}
 
 	// >>> note-length
+	/**
+	 * Which kind of post the counter applies to: an Aside post is a 'note',
+	 * a Standard post with no title is a 'post', and anything else gets no
+	 * counter (null).
+	 *
+	 * @param {string} format The post's format ('' or 'standard' for Standard).
+	 * @param {string} title  The post's title as edited.
+	 * @return {string|null} 'note', 'post', or null.
+	 */
+	function counterKind( format, title ) {
+		if ( format === 'aside' ) {
+			return 'note';
+		}
+
+		if ( ( ! format || format === 'standard' ) && ! String( title || '' ).trim() ) {
+			return 'post';
+		}
+
+		return null;
+	}
+
 	/**
 	 * The text of a post as ATmosphere measures it: tags and block comments
 	 * removed, entities decoded, script and style contents dropped, whitespace
@@ -123,29 +146,49 @@
 	function helpText( form ) {
 		if ( atmosphere ) {
 			if ( form === 'short' ) {
-				return __( 'Posts to Bluesky as a short note, without a title.', 'daymark' );
+				return __( 'Posts to Bluesky as a regular post, without a title.', 'daymark' );
 			}
 			if ( form === 'long-images' ) {
 				return __( 'Posts to Bluesky with its images, and the text is shortened to fit.', 'daymark' );
 			}
-			return __( 'Posts to Bluesky as a link card with this Note’s title.', 'daymark' );
+			return __( 'Posts to Bluesky as a link card to this post, not its full text.', 'daymark' );
 		}
 
 		if ( form === 'short' ) {
 			return __( 'Short enough to share as one social post, without a title.', 'daymark' );
 		}
-		return __( 'Too long for one Bluesky post. Sharing tools may show the title and a link instead.', 'daymark' );
+		return __( 'Too long for one Bluesky post. Sharing tools may share a link to it instead.', 'daymark' );
+	}
+
+	/**
+	 * The label beside the count.
+	 *
+	 * @param {string}  kind 'note' or 'post'.
+	 * @param {boolean} over Whether the text is over the limit.
+	 * @return {string} Label.
+	 */
+	function kindLabel( kind, over ) {
+		if ( kind === 'note' ) {
+			return over ? __( 'Long note', 'daymark' ) : __( 'Short note', 'daymark' );
+		}
+
+		return over ? __( 'Long post', 'daymark' ) : __( 'Short post', 'daymark' );
 	}
 
 	function NoteLength() {
 		const state = useSelect( ( select ) => {
 			const editor = select( 'core/editor' );
 
-			if ( editor.getEditedPostAttribute( 'format' ) !== 'aside' ) {
+			const kind = counterKind( editor.getEditedPostAttribute( 'format' ), editor.getEditedPostAttribute( 'title' ) );
+
+			if ( ! kind ) {
 				return null;
 			}
 
-			return measureNote( editor.getEditedPostContent(), select( 'core/block-editor' ).getBlocks(), limit );
+			return {
+				kind,
+				...measureNote( editor.getEditedPostContent(), select( 'core/block-editor' ).getBlocks(), limit ),
+			};
 		}, [] );
 
 		const lastForm = useRef( null );
@@ -185,7 +228,7 @@
 				el(
 					'div',
 					{ style: { display: 'flex', justifyContent: 'space-between', gap: '8px' } },
-					el( 'span', null, over ? __( 'Long note', 'daymark' ) : __( 'Short note', 'daymark' ) ),
+					el( 'span', null, kindLabel( state.kind, over ) ),
 					el(
 						'span',
 						{ style: over ? { color: '#cc1818', fontWeight: 600 } : undefined },

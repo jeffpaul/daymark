@@ -145,7 +145,7 @@ If your site still has entries in WordPress's old Links (blogroll) list, Setting
 
 = What's the character count on Notes in the block editor? =
 
-When you write a post with the Aside format, the block editor's Post sidebar counts down from 300 characters, the length of one Bluesky post. Up to 300 characters, the Note is a short note: plugins that share to Bluesky, such as ATmosphere, post its text as an ordinary social post, without a title. Past 300, it's a long note, which ATmosphere shares as a link card with its title. If the Note has images, ATmosphere still posts it with its images and shortens the text. The count runs in your browser and can differ from ATmosphere's by a few characters; ATmosphere's own panel when you click Publish is the exact check. The counter shows whether or not a Bluesky plugin is active.
+When you write a post with the Aside format, or a Standard post with no title, the block editor's Post sidebar counts down from 300 characters, the length of one Bluesky post. Up to 300 characters, it's a short post: plugins that share to Bluesky, such as ATmosphere, post its text as an ordinary social post, without a title. Past 300, it's a long post, which ATmosphere shares as a link card to it instead of its full text. If it has images, ATmosphere still posts it with its images and shortens the text. A Standard post with a title is always shared as a link card, so the counter doesn't show for it. The count runs in your browser and can differ from ATmosphere's by a few characters; ATmosphere's own panel when you click Publish is the exact check. The counter shows whether or not a Bluesky plugin is active.
 
 = What's a Check In? =
 

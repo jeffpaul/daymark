@@ -24,8 +24,23 @@ const region = source.slice( start, end );
 test.beforeEach( async ( { page } ) => {
 	await page.setContent( '<!doctype html><title>note length</title>' );
 	await page.evaluate( ( code ) => {
-		window.__noteLength = new Function( code + '\nreturn { notePlainText, graphemeCount, measureNote };' )();
+		window.__noteLength = new Function( code + '\nreturn { counterKind, notePlainText, graphemeCount, measureNote };' )();
 	}, region );
+} );
+
+test( 'shows for an Aside post or an untitled Standard post only', async ( { page } ) => {
+	const kinds = await page.evaluate( () =>
+		[
+			[ 'aside', 'Has a title' ],
+			[ 'aside', '' ],
+			[ '', '' ],
+			[ 'standard', '   ' ],
+			[ 'standard', 'A blog post' ],
+			[ 'image', '' ],
+		].map( ( [ format, title ] ) => window.__noteLength.counterKind( format, title ) )
+	);
+
+	expect( kinds ).toEqual( [ 'note', 'note', 'post', 'post', null, null ] );
 } );
 
 const paragraph = ( text ) => `<!-- wp:paragraph -->\n<p>${ text }</p>\n<!-- /wp:paragraph -->`;
