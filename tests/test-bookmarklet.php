@@ -369,6 +369,39 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'name="daymark_comment"', $html );
 	}
 
+	public function test_admin_button_is_draggable_but_does_nothing_on_click() {
+		$html = Daymark_Bookmarklet::button_html( 'button-primary' );
+
+		$this->assertStringContainsString( 'href="javascript:', $html );
+		$this->assertStringContainsString( 'onclick="return false;"', $html );
+		$this->assertStringContainsString( 'class="button button-primary"', $html );
+	}
+
+	public function test_settings_general_tab_offers_the_bookmarklet() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$_GET['tab'] = 'general'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Test fixture.
+		ob_start();
+		( new Daymark_Admin_Subscriptions() )->render_page();
+		$html = (string) ob_get_clean();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'Reblog and Like from your browser', $html );
+		$this->assertStringContainsString( 'href="javascript:', $html );
+	}
+
+	public function test_welcome_notice_offers_the_bookmarklet() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		Daymark_Admin_Welcome::queue( true );
+
+		ob_start();
+		( new Daymark_Admin_Welcome() )->render_notice();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'drag', $html );
+		$this->assertStringContainsString( 'href="javascript:', $html );
+	}
+
 	public function test_app_config_carries_the_bookmarklet_url() {
 		$config = Daymark_Routes::build_app_config();
 

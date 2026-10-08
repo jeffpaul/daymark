@@ -125,7 +125,7 @@ class Daymark_Admin_Welcome {
 	}
 
 	/**
-	 * Render the notice: where the app is, and two things worth doing first.
+	 * Render the notice: where the app is, and three things worth doing first.
 	 *
 	 * @return void
 	 */
@@ -165,6 +165,15 @@ class Daymark_Admin_Welcome {
 						/* translators: %s: link to the Connectors tab */
 						esc_html__( '%s to let your Marks reach the fediverse and Bluesky, and bring replies back to you.', 'daymark' ),
 						'<a href="' . esc_url( Daymark_Admin_Subscriptions::tab_url( 'connectors' ) ) . '">' . esc_html__( 'Review Connectors', 'daymark' ) . '</a>'
+					);
+					?>
+				</li>
+				<li>
+					<?php
+					printf(
+						/* translators: %s: the draggable Daymark bookmarklet button */
+						esc_html__( 'On your computer, drag %s to your bookmarks bar. Click it on any post you\'re reading to Reblog or Like it.', 'daymark' ),
+						Daymark_Bookmarklet::button_html( 'button-small' ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html().
 					);
 					?>
 				</li>

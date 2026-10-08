@@ -82,6 +82,31 @@ class Daymark_Bookmarklet {
 	}
 
 	/**
+	 * The draggable "Daymark" bookmarklet button, for wp-admin screens.
+	 *
+	 * Clicking it does nothing (`return false`): the bookmarklet would
+	 * otherwise run against the admin page itself. Dragging it to the
+	 * bookmarks bar still copies its `javascript:` address. wp-admin has no
+	 * CSP, so the inline handler runs there; the popup's own install page
+	 * (templates/bookmarklet.php) doesn't use this, since its CSP blocks
+	 * inline handlers and `javascript:` navigation anyway.
+	 *
+	 * @param string $classes Extra button classes, e.g. 'button-primary'.
+	 * @return string
+	 */
+	public static function button_html( string $classes = '' ): string {
+		// esc_url() would drop a javascript: address. script() rawurlencodes
+		// everything, so esc_attr() is enough to keep it attribute-safe.
+		return sprintf(
+			'<a class="%1$s" href="%2$s" onclick="return false;" draggable="true" style="cursor:grab;" title="%3$s">%4$s</a>',
+			esc_attr( trim( 'button ' . $classes ) ),
+			esc_attr( self::script() ),
+			esc_attr__( 'Drag this to your bookmarks bar', 'daymark' ),
+			esc_html__( 'Daymark', 'daymark' )
+		);
+	}
+
+	/**
 	 * Read and sanitize the page details the bookmarklet passed.
 	 *
 	 * @param array<string, mixed> $source $_GET or $_POST (unslashed).
