@@ -2418,11 +2418,15 @@ class Daymark_Publisher {
 	 * This is a deliberate, Checkin-only departure from every other Mark
 	 * type, where the caption is the title's own primary source.
 	 *
+	 * Daymark_Notes also calls this for a Note written outside Daymark
+	 * (the block editor) and published with no title, so a Note gets the
+	 * same kind of title wherever it was written.
+	 *
 	 * @param string      $caption Caption text — always '' for a Checkin Mark; see this method's own docblock above.
 	 * @param string|null $place   Resolved place name (see resolve_place_name()), or null.
 	 * @return string Title.
 	 */
-	private function generate_title( string $caption, ?string $place = null ): string {
+	public static function generate_title( string $caption, ?string $place = null ): string {
 		$plain = trim( wp_strip_all_tags( $caption ) );
 
 		if ( '' !== $plain ) {
@@ -2430,7 +2434,7 @@ class Daymark_Publisher {
 			$max_chars = (int) apply_filters( 'daymark_title_max_chars', self::MAX_TITLE_CHARS );
 
 			if ( mb_strlen( $title ) > $max_chars ) {
-				$title = $this->trim_chars( $title, $max_chars, '…' );
+				$title = self::trim_chars( $title, $max_chars, '…' );
 			}
 
 			return $title;
@@ -2469,7 +2473,7 @@ class Daymark_Publisher {
 	 * @param string $more      Suffix appended when trimming occurs.
 	 * @return string
 	 */
-	private function trim_chars( string $text, int $max_chars, string $more ): string {
+	private static function trim_chars( string $text, int $max_chars, string $more ): string {
 		preg_match_all( '/./u', $text, $matches );
 		$chars = array_slice( $matches[0], 0, $max_chars );
 

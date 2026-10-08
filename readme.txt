@@ -136,6 +136,12 @@ Yes, if you want to. In Settings -> Daymark -> General, check "Share the sites y
 
 If your site still has entries in WordPress's old Links (blogroll) list, Settings -> Daymark -> Import / Export offers to import them as subscriptions.
 
+= Can I keep Notes off my blog's home page? =
+
+Yes. In Settings -> Daymark -> General, uncheck "Show Notes on your blog's home page and main feed". A Note is any post with the Aside post format: Notes you post from Daymark, including reblogs and replies, and Aside posts you write in the block editor. Notes then stay off the home page and the main RSS feed, but keep their own pages and still appear in archives, search, and Daymark's Timeline. Notes stay ordinary posts, so nothing changes if you deactivate Daymark. A block theme's home page follows this setting when its Query Loop block inherits the template's query, which is the usual setup.
+
+You don't need to give a Note a title in the block editor. When you publish an Aside post with no title, Daymark gives it one from its first few words, the same way the app titles a Note, so it gets a readable web address and a title in feeds.
+
 = What's a Check In? =
 
 A Check In is a Mark whose point is *where* you are, not media or a written caption — tap the "+ New Mark" launcher's Check In bubble and Daymark quietly reverse-geocodes your captured location into an editable Place field (no address lookup service credentials needed on your end — it uses a free, keyless geocoding service). You can always edit or replace the detected place before publishing, and add your own thoughts too, but neither is required: a Check In with just a place name is a complete, publishable Mark. It publishes as a real post naming the place (linking out to a map when a location was captured), titled "Checked in at {place}" when you haven't added your own caption.

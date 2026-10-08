@@ -37,6 +37,7 @@ class Test_Settings extends WP_UnitTestCase {
 		$this->assertTrue( Daymark_Settings::ai_auto_suggest() );
 		$this->assertSame( DAY_IN_SECONDS, Daymark_Settings::poll_interval() );
 		$this->assertFalse( Daymark_Settings::blogroll_public() );
+		$this->assertTrue( Daymark_Settings::show_notes_on_home() );
 	}
 
 	/** Each setting follows its stored option. */
@@ -46,12 +47,14 @@ class Test_Settings extends WP_UnitTestCase {
 		update_option( Daymark_Settings::AI_AUTO_SUGGEST, '' );
 		update_option( Daymark_Settings::POLL_INTERVAL, HOUR_IN_SECONDS );
 		update_option( Daymark_Settings::BLOGROLL_PUBLIC, '1' );
+		update_option( Daymark_Settings::SHOW_NOTES_ON_HOME, '' );
 
 		$this->assertFalse( Daymark_Settings::capture_location() );
 		$this->assertSame( 0, Daymark_Settings::imported_reply_approved() );
 		$this->assertFalse( Daymark_Settings::ai_auto_suggest() );
 		$this->assertSame( HOUR_IN_SECONDS, Daymark_Settings::poll_interval() );
 		$this->assertTrue( Daymark_Settings::blogroll_public() );
+		$this->assertFalse( Daymark_Settings::show_notes_on_home() );
 	}
 
 	/** A developer filter wins over the stored option. */
@@ -74,7 +77,7 @@ class Test_Settings extends WP_UnitTestCase {
 
 	/** Uninstall's list covers every option this class reads. */
 	public function test_options_lists_every_setting(): void {
-		$this->assertCount( 10, array_unique( Daymark_Settings::options() ) );
+		$this->assertCount( 11, array_unique( Daymark_Settings::options() ) );
 	}
 
 	/** The app config carries the AI auto-suggest and location capture settings. */

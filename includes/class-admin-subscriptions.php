@@ -184,6 +184,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
+		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
 		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
 		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
@@ -651,8 +652,9 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * The General tab: how often followed sites are checked, and whether
-	 * they're shared as a public blogroll.
+	 * The General tab: how often followed sites are checked, whether
+	 * they're shared as a public blogroll, what new Marks start with, and
+	 * where Notes show on the site.
 	 *
 	 * @return void
 	 */
@@ -663,6 +665,8 @@ class Daymark_Admin_Subscriptions {
 		<?php $this->render_blogroll_form(); ?>
 		<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
 		<?php $this->render_publishing_defaults_form(); ?>
+		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
+		<?php $this->render_notes_form(); ?>
 		<?php
 	}
 
@@ -1163,6 +1167,7 @@ class Daymark_Admin_Subscriptions {
 			'title_updated'             => __( 'Site name updated.', 'daymark' ),
 			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
+			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
 			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
 			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved'       => __( 'Check frequency saved.', 'daymark' ),
@@ -3249,6 +3254,59 @@ class Daymark_Admin_Subscriptions {
 			<?php endif; ?>
 		</form>
 		<?php
+	}
+
+	/**
+	 * The Notes setting: whether Notes (Aside-format posts) show on the
+	 * blog's home page and in its main feed (Daymark_Notes).
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	private function render_notes_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::SHOW_NOTES_ON_HOME, true );
+		$effective  = Daymark_Settings::show_notes_on_home();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_notes_save" />
+			<?php wp_nonce_field( 'daymark_notes_save', 'daymark_notes_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::SHOW_NOTES_ON_HOME ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Show Notes on your blog\'s home page and main feed', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'A Note is any post with the Aside format: Notes you post from Daymark, including reblogs and replies, and Aside posts written in the editor. When this is off, Notes stay on their own pages, in archives and search, and in Daymark\'s Timeline.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-notes-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Notes setting (admin_post_daymark_notes_save).
+	 *
+	 * @since 0.20.0
+	 *
+	 * @return void
+	 */
+	public function handle_notes_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_notes_save', 'daymark_notes_save_nonce' );
+
+		update_option( Daymark_Settings::SHOW_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::SHOW_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'notes_saved' ), 'general' );
 	}
 
 	/**
