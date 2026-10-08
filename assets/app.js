@@ -1071,6 +1071,12 @@
 	// trashes) a small Mark of the site owner's own — see toggleLike() — so
 	// `data-like-mark-id` carries that Mark's ID once one exists, letting the
 	// toggle undo itself without a second lookup.
+	// An invisible stand-in the same size as the Like button, so the row's
+	// other icons stay where they are when a site can't receive Likes.
+	function likePlaceholderHtml() {
+		return `<span class="daymark-stat daymark-stat--placeholder" aria-hidden="true">${statIcon(HEART_GLYPH)}</span>`;
+	}
+
 	function renderLikeToggle(item) {
 		// A like can exist two ways now (issue #391): the classic local Mark
 		// (liked_mark_id) or a Jetpack-native WordPress.com like recorded
@@ -1082,9 +1088,10 @@
 		// Daymark_Like_Delivery): `like_available` is false when nothing
 		// could deliver one, null while still unknown (kept visible;
 		// observeLikeAvailability() resolves it lazily). An already-liked
-		// item always keeps its icon so it can be unliked.
+		// item always keeps its icon so it can be unliked. An unavailable
+		// Like keeps its space, so the other icons never shift.
 		if (!liked && false === item.like_available) {
-			return '';
+			return likePlaceholderHtml();
 		}
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
@@ -5078,15 +5085,31 @@
 		window.setTimeout(() => removeLikeToggles(id), 2000);
 	}
 
-	// Removes every not-yet-liked Like icon for one subscription post id.
-	// An already-liked one is left alone so it can still be unliked.
+	// Replaces every not-yet-liked Like icon for one subscription post id
+	// with an invisible placeholder of the same size, so the other icons
+	// don't shift. An already-liked one is left alone so it can still be
+	// unliked. Focus on a replaced button moves to the next button in the row.
 	function removeLikeToggles(id) {
 		if (!id) {
 			return;
 		}
 		document.querySelectorAll('[data-like-toggle]').forEach((el) => {
-			if (id === el.getAttribute('data-like-toggle') && 'true' !== el.getAttribute('aria-pressed')) {
-				el.remove();
+			if (id !== el.getAttribute('data-like-toggle') || 'true' === el.getAttribute('aria-pressed')) {
+				return;
+			}
+			const hadFocus = document.activeElement === el;
+			const template = document.createElement('template');
+			template.innerHTML = likePlaceholderHtml();
+			const placeholder = template.content.firstElementChild;
+			el.replaceWith(placeholder);
+			if (hadFocus) {
+				let next = placeholder.nextElementSibling;
+				while (next && 'BUTTON' !== next.tagName) {
+					next = next.nextElementSibling;
+				}
+				if (next) {
+					next.focus();
+				}
 			}
 		});
 	}
@@ -12002,6 +12025,10 @@
 
 		async publish(postStatus) {
 			const isDraft = 'draft' === postStatus;
+			// Someone who can't publish on this site (a Contributor) gets a
+			// draft from the server whatever they tap, so send a draft and
+			// say so, instead of claiming it was published.
+			const needsReview = !isDraft && false === config.canPublish;
 			const button = root.querySelector(
 				isDraft ? '[data-action="save-draft"]' : '[data-action="publish"]'
 			);
@@ -12031,7 +12058,7 @@
 			autosaveState.timer = null;
 			await waitForPendingAutosave();
 
-			const payload = buildMarkPayload(postStatus);
+			const payload = buildMarkPayload(needsReview ? 'draft' : postStatus);
 			// Editing a draft updates it in place; otherwise create.
 			const path = state.editing ? 'marks/' + state.editing.id : 'marks';
 			const targetId = state.editing ? state.editing.id : null;
@@ -12045,7 +12072,8 @@
 				const pendingId = await publishInBackground(path, targetId, payload, state.offlineQueueId);
 				state.lastPublish = {
 					pendingId,
-					wasDraft: isDraft,
+					wasDraft: isDraft || needsReview,
+					needsReview,
 					targets: state.targets.slice(),
 					type: state.primaryType,
 					response: null,
@@ -12060,12 +12088,13 @@
 					const response = await sendMarkPayload(path, payload, { waitForUploads: true });
 					forgetUploads(payload);
 					onMarkSaved(response);
-					state.lastPublish = {
+					state.lastPublish = applyServerStatus({
 						response,
-						wasDraft: isDraft,
+						wasDraft: isDraft || needsReview,
+						needsReview,
 						targets: state.targets.slice(),
 						type: state.primaryType,
-					};
+					});
 					resetComposer();
 					navigate('#success');
 				} catch (err2) {
@@ -12111,6 +12140,21 @@
 
 	// --- Screen: Success ---
 
+	// The server's own status for the saved Mark wins over the button that
+	// was tapped: a Mark someone asked to publish that came back as a
+	// draft is reported as a draft waiting for an editor.
+	function applyServerStatus(publish) {
+		const status = publish.response && publish.response.status;
+		if (status) {
+			const published = 'publish' === status;
+			if (!published && !publish.wasDraft) {
+				publish.needsReview = true;
+			}
+			publish.wasDraft = !published;
+		}
+		return publish;
+	}
+
 	// "Tap Publish. Immediately appears in your timeline. Uploads continue
 	// in the background." This screen renders from whatever's known right
 	// now: state.lastPublish.response is null the moment PublishScreen
@@ -12146,16 +12190,28 @@
 		renderDetail(publish) {
 			const response = publish.response;
 
+			const reviewNote = publish.needsReview
+				? `<p class="daymark-note-card__meta">${esc(
+						__(
+							"Your account can't publish on this site, so it's saved as a draft for an editor to publish. You'll find it under Drafts on the Me tab.",
+							'daymark'
+						)
+				  )}</p>`
+				: '';
+
 			if (!response) {
 				return `
 				<h2 class="daymark-screen__heading">${esc(
 					publish.wasDraft ? __('Saved as draft', 'daymark') : __('Published', 'daymark')
 				)}</h2>
-				<p class="daymark-note-card__meta">${esc(
-					publish.wasDraft
-						? __("Saving in the background. You'll find it under Drafts on the Me tab.", 'daymark')
-						: __("It's already at the top of your Timeline. The upload finishes in the background.", 'daymark')
-				)}</p>`;
+				${
+					reviewNote ||
+					`<p class="daymark-note-card__meta">${esc(
+						publish.wasDraft
+							? __("Saving in the background. You'll find it under Drafts on the Me tab.", 'daymark')
+							: __("It's already at the top of your Timeline. The upload finishes in the background.", 'daymark')
+					)}</p>`
+				}`;
 			}
 
 			const permalink = response.permalink;
@@ -12180,8 +12236,9 @@
 					  )})</a>`
 					: ''
 			}</h2>
+			${reviewNote}
 			${
-				publish.wasDraft
+				publish.wasDraft && !publish.needsReview
 					? '<p class="daymark-note-card__meta">' +
 					  esc(__('Finish it any time from Drafts on the Me tab.', 'daymark')) +
 					  '</p>'
@@ -12213,12 +12270,17 @@
 				return;
 			}
 			state.lastPublish.response = response;
+			applyServerStatus(state.lastPublish);
 			if (window.location.hash !== '#success') {
 				return;
 			}
 			const slot = root.querySelector('[data-success-detail]');
 			if (slot) {
 				slot.innerHTML = this.renderDetail(state.lastPublish);
+			}
+			const heading = root.querySelector('.daymark-success [data-daymark-focus], .daymark-topbar [data-daymark-focus]');
+			if (heading) {
+				heading.textContent = state.lastPublish.wasDraft ? __('Draft saved', 'daymark') : __('Published', 'daymark');
 			}
 		},
 

@@ -410,6 +410,14 @@ h2[tabindex='-1']:focus {
 	cursor: pointer;
 }
 
+/* Holds the Like button's space when a site can't receive Likes
+   (likePlaceholderHtml(), app.js), so the other icons don't shift. */
+.daymark-stat--placeholder {
+	min-height: var(--daymark-tap-min);
+	visibility: hidden;
+	pointer-events: none;
+}
+
 /* --- Buttons --- */
 .daymark-btn {
 	display: inline-flex;

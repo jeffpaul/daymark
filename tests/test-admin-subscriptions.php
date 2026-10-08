@@ -2134,6 +2134,61 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'Install Now', $output );
 	}
 
+	/**
+	 * Render the Connectors tab with Jetpack installed and active, and its
+	 * WordPress.com connection in a given state.
+	 *
+	 * @param string $state 'site', 'user', or 'linked'.
+	 * @return string
+	 */
+	private function render_connectors_with_jetpack( string $state ): string {
+		$this->install_fake_plugin( 'jetpack', 'jetpack.php' );
+		$active = static function ( $value ) {
+			$value   = (array) $value;
+			$value[] = 'jetpack/jetpack.php';
+
+			return $value;
+		};
+		$link   = static function () use ( $state ) {
+			return $state;
+		};
+		add_filter( 'option_active_plugins', $active );
+		add_filter( 'daymark_jetpack_link_state', $link );
+
+		$output = $this->render( 'connectors' );
+
+		remove_filter( 'option_active_plugins', $active );
+		remove_filter( 'daymark_jetpack_link_state', $link );
+		$this->remove_fake_plugin( 'jetpack' );
+
+		return $output;
+	}
+
+	/** Jetpack active with no WordPress.com account linked says so, with a link to fix it. */
+	public function test_jetpack_card_says_when_account_not_linked(): void {
+		$output = $this->render_connectors_with_jetpack( 'user' );
+
+		$this->assertStringContainsString( 'your WordPress.com account isn&#039;t linked', $output );
+		$this->assertStringContainsString( 'Link your account', $output );
+		$this->assertStringContainsString( esc_url( Daymark_Jetpack_Engagement::connect_account_url() ), $output );
+	}
+
+	/** Jetpack active on a site that isn't connected to WordPress.com says so. */
+	public function test_jetpack_card_says_when_site_not_connected(): void {
+		$output = $this->render_connectors_with_jetpack( 'site' );
+
+		$this->assertStringContainsString( 'this site isn&#039;t connected to WordPress.com yet', $output );
+		$this->assertStringContainsString( '>Connect</a>', $output );
+	}
+
+	/** Jetpack fully linked shows the account as linked, with no action to take. */
+	public function test_jetpack_card_says_when_linked(): void {
+		$output = $this->render_connectors_with_jetpack( 'linked' );
+
+		$this->assertStringContainsString( 'Active, and your WordPress.com account is linked.', $output );
+		$this->assertStringNotContainsString( 'Link your account', $output );
+	}
+
 	/** A connector that's installed but not active shows its own status text, distinct from "not installed" or "active." */
 	public function test_connectors_tab_shows_inactive_state_for_installed_but_inactive_connector(): void {
 		$this->install_fake_plugin( 'activitypub', 'activitypub.php' );
