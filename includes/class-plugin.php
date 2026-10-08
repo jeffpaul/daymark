@@ -59,6 +59,14 @@ final class Daymark_Plugin {
 	public Daymark_Like_Visibility $like_visibility;
 
 	/**
+	 * Notes (Aside-format posts) on the site: home page and main feed
+	 * visibility, and titles for untitled Notes.
+	 *
+	 * @var Daymark_Notes
+	 */
+	public Daymark_Notes $notes;
+
+	/**
 	 * POSSE-quality outbound microformats2 markup (h-entry, h-card, rel=me).
 	 *
 	 * @var Daymark_Microformats
@@ -316,6 +324,7 @@ final class Daymark_Plugin {
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
+		$this->notes                        = new Daymark_Notes();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
 		$this->rate_limiter                 = new Daymark_Rate_Limiter();
@@ -413,6 +422,7 @@ final class Daymark_Plugin {
 		$this->routes->register();
 		$this->syndication_links->register();
 		$this->like_visibility->register();
+		$this->notes->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
