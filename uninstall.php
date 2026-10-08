@@ -43,6 +43,7 @@ delete_option( 'daymark_hold_imported_replies' );
 delete_option( 'daymark_ai_auto_suggest' );
 delete_option( 'daymark_subscription_poll_interval' );
 delete_option( 'daymark_blogroll_public' );
+delete_option( 'daymark_hide_notes_on_home' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,
@@ -52,6 +53,7 @@ delete_metadata( 'user', 0, 'daymark_category_prefs', '', true );
 delete_metadata( 'user', 0, 'daymark_notifications_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
+delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_plugin_overlap_dismissed', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
