@@ -143,6 +143,10 @@ Yes, if you want to. In Settings -> Daymark -> General, check "Share the sites y
 
 If your site still has entries in WordPress's old Links (blogroll) list, Settings -> Daymark -> Import / Export offers to import them as subscriptions.
 
+= What's the character count on Notes in the block editor? =
+
+When you write a post with the Aside format, the block editor's Post sidebar counts down from 300 characters, the length of one Bluesky post. Up to 300 characters, the Note is a short note: plugins that share to Bluesky, such as ATmosphere, post its text as an ordinary social post, without a title. Past 300, it's a long note, which ATmosphere shares as a link card with its title. If the Note has images, ATmosphere still posts it with its images and shortens the text. The count runs in your browser and can differ from ATmosphere's by a few characters; ATmosphere's own panel when you click Publish is the exact check. The counter shows whether or not a Bluesky plugin is active.
+
 = What's a Check In? =
 
 A Check In is a Mark whose point is *where* you are, not media or a written caption — tap the "+ New Mark" launcher's Check In bubble and Daymark quietly reverse-geocodes your captured location into an editable Place field (no address lookup service credentials needed on your end — it uses a free, keyless geocoding service). You can always edit or replace the detected place before publishing, and add your own thoughts too, but neither is required: a Check In with just a place name is a complete, publishable Mark. It publishes as a real post naming the place (linking out to a map when a location was captured), titled "Checked in at {place}" when you haven't added your own caption.

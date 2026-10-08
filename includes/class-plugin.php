@@ -59,6 +59,13 @@ final class Daymark_Plugin {
 	public Daymark_Like_Visibility $like_visibility;
 
 	/**
+	 * Block editor counter for a Note's length.
+	 *
+	 * @var Daymark_Note_Length
+	 */
+	public Daymark_Note_Length $note_length;
+
+	/**
 	 * POSSE-quality outbound microformats2 markup (h-entry, h-card, rel=me).
 	 *
 	 * @var Daymark_Microformats
@@ -308,6 +315,7 @@ final class Daymark_Plugin {
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
+		$this->note_length                  = new Daymark_Note_Length();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
 		$this->rate_limiter                 = new Daymark_Rate_Limiter();
@@ -405,6 +413,7 @@ final class Daymark_Plugin {
 		$this->routes->register();
 		$this->syndication_links->register();
 		$this->like_visibility->register();
+		$this->note_length->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();
 		$this->publisher->register();
