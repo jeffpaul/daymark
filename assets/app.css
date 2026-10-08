@@ -239,6 +239,26 @@ h2[tabindex='-1']:focus {
 	align-items: flex-start;
 }
 
+/* Even with both fixes above, the icon's top edge sat 9px above the
+   title's capital letters: the title's 33px line box (22px at
+   line-height 1.5) starts with empty space above the letters, and the
+   icon lines up with that box, not the letters. Trimming the space above
+   the first line's cap height lines the two up exactly, whatever the
+   font. A browser without `text-box` (Firefox, older Safari) instead moves
+   the back link down by the measured gap, which is within a pixel for the
+   system fonts this file uses. */
+@supports (text-box: trim-start cap alphabetic) {
+	.daymark-topbar--top .daymark-topbar__title {
+		text-box: trim-start cap alphabetic;
+	}
+}
+
+@supports not (text-box: trim-start cap alphabetic) {
+	.daymark-topbar--top .daymark-backlink {
+		margin-top: 9px;
+	}
+}
+
 /* Daymark's own icon + wordmark act as one home-link. `gap` matches
    .daymark-topbar's own flex gap (var(--daymark-spacing-sm), see below) —
    deliberately the same token, not a separately hand-picked value, so the
