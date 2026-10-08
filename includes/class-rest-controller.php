@@ -964,6 +964,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/timeline/position',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'save_timeline_position' ),
+				// Same posture as /timeline/last-seen: a debounced, local
+				// per-user meta write with no outbound request.
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/interaction-hints/(?P<hint>[a-z]+)/seen',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -3156,6 +3175,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( array( 'last_seen' => $marker ) );
+	}
+
+	/**
+	 * POST /daymark/v1/timeline/position — record the Timeline item at the
+	 * top of the current user's screen on Home, so the next visit opens
+	 * there (see Daymark_Timeline_Position::set_position()).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function save_timeline_position( WP_REST_Request $request ) {
+		$position = Daymark_Timeline_Position::set_position(
+			get_current_user_id(),
+			absint( $request->get_param( 'id' ) )
+		);
+
+		if ( is_wp_error( $position ) ) {
+			return $position;
+		}
+
+		return rest_ensure_response( array( 'position' => $position ) );
 	}
 
 	/**
