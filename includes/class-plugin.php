@@ -224,6 +224,13 @@ final class Daymark_Plugin {
 	public Daymark_Admin_Bar $admin_bar;
 
 	/**
+	 * Welcome notice shown once after the first activation.
+	 *
+	 * @var Daymark_Admin_Welcome
+	 */
+	public Daymark_Admin_Welcome $admin_welcome;
+
+	/**
 	 * The post-format icon indicator on wp-admin's post list screens.
 	 *
 	 * @var Daymark_Admin_Post_Format_Icon
@@ -311,6 +318,7 @@ final class Daymark_Plugin {
 		$this->admin_subscriptions          = new Daymark_Admin_Subscriptions();
 		$this->share_target                 = new Daymark_Share_Target();
 		$this->admin_bar                    = new Daymark_Admin_Bar();
+		$this->admin_welcome                = new Daymark_Admin_Welcome();
 		$this->admin_post_format_icon       = new Daymark_Admin_Post_Format_Icon();
 		$this->websub_subscriber            = new Daymark_Websub_Subscriber();
 		$this->websub_endpoint              = new Daymark_Websub_Endpoint();
@@ -405,6 +413,7 @@ final class Daymark_Plugin {
 		$this->subscription_poller->register();
 		$this->admin_subscriptions->register();
 		$this->admin_bar->register();
+		$this->admin_welcome->register();
 		$this->admin_post_format_icon->register();
 		$this->websub_endpoint->register();
 		$this->websub_subscriber->register();
@@ -477,6 +486,10 @@ final class Daymark_Plugin {
 		$routes->register();
 
 		flush_rewrite_rules();
+
+		// Only a site's first-ever activation queues the welcome notice;
+		// reactivating later doesn't bring it back.
+		Daymark_Admin_Welcome::queue( false === get_option( 'daymark_activated', false ) );
 
 		update_option( 'daymark_activated', time() );
 		update_option( 'daymark_version', DAYMARK_VERSION );
