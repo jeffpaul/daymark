@@ -1065,6 +1065,12 @@
 		return liked ? withDeliveryStatus(__('Unlike', 'daymark'), delivery) : __('Like', 'daymark');
 	}
 
+	// Liked only through the IndieBlocks plugin, which Daymark reads but
+	// never removes (see Daymark_IndieBlocks_Likes).
+	function likedOnlyWithIndieBlocks(item) {
+		return !!item.indieblocks_like_id && !item.liked_mark_id && !item.jetpack_liked;
+	}
+
 	// The Like toggle for a subscription post — a real <button>, like every
 	// other entry in the row (see renderBookmarkToggle()). Unlike Bookmark,
 	// activating this publishes (or, to undo,
@@ -1083,7 +1089,8 @@
 		// with no local post at all (jetpack_liked) — either counts as
 		// "liked" for display purposes; toggleLike() below resolves which
 		// one to undo entirely server-side.
-		const liked = !!item.liked_mark_id || !!item.jetpack_liked;
+		// A Like made with the IndieBlocks plugin counts too (read-only).
+		const liked = !!item.liked_mark_id || !!item.jetpack_liked || !!item.indieblocks_like_id;
 		// Only offered when a Like can actually reach the origin (see
 		// Daymark_Like_Delivery): `like_available` is false when nothing
 		// could deliver one, null while still unknown (kept visible;
@@ -1095,7 +1102,9 @@
 		}
 		const id = esc(String(item.id));
 		const markId = esc(String(item.liked_mark_id || 0));
-		const label = likeToggleLabel(liked, item.like_delivery);
+		const label = likedOnlyWithIndieBlocks(item)
+			? __('Liked with IndieBlocks', 'daymark')
+			: likeToggleLabel(liked, item.like_delivery);
 		return `<button type="button" class="daymark-stat daymark-stat--like${
 			liked ? ' daymark-stat--active daymark-stat--liked' : ''
 		}" aria-pressed="${liked ? 'true' : 'false'}" aria-label="${esc(
@@ -4978,7 +4987,9 @@
 		const activeClass = 'like' === kind ? 'daymark-stat--liked' : 'daymark-stat--reposted';
 		const label =
 			'like' === kind
-				? likeToggleLabel(active, active && item ? item.like_delivery : '')
+				? active && item && item.indieblocks_like_id && !markId && !item.jetpack_liked
+					? __('Liked with IndieBlocks', 'daymark')
+					: likeToggleLabel(active, active && item ? item.like_delivery : '')
 				: active
 				? __('Undo reblog', 'daymark')
 				: __('Reblog', 'daymark');
@@ -5020,6 +5031,11 @@
 			return;
 		}
 		const wasLiked = 'true' === trigger.getAttribute('aria-pressed');
+		// Daymark can't undo an IndieBlocks Like; say where to do it.
+		if (wasLiked && likedOnlyWithIndieBlocks(item)) {
+			showFlashBubble(trigger, __('Liked with IndieBlocks. Remove it in WordPress.', 'daymark'));
+			return;
+		}
 		trigger.setAttribute('data-like-busy', 'true');
 		// Not yet known whether a Like can reach this origin: check first
 		// (the same answer observeLikeAvailability() would have fetched),
@@ -5037,11 +5053,17 @@
 			if (!wasLiked) {
 				const result = await apiPost('subscription-posts/' + id + '/like', {});
 				item.like_delivery = result.delivery || '';
+				if ('indieblocks' === result.method && !item.indieblocks_like_id) {
+					// Liked with IndieBlocks since this card loaded.
+					item.indieblocks_like_id = -1;
+				}
 				setEngagementToggleState(trigger, 'like', true, result.mark_id || 0, item);
 			} else {
-				await apiDelete('subscription-posts/' + id + '/like');
+				const result = await apiDelete('subscription-posts/' + id + '/like');
 				item.like_delivery = '';
-				setEngagementToggleState(trigger, 'like', false, 0, item);
+				item.jetpack_liked = false;
+				// Still liked when an IndieBlocks Like remains.
+				setEngagementToggleState(trigger, 'like', !!(result && result.liked), 0, item);
 			}
 			maybeShowInteractionHint('like', trigger);
 		} catch (err) {
@@ -5052,6 +5074,8 @@
 			if (err && 'daymark_like_undeliverable' === err.code) {
 				item.like_available = false;
 				hideUnavailableLikeToggle(trigger);
+			} else if (err && 'daymark_like_from_indieblocks' === err.code) {
+				showFlashBubble(trigger, __('Liked with IndieBlocks. Remove it in WordPress.', 'daymark'));
 			}
 		} finally {
 			trigger.removeAttribute('data-like-busy');
