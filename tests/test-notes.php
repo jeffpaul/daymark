@@ -21,12 +21,12 @@ class Test_Notes extends WP_UnitTestCase {
 	public function set_up(): void {
 		parent::set_up();
 
-		delete_option( Daymark_Settings::SHOW_NOTES_ON_HOME );
+		delete_option( Daymark_Settings::HIDE_NOTES_ON_HOME );
 		$this->admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 	}
 
 	public function tear_down(): void {
-		delete_option( Daymark_Settings::SHOW_NOTES_ON_HOME );
+		delete_option( Daymark_Settings::HIDE_NOTES_ON_HOME );
 		wp_set_current_user( 0 );
 
 		parent::tear_down();
@@ -75,9 +75,9 @@ class Test_Notes extends WP_UnitTestCase {
 		$this->assertContains( $note, $this->main_query_ids() );
 	}
 
-	/** With the setting off, the home page and main feed leave Notes out. */
-	public function test_setting_off_hides_notes_from_home_and_feed(): void {
-		update_option( Daymark_Settings::SHOW_NOTES_ON_HOME, '' );
+	/** With the setting on, the home page and main feed leave Notes out. */
+	public function test_setting_on_hides_notes_from_home_and_feed(): void {
+		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, '1' );
 		$note     = $this->make_post( 'aside' );
 		$standard = $this->make_post();
 		$image    = $this->make_post( 'image' );
@@ -94,9 +94,9 @@ class Test_Notes extends WP_UnitTestCase {
 		$this->assertContains( $standard, $ids );
 	}
 
-	/** With the setting off, a Note's own page and archives still show it. */
-	public function test_setting_off_keeps_notes_elsewhere(): void {
-		update_option( Daymark_Settings::SHOW_NOTES_ON_HOME, '' );
+	/** With the setting on, a Note's own page and archives still show it. */
+	public function test_setting_on_keeps_notes_elsewhere(): void {
+		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, '1' );
 		$category = self::factory()->category->create( array( 'name' => 'Thoughts' ) );
 		$note     = $this->make_post( 'aside' );
 		wp_set_post_categories( $note, array( $category ) );
@@ -117,12 +117,12 @@ class Test_Notes extends WP_UnitTestCase {
 	/** A developer filter wins over the stored option. */
 	public function test_filter_wins_over_option(): void {
 		$note = $this->make_post( 'aside' );
-		add_filter( 'daymark_show_notes_on_home', '__return_false' );
+		add_filter( 'daymark_hide_notes_on_home', '__return_true' );
 
 		$this->go_to( home_url( '/' ) );
 		$this->assertNotContains( $note, $this->main_query_ids() );
 
-		remove_filter( 'daymark_show_notes_on_home', '__return_false' );
+		remove_filter( 'daymark_hide_notes_on_home', '__return_true' );
 	}
 
 	/**

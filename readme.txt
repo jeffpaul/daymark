@@ -145,7 +145,7 @@ If your site still has entries in WordPress's old Links (blogroll) list, Setting
 
 = Can I keep Notes off my blog's home page? =
 
-Yes. In Settings -> Daymark -> General, uncheck "Show Notes on your blog's home page and main feed". A Note is any post with the Aside post format: Notes you post from Daymark, including reblogs and replies, and Aside posts you write in the block editor. Notes then stay off the home page and the main RSS feed, but keep their own pages and still appear in archives, search, and Daymark's Timeline. Notes stay ordinary posts, so nothing changes if you deactivate Daymark. A block theme's home page follows this setting when its Query Loop block inherits the template's query, which is the usual setup.
+Yes. Notes show on the home page and in the main feed by default, like any other post. To keep them off, check "Keep Notes off your blog's home page and main feed" in Settings -> Daymark -> General. A Note is any post with the Aside post format: Notes you post from Daymark, including reblogs and replies, and Aside posts you write in the block editor. Notes then stay off the home page and the main RSS feed, but keep their own pages and still appear in archives, search, and Daymark's Timeline. Notes stay ordinary posts, so nothing changes if you deactivate Daymark. A block theme's home page follows this setting when its Query Loop block inherits the template's query, which is the usual setup.
 
 You don't need to give a Note a title in the block editor. When you publish an Aside post with no title, Daymark gives it one from its first few words, the same way the app titles a Note, so it gets a readable web address and a title in feeds.
 

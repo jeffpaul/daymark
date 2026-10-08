@@ -61,10 +61,10 @@ final class Daymark_Settings {
 	public const BLOGROLL_PUBLIC = 'daymark_blogroll_public';
 
 	/**
-	 * Option: show Notes (Aside-format posts) on the blog's home page and
-	 * in its main feed.
+	 * Option: keep Notes (Aside-format posts) off the blog's home page and
+	 * out of its main feed.
 	 */
-	public const SHOW_NOTES_ON_HOME = 'daymark_show_notes_on_home';
+	public const HIDE_NOTES_ON_HOME = 'daymark_hide_notes_on_home';
 
 	/**
 	 * Option: the destinations a new Mark of each type starts with, as a
@@ -103,7 +103,7 @@ final class Daymark_Settings {
 			self::AI_AUTO_SUGGEST,
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
-			self::SHOW_NOTES_ON_HOME,
+			self::HIDE_NOTES_ON_HOME,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
 		);
@@ -373,26 +373,27 @@ final class Daymark_Settings {
 	}
 
 	/**
-	 * Whether Notes appear on the blog's home page and in its main feed. A
-	 * Note is any post with the Aside post format, whether it came from
-	 * Daymark or the block editor (Daymark_Notes).
+	 * Whether Notes are kept off the blog's home page and out of its main
+	 * feed. A Note is any post with the Aside post format, whether it came
+	 * from Daymark or the block editor (Daymark_Notes). Off by default, so
+	 * Notes appear there like any other post.
 	 *
 	 * @return bool
 	 */
-	public static function show_notes_on_home(): bool {
+	public static function hide_notes_on_home(): bool {
 		/**
-		 * Whether Notes (Aside-format posts) show on the blog's home page
-		 * and in its main RSS/Atom feed.
+		 * Whether Notes (Aside-format posts) are left off the blog's home
+		 * page and out of its main RSS/Atom feed.
 		 *
-		 * Defaults to the `daymark_show_notes_on_home` option (Settings ->
-		 * Daymark -> General, on by default). When false, Notes are left out
+		 * Defaults to the `daymark_hide_notes_on_home` option (Settings ->
+		 * Daymark -> General, off by default). When true, Notes are left out
 		 * of those two places only: each Note's own page, archives, search,
 		 * the REST API, and Daymark's Timeline still include them.
 		 *
 		 * @since 0.20.0
 		 *
-		 * @param bool $show Defaults to the `daymark_show_notes_on_home` option.
+		 * @param bool $hide Defaults to the `daymark_hide_notes_on_home` option.
 		 */
-		return (bool) apply_filters( 'daymark_show_notes_on_home', (bool) get_option( self::SHOW_NOTES_ON_HOME, true ) );
+		return (bool) apply_filters( 'daymark_hide_notes_on_home', (bool) get_option( self::HIDE_NOTES_ON_HOME, false ) );
 	}
 }

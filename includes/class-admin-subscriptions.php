@@ -3351,16 +3351,17 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * The Notes setting: whether Notes (Aside-format posts) show on the
-	 * blog's home page and in its main feed (Daymark_Notes).
+	 * The Notes setting: whether Notes (Aside-format posts) are kept off
+	 * the blog's home page and out of its main feed (Daymark_Notes). Off by
+	 * default.
 	 *
 	 * @since 0.20.0
 	 *
 	 * @return void
 	 */
 	private function render_notes_form(): void {
-		$stored     = (bool) get_option( Daymark_Settings::SHOW_NOTES_ON_HOME, true );
-		$effective  = Daymark_Settings::show_notes_on_home();
+		$stored     = (bool) get_option( Daymark_Settings::HIDE_NOTES_ON_HOME, false );
+		$effective  = Daymark_Settings::hide_notes_on_home();
 		$overridden = $stored !== $effective;
 		?>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -3368,12 +3369,12 @@ class Daymark_Admin_Subscriptions {
 			<?php wp_nonce_field( 'daymark_notes_save', 'daymark_notes_save_nonce' ); ?>
 			<p>
 				<label>
-					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::SHOW_NOTES_ON_HOME ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
-					<?php esc_html_e( 'Show Notes on your blog\'s home page and main feed', 'daymark' ); ?>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::HIDE_NOTES_ON_HOME ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Keep Notes off your blog\'s home page and main feed', 'daymark' ); ?>
 				</label>
 			</p>
 			<p class="description">
-				<?php esc_html_e( 'A Note is any post with the Aside format: Notes you post from Daymark, including reblogs and replies, and Aside posts written in the editor. When this is off, Notes stay on their own pages, in archives and search, and in Daymark\'s Timeline.', 'daymark' ); ?>
+				<?php esc_html_e( 'A Note is any post with the Aside format: Notes you post from Daymark, including reblogs and replies, and Aside posts written in the editor. Notes kept off still have their own pages and still appear in archives, search, and Daymark\'s Timeline.', 'daymark' ); ?>
 			</p>
 			<?php if ( $overridden ) : ?>
 				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
@@ -3398,7 +3399,7 @@ class Daymark_Admin_Subscriptions {
 
 		check_admin_referer( 'daymark_notes_save', 'daymark_notes_save_nonce' );
 
-		update_option( Daymark_Settings::SHOW_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::SHOW_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::HIDE_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'notes_saved' ), 'general' );
 	}

@@ -11,9 +11,9 @@
  * This class does two things for every Aside post, wherever it was
  * written:
  *
- * - When Settings -> Daymark -> General turns off "Show Notes on your
- *   blog's home page and main feed" (Daymark_Settings::show_notes_on_home()),
- *   the main query for the home page and the main RSS/Atom feed leaves
+ * - When Settings -> Daymark -> General turns on "Keep Notes off your
+ *   blog's home page and main feed" (Daymark_Settings::hide_notes_on_home(),
+ *   off by default), the main query for the home page and the main RSS/Atom feed leaves
  *   Aside posts out. Nothing else changes: each Note's own page, every
  *   archive (including the Aside format archive), search, the REST API,
  *   the sitemap, and Daymark's Timeline still include them.
@@ -66,7 +66,7 @@ class Daymark_Notes {
 
 	/**
 	 * Leave Notes out of the home page and the main feed when the site
-	 * owner has turned them off there.
+	 * owner has chosen to keep them off there.
 	 *
 	 * Only the main query is changed. A block theme's home template uses
 	 * the main query (a Query Loop block set to inherit it), so it follows
@@ -76,7 +76,7 @@ class Daymark_Notes {
 	 * @return void
 	 */
 	public function exclude_from_home_and_feed( WP_Query $query ): void {
-		if ( is_admin() || ! $query->is_main_query() || Daymark_Settings::show_notes_on_home() ) {
+		if ( is_admin() || ! $query->is_main_query() || ! Daymark_Settings::hide_notes_on_home() ) {
 			return;
 		}
 
