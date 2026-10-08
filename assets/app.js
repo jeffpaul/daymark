@@ -9709,9 +9709,12 @@
 				);
 				return;
 			}
-			const defaultIndex = open.some((c) => c.index === result.default_index)
-				? result.default_index
-				: open[0].index;
+			const recommended = open.some((c) => c.index === result.default_index);
+			const defaultIndex = recommended ? result.default_index : open[0].index;
+			// With more than one feed to choose from, name the one Daymark
+			// would pick (the server's default_index), so the preselection
+			// isn't a mystery.
+			const showRecommended = recommended && candidates.length > 1;
 			const options = candidates
 				.map(
 					(c) => `
@@ -9720,9 +9723,11 @@
 						c.index === defaultIndex ? ' checked' : ''
 					}${c.subscribed ? ' disabled' : ''} />
 					<span class="daymark-follow__optiontext">
-						<strong>${esc(c.label || __('Feed', 'daymark'))}</strong>${
-							c.subscribed ? ` <em>${esc(__('(already following)', 'daymark'))}</em>` : ''
-						}
+						<span class="daymark-follow__name"><strong>${esc(c.label || __('Feed', 'daymark'))}</strong>${
+							showRecommended && c.index === result.default_index
+								? ` <span class="daymark-follow__recommended">${esc(__('(recommended)', 'daymark'))}</span>`
+								: ''
+						}${c.subscribed ? ` <em>${esc(__('(already following)', 'daymark'))}</em>` : ''}</span>
 						<span class="daymark-follow__url">${esc(c.url)}</span>
 					</span>
 				</label>`

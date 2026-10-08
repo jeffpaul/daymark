@@ -888,6 +888,10 @@ test('Follow a site from the Me screen picks a feed and follows it', async ({ pa
 	await sheet.locator('[data-follow-find]').click();
 
 	await expect(sheet.locator('input[name="daymark-follow-feed"][value="1"]')).toBeChecked();
+	// With two feeds to choose from, the preselected one is labelled.
+	const options = sheet.locator('.daymark-follow__option');
+	await expect(options.nth(1).locator('.daymark-follow__recommended')).toHaveText('(recommended)');
+	await expect(options.nth(0).locator('.daymark-follow__recommended')).toHaveCount(0);
 	await expect(sheet.locator('[data-follow-name]')).toHaveValue('Follow Example');
 	await sheet.locator('[data-follow-name]').fill('My Friend');
 	await sheet.locator('[data-follow-submit]').click();

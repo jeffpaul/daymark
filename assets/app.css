@@ -2564,6 +2564,11 @@ button.daymark-stat {
 	color: var(--daymark-text-primary);
 }
 
+.daymark-follow__recommended {
+	font-weight: 400;
+	color: var(--daymark-text-secondary);
+}
+
 .daymark-follow__url {
 	font-size: 13px;
 	color: var(--daymark-text-muted);
