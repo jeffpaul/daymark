@@ -54,7 +54,13 @@ wp_register_script( 'daymark-bookmarklet', DAYMARK_PLUGIN_URL . 'assets/bookmark
 <body class="daymark-app daymark-bookmarklet">
 	<main class="daymark-shell daymark-bookmarklet__shell">
 		<header class="daymark-topbar">
-			<img class="daymark-bookmarklet__icon" src="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 192 ) ); ?>" alt="" width="26" height="26" />
+			<?php if ( '' === $daymark_bm_target['url'] ) : ?>
+				<?php // The install page is reached from Me in the app; this is the same back link the app's own screens use. ?>
+				<a class="daymark-backlink daymark-backlink--icon" href="<?php echo esc_url( Daymark_Routes::app_url( 'me' ) ); ?>" aria-label="<?php esc_attr_e( 'Back to Me', 'daymark' ); ?>"><span aria-hidden="true">&larr;</span><img src="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 192 ) ); ?>" alt="" width="22" height="22" /></a>
+			<?php else : ?>
+				<?php // The Reblog/Like popup opens from another site, so it has no app screen to go back to; it gets a Close button instead. ?>
+				<img class="daymark-bookmarklet__icon" src="<?php echo esc_url( Daymark_Routes::daymark_icon_url( 192 ) ); ?>" alt="" width="26" height="26" />
+			<?php endif; ?>
 			<h1 class="daymark-topbar__title">
 				<?php echo '' !== $daymark_bm_target['url'] ? esc_html__( 'Share to Daymark', 'daymark' ) : esc_html__( 'Daymark bookmarklet', 'daymark' ); ?>
 			</h1>

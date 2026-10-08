@@ -331,6 +331,8 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'href="javascript:', $html );
 		$this->assertStringNotContainsString( 'name="daymark_action"', $html );
+		$this->assertStringContainsString( 'href="' . esc_url( Daymark_Routes::app_url( 'me' ) ) . '"', $html );
+		$this->assertStringContainsString( 'aria-label="Back to Me"', $html );
 	}
 
 	public function test_popup_shows_the_reblog_form_with_editable_title_and_comment() {
@@ -341,6 +343,10 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'value="reblog"', $html );
 		$this->assertStringContainsString( 'name="_wpnonce"', $html );
 		$this->assertStringContainsString( 'can’t receive a Like', $html );
+	}
+
+	public function test_reblog_popup_has_no_back_link() {
+		$this->assertStringNotContainsString( 'Back to Me', $this->render( $this->target() ) );
 	}
 
 	public function test_popup_shows_the_embed_preview_and_a_like_button_when_available() {
