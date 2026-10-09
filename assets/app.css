@@ -3923,15 +3923,85 @@ button.daymark-stat {
    .daymark-screen's own between the post body above and this block) since
    both rows are already block-level flex containers in their own right
    and would otherwise sit flush with no breathing room between them.
-   position: relative gives the ⋯ overflow menu's own floating panel
-   (.daymark-recent__overflowmenu) a containing block to anchor against —
-   PostScreen has no other position:relative ancestor the way a Timeline
-   card's own .daymark-recent__item-wrap already does. */
+   The interaction row itself lives in .daymark-postview-footer below. */
 .daymark-postview-meta {
-	position: relative;
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-xs);
+}
+
+/* Opening "Where this went" from the floating footer scrolls its panel
+   into view; this margin keeps it clear of the footer. */
+.daymark-postview-meta .daymark-recent__routing {
+	scroll-margin-bottom: calc(var(--daymark-tap-min) + var(--daymark-spacing-xl));
+}
+
+/* The post view's floating action bar: Like, Comment, Reblog, Bookmark,
+   and the ⋯ menu in one rounded pill that stays at the bottom of the
+   screen while the post scrolls under it, like the Jetpack app's reader.
+   It is the screen's last child, so position: sticky pins it to the
+   viewport's bottom on a long post and lets it sit after the content on
+   a short one. Being positioned, it is also the containing block the ⋯
+   menu's panel (.daymark-recent__overflowmenu) anchors to; the panel
+   opens upward from here (positionOverflowPanel(), app.js). */
+.daymark-postview-footer {
+	position: sticky;
+	bottom: calc(var(--daymark-spacing-sm) + env(safe-area-inset-bottom, 0px));
+	z-index: 10;
+	display: flex;
+	justify-content: center;
+	margin-top: auto;
+	pointer-events: none;
+}
+
+.daymark-postview-footer__bar {
+	pointer-events: auto;
+	display: flex;
+	width: 100%;
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+	border: 1px solid var(--daymark-border);
+	border-radius: 999px;
+	background: var(--daymark-bg);
+	box-shadow: 0 8px 24px rgba(46, 0, 84, 0.16);
+}
+
+@supports (background: color-mix(in srgb, red 50%, transparent)) and ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+	.daymark-postview-footer__bar {
+		background: color-mix(in srgb, var(--daymark-bg) 82%, transparent);
+		-webkit-backdrop-filter: blur(16px) saturate(180%);
+		backdrop-filter: blur(16px) saturate(180%);
+	}
+}
+
+/* Spread the icons evenly across the pill instead of bunching them at
+   one end, as a card's row does. */
+.daymark-postview-footer .daymark-item-stats {
+	flex: 1;
+	justify-content: space-between;
+	align-items: center;
+	min-height: var(--daymark-tap-min);
+}
+
+/* Your own Mark: engagement text on the left, Bookmark and ⋯ together on
+   the right, the same split as its card. */
+.daymark-postview-footer .daymark-item-stats--own {
+	justify-content: flex-end;
+}
+
+.daymark-postview-footer .daymark-stat {
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-postview-footer .daymark-stat--active {
+	color: var(--daymark-accent);
+}
+
+.daymark-postview-footer .daymark-engagement {
+	padding-left: var(--daymark-spacing-xs);
+}
+
+.daymark-postview-footer .daymark-recent__overflowmenu {
+	pointer-events: auto;
 }
 
 /* The full-screen post-view screen's own content area (PostScreen, issue
