@@ -132,14 +132,19 @@ class Test_Federated_Comments extends WP_UnitTestCase {
 		$this->assertSame( 'site', $item['source'] );
 	}
 
-	/** Reaction comment types (likes/reposts) are not notification items. */
-	public function test_reaction_comment_types_excluded() {
+	/** A federated like is a notification in the Likes tab, labeled by network. */
+	public function test_reaction_comment_types_are_likes() {
 		$comment_id = $this->insert_federated_comment(
 			array( 'protocol' => 'atproto' ),
 			'like'
 		);
 
-		$this->assertNull( $this->notification_item( $comment_id ) );
+		$item = $this->notification_item( $comment_id );
+
+		$this->assertNotNull( $item );
+		$this->assertSame( 'like', $item['comment_kind'] );
+		$this->assertSame( 'likes', $item['category'] );
+		$this->assertSame( 'Bluesky', $item['source_label'] );
 	}
 
 	/** u-syndication links render for external posts with URLs. */

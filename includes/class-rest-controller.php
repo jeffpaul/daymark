@@ -1043,6 +1043,33 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Per-item Notifications state: read, unread, archive, unarchive.
+		// Pure local per-user writes with no outbound request, so no
+		// rate-limit bucket (same posture as dismissing a plugin notice).
+		foreach ( array( 'read', 'unread', 'archive', 'unarchive' ) as $notification_action ) {
+			register_rest_route(
+				$this->namespace,
+				'/notifications/' . $notification_action,
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'update_notification_state' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'ids' => array(
+							'type'     => 'array',
+							'items'    => array( 'type' => 'string' ),
+							'default'  => array(),
+							'maxItems' => Daymark_Notification_State::MAX_IDS_PER_REQUEST,
+						),
+						'all' => array(
+							'type'    => 'boolean',
+							'default' => false,
+						),
+					),
+				)
+			);
+		}
+
 		register_rest_route(
 			$this->namespace,
 			'/notifications/plugin-overlaps/(?P<plugin>[a-z0-9-]+)/dismiss',
@@ -3304,6 +3331,67 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/notifications/{read|unread|archive|unarchive} —
+	 * change the current user's state for the notifications in `ids`.
+	 * `read` also takes `all: true`, which marks every notification read
+	 * (see Daymark_Notification_State::mark_all_read()). Archiving hides a
+	 * notification; the comment or like itself is never deleted.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function update_notification_state( WP_REST_Request $request ) {
+		$route   = (string) $request->get_route();
+		$action  = substr( $route, (int) strrpos( $route, '/' ) + 1 );
+		$user_id = get_current_user_id();
+		$state   = Daymark_Plugin::instance()->notification_state;
+
+		if ( 'read' === $action && true === $request->get_param( 'all' ) ) {
+			$items = Daymark_Plugin::instance()->notifications->get_notifications();
+			$state->mark_all_read( $user_id, Daymark_Notifications::undated_ids( $items ) );
+
+			return rest_ensure_response(
+				array(
+					'action' => 'read',
+					'all'    => true,
+				)
+			);
+		}
+
+		$ids = Daymark_Notification_State::clean_ids( $request->get_param( 'ids' ) );
+
+		if ( empty( $ids ) ) {
+			return new WP_Error(
+				'daymark_notification_ids_required',
+				__( 'Choose at least one notification.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		switch ( $action ) {
+			case 'read':
+				$state->mark_read( $user_id, $ids );
+				break;
+			case 'unread':
+				$state->mark_unread( $user_id, $ids );
+				break;
+			case 'archive':
+				$state->archive( $user_id, $ids );
+				break;
+			case 'unarchive':
+				$state->unarchive( $user_id, $ids );
+				break;
+		}
+
+		return rest_ensure_response(
+			array(
+				'action' => $action,
+				'ids'    => $ids,
+			)
+		);
+	}
+
+	/**
 	 * POST /daymark/v1/notifications/plugin-overlaps/{plugin}/dismiss —
 	 * dismiss a plugin-overlap Notifications item (issue #346) for the
 	 * current user. One-way: there's no matching "un-dismiss" route, since
@@ -3546,6 +3634,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			return $new_comment_id;
 		}
+
+		// Replying to a notification means you've read it.
+		Daymark_Plugin::instance()->notification_state->mark_read( $user->ID, array( 'comment-' . $comment_id ) );
 
 		$response = rest_ensure_response(
 			array(
