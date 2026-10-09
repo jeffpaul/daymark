@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-09
+
 ### Added
 
 - Connector plugins can now report how many likes and reblogs a Mark got on their network, on the same hourly check that brings back replies. Daymark adds those counts to the Mark's like and reblog counts on the Timeline. Before, likes and reblogs on a network Daymark checks for replies were never counted.
@@ -27,7 +29,6 @@ can't act on them.
 - If you write short notes with the Shortnotes plugin, or with the Notes option in IndieBlocks, those notes now show in Daymark's Timeline, Search, On this day, and Bookmarks as Note cards. Daymark only reads them; it never changes or deletes them. ([#512](https://github.com/jeffpaul/daymark/pull/512))
 - Daymark now sends and receives Webmentions itself when the Webmention plugin isn't installed, for every public post. Likes, Reblogs, and comments now reach another Daymark site with nothing else to install, and arrive there as likes, reblog counts, and replies in Notifications.
 - A Daymark site now tells the Daymark sites that follow it what each post is: a Check In, a Reblog or reply and what it points to, and its Featured Content. Their Timeline shows the post the way its own site does, where before a Check In looked like a Note and a Reblog had no "Reblogged from" line.
-
 - You can now follow sites that publish a JSON Feed, the format Micro.blog and many static sites use. Daymark finds it from the site's page, or you can paste the feed's own address. A site that offers RSS as well is still followed through RSS, and the subscribe picker lists both. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - Daymark now works with the optional Parse This plugin (2.0.0 or later), listed on Settings -> Daymark -> Connectors. With it, link previews also show the page's author and use its microformats and JSON-LD, and sites you follow through their microformats are read by Parse This's complete parser. Daymark only gives Parse This pages it already fetched, and works as before without it. ([#479](https://github.com/jeffpaul/daymark/pull/479))
 - A post from a site you follow that replies to, reblogs, bookmarks, or RSVPs to another post now says so in a line at the top of its Timeline card, and the full post view shows a preview of that post. Likes from sites you follow stay out of the Timeline, the same way your own Likes do. ([#479](https://github.com/jeffpaul/daymark/pull/479), [#480](https://github.com/jeffpaul/daymark/pull/480))
@@ -733,6 +734,7 @@ can't act on them.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
 [unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[0.20.0]: https://github.com/jeffpaul/daymark/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/jeffpaul/daymark/compare/0.18.0...0.19.0
 [0.18.0]: https://github.com/jeffpaul/daymark/compare/0.17.0...0.18.0
 [0.17.0]: https://github.com/jeffpaul/daymark/compare/0.16.0...0.17.0
