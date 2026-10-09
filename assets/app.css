@@ -2085,6 +2085,18 @@ button.daymark-stat {
 	background: var(--daymark-accent-wash);
 }
 
+/* A row that opens a WordPress screen: its icon sits right after the text. */
+.daymark-melink__external {
+	flex-shrink: 0;
+	margin-left: 6px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-melink:hover .daymark-melink__external,
+.daymark-melink:focus-visible .daymark-melink__external {
+	color: currentColor;
+}
+
 /* --- Create: media picker --- */
 .daymark-picker__input {
 	position: absolute;
@@ -3643,7 +3655,7 @@ button.daymark-stat {
 	outline-offset: 2px;
 }
 
-/* The Source filter (All / My Marks / one subscribed site) sits next to
+/* The Source filter (All sites / My marks / one subscribed site) sits next to
    the type-filter chip row, not merged into it — its own control, same
    row. .daymark-filterchips is given room to wrap onto its own line(s)
    first (flex: 1 1 auto) while the select stays a fixed, un-shrinking

@@ -182,6 +182,53 @@ Daymark stores none. `Daymark_Connector_Base`
 a mock-only connector is all a given destination needs, but a real
 connector generally implements the interface directly, as above.
 
+## Bringing back replies, likes, and reblogs
+
+A connector whose result sets `backflow_supported` is checked automatically:
+once an hour for Marks from the last 14 days, and soon after someone opens
+Notifications. Each check runs two filters for every network the Mark went
+to.
+
+`daymark_import_network_responses` brings back replies. Fetch them from
+your platform and pass each one to `$notifications->import_response()`,
+which turns it into a WordPress comment and skips one it already imported.
+Return the new comment IDs, or an empty array when there was nothing new.
+
+`daymark_import_network_reactions` brings back like and reblog counts.
+Return the platform's current totals, and Daymark adds them to the Mark's
+like and reblog counts on the Timeline. Each check replaces the last one's
+numbers, so return totals, not changes. Leave out a count your platform
+doesn't have, and the previous value is kept.
+
+```php
+add_filter(
+    'daymark_import_network_reactions',
+    function ( $counts, int $post_id, string $network, array $reference ) {
+        if ( 'my-network' !== $network ) {
+            return $counts;
+        }
+
+        $post = my_network_fetch_post( $reference['external_id'] ?? '' );
+
+        if ( ! $post ) {
+            return $counts; // Keep the last stored counts.
+        }
+
+        return array(
+            'likes'   => (int) $post['like_count'],
+            'reposts' => (int) $post['reblog_count'],
+        );
+    },
+    10,
+    4
+);
+```
+
+Only report reactions your platform holds itself. If a federation plugin
+(ActivityPub, ATmosphere, or Webmention) already delivers the same likes to
+the site as comments, Daymark counts those already, and reporting them here
+would count each one twice.
+
 ## Where this fits
 
 - `daymark_register_connectors` fires on `init`, after Daymark's own seven

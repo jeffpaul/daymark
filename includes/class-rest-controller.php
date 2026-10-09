@@ -1898,6 +1898,48 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
 				);
 			}
+
+			// Notes written with Shortnotes or IndieBlocks (issue #492) are
+			// the site's own posts in another plugin's post type, so they
+			// show wherever the site's posts do. Their own query, because
+			// the `note` type filter matches a Mark by meta but these by
+			// post type, and WP_Query can't OR the two. Every other filter
+			// (search, bookmarks, date window, On this day) applies as is.
+			$note_types = Daymark_External_Notes::post_types();
+
+			if ( ! empty( $note_types ) && ( '' === $type || 'note' === $type ) ) {
+				$notes_args = array(
+					'post_type'      => $note_types,
+					'post_status'    => 'publish',
+					'posts_per_page' => $limit,
+					'paged'          => 1,
+					'orderby'        => 'date',
+					'order'          => 'DESC',
+					'no_found_rows'  => ! $want_total,
+				);
+
+				if ( '' !== $search ) {
+					$notes_args['s'] = $search;
+				}
+
+				if ( null !== $bookmarked_post_in ) {
+					$notes_args['post__in'] = $bookmarked_post_in;
+				}
+
+				if ( count( $marks_window ) > 1 ) {
+					$notes_args['date_query'] = array( $marks_window );
+				}
+
+				$notes_query = new WP_Query( $notes_args );
+				$total      += (int) $notes_query->found_posts;
+
+				foreach ( $notes_query->posts as $post ) {
+					$items[] = array(
+						'date' => (string) $post->post_date_gmt,
+						'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
+					);
+				}
+			}
 		}
 
 		if ( $include_subscription_posts ) {
@@ -2279,7 +2321,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	public function get_featured_content_link( WP_REST_Request $request ) {
 		$post = get_post( absint( $request->get_param( 'id' ) ) );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -2337,7 +2379,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	public function get_featured_content_image( WP_REST_Request $request ) {
 		$post = get_post( absint( $request->get_param( 'id' ) ) );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -2862,7 +2904,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$post_id = absint( $request->get_param( 'id' ) );
 		$post    = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -3109,7 +3151,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		if ( ! in_array( $post->post_type, array( 'post', Daymark_Subscription_Post_Type::POST_TYPE ), true ) ) {
+		if ( Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type && ! Daymark_External_Notes::is_own_content_type( $post->post_type ) ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -4783,6 +4825,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 */
 	private function prepare_mark_summary( int $post_id ): array {
 		$author_id = (int) get_post_field( 'post_author', $post_id );
+		$reactions = Daymark_Backflow_Sync::reaction_totals( $post_id );
+
+		// A Shortnotes or IndieBlocks note (issue #492) has no
+		// _daymark_primary_type meta, but it is a Note by definition.
+		$note_source = Daymark_External_Notes::source_for( $post_id );
 
 		$summary = array(
 			'id'                 => absint( $post_id ),
@@ -4795,7 +4842,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			),
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
-			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			'type'               => '' !== $note_source ? 'note' : sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
 			// The post's own real WordPress post format ('standard' when
 			// unset). A true Mark's `type` above always takes priority
 			// client-side; this exists only for an ordinary post published
@@ -4816,17 +4863,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
-			// Federation-plugin likes (stored as comments) plus WordPress.com
-			// likes, which Jetpack keeps off-site — see
-			// Daymark_Jetpack_Engagement::sync_own_likes().
+			// Federation-plugin likes (stored as comments), WordPress.com
+			// likes, which Jetpack keeps off-site (see
+			// Daymark_Jetpack_Engagement::sync_own_likes()), and the likes a
+			// polling connector reported for its copy of the Mark (see
+			// Daymark_Backflow_Sync::store_reactions()).
 			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
-				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
-			// Every reblog, with or without the reblogger's own words — see
-			// count_reblogs(). A polling connector's own reactions aren't
-			// pulled in at all (backflow only imports replies), so they
-			// aren't counted; extending backflow to sync reaction counts is
-			// tracked separately on issue #41.
-			'repost_count'       => $this->count_reblogs( $post_id ),
+				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count']
+				+ $reactions['likes'],
+			// Every reblog, with or without the reblogger's own words, plus
+			// the reblogs a polling connector reported. The same number the
+			// Posts list's Reblogs column shows.
+			'repost_count'       => Daymark_Reblog_Count::for_post( $post_id ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 			// Whose post this is, so a Timeline card can label your own
@@ -5035,76 +5083,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'count'   => true,
 			)
 		);
-	}
-
-	/**
-	 * How many times a Mark has been reblogged, with or without the
-	 * reblogger's own words (issue #396).
-	 *
-	 * - `repost` comments: a plain reblog or boost, as the ActivityPub,
-	 *   ATmosphere, and Webmention plugins store it (issue #41). A Webmention
-	 *   reblog with commentary is still a `repost`, since the Webmention
-	 *   plugin types by `u-repost-of` and ignores any text alongside it.
-	 * - `quote` comments: a quote post (a reblog with commentary) from the
-	 *   fediverse, which the ActivityPub plugin stores under its own `quote`
-	 *   type (`Activitypub\Comment::register_comment_types()`).
-	 * - Reblog Marks published on this same site (another author here
-	 *   reblogging it), which no plugin turns into a comment. One that the
-	 *   Webmention plugin already recorded as a comment (by its source URL)
-	 *   is not counted twice.
-	 *
-	 * @param int $post_id Mark post ID.
-	 * @return int
-	 */
-	private function count_reblogs( int $post_id ): int {
-		$comments = get_comments(
-			array(
-				'post_id'  => $post_id,
-				'type__in' => array( 'repost', 'quote' ),
-				'status'   => 'approve',
-				'fields'   => 'ids',
-			)
-		);
-
-		$counted_sources = array();
-
-		foreach ( $comments as $comment_id ) {
-			$source = (string) get_comment_meta( (int) $comment_id, 'webmention_source_url', true );
-
-			if ( '' !== $source ) {
-				$counted_sources[ untrailingslashit( $source ) ] = true;
-			}
-		}
-
-		$permalink = (string) get_permalink( $post_id );
-		$targets   = array_values( array_unique( array_filter( array( $permalink, untrailingslashit( $permalink ), trailingslashit( $permalink ) ) ) ) );
-		$local     = empty( $targets ) ? array() : get_posts(
-			array(
-				'post_type'      => 'post',
-				'post_status'    => 'publish',
-				'posts_per_page' => -1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-				'post__not_in'   => array( $post_id ),
-				'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Exact-match lookup, one per Mark card, at personal-site scale (same posture as find_own_mark_id_by_target_url()).
-					array(
-						'key'     => '_daymark_repost_of',
-						'value'   => $targets,
-						'compare' => 'IN',
-					),
-				),
-			)
-		);
-
-		$local_uncounted = 0;
-
-		foreach ( $local as $reblog_id ) {
-			if ( ! isset( $counted_sources[ untrailingslashit( (string) get_permalink( (int) $reblog_id ) ) ] ) ) {
-				++$local_uncounted;
-			}
-		}
-
-		return count( $comments ) + $local_uncounted;
 	}
 
 	/**

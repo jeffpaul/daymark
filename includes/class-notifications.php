@@ -939,7 +939,8 @@ class Daymark_Notifications {
 	}
 
 	/**
-	 * Import mocked social responses for a Mark (conversation backflow).
+	 * Import mocked social responses for a Mark (conversation backflow),
+	 * and any like and reblog counts a connector reports.
 	 *
 	 * For each requested network that has an entry in the Mark's
 	 * _daymark_external_posts reference map, inserts 1–2 sample WordPress
@@ -987,6 +988,30 @@ class Daymark_Notifications {
 			// there's anything new — so a Mark's sync recency reflects that
 			// a check happened, not only that a check found something.
 			$this->record_synced_at( $post_id, $network );
+
+			/**
+			 * Allows a polling connector to report the like and reblog
+			 * counts for its copy of a Mark, on the same sync that imports
+			 * its replies.
+			 *
+			 * Return an array with `likes` and/or `reposts` (whole numbers,
+			 * the platform's current totals) to store them; return null to
+			 * report nothing. Daymark adds the stored counts to the Mark's
+			 * like and reblog counts on the Timeline. Report only what the
+			 * platform itself holds: a like that a federation plugin already
+			 * delivers to this site as a comment would otherwise be counted
+			 * twice.
+			 *
+			 * @param array<string, int>|null $counts    Counts, or null when unreported.
+			 * @param int                     $post_id   Mark post ID.
+			 * @param string                  $network   Network ID, e.g. 'bluesky'.
+			 * @param array<string, mixed>    $reference External post reference for the network.
+			 */
+			$reactions = apply_filters( 'daymark_import_network_reactions', null, $post_id, $network, $external_posts[ $network ] );
+
+			if ( is_array( $reactions ) ) {
+				Daymark_Backflow_Sync::store_reactions( $post_id, $network, $reactions );
+			}
 
 			/**
 			 * Allows a real connector plugin to handle response import for

@@ -300,4 +300,63 @@ class Test_Jetpack_Engagement extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 1, $response->get_data()['like_count'] );
 	}
+
+	/** The older-likes pass walks every published post, newest first, then starts over. */
+	public function test_older_likes_batches_walk_all_posts_then_restart() {
+		delete_option( Daymark_Jetpack_Engagement::OLDER_LIKES_CURSOR );
+		$batch = static function () {
+			return 2;
+		};
+		add_filter( 'daymark_jetpack_older_likes_batch', $batch );
+
+		$ids = array();
+		for ( $i = 0; $i < 3; $i++ ) {
+			$ids[] = (int) self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		}
+		self::factory()->post->create( array( 'post_status' => 'draft' ) );
+		self::factory()->post->create(
+			array(
+				'post_status' => 'publish',
+				'post_type'   => 'page',
+			)
+		);
+		rsort( $ids );
+
+		$this->assertSame( array( $ids[0], $ids[1] ), Daymark_Jetpack_Engagement::next_older_likes_batch() );
+		$this->assertSame( array( $ids[2] ), Daymark_Jetpack_Engagement::next_older_likes_batch(), 'Continues below the last post, skipping drafts and pages.' );
+		$this->assertSame( array( $ids[0], $ids[1] ), Daymark_Jetpack_Engagement::next_older_likes_batch(), 'Starts over from the newest after the oldest.' );
+
+		remove_filter( 'daymark_jetpack_older_likes_batch', $batch );
+	}
+
+	/** Without a Jetpack connection the older-likes pass does nothing. */
+	public function test_sync_older_likes_no_ops_when_unavailable() {
+		delete_option( Daymark_Jetpack_Engagement::OLDER_LIKES_CURSOR );
+		self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$this->assertSame( 0, Daymark_Jetpack_Engagement::sync_older_likes() );
+		$this->assertFalse( get_option( Daymark_Jetpack_Engagement::OLDER_LIKES_CURSOR ), 'No position stored when nothing ran.' );
+	}
+
+	/** A like with no date found on an old post is dated with the post, not now. */
+	public function test_store_own_likes_uses_the_fallback_date() {
+		$post_id   = (int) self::factory()->post->create();
+		$post_date = strtotime( '2020-01-01 00:00:00' );
+
+		Daymark_Jetpack_Engagement::store_own_likes(
+			$post_id,
+			array(
+				'found' => 1,
+				'likes' => array(
+					array(
+						'ID'   => 7,
+						'name' => 'Old Friend',
+					),
+				),
+			),
+			$post_date
+		);
+
+		$this->assertSame( $post_date, Daymark_Jetpack_Engagement::own_likes( $post_id )['likers']['7']['liked_at'] );
+	}
 }
