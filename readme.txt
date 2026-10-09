@@ -4,7 +4,7 @@ Tags:              publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
-Stable tag:        0.19.0
+Stable tag:        0.20.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -203,7 +203,91 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.20.0 - 2026-10-09 =
+**Added**
+
+* Connector plugins can now report how many likes and reblogs a Mark got on their network, on the same hourly check that brings back replies. Daymark adds those counts to the Mark's like and reblog counts on the Timeline. Before, likes and reblogs on a network Daymark checks for replies were never counted.
+* The Posts list in wp-admin has a new Reblogs column, next to the comment count. It shows the same reblog count as the post's card in the Daymark app.
+* If you write short notes with the Shortnotes plugin, or with the Notes option in IndieBlocks, those notes now show in Daymark's Timeline, Search, On this day, and Bookmarks as Note cards. Daymark only reads them; it never changes or deletes them.
+* Daymark now sends and receives Webmentions itself when the Webmention plugin isn't installed, for every public post. Likes, Reblogs, and comments now reach another Daymark site with nothing else to install, and arrive there as likes, reblog counts, and replies in Notifications.
+* A Daymark site now tells the Daymark sites that follow it what each post is: a Check In, a Reblog or reply and what it points to, and its Featured Content. Their Timeline shows the post the way its own site does, where before a Check In looked like a Note and a Reblog had no "Reblogged from" line.
+* You can now follow sites that publish a JSON Feed, the format Micro.blog and many static sites use. Daymark finds it from the site's page, or you can paste the feed's own address. A site that offers RSS as well is still followed through RSS, and the subscribe picker lists both.
+* Daymark now works with the optional Parse This plugin (2.0.0 or later), listed on Settings -> Daymark -> Connectors. With it, link previews also show the page's author and use its microformats and JSON-LD, and sites you follow through their microformats are read by Parse This's complete parser. Daymark only gives Parse This pages it already fetched, and works as before without it.
+* A post from a site you follow that replies to, reblogs, bookmarks, or RSVPs to another post now says so in a line at the top of its Timeline card, and the full post view shows a preview of that post. Likes from sites you follow stay out of the Timeline, the same way your own Likes do.
+* Posts from WordPress sites you follow keep more of their post format: an aside shows as a Note, a link post as a Link card with a preview of the linked page, and a quote post with its quote across the top of its card.
+* With Jetpack active and your WordPress.com account linked, Settings -> Daymark -> Import/Export can now import the sites you follow in the WordPress.com Reader. You pick from a checklist first, and each site is imported the same way as an OPML entry, so it looks exactly like a subscription added by hand.
+* You can now add AVIF photos to a Mark, and HEIC/HEIF photos where your server can convert them to JPEG. Where it can't, the composer says so when you pick the photo and asks for a JPEG. iPhone already sends photos as JPEG.
+* Daymark now has a dark theme that follows your device setting.
+* With a mouse or keyboard, a refresh button in the Timeline's header does what pulling down does on a phone.
+* Notifications marks the replies that arrived since your last visit as New, and the bell's dot now appears during a visit instead of only after a reload.
+* Settings -> Daymark has a new General tab, shown first, with how often Daymark checks the sites you follow and a new option to share them as a public blogroll. Sharing publishes an OPML file that feed readers can import and links to it from your site's pages. A new Blogroll block lists the sites you follow on any page.
+* Import / Export can now import your site's old Links Manager list, the classic WordPress blogroll, when it has one.
+* The Subscriptions table has a Failing view, pages of 50 sites, and bulk Refresh and Unsubscribe.
+* The Privacy tab, now called Data & privacy, adds two settings: hold replies Daymark imports for moderation, and stop automatic AI suggestions so nothing goes to your AI provider until you tap an AI button.
+* Settings -> Daymark -> General can now set which destinations and categories each type of Mark starts with. Before, destinations could only be changed in code, and categories had no site default.
+* When you write a Note (an Aside post), or a Standard post with no title, in the block editor, the Post sidebar now counts down from 300 characters and says whether it will be shared as a short social post without a title, or as a link card to the post.
+* If you liked posts with the IndieBlocks plugin's Likes before using Daymark, Daymark now shows those posts as liked in your Timeline and doesn't send the site a second Like. Daymark only reads IndieBlocks Likes; to remove one, delete it in WordPress.
+* After you first activate Daymark, a notice in wp-admin links to the app and lists three first steps: open it on your phone, follow a few sites, and review Connectors. A QR code in the notice, and on Settings -> Daymark -> General, opens the app when you point your phone's camera at it.
+* Home shows an Install card until Daymark is on your home screen, and Me has an Install Daymark row. On Android, and in desktop Chrome or Edge, it opens the browser's install prompt; on an iPhone or iPad it shows the Add to Home Screen steps.
+* The + launcher's bubbles now show their names while it's open, and first-time hints explain the launcher and the Check In composer. The Check In hint appears before your browser asks for your location.
+* You can now follow a site from the app: tap "+ Follow a site" in Explore's Following section or on the Me screen, paste the address, pick a feed, and tap Follow. Before, following a site was only possible in wp-admin. Like Settings -> Daymark, it's for administrators.
+* Videos and audio now upload in small parts, so a weak or dropped connection no longer starts the file over. The upload carries on from where it stopped, even after you close the app once you've tapped Publish, and the Timeline card shows how far along it is. Videos and audio can now be up to 500 MB each; photos stay at 50 MB.
+* A new Daymark bookmarklet lets you Reblog or Like a post while you read it anywhere on the web. It opens a small window on your own site with the post at the top, then your thoughts and an editable title. The Reblog is published on your site, with the post embedded the same way as a Reblog from the app. Find it on your profile page, in Settings -> Daymark -> General, in the welcome notice, or under Me -> Reblog from anywhere.
+* Settings -> Daymark -> General can now keep Notes off your blog's home page and main feed. A Note is any post with the Aside format, from Daymark or the block editor, and it still has its own page and appears in archives, search, and the Timeline. An Aside post published without a title now gets one from its first words, as Notes from the app already do.
+
+**Changed**
+
+* Notifications now has tabs for All, Unread, Comments, Likes, Reblogs, and Mentions, and lists everything newest first under Today, Yesterday, and older date headings. You can mark each notification read or unread, mark all as read, and archive one to remove it from the list (with Undo). Likes, reblogs, and mentions from other sites now show up here too, and several likes on one Mark are grouped into one row, such as "Ana and 3 others liked".
+* The full post view now shows Like, Comment, Reblog, Bookmark, and the ⋯ menu in a bar that floats at the bottom of the screen, so you can act on a post without scrolling to its end. The ⋯ menu opens upward from the bar.
+* On the Me screen, the Subscriptions and Edit profile rows now show an "opens outside" icon, since both open a WordPress admin screen instead of a Daymark one. Screen readers hear that too. The "My Marks" row, and the same choice in Search's Source filter, now read "My marks" to match the other rows.
+* A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text.
+* A Reblog now shows the reblogged post as an embed of the original, the same card WordPress shows when you paste a link into a post, instead of a quote. The Reblog screen previews it as a card, and a caption credits the author and site. A site that can't be embedded shows a link.
+* The Timeline now opens on the post that was at the top of your screen when you last left it, even if you had scrolled down into older posts. Newer posts are above it, and the "new posts" button counts only the ones you haven't seen. To jump back to the newest post, tap an empty part of the header, the Daymark name, or the Timeline tab. Refreshing the Timeline also starts you at the top.
+* Explore hides the "On this day" section when there are no Marks from this date in a prior year.
+* The one-time explainer for each interaction icon (Like, Comment, Reblog, Bookmark, Open original, Share) is now remembered on your account instead of only in one browser. Dismissing it on your phone also keeps it away on your laptop.
+* A Mark you publish now shows at the top of your Timeline right away, marked "Uploading…", and turns into the finished post when the upload ends. Before, it sat in a separate Pending box and then seemed to vanish, and the Timeline could open below it.
+* Your own posts are labelled "You", and other people's likes, comments, and reblogs on them show as text ("1 comment") instead of the same icons that are buttons on posts you follow.
+* Home shows your drafts as one line ("3 drafts"). The drafts themselves, with Edit, Publish, and Delete, are on the Me screen, so a few photo drafts no longer push the Timeline down.
+* Screen readers can now reach each button on a Timeline card (Like, Comment, Reblog, Bookmark, More actions) on its own, and the Timeline no longer reads every card aloud each time it loads more posts.
+* Timestamps, site names, and the card icons have higher contrast, so they're easier to read outdoors.
+* Search now loads more results as you scroll, instead of stopping at 20, and shows how many there are. Bookmarks and My Marks, which open in Search, load more too. A site's icon on a Timeline card now says "Show posts from" that site, which is what it does.
+* The Timeline loads 20 posts at a time instead of 5, so scrolling makes fewer requests.
+* Daymark now captures a location only for Check Ins. Other Marks no longer ask your browser for your location or store one. Turning off Check In location also stops the place lookup.
+* A setting that code on your site overrides now shows its real value, greyed out, with a note. Before, its checkbox seemed to do nothing.
+* The Connectors tab now starts with the two plugins most sites need, Webmention and ActivityPub, and lists the others under Optional. Each card has a short summary, with details under More.
+* With no social destination connected, the Publish screen now says your site is the destination and where the Mark also reaches through an active fediverse or Bluesky plugin. Before, it said "No social networks connected yet".
+* When several followed sites fail, Notifications shows one item that links to the Failing view, instead of one item for each site.
+* When a new Mark starts from your last choices for its type and they differ from the site's defaults, the Publish screen says so and offers "Use site defaults", so a one-off change no longer sticks without you knowing.
+* The Like and Comment hints no longer promise that the other site always receives your like or comment, and say what happens when it can't. The readme now explains how to follow a site, and that sharing to Daymark from other apps works on Android only, since iPhone and iPad don't support it for web apps.
+* The Connectors tab now says when Jetpack is active but your WordPress.com account isn't linked, or the site isn't connected to WordPress.com, with a link to fix it. Before, it said "Active" either way, though liking and commenting through WordPress.com need the link.
+* Notifications about plugins that overlap with Daymark now go only to people who can deactivate plugins, since that's what they suggest.
+
+**Fixed**
+
+* With Jetpack, likes from WordPress.com now reach the like count on every post's Timeline card, including posts older than two weeks and posts you wrote in the block editor. Before, Daymark only copied them for Marks from the last 14 days, so the Posts list's star column could show likes the app didn't. Daymark checks older posts in small batches each hour, so a large site takes a while to catch up.
+* In the full post view, the back arrow and Daymark icon now line up with the top of the title's letters. They sat a few pixels higher before.
+* Your Reblogs now show on your Timeline. They were left out by an old rule from when a Reblog had no content of its own.
+* "Reblog without comment" failed with "A Mark needs media or text". It now publishes the reblogged post on its own. Backslashes typed in a caption are also kept now, where they used to be dropped.
+* A Reblog's quote of the reblogged post was never published: the app sent the quote's title, but the server dropped it. The quote now appears, crediting the post's author as well as its site.
+* Animated GIFs now stay animated on Timeline cards, in the post view, and on the post's page. WordPress keeps only the first frame in its resized copies, so Daymark now shows GIFs at full size.
+* The ⋯ menu on a Timeline card now shows each action's name (Open original, Share, Unsubscribe) next to its icon. The names were meant to show there but never did.
+* Pulling down to refresh with more than about ten followed sites reported most of them as "checked too recently" when they were never checked. The Timeline now checks every site in one request, says how many it checked, and hands any it runs out of time for to a background check. A pull that starts above the Timeline, on the drafts line, now works too, and the result message clears after a few seconds.
+* After a long scroll through the Timeline, opening a post from a site you follow could fail with "Couldn't load full content." Background work while scrolling used up the same request allowance that opening a post needs. Opening a post now has its own allowance, and a post that's already saved on your site opens without using any.
+* When the next page of the Timeline fails to load, it now says "Couldn't load more" with a Retry button, instead of stopping silently.
+* Unchecking a feed in "Choose from available feeds" no longer unfollows it unless you also tick "Also unfollow the feeds I unchecked". Before, one stray click could unfollow a site and move its saved posts to Trash.
+* Error messages on Settings -> Daymark no longer come from text in the page address, so a crafted link can't show made-up text there. Reloading the page no longer repeats the message.
+* If the composer autosaved before you tapped Next, the Publish screen showed no destinations or categories ticked, although the Mark was still filed with its defaults. It now shows them. Check Ins also start from your last choices now, like other types.
+* Refreshing the Timeline with the header button now shows one loading animation, the spinning button, instead of also showing the pull-down spinner below it.
+* When a followed site can't receive Likes, the Like icon now leaves an empty space instead of disappearing, so the icons beside it no longer jump left as you scroll.
+* Someone who can't publish on the site (a Contributor) no longer sees "Published to your site" for a Mark the site saved as a draft. The Success screen now follows what the site actually did, and explains that an editor needs to publish it.
+* Tapping Publish right after picking a video no longer waits for the video to finish uploading, and a file picked while autosave was running can no longer be attached twice.
+
+**Developer**
+
+* New `/daymark/v1/uploads` routes upload one file in parts and resume it, and `POST /marks` and `PUT /marks/{id}` accept the finished files as `media_ids[]`. Each ID must be the current user's own unused upload, or a file already on the Mark. `files[]` still works. New filters: `daymark_upload_chunk_bytes`, `daymark_upload_session_ttl`, `daymark_staged_upload_ttl`; `daymark_upload_max_bytes` now also receives the file's MIME type.
+
 = 0.19.0 - 2026-10-02 =
+
 **Added**
 
 * The Timeline now remembers the newest post you've seen, on your account, so it follows you across devices. When you come back, it opens at that post instead of the top, with newer posts above it. A "new posts" button shows how many there are and jumps to the newest one.
@@ -380,32 +464,12 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 * Tapping Like on a subscription post no longer creates a post that can show up on your own site's home page, archives, search, RSS/Atom feed, REST API, or XML sitemap — it stays visible only at its own direct permalink, which is what lets your Webmention plugin still verify and deliver the outbound Like to the original post. It also never syndicates to a real destination, whatever your remembered Note-type preference is. Reblog is unaffected — it's still real, visible, publishable content, exactly as before.
 * Subscribing to a site inside WordPress Playground previews no longer fails with "Please enter a valid site URL." for every URL, including well-known real sites — Playground's own sandboxed PHP runtime doesn't genuinely support DNS lookups, which was making Daymark's own SSRF safety check wrongly treat every site as unsafe.
 
-= 0.15.0 - 2026-09-10 =
-
-**Added**
-
-* Settings -> Daymark's subscriptions table now has a "Check for other feeds" action per row — useful when Daymark picked the wrong source for a site (e.g. a WordPress REST API that mixes every language together on a multilingual site). It lists every feed/source discovered for that site and lets you switch to a different one without unsubscribing and resubscribing.
-* The first time you tap Like, Comment, Reblog, Bookmark, "Open original", or Share, a short overlay explains what that icon does — shown once per icon, right after the tap, never again after that.
-
-**Changed**
-
-* Subscription posts get a new Comment action, replacing the old "Reply" button that opened the full composer — tap it, type your comment, and it's delivered straight to the original post: via Webmention when both your site and the source support it (behind the scenes this still publishes a small Mark on your own site so your Webmention plugin can deliver it, same as before), or posted directly to the source site otherwise. Reblog now asks for an optional comment of your own before publishing, instead of always using a generic "Reposted ..." caption.
-* The full-screen post view's standalone "Refresh content" text link is now an icon at the end of the interaction row (after Share), instead of its own row below the post — a shorter, less tall screen with one consistent set of icons for everything you can do with a post.
-* The Timeline interaction row's "Open original", Share, Routing (on your own Marks), and "Refresh content" (on the full post view) actions now live behind a new ⋯ overflow menu, keeping Like, Comment, Reblog, and Bookmark as the primary row's exposed icons. A subscription post's overflow menu also gains a new Unsubscribe action — unsubscribe from a site directly from its card or full post view, with a confirmation step first, instead of needing a trip to Settings -> Daymark.
-
-**Fixed**
-
-* Timeline cards whose kind shows a small thumbnail beside the title (an article with a featured image, an audio/podcast post, a subscription post falling back to its site icon) had their interaction icons and site-name/date row indented under that thumbnail, reading as shifted right compared to a thumbnail-less card (note, link). Both rows now line up flush with the card's own left edge on every kind.
-* Subscribing to an ordinary, valid site could fail with "Please enter a valid site URL." inside WordPress Playground, including the sites this plugin's own Playground previews try to preset automatically. Root cause: a DNS-resolution function returning something other than a real IP address or a clean failure was wrongly trusted as a "resolved" (and then judged unsafe) address.
-* A subscribed WordPress or Friends post with a confirmed Image/Video/Audio/Gallery post format but no explicit featured image (common for themes that show a post's own first inline image instead) showed the subscription's site icon blown up in the card's media banner instead of that image.
-* The full-screen post view's back arrow and Daymark icon were vertically centered against the post title's full height, so a long title that wrapped to two or three lines left them floating in the middle of the block instead of level with its first line.
-* A plain, no-image subscription post could show a small thumbnail duplicating its own site icon — an author-bio box's avatar photo, embedded in the post's own content by the theme, was being picked up as the card's featured image. Avatar images are no longer treated as post content.
-* A Mark's own like/comment/repost counts on its Timeline card no longer show Daymark's orange "active" accent color just because the count is 1 or more — that color is reserved for your own action (a genuine Like/Repost/Comment/Bookmark toggle); these three are always other people's engagement with your Mark, so they now stay a plain, muted count regardless of how high it is.
-* A Timeline card's trailing whitespace below its own site-name/date row — before the next card begins — is now identical across every Mark type and post format. Media-dominant cards (image, gallery, video, mixed media) previously had roughly double the trailing space of every other kind (audio, note, article, link, standard), a real inconsistency visible scrolling down a mixed Timeline.
-
 [View the full changelog history](https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 0.20.0 =
+Daymark now sends and receives Webmentions itself, so Likes, Reblogs, and comments reach another Daymark site with nothing else to install. Notifications gains tabs, date headings, read and archive, and grouped likes. Follow sites from the app, including JSON Feed sites, and import your WordPress.com Reader follows. Videos upload in parts that resume after a dropped connection. Also new: a dark theme, a Reblog and Like bookmarklet, site defaults for new Marks, and Shortnotes and IndieBlocks notes on the Timeline. Location is now captured only for Check Ins.
 
 = 0.19.0 =
 Featured Content grows into a full set: galleries (reorderable in WordPress's own gallery editor), quotes, and links join audio and video, and each shows on the Timeline card, at the top of the full post view, and in a post's link previews when shared. A link becomes a preview of the linked page on the post's own page too. Gallery cards show a 2x2 photo grid, and followed and ordinary posts show their featured image full width. The Timeline remembers where you left off, Search gains a Date filter, Explore adds "On this day", and Back from a post returns to your place in the list.
