@@ -151,7 +151,7 @@ class Daymark_Bookmark_Images {
 
 		if ( Daymark_Subscription_Post_Type::POST_TYPE === $post->post_type ) {
 			$content = (string) get_post_meta( $post_id, 'body_content', true );
-		} elseif ( 'post' === $post->post_type && ! post_password_required( $post ) ) {
+		} elseif ( Daymark_External_Notes::is_own_content_type( $post->post_type ) && ! post_password_required( $post ) ) {
 			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Applying WordPress core's own 'the_content' filter, the same rendering GET /marks/{id}/content uses.
 			$content = (string) apply_filters( 'the_content', $post->post_content );
 		} else {
