@@ -180,4 +180,144 @@ class Test_Backflow_Sync extends WP_UnitTestCase {
 
 		$this->assertNotFalse( get_transient( 'daymark_backflow_freshened' ) );
 	}
+
+	/**
+	 * Report reaction counts for every synced network.
+	 *
+	 * @param array<string, int> $counts Counts to report.
+	 * @return callable The filter callback, so the test can remove it.
+	 */
+	private function report_reactions( array $counts ): callable {
+		$callback = static function () use ( $counts ) {
+			return $counts;
+		};
+
+		add_filter( 'daymark_import_network_reactions', $callback );
+
+		return $callback;
+	}
+
+	/** A connector's reported counts are added to the Timeline counts. */
+	public function test_reported_reactions_add_to_timeline_counts() {
+		$post_id = $this->create_syndicated_daymark( true );
+		wp_update_post(
+			array(
+				'ID'          => $post_id,
+				'post_author' => get_current_user_id(),
+			)
+		);
+
+		// One like already delivered as a comment by a federation plugin.
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $post_id,
+				'comment_type'     => 'like',
+				'comment_approved' => 1,
+			)
+		);
+
+		add_filter( 'daymark_import_network_responses', '__return_empty_array' );
+		$this->report_reactions(
+			array(
+				'likes'   => 4,
+				'reposts' => 2,
+			)
+		);
+
+		( new Daymark_Backflow_Sync() )->sync_recent_marks();
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/marks/' . $post_id );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$data = rest_do_request( $request )->get_data();
+
+		$this->assertSame( 5, $data['like_count'] );
+		$this->assertSame( 2, $data['repost_count'] );
+	}
+
+	/** A later sync replaces a network's counts instead of adding to them. */
+	public function test_reported_reactions_replace_previous_counts() {
+		$post_id = $this->create_syndicated_daymark( true );
+
+		Daymark_Backflow_Sync::store_reactions(
+			$post_id,
+			'bluesky',
+			array(
+				'likes'   => 4,
+				'reposts' => 2,
+			)
+		);
+		Daymark_Backflow_Sync::store_reactions( $post_id, 'bluesky', array( 'likes' => 3 ) );
+
+		$this->assertSame(
+			array(
+				'likes'   => 3,
+				'reposts' => 2,
+			),
+			Daymark_Backflow_Sync::reaction_totals( $post_id ),
+			'An unreported count keeps its previous value.'
+		);
+	}
+
+	/** Counts from several networks are summed. */
+	public function test_reaction_totals_sum_networks() {
+		$post_id = $this->create_syndicated_daymark( true );
+
+		Daymark_Backflow_Sync::store_reactions( $post_id, 'bluesky', array( 'likes' => 4 ) );
+		Daymark_Backflow_Sync::store_reactions(
+			$post_id,
+			'mastodon',
+			array(
+				'likes'   => 1,
+				'reposts' => 6,
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'likes'   => 5,
+				'reposts' => 6,
+			),
+			Daymark_Backflow_Sync::reaction_totals( $post_id )
+		);
+	}
+
+	/** Bad values are clamped or ignored, never stored as-is. */
+	public function test_store_reactions_rejects_bad_values() {
+		$post_id = $this->create_syndicated_daymark( true );
+
+		$this->assertFalse( Daymark_Backflow_Sync::store_reactions( $post_id, 'bluesky', array( 'likes' => 'lots' ) ) );
+		$this->assertFalse( Daymark_Backflow_Sync::store_reactions( $post_id, '', array( 'likes' => 1 ) ) );
+		$this->assertTrue( Daymark_Backflow_Sync::store_reactions( $post_id, 'bluesky', array( 'likes' => -3 ) ) );
+
+		$this->assertSame(
+			array(
+				'likes'   => 0,
+				'reposts' => 0,
+			),
+			Daymark_Backflow_Sync::reaction_totals( $post_id )
+		);
+	}
+
+	/** A Mark that was never synced has no reaction counts. */
+	public function test_reaction_totals_default_to_zero() {
+		$post_id = $this->create_syndicated_daymark( true );
+
+		$this->assertSame(
+			array(
+				'likes'   => 0,
+				'reposts' => 0,
+			),
+			Daymark_Backflow_Sync::reaction_totals( $post_id )
+		);
+	}
+
+	/** A connector that reports nothing stores nothing. */
+	public function test_unreported_reactions_store_nothing() {
+		$post_id = $this->create_syndicated_daymark( true );
+		add_filter( 'daymark_import_network_responses', '__return_empty_array' );
+
+		( new Daymark_Backflow_Sync() )->sync_recent_marks();
+
+		$this->assertSame( '', get_post_meta( $post_id, Daymark_Backflow_Sync::REACTIONS_META, true ) );
+	}
 }

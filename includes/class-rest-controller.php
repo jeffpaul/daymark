@@ -4692,6 +4692,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 */
 	private function prepare_mark_summary( int $post_id ): array {
 		$author_id = (int) get_post_field( 'post_author', $post_id );
+		$reactions = Daymark_Backflow_Sync::reaction_totals( $post_id );
 
 		$summary = array(
 			'id'                 => absint( $post_id ),
@@ -4725,17 +4726,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
-			// Federation-plugin likes (stored as comments) plus WordPress.com
-			// likes, which Jetpack keeps off-site — see
-			// Daymark_Jetpack_Engagement::sync_own_likes().
+			// Federation-plugin likes (stored as comments), WordPress.com
+			// likes, which Jetpack keeps off-site (see
+			// Daymark_Jetpack_Engagement::sync_own_likes()), and the likes a
+			// polling connector reported for its copy of the Mark (see
+			// Daymark_Backflow_Sync::store_reactions()).
 			'like_count'         => $this->count_comments_of_type( $post_id, 'like' )
-				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count'],
-			// Every reblog, with or without the reblogger's own words — see
-			// count_reblogs(). A polling connector's own reactions aren't
-			// pulled in at all (backflow only imports replies), so they
-			// aren't counted; extending backflow to sync reaction counts is
-			// tracked separately on issue #41.
-			'repost_count'       => $this->count_reblogs( $post_id ),
+				+ Daymark_Jetpack_Engagement::own_likes( $post_id )['count']
+				+ $reactions['likes'],
+			// Every reblog, with or without the reblogger's own words (see
+			// count_reblogs()), plus the reblogs a polling connector
+			// reported.
+			'repost_count'       => $this->count_reblogs( $post_id ) + $reactions['reposts'],
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 			// Whose post this is, so a Timeline card can label your own
