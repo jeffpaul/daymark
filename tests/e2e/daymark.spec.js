@@ -497,21 +497,24 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	const meta = page.locator('.daymark-postview-meta');
 	await expect(meta.locator('.daymark-recent__sitename')).toBeVisible();
 	await expect(meta.locator('.daymark-recent__timestamprow time')).toBeVisible();
-	const bookmarkToggle = meta.locator('[data-bookmark-toggle]');
+	// The interaction row floats in its own footer bar at the bottom of
+	// the screen, not below the post body.
+	const actions = page.locator('.daymark-postview-footer');
+	const bookmarkToggle = actions.locator('[data-bookmark-toggle]');
 	await expect(bookmarkToggle).toBeVisible();
 
 	// The ⋯ overflow toggle reveals Open original/Where this went/Share for
 	// a Mark — none of it visible until tapped.
-	const overflowToggle = meta.locator('[data-overflow-toggle]');
+	const overflowToggle = actions.locator('[data-overflow-toggle]');
 	await expect(overflowToggle).toBeVisible();
-	await expect(meta.locator('[data-external-link]')).toBeHidden();
+	await expect(actions.locator('[data-external-link]')).toBeHidden();
 	await overflowToggle.click();
-	await expect(meta.locator('[data-external-link]')).toBeVisible();
-	await expect(meta.locator('[data-share-toggle]')).toBeVisible();
+	await expect(actions.locator('[data-external-link]')).toBeVisible();
+	await expect(actions.locator('[data-share-toggle]')).toBeVisible();
 	// Closing it again (tapping the toggle a second time) hides the panel
 	// once more, same as any other ⋯ menu in the app.
 	await overflowToggle.click();
-	await expect(meta.locator('[data-external-link]')).toBeHidden();
+	await expect(actions.locator('[data-external-link]')).toBeHidden();
 
 	// Bookmarking works from here, the same as from the card itself. The
 	// first tap also triggers the new first-time explainer overlay (issue
@@ -537,25 +540,26 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	const subMeta = page.locator('.daymark-postview-meta');
 	await expect(subMeta.locator('.daymark-recent__sitename')).toBeVisible();
 	await expect(subMeta.locator('.daymark-recent__timestamprow time')).toBeVisible();
+	const subActions = page.locator('.daymark-postview-footer');
 	// No Like icon here: this E2E site has neither the Webmention plugin
 	// nor a Jetpack user connection, so no Like could ever reach the
 	// origin — the icon is hidden rather than offering a Like nobody would
 	// receive (see Daymark_Like_Delivery).
-	await expect(subMeta.locator('[data-like-toggle]')).toHaveCount(0);
-	await expect(subMeta.locator('[data-comment-toggle]')).toBeVisible();
-	await expect(subMeta.locator('[data-repost-toggle]')).toBeVisible();
-	await expect(subMeta.locator('[data-bookmark-toggle]')).toBeVisible();
+	await expect(subActions.locator('[data-like-toggle]')).toHaveCount(0);
+	await expect(subActions.locator('[data-comment-toggle]')).toBeVisible();
+	await expect(subActions.locator('[data-repost-toggle]')).toBeVisible();
+	await expect(subActions.locator('[data-bookmark-toggle]')).toBeVisible();
 
 	// Same overflow-toggle mechanism for a subscription post — Open
 	// original/Share/Unsubscribe, plus the routing toggle's own subscription
 	// counterpart it doesn't have (Mark-only).
-	const subOverflowToggle = subMeta.locator('[data-overflow-toggle]');
+	const subOverflowToggle = subActions.locator('[data-overflow-toggle]');
 	await expect(subOverflowToggle).toBeVisible();
-	await expect(subMeta.locator('[data-external-link]')).toBeHidden();
+	await expect(subActions.locator('[data-external-link]')).toBeHidden();
 	await subOverflowToggle.click();
-	await expect(subMeta.locator('[data-external-link]')).toBeVisible();
-	await expect(subMeta.locator('[data-share-toggle]')).toBeVisible();
-	await expect(subMeta.locator('[data-menu-unsubscribe]')).toBeVisible();
+	await expect(subActions.locator('[data-external-link]')).toBeVisible();
+	await expect(subActions.locator('[data-share-toggle]')).toBeVisible();
+	await expect(subActions.locator('[data-menu-unsubscribe]')).toBeVisible();
 });
 
 // The Reblog preview screen (issue #393): tapping Repost on a subscription

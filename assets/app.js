@@ -5554,17 +5554,24 @@
 	// another <button>), so CSS alone can't anchor it to the trigger the
 	// way .daymark-menu anchors to .daymark-recent__menubtn. Measuring both
 	// rects against the panel's nearest position:relative ancestor
-	// (.daymark-recent__item-wrap on a Timeline card, .daymark-postview-meta
+	// (.daymark-recent__item-wrap on a Timeline card, .daymark-postview-footer
 	// on the full-screen post view) and writing plain top/right inline
 	// styles gets the same visual result with no new markup.
+	// The post view's floating footer sits at the bottom of the screen, so
+	// its menu opens upward, above the trigger, instead of below it.
 	function positionOverflowPanel(trigger, panel) {
-		const anchor = panel.closest('.daymark-recent__item-wrap, .daymark-postview-meta');
+		const anchor = panel.closest('.daymark-recent__item-wrap, .daymark-postview-footer');
 		if (!anchor) {
 			return;
 		}
 		const anchorRect = anchor.getBoundingClientRect();
 		const triggerRect = trigger.getBoundingClientRect();
-		panel.style.top = triggerRect.bottom - anchorRect.top + 6 + 'px';
+		if (anchor.classList.contains('daymark-postview-footer')) {
+			panel.style.top = 'auto';
+			panel.style.bottom = anchorRect.bottom - triggerRect.top + 6 + 'px';
+		} else {
+			panel.style.top = triggerRect.bottom - anchorRect.top + 6 + 'px';
+		}
 		panel.style.right = Math.max(0, anchorRect.right - triggerRect.right) + 'px';
 	}
 
@@ -5659,6 +5666,11 @@
 		}
 		panel.hidden = false;
 		trigger.setAttribute('aria-expanded', 'true');
+		// On the post view, the trigger lives in the floating footer while
+		// the panel sits below the post body, possibly off screen.
+		if (panel.closest('.daymark-postview-meta')) {
+			panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+		}
 		if (panel.dataset.loaded) {
 			return;
 		}
@@ -11674,6 +11686,12 @@
 			const view = pendingPostView;
 			const item = view && view.item ? view.item : {};
 			const title = item.title || __('Post', 'daymark');
+			// The interaction row (Like, Comment, Reblog, Bookmark, ⋯) floats
+			// in .daymark-postview-footer, pinned to the bottom of the
+			// screen while the post scrolls under it, like the Jetpack
+			// app's reader. The site name/date row and the routing panel
+			// stay below the post body in .daymark-postview-meta.
+			//
 			// The site name, date, and interaction icons (Like through Share)
 			// a Timeline card already carries — kept visible here too, not
 			// just the raw content, so opening the full-screen view doesn't
@@ -11727,9 +11745,11 @@
 				</div>
 				<div class="daymark-postview-meta">
 					${renderCardTimestampRow(item, siteLabel)}
-					${stats}
-					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
+				</div>
+				<div class="daymark-postview-footer" role="toolbar" aria-label="${esc(__('Post actions', 'daymark'))}">
+					<div class="daymark-postview-footer__bar">${stats}</div>
+					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
 				</div>
 			</section>`;
 		},
@@ -11743,10 +11763,9 @@
 		// refreshSubscriptionPost() the same way a Timeline card's own
 		// toggles reach back into their screen.
 		bindEvents() {
-			const meta = root.querySelector('.daymark-postview-meta');
-			if (meta) {
-				meta.addEventListener('click', (event) => onFeedListClick(this, event));
-			}
+			root.querySelectorAll('.daymark-postview-meta, .daymark-postview-footer').forEach((el) =>
+				el.addEventListener('click', (event) => onFeedListClick(this, event))
+			);
 			bindDismissible(this, [itemMenusDismissEntry()]);
 		},
 
@@ -11765,7 +11784,7 @@
 			this._bySubId = new Map();
 			rememberItem(this, this.view.item);
 			teardownLikeAvailabilityObserver(this);
-			observeLikeAvailability(this, root.querySelector('.daymark-postview-meta'));
+			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
 			await this.load(false);
 		},
 
