@@ -58,6 +58,13 @@ class Daymark_Notifications {
 	private const REPLY_NETWORKS = array( 'bluesky', 'mastodon', 'x' );
 
 	/**
+	 * Comment types that become notifications.
+	 *
+	 * @var string[]
+	 */
+	public const COMMENT_TYPES = array( 'comment', 'quote', 'like', 'repost', 'mention', 'pingback', 'trackback' );
+
+	/**
 	 * Mocked sample response texts per network (1–2 imported per sync).
 	 *
 	 * @var array<string, string[]>
@@ -153,13 +160,26 @@ class Daymark_Notifications {
 	 * @return array<int, array<string, mixed>> Notification items, newest first.
 	 */
 	public function get_notifications( int $limit = self::DEFAULT_LIMIT, ?int $seen_before = null ): array {
-		$limit = $limit > 0 ? $limit : self::DEFAULT_LIMIT;
+		$limit   = $limit > 0 ? $limit : self::DEFAULT_LIMIT;
+		$user_id = get_current_user_id();
+		$state   = Daymark_Plugin::instance()->notification_state;
+
+		$archived = $state->ids( $user_id, Daymark_Notification_State::ARCHIVED_META );
+
+		// Archived comments are dropped after the query, so ask for enough
+		// extra rows that archiving never shortens the list.
+		$archived_comments = 0;
+		foreach ( array_keys( $archived ) as $archived_id ) {
+			if ( 0 === strpos( $archived_id, 'comment-' ) ) {
+				++$archived_comments;
+			}
+		}
 
 		$dated_items      = array();
 		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
 		if ( ! empty( $daymark_post_ids ) ) {
-			foreach ( $this->get_comments_for_posts( $daymark_post_ids, $limit ) as $comment ) {
+			foreach ( $this->get_comments_for_posts( $daymark_post_ids, $limit + $archived_comments ) as $comment ) {
 				$post = get_post( (int) $comment->comment_post_ID );
 
 				if ( ! $post instanceof WP_Post ) {
@@ -220,21 +240,128 @@ class Daymark_Notifications {
 			}
 		);
 
-		$items = array_map(
-			static function ( array $dated_item ) use ( $seen_before ) {
-				$item = $dated_item['item'];
+		if ( $user_id ) {
+			$state->prune(
+				$user_id,
+				array_map(
+					static function ( array $dated_item ): string {
+						return self::item_id( $dated_item['item'] );
+					},
+					$dated_items
+				)
+			);
+		}
 
-				if ( null !== $seen_before ) {
-					$item['is_new'] = 'plugin_overlap' !== ( $item['type'] ?? '' )
-						&& (int) $dated_item['timestamp'] > $seen_before;
-				}
+		$read_before = $user_id ? $state->read_before( $user_id ) : 0;
+		$read        = $state->ids( $user_id, Daymark_Notification_State::READ_META );
+		$unread      = $state->ids( $user_id, Daymark_Notification_State::UNREAD_META );
 
-				return $item;
-			},
-			$dated_items
-		);
+		$items = array();
+
+		foreach ( $dated_items as $dated_item ) {
+			$item      = $dated_item['item'];
+			$timestamp = (int) $dated_item['timestamp'];
+			$id        = self::item_id( $item );
+
+			if ( isset( $archived[ $id ] ) ) {
+				continue;
+			}
+
+			$item['id']        = $id;
+			$item['category']  = self::item_category( $item );
+			$item['timestamp'] = $timestamp;
+			$item['date_gmt']  = $timestamp > 0 ? gmdate( 'c', $timestamp ) : '';
+			$item['read']      = Daymark_Notification_State::is_read( $id, $timestamp, $read_before, $read, $unread );
+
+			if ( null !== $seen_before ) {
+				$item['is_new'] = 'plugin_overlap' !== ( $item['type'] ?? '' )
+					&& $timestamp > $seen_before;
+			}
+
+			$items[] = $item;
+		}
 
 		return array_slice( $items, 0, $limit );
+	}
+
+	/**
+	 * A notification item's stable ID, used to store its read and
+	 * archived state. Each type has its own prefix (see
+	 * Daymark_Notification_State::is_valid_id()).
+	 *
+	 * @param array<string, mixed> $item Notification item.
+	 * @return string
+	 */
+	public static function item_id( array $item ): string {
+		switch ( $item['type'] ?? '' ) {
+			case 'comment':
+				return 'comment-' . absint( $item['comment_ID'] ?? 0 );
+			case 'jetpack_like':
+				return 'jetpack_like-' . absint( $item['post_id'] ?? 0 ) . '-' . sanitize_key( (string) ( $item['liker_id'] ?? '' ) );
+			case 'dead_feed':
+			case 'feed_issue':
+				// Same ID whether still failing or fully dead, so archiving
+				// it once covers both stages.
+				return 'feed_issue-' . absint( $item['subscription_id'] ?? 0 );
+			case 'feed_issues':
+				return 'feed_issues-' . sanitize_key( (string) ( $item['issue_key'] ?? '' ) );
+			case 'plugin_overlap':
+				return 'plugin_overlap-' . sanitize_key( (string) ( $item['plugin'] ?? '' ) );
+		}
+
+		return '';
+	}
+
+	/**
+	 * Which Notifications tab an item belongs to: comments, likes,
+	 * reblogs, mentions, or site (subscription issues and plugin notices,
+	 * shown only under All and Unread).
+	 *
+	 * @param array<string, mixed> $item Notification item.
+	 * @return string
+	 */
+	public static function item_category( array $item ): string {
+		$type = $item['type'] ?? '';
+
+		if ( 'jetpack_like' === $type ) {
+			return 'likes';
+		}
+
+		if ( 'comment' !== $type ) {
+			return 'site';
+		}
+
+		switch ( $item['comment_kind'] ?? 'reply' ) {
+			case 'like':
+				return 'likes';
+			case 'repost':
+			case 'quote':
+				return 'reblogs';
+			case 'mention':
+				return 'mentions';
+		}
+
+		return 'comments';
+	}
+
+	/**
+	 * The undated items in a notifications list (subscription issues and
+	 * plugin notices): "Mark all as read" records them one by one, since
+	 * the read watermark can't cover an item with no stable date.
+	 *
+	 * @param array<int, array<string, mixed>> $items Items from get_notifications().
+	 * @return string[]
+	 */
+	public static function undated_ids( array $items ): array {
+		$ids = array();
+
+		foreach ( $items as $item ) {
+			if ( 'site' === ( $item['category'] ?? '' ) && ! empty( $item['id'] ) ) {
+				$ids[] = (string) $item['id'];
+			}
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -347,8 +474,19 @@ class Daymark_Notifications {
 
 		$latest = max( array_map( array( $this, 'subscription_issue_timestamp' ), $subscriptions ) );
 
+		$ids = array_map(
+			static function ( array $subscription ): int {
+				return absint( $subscription['id'] ?? 0 );
+			},
+			$subscriptions
+		);
+		sort( $ids );
+
 		return array(
 			'type'                     => 'feed_issues',
+			// Changes when the set of failing sites changes, so archiving
+			// this summary hides it only until another site starts failing.
+			'issue_key'                => substr( md5( implode( ',', $ids ) ), 0, 12 ),
 			'count'                    => count( $subscriptions ),
 			'site_titles'              => $names,
 			'last_checked_at'          => $latest > 0 ? gmdate( 'Y-m-d H:i:s', $latest ) : '',
@@ -418,12 +556,12 @@ class Daymark_Notifications {
 			array(
 				'post__in' => $post_ids,
 				'status'   => 'approve',
-				// Replies, plus quote posts (issue #396 follow-up): a reblog
-				// with commentary, which the ActivityPub plugin stores as a
-				// `quote` comment holding the quoter's own words. Plain
-				// likes and reposts carry no text, so they stay out — they
-				// show only as counts on the Mark.
-				'type'     => array( 'comment', 'quote' ),
+				// Replies, quote posts (a reblog with commentary, which the
+				// ActivityPub plugin stores as a `quote` comment), and the
+				// reactions federation plugins store as comments: likes,
+				// reposts, and mentions (Webmention `mention`, plus classic
+				// pingbacks and trackbacks). Each gets its own tab.
+				'type'     => self::COMMENT_TYPES,
 				'number'   => $limit,
 				'orderby'  => 'comment_date_gmt',
 				'order'    => 'DESC',
@@ -468,15 +606,21 @@ class Daymark_Notifications {
 			}
 		}
 
+		$kind     = self::comment_kind( (string) $comment->comment_type );
+		$is_quote = 'quote' === $kind;
+
 		// A quote post reads like a reply but isn't one: label it as what
 		// it is, keeping the network the federation detection found.
-		$is_quote = 'quote' === $comment->comment_type;
-
 		if ( $is_quote ) {
 			$source_label = 'fediverse' === $source
 				? __( 'Quoted your Mark on the Fediverse', 'daymark' )
 				: __( 'Quoted your Mark', 'daymark' );
 			$is_imported  = true;
+		} elseif ( 'reply' !== $kind ) {
+			// A like, repost, or mention isn't a reply, so "Reply from …"
+			// would be wrong: label it with the network alone.
+			$source_label = self::network_label( $source );
+			$is_imported  = 'site' !== $source;
 		}
 
 		$author = $is_imported && '' !== $external_author
@@ -507,7 +651,9 @@ class Daymark_Notifications {
 			// 'quote' for a quote post (a reblog with commentary), else
 			// 'reply'. The item stays type 'comment' so it groups, filters,
 			// and takes a Reply exactly like any other conversation item.
-			'comment_kind'          => $is_quote ? 'quote' : 'reply',
+			// reply, quote, like, repost, or mention (see comment_kind()).
+			'comment_kind'          => $kind,
+			'avatar'                => esc_url_raw( (string) get_avatar_url( $comment, array( 'size' => 96 ) ) ),
 			'source'                => $source,
 			'source_label'          => $is_imported && '' !== $source_label
 				? sanitize_text_field( $source_label )
@@ -527,6 +673,50 @@ class Daymark_Notifications {
 			'post_url'              => esc_url_raw( (string) get_permalink( $post ) ),
 			'daymark_type'          => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
 		);
+	}
+
+	/**
+	 * The notification kind for a comment type.
+	 *
+	 * @param string $comment_type WordPress comment type.
+	 * @return string reply, quote, like, repost, or mention.
+	 */
+	public static function comment_kind( string $comment_type ): string {
+		switch ( $comment_type ) {
+			case 'quote':
+			case 'like':
+			case 'repost':
+			case 'mention':
+				return $comment_type;
+			case 'pingback':
+			case 'trackback':
+				return 'mention';
+		}
+
+		return 'reply';
+	}
+
+	/**
+	 * A plain network name for a notification's source.
+	 *
+	 * @param string $source Source key.
+	 * @return string
+	 */
+	private static function network_label( string $source ): string {
+		switch ( $source ) {
+			case 'fediverse':
+				return __( 'Fediverse', 'daymark' );
+			case 'bluesky':
+				return __( 'Bluesky', 'daymark' );
+			case 'webmention':
+				return __( 'Webmention', 'daymark' );
+			case 'wpcom':
+				return __( 'WordPress.com', 'daymark' );
+			case 'site':
+				return __( 'Your site', 'daymark' );
+		}
+
+		return ucfirst( $source );
 	}
 
 	/**
@@ -565,13 +755,14 @@ class Daymark_Notifications {
 			$post_title = html_entity_decode( sanitize_text_field( get_the_title( $post ) ), ENT_QUOTES, 'UTF-8' );
 			$post_url   = esc_url_raw( (string) get_permalink( $post ) );
 
-			foreach ( $likers as $liker ) {
+			foreach ( $likers as $liker_id => $liker ) {
 				$liked_at = absint( $liker['liked_at'] ?? 0 );
 
 				$items[] = array(
 					'timestamp' => $liked_at,
 					'item'      => array(
 						'type'         => 'jetpack_like',
+						'liker_id'     => sanitize_key( (string) $liker_id ),
 						'author'       => sanitize_text_field( (string) ( $liker['name'] ?? '' ) ),
 						'author_url'   => esc_url_raw( (string) ( $liker['url'] ?? '' ) ),
 						'avatar'       => esc_url_raw( (string) ( $liker['avatar'] ?? '' ) ),

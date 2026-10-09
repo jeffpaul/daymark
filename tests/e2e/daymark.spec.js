@@ -3001,10 +3001,10 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	await expect(page.locator('.daymark-iconbtn__dot')).toBeVisible();
 
 	// Viewing notifications clears it without a reload, and the reply that
-	// arrived since the last visit is marked New…
+	// arrived since the last visit is marked unread…
 	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
 	await expect(page.getByText(reply).first()).toBeVisible();
-	await expect(page.locator('.daymark-note-card--new').filter({ hasText: reply }).first()).toBeVisible();
+	await expect(page.locator('.daymark-note-card--unread').filter({ hasText: reply }).first()).toBeVisible();
 	await page.locator('.daymark-backlink').click();
 	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
 	await expect(page.locator('.daymark-iconbtn__dot')).toHaveCount(0);

@@ -366,7 +366,7 @@ class Test_Notifications extends WP_UnitTestCase {
 	/**
 	 * A quote post (a reblog with commentary, stored by the ActivityPub
 	 * plugin as a `quote` comment) appears as a conversation item labeled as
-	 * a quote, while plain likes and reposts stay out (issue #396 follow-up).
+	 * a quote. Likes and reposts appear too, each in its own tab.
 	 */
 	public function test_quote_post_appears_labeled_as_a_quote() {
 		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
@@ -401,13 +401,19 @@ class Test_Notifications extends WP_UnitTestCase {
 		$items = ( new Daymark_Notifications() )->get_notifications();
 		$by_id = array_column( $items, null, 'comment_ID' );
 
-		$this->assertCount( 2, $items, 'The quote and the reply; the repost and like stay out' );
+		$this->assertCount( 4, $items, 'The quote, the reply, the repost, and the like' );
 		$this->assertSame( 'comment', $by_id[ $quote_id ]['type'] );
 		$this->assertSame( 'quote', $by_id[ $quote_id ]['comment_kind'] );
 		$this->assertSame( 'fediverse', $by_id[ $quote_id ]['source'] );
 		$this->assertSame( 'Quoted your Mark on the Fediverse', $by_id[ $quote_id ]['source_label'] );
 		$this->assertSame( 'https://social.example/@someone/1', $by_id[ $quote_id ]['source_url'] );
 		$this->assertSame( 'reply', $by_id[ $reply_id ]['comment_kind'] );
+		$this->assertSame( 'reblogs', $by_id[ $quote_id ]['category'] );
+		$this->assertSame( 'comments', $by_id[ $reply_id ]['category'] );
+
+		$kinds = array_column( $items, 'category', 'comment_kind' );
+		$this->assertSame( 'likes', $kinds['like'] );
+		$this->assertSame( 'reblogs', $kinds['repost'] );
 	}
 
 	/** A new quote post sets the unread flag, like a new reply. */

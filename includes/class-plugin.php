@@ -109,6 +109,13 @@ final class Daymark_Plugin {
 	public Daymark_Notifications $notifications;
 
 	/**
+	 * Per-user read and archived Notifications state.
+	 *
+	 * @var Daymark_Notification_State
+	 */
+	public Daymark_Notification_State $notification_state;
+
+	/**
 	 * Per-user bookmark set membership.
 	 *
 	 * @var Daymark_Bookmarks
@@ -357,6 +364,7 @@ final class Daymark_Plugin {
 		$this->ai_assist                    = new Daymark_AI_Assist();
 		$this->syndication_registry         = Daymark_Syndication_Registry::instance();
 		$this->notifications                = new Daymark_Notifications();
+		$this->notification_state           = new Daymark_Notification_State();
 		$this->bookmarks                    = new Daymark_Bookmarks();
 		$this->uploads                      = new Daymark_Uploads();
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
@@ -471,6 +479,7 @@ final class Daymark_Plugin {
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->bookmarks->register();
+		$this->notification_state->register();
 		$this->uploads->register();
 		$this->subscription_post_type->register();
 		$this->subscription_poller->register();

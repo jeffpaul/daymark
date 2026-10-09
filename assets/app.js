@@ -12786,41 +12786,83 @@
 
 	// --- Screen: Notifications ---
 
-	// Groups a newest-first notification list into conversations (issue
-	// #258): every 'comment' item belonging to the same Mark (post_id)
-	// becomes one entry's `comments` array instead of scattering across the
-	// list as separate items. A group's position is set by its *first*
-	// occurrence — since the input is already sorted newest-first overall,
-	// the first time a post_id appears is guaranteed to carry that
-	// conversation's own most recent reply, so no separate re-sort is
-	// needed to keep conversations themselves ordered newest-first.
-	// Subscription-issue items ('dead_feed'/'feed_issue') aren't part of
-	// any conversation and pass through as their own single-item group,
-	// keeping their exact position in the merged, timestamp-sorted list.
-	function groupNotificationItems(items) {
-		const groups = [];
-		const byPostId = new Map();
-		items.forEach((item) => {
-			if ('dead_feed' === item.type || 'feed_issue' === item.type || 'plugin_overlap' === item.type) {
-				groups.push({ kind: 'issue', item });
-				return;
-			}
-			const postId = item.post_id;
-			let group = byPostId.get(postId);
-			if (!group) {
-				group = {
-					kind: 'conversation',
-					postId,
-					postTitle: item.post_title || '',
-					postUrl: item.post_url || '',
-					comments: [],
-				};
-				byPostId.set(postId, group);
-				groups.push(group);
-			}
-			group.comments.push(item);
-		});
-		return groups;
+	// The tabs across the top of Notifications. `category` matches the
+	// `category` field GET /notifications sets on each item
+	// (Daymark_Notifications::item_category()); `unread` and `all` aren't
+	// categories. Subscription issues and plugin notices (category `site`)
+	// show only under All and Unread.
+	const NOTIFICATION_TABS = [
+		{ key: 'all', label: __('All', 'daymark') },
+		{ key: 'unread', label: __('Unread', 'daymark') },
+		{ key: 'comments', label: __('Comments', 'daymark') },
+		{ key: 'likes', label: __('Likes', 'daymark') },
+		{ key: 'reblogs', label: __('Reblogs', 'daymark') },
+		{ key: 'mentions', label: __('Mentions', 'daymark') },
+	];
+
+	const NOTIFICATION_EMPTY = {
+		all: __('No activity on your Marks yet.', 'daymark'),
+		unread: __("You're all caught up.", 'daymark'),
+		comments: __('No comments yet.', 'daymark'),
+		likes: __('No likes yet.', 'daymark'),
+		reblogs: __('No reblogs yet.', 'daymark'),
+		mentions: __('No mentions yet.', 'daymark'),
+	};
+
+	// The tab last chosen, kept while the app is open so coming back to
+	// Notifications returns to it.
+	let notificationsTab = 'all';
+
+	// Buckets a notification's date into the headings the list is grouped
+	// under: Today, Yesterday, Older Than 2 Days (2 to 6 days ago), Older
+	// Than a Week (7 to 29 days), Older Than a Month. Counted in calendar
+	// days, so something from 11pm yesterday is "Yesterday" at 1am today.
+	// An item with no date (a subscription never checked) goes last.
+	function notificationPeriod(date) {
+		if (!date) {
+			return { key: 'month', label: __('Older Than a Month', 'daymark') };
+		}
+		const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const days = Math.round((startOfDay(new Date()).getTime() - startOfDay(date).getTime()) / 86400000);
+		if (days <= 0) {
+			return { key: 'today', label: __('Today', 'daymark') };
+		}
+		if (days === 1) {
+			return { key: 'yesterday', label: __('Yesterday', 'daymark') };
+		}
+		if (days < 7) {
+			return { key: 'days', label: __('Older Than 2 Days', 'daymark') };
+		}
+		if (days < 30) {
+			return { key: 'week', label: __('Older Than a Week', 'daymark') };
+		}
+		return { key: 'month', label: __('Older Than a Month', 'daymark') };
+	}
+
+	function notifGlyph(paths) {
+		return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+	}
+
+	const CHECK_GLYPH = '<polyline points="20 6 9 17 4 12"></polyline>';
+	const UNREAD_GLYPH = '<circle cx="12" cy="12" r="5"></circle>';
+	const ARCHIVE_GLYPH =
+		'<polyline points="21 8 21 21 3 21 3 8"></polyline><rect x="1" y="3" width="22" height="5"></rect><line x1="10" y1="12" x2="14" y2="12"></line>';
+	const ALERT_GLYPH =
+		'<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>';
+	const INFO_GLYPH =
+		'<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>';
+	const MENTION_GLYPH =
+		'<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path>';
+
+	// What a notification is, for its small badge and its one-line summary.
+	function notificationKind(item) {
+		if ('jetpack_like' === item.type) {
+			return 'like';
+		}
+		if ('comment' === item.type) {
+			return item.comment_kind || 'reply';
+		}
+		return 'site';
 	}
 
 	// Reply text a user has started typing, keyed by comment ID — kept in
@@ -12832,6 +12874,15 @@
 	const NotificationsScreen = {
 		render() {
 			const backLink = backLinkWithIcon('#home', __('Back to Timeline', 'daymark'));
+			const tabs = NOTIFICATION_TABS.map(
+				(tab) => `<button type="button" role="tab" class="daymark-notif-tabs__tab" id="daymark-notif-tab-${esc(
+					tab.key
+				)}" data-notif-tab="${esc(tab.key)}" aria-controls="daymark-notif-panel" aria-selected="${
+					tab.key === notificationsTab ? 'true' : 'false'
+				}" tabindex="${tab.key === notificationsTab ? '0' : '-1'}">${esc(tab.label)}${
+					'unread' === tab.key ? '<span class="daymark-notif-tabs__count" data-notif-unread-count hidden></span>' : ''
+				}</button>`
+			).join('');
 			return `
 			<header class="daymark-topbar">
 				${backLink}
@@ -12839,36 +12890,53 @@
 					__('Notifications', 'daymark')
 				)}</h1>
 			</header>
-			<section class="daymark-screen">
-				<h2 class="daymark-section-heading">${esc(__('Recent Activity', 'daymark'))}</h2>
-				<div class="daymark-notif-filter" data-notif-filter hidden>
-					<label class="daymark-visually-hidden" for="daymark-notif-source">${esc(
-						__('Filter by source', 'daymark')
-					)}</label>
-					<select id="daymark-notif-source" class="daymark-sourcefilter" data-notif-source-filter>
-						<option value="">${esc(__('All', 'daymark'))}</option>
-					</select>
+			<section class="daymark-screen daymark-notif-screen">
+				<div class="daymark-notif-tabs" role="tablist" aria-label="${esc(__('Show notifications', 'daymark'))}">
+					${tabs}
 				</div>
-				<div class="daymark-recent__list" data-notification-list>
+				<div class="daymark-notif-toolbar">
+					<div class="daymark-notif-filter" data-notif-filter hidden>
+						<label class="daymark-visually-hidden" for="daymark-notif-source">${esc(
+							__('Filter by source', 'daymark')
+						)}</label>
+						<select id="daymark-notif-source" class="daymark-sourcefilter" data-notif-source-filter>
+							<option value="">${esc(__('All sources', 'daymark'))}</option>
+						</select>
+					</div>
+					<button type="button" class="daymark-btn daymark-btn--text daymark-notif-toolbar__markall" data-notif-mark-all hidden>${esc(
+						__('Mark all as read', 'daymark')
+					)}</button>
+				</div>
+				<div class="daymark-recent__list daymark-notif-list" id="daymark-notif-panel" role="tabpanel" aria-labelledby="daymark-notif-tab-${esc(
+					notificationsTab
+				)}" data-notification-list>
 					${skeletonRows(3)}
 					<span class="daymark-visually-hidden">${esc(__('Loading notifications', 'daymark'))}</span>
+				</div>
+				<div class="daymark-notif-undo" data-notif-undo hidden>
+					<span data-notif-undo-text></span>
+					<button type="button" class="daymark-btn daymark-btn--text" data-notif-undo-button>${esc(
+						__('Undo', 'daymark')
+					)}</button>
 				</div>
 			</section>`;
 		},
 
 		bindEvents() {},
 
-		// The full, unfiltered fetch — items are grouped/filtered from this
-		// in memory (issue #258), never re-fetched, since the endpoint
-		// already returns its whole (capped, unpaginated) result in one
-		// request.
+		// The full, unfiltered fetch — tabs and the source filter work on it
+		// in memory, never re-fetching, since the endpoint returns its whole
+		// (capped, unpaginated) result in one request.
 		items: [],
 		sourceFilter: '',
+		undoTimer: null,
 
 		async init() {
 			this.items = [];
 			this.sourceFilter = '';
+			clearTimeout(this.undoTimer);
 			const list = root.querySelector('[data-notification-list]');
+			this.bindTabs();
 			try {
 				const items = await apiGet('notifications');
 				// The endpoint marks everything seen server-side; mirror
@@ -12879,17 +12947,20 @@
 				if (!list || !list.isConnected) {
 					return;
 				}
-				if (!Array.isArray(items) || !items.length) {
-					list.innerHTML =
-						'<p class="daymark-empty">' + esc(__('No new activity for your Marks.', 'daymark')) + '</p>';
-					return;
-				}
-				this.items = items;
+				this.items = Array.isArray(items) ? items : [];
 				this.bindSourceFilter(root.querySelector('[data-notif-filter]'), root.querySelector('[data-notif-source-filter]'));
+				const markAll = root.querySelector('[data-notif-mark-all]');
+				if (markAll) {
+					markAll.addEventListener('click', () => this.markAllRead(markAll));
+				}
+				const undo = root.querySelector('[data-notif-undo-button]');
+				if (undo) {
+					undo.addEventListener('click', () => this.undoArchive());
+				}
 				this.renderList(list);
-				// Reply interactions are delegated on the list so appended /
-				// re-rendered cards stay wired.
-				list.addEventListener('click', (event) => this.onReplyClick(event));
+				// Interactions are delegated on the list so re-rendered
+				// cards stay wired.
+				list.addEventListener('click', (event) => this.onListClick(event));
 				// Track in-progress reply text so it survives switching between
 				// cards, closing/reopening the same one, or navigating back here.
 				list.addEventListener('input', (event) => this.onReplyInput(event));
@@ -12919,16 +12990,65 @@
 			}
 		},
 
-		// A subscription-issue item isn't "from" a reply source the way a
-		// comment is (it's a feed-health alert, not a reply) — it stays
-		// visible regardless of the source filter (issue #258).
+		// Tabs follow the ARIA tabs pattern: one tab in the Tab order,
+		// arrow keys (and Home/End) move between them and select.
+		bindTabs() {
+			const tablist = root.querySelector('.daymark-notif-tabs');
+			if (!tablist) {
+				return;
+			}
+			const tabs = Array.from(tablist.querySelectorAll('[data-notif-tab]'));
+			const select = (tab, focus) => {
+				notificationsTab = tab.getAttribute('data-notif-tab');
+				tabs.forEach((other) => {
+					const active = other === tab;
+					other.setAttribute('aria-selected', active ? 'true' : 'false');
+					other.tabIndex = active ? 0 : -1;
+				});
+				if (focus) {
+					tab.focus();
+				}
+				tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				const list = root.querySelector('[data-notification-list]');
+				if (list) {
+					list.setAttribute('aria-labelledby', tab.id);
+					if (this.items.length || !list.querySelector('.daymark-skeleton')) {
+						this.renderList(list);
+					}
+				}
+			};
+			tablist.addEventListener('click', (event) => {
+				const tab = event.target.closest('[data-notif-tab]');
+				if (tab) {
+					select(tab, false);
+				}
+			});
+			tablist.addEventListener('keydown', (event) => {
+				const index = tabs.indexOf(document.activeElement);
+				if (index < 0) {
+					return;
+				}
+				let next = null;
+				if ('ArrowRight' === event.key) {
+					next = tabs[(index + 1) % tabs.length];
+				} else if ('ArrowLeft' === event.key) {
+					next = tabs[(index - 1 + tabs.length) % tabs.length];
+				} else if ('Home' === event.key) {
+					next = tabs[0];
+				} else if ('End' === event.key) {
+					next = tabs[tabs.length - 1];
+				}
+				if (next) {
+					event.preventDefault();
+					select(next, true);
+				}
+			});
+		},
+
+		// A subscription issue or plugin notice isn't "from" a reply source
+		// the way a comment is — it stays visible whatever the source filter.
 		isIssueItem(item) {
-			return (
-				'dead_feed' === item.type ||
-				'feed_issue' === item.type ||
-				'feed_issues' === item.type ||
-				'plugin_overlap' === item.type
-			);
+			return 'site' === item.category;
 		},
 
 		// The source filter's options, derived from what's actually in this
@@ -12951,9 +13071,9 @@
 			return Array.from(seen, ([value, label]) => ({ value, label }));
 		},
 
-		// Only rendered/shown once there's more than one source to choose
-		// between — a single-source inbox (the common case for a new
-		// install) has nothing to filter.
+		// Only shown once there's more than one source to choose between —
+		// a single-source inbox (the common case for a new install) has
+		// nothing to filter.
 		bindSourceFilter(wrap, select) {
 			if (!wrap || !select) {
 				return;
@@ -12964,7 +13084,7 @@
 				return;
 			}
 			select.innerHTML =
-				`<option value="">${esc(__('All', 'daymark'))}</option>` +
+				`<option value="">${esc(__('All sources', 'daymark'))}</option>` +
 				options.map((opt) => `<option value="${esc(opt.value)}">${esc(opt.label)}</option>`).join('');
 			wrap.hidden = false;
 			select.value = this.sourceFilter;
@@ -12975,61 +13095,160 @@
 		},
 
 		filteredItems() {
-			if (!this.sourceFilter) {
-				return this.items;
-			}
-			return this.items.filter((item) => this.isIssueItem(item) || item.source === this.sourceFilter);
+			return this.items.filter((item) => {
+				if (this.sourceFilter && !this.isIssueItem(item) && item.source !== this.sourceFilter) {
+					return false;
+				}
+				if ('all' === notificationsTab) {
+					return true;
+				}
+				if ('unread' === notificationsTab) {
+					return !item.read;
+				}
+				return item.category === notificationsTab;
+			});
 		},
 
-		// Renders the (already-fetched, in-memory) list: comment items are
-		// grouped into one conversation card per Mark (issue #258) instead
-		// of each reply scattering as its own flat card; subscription-issue
-		// items stay standalone, interleaved by their own position in the
-		// server's newest-first ordering — unaffected by grouping since
-		// they were never part of any conversation.
+		// Updates the Unread tab's count and the "Mark all as read" button
+		// from this.items.
+		refreshCounts() {
+			const unread = this.items.filter((item) => !item.read).length;
+			const count = root.querySelector('[data-notif-unread-count]');
+			if (count) {
+				count.hidden = !unread;
+				count.textContent = unread > 99 ? '99+' : String(unread);
+			}
+			const tab = root.querySelector('[data-notif-tab="unread"]');
+			if (tab) {
+				tab.setAttribute(
+					'aria-label',
+					unread
+						? sprintf(
+								/* translators: %d: number of unread notifications */
+								_n('Unread, %d notification', 'Unread, %d notifications', unread, 'daymark'),
+								unread
+						  )
+						: __('Unread', 'daymark')
+				);
+			}
+			const markAll = root.querySelector('[data-notif-mark-all]');
+			if (markAll) {
+				markAll.hidden = !unread;
+			}
+		},
+
+		// Renders the current tab, newest first, under date headings. The
+		// server already sorts newest first, so a heading goes in each time
+		// the period changes.
 		renderList(list) {
 			if (!list || !list.isConnected) {
 				return;
 			}
+			this.refreshCounts();
 			const filtered = this.filteredItems();
 			if (!filtered.length) {
-				list.innerHTML = '<p class="daymark-empty">' + esc(__('Nothing matches this filter.', 'daymark')) + '</p>';
+				list.innerHTML =
+					'<p class="daymark-empty">' +
+					esc(
+						this.sourceFilter && this.items.length
+							? __('Nothing matches this filter.', 'daymark')
+							: NOTIFICATION_EMPTY[notificationsTab] || NOTIFICATION_EMPTY.all
+					) +
+					'</p>';
 				return;
 			}
-			list.innerHTML = groupNotificationItems(filtered)
-				.map((group) => this.renderGroup(group))
-				.join('');
+			let html = '';
+			let lastKey = null;
+			filtered.forEach((item) => {
+				const period = notificationPeriod(parseDate(item.date_gmt));
+				if (period.key !== lastKey) {
+					html += `<h2 class="daymark-section-heading daymark-notif-list__heading">${esc(period.label)}</h2>`;
+					lastKey = period.key;
+				}
+				html += this.renderItem(item);
+			});
+			list.innerHTML = html;
 			this.bindShowMore(list);
 		},
 
-		// A notification that arrived since your last visit (`is_new`, set
-		// by GET /notifications) gets a "New" label and an accent edge.
-		renderMaybeNew(item) {
-			const html = this.renderItem(item);
-			if (!item.is_new) {
-				return html;
-			}
-			return html.replace(
-				'<article class="daymark-note-card"',
-				`<article class="daymark-note-card daymark-note-card--new"`
-			).replace(
-				/(<article class="daymark-note-card daymark-note-card--new"[^>]*>)/,
-				`$1<span class="daymark-note-card__new">${esc(__('New', 'daymark'))}</span>`
-			);
+		// Every notification shares one frame: an avatar or icon, an unread
+		// dot, the summary and any excerpt, then its links and actions.
+		renderShell(item, parts) {
+			const unread = !item.read;
+			const commentId = Number(item.comment_ID || item.comment_id || 0);
+			return `
+			<article class="daymark-note-card daymark-notif${unread ? ' daymark-note-card--unread' : ''}" data-notif-id="${esc(
+				item.id || ''
+			)}"${commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''}>
+				<div class="daymark-notif__row">
+					<span class="daymark-notif__dot" aria-hidden="true"></span>
+					${parts.figure}
+					<div class="daymark-notif__body">
+						${unread ? `<span class="daymark-visually-hidden">${esc(__('Unread:', 'daymark'))}</span>` : ''}
+						${parts.body}
+					</div>
+					${this.renderStateActions(item)}
+				</div>
+				${parts.links && parts.links.trim() ? `<div class="daymark-note-card__links">${parts.links}</div>` : ''}
+				${parts.after || ''}
+			</article>`;
 		},
 
-		renderGroup(group) {
-			if ('conversation' !== group.kind) {
-				return this.renderMaybeNew(group.item);
+		// Mark as read / unread, and Archive. Archive hides the notification
+		// only; the comment or like itself stays on the Mark.
+		renderStateActions(item) {
+			if (!item.id) {
+				return '';
 			}
-			const heading = group.postUrl
-				? `<a href="${esc(group.postUrl)}">${esc(group.postTitle || __('(untitled Mark)', 'daymark'))}</a>`
-				: esc(group.postTitle || __('(untitled Mark)', 'daymark'));
-			return `
-			<section class="daymark-conversation">
-				<h3 class="daymark-conversation__heading">${heading}</h3>
-				${group.comments.map((comment) => this.renderMaybeNew(comment)).join('')}
-			</section>`;
+			const readLabel = item.read ? __('Mark as unread', 'daymark') : __('Mark as read', 'daymark');
+			return `<span class="daymark-notif__actions">
+				<button type="button" class="daymark-notif__action" data-notif-read title="${esc(readLabel)}">${notifGlyph(
+					item.read ? UNREAD_GLYPH : CHECK_GLYPH
+				)}<span class="daymark-visually-hidden" data-notif-read-label>${esc(readLabel)}</span></button>
+				<button type="button" class="daymark-notif__action" data-notif-archive title="${esc(__('Archive', 'daymark'))}">${notifGlyph(
+					ARCHIVE_GLYPH
+				)}<span class="daymark-visually-hidden">${esc(__('Archive', 'daymark'))}</span></button>
+			</span>`;
+		},
+
+		// The person's avatar with a small badge for what they did, or a
+		// plain icon for a notice that isn't from a person.
+		renderFigure(item) {
+			const kind = notificationKind(item);
+			const badges = {
+				like: HEART_GLYPH,
+				repost: REPOST_GLYPH,
+				quote: REPOST_GLYPH,
+				reply: COMMENT_GLYPH,
+				mention: MENTION_GLYPH,
+			};
+			if ('site' === kind) {
+				const glyph = 'plugin_overlap' === item.type ? INFO_GLYPH : ALERT_GLYPH;
+				return `<span class="daymark-notif__figure daymark-notif__figure--icon${
+					'plugin_overlap' === item.type ? '' : ' daymark-notif__figure--danger'
+				}" aria-hidden="true">${notifGlyph(glyph)}</span>`;
+			}
+			const avatar = item.avatar
+				? `<img class="daymark-notif__avatar" src="${esc(item.avatar)}" alt="" width="40" height="40" loading="lazy" decoding="async">`
+				: `<span class="daymark-notif__avatar daymark-notif__avatar--empty"></span>`;
+			return `<span class="daymark-notif__figure" aria-hidden="true">${avatar}<span class="daymark-notif__badge daymark-notif__badge--${esc(
+				kind
+			)}">${notifGlyph(badges[kind] || COMMENT_GLYPH)}</span></span>`;
+		},
+
+		renderMeta(item, extra) {
+			const parts = [];
+			if (item.source_label) {
+				parts.push(esc(item.source_label));
+			}
+			if (extra) {
+				parts.push(extra);
+			}
+			const when = item.date_gmt ? relativeTime(item.date_gmt) : '';
+			if (when) {
+				parts.push(esc(when));
+			}
+			return parts.length ? `<p class="daymark-note-card__meta">${parts.join(' &middot; ')}</p>` : '';
 		},
 
 		renderItem(item) {
@@ -13042,31 +13261,39 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
-			if ('jetpack_like' === item.type) {
-				return this.renderJetpackLikeItem(item);
-			}
 
-			const text = toPlainText(item.comment_content);
+			const kind = notificationKind(item);
+			const name = item.comment_author || item.author || __('Someone', 'daymark');
+			const title = item.post_title || __('(untitled Mark)', 'daymark');
+			const titleHtml = item.post_url
+				? `<a href="${esc(item.post_url)}" data-notif-open>${esc(title)}</a>`
+				: `<strong>${esc(title)}</strong>`;
+			const formats = {
+				/* translators: 1: person's name, 2: Mark title */
+				reply: __('%1$s commented on %2$s', 'daymark'),
+				/* translators: 1: person's name, 2: Mark title */
+				quote: __('%1$s quoted %2$s', 'daymark'),
+				/* translators: 1: person's name, 2: Mark title */
+				like: __('%1$s liked %2$s', 'daymark'),
+				/* translators: 1: person's name, 2: Mark title */
+				repost: __('%1$s reblogged %2$s', 'daymark'),
+				/* translators: 1: person's name, 2: Mark title */
+				mention: __('%1$s mentioned %2$s', 'daymark'),
+			};
+			const summary = sprintf(esc(formats[kind] || formats.reply), `<strong>${esc(name)}</strong>`, titleHtml);
+
+			// Replies, quotes, and mentions carry text worth showing; a like
+			// or repost usually carries none (or a stock "liked this").
+			const showText = 'reply' === kind || 'quote' === kind || 'mention' === kind;
+			const text = showText ? toPlainText(item.comment_content || '') : '';
 			const long = text.length > 140;
-			const author = item.comment_author || item.author || '';
+			const canReply = ('reply' === kind || 'quote' === kind) && Number(item.comment_ID || item.comment_id);
 			const commentId = Number(item.comment_ID || item.comment_id || 0);
-			const metaParts = [];
-			if (author) {
-				metaParts.push(esc(author));
-			}
-			if (item.comment_date) {
-				metaParts.push(esc(relativeTime(item.comment_date)));
-			}
-			// No "on {post title}" meta part here — every comment now
-			// renders inside its own conversation card (issue #258), whose
-			// own heading already names the Mark it belongs to.
-			// A reply targets a specific comment; only offer it when we have a
-			// comment id to reply to.
 			const replyId = 'daymark-reply-' + commentId;
-			return `
-			<article class="daymark-note-card"${commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''}>
-				<span class="daymark-chip">${esc(item.source_label || __('Comment', 'daymark'))}</span>
-				<p class="daymark-note-card__text daymark-clamp">${esc(text)}</p>
+
+			const body = `
+				<p class="daymark-notif__summary">${summary}</p>
+				${text ? `<p class="daymark-note-card__text daymark-clamp">${esc(text)}</p>` : ''}
 				${
 					long
 						? '<button type="button" class="daymark-note-card__showmore" data-showmore aria-expanded="false">' +
@@ -13074,40 +13301,35 @@
 						  '</button>'
 						: ''
 				}
-				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				<div class="daymark-note-card__links">
-					${
-						item.post_url
-							? `<a class="daymark-note-card__link" href="${esc(item.post_url)}">${esc(
-									__('→ View Mark', 'daymark')
-							  )}</a>`
-							: ''
-					}
-					${
-						item.source_url
-							? `<a class="daymark-note-card__link" href="${esc(item.source_url)}" target="_blank" rel="noopener">${esc(
-									// A quote post is the quoter's own post, not a reply on a network.
-									'quote' === item.comment_kind
-										? __('↗ View their post', 'daymark')
-										: __('↗ View on network', 'daymark')
-							  )}</a>`
-							: ''
-					}
-					${
-						commentId
-							? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> ${esc(
-									__('Reply', 'daymark')
-							  )}</button>`
-							: ''
-					}
-				</div>
+				${this.renderMeta(item)}`;
+
+			const profileUrl = 'jetpack_like' === item.type ? item.author_url : item.source_url;
+			const links = `
 				${
-					commentId
-						? `<div class="daymark-reply" id="${replyId}" data-reply-form hidden>
+					profileUrl
+						? `<a class="daymark-note-card__link" href="${esc(profileUrl)}" target="_blank" rel="noopener" data-notif-open>${esc(
+								'jetpack_like' === item.type
+									? __('↗ View profile', 'daymark')
+									: 'reply' === kind
+									? __('↗ View on network', 'daymark')
+									: __('↗ View their post', 'daymark')
+						  )}</a>`
+						: ''
+				}
+				${
+					canReply
+						? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> ${esc(
+								__('Reply', 'daymark')
+						  )}</button>`
+						: ''
+				}`;
+
+			const after = canReply
+				? `<div class="daymark-reply" id="${replyId}" data-reply-form hidden>
 						<label class="daymark-visually-hidden" for="${replyId}-input">${esc(__('Your reply', 'daymark'))}</label>
 						<textarea id="${replyId}-input" class="daymark-textarea daymark-reply__input" data-reply-input rows="2" placeholder="${esc(
-								__('Write a reply…', 'daymark')
-						  )}">${esc(replyDrafts[commentId] || '')}</textarea>
+							__('Write a reply…', 'daymark')
+						)}">${esc(replyDrafts[commentId] || '')}</textarea>
 						<div class="daymark-reply__actions">
 							<button type="button" class="daymark-btn daymark-btn--primary" data-reply-send>${esc(
 								__('Send reply', 'daymark')
@@ -13119,26 +13341,21 @@
 						<p class="daymark-reply__status" data-reply-status aria-live="polite"></p>
 					</div>
 					<p class="daymark-note-card__replied" data-replied hidden>${esc(__('Reply sent.', 'daymark'))}</p>`
-						: ''
-				}
-			</article>`;
+				: '';
+
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links, after });
 		},
 
 		// A subscription currently having trouble fetching new posts
 		// (`feed_issue`, still `active`) or fully flagged dead (`dead_feed`,
 		// `status: 'error'`) — surfaced here instead of a separate wp-admin
-		// notice (issue #189): this screen is already where a Daymark user
-		// looks for "what needs my attention," so a second, admin-only
-		// heads-up would just be a duplicate alert most users would never
-		// see anyway. No reply/comment affordances apply — the only action
+		// notice (issue #189). No reply affordance applies — the only action
 		// is managing the subscription itself, in wp-admin.
 		renderSubscriptionIssueItem(item) {
 			const isDead = 'dead_feed' === item.type;
 			const siteLabel = item.site_title || item.site_url || __('A subscribed site', 'daymark');
-			const metaParts = [];
-			if (item.last_error) {
-				metaParts.push(
-					esc(
+			const reason = item.last_error
+				? esc(
 						isDead
 							? item.last_error
 							: sprintf(
@@ -13146,32 +13363,22 @@
 									__('Recent fetch issue: %s', 'daymark'),
 									item.last_error
 							  )
-					)
-				);
-			}
-			if (item.last_checked_at) {
-				const when = relativeTime(item.last_checked_at);
-				if (when) {
-					metaParts.push(esc(when));
-				}
-			}
-			return `
-			<article class="daymark-note-card">
-				<span class="daymark-chip daymark-chip--danger">${esc(
+				  )
+				: '';
+			const body = `
+				<p class="daymark-notif__summary"><strong>${esc(siteLabel)}</strong> ${esc(
+					isDead ? __('stopped updating.', 'daymark') : __("isn't updating right now.", 'daymark')
+				)}</p>
+				${reason ? `<p class="daymark-note-card__text">${reason}</p>` : ''}
+				<p class="daymark-note-card__meta"><span class="daymark-chip daymark-chip--danger">${esc(
 					isDead ? __('Feed error', 'daymark') : __('Feed issue', 'daymark')
-				)}</span>
-				<p class="daymark-note-card__text">${esc(siteLabel)}</p>
-				${metaParts.length ? `<p class="daymark-note-card__meta">${metaParts.join(' &middot; ')}</p>` : ''}
-				${
-					config.adminSubscriptionsUrl
-						? `<div class="daymark-note-card__links">
-					<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl)}">${esc(
-								__('→ Manage subscriptions', 'daymark')
-						  )}</a>
-				</div>`
-						: ''
-				}
-			</article>`;
+				)}</span>${item.date_gmt ? ' &middot; ' + esc(relativeTime(item.date_gmt)) : ''}</p>`;
+			const links = config.adminSubscriptionsUrl
+				? `<a class="daymark-note-card__link" href="${esc(config.adminSubscriptionsUrl)}">${esc(
+						__('→ Manage subscriptions', 'daymark')
+				  )}</a>`
+				: '';
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links });
 		},
 
 		// Several followed sites failing at once (often after a large
@@ -13191,81 +13398,37 @@
 					more
 				);
 			}
-			const when = item.last_checked_at ? relativeTime(item.last_checked_at) : '';
-			return `
-			<article class="daymark-note-card">
-				<span class="daymark-chip daymark-chip--danger">${esc(__('Feed issues', 'daymark'))}</span>
-				<p class="daymark-note-card__text">${esc(
+			const body = `
+				<p class="daymark-notif__summary">${esc(
 					sprintf(
 						/* translators: %d: number of followed sites that aren't updating */
 						_n("%d site you follow isn't updating.", "%d sites you follow aren't updating.", count, 'daymark'),
 						count
 					)
 				)}</p>
-				${list ? `<p class="daymark-note-card__meta">${esc(list)}${when ? ' &middot; ' + esc(when) : ''}</p>` : ''}
-				${
-					item.manage_url
-						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
-								item.manage_url
-						  )}">${esc(__('→ See which sites', 'daymark'))}</a></div>`
-						: ''
-				}
-			</article>`;
+				${list ? `<p class="daymark-note-card__text">${esc(list)}</p>` : ''}
+				<p class="daymark-note-card__meta"><span class="daymark-chip daymark-chip--danger">${esc(
+					__('Feed issues', 'daymark')
+				)}</span>${item.date_gmt ? ' &middot; ' + esc(relativeTime(item.date_gmt)) : ''}</p>`;
+			const links = item.manage_url
+				? `<a class="daymark-note-card__link" href="${esc(item.manage_url)}">${esc(__('→ See which sites', 'daymark'))}</a>`
+				: '';
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links });
 		},
 
-		// A WordPress.com like on one of your own Marks. Jetpack keeps these
-		// on WordPress.com rather than as comments on your site, so the
-		// server pulls them in separately
-		// (Daymark_Jetpack_Engagement::sync_own_likes()). It carries the
-		// same post_id/source fields as a comment, so it groups into that
-		// Mark's conversation card and the source filter like any reply —
-		// just with nothing to reply to.
-		renderJetpackLikeItem(item) {
-			const name = item.author || __('Someone', 'daymark');
-			const when = item.date ? relativeTime(item.date) : '';
-			return `
-			<article class="daymark-note-card">
-				<span class="daymark-chip">${esc(item.source_label || __('WordPress.com', 'daymark'))}</span>
-				<p class="daymark-note-card__text">${esc(
-					sprintf(
-						/* translators: %s: name of the person who liked the Mark */
-						__('%s liked this', 'daymark'),
-						name
-					)
-				)}</p>
-				${when ? `<p class="daymark-note-card__meta">${esc(when)}</p>` : ''}
-				${
-					item.author_url
-						? `<div class="daymark-note-card__links"><a class="daymark-note-card__link" href="${esc(
-								item.author_url
-						  )}" target="_blank" rel="noopener">${esc(__('↗ View profile', 'daymark'))}</a></div>`
-						: ''
-				}
-			</article>`;
-		},
-
-		// A passive, informational item (issue #346): no severity chip the
-		// way a subscription issue has, since nothing is broken — just
-		// something the site owner may want to know about their own
-		// active-plugin setup and decide on. Stays visible until
-		// explicitly dismissed (never auto-hides, never nags via the
-		// unread dot — see has_unread()'s own PHP docblock).
+		// A passive, informational item (issue #346): something the site
+		// owner may want to know about their own active-plugin setup and
+		// decide on. Stays until archived.
 		renderPluginOverlapItem(item) {
-			return `
-			<article class="daymark-note-card">
-				<span class="daymark-chip daymark-chip--muted">${esc(__('Plugin overlap', 'daymark'))}</span>
-				<p class="daymark-note-card__text">${esc(item.message || '')}</p>
-				<div class="daymark-note-card__links">
-					<a class="daymark-note-card__link" href="${esc(config.pluginsUrl || '#')}">${esc(
-						__('→ Manage plugins', 'daymark')
-					)}</a>
-					<button
-						type="button"
-						class="daymark-note-card__showmore"
-						data-plugin-overlap-dismiss="${esc(item.plugin || '')}"
-					>${esc(__('Dismiss', 'daymark'))}</button>
-				</div>
-			</article>`;
+			const body = `
+				<p class="daymark-notif__summary">${esc(item.message || '')}</p>
+				<p class="daymark-note-card__meta"><span class="daymark-chip daymark-chip--muted">${esc(
+					__('Plugin overlap', 'daymark')
+				)}</span></p>`;
+			const links = `<a class="daymark-note-card__link" href="${esc(config.pluginsUrl || '#')}">${esc(
+				__('→ Manage plugins', 'daymark')
+			)}</a>`;
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links });
 		},
 
 		bindShowMore(list) {
@@ -13289,13 +13452,43 @@
 			});
 		},
 
-		onReplyClick(event) {
+		itemFor(card) {
+			const id = card && card.getAttribute('data-notif-id');
+			return id ? this.items.find((item) => item.id === id) : null;
+		},
+
+		onListClick(event) {
 			const list = event.currentTarget;
 			const target = event.target;
 
-			const dismiss = target.closest('[data-plugin-overlap-dismiss]');
-			if (dismiss) {
-				this.dismissPluginOverlap(dismiss);
+			const readBtn = target.closest('[data-notif-read]');
+			if (readBtn) {
+				const item = this.itemFor(readBtn.closest('[data-notif-id]'));
+				if (item) {
+					this.setRead(item, !item.read, readBtn);
+				}
+				return;
+			}
+
+			const archiveBtn = target.closest('[data-notif-archive]');
+			if (archiveBtn) {
+				const item = this.itemFor(archiveBtn.closest('[data-notif-id]'));
+				if (item) {
+					this.archive(item, archiveBtn);
+				}
+				return;
+			}
+
+			// Opening the Mark or the other person's post counts as reading
+			// the notification. Fire and forget: the link still opens.
+			const open = target.closest('[data-notif-open]');
+			if (open) {
+				const item = this.itemFor(open.closest('[data-notif-id]'));
+				if (item && !item.read) {
+					item.read = true;
+					apiPost('notifications/read', { ids: [item.id] }).catch(() => {});
+					this.updateCard(item);
+				}
 				return;
 			}
 
@@ -13333,25 +13526,162 @@
 			}
 		},
 
-		// Dismisses a plugin-overlap item for good (issue #346) — an
-		// optimistic remove-from-DOM, mirroring toggleBookmark()'s own
-		// optimistic-then-revert-on-failure shape, just with nothing to
-		// revert TO here (there's no un-dismiss action, so a failure just
-		// re-enables the button for a retry rather than restoring state).
-		async dismissPluginOverlap(trigger) {
-			const plugin = trigger.getAttribute('data-plugin-overlap-dismiss');
-			if (!plugin) {
+		// Redraws one card's read state in place, without re-rendering the
+		// list: on the Unread tab, a card just marked read stays where it is
+		// until the tab changes, so nothing jumps out from under a finger.
+		updateCard(item) {
+			const card = root.querySelector(`[data-notif-id="${CSS.escape(item.id)}"]`);
+			if (card) {
+				card.classList.toggle('daymark-note-card--unread', !item.read);
+				const button = card.querySelector('[data-notif-read]');
+				if (button) {
+					const readLabel = item.read ? __('Mark as unread', 'daymark') : __('Mark as read', 'daymark');
+					button.title = readLabel;
+					button.innerHTML = `${notifGlyph(item.read ? UNREAD_GLYPH : CHECK_GLYPH)}<span class="daymark-visually-hidden">${esc(
+						readLabel
+					)}</span>`;
+				}
+				const hidden = card.querySelector('.daymark-notif__body > .daymark-visually-hidden');
+				if (item.read && hidden) {
+					hidden.remove();
+				} else if (!item.read && !hidden) {
+					card.querySelector('.daymark-notif__body').insertAdjacentHTML(
+						'afterbegin',
+						`<span class="daymark-visually-hidden">${esc(__('Unread:', 'daymark'))}</span>`
+					);
+				}
+			}
+			this.refreshCounts();
+		},
+
+		async setRead(item, read, button) {
+			const previous = item.read;
+			item.read = read;
+			this.updateCard(item);
+			announce(read ? __('Marked as read.', 'daymark') : __('Marked as unread.', 'daymark'));
+			try {
+				await apiPost(read ? 'notifications/read' : 'notifications/unread', { ids: [item.id] });
+			} catch (err) {
+				item.read = previous;
+				this.updateCard(item);
+				if (button && button.isConnected) {
+					showFlashBubble(button, __("Couldn't save. Try again.", 'daymark'));
+				}
+			}
+		},
+
+		async markAllRead(button) {
+			const unread = this.items.filter((item) => !item.read);
+			if (!unread.length) {
 				return;
 			}
-			const card = trigger.closest('.daymark-note-card');
-			trigger.disabled = true;
+			button.disabled = true;
+			unread.forEach((item) => {
+				item.read = true;
+			});
+			this.renderList(root.querySelector('[data-notification-list]'));
 			try {
-				await apiPost('notifications/plugin-overlaps/' + plugin + '/dismiss', {});
-				if (card) {
-					card.remove();
-				}
+				await apiPost('notifications/read', { all: true });
+				announce(__('All notifications marked as read.', 'daymark'));
 			} catch (err) {
-				trigger.disabled = false;
+				unread.forEach((item) => {
+					item.read = false;
+				});
+				this.renderList(root.querySelector('[data-notification-list]'));
+				announce(__("Couldn't mark notifications as read.", 'daymark'));
+			}
+			button.disabled = false;
+		},
+
+		// Archiving removes the notification from the list right away and
+		// offers Undo for a few seconds. The comment or like itself stays.
+		async archive(item, button) {
+			const index = this.items.indexOf(item);
+			if (index < 0) {
+				return;
+			}
+			const list = root.querySelector('[data-notification-list]');
+			const card = button.closest('[data-notif-id]');
+			// Where focus goes once the card is gone: the next card, else
+			// the previous one, else the list's tab.
+			const cards = Array.from(list.querySelectorAll('[data-notif-id]'));
+			const position = cards.indexOf(card);
+			const neighbor = cards[position + 1] || cards[position - 1];
+			const neighborId = neighbor ? neighbor.getAttribute('data-notif-id') : '';
+
+			this.items.splice(index, 1);
+			this.renderList(list);
+			this.lastArchived = { item, index };
+			this.showUndo(item);
+
+			const next = neighborId ? list.querySelector(`[data-notif-id="${CSS.escape(neighborId)}"]`) : null;
+			const focusTarget = next
+				? next.querySelector('[data-notif-archive]')
+				: root.querySelector('[data-notif-tab][aria-selected="true"]');
+			if (focusTarget) {
+				focusTarget.focus();
+			}
+
+			try {
+				await apiPost('notifications/archive', { ids: [item.id] });
+				item.read = true;
+			} catch (err) {
+				this.restore(item, index);
+				this.hideUndo();
+				announce(__("Couldn't archive that notification.", 'daymark'));
+			}
+		},
+
+		restore(item, index) {
+			if (this.items.indexOf(item) < 0) {
+				this.items.splice(Math.min(index, this.items.length), 0, item);
+			}
+			this.renderList(root.querySelector('[data-notification-list]'));
+		},
+
+		showUndo() {
+			const bar = root.querySelector('[data-notif-undo]');
+			if (!bar) {
+				return;
+			}
+			bar.querySelector('[data-notif-undo-text]').textContent = __('Notification archived.', 'daymark');
+			bar.hidden = false;
+			announce(__('Notification archived. Undo is available.', 'daymark'));
+			clearTimeout(this.undoTimer);
+			this.undoTimer = setTimeout(() => this.hideUndo(), 6000);
+		},
+
+		hideUndo() {
+			clearTimeout(this.undoTimer);
+			const bar = root.querySelector('[data-notif-undo]');
+			if (bar) {
+				bar.hidden = true;
+			}
+		},
+
+		async undoArchive() {
+			const last = this.lastArchived;
+			this.hideUndo();
+			if (!last) {
+				return;
+			}
+			this.lastArchived = null;
+			this.restore(last.item, last.index);
+			const card = root.querySelector(`[data-notif-id="${CSS.escape(last.item.id)}"]`);
+			const focusTarget = card && card.querySelector('[data-notif-archive]');
+			if (focusTarget) {
+				focusTarget.focus();
+			}
+			announce(__('Notification restored.', 'daymark'));
+			try {
+				await apiPost('notifications/unarchive', { ids: [last.item.id] });
+			} catch (err) {
+				const index = this.items.indexOf(last.item);
+				if (index >= 0) {
+					this.items.splice(index, 1);
+				}
+				this.renderList(root.querySelector('[data-notification-list]'));
+				announce(__("Couldn't restore that notification.", 'daymark'));
 			}
 		},
 
@@ -13403,6 +13733,12 @@
 				const replied = card.querySelector('[data-replied]');
 				if (replied) {
 					replied.hidden = false;
+				}
+				// The server marks a replied-to notification read.
+				const item = this.itemFor(card);
+				if (item && !item.read) {
+					item.read = true;
+					this.updateCard(item);
 				}
 			} catch (err) {
 				sendBtn.disabled = false;
