@@ -12,6 +12,11 @@
  *   background freshen whenever the notifications feed is viewed and the
  *   last sync has gone stale. No manual sync control exists in the UI.
  *
+ * Polling connectors can also report a post's like and reblog counts on
+ * the same sync, through the `daymark_import_network_reactions` filter in
+ * Daymark_Notifications::import_responses(). Those counts are stored per
+ * network (see REACTIONS_META) and added to a Mark's Timeline counts.
+ *
  * Only real syndicated posts are auto-synced (references a connector
  * marked `backflow_supported`) — mocked demo references stay manual via
  * the sync-responses REST endpoint so demo comments never appear
@@ -81,6 +86,19 @@ class Daymark_Backflow_Sync {
 	 * @var string
 	 */
 	public const LAST_SYNCED_META = '_daymark_backflow_last_synced_at';
+
+	/**
+	 * Post meta key holding a JSON object of network => {likes, reposts,
+	 * fetched_at}: the like and reblog counts a polling connector last
+	 * reported for the syndicated copy of a Mark on that network.
+	 *
+	 * Each sync replaces the network's counts, since a platform API reports
+	 * a current total, not new reactions since the last check. Written by
+	 * store_reactions(), read by reaction_totals().
+	 *
+	 * @var string
+	 */
+	public const REACTIONS_META = '_daymark_backflow_reactions';
 
 	/**
 	 * Hook up.
@@ -225,6 +243,13 @@ class Daymark_Backflow_Sync {
 			}
 		}
 
+		// Likes on older posts, and on ordinary posts, aren't covered by
+		// the recent-Marks loop above; a slower pass walks them a batch at
+		// a time (see Daymark_Jetpack_Engagement::sync_older_likes()).
+		if ( $jetpack_site ) {
+			Daymark_Jetpack_Engagement::sync_older_likes();
+		}
+
 		return $imported;
 	}
 
@@ -262,6 +287,98 @@ class Daymark_Backflow_Sync {
 		}
 
 		return sanitize_text_field( (string) $synced[ $network ] );
+	}
+
+	/**
+	 * Store the like and reblog counts a connector reported for one network.
+	 *
+	 * A count the connector didn't report keeps its previous value, so a
+	 * platform that only exposes likes never erases a reblog count. Any
+	 * other key is ignored. Counts are whole numbers, never negative.
+	 *
+	 * @param int                  $post_id Mark post ID.
+	 * @param string               $network Network ID, e.g. 'bluesky'.
+	 * @param array<string, mixed> $counts  `likes` and/or `reposts`.
+	 * @return bool Whether anything was stored.
+	 */
+	public static function store_reactions( int $post_id, string $network, array $counts ): bool {
+		$network = sanitize_key( $network );
+
+		if ( '' === $network ) {
+			return false;
+		}
+
+		$reported = array();
+
+		foreach ( array( 'likes', 'reposts' ) as $key ) {
+			if ( isset( $counts[ $key ] ) && is_numeric( $counts[ $key ] ) ) {
+				$reported[ $key ] = max( 0, (int) $counts[ $key ] );
+			}
+		}
+
+		if ( array() === $reported ) {
+			return false;
+		}
+
+		$all      = self::stored_reactions( $post_id );
+		$previous = $all[ $network ] ?? array();
+
+		$all[ $network ] = array(
+			'likes'      => $reported['likes'] ?? (int) ( $previous['likes'] ?? 0 ),
+			'reposts'    => $reported['reposts'] ?? (int) ( $previous['reposts'] ?? 0 ),
+			'fetched_at' => current_time( 'mysql' ),
+		);
+
+		update_post_meta( $post_id, self::REACTIONS_META, wp_json_encode( $all ) );
+
+		return true;
+	}
+
+	/**
+	 * Like and reblog counts across every network a connector reported for.
+	 *
+	 * Reads stored post meta only, never a platform API, so it is safe to
+	 * call while building a Timeline response.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array{likes: int, reposts: int}
+	 */
+	public static function reaction_totals( int $post_id ): array {
+		$totals = array(
+			'likes'   => 0,
+			'reposts' => 0,
+		);
+
+		foreach ( self::stored_reactions( $post_id ) as $counts ) {
+			$totals['likes']   += max( 0, (int) ( $counts['likes'] ?? 0 ) );
+			$totals['reposts'] += max( 0, (int) ( $counts['reposts'] ?? 0 ) );
+		}
+
+		return $totals;
+	}
+
+	/**
+	 * The stored per-network counts, with anything malformed dropped.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array<string, array<string, mixed>>
+	 */
+	private static function stored_reactions( int $post_id ): array {
+		$stored = json_decode( (string) get_post_meta( $post_id, self::REACTIONS_META, true ), true );
+
+		if ( ! is_array( $stored ) ) {
+			return array();
+		}
+
+		$clean = array();
+
+		foreach ( $stored as $network => $counts ) {
+			if ( is_string( $network ) && is_array( $counts ) ) {
+				$clean[ sanitize_key( $network ) ] = $counts;
+			}
+		}
+
+		return $clean;
 	}
 
 	/**

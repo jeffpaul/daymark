@@ -22,6 +22,9 @@ can't act on them.
 
 ### Added
 
+- Connector plugins can now report how many likes and reblogs a Mark got on their network, on the same hourly check that brings back replies. Daymark adds those counts to the Mark's like and reblog counts on the Timeline. Before, likes and reblogs on a network Daymark checks for replies were never counted.
+- The Posts list in wp-admin has a new Reblogs column, next to the comment count. It shows the same reblog count as the post's card in the Daymark app.
+- If you write short notes with the Shortnotes plugin, or with the Notes option in IndieBlocks, those notes now show in Daymark's Timeline, Search, On this day, and Bookmarks as Note cards. Daymark only reads them; it never changes or deletes them. ([#512](https://github.com/jeffpaul/daymark/pull/512))
 - Daymark now sends and receives Webmentions itself when the Webmention plugin isn't installed, for every public post. Likes, Reblogs, and comments now reach another Daymark site with nothing else to install, and arrive there as likes, reblog counts, and replies in Notifications.
 - A Daymark site now tells the Daymark sites that follow it what each post is: a Check In, a Reblog or reply and what it points to, and its Featured Content. Their Timeline shows the post the way its own site does, where before a Check In looked like a Note and a Reblog had no "Reblogged from" line.
 
@@ -77,6 +80,7 @@ can't act on them.
 
 ### Fixed
 
+- With Jetpack, likes from WordPress.com now reach the like count on every post's Timeline card, including posts older than two weeks and posts you wrote in the block editor. Before, Daymark only copied them for Marks from the last 14 days, so the Posts list's star column could show likes the app didn't. Daymark checks older posts in small batches each hour, so a large site takes a while to catch up.
 - In the full post view, the back arrow and Daymark icon now line up with the top of the title's letters. They sat a few pixels higher before. ([#508](https://github.com/jeffpaul/daymark/pull/508))
 - Your Reblogs now show on your Timeline. They were left out by an old rule from when a Reblog had no content of its own. ([#502](https://github.com/jeffpaul/daymark/pull/502))
 - "Reblog without comment" failed with "A Mark needs media or text". It now publishes the reblogged post on its own. Backslashes typed in a caption are also kept now, where they used to be dropped. ([#500](https://github.com/jeffpaul/daymark/pull/500))
