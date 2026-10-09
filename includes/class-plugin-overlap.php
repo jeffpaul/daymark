@@ -79,7 +79,7 @@ class Daymark_Plugin_Overlap {
 		),
 		'indieblocks'       => array(
 			'label'    => 'IndieBlocks',
-			'overlaps' => 'bundles its own post-kind, webmention, microformats, and syndication features — each may duplicate something Daymark already renders, so consider deactivating whichever one you don\'t need. If you turn IndieBlocks off, posts you liked with it no longer show as liked in Daymark',
+			'overlaps' => 'bundles its own post-kind, webmention, microformats, and syndication features — each may duplicate something Daymark already renders, so consider deactivating whichever one you don\'t need. If you turn IndieBlocks off, Notes you wrote with it no longer show in Daymark, and posts you liked with it no longer show as liked',
 			'slugs'    => array( 'indieblocks' ),
 			'classes'  => array( 'IndieBlocks\\Plugin' ),
 		),

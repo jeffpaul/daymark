@@ -24,6 +24,7 @@ can't act on them.
 
 - Connector plugins can now report how many likes and reblogs a Mark got on their network, on the same hourly check that brings back replies. Daymark adds those counts to the Mark's like and reblog counts on the Timeline. Before, likes and reblogs on a network Daymark checks for replies were never counted.
 - The Posts list in wp-admin has a new Reblogs column, next to the comment count. It shows the same reblog count as the post's card in the Daymark app.
+- If you write short notes with the Shortnotes plugin, or with the Notes option in IndieBlocks, those notes now show in Daymark's Timeline, Search, On this day, and Bookmarks as Note cards. Daymark only reads them; it never changes or deletes them. ([#512](https://github.com/jeffpaul/daymark/pull/512))
 - Daymark now sends and receives Webmentions itself when the Webmention plugin isn't installed, for every public post. Likes, Reblogs, and comments now reach another Daymark site with nothing else to install, and arrive there as likes, reblog counts, and replies in Notifications.
 - A Daymark site now tells the Daymark sites that follow it what each post is: a Check In, a Reblog or reply and what it points to, and its Featured Content. Their Timeline shows the post the way its own site does, where before a Check In looked like a Note and a Reblog had no "Reblogged from" line.
 
@@ -53,6 +54,7 @@ can't act on them.
 
 ### Changed
 
+- On the Me screen, the Subscriptions and Edit profile rows now show an "opens outside" icon, since both open a WordPress admin screen instead of a Daymark one. Screen readers hear that too. The "My Marks" row, and the same choice in Search's Source filter, now read "My marks" to match the other rows. ([#509](https://github.com/jeffpaul/daymark/pull/509))
 - A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text. ([#503](https://github.com/jeffpaul/daymark/pull/503))
 - A Reblog now shows the reblogged post as an embed of the original, the same card WordPress shows when you paste a link into a post, instead of a quote. The Reblog screen previews it as a card, and a caption credits the author and site. A site that can't be embedded shows a link. ([#500](https://github.com/jeffpaul/daymark/pull/500))
 - The Timeline now opens on the post that was at the top of your screen when you last left it, even if you had scrolled down into older posts. Newer posts are above it, and the "new posts" button counts only the ones you haven't seen. To jump back to the newest post, tap an empty part of the header, the Daymark name, or the Timeline tab. Refreshing the Timeline also starts you at the top. ([#501](https://github.com/jeffpaul/daymark/pull/501))

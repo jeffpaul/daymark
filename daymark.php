@@ -84,6 +84,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention-receiver.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-post-export.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-indieblocks-likes.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-external-notes.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bridgy-fed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-reader-import.php';

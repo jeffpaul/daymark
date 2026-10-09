@@ -1871,6 +1871,48 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
 				);
 			}
+
+			// Notes written with Shortnotes or IndieBlocks (issue #492) are
+			// the site's own posts in another plugin's post type, so they
+			// show wherever the site's posts do. Their own query, because
+			// the `note` type filter matches a Mark by meta but these by
+			// post type, and WP_Query can't OR the two. Every other filter
+			// (search, bookmarks, date window, On this day) applies as is.
+			$note_types = Daymark_External_Notes::post_types();
+
+			if ( ! empty( $note_types ) && ( '' === $type || 'note' === $type ) ) {
+				$notes_args = array(
+					'post_type'      => $note_types,
+					'post_status'    => 'publish',
+					'posts_per_page' => $limit,
+					'paged'          => 1,
+					'orderby'        => 'date',
+					'order'          => 'DESC',
+					'no_found_rows'  => ! $want_total,
+				);
+
+				if ( '' !== $search ) {
+					$notes_args['s'] = $search;
+				}
+
+				if ( null !== $bookmarked_post_in ) {
+					$notes_args['post__in'] = $bookmarked_post_in;
+				}
+
+				if ( count( $marks_window ) > 1 ) {
+					$notes_args['date_query'] = array( $marks_window );
+				}
+
+				$notes_query = new WP_Query( $notes_args );
+				$total      += (int) $notes_query->found_posts;
+
+				foreach ( $notes_query->posts as $post ) {
+					$items[] = array(
+						'date' => (string) $post->post_date_gmt,
+						'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
+					);
+				}
+			}
 		}
 
 		if ( $include_subscription_posts ) {
@@ -2252,7 +2294,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	public function get_featured_content_link( WP_REST_Request $request ) {
 		$post = get_post( absint( $request->get_param( 'id' ) ) );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -2310,7 +2352,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	public function get_featured_content_image( WP_REST_Request $request ) {
 		$post = get_post( absint( $request->get_param( 'id' ) ) );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -2835,7 +2877,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$post_id = absint( $request->get_param( 'id' ) );
 		$post    = get_post( $post_id );
 
-		if ( ! $post instanceof WP_Post || 'post' !== $post->post_type || 'publish' !== $post->post_status ) {
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) || 'publish' !== $post->post_status ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -3082,7 +3124,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
-		if ( ! in_array( $post->post_type, array( 'post', Daymark_Subscription_Post_Type::POST_TYPE ), true ) ) {
+		if ( Daymark_Subscription_Post_Type::POST_TYPE !== $post->post_type && ! Daymark_External_Notes::is_own_content_type( $post->post_type ) ) {
 			return new WP_Error(
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
@@ -4694,6 +4736,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$author_id = (int) get_post_field( 'post_author', $post_id );
 		$reactions = Daymark_Backflow_Sync::reaction_totals( $post_id );
 
+		// A Shortnotes or IndieBlocks note (issue #492) has no
+		// _daymark_primary_type meta, but it is a Note by definition.
+		$note_source = Daymark_External_Notes::source_for( $post_id );
+
 		$summary = array(
 			'id'                 => absint( $post_id ),
 			// Plain text: the_title filters entity-encode (&#8217; etc.) for
@@ -4705,7 +4751,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			),
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
-			'type'               => sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
+			'type'               => '' !== $note_source ? 'note' : sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
 			// The post's own real WordPress post format ('standard' when
 			// unset). A true Mark's `type` above always takes priority
 			// client-side; this exists only for an ordinary post published
