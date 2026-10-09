@@ -3982,7 +3982,7 @@
 		navigate('#search');
 	}
 
-	// The Source filter's <option>s: "All sites" and "My Marks" always
+	// The Source filter's <option>s: "All sites" and "My marks" always
 	// render first, in that order; the per-subscription options appear
 	// after them, alphabetized by their own displayed label, once the
 	// subscriptions fetch below resolves.
@@ -3997,7 +3997,7 @@
 			.map((sub) => `<option value="${esc(String(sub.id))}">${esc(sub.label)}</option>`)
 			.join('');
 		return `<option value="">${esc(__('All sites', 'daymark'))}</option><option value="mine">${esc(
-			__('My Marks', 'daymark')
+			__('My marks', 'daymark')
 		)}</option>${subscriptionOptions}`;
 	}
 
@@ -7676,7 +7676,7 @@
 
 		// Fetch active subscriptions once per visit, purely to populate the
 		// Source filter's per-site options. Never blocks the search itself;
-		// the dropdown just renders "All"/"My Marks" until this resolves.
+		// the dropdown just renders "All sites"/"My marks" until this resolves.
 		async loadSubscriptionsForFilter() {
 			this._subscriptions = await fetchSubscriptions();
 			const select = root.querySelector('[data-source-filter]');
@@ -8219,7 +8219,7 @@
 					<span class="daymark-mename">${esc(user.displayName || '')}</span>
 				</div>
 				<nav class="daymark-melinks" aria-label="${esc(__('Your Daymark', 'daymark'))}">
-					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My Marks', 'daymark'))}</button>
+					<button type="button" class="daymark-melink" data-me-mymarks>${esc(__('My marks', 'daymark'))}</button>
 					${
 						config.canManageSubscriptions
 							? `<button type="button" class="daymark-melink" data-follow-site>${esc(__('Follow a site', 'daymark'))}</button>`
