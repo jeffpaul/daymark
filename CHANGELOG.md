@@ -51,7 +51,7 @@ can't act on them.
 
 ### Changed
 
-- Notifications now has tabs for All, Unread, Comments, Likes, Reblogs, and Mentions, and lists everything newest first under Today, Yesterday, and older date headings. You can mark each notification read or unread, mark all as read, and archive one to remove it from the list (with Undo). Likes, reblogs, and mentions from other sites now show up here too. ([#514](https://github.com/jeffpaul/daymark/pull/514))
+- Notifications now has tabs for All, Unread, Comments, Likes, Reblogs, and Mentions, and lists everything newest first under Today, Yesterday, and older date headings. You can mark each notification read or unread, mark all as read, and archive one to remove it from the list (with Undo). Likes, reblogs, and mentions from other sites now show up here too, and several likes on one Mark are grouped into one row, such as "Ana and 3 others liked". ([#514](https://github.com/jeffpaul/daymark/pull/514))
 
 - A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text. ([#503](https://github.com/jeffpaul/daymark/pull/503))
 - A Reblog now shows the reblogged post as an embed of the original, the same card WordPress shows when you paste a link into a post, instead of a quote. The Reblog screen previews it as a card, and a caption credits the author and site. A site that can't be embedded shows a link. ([#500](https://github.com/jeffpaul/daymark/pull/500))

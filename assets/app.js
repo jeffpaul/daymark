@@ -12865,6 +12865,32 @@
 		return 'site';
 	}
 
+	// Collapses likes on the same Mark under the same date heading into one
+	// entry, the way the Jetpack app shows "Ana and 3 others liked …". The
+	// group sits where its newest like would (the list is newest first, so
+	// that's the first like seen). Everything else is an entry of its own.
+	function groupNotificationLikes(items) {
+		const entries = [];
+		const groups = new Map();
+		items.forEach((item) => {
+			const period = notificationPeriod(parseDate(item.date_gmt));
+			if ('like' === notificationKind(item) && item.post_id) {
+				const key = period.key + '|' + item.post_id;
+				const group = groups.get(key);
+				if (group) {
+					group.members.push(item);
+					return;
+				}
+				const entry = { period, members: [item] };
+				groups.set(key, entry);
+				entries.push(entry);
+				return;
+			}
+			entries.push({ period, members: [item] });
+		});
+		return entries;
+	}
+
 	// Reply text a user has started typing, keyed by comment ID — kept in
 	// memory (not sent anywhere) so switching between replies, closing and
 	// reopening the same one, or navigating back to Notifications never
@@ -13159,13 +13185,12 @@
 			}
 			let html = '';
 			let lastKey = null;
-			filtered.forEach((item) => {
-				const period = notificationPeriod(parseDate(item.date_gmt));
-				if (period.key !== lastKey) {
-					html += `<h2 class="daymark-section-heading daymark-notif-list__heading">${esc(period.label)}</h2>`;
-					lastKey = period.key;
+			groupNotificationLikes(filtered).forEach((entry) => {
+				if (entry.period.key !== lastKey) {
+					html += `<h2 class="daymark-section-heading daymark-notif-list__heading">${esc(entry.period.label)}</h2>`;
+					lastKey = entry.period.key;
 				}
-				html += this.renderItem(item);
+				html += entry.members.length > 1 ? this.renderLikeGroup(entry.members) : this.renderItem(entry.members[0]);
 			});
 			list.innerHTML = html;
 			this.bindShowMore(list);
@@ -13179,7 +13204,9 @@
 			return `
 			<article class="daymark-note-card daymark-notif${unread ? ' daymark-note-card--unread' : ''}" data-notif-id="${esc(
 				item.id || ''
-			)}"${commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''}>
+			)}"${parts.ids ? ` data-notif-ids="${esc(parts.ids.join(','))}"` : ''}${
+				commentId ? ` data-comment-id="${esc(String(commentId))}"` : ''
+			}>
 				<div class="daymark-notif__row">
 					<span class="daymark-notif__dot" aria-hidden="true"></span>
 					${parts.figure}
@@ -13346,6 +13373,61 @@
 			return this.renderShell(item, { figure: this.renderFigure(item), body, links, after });
 		},
 
+		// Several likes on one Mark under one date heading, as a single row:
+		// up to three stacked avatars, "Ana and 3 others liked …", and a
+		// "See who" list of everyone. Read and Archive act on every like in
+		// the row; the row reads as unread while any of them is.
+		renderLikeGroup(members) {
+			const first = members[0];
+			const others = members.length - 1;
+			const name = (item) => item.comment_author || item.author || __('Someone', 'daymark');
+			const title = first.post_title || __('(untitled Mark)', 'daymark');
+			const titleHtml = first.post_url
+				? `<a href="${esc(first.post_url)}" data-notif-open>${esc(title)}</a>`
+				: `<strong>${esc(title)}</strong>`;
+			const summary = sprintf(
+				esc(
+					/* translators: 1: first person's name, 2: number of other people, 3: Mark title */
+					_n('%1$s and %2$d other liked %3$s', '%1$s and %2$d others liked %3$s', others, 'daymark')
+				),
+				`<strong>${esc(name(first))}</strong>`,
+				others,
+				titleHtml
+			);
+			const avatars = members
+				.slice(0, 2)
+				.map((item) =>
+					item.avatar
+						? `<img class="daymark-notif__avatar" src="${esc(item.avatar)}" alt="" width="40" height="40" loading="lazy" decoding="async">`
+						: '<span class="daymark-notif__avatar daymark-notif__avatar--empty"></span>'
+				)
+				.join('');
+			const figure = `<span class="daymark-notif__figure daymark-notif__figure--stack" aria-hidden="true">${avatars}<span class="daymark-notif__badge daymark-notif__badge--like">${notifGlyph(
+				HEART_GLYPH
+			)}</span></span>`;
+			const whoId = 'daymark-notif-who-' + first.id;
+			const people = members
+				.map((item) => {
+					const url = 'jetpack_like' === item.type ? item.author_url : item.source_url;
+					const label = esc(name(item));
+					return `<li>${
+						url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${label}</a>` : label
+					} <span class="daymark-note-card__meta">${esc(item.source_label || '')}${
+						item.date_gmt ? ' &middot; ' + esc(relativeTime(item.date_gmt)) : ''
+					}</span></li>`;
+				})
+				.join('');
+			const body = `
+				<p class="daymark-notif__summary">${summary}</p>
+				${this.renderMeta(first)}`;
+			const links = `<button type="button" class="daymark-note-card__showmore" data-notif-who aria-expanded="false" aria-controls="${esc(
+				whoId
+			)}">${esc(__('See who', 'daymark'))}</button>`;
+			const after = `<ul class="daymark-notif__who" id="${esc(whoId)}" hidden>${people}</ul>`;
+			const group = Object.assign({}, first, { read: members.every((item) => item.read) });
+			return this.renderShell(group, { figure, body, links, after, ids: members.map((item) => item.id) });
+		},
+
 		// A subscription currently having trouble fetching new posts
 		// (`feed_issue`, still `active`) or fully flagged dead (`dead_feed`,
 		// `status: 'error'`) — surfaced here instead of a separate wp-admin
@@ -13452,9 +13534,16 @@
 			});
 		},
 
-		itemFor(card) {
-			const id = card && card.getAttribute('data-notif-id');
-			return id ? this.items.find((item) => item.id === id) : null;
+		// Every notification a card stands for: one item, or every like in a
+		// grouped likes row (data-notif-ids).
+		itemsFor(card) {
+			if (!card) {
+				return [];
+			}
+			const ids = (card.getAttribute('data-notif-ids') || card.getAttribute('data-notif-id') || '')
+				.split(',')
+				.filter(Boolean);
+			return this.items.filter((item) => ids.includes(item.id));
 		},
 
 		onListClick(event) {
@@ -13463,18 +13552,31 @@
 
 			const readBtn = target.closest('[data-notif-read]');
 			if (readBtn) {
-				const item = this.itemFor(readBtn.closest('[data-notif-id]'));
-				if (item) {
-					this.setRead(item, !item.read, readBtn);
+				const items = this.itemsFor(readBtn.closest('[data-notif-id]'));
+				if (items.length) {
+					// A group is read only once every like in it is.
+					this.setRead(items, !items.every((item) => item.read), readBtn);
 				}
 				return;
 			}
 
 			const archiveBtn = target.closest('[data-notif-archive]');
 			if (archiveBtn) {
-				const item = this.itemFor(archiveBtn.closest('[data-notif-id]'));
-				if (item) {
-					this.archive(item, archiveBtn);
+				const items = this.itemsFor(archiveBtn.closest('[data-notif-id]'));
+				if (items.length) {
+					this.archive(items, archiveBtn);
+				}
+				return;
+			}
+
+			const whoToggle = target.closest('[data-notif-who]');
+			if (whoToggle) {
+				const panel = document.getElementById(whoToggle.getAttribute('aria-controls'));
+				const opening = 'true' !== whoToggle.getAttribute('aria-expanded');
+				whoToggle.setAttribute('aria-expanded', opening ? 'true' : 'false');
+				whoToggle.textContent = opening ? __('Hide names', 'daymark') : __('See who', 'daymark');
+				if (panel) {
+					panel.hidden = !opening;
 				}
 				return;
 			}
@@ -13483,11 +13585,13 @@
 			// the notification. Fire and forget: the link still opens.
 			const open = target.closest('[data-notif-open]');
 			if (open) {
-				const item = this.itemFor(open.closest('[data-notif-id]'));
-				if (item && !item.read) {
-					item.read = true;
-					apiPost('notifications/read', { ids: [item.id] }).catch(() => {});
-					this.updateCard(item);
+				const unread = this.itemsFor(open.closest('[data-notif-id]')).filter((item) => !item.read);
+				if (unread.length) {
+					unread.forEach((item) => {
+						item.read = true;
+					});
+					apiPost('notifications/read', { ids: unread.map((item) => item.id) }).catch(() => {});
+					this.updateCard(unread);
 				}
 				return;
 			}
@@ -13526,25 +13630,34 @@
 			}
 		},
 
-		// Redraws one card's read state in place, without re-rendering the
+		// The card holding a notification: its own, or the grouped likes row
+		// it belongs to.
+		cardFor(item) {
+			return Array.from(root.querySelectorAll('[data-notif-id]')).find((card) =>
+				(card.getAttribute('data-notif-ids') || card.getAttribute('data-notif-id')).split(',').includes(item.id)
+			);
+		},
+
+		// Redraws a card's read state in place, without re-rendering the
 		// list: on the Unread tab, a card just marked read stays where it is
 		// until the tab changes, so nothing jumps out from under a finger.
-		updateCard(item) {
-			const card = root.querySelector(`[data-notif-id="${CSS.escape(item.id)}"]`);
+		updateCard(items) {
+			const card = this.cardFor(items[0]);
 			if (card) {
-				card.classList.toggle('daymark-note-card--unread', !item.read);
+				const read = this.itemsFor(card).every((item) => item.read);
+				card.classList.toggle('daymark-note-card--unread', !read);
 				const button = card.querySelector('[data-notif-read]');
 				if (button) {
-					const readLabel = item.read ? __('Mark as unread', 'daymark') : __('Mark as read', 'daymark');
+					const readLabel = read ? __('Mark as unread', 'daymark') : __('Mark as read', 'daymark');
 					button.title = readLabel;
-					button.innerHTML = `${notifGlyph(item.read ? UNREAD_GLYPH : CHECK_GLYPH)}<span class="daymark-visually-hidden">${esc(
+					button.innerHTML = `${notifGlyph(read ? UNREAD_GLYPH : CHECK_GLYPH)}<span class="daymark-visually-hidden">${esc(
 						readLabel
 					)}</span>`;
 				}
 				const hidden = card.querySelector('.daymark-notif__body > .daymark-visually-hidden');
-				if (item.read && hidden) {
+				if (read && hidden) {
 					hidden.remove();
-				} else if (!item.read && !hidden) {
+				} else if (!read && !hidden) {
 					card.querySelector('.daymark-notif__body').insertAdjacentHTML(
 						'afterbegin',
 						`<span class="daymark-visually-hidden">${esc(__('Unread:', 'daymark'))}</span>`
@@ -13554,16 +13667,20 @@
 			this.refreshCounts();
 		},
 
-		async setRead(item, read, button) {
-			const previous = item.read;
-			item.read = read;
-			this.updateCard(item);
+		async setRead(items, read, button) {
+			const previous = items.map((item) => item.read);
+			items.forEach((item) => {
+				item.read = read;
+			});
+			this.updateCard(items);
 			announce(read ? __('Marked as read.', 'daymark') : __('Marked as unread.', 'daymark'));
 			try {
-				await apiPost(read ? 'notifications/read' : 'notifications/unread', { ids: [item.id] });
+				await apiPost(read ? 'notifications/read' : 'notifications/unread', { ids: items.map((item) => item.id) });
 			} catch (err) {
-				item.read = previous;
-				this.updateCard(item);
+				items.forEach((item, i) => {
+					item.read = previous[i];
+				});
+				this.updateCard(items);
 				if (button && button.isConnected) {
 					showFlashBubble(button, __("Couldn't save. Try again.", 'daymark'));
 				}
@@ -13593,26 +13710,26 @@
 			button.disabled = false;
 		},
 
-		// Archiving removes the notification from the list right away and
-		// offers Undo for a few seconds. The comment or like itself stays.
-		async archive(item, button) {
-			const index = this.items.indexOf(item);
-			if (index < 0) {
-				return;
-			}
+		// Archiving removes the notification (or every like in a grouped
+		// row) from the list right away and offers Undo for a few seconds.
+		// The comment or like itself stays.
+		async archive(items, button) {
 			const list = root.querySelector('[data-notification-list]');
 			const card = button.closest('[data-notif-id]');
 			// Where focus goes once the card is gone: the next card, else
-			// the previous one, else the list's tab.
+			// the previous one, else the selected tab.
 			const cards = Array.from(list.querySelectorAll('[data-notif-id]'));
 			const position = cards.indexOf(card);
 			const neighbor = cards[position + 1] || cards[position - 1];
 			const neighborId = neighbor ? neighbor.getAttribute('data-notif-id') : '';
 
-			this.items.splice(index, 1);
+			const removed = items
+				.map((item) => ({ item, index: this.items.indexOf(item) }))
+				.filter((entry) => entry.index >= 0);
+			this.items = this.items.filter((item) => !items.includes(item));
 			this.renderList(list);
-			this.lastArchived = { item, index };
-			this.showUndo(item);
+			this.lastArchived = removed;
+			this.showUndo(removed.length);
 
 			const next = neighborId ? list.querySelector(`[data-notif-id="${CSS.escape(neighborId)}"]`) : null;
 			const focusTarget = next
@@ -13623,30 +13740,47 @@
 			}
 
 			try {
-				await apiPost('notifications/archive', { ids: [item.id] });
-				item.read = true;
+				await apiPost('notifications/archive', { ids: items.map((item) => item.id) });
+				items.forEach((item) => {
+					item.read = true;
+				});
 			} catch (err) {
-				this.restore(item, index);
+				this.restore(removed);
 				this.hideUndo();
 				announce(__("Couldn't archive that notification.", 'daymark'));
 			}
 		},
 
-		restore(item, index) {
-			if (this.items.indexOf(item) < 0) {
-				this.items.splice(Math.min(index, this.items.length), 0, item);
-			}
+		// Put archived items back at their old places, lowest index first so
+		// each index still points where it did.
+		restore(removed) {
+			removed
+				.slice()
+				.sort((a, b) => a.index - b.index)
+				.forEach(({ item, index }) => {
+					if (this.items.indexOf(item) < 0) {
+						this.items.splice(Math.min(index, this.items.length), 0, item);
+					}
+				});
 			this.renderList(root.querySelector('[data-notification-list]'));
 		},
 
-		showUndo() {
+		showUndo(count) {
 			const bar = root.querySelector('[data-notif-undo]');
 			if (!bar) {
 				return;
 			}
-			bar.querySelector('[data-notif-undo-text]').textContent = __('Notification archived.', 'daymark');
+			const text =
+				count > 1
+					? sprintf(
+							/* translators: %d: number of notifications archived */
+							_n('%d notification archived.', '%d notifications archived.', count, 'daymark'),
+							count
+					  )
+					: __('Notification archived.', 'daymark');
+			bar.querySelector('[data-notif-undo-text]').textContent = text;
 			bar.hidden = false;
-			announce(__('Notification archived. Undo is available.', 'daymark'));
+			announce(text + ' ' + __('Undo is available.', 'daymark'));
 			clearTimeout(this.undoTimer);
 			this.undoTimer = setTimeout(() => this.hideUndo(), 6000);
 		},
@@ -13660,26 +13794,23 @@
 		},
 
 		async undoArchive() {
-			const last = this.lastArchived;
+			const removed = this.lastArchived;
 			this.hideUndo();
-			if (!last) {
+			if (!removed || !removed.length) {
 				return;
 			}
 			this.lastArchived = null;
-			this.restore(last.item, last.index);
-			const card = root.querySelector(`[data-notif-id="${CSS.escape(last.item.id)}"]`);
+			this.restore(removed);
+			const card = this.cardFor(removed[0].item);
 			const focusTarget = card && card.querySelector('[data-notif-archive]');
 			if (focusTarget) {
 				focusTarget.focus();
 			}
 			announce(__('Notification restored.', 'daymark'));
 			try {
-				await apiPost('notifications/unarchive', { ids: [last.item.id] });
+				await apiPost('notifications/unarchive', { ids: removed.map((entry) => entry.item.id) });
 			} catch (err) {
-				const index = this.items.indexOf(last.item);
-				if (index >= 0) {
-					this.items.splice(index, 1);
-				}
+				this.items = this.items.filter((item) => !removed.some((entry) => entry.item === item));
 				this.renderList(root.querySelector('[data-notification-list]'));
 				announce(__("Couldn't restore that notification.", 'daymark'));
 			}
@@ -13735,10 +13866,12 @@
 					replied.hidden = false;
 				}
 				// The server marks a replied-to notification read.
-				const item = this.itemFor(card);
-				if (item && !item.read) {
-					item.read = true;
-					this.updateCard(item);
+				const items = this.itemsFor(card).filter((item) => !item.read);
+				if (items.length) {
+					items.forEach((item) => {
+						item.read = true;
+					});
+					this.updateCard(items);
 				}
 			} catch (err) {
 				sendBtn.disabled = false;
