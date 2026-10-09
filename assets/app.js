@@ -738,6 +738,10 @@
 		'<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>';
 	const EXTERNAL_LINK_GLYPH =
 		'<line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline>';
+	// Feather "external-link" (box with an arrow out of it): marks a Me
+	// row that leaves the app for a WordPress screen.
+	const LEAVES_APP_GLYPH =
+		'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line>';
 	const ROUTING_GLYPH =
 		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
 	const REFRESH_GLYPH =
@@ -8187,6 +8191,14 @@
 	// WordPress's own account settings — Edit profile and Log out link
 	// out to WordPress rather than reimplementing them.
 
+	// A trailing icon plus screen-reader text for a Me row that opens a
+	// WordPress screen instead of a Daymark one.
+	function leavesAppMarker() {
+		return `<svg class="daymark-melink__external" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${LEAVES_APP_GLYPH}</svg><span class="daymark-visually-hidden">${esc(
+			__('(opens in WordPress, outside Daymark)', 'daymark')
+		)}</span>`;
+	}
+
 	const MeScreen = {
 		render() {
 			const user = config.currentUser || {};
@@ -8223,16 +8235,12 @@
 					}
 					${
 						config.adminSubscriptionsUrl
-							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}">${esc(
-									__('Subscriptions', 'daymark')
-							  )}</a>`
+							? `<a class="daymark-melink" href="${esc(config.adminSubscriptionsUrl)}"><span class="daymark-melink__label">${esc(__('Subscriptions', 'daymark'))}</span>${leavesAppMarker()}</a>`
 							: ''
 					}
 					${
 						user.profileEditUrl
-							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}">${esc(
-									__('Edit profile', 'daymark')
-							  )}</a>`
+							? `<a class="daymark-melink" href="${esc(user.profileEditUrl)}"><span class="daymark-melink__label">${esc(__('Edit profile', 'daymark'))}</span>${leavesAppMarker()}</a>`
 							: ''
 					}
 					${

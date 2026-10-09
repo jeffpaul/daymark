@@ -2085,6 +2085,22 @@ button.daymark-stat {
 	background: var(--daymark-accent-wash);
 }
 
+/* A row that opens a WordPress screen: its icon sits at the far right. */
+.daymark-melink__label {
+	flex: 1;
+}
+
+.daymark-melink__external {
+	flex-shrink: 0;
+	margin-left: var(--daymark-spacing-sm);
+	color: var(--daymark-text-muted);
+}
+
+.daymark-melink:hover .daymark-melink__external,
+.daymark-melink:focus-visible .daymark-melink__external {
+	color: currentColor;
+}
+
 /* --- Create: media picker --- */
 .daymark-picker__input {
 	position: absolute;
