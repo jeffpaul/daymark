@@ -54,6 +54,7 @@ can't act on them.
 
 ### Changed
 
+- The full post view now shows Like, Comment, Reblog, Bookmark, and the ⋯ menu in a bar that floats at the bottom of the screen, so you can act on a post without scrolling to its end. The ⋯ menu opens upward from the bar. ([#511](https://github.com/jeffpaul/daymark/pull/511))
 - On the Me screen, the Subscriptions and Edit profile rows now show an "opens outside" icon, since both open a WordPress admin screen instead of a Daymark one. Screen readers hear that too. The "My Marks" row, and the same choice in Search's Source filter, now read "My marks" to match the other rows. ([#509](https://github.com/jeffpaul/daymark/pull/509))
 - A Timeline card for a post with no excerpt now shows the first words of the post's text, instead of nothing. This covers posts written in the block editor and followed posts whose feed carried no summary. A post with no title shows that text as its title, and an untitled post with no image, or an Aside, Status, or Chat post, now shows as a Note card. A Mark with no caption, such as a photo, still shows no text. ([#503](https://github.com/jeffpaul/daymark/pull/503))
 - A Reblog now shows the reblogged post as an embed of the original, the same card WordPress shows when you paste a link into a post, instead of a quote. The Reblog screen previews it as a card, and a caption credits the author and site. A site that can't be embedded shows a link. ([#500](https://github.com/jeffpaul/daymark/pull/500))
