@@ -84,6 +84,14 @@ class Daymark_Jetpack_Engagement {
 	private const OWN_LIKES_COOLDOWN = 10 * MINUTE_IN_SECONDS;
 
 	/**
+	 * Option holding the post ID sync_older_likes() continues below, or 0
+	 * to start from the newest post.
+	 *
+	 * @var string
+	 */
+	public const OLDER_LIKES_CURSOR = 'daymark_jetpack_older_likes_cursor';
+
+	/**
 	 * Registers hooks — mirrors Daymark_Bookmarks' own cleanup convention.
 	 *
 	 * @return void
@@ -220,10 +228,13 @@ class Daymark_Jetpack_Engagement {
 	 * response shape come from WordPress.com's public API docs; flagged for
 	 * verification.
 	 *
-	 * @param int $post_id Mark post ID.
+	 * @param int $post_id           Mark post ID.
+	 * @param int $fallback_liked_at Date for a new liker when WordPress.com
+	 *                               sends no `date_liked`; 0 means now.
+	 *                               See store_own_likes().
 	 * @return bool Whether a fresh result was stored.
 	 */
-	public static function sync_own_likes( int $post_id ): bool {
+	public static function sync_own_likes( int $post_id, int $fallback_liked_at = 0 ): bool {
 		if ( ! self::site_connected() ) {
 			return false;
 		}
@@ -266,9 +277,79 @@ class Daymark_Jetpack_Engagement {
 			return false;
 		}
 
-		self::store_own_likes( $post_id, $body );
+		self::store_own_likes( $post_id, $body, $fallback_liked_at );
 
 		return true;
+	}
+
+	/**
+	 * Copy WordPress.com likes for older posts, one batch per call.
+	 *
+	 * The backflow sync only covers recent Marks, so a like on an older
+	 * post, or on an ordinary post, never reached Daymark's like count.
+	 * This pass walks every published post from newest to oldest, a batch
+	 * at a time, and starts again from the newest once it reaches the
+	 * oldest. Each post keeps its own cooldown in sync_own_likes(), so a
+	 * post the recent pass just checked isn't requested twice. A new liker
+	 * with no `date_liked` is dated with the post's own date, so this pass
+	 * never fills Notifications with likes that only look new.
+	 *
+	 * @return int Posts whose likes were refreshed.
+	 */
+	public static function sync_older_likes(): int {
+		if ( ! self::site_connected() ) {
+			return 0;
+		}
+
+		$synced = 0;
+
+		foreach ( self::next_older_likes_batch() as $post_id ) {
+			$post_date = (int) get_post_time( 'U', true, $post_id );
+
+			if ( self::sync_own_likes( $post_id, $post_date ) ) {
+				++$synced;
+			}
+		}
+
+		return $synced;
+	}
+
+	/**
+	 * The next batch of posts for sync_older_likes(), newest first, and
+	 * move the stored position past them. When the walk reaches the oldest
+	 * post, the position resets so the next call starts from the newest.
+	 *
+	 * @return int[] Post IDs.
+	 */
+	public static function next_older_likes_batch(): array {
+		/**
+		 * Filters how many posts each pass copies WordPress.com likes for.
+		 * One request to WordPress.com per post. The pass runs hourly.
+		 *
+		 * @param int $size Posts per pass. Default 20.
+		 */
+		$size = max( 1, (int) apply_filters( 'daymark_jetpack_older_likes_batch', 20 ) );
+
+		$cursor = absint( get_option( self::OLDER_LIKES_CURSOR, 0 ) );
+
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- A position-based walk WP_Query can't express (ID below a cursor); read once per hourly pass.
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'post' AND post_status = 'publish' AND ( %d = 0 OR ID < %d ) ORDER BY ID DESC LIMIT %d",
+				$cursor,
+				$cursor,
+				$size
+			)
+		);
+
+		$ids = array_map( 'absint', (array) $ids );
+
+		// A short batch means the walk reached the oldest post: start over.
+		update_option( self::OLDER_LIKES_CURSOR, count( $ids ) < $size ? 0 : (int) end( $ids ), false );
+
+		return $ids;
 	}
 
 	/**
@@ -280,14 +361,23 @@ class Daymark_Jetpack_Engagement {
 	 * (unliked) is dropped. Separate from sync_own_likes() so it can be
 	 * unit tested without the real Jetpack classes.
 	 *
-	 * @param int                  $post_id Mark post ID.
-	 * @param array<string, mixed> $body    Decoded API response.
+	 * A new liker with no `date_liked` gets $fallback_liked_at instead of
+	 * now when one is given. The older-posts pass passes the post's own
+	 * date, so likes it finds on an old post never show as new in
+	 * Notifications.
+	 *
+	 * @param int                  $post_id           Mark post ID.
+	 * @param array<string, mixed> $body              Decoded API response.
+	 * @param int                  $fallback_liked_at Date for a new liker
+	 *                                                with no `date_liked`;
+	 *                                                0 means now.
 	 * @return void
 	 */
-	public static function store_own_likes( int $post_id, array $body ): void {
+	public static function store_own_likes( int $post_id, array $body, int $fallback_liked_at = 0 ): void {
 		$previous = self::own_likes( $post_id );
 		$likers   = array();
 		$now      = time();
+		$fallback = $fallback_liked_at > 0 ? $fallback_liked_at : $now;
 
 		foreach ( (array) ( $body['likes'] ?? array() ) as $like ) {
 			if ( ! is_array( $like ) || empty( $like['ID'] ) ) {
@@ -308,7 +398,7 @@ class Daymark_Jetpack_Engagement {
 				'name'     => sanitize_text_field( (string) ( $like['name'] ?? $like['login'] ?? '' ) ),
 				'url'      => esc_url_raw( (string) ( $like['URL'] ?? $like['profile_URL'] ?? '' ) ),
 				'avatar'   => esc_url_raw( (string) ( $like['avatar_URL'] ?? '' ) ),
-				'liked_at' => $liked_at > 0 ? $liked_at : $now,
+				'liked_at' => $liked_at > 0 ? $liked_at : $fallback,
 			);
 		}
 

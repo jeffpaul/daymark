@@ -35,6 +35,7 @@ delete_option( 'daymark_nav_routes_added' );
 delete_option( 'daymark_bookmarklet_route_added' );
 delete_option( 'daymark_subscriptions_db_version' );
 delete_option( 'daymark_bridgy_fed_bridged' );
+delete_option( 'daymark_jetpack_older_likes_cursor' );
 // Settings -> Daymark's own settings (Daymark_Settings::options()).
 delete_option( 'daymark_capture_location' );
 delete_option( 'daymark_capture_weather' );

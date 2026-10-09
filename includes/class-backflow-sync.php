@@ -243,6 +243,13 @@ class Daymark_Backflow_Sync {
 			}
 		}
 
+		// Likes on older posts, and on ordinary posts, aren't covered by
+		// the recent-Marks loop above; a slower pass walks them a batch at
+		// a time (see Daymark_Jetpack_Engagement::sync_older_likes()).
+		if ( $jetpack_site ) {
+			Daymark_Jetpack_Engagement::sync_older_likes();
+		}
+
 		return $imported;
 	}
 
