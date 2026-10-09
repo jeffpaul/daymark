@@ -191,7 +191,7 @@ class Daymark_Timeline_Position {
 			return null;
 		}
 
-		if ( 'post' === $post->post_type ) {
+		if ( Daymark_External_Notes::is_own_content_type( $post->post_type ) ) {
 			return (string) $post->post_date_gmt;
 		}
 
