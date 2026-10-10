@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
+
 ### Fixed
 
 - The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too. ([#516](https://github.com/jeffpaul/daymark/pull/516))
