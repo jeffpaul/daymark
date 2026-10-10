@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs. ([#517](https://github.com/jeffpaul/daymark/pull/517))
+
 ### Fixed
 
 - The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too. ([#516](https://github.com/jeffpaul/daymark/pull/516))
