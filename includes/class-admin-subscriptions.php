@@ -2924,6 +2924,12 @@ class Daymark_Admin_Subscriptions {
 	 * pattern"). render_connectors_tab() branches on this to skip
 	 * connector_status()/Install/Activate entirely for a 'service' entry.
 	 *
+	 * A plugin that isn't in the wordpress.org directory names its home
+	 * page in `source_url` instead of a `wporg_slug` (Parse This is only on
+	 * GitHub). Its card links there and offers no Install button, since
+	 * WordPress's installer only installs wordpress.org plugins; status
+	 * and Activate still come from `folder_slug`.
+	 *
 	 * `classes`/`constants`, where present, are an additional fallback
 	 * signal for connector_status() (issue #342): a defining class/constant
 	 * present at runtime can only be true for a plugin that's genuinely
@@ -2933,7 +2939,7 @@ class Daymark_Admin_Subscriptions {
 	 * mirror `Daymark_Publish_Helpers::PLUGINS['atmosphere']`'s own,
 	 * already-working multi-signal detection of the same plugin.
 	 *
-	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, folder_slug?: string, classes?: string[], constants?: string[], url?: string, description: string}>
+	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, source_url?: string, folder_slug?: string, classes?: string[], constants?: string[], url?: string, description: string}>
 	 */
 	private static function recommended_connectors(): array {
 		return array(
@@ -2994,7 +3000,7 @@ class Daymark_Admin_Subscriptions {
 			'parse_this'      => array(
 				'label'       => 'Parse This',
 				'group'       => 'optional',
-				'wporg_slug'  => Daymark_Parse_This::SLUG,
+				'source_url'  => Daymark_Parse_This::SOURCE_URL,
 				'folder_slug' => Daymark_Parse_This::SLUG,
 				'constants'   => array( 'PARSE_THIS_VERSION' ),
 				'summary'     => __( 'Reads the pages Daymark shows you more fully.', 'daymark' ),
@@ -3158,7 +3164,14 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_connector_card( array $connector ): void {
 		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
-		$link       = $is_service ? $connector['url'] : 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+		$on_wporg   = ! $is_service && ! empty( $connector['wporg_slug'] );
+		if ( $is_service ) {
+			$link = $connector['url'];
+		} elseif ( $on_wporg ) {
+			$link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+		} else {
+			$link = $connector['source_url'] ?? '';
+		}
 		?>
 		<div class="card" style="max-width:none;margin:0;">
 			<h3>
@@ -3190,6 +3203,8 @@ class Daymark_Admin_Subscriptions {
 						<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
 							<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
 						<?php endif; ?>
+					<?php elseif ( ! $on_wporg ) : ?>
+						<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from GitHub', 'daymark' ); ?></a>
 					<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
 						<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
 					<?php else : ?>

@@ -2109,6 +2109,23 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/update\.php\?action=install-plugin(?:&amp;|&#038;|&)plugin=webmention(?:&amp;|&#038;|&)_wpnonce=/', $output );
 	}
 
+	/**
+	 * Parse This isn't in the wordpress.org directory, so its card links to
+	 * GitHub and never offers an Install button, even to an administrator.
+	 */
+	public function test_connectors_tab_links_parse_this_to_github(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'https://github.com/dshanske/parse-this', $output );
+		$this->assertStringContainsString( 'Get it from GitHub', $output );
+		$this->assertStringNotContainsString( 'wordpress.org/plugins/parse-this', $output );
+		$this->assertDoesNotMatchRegularExpression( '/install-plugin(?:&amp;|&#038;|&)plugin=parse-this/', $output );
+	}
+
 	/** A connector that's installed and active shows an "Active" state, not an Install/Activate action. */
 	public function test_connectors_tab_shows_active_state_for_an_active_connector(): void {
 		$this->install_fake_plugin( 'webmention', 'webmention.php' );
