@@ -67,6 +67,12 @@ final class Daymark_Settings {
 	public const HIDE_NOTES_ON_HOME = 'daymark_hide_notes_on_home';
 
 	/**
+	 * Option: show the number of unread notifications on the installed
+	 * app's icon (the app badge).
+	 */
+	public const APP_BADGE = 'daymark_app_badge_unread';
+
+	/**
 	 * Option: the destinations a new Mark of each type starts with, as a
 	 * map of Mark type to connector IDs.
 	 */
@@ -104,6 +110,7 @@ final class Daymark_Settings {
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
 			self::HIDE_NOTES_ON_HOME,
+			self::APP_BADGE,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
 		);
@@ -395,5 +402,27 @@ final class Daymark_Settings {
 		 * @param bool $hide Defaults to the `daymark_hide_notes_on_home` option.
 		 */
 		return (bool) apply_filters( 'daymark_hide_notes_on_home', (bool) get_option( self::HIDE_NOTES_ON_HOME, false ) );
+	}
+
+	/**
+	 * Whether the installed app shows the number of unread notifications
+	 * on its icon. Off by default.
+	 *
+	 * @return bool
+	 */
+	public static function app_badge_unread(): bool {
+		/**
+		 * Whether the installed Daymark app shows the number of unread
+		 * notifications on its icon (the app badge).
+		 *
+		 * Defaults to the `daymark_app_badge_unread` option (Settings ->
+		 * Daymark -> General, off by default). The badge needs a browser
+		 * with the Badging API and an installed app.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $show Defaults to the `daymark_app_badge_unread` option.
+		 */
+		return (bool) apply_filters( 'daymark_app_badge_unread', (bool) get_option( self::APP_BADGE, false ) );
 	}
 }

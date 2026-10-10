@@ -2371,6 +2371,26 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_hide_notes_on_home' );
 	}
 
+	/** The General tab offers the app badge setting, off by default. */
+	public function test_general_tab_renders_app_badge_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_app_badge_unread"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $output );
+		$this->assertFalse( Daymark_Settings::app_badge_unread() );
+	}
+
+	/** Saving the app badge setting checked turns it on and returns to the General tab. */
+	public function test_app_badge_save_turns_setting_on(): void {
+		$location = $this->call_handler( 'handle_app_badge_save', 'daymark_app_badge_save', array( 'daymark_app_badge_unread' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::app_badge_unread() );
+		$this->assertMatchesRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $this->render( 'general' ) );
+
+		delete_option( 'daymark_app_badge_unread' );
+	}
+
 	/** A filter that overrides the Notes setting disables the checkbox and says so. */
 	public function test_notes_setting_overridden_by_filter_is_disabled(): void {
 		add_filter( 'daymark_hide_notes_on_home', '__return_true' );

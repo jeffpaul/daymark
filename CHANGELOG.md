@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added
