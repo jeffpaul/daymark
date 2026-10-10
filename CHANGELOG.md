@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs.
+- The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs. ([#517](https://github.com/jeffpaul/daymark/pull/517))
 
 ### Fixed
 
