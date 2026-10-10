@@ -254,9 +254,35 @@ h2[tabindex='-1']:focus {
 }
 
 @supports not (text-box: trim-start cap alphabetic) {
-	.daymark-topbar--top .daymark-backlink {
+	.daymark-topbar--top .daymark-backlink,
+	.daymark-topbar--top .daymark-postview-steps {
 		margin-top: 9px;
 	}
+}
+
+/* The post view's Previous and Next buttons, at the header's trailing
+   edge. Their chevrons sit at the top of the 44px tap target, like the
+   back link's arrow, so all three line up with the title's first line. */
+.daymark-postview-steps {
+	display: flex;
+	flex: none;
+}
+
+.daymark-postview-step {
+	align-items: flex-start;
+	color: var(--daymark-text-secondary);
+	cursor: pointer;
+}
+
+/* Next while it loads the list's next page. */
+.daymark-postview-step.is-loading {
+	opacity: 0.5;
+	cursor: progress;
+}
+
+.daymark-postview-step:disabled {
+	opacity: 0.35;
+	cursor: default;
 }
 
 /* Daymark's own icon + wordmark act as one home-link. `gap` matches
