@@ -14052,6 +14052,27 @@
 	// /daymark navigation any other cold load gets. Nothing already queued
 	// is lost: IndexedDB survives the reload and flushes again on the very
 	// next boot, same as this listener already does below.
+	// A home-screen app often resumes from the background instead of
+	// reloading, and the browser only looks for a new service worker on a
+	// page load. Asking on return to the foreground means a plugin update
+	// installs in the background and is used from the next launch, rather
+	// than waiting until the phone happens to close the app. At most once
+	// an hour, since each check is a request for /daymark/sw.js.
+	let lastAppUpdateCheck = Date.now();
+	function checkForAppUpdate() {
+		if (!('serviceWorker' in navigator) || config.offlineShell || !navigator.onLine) {
+			return;
+		}
+		if (Date.now() - lastAppUpdateCheck < 60 * 60 * 1000) {
+			return;
+		}
+		lastAppUpdateCheck = Date.now();
+		navigator.serviceWorker
+			.getRegistration(config.appUrl)
+			.then((registration) => (registration ? registration.update() : null))
+			.catch(() => {});
+	}
+
 	// Save the newest Timeline card seen before the app is hidden or
 	// closed, rather than losing the last debounced save.
 	document.addEventListener('visibilitychange', () => {
@@ -14062,6 +14083,7 @@
 			checkUnreadNotifications();
 			// iOS drops a backgrounded app's requests; retry uploads now.
 			wakeUploads();
+			checkForAppUpdate();
 		}
 	});
 
