@@ -112,7 +112,7 @@ Without any of these, subscribed posts show no Like icon at all, so you never se
 
 = Does Daymark work with Parse This? =
 
-Yes, and it's optional. With [Parse This](https://wordpress.org/plugins/parse-this/) 2.0.0 or later active, Daymark reads the pages it already fetches more fully. Link previews also show the author and use a page's microformats and JSON-LD, not only its Open Graph tags. Sites you follow through their microformats are read by Parse This's complete parser instead of Daymark's simpler one. Daymark only hands Parse This pages it has already downloaded, and turns off Parse This's own extra requests while it does. Without Parse This, Daymark uses its own parsing, as before.
+Yes, and it's optional. Parse This isn't in the WordPress.org plugin directory; get it from [GitHub](https://github.com/dshanske/parse-this). With Parse This 2.0.0 or later active, Daymark reads the pages it already fetches more fully. Link previews also show the author and use a page's microformats and JSON-LD, not only its Open Graph tags. Sites you follow through their microformats are read by Parse This's complete parser instead of Daymark's simpler one. Daymark only hands Parse This pages it has already downloaded, and turns off Parse This's own extra requests while it does. Without Parse This, Daymark uses its own parsing, as before.
 
 = Does Daymark work with the Friends plugin? =
 
