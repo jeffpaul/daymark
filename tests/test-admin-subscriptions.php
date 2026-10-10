@@ -2121,7 +2121,13 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'https://github.com/dshanske/parse-this', $output );
-		$this->assertStringContainsString( 'Get it from GitHub', $output );
+		// The PHPUnit-with-Parse-This CI job defines
+		// PARSE_THIS_VERSION, so the card shows Active instead of the button.
+		if ( defined( 'PARSE_THIS_VERSION' ) ) {
+			$this->assertStringNotContainsString( 'Get it from GitHub', $output );
+		} else {
+			$this->assertStringContainsString( 'Get it from GitHub', $output );
+		}
 		$this->assertStringNotContainsString( 'wordpress.org/plugins/parse-this', $output );
 		$this->assertDoesNotMatchRegularExpression( '/install-plugin(?:&amp;|&#038;|&)plugin=parse-this/', $output );
 	}
