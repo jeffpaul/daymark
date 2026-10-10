@@ -22,7 +22,7 @@ can't act on them.
 
 ### Fixed
 
-- After a Daymark update, the app saved to your home screen now runs the new version the first time you open it. Before, it kept running the old version for one more launch, and on iPhone that could last until the phone fully closed the app.
+- After a Daymark update, the app saved to your home screen now runs the new version the first time you open it. Before, it kept running the old version for one more launch, and on iPhone that could last until the phone fully closed the app. ([#518](https://github.com/jeffpaul/daymark/pull/518))
 
 ## [0.20.0] - 2026-10-09
 
