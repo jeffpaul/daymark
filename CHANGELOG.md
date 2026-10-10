@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added
