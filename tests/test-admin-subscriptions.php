@@ -2112,6 +2112,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	/**
 	 * Parse This isn't in the wordpress.org directory, so its card links to
 	 * GitHub and never offers an Install button, even to an administrator.
+	 * The CI job that loads Parse This sees it as active instead, so the
+	 * card shows "Active" there rather than the GitHub button.
 	 */
 	public function test_connectors_tab_links_parse_this_to_github(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
@@ -2121,7 +2123,11 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'https://github.com/dshanske/parse-this', $output );
-		$this->assertStringContainsString( 'Get it from GitHub', $output );
+		if ( defined( 'PARSE_THIS_VERSION' ) ) {
+			$this->assertStringNotContainsString( 'Get it from GitHub', $output );
+		} else {
+			$this->assertStringContainsString( 'Get it from GitHub', $output );
+		}
 		$this->assertStringNotContainsString( 'wordpress.org/plugins/parse-this', $output );
 		$this->assertDoesNotMatchRegularExpression( '/install-plugin(?:&amp;|&#038;|&)plugin=parse-this/', $output );
 	}
