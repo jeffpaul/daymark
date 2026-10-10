@@ -173,11 +173,18 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	// app.css / app.js / offline-boot.js: cache-first, exactly as before
-	// this worker's scope widened (offline-boot.js is the one addition —
-	// see this file's own docblock on why it has to be precached the same
-	// way). ignoreSearch so a ?ver= cache-busting param still hits the
-	// precached entry.
+	// app.css / app.js / offline-boot.js: cache-first (offline-boot.js is
+	// the one addition since this worker's scope widened — see this file's
+	// own docblock on why it has to be precached the same way).
+	//
+	// The cache is checked for the exact URL first, ?ver= included. The
+	// page asks for ?ver=<plugin version>, so on the first launch after a
+	// plugin update the new version misses the cache and comes from the
+	// network, even though the previous release's worker is still the one
+	// answering. Matching while ignoring ?ver= (as this used to do first)
+	// served the previous release's files for that whole launch. The match
+	// that ignores ?ver= is now only the fallback when the network can't
+	// answer: offline, or the precached copy, which is stored without ?ver=.
 	// featured-content.css/.js (a Featured Content gallery's slider) are
 	// cached the same way, so a bookmarked gallery is a slider offline too.
 	const isStaticAsset = [
@@ -189,21 +196,28 @@ self.addEventListener('fetch', (event) => {
 	].some((file) => url.pathname === ASSETS_BASE_PATH + file);
 	if (isStaticAsset) {
 		event.respondWith(
-			caches.match(event.request, { ignoreSearch: true }).then((cached) => {
+			caches.match(event.request).then((cached) => {
 				if (cached) {
 					return cached;
 				}
-				return fetch(event.request).then((response) => {
-					if (response.ok) {
-						const copy = response.clone();
-						// Same event.waitUntil() reasoning as the config.json
-						// branch below: without it, the cache write can lose
-						// the race against the worker being torn down once
-						// respondWith()'s own promise has already resolved.
-						event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
-					}
-					return response;
-				});
+				const anyVersion = () =>
+					caches.match(event.request, { ignoreSearch: true });
+				return fetch(event.request)
+					.then((response) => {
+						if (response.ok) {
+							const copy = response.clone();
+							// Same event.waitUntil() reasoning as the config.json
+							// branch below: without it, the cache write can lose
+							// the race against the worker being torn down once
+							// respondWith()'s own promise has already resolved.
+							event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
+							return response;
+						}
+						return anyVersion().then((fallback) => fallback || response);
+					})
+					.catch(() =>
+						anyVersion().then((fallback) => fallback || Promise.reject(new TypeError('offline')))
+					);
 			})
 		);
 		return;
