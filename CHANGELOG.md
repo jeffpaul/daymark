@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
+
 ### Changed
 
 - The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs. ([#517](https://github.com/jeffpaul/daymark/pull/517))
