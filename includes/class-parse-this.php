@@ -2,7 +2,7 @@
 /**
  * Optional Parse This integration.
  *
- * Parse This (https://wordpress.org/plugins/parse-this/, by David Shanske)
+ * Parse This (https://github.com/dshanske/parse-this, by David Shanske)
  * turns a page into jf2: microformats2 first, then JSON-LD, Open Graph and
  * other meta tags. When it is active, Daymark uses it in two places:
  *
@@ -43,11 +43,19 @@ final class Daymark_Parse_This {
 	public const MIN_VERSION = '2.0.0';
 
 	/**
-	 * The plugin's wordpress.org slug and installed folder name.
+	 * The plugin's installed folder name.
 	 *
 	 * @var string
 	 */
 	public const SLUG = 'parse-this';
+
+	/**
+	 * Where to get Parse This. It is published on GitHub, not in the
+	 * wordpress.org plugin directory.
+	 *
+	 * @var string
+	 */
+	public const SOURCE_URL = 'https://github.com/dshanske/parse-this';
 
 	/**
 	 * Whether a usable Parse This (2.0.0 or later) is loaded.
