@@ -22,7 +22,7 @@ can't act on them.
 
 ### Added
 
-- The full post view now has Previous and Next buttons at the top. They move to the post above or below on the Timeline, Search results, or On this day list you opened it from, without going back to the list first. At the last post loaded so far, Next loads the next batch of posts, so you can keep reading to the end of the list. Back then returns to the list at the last post you read.
+- The full post view now has Previous and Next buttons at the top. They move to the post above or below on the Timeline, Search results, or On this day list you opened it from, without going back to the list first. At the last post loaded so far, Next loads the next batch of posts, so you can keep reading to the end of the list. Back then returns to the list at the last post you read. ([#521](https://github.com/jeffpaul/daymark/pull/521))
 
 ## [0.20.0] - 2026-10-09
 
