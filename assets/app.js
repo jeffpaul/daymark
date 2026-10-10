@@ -3597,6 +3597,9 @@
 				config.notifications.hasUnread = hasUnread;
 				updateUnreadDots();
 			}
+			if (result && 'number' === typeof result.unread_count) {
+				updateAppBadge(result.unread_count);
+			}
 		} catch (err) {
 			// Best effort: the dot just stays as it was.
 		}
@@ -3611,6 +3614,29 @@
 				link.replaceWith(fresh.firstElementChild);
 			}
 		});
+	}
+
+	// The app badge: the number of unread notifications on the installed
+	// app's icon, when the site turns it on (Settings -> Daymark ->
+	// General, off by default). It is the Unread tab's count, set at boot,
+	// on each unread check, and whenever the Notifications screen changes
+	// what is read. Browsers without the Badging API, or an app that isn't
+	// installed, simply show nothing. With the setting off, any badge an
+	// earlier visit set is cleared once at boot.
+	function updateAppBadge(count) {
+		if (!('setAppBadge' in navigator)) {
+			return;
+		}
+		const unread = Math.max(0, parseInt(count, 10) || 0);
+		const enabled = !!(config.notifications && config.notifications.badge);
+		try {
+			const result = enabled && unread > 0 ? navigator.setAppBadge(unread) : navigator.clearAppBadge();
+			if (result && 'function' === typeof result.catch) {
+				result.catch(() => {});
+			}
+		} catch (err) {
+			// Best effort: a badge is never worth an error.
+		}
 	}
 
 	// --- Shared: persistent bottom nav, feed-list rendering ---
@@ -13251,6 +13277,7 @@
 		// from this.items.
 		refreshCounts() {
 			const unread = this.items.filter((item) => !item.read).length;
+			updateAppBadge(unread);
 			const count = root.querySelector('[data-notif-unread-count]');
 			if (count) {
 				count.hidden = !unread;
@@ -14137,6 +14164,12 @@
 	// /daymark navigation any other cold load gets. Nothing already queued
 	// is lost: IndexedDB survives the reload and flushes again on the very
 	// next boot, same as this listener already does below.
+	// Set the app badge from the boot config. The offline-fallback shell's
+	// cached config can be stale, so it leaves the badge as it was.
+	if (!config.offlineShell) {
+		updateAppBadge(config.notifications ? config.notifications.unreadCount : 0);
+	}
+
 	// Save the newest Timeline card seen before the app is hidden or
 	// closed, rather than losing the last debounced save.
 	document.addEventListener('visibilitychange', () => {

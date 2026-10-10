@@ -2121,7 +2121,11 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		unset( $_GET['tab'] );
 
 		$this->assertStringContainsString( 'https://github.com/dshanske/parse-this', $output );
-		$this->assertStringContainsString( 'Get it from GitHub', $output );
+		// The "PHPUnit with Parse This" CI job loads the real plugin, and an
+		// active plugin's card shows "Active" instead of a download button.
+		if ( ! defined( 'PARSE_THIS_VERSION' ) ) {
+			$this->assertStringContainsString( 'Get it from GitHub', $output );
+		}
 		$this->assertStringNotContainsString( 'wordpress.org/plugins/parse-this', $output );
 		$this->assertDoesNotMatchRegularExpression( '/install-plugin(?:&amp;|&#038;|&)plugin=parse-this/', $output );
 	}
@@ -2386,6 +2390,26 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/name="daymark_hide_notes_on_home"[^>]*checked/', $this->render( 'general' ) );
 
 		delete_option( 'daymark_hide_notes_on_home' );
+	}
+
+	/** The General tab offers the app badge setting, off by default. */
+	public function test_general_tab_renders_app_badge_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_app_badge_unread"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $output );
+		$this->assertFalse( Daymark_Settings::app_badge_unread() );
+	}
+
+	/** Saving the app badge setting checked turns it on and returns to the General tab. */
+	public function test_app_badge_save_turns_setting_on(): void {
+		$location = $this->call_handler( 'handle_app_badge_save', 'daymark_app_badge_save', array( 'daymark_app_badge_unread' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::app_badge_unread() );
+		$this->assertMatchesRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $this->render( 'general' ) );
+
+		delete_option( 'daymark_app_badge_unread' );
 	}
 
 	/** A filter that overrides the Notes setting disables the checkbox and says so. */

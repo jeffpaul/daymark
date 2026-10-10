@@ -47,6 +47,7 @@ delete_option( 'daymark_subscription_poll_interval' );
 delete_option( 'daymark_blogroll_public' );
 delete_option( 'daymark_hide_notes_on_home' );
 delete_option( 'daymark_compact_timeline' );
+delete_option( 'daymark_app_badge_unread' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,

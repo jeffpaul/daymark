@@ -806,6 +806,39 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertFalse( rest_do_request( $status )->get_data()['has_unread'], 'Opening Notifications clears it' );
 	}
 
+	/**
+	 * The status route adds the unread count only when the app badge
+	 * setting is on, and the count matches the list's unread items.
+	 */
+	public function test_status_route_reports_unread_count_only_when_app_badge_is_on() {
+		$user = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user );
+		$this->failing_subscription( current_time( 'mysql', true ) );
+
+		$status = new WP_REST_Request( 'GET', '/daymark/v1/notifications/status' );
+		$status->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		$this->assertArrayNotHasKey( 'unread_count', rest_do_request( $status )->get_data(), 'Off by default' );
+
+		update_option( Daymark_Settings::APP_BADGE, '1' );
+
+		$expected = count(
+			array_filter(
+				Daymark_Plugin::instance()->notifications->get_notifications(),
+				static function ( array $item ): bool {
+					return empty( $item['read'] );
+				}
+			)
+		);
+
+		$this->assertGreaterThan( 0, $expected );
+		$this->assertSame( $expected, rest_do_request( $status )->get_data()['unread_count'] );
+		$this->assertSame( $expected, Daymark_Routes::build_app_config()['notifications']['unreadCount'] );
+		$this->assertTrue( Daymark_Routes::build_app_config()['notifications']['badge'] );
+
+		delete_option( Daymark_Settings::APP_BADGE );
+	}
+
 	/** The status route needs a logged-in user. */
 	public function test_status_route_rejects_unauthenticated_requests() {
 		wp_set_current_user( 0 );

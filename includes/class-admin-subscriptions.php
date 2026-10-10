@@ -186,6 +186,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
 		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
 		add_action( 'admin_post_daymark_timeline_display_save', array( $this, 'handle_timeline_display_save' ) );
+		add_action( 'admin_post_daymark_app_badge_save', array( $this, 'handle_app_badge_save' ) );
 		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
 		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
@@ -655,7 +656,8 @@ class Daymark_Admin_Subscriptions {
 	/**
 	 * The General tab: how often followed sites are checked, whether
 	 * they're shared as a public blogroll, what new Marks start with,
-	 * where Notes show on the site, and how the app lists posts.
+	 * where Notes show on the site, how the app lists posts, and whether
+	 * the app icon shows an unread count.
 	 *
 	 * @return void
 	 */
@@ -672,6 +674,8 @@ class Daymark_Admin_Subscriptions {
 		<?php $this->render_notes_form(); ?>
 		<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
 		<?php $this->render_timeline_display_form(); ?>
+		<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
+		<?php $this->render_app_badge_form(); ?>
 		<?php
 	}
 
@@ -1218,6 +1222,7 @@ class Daymark_Admin_Subscriptions {
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
 			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
 			'timeline_display_saved'    => __( 'Timeline setting saved.', 'daymark' ),
+			'app_badge_saved'           => __( 'App icon setting saved.', 'daymark' ),
 			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
 			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved'       => __( 'Check frequency saved.', 'daymark' ),
@@ -3438,6 +3443,59 @@ class Daymark_Admin_Subscriptions {
 		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::HIDE_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'notes_saved' ), 'general' );
+	}
+
+	/**
+	 * The app badge setting: whether the installed app's icon shows the
+	 * number of unread notifications. Off by default.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	private function render_app_badge_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::APP_BADGE, false );
+		$effective  = Daymark_Settings::app_badge_unread();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_app_badge_save" />
+			<?php wp_nonce_field( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::APP_BADGE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Show the number of unread notifications on the app icon', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'The number appears on Daymark\'s icon once Daymark is added to a home screen or installed. It matches the Unread tab in Notifications and updates while the app is open. Some browsers and phones don\'t show app badges.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-app-badge-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the app badge setting (admin_post_daymark_app_badge_save).
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	public function handle_app_badge_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' );
+
+		update_option( Daymark_Settings::APP_BADGE, isset( $_POST[ Daymark_Settings::APP_BADGE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'app_badge_saved' ), 'general' );
 	}
 
 	/**
