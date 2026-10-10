@@ -602,6 +602,8 @@ class Daymark_Routes {
 			// federation plugin, for the Publish screen's "Your site is the
 			// destination" note.
 			'reach'                  => self::federation_reach(),
+			// Whether lists show each post as just its title and thumbnail.
+			'compactTimeline'        => Daymark_Settings::compact_timeline(),
 			// Whether starting a Check In may ask for the device's location.
 			'capture'                => array(
 				'location' => Daymark_Settings::capture_location(),

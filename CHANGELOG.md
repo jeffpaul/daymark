@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General. ([#520](https://github.com/jeffpaul/daymark/pull/520))
 - A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
 
 ### Fixed
