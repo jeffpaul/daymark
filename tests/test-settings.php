@@ -38,6 +38,7 @@ class Test_Settings extends WP_UnitTestCase {
 		$this->assertSame( DAY_IN_SECONDS, Daymark_Settings::poll_interval() );
 		$this->assertFalse( Daymark_Settings::blogroll_public() );
 		$this->assertFalse( Daymark_Settings::hide_notes_on_home() );
+		$this->assertFalse( Daymark_Settings::compact_timeline() );
 	}
 
 	/** Each setting follows its stored option. */
@@ -48,6 +49,7 @@ class Test_Settings extends WP_UnitTestCase {
 		update_option( Daymark_Settings::POLL_INTERVAL, HOUR_IN_SECONDS );
 		update_option( Daymark_Settings::BLOGROLL_PUBLIC, '1' );
 		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, '1' );
+		update_option( Daymark_Settings::COMPACT_TIMELINE, '1' );
 
 		$this->assertFalse( Daymark_Settings::capture_location() );
 		$this->assertSame( 0, Daymark_Settings::imported_reply_approved() );
@@ -55,6 +57,19 @@ class Test_Settings extends WP_UnitTestCase {
 		$this->assertSame( HOUR_IN_SECONDS, Daymark_Settings::poll_interval() );
 		$this->assertTrue( Daymark_Settings::blogroll_public() );
 		$this->assertTrue( Daymark_Settings::hide_notes_on_home() );
+		$this->assertTrue( Daymark_Settings::compact_timeline() );
+	}
+
+	/** The app's boot config carries the compact list setting. */
+	public function test_app_config_carries_compact_timeline(): void {
+		$this->assertFalse( Daymark_Routes::build_app_config()['compactTimeline'] );
+
+		update_option( Daymark_Settings::COMPACT_TIMELINE, '1' );
+		$this->assertTrue( Daymark_Routes::build_app_config()['compactTimeline'] );
+
+		add_filter( 'daymark_compact_timeline', '__return_false' );
+		$this->assertFalse( Daymark_Routes::build_app_config()['compactTimeline'] );
+		remove_filter( 'daymark_compact_timeline', '__return_false' );
 	}
 
 	/** A developer filter wins over the stored option. */
@@ -77,7 +92,7 @@ class Test_Settings extends WP_UnitTestCase {
 
 	/** Uninstall's list covers every option this class reads. */
 	public function test_options_lists_every_setting(): void {
-		$this->assertCount( 11, array_unique( Daymark_Settings::options() ) );
+		$this->assertCount( 12, array_unique( Daymark_Settings::options() ) );
 	}
 
 	/** The app config carries the AI auto-suggest and location capture settings. */

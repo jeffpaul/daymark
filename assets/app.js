@@ -4106,6 +4106,58 @@
 		return `<div class="daymark-recent__leadcol">${siteIconHtml}${renderTypeIcon(kind)}</div>`;
 	}
 
+	// --- Compact list (Settings -> Daymark -> General) ---
+	//
+	// When the site turns on the compact list (config.compactTimeline), a
+	// published card shows only its title and one small thumbnail, so many
+	// more posts fit on a screen. The lead column (site icon and rail icon)
+	// stays, so the list still reads as a Timeline. Opening a card shows the
+	// full post view, where every action still is. Drafts keep their full
+	// card, since tapping one reopens the composer.
+	function isCompactList() {
+		return !!config.compactTimeline;
+	}
+
+	// The one image a compact card shows, or '' for none. Featured Content
+	// wins, the same order the full card's media slot uses
+	// (mediaKindForItem()); a site icon never stands in for a thumbnail.
+	function compactThumbSrc(item) {
+		const fc = item.featured_content;
+		if (fc) {
+			if (Array.isArray(fc.images) && fc.images.length) {
+				return fc.images[0];
+			}
+			if (fc.image) {
+				return fc.image;
+			}
+			if ('link' === fc.type && fc.preview && fc.preview.image) {
+				return fc.preview.image;
+			}
+		}
+		if (item.gallery && Array.isArray(item.gallery.images) && item.gallery.images.length) {
+			return item.gallery.images[0];
+		}
+		return item.thumbnail || item.featured_image_url || '';
+	}
+
+	// A compact card: the title as the card's "open" button (see
+	// renderCardTitle()), then the thumbnail when there is one. `dataAttr`
+	// is the card's own data-expand-post/data-subpost attribute, so every
+	// tap handler and observer finds it the same way as a full card.
+	function renderCompactCard(item, kind, title, dataAttr, titleId) {
+		const src = compactThumbSrc(item);
+		const glyph = (CARD_KIND_LABELS[kind] || 'S').charAt(0);
+		const thumb = src
+			? `<span class="daymark-recent__compactthumb">${imgWithFallback(src, 'daymark-recent__thumb', glyph)}</span>`
+			: '';
+		return `<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--compact" ${dataAttr}>
+					<span class="daymark-recent__title daymark-recent__title--compact" id="${esc(
+						titleId
+					)}"><button type="button" class="daymark-recent__open">${esc(title)}</button></span>
+					${thumb}
+				</div>`;
+	}
+
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
 	// core (renderMarkCore()) wrapped in its own tap target plus, for a
 	// Draft only, the shared ⋯ edit/delete actions menu. Used everywhere a
@@ -4183,6 +4235,14 @@
 						</div>
 					</div>
 				</div>`;
+		if (!isDraft && isCompactList()) {
+			const compactTitleId = nextCardTitleId();
+			return `
+			<article class="daymark-recent__item-wrap daymark-recent__item-wrap--compact" data-item="${id}" aria-labelledby="${compactTitleId}">
+				${renderLeadColumn(siteIcon, kind)}
+				${renderCompactCard(item, kind, title, `data-expand-post="${id}"`, compactTitleId)}
+			</article>`;
+		}
 		const layoutKind = cardLayoutKind(item, kind);
 		// A published card is a plain container holding real controls: its
 		// title button opens the post (and stretches over the whole card, see
@@ -4434,6 +4494,10 @@
 	const OEMBED_PREVIEW_LOOKAHEAD = '600px';
 
 	function observeOembedPreviewCandidates(screen, container) {
+		// A compact card has no media slot or preview to fill in.
+		if (isCompactList()) {
+			return;
+		}
 		if (!('IntersectionObserver' in window) || !container) {
 			return;
 		}
@@ -5254,6 +5318,21 @@
 	// its play button beside it rather than inside it, so both go.
 	function refreshCardMedia(id, item) {
 		document.querySelectorAll(`[data-expand-post="${CSS.escape(String(id))}"]`).forEach((card) => {
+			if (card.classList.contains('daymark-recent__item--compact')) {
+				// A compact card is redrawn whole: it may not have had a
+				// thumbnail at all until now.
+				const titleEl = card.querySelector('.daymark-recent__title');
+				const title = titleEl ? titleEl.textContent : '';
+				const titleId = titleEl ? titleEl.id : nextCardTitleId();
+				card.outerHTML = renderCompactCard(
+					item,
+					resolveCardKind(item),
+					title,
+					`data-expand-post="${esc(String(id))}"`,
+					titleId
+				);
+				return;
+			}
 			const old = card.querySelector('.daymark-recent__thumbwrap');
 			if (!old) {
 				return;
@@ -11313,6 +11392,25 @@
 		// (renderMarkItem()) — Unsubscribe's own confirm step needs real
 		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
+		const siteIcon = renderSiteIconButton({
+			iconSrc: item.site_icon_url || '',
+			iconAlt: siteLabel,
+			ariaLabel: sprintf(
+				/* translators: %s: site name */
+				__('Show posts from %s', 'daymark'),
+				siteLabel
+			),
+			filterValue: String(item.subscription_id),
+			siteUrl: item.site_url || '',
+		});
+		if (isCompactList()) {
+			const compactTitleId = nextCardTitleId();
+			return `
+				<article class="daymark-recent__item-wrap daymark-recent__item-wrap--compact" aria-labelledby="${compactTitleId}">
+					${renderLeadColumn(siteIcon, kind)}
+					${renderCompactCard(item, kind, title, `data-subpost="${id}"`, compactTitleId)}
+				</article>`;
+		}
 		const overflowItems = subscriptionOverflowMenuItems(item);
 		// An article with a real featured image shows it as the same
 		// full-width banner an image Mark has, not a small thumbnail beside
@@ -11332,20 +11430,7 @@
 		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media, titleId);
 		return `
 				<article class="daymark-recent__item-wrap" aria-labelledby="${titleId}">
-					${renderLeadColumn(
-						renderSiteIconButton({
-							iconSrc: item.site_icon_url || '',
-							iconAlt: siteLabel,
-							ariaLabel: sprintf(
-								/* translators: %s: site name */
-								__('Show posts from %s', 'daymark'),
-								siteLabel
-							),
-							filterValue: String(item.subscription_id),
-							siteUrl: item.site_url || '',
-						}),
-						kind
-					)}
+					${renderLeadColumn(siteIcon, kind)}
 					<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--${esc(
 						layoutKind
 					)}" data-subpost="${id}">

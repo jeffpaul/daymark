@@ -2381,6 +2381,28 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'Turned on by code on this site', $output );
 	}
 
+	/** The General tab offers the compact list setting, off by default. */
+	public function test_general_tab_renders_compact_timeline_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_compact_timeline"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_compact_timeline"[^>]*checked/', $output );
+	}
+
+	/** Saving the compact list setting checked turns it on; saving it unchecked turns it off. */
+	public function test_timeline_display_save_toggles_setting(): void {
+		$location = $this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array( 'daymark_compact_timeline' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::compact_timeline() );
+		$this->assertMatchesRegularExpression( '/name="daymark_compact_timeline"[^>]*checked/', $this->render( 'general' ) );
+
+		$this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array() );
+		$this->assertFalse( Daymark_Settings::compact_timeline() );
+
+		delete_option( 'daymark_compact_timeline' );
+	}
+
 	/** The Failing view lists only subscriptions having trouble, and the view links count both. */
 	public function test_failing_view_lists_only_failing_subscriptions(): void {
 		$this->subscriptions->create(

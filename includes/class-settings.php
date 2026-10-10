@@ -67,6 +67,12 @@ final class Daymark_Settings {
 	public const HIDE_NOTES_ON_HOME = 'daymark_hide_notes_on_home';
 
 	/**
+	 * Option: show the app's Timeline as a compact list (title and
+	 * thumbnail only) instead of full cards.
+	 */
+	public const COMPACT_TIMELINE = 'daymark_compact_timeline';
+
+	/**
 	 * Option: the destinations a new Mark of each type starts with, as a
 	 * map of Mark type to connector IDs.
 	 */
@@ -104,6 +110,7 @@ final class Daymark_Settings {
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
 			self::HIDE_NOTES_ON_HOME,
+			self::COMPACT_TIMELINE,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
 		);
@@ -395,5 +402,28 @@ final class Daymark_Settings {
 		 * @param bool $hide Defaults to the `daymark_hide_notes_on_home` option.
 		 */
 		return (bool) apply_filters( 'daymark_hide_notes_on_home', (bool) get_option( self::HIDE_NOTES_ON_HOME, false ) );
+	}
+
+	/**
+	 * Whether the app shows the Timeline, Search, and Explore as a compact
+	 * list: each post as its title and one small thumbnail. Off by default,
+	 * so posts show as full cards.
+	 *
+	 * @return bool
+	 */
+	public static function compact_timeline(): bool {
+		/**
+		 * Whether the app lists posts compactly (title and thumbnail only)
+		 * instead of as full cards.
+		 *
+		 * Defaults to the `daymark_compact_timeline` option (Settings ->
+		 * Daymark -> General, off by default). Drafts and the full post
+		 * view are unchanged either way.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $compact Defaults to the `daymark_compact_timeline` option.
+		 */
+		return (bool) apply_filters( 'daymark_compact_timeline', (bool) get_option( self::COMPACT_TIMELINE, false ) );
 	}
 }

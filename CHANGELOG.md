@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added
