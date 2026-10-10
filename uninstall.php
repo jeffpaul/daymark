@@ -106,6 +106,20 @@ foreach ( $daymark_cooldowns as $daymark_option_name ) {
 	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 
+// Read to me: the cached "can this AI provider make speech" answer, one
+// per provider.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_tts_transients = $wpdb->get_col(
+	$wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+		$wpdb->esc_like( '_transient_daymark_tts_supported_' ) . '%'
+	)
+);
+
+foreach ( $daymark_tts_transients as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
+}
+
 // WebSub pending-verification markers and attempt counts.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
 $daymark_websub_transients = $wpdb->get_col(
@@ -156,6 +170,25 @@ foreach ( $daymark_subscription_post_ids as $daymark_subscription_post_id ) {
 // so uninstall drops it outright.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time removal of the plugin's own table.
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}daymark_subscriptions" );
+
+// Read to me: saved audio versions of posts and the folder they live in.
+delete_post_meta_by_key( '_daymark_speech' );
+
+$daymark_speech_uploads = wp_upload_dir( null, false );
+
+if ( empty( $daymark_speech_uploads['error'] ) && ! empty( $daymark_speech_uploads['basedir'] ) ) {
+	$daymark_speech_dir = trailingslashit( $daymark_speech_uploads['basedir'] ) . 'daymark-speech';
+
+	if ( is_dir( $daymark_speech_dir ) ) {
+		$daymark_speech_files = glob( $daymark_speech_dir . '/*' );
+
+		foreach ( is_array( $daymark_speech_files ) ? $daymark_speech_files : array() as $daymark_speech_file ) {
+			wp_delete_file( $daymark_speech_file );
+		}
+
+		@rmdir( $daymark_speech_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort; a non-empty folder is left alone.
+	}
+}
 
 // Unfinished composer uploads (issue #483): parts of files that never
 // finished uploading. A finished upload is an ordinary attachment and stays

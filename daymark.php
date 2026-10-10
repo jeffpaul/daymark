@@ -34,6 +34,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-uploads.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-geocoder.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publish-helpers.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-ai-assist.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-speech.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-federated-comments.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-links.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-visibility.php';

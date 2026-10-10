@@ -4794,3 +4794,38 @@ button.daymark-stat {
 	background: var(--daymark-danger-bg);
 	color: #fff;
 }
+
+/* Read to me: the Listen button and audio player at the top of the full
+   post view. */
+.daymark-listen {
+	margin-bottom: var(--daymark-spacing-md);
+}
+
+.daymark-listen__start {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-listen__start svg {
+	width: 18px;
+	height: 18px;
+}
+
+.daymark-listen__status:empty {
+	display: none;
+}
+
+.daymark-listen__status,
+.daymark-listen__note {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-listen__audio {
+	display: block;
+	width: 100%;
+	min-height: var(--daymark-tap-min);
+}

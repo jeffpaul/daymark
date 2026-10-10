@@ -749,6 +749,9 @@
 	const OVERFLOW_GLYPH =
 		'<circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle>';
 	const UNSUBSCRIBE_GLYPH = '<circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line>';
+	// Feather "volume-2": the full post view's Listen button (Read to me).
+	const LISTEN_GLYPH =
+		'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -11828,6 +11831,88 @@
 			// replies to comes from the Timeline data, not from that page.
 			if (body.isConnected) {
 				this.maybeShowInteractionContext(kind, item, body);
+				this.maybeShowListenPlayer(kind, item, body);
+			}
+		},
+
+		// Read to me: a Listen button at the very top of the post, shown
+		// when the site owner turned it on and the AI provider can make
+		// speech (config.speech.available), and only when the loaded post
+		// has text to read. Nothing is sent until the button is tapped. The
+		// server makes the audio once and saves it, so a later tap (or
+		// another reader) gets the saved file. The answer is also kept on
+		// the item, so reopening this post in the same session shows the
+		// player straight away.
+		maybeShowListenPlayer(kind, item, body) {
+			if (!config.speech || !config.speech.available || !item.id) {
+				return;
+			}
+			const text = (body.querySelector('.daymark-expand-content') || body).textContent || '';
+			if (!text.trim()) {
+				return;
+			}
+			const player = document.createElement('div');
+			player.className = 'daymark-listen';
+			body.prepend(player);
+			if (item._speech) {
+				this.showListenAudio(player, item._speech, false);
+				return;
+			}
+			player.innerHTML = `<button type="button" class="daymark-btn daymark-btn--secondary daymark-listen__start" data-listen-start>${statIcon(
+				LISTEN_GLYPH
+			)}<span>${esc(__('Listen to this post', 'daymark'))}</span></button><p class="daymark-listen__status" role="status"></p>`;
+			const button = player.querySelector('[data-listen-start]');
+			const status = player.querySelector('.daymark-listen__status');
+			button.addEventListener('click', async () => {
+				if (!navigator.onLine) {
+					status.textContent = __("You're offline. Listening needs a connection.", 'daymark');
+					return;
+				}
+				button.disabled = true;
+				button.querySelector('span').textContent = __('Making audio…', 'daymark');
+				status.textContent = __('Making an audio version of this post. This can take a little while.', 'daymark');
+				const base = 'sub' === kind ? 'subscription-posts/' : 'marks/';
+				try {
+					const result = await apiPost(base + item.id + '/speech', {});
+					if (!result || !result.url) {
+						throw new Error('no audio');
+					}
+					item._speech = { url: String(result.url), truncated: !!result.truncated };
+					if (player.isConnected) {
+						this.showListenAudio(player, item._speech, true);
+					}
+				} catch (err) {
+					if (!player.isConnected) {
+						return;
+					}
+					button.disabled = false;
+					button.querySelector('span').textContent = __('Try again', 'daymark');
+					status.textContent =
+						err && 429 === err.status
+							? __("You've made a lot of audio recently. Try again in a few minutes.", 'daymark')
+							: (err && err.message && 'no audio' !== err.message ? err.message : '') ||
+							  __("Couldn't make an audio version of this post.", 'daymark');
+				}
+			});
+		},
+
+		// Swap the Listen button for the browser's own audio player. Starts
+		// playing when the reader just asked for it; a browser that blocks
+		// that still shows the controls to tap.
+		showListenAudio(player, speech, autoplay) {
+			player.innerHTML = `<audio class="daymark-listen__audio" controls preload="${
+				autoplay ? 'auto' : 'none'
+			}" src="${esc(speech.url)}" aria-label="${esc(__('Audio version of this post', 'daymark'))}"></audio>${
+				speech.truncated
+					? `<p class="daymark-listen__note">${esc(__('Reads the first part of this post.', 'daymark'))}</p>`
+					: ''
+			}`;
+			if (autoplay) {
+				const audio = player.querySelector('audio');
+				const played = audio.play();
+				if (played && played.catch) {
+					played.catch(() => {});
+				}
 			}
 		},
 

@@ -72,6 +72,21 @@ class Daymark_AI_Assist {
 	private const TRANSCRIPT_PROMPT_EXCERPT_CHARS = 1500;
 
 	/**
+	 * Largest audio file accepted from a text-to-speech call, in bytes.
+	 *
+	 * @var int
+	 */
+	private const MAX_SPEECH_BYTES = 25 * 1024 * 1024;
+
+	/**
+	 * How long a text-to-speech call may take, in seconds. Reading a long
+	 * post aloud takes a provider much longer than a caption suggestion.
+	 *
+	 * @var int
+	 */
+	private const SPEECH_TIMEOUT_SECONDS = 90;
+
+	/**
 	 * Hardening note appended to every system instruction: text wrapped in
 	 * <user_content> tags (see wrap_user_content()) is data to edit, never
 	 * instructions to follow. Defends against prompt injection carried in a
@@ -409,6 +424,148 @@ class Daymark_AI_Assist {
 			$this->log_debug( 'Transcript threw: ' . $e->getMessage() );
 			return null;
 		}
+	}
+
+	/**
+	 * Whether the configured provider says it can turn text into speech
+	 * (the AI Client's text-to-speech conversion capability). Used to
+	 * decide whether the post view offers a Listen button.
+	 *
+	 * This reads model metadata only, so it is a hint, not a promise: a
+	 * provider can list a speech model whose code isn't finished yet. The
+	 * generation call (convert_text_to_speech()) handles that failure.
+	 * Cached for an hour, because asking can mean a request to the
+	 * provider's model list, and the app config reads it on every load.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return bool
+	 */
+	public function supports_text_to_speech(): bool {
+		if ( ! $this->is_available() ) {
+			return false;
+		}
+
+		$cache_key = 'daymark_tts_supported_' . sanitize_key( $this->provider_id );
+		$cached    = get_transient( $cache_key );
+
+		if ( 'yes' === $cached || 'no' === $cached ) {
+			return 'yes' === $cached;
+		}
+
+		$supported = false;
+
+		try {
+			$result    = wp_ai_client_prompt( 'Hello.' )->is_supported_for_text_to_speech_conversion();
+			$supported = true === $result;
+		} catch ( Throwable $e ) {
+			$this->log_debug( 'Text-to-speech support check threw: ' . $e->getMessage() );
+		}
+
+		set_transient( $cache_key, $supported ? 'yes' : 'no', HOUR_IN_SECONDS );
+
+		return $supported;
+	}
+
+	/**
+	 * Turn text into speech with the configured provider.
+	 *
+	 * Never throws. Returns null on any failure, including a provider
+	 * that lists a speech model it can't actually run yet, so the caller
+	 * can show "couldn't make audio" instead of breaking.
+	 *
+	 * The provider returns the audio inline (base64) or as a URL. A URL is
+	 * fetched through Daymark_Outbound_Guard with a size cap, like every
+	 * other outbound request in the plugin.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @param string $text  Plain text to read aloud.
+	 * @param string $voice Provider voice name, or '' for the default.
+	 * @return array{data: string, mime: string}|null Raw audio bytes and their MIME type.
+	 */
+	public function convert_text_to_speech( string $text, string $voice = '' ): ?array {
+		if ( '' === trim( $text ) || ! $this->is_available() ) {
+			return null;
+		}
+
+		try {
+			$builder = wp_ai_client_prompt( $text );
+
+			if ( '' !== $voice ) {
+				$builder = $builder->as_output_speech_voice( $voice );
+			}
+
+			$options_class = '\WordPress\AiClient\Providers\Http\DTO\RequestOptions';
+
+			if ( class_exists( $options_class ) ) {
+				$options = new $options_class();
+				$options->setTimeout( (float) self::SPEECH_TIMEOUT_SECONDS );
+				$builder = $builder->using_request_options( $options );
+			}
+
+			$file = $builder->convert_text_to_speech();
+
+			if ( is_wp_error( $file ) ) {
+				$this->log_debug( 'Text to speech failed: ' . $file->get_error_message() );
+				return null;
+			}
+
+			if ( ! is_object( $file ) || ! method_exists( $file, 'getMimeType' ) ) {
+				return null;
+			}
+
+			$mime = strtolower( (string) $file->getMimeType() );
+			$data = null;
+
+			if ( $file->isInline() ) {
+				$decoded = base64_decode( (string) $file->getBase64Data(), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Decoding the provider's own inline audio.
+				$data    = false === $decoded ? null : $decoded;
+			} elseif ( $file->isRemote() ) {
+				$data = $this->fetch_remote_audio( (string) $file->getUrl() );
+			}
+
+			if ( null === $data || '' === $data || strlen( $data ) > self::MAX_SPEECH_BYTES ) {
+				return null;
+			}
+
+			return array(
+				'data' => $data,
+				'mime' => $mime,
+			);
+		} catch ( Throwable $e ) {
+			$this->log_debug( 'Text to speech threw: ' . $e->getMessage() );
+			return null;
+		}
+	}
+
+	/**
+	 * Download audio a provider returned as a URL.
+	 *
+	 * @param string $url Audio URL from the provider.
+	 * @return string|null Audio bytes, or null on any failure.
+	 */
+	private function fetch_remote_audio( string $url ): ?string {
+		if ( ! wp_http_validate_url( $url ) || 'https' !== wp_parse_url( $url, PHP_URL_SCHEME ) ) {
+			return null;
+		}
+
+		$response = Daymark_Outbound_Guard::get(
+			$url,
+			array(
+				'timeout'             => self::SPEECH_TIMEOUT_SECONDS,
+				'redirection'         => 3,
+				'limit_response_size' => self::MAX_SPEECH_BYTES + 1,
+			)
+		);
+
+		if ( is_wp_error( $response ) || 200 !== (int) wp_remote_retrieve_response_code( $response ) ) {
+			return null;
+		}
+
+		$body = (string) wp_remote_retrieve_body( $response );
+
+		return strlen( $body ) > self::MAX_SPEECH_BYTES ? null : $body;
 	}
 
 	/**

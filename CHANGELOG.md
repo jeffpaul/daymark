@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- New "Read to me" setting (Settings -> Daymark -> Data & privacy, off by default). When it's on and your AI provider can turn text into speech, a post in the app's full post view shows a Listen button at the top. The first tap makes an audio version, and Daymark saves it so the post is only sent to your provider once.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added

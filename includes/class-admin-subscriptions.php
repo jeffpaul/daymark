@@ -3553,7 +3553,11 @@ class Daymark_Admin_Subscriptions {
 	 *
 	 * @since 0.13.0
 	 *
-	 * @return array<string, array{label: string, description: string, default: bool, effective: callable}>
+	 * An optional `unavailable` callable returns a note shown under the
+	 * setting when something else it needs is missing (for Read to me, a
+	 * provider that can make speech), or '' when nothing is missing.
+	 *
+	 * @return array<string, array{label: string, description: string, default: bool, effective: callable, unavailable?: callable}>
 	 */
 	private static function privacy_option_definitions(): array {
 		return array(
@@ -3594,6 +3598,17 @@ class Daymark_Admin_Subscriptions {
 				'description' => __( 'While you write, send your caption and the photos you pick to your AI provider to suggest tags and alt text. When this is off, nothing is sent until you tap an AI button.', 'daymark' ),
 				'default'     => true,
 				'effective'   => array( 'Daymark_Settings', 'ai_auto_suggest' ),
+			),
+			Daymark_Settings::TEXT_TO_SPEECH        => array(
+				'label'       => __( 'Read to me', 'daymark' ),
+				'description' => __( 'Add a Listen button to the top of a post in the app\'s full post view. The first time someone taps it, the post\'s text goes to your AI provider to make an audio version. Daymark saves that audio, so each post is only sent once unless its text changes. Your provider may charge for each recording.', 'daymark' ),
+				'default'     => false,
+				'effective'   => array( 'Daymark_Settings', 'text_to_speech' ),
+				'unavailable' => static function (): string {
+					return Daymark_Speech::provider_supports()
+						? ''
+						: __( 'Your AI provider can\'t turn text into speech, so the Listen button won\'t show until you connect one that can.', 'daymark' );
+				},
 			),
 		);
 	}
@@ -3662,6 +3677,10 @@ class Daymark_Admin_Subscriptions {
 							</label>
 							<?php if ( $state['overridden'] ) : ?>
 								<p class="description"><?php echo esc_html( self::overridden_note( $state['effective'] ) ); ?></p>
+							<?php endif; ?>
+							<?php $unavailable = isset( $definition['unavailable'] ) ? (string) call_user_func( $definition['unavailable'] ) : ''; ?>
+							<?php if ( '' !== $unavailable ) : ?>
+								<p class="description"><?php echo esc_html( $unavailable ); ?></p>
 							<?php endif; ?>
 						</td>
 					</tr>

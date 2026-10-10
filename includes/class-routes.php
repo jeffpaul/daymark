@@ -597,6 +597,11 @@ class Daymark_Routes {
 				// own; when false, AI only runs when an AI button is tapped.
 				'autoSuggest'   => Daymark_Settings::ai_auto_suggest(),
 			),
+			// Read to me: whether the full post view offers a Listen button
+			// (turned on in Settings and the AI provider can make speech).
+			'speech'                 => array(
+				'available' => Daymark_Speech::available(),
+			),
 			// Where a published Mark also reaches through an active
 			// federation plugin, for the Publish screen's "Your site is the
 			// destination" note.

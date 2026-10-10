@@ -116,6 +116,13 @@ final class Daymark_Plugin {
 	public Daymark_Notification_State $notification_state;
 
 	/**
+	 * Read to me: cached audio versions of posts.
+	 *
+	 * @var Daymark_Speech
+	 */
+	public Daymark_Speech $speech;
+
+	/**
 	 * Per-user bookmark set membership.
 	 *
 	 * @var Daymark_Bookmarks
@@ -373,6 +380,7 @@ final class Daymark_Plugin {
 		$this->notifications                = new Daymark_Notifications();
 		$this->notification_state           = new Daymark_Notification_State();
 		$this->bookmarks                    = new Daymark_Bookmarks();
+		$this->speech                       = new Daymark_Speech();
 		$this->uploads                      = new Daymark_Uploads();
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
@@ -487,6 +495,7 @@ final class Daymark_Plugin {
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->bookmarks->register();
+		$this->speech->register();
 		$this->notification_state->register();
 		$this->uploads->register();
 		$this->subscription_post_type->register();

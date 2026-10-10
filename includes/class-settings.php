@@ -51,6 +51,12 @@ final class Daymark_Settings {
 	public const AI_AUTO_SUGGEST = 'daymark_ai_auto_suggest';
 
 	/**
+	 * Option: offer a Listen button that reads a post aloud in the app's
+	 * full post view, using the AI provider's text-to-speech.
+	 */
+	public const TEXT_TO_SPEECH = 'daymark_text_to_speech';
+
+	/**
 	 * Option: how often to check followed sites, in seconds.
 	 */
 	public const POLL_INTERVAL = 'daymark_subscription_poll_interval';
@@ -101,6 +107,7 @@ final class Daymark_Settings {
 			self::PUBLISH_LOCATION,
 			self::HOLD_IMPORTED_REPLIES,
 			self::AI_AUTO_SUGGEST,
+			self::TEXT_TO_SPEECH,
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
 			self::HIDE_NOTES_ON_HOME,
@@ -329,6 +336,29 @@ final class Daymark_Settings {
 		 * @param bool $auto Defaults to the `daymark_ai_auto_suggest` option.
 		 */
 		return (bool) apply_filters( 'daymark_ai_auto_suggest', (bool) get_option( self::AI_AUTO_SUGGEST, true ) );
+	}
+
+	/**
+	 * Whether the site owner turned on Read to me: a Listen button at the
+	 * top of a post in the app's full post view. The button also needs a
+	 * provider that can turn text into speech (Daymark_Speech::available()).
+	 *
+	 * @return bool
+	 */
+	public static function text_to_speech(): bool {
+		/**
+		 * Whether the app's full post view offers a Listen button.
+		 *
+		 * Defaults to the `daymark_text_to_speech` option (off by default,
+		 * since each new recording sends the post's text to the AI provider
+		 * and the provider may charge for it). The button still needs a
+		 * provider that can turn text into speech.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $enabled Defaults to the `daymark_text_to_speech` option.
+		 */
+		return (bool) apply_filters( 'daymark_text_to_speech', (bool) get_option( self::TEXT_TO_SPEECH, false ) );
 	}
 
 	/**

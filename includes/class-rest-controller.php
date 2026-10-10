@@ -528,6 +528,29 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Read to me: an audio version of a post in the full post view.
+		// Same visibility rule as GET /marks/{id}/content and GET
+		// /subscription-posts/{id}: the post is already on the caller's
+		// Timeline. Rate-limited only when a new recording is made.
+		foreach ( array( 'marks', 'subscription-posts' ) as $speech_base ) {
+			register_rest_route(
+				$this->namespace,
+				'/' . $speech_base . '/(?P<id>\d+)/speech',
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'marks' === $speech_base ? 'mark_speech' : 'subscription_post_speech' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'id' => array(
+							'type'              => 'integer',
+							'required'          => true,
+							'sanitize_callback' => 'absint',
+						),
+					),
+				)
+			);
+		}
+
 		register_rest_route(
 			$this->namespace,
 			'/marks/(?P<id>\d+)/featured-content-link',
@@ -3192,6 +3215,77 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return true;
+	}
+
+	/**
+	 * POST /daymark/v1/marks/{id}/speech — the audio version of one of the
+	 * site's own posts, made on first request (Read to me).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function mark_speech( WP_REST_Request $request ) {
+		$post = get_post( absint( $request->get_param( 'id' ) ) );
+
+		if ( ! $post instanceof WP_Post || ! Daymark_External_Notes::is_own_content_type( $post->post_type ) ) {
+			return new WP_Error( 'daymark_not_found', __( 'Post not found.', 'daymark' ), array( 'status' => 404 ) );
+		}
+
+		return $this->speech_response( $post );
+	}
+
+	/**
+	 * POST /daymark/v1/subscription-posts/{id}/speech — the audio version
+	 * of a followed site's cached post, made on first request.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function subscription_post_speech( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		return $this->speech_response( get_post( $post_id ) );
+	}
+
+	/**
+	 * Shared body of the two speech routes: refuse when Read to me is off
+	 * or the post can't be read, return a saved recording for free, and
+	 * charge the speech allowance only before making a new one.
+	 *
+	 * @param WP_Post $post The post.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function speech_response( WP_Post $post ) {
+		if ( ! Daymark_Speech::available() ) {
+			return new WP_Error(
+				'daymark_speech_off',
+				__( 'Reading posts aloud is turned off on this site.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		if ( ! Daymark_Speech::can_read( $post ) ) {
+			return new WP_Error( 'daymark_not_found', __( 'Post not found.', 'daymark' ), array( 'status' => 404 ) );
+		}
+
+		$result = Daymark_Speech::get_or_make( $post, false );
+
+		if ( is_wp_error( $result ) && 'daymark_speech_not_cached' === $result->get_error_code() ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SPEECH );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+
+			$result = Daymark_Speech::get_or_make( $post );
+		}
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
 	}
 
 	/**
