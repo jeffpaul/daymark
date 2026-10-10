@@ -4824,7 +4824,7 @@
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
 				saveFeedSnapshot(screen, subTrigger);
-				openPostView('sub', item);
+				openPostView('sub', item, postViewList(screen));
 			}
 			return;
 		}
@@ -4836,7 +4836,7 @@
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
 				saveFeedSnapshot(screen, markTrigger);
-				openPostView('mark', item);
+				openPostView('mark', item, postViewList(screen));
 			}
 			return;
 		}
@@ -11694,10 +11694,120 @@
 		}
 	}
 
-	function openPostView(kind, item) {
-		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };
+	// `list` is the list the card was tapped in (see postViewList()), so
+	// the post view's Previous and Next buttons can step through it.
+	function openPostView(kind, item, list) {
+		pendingPostView = {
+			kind,
+			item,
+			returnTo: window.location.hash || '#home',
+			list: list || { items: [], pager: null },
+		};
 		navigate('#post');
 	}
+
+	// The list the post view steps through: the tapped screen's items, in
+	// list order, plus how to fetch its next page. It holds the same item
+	// objects the screen does, so a Like on a stepped-to post shows on its
+	// card after Back. When saveFeedSnapshot() just saved this screen,
+	// `items` is the snapshot's own array, so a page the post view loads
+	// is there too when Back re-renders the list. Home and Search page
+	// through GET /timeline; "On this day" has a single page, so no pager.
+	function postViewList(screen) {
+		const items =
+			feedSnapshot && Array.isArray(feedSnapshot.items) ? feedSnapshot.items : (screen._items || []).slice();
+		let pager = null;
+		if (screen === HomeScreen) {
+			pager = { params: '', page: screen.recentPage, perPage: RECENT_PER_PAGE, done: !!screen.recentDone };
+		} else if (screen === SearchScreen) {
+			pager = {
+				params: screen._searchParams || '',
+				page: screen._searchPage || 1,
+				perPage: SEARCH_PER_PAGE,
+				done: screen._searchDone !== false,
+			};
+		}
+		return { items, pager, source: screen };
+	}
+
+	// Fetch the list's next page into memory, once at a time; a second
+	// call while one is running waits for the same request. Resolves true
+	// when it added at least one post. A post already in the list (the
+	// Timeline can shift by a post while you read) is skipped, so stepping
+	// never revisits one. The saved list snapshot gets the new paging
+	// state, so Back shows these posts and infinite scroll resumes after
+	// them. Rejects on a failed request, leaving the pager able to retry.
+	function loadMorePostViewList(list) {
+		const pager = list && list.pager;
+		if (!pager || pager.done) {
+			return Promise.resolve(false);
+		}
+		if (pager.loading) {
+			return pager.loading;
+		}
+		const params = new URLSearchParams(pager.params);
+		params.set('per_page', String(pager.perPage));
+		params.set('page', String(pager.page + 1));
+		pager.loading = apiGet('timeline?' + params.toString())
+			.then((result) => {
+				const arr = Array.isArray(result) ? result : [];
+				pager.page += 1;
+				if (arr.length < pager.perPage) {
+					pager.done = true;
+				}
+				let added = 0;
+				arr.forEach((item) => {
+					if (timelineItemIndex(list.items, item) < 0) {
+						list.items.push(item);
+						added++;
+					}
+				});
+				if (feedSnapshot && feedSnapshot.items === list.items) {
+					if (list.source === HomeScreen) {
+						feedSnapshot.recentPage = pager.page;
+						feedSnapshot.recentDone = pager.done;
+					} else if (list.source === SearchScreen) {
+						feedSnapshot.searchPage = pager.page;
+						feedSnapshot.searchDone = pager.done;
+					}
+				}
+				return added > 0;
+			})
+			.finally(() => {
+				pager.loading = null;
+			});
+		return pager.loading;
+	}
+
+	function postViewHasMore(list) {
+		return !!(list && list.pager && !list.pager.done);
+	}
+
+	// The posts the post view can step to: published ones only, since a
+	// Draft card opens the composer instead of the post view.
+	function postViewSteppable(item) {
+		return !!item && (!item.status || 'publish' === item.status);
+	}
+
+	// The nearest openable post before (`direction` -1) or after (+1)
+	// `item` in `items`, or null at either end of the list.
+	function postViewNeighbor(items, item, direction) {
+		let index = timelineItemIndex(items, item);
+		if (index < 0) {
+			return null;
+		}
+		for (index += direction; index >= 0 && index < items.length; index += direction) {
+			if (postViewSteppable(items[index])) {
+				return items[index];
+			}
+		}
+		return null;
+	}
+
+	const CHEVRON_UP_GLYPH =
+		'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>';
+	const CHEVRON_DOWN_GLYPH =
+		'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
 	// --- Screen: full-screen post view ---
 	//
@@ -11763,6 +11873,7 @@
 					__('Back to Timeline', 'daymark')
 				)}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(title)}</h1>
+				${this.stepButtonsHtml(view)}
 			</header>
 			<section class="daymark-screen">
 				<div class="daymark-postview" data-postview-body>
@@ -11789,10 +11900,103 @@
 		// refreshSubscriptionPost() the same way a Timeline card's own
 		// toggles reach back into their screen.
 		bindEvents() {
+			root.querySelectorAll('[data-postview-step]').forEach((button) =>
+				button.addEventListener('click', () =>
+					this.step(Number(button.getAttribute('data-postview-step')))
+				)
+			);
 			root.querySelectorAll('.daymark-postview-meta, .daymark-postview-footer').forEach((el) =>
 				el.addEventListener('click', (event) => onFeedListClick(this, event))
 			);
 			bindDismissible(this, [itemMenusDismissEntry()]);
+		},
+
+		// Previous (the newer post above this one on the list it was
+		// opened from) and Next (the older one below). Omitted when the
+		// view came from a list of one; a button with nothing to step to
+		// stays visible but disabled, so the pair never shifts the title.
+		stepButtonsHtml(view) {
+			const list = view && view.list;
+			const items = list && Array.isArray(list.items) ? list.items : [];
+			if (!view || (items.filter(postViewSteppable).length < 2 && !postViewHasMore(list))) {
+				return '';
+			}
+			const button = (direction, label, glyph) => {
+				const disabled =
+					!postViewNeighbor(items, view.item, direction) && !(direction > 0 && postViewHasMore(list));
+				return `<button type="button" class="daymark-iconbtn daymark-postview-step" data-postview-step="${direction}" aria-label="${esc(
+					label
+				)}" title="${esc(label)}"${disabled ? ' disabled' : ''}>${glyph}</button>`;
+			};
+			return `<div class="daymark-postview-steps">${button(
+				-1,
+				__('Previous post', 'daymark'),
+				CHEVRON_UP_GLYPH
+			)}${button(1, __('Next post', 'daymark'), CHEVRON_DOWN_GLYPH)}</div>`;
+		},
+
+		// Swap this screen to the neighboring post. At the last loaded post,
+		// Next first loads the list's next page (or waits for the one
+		// prefetch() already started). Back still returns to the list, now
+		// at the post shown last: the saved list snapshot's anchor moves to
+		// that post's card.
+		async step(direction) {
+			const view = this.view;
+			if (!view || this._stepping) {
+				return;
+			}
+			let next = postViewNeighbor(view.list.items, view.item, direction);
+			if (!next && direction > 0 && postViewHasMore(view.list)) {
+				const button = root.querySelector('[data-postview-step="1"]');
+				this._stepping = true;
+				if (button) {
+					button.setAttribute('aria-busy', 'true');
+					button.classList.add('is-loading');
+				}
+				try {
+					// A page of only Drafts adds nothing to step to; keep going.
+					while (!next && postViewHasMore(view.list)) {
+						await loadMorePostViewList(view.list);
+						next = postViewNeighbor(view.list.items, view.item, direction);
+					}
+				} catch (err) {
+					announce(__('Couldn’t load more posts. Try again.', 'daymark'));
+				} finally {
+					this._stepping = false;
+					if (button && button.isConnected) {
+						button.removeAttribute('aria-busy');
+						button.classList.remove('is-loading');
+						if (!next && !postViewHasMore(view.list)) {
+							button.disabled = true;
+						}
+					}
+				}
+				// The reader left the post view while the page loaded.
+				if (this.view !== view || (button && !root.contains(button))) {
+					return;
+				}
+			}
+			if (!next) {
+				return;
+			}
+			if (feedSnapshot && feedSnapshot.hash === view.returnTo) {
+				feedSnapshot.anchorSelector = timelineCardSelector(next);
+			}
+			pendingPostView = {
+				kind: 'subscription_post' === next.item_type ? 'sub' : 'mark',
+				item: next,
+				returnTo: view.returnTo,
+				list: view.list,
+			};
+			window.scrollTo(0, 0);
+			navigate('#post');
+			// showScreen() focused the new title. A keyboard user stepping
+			// through posts keeps their place on the same button instead,
+			// once the title has been announced.
+			const same = root.querySelector('[data-postview-step="' + direction + '"]');
+			if (same && !same.disabled && document.activeElement !== same) {
+				requestAnimationFrame(() => same.focus({ preventScroll: true }));
+			}
 		},
 
 		// showScreen()'s own guard already redirects a direct/refreshed
@@ -11811,7 +12015,19 @@
 			rememberItem(this, this.view.item);
 			teardownLikeAvailabilityObserver(this);
 			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			this.prefetch();
 			await this.load(false);
+		},
+
+		// On the last loaded post, start loading the list's next page now,
+		// so Next is ready by the time the reader has read this one. A
+		// failure here is silent; tapping Next tries again.
+		prefetch() {
+			const view = this.view;
+			if (!view || postViewNeighbor(view.list.items, view.item, 1) || !postViewHasMore(view.list)) {
+				return;
+			}
+			loadMorePostViewList(view.list).catch(() => {});
 		},
 
 		// `forceRefresh` only ever applies to a subscription post — a Mark
