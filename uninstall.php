@@ -80,6 +80,7 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+wp_clear_scheduled_hook( 'daymark_subscription_poll_favorites' );
 wp_clear_scheduled_hook( 'daymark_uploads_cleanup' );
 // Per-subscription WebSub retry checks carry an argument, so clear every one.
 wp_unschedule_hook( 'daymark_websub_verify_timeout' );

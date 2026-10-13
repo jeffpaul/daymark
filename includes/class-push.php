@@ -63,8 +63,23 @@ class Daymark_Push {
 	 */
 	public const PREF_DEFAULTS = array(
 		'comments'  => true,
+		'favorites' => true,
 		'followers' => true,
 	);
+
+	/**
+	 * A favorite site's post older than this when Daymark first sees it
+	 * (a backfill, or a feed that just reappeared) doesn't push.
+	 */
+	public const FAVORITE_MAX_AGE = 3 * DAY_IN_SECONDS;
+
+	/**
+	 * New favorite-site posts seen in this request, by subscription ID,
+	 * sent as one push per site when the request ends.
+	 *
+	 * @var array<int, int[]>
+	 */
+	private static $favorite_queue = array();
 
 	/**
 	 * Register hooks.
@@ -75,6 +90,7 @@ class Daymark_Push {
 		add_action( self::CRON_HOOK, array( __CLASS__, 'dispatch' ), 10, 2 );
 		add_action( 'wp_insert_comment', array( $this, 'maybe_push_new_comment' ), 10, 2 );
 		add_action( 'transition_comment_status', array( $this, 'maybe_push_approved_comment' ), 10, 3 );
+		add_action( 'daymark_subscription_post_ingested', array( __CLASS__, 'queue_favorite_post' ), 10, 2 );
 	}
 
 	/**
@@ -609,5 +625,87 @@ class Daymark_Push {
 		}
 
 		return $queued;
+	}
+
+	/**
+	 * Note a favorite site's new post, to push when the request ends.
+	 *
+	 * Only a post published after the site was starred, and not older than
+	 * FAVORITE_MAX_AGE, so starring a site or a feed catching up never
+	 * floods anyone with old posts. Several new posts from one site in one
+	 * check become one push.
+	 *
+	 * @param int $post_id         Subscription post ID.
+	 * @param int $subscription_id Subscription ID.
+	 * @return bool Whether the post was queued.
+	 */
+	public static function queue_favorite_post( $post_id, $subscription_id ): bool {
+		$subscription = Daymark_Plugin::instance()->subscriptions->get( (int) $subscription_id );
+
+		if ( ! Daymark_Subscriptions::is_favorite( $subscription ) ) {
+			return false;
+		}
+
+		$published = (string) get_post_meta( (int) $post_id, 'published_at', true );
+
+		if ( '' !== $published ) {
+			$published_ts = (int) strtotime( $published . ' UTC' );
+			$starred_ts   = (int) strtotime( (string) $subscription['favorited_at'] . ' UTC' );
+
+			if ( $published_ts < $starred_ts || $published_ts < time() - self::FAVORITE_MAX_AGE ) {
+				return false;
+			}
+		}
+
+		if ( empty( self::$favorite_queue ) ) {
+			add_action( 'shutdown', array( __CLASS__, 'send_favorite_pushes' ) );
+		}
+
+		self::$favorite_queue[ (int) $subscription_id ][] = (int) $post_id;
+
+		return true;
+	}
+
+	/**
+	 * Queue one push per favorite site with new posts this request.
+	 *
+	 * @return void
+	 */
+	public static function send_favorite_pushes(): void {
+		$queue                = self::$favorite_queue;
+		self::$favorite_queue = array();
+
+		foreach ( $queue as $subscription_id => $post_ids ) {
+			$subscription = Daymark_Plugin::instance()->subscriptions->get( (int) $subscription_id );
+
+			if ( null === $subscription ) {
+				continue;
+			}
+
+			$site  = trim( (string) $subscription['site_title'] );
+			$site  = '' !== $site ? $site : (string) wp_parse_url( (string) $subscription['site_url'], PHP_URL_HOST );
+			$count = count( $post_ids );
+
+			if ( 1 === $count ) {
+				$post_id = (int) $post_ids[0];
+				$title   = trim( (string) get_the_title( $post_id ) );
+				$body    = '' !== $title ? $title : (string) get_post_field( 'post_excerpt', $post_id );
+				$url     = add_query_arg( 'daymark_post', $post_id, Daymark_Routes::app_url() );
+			} else {
+				/* translators: %d: number of new posts. */
+				$body = sprintf( _nx( '%d new post', '%d new posts', $count, 'push notification about a favorite site', 'daymark' ), $count );
+				$url  = Daymark_Routes::app_url();
+			}
+
+			self::notify_everyone(
+				'favorites',
+				array(
+					'title' => $site,
+					'body'  => $body,
+					'url'   => $url,
+					'tag'   => 'favorite-' . (int) $subscription_id,
+				)
+			);
+		}
 	}
 }
