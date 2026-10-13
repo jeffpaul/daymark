@@ -624,7 +624,6 @@ final class Daymark_Settings {
 				'numberposts'      => 50,
 				'orderby'          => 'date',
 				'order'            => 'DESC',
-				'suppress_filters' => true,
 			)
 		);
 
@@ -720,7 +719,6 @@ final class Daymark_Settings {
 				'numberposts'      => 50,
 				'orderby'          => 'ID',
 				'order'            => 'ASC',
-				'suppress_filters' => true,
 			)
 		);
 
