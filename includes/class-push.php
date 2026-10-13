@@ -692,7 +692,7 @@ class Daymark_Push {
 				$url     = add_query_arg( 'daymark_post', $post_id, Daymark_Routes::app_url() );
 			} else {
 				/* translators: %d: number of new posts. */
-				$body = sprintf( _n( '%d new post', '%d new posts', $count, 'daymark' ), $count );
+				$body = sprintf( _nx( '%d new post', '%d new posts', $count, 'push notification about a favorite site', 'daymark' ), $count );
 				$url  = Daymark_Routes::app_url();
 			}
 
