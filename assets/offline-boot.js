@@ -74,6 +74,14 @@
 			// returns, rather than trying to patch a live nonce into an
 			// already-running session (see that listener's own comment).
 			configData.offlineShell = true;
+			// The site's translations for app.js. The online shell loads them
+			// with an inline script, which this page can't run, so
+			// config.json carries them instead. Core's wp-i18n is loaded by
+			// offline-shell.php just before this file.
+			if (configData.localeData && window.wp && window.wp.i18n) {
+				window.wp.i18n.setLocaleData(configData.localeData, 'daymark');
+			}
+			delete configData.localeData;
 			window.daymarkApp = configData;
 			loadAppJs();
 		});

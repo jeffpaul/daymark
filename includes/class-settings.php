@@ -51,6 +51,12 @@ final class Daymark_Settings {
 	public const AI_AUTO_SUGGEST = 'daymark_ai_auto_suggest';
 
 	/**
+	 * Option: offer a Listen button that reads a post aloud in the app's
+	 * full post view, using the AI provider's text-to-speech.
+	 */
+	public const TEXT_TO_SPEECH = 'daymark_text_to_speech';
+
+	/**
 	 * Option: how often to check followed sites, in seconds.
 	 */
 	public const POLL_INTERVAL = 'daymark_subscription_poll_interval';
@@ -61,10 +67,27 @@ final class Daymark_Settings {
 	public const BLOGROLL_PUBLIC = 'daymark_blogroll_public';
 
 	/**
+	 * Option: tell a site when you start following it (a follow Webmention).
+	 */
+	public const ANNOUNCE_FOLLOWS = 'daymark_announce_follows';
+
+	/**
 	 * Option: keep Notes (Aside-format posts) off the blog's home page and
 	 * out of its main feed.
 	 */
 	public const HIDE_NOTES_ON_HOME = 'daymark_hide_notes_on_home';
+
+	/**
+	 * Option: show the app's Timeline as a compact list (title and
+	 * thumbnail only) instead of full cards.
+	 */
+	public const COMPACT_TIMELINE = 'daymark_compact_timeline';
+
+	/**
+	 * Option: show the number of unread notifications on the installed
+	 * app's icon (the app badge).
+	 */
+	public const APP_BADGE = 'daymark_app_badge_unread';
 
 	/**
 	 * Option: the destinations a new Mark of each type starts with, as a
@@ -119,9 +142,12 @@ final class Daymark_Settings {
 			self::PUBLISH_LOCATION,
 			self::HOLD_IMPORTED_REPLIES,
 			self::AI_AUTO_SUGGEST,
+			self::TEXT_TO_SPEECH,
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
 			self::HIDE_NOTES_ON_HOME,
+			self::COMPACT_TIMELINE,
+			self::APP_BADGE,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
 			self::BIONIC_READING_FONT,
@@ -353,6 +379,29 @@ final class Daymark_Settings {
 	}
 
 	/**
+	 * Whether the site owner turned on Read to me: a Listen button at the
+	 * top of a post in the app's full post view. The button also needs a
+	 * provider that can turn text into speech (Daymark_Speech::available()).
+	 *
+	 * @return bool
+	 */
+	public static function text_to_speech(): bool {
+		/**
+		 * Whether the app's full post view offers a Listen button.
+		 *
+		 * Defaults to the `daymark_text_to_speech` option (off by default,
+		 * since each new recording sends the post's text to the AI provider
+		 * and the provider may charge for it). The button still needs a
+		 * provider that can turn text into speech.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $enabled Defaults to the `daymark_text_to_speech` option.
+		 */
+		return (bool) apply_filters( 'daymark_text_to_speech', (bool) get_option( self::TEXT_TO_SPEECH, false ) );
+	}
+
+	/**
 	 * How often followed sites are checked, in seconds.
 	 *
 	 * @return int
@@ -394,6 +443,25 @@ final class Daymark_Settings {
 	}
 
 	/**
+	 * Whether following a site tells that site, with a follow Webmention
+	 * from an unlisted page on this site (Daymark_Followers). On by
+	 * default, so Daymark sites can show each other as followers.
+	 *
+	 * @return bool
+	 */
+	public static function announce_follows(): bool {
+		/**
+		 * Whether following a site sends it a follow Webmention.
+		 *
+		 * Defaults to the `daymark_announce_follows` option (Settings ->
+		 * Daymark -> General, on by default).
+		 *
+		 * @param bool $announce Defaults to the `daymark_announce_follows` option.
+		 */
+		return (bool) apply_filters( 'daymark_announce_follows', (bool) get_option( self::ANNOUNCE_FOLLOWS, true ) );
+	}
+
+	/**
 	 * Whether Notes are kept off the blog's home page and out of its main
 	 * feed. A Note is any post with the Aside post format, whether it came
 	 * from Daymark or the block editor (Daymark_Notes). Off by default, so
@@ -416,6 +484,51 @@ final class Daymark_Settings {
 		 * @param bool $hide Defaults to the `daymark_hide_notes_on_home` option.
 		 */
 		return (bool) apply_filters( 'daymark_hide_notes_on_home', (bool) get_option( self::HIDE_NOTES_ON_HOME, false ) );
+	}
+
+	/**
+	 * Whether the installed app shows the number of unread notifications
+	 * on its icon. Off by default.
+	 *
+	 * @return bool
+	 */
+	public static function app_badge_unread(): bool {
+		/**
+		 * Whether the installed Daymark app shows the number of unread
+		 * notifications on its icon (the app badge).
+		 *
+		 * Defaults to the `daymark_app_badge_unread` option (Settings ->
+		 * Daymark -> General, off by default). The badge needs a browser
+		 * with the Badging API and an installed app.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $show Defaults to the `daymark_app_badge_unread` option.
+		 */
+		return (bool) apply_filters( 'daymark_app_badge_unread', (bool) get_option( self::APP_BADGE, false ) );
+	}
+
+	/**
+	 * Whether the app shows the Timeline, Search, and Explore as a compact
+	 * list: each post as its title and one small thumbnail. Off by default,
+	 * so posts show as full cards.
+	 *
+	 * @return bool
+	 */
+	public static function compact_timeline(): bool {
+		/**
+		 * Whether the app lists posts compactly (title and thumbnail only)
+		 * instead of as full cards.
+		 *
+		 * Defaults to the `daymark_compact_timeline` option (Settings ->
+		 * Daymark -> General, off by default). Drafts and the full post
+		 * view are unchanged either way.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $compact Defaults to the `daymark_compact_timeline` option.
+		 */
+		return (bool) apply_filters( 'daymark_compact_timeline', (bool) get_option( self::COMPACT_TIMELINE, false ) );
 	}
 
 	/**

@@ -162,6 +162,23 @@ class Daymark_Webmention_Receiver {
 			return self::error( 'daymark_webmention_same_url', __( 'Source and target must be different.', 'daymark' ) );
 		}
 
+		// A follow names the site itself, not a post (Daymark_Followers).
+		if ( Daymark_Followers::is_site_target( $target ) ) {
+			if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
+				return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
+			}
+
+			if ( ! Daymark_Followers::queue_verification( $source ) ) {
+				return new WP_Error(
+					'daymark_webmention_rate_limited',
+					__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
+					array( 'status' => 429 )
+				);
+			}
+
+			return new WP_REST_Response( array( 'status' => 'accepted' ), 202 );
+		}
+
 		$post_id = self::target_post_id( $target );
 
 		if ( 0 === $post_id ) {
@@ -517,7 +534,7 @@ class Daymark_Webmention_Receiver {
 	 * @param string $source Source URL.
 	 * @return bool False when over the limit.
 	 */
-	private static function within_limit( string $source ): bool {
+	public static function within_limit( string $source ): bool {
 		$key   = 'daymark_wm_rx_' . md5( strtolower( (string) wp_parse_url( $source, PHP_URL_HOST ) ) );
 		$count = (int) get_transient( $key );
 

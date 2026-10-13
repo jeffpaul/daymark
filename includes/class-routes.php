@@ -382,6 +382,71 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * WordPress core scripts the offline-fallback shell loads so the app
+	 * still has wp.i18n, and so still shows the site's language, offline.
+	 * Plain external files with no inline code, which the offline shell's
+	 * nonce-free `script-src 'self'` allows. Order matters: wp-i18n needs
+	 * wp-hooks loaded first.
+	 *
+	 * @return string[] Absolute URLs, in load order.
+	 */
+	public static function offline_core_script_urls(): array {
+		$scripts = wp_scripts();
+		$urls    = array();
+
+		foreach ( array( 'wp-hooks', 'wp-i18n' ) as $handle ) {
+			$script = $scripts->registered[ $handle ] ?? null;
+
+			if ( ! $script || ! is_string( $script->src ) || '' === $script->src ) {
+				continue;
+			}
+
+			$src = $script->src;
+
+			if ( ! preg_match( '#^(https?:)?//#', $src ) ) {
+				$src = $scripts->base_url . $src;
+			}
+
+			$urls[] = $script->ver ? add_query_arg( 'ver', $script->ver, $src ) : $src;
+		}
+
+		return $urls;
+	}
+
+	/**
+	 * The app's translations for the current user's language, in the shape
+	 * wp.i18n.setLocaleData() takes. The online app shell gets the same data
+	 * from wp_set_script_translations(), as an inline script. The offline
+	 * shell can't run inline scripts, so config.json carries this instead
+	 * and assets/offline-boot.js hands it to wp.i18n.
+	 *
+	 * @return array<string, mixed>|null Null when no translation file exists
+	 *                                   (an English site, for example).
+	 */
+	public static function app_locale_data(): ?array {
+		if ( ! wp_script_is( 'daymark-app', 'registered' ) ) {
+			wp_register_script( 'daymark-app', DAYMARK_PLUGIN_URL . 'assets/app.js', array( 'wp-i18n' ), DAYMARK_VERSION, true );
+		}
+
+		$json = load_script_textdomain( 'daymark-app', 'daymark' );
+
+		if ( ! is_string( $json ) || '' === $json ) {
+			return null;
+		}
+
+		$translations = json_decode( $json, true );
+		$locale_data  = $translations['locale_data']['daymark'] ?? $translations['locale_data']['messages'] ?? null;
+
+		if ( ! is_array( $locale_data ) || count( $locale_data ) < 2 ) {
+			return null;
+		}
+
+		$locale_data['']['domain'] = 'daymark';
+
+		return $locale_data;
+	}
+
+	/**
 	 * A cache version for the service worker that changes whenever the
 	 * plugin's cached assets do.
 	 *
@@ -405,13 +470,17 @@ class Daymark_Routes {
 			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
 		}
 
+		// The worker also caches core's wp-hooks and wp-i18n, so a core
+		// update has to give it a fresh cache as well.
+		$signature .= '|' . get_bloginfo( 'version' );
+
 		return DAYMARK_VERSION . '-' . substr( md5( $signature ), 0, 8 );
 	}
 
 	/**
 	 * The service worker script served at /daymark/sw.js: assets/daymark-sw.js
-	 * with its two placeholders filled in (the plugin assets URL and the
-	 * cache version above).
+	 * with its placeholders filled in: the plugin assets URL, the cache
+	 * version above, and the core script URLs the offline shell loads.
 	 *
 	 * @return string
 	 */
@@ -420,10 +489,47 @@ class Daymark_Routes {
 		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
 
 		return str_replace(
-			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__' ),
-			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version() ),
+			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__', '"__DAYMARK_CORE_SCRIPTS__"' ),
+			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version(), (string) wp_json_encode( self::offline_core_script_urls(), JSON_UNESCAPED_SLASHES ) ),
 			$sw_js
 		);
+	}
+
+	/**
+	 * Month and weekday names in the site's language, for the app's own
+	 * Date Format rendering. Read from core's $wp_locale, which WordPress
+	 * already translates, so Daymark's translators never repeat that work.
+	 * Index 0 is January / Sunday, matching JavaScript's Date methods.
+	 *
+	 * @return array{months: string[], monthsShort: string[], weekdays: string[], weekdaysShort: string[]}
+	 */
+	public static function date_names(): array {
+		global $wp_locale;
+
+		$names = array(
+			'months'        => array(),
+			'monthsShort'   => array(),
+			'weekdays'      => array(),
+			'weekdaysShort' => array(),
+		);
+
+		if ( ! $wp_locale instanceof WP_Locale ) {
+			return $names;
+		}
+
+		for ( $month = 1; $month <= 12; $month++ ) {
+			$full                   = $wp_locale->get_month( $month );
+			$names['months'][]      = $full;
+			$names['monthsShort'][] = $wp_locale->get_month_abbrev( $full );
+		}
+
+		for ( $day = 0; $day <= 6; $day++ ) {
+			$full                     = $wp_locale->get_weekday( $day );
+			$names['weekdays'][]      = $full;
+			$names['weekdaysShort'][] = $wp_locale->get_weekday_abbrev( $full );
+		}
+
+		return $names;
 	}
 
 	/**
@@ -443,11 +549,13 @@ class Daymark_Routes {
 	 * @param string $screen           Current app screen ('home', 'notifications', etc.).
 	 * @param string $pending_type     One-shot composer type hint, or ''.
 	 * @param int    $pending_draft_id One-shot share-sheet draft ID, or 0.
+	 * @param int    $pending_post_id  A followed site's post to open (a push from a favorite site), or 0.
 	 * @return array<string, mixed>
 	 */
-	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0 ): array {
+	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0, int $pending_post_id = 0 ): array {
 		$user                     = wp_get_current_user();
 		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
+		$app_badge                = Daymark_Settings::app_badge_unread();
 
 		/*
 		 * Connector list and per-type destination defaults, from the
@@ -571,6 +679,10 @@ class Daymark_Routes {
 			// wp-admin already does rather than the browser's own locale
 			// default.
 			'dateFormat'             => sanitize_text_field( get_option( 'date_format' ) ),
+			// Month and weekday names for that Date Format, from WordPress
+			// core's own translations ($wp_locale), so they read exactly as
+			// wp-admin's dates do in the site's language.
+			'dateNames'              => self::date_names(),
 			// Site Icon first, Daymark's own bundled icon otherwise — same
 			// resolution icon_url() already uses for the browser favicon
 			// and PWA manifest icons.
@@ -597,10 +709,17 @@ class Daymark_Routes {
 				// own; when false, AI only runs when an AI button is tapped.
 				'autoSuggest'   => Daymark_Settings::ai_auto_suggest(),
 			),
+			// Read to me: whether the full post view offers a Listen button
+			// (turned on in Settings and the AI provider can make speech).
+			'speech'                 => array(
+				'available' => Daymark_Speech::available(),
+			),
 			// Where a published Mark also reaches through an active
 			// federation plugin, for the Publish screen's "Your site is the
 			// destination" note.
 			'reach'                  => self::federation_reach(),
+			// Whether lists show each post as just its title and thumbnail.
+			'compactTimeline'        => Daymark_Settings::compact_timeline(),
 			// Whether starting a Check In may ask for the device's location.
 			'capture'                => array(
 				'location' => Daymark_Settings::capture_location(),
@@ -614,7 +733,18 @@ class Daymark_Routes {
 				'faces'  => Daymark_Settings::bionic_reading_font_faces(),
 			),
 			'notifications'          => array(
-				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
+				'hasUnread'   => Daymark_Plugin::instance()->notifications->has_unread(),
+				// Whether to show the unread count on the installed app's
+				// icon, and that count (only worked out when it's on).
+				'badge'       => $app_badge,
+				'unreadCount' => $app_badge ? Daymark_Plugin::instance()->notifications->unread_count() : 0,
+			),
+			// Web push: the site's public signing key (empty when the
+			// bundled library can't load, which hides the switch), and
+			// which kinds of push this person wants.
+			'push'                   => array(
+				'publicKey' => Daymark_Push::public_key(),
+				'prefs'     => Daymark_Push::get_prefs( (int) $user->ID ),
 			),
 			'controllableHelpers'    => $controllable_helpers,
 			'publishHelpers'         => $awareness_helpers,
@@ -646,6 +776,7 @@ class Daymark_Routes {
 			// device — see Daymark_Interaction_Hints.
 			'interactionHintsSeen'   => Daymark_Interaction_Hints::get_seen( (int) $user->ID ),
 			'pendingDraftId'         => $pending_draft_id,
+			'pendingPostId'          => $pending_post_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
 	}
@@ -758,7 +889,11 @@ class Daymark_Routes {
 				// deliberately persisted, for offline reuse only.
 				header( 'Content-Type: application/json; charset=utf-8' );
 				header( 'Cache-Control: no-store' );
-				echo wp_json_encode( self::build_app_config() );
+				$config = self::build_app_config();
+				// Only here, not in build_app_config(): the online shell
+				// already gets these from wp_set_script_translations().
+				$config['localeData'] = self::app_locale_data();
+				echo wp_json_encode( $config );
 				exit;
 			}
 

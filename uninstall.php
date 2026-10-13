@@ -46,6 +46,14 @@ delete_option( 'daymark_ai_auto_suggest' );
 delete_option( 'daymark_subscription_poll_interval' );
 delete_option( 'daymark_blogroll_public' );
 delete_option( 'daymark_hide_notes_on_home' );
+delete_option( 'daymark_compact_timeline' );
+delete_option( 'daymark_app_badge_unread' );
+delete_option( 'daymark_push_vapid' );
+delete_option( 'daymark_followers' );
+delete_option( 'daymark_follow_pages' );
+delete_option( 'daymark_follow_queue' );
+delete_option( 'daymark_announce_follows' );
+delete_option( 'daymark_jetpack_followers_since' );
 delete_option( 'daymark_bionic_reading_font' );
 delete_option( 'daymark_bionic_reading_font_url' );
 delete_option( 'daymark_bionic_reading_font_family' );
@@ -61,6 +69,9 @@ delete_metadata( 'user', 0, 'daymark_notification_read', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_unread', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_archived', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
+delete_metadata( 'user', 0, 'daymark_push_subscription', '', true );
+delete_metadata( 'user', 0, 'daymark_push_prefs', '', true );
+delete_metadata( 'comment', 0, '_daymark_push_sent', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
@@ -72,6 +83,7 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+wp_clear_scheduled_hook( 'daymark_subscription_poll_favorites' );
 wp_clear_scheduled_hook( 'daymark_uploads_cleanup' );
 // Per-subscription WebSub retry checks carry an argument, so clear every one.
 wp_unschedule_hook( 'daymark_websub_verify_timeout' );
@@ -81,6 +93,10 @@ wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
 // received Webmention, with arguments).
 wp_unschedule_hook( 'daymark_webmention_send' );
 wp_unschedule_hook( 'daymark_webmention_verify' );
+wp_unschedule_hook( 'daymark_push_dispatch' );
+wp_unschedule_hook( 'daymark_follow_send' );
+wp_unschedule_hook( 'daymark_follow_verify' );
+wp_unschedule_hook( 'daymark_followers_check_jetpack' );
 
 // The share image Daymark resolved for a post's remote Featured Content
 // (issue #408) is a cache derived from that content, not content itself,
@@ -106,6 +122,20 @@ $daymark_cooldowns = $wpdb->get_col(
 );
 
 foreach ( $daymark_cooldowns as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
+}
+
+// Read to me: the cached "can this AI provider make speech" answer, one
+// per provider.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_tts_transients = $wpdb->get_col(
+	$wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+		$wpdb->esc_like( '_transient_daymark_tts_supported_' ) . '%'
+	)
+);
+
+foreach ( $daymark_tts_transients as $daymark_option_name ) {
 	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 
@@ -159,6 +189,25 @@ foreach ( $daymark_subscription_post_ids as $daymark_subscription_post_id ) {
 // so uninstall drops it outright.
 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time removal of the plugin's own table.
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}daymark_subscriptions" );
+
+// Read to me: saved audio versions of posts and the folder they live in.
+delete_post_meta_by_key( '_daymark_speech' );
+
+$daymark_speech_uploads = wp_upload_dir( null, false );
+
+if ( empty( $daymark_speech_uploads['error'] ) && ! empty( $daymark_speech_uploads['basedir'] ) ) {
+	$daymark_speech_dir = trailingslashit( $daymark_speech_uploads['basedir'] ) . 'daymark-speech';
+
+	if ( is_dir( $daymark_speech_dir ) ) {
+		$daymark_speech_files = glob( $daymark_speech_dir . '/*' );
+
+		foreach ( is_array( $daymark_speech_files ) ? $daymark_speech_files : array() as $daymark_speech_file ) {
+			wp_delete_file( $daymark_speech_file );
+		}
+
+		@rmdir( $daymark_speech_dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Best-effort; a non-empty folder is left alone.
+	}
+}
 
 // Unfinished composer uploads (issue #483): parts of files that never
 // finished uploading. A finished upload is an ordinary attachment and stays

@@ -164,6 +164,24 @@ class Daymark_Rate_Limiter {
 	public const ACTION_UPLOAD = 'upload';
 
 	/**
+	 * Make an audio version of a post (POST /marks/{id}/speech and
+	 * /subscription-posts/{id}/speech). Charged only when a new recording
+	 * is made, never for replaying a saved one. Tighter than ACTION_AI: a
+	 * whole post read aloud costs the provider far more than a caption.
+	 *
+	 * @var string
+	 */
+	public const ACTION_SPEECH = 'speech';
+
+	/**
+	 * Send a test push to your own devices (POST /push/test). Each one is
+	 * a request to every device's push service, so it's kept small.
+	 *
+	 * @var string
+	 */
+	public const ACTION_PUSH_TEST = 'push_test';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -224,6 +242,14 @@ class Daymark_Rate_Limiter {
 		self::ACTION_UPLOAD                  => array(
 			'limit'  => 60,
 			'window' => 5 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_SPEECH                  => array(
+			'limit'  => 10,
+			'window' => 15 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_PUSH_TEST               => array(
+			'limit'  => 5,
+			'window' => 15 * MINUTE_IN_SECONDS,
 		),
 	);
 

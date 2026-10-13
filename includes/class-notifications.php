@@ -428,6 +428,31 @@ class Daymark_Notifications {
 	}
 
 	/**
+	 * How many of the current user's notifications are unread: the same
+	 * number as the Notifications screen's Unread tab, since both count
+	 * the same list. Used for the app badge.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return int
+	 */
+	public function unread_count(): int {
+		if ( ! get_current_user_id() ) {
+			return 0;
+		}
+
+		$unread = 0;
+
+		foreach ( $this->get_notifications() as $item ) {
+			if ( empty( $item['read'] ) ) {
+				++$unread;
+			}
+		}
+
+		return $unread;
+	}
+
+	/**
 	 * When the current user last opened Notifications, as a Unix
 	 * timestamp; 0 if never.
 	 *
@@ -629,7 +654,7 @@ class Daymark_Notifications {
 
 		$timestamp = strtotime( $comment->comment_date_gmt . ' UTC' );
 		$relative  = $timestamp
-			/* translators: %s: human-readable time difference, e.g. "2 minutes". */
+			/* translators: %s: human-readable time difference, e.g. "5 minutes". */
 			? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
 			: '';
 
@@ -874,7 +899,7 @@ class Daymark_Notifications {
 			'consecutive_failure_count' => absint( $subscription['consecutive_failure_count'] ?? 0 ),
 			'last_checked_at'           => sanitize_text_field( (string) ( $subscription['last_checked_at'] ?? '' ) ),
 			'last_checked_at_relative'  => $timestamp
-				/* translators: %s: human-readable time difference, e.g. "2 hours". */
+				/* translators: %s: human-readable time difference, e.g. "5 minutes". */
 				? sprintf( __( '%s ago', 'daymark' ), human_time_diff( $timestamp, time() ) )
 				: '',
 			'last_error'                => sanitize_text_field( (string) ( $subscription['last_error'] ?? '' ) ),

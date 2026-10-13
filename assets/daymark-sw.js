@@ -55,6 +55,13 @@ const ASSETS_BASE_URL = '__DAYMARK_ASSETS_URL__';
 // Only the path portion is ever compared against a request's own url.pathname.
 const ASSETS_BASE_PATH = new URL(ASSETS_BASE_URL).pathname;
 
+// WordPress core's wp-hooks and wp-i18n (absolute URLs, in load order), filled
+// in by Daymark_Routes::build_service_worker_script(). The offline shell
+// loads them so the app keeps the site's language offline; they're cached
+// with the app's own files.
+const CORE_SCRIPTS = "__DAYMARK_CORE_SCRIPTS__";
+const CORE_SCRIPT_PATHS = CORE_SCRIPTS.map((src) => new URL(src).pathname);
+
 self.addEventListener('install', (event) => {
 	const scopePath = new URL(self.registration.scope).pathname;
 	event.waitUntil(
@@ -68,6 +75,7 @@ self.addEventListener('install', (event) => {
 					ASSETS_BASE_URL + 'featured-content.css',
 					ASSETS_BASE_URL + 'featured-content.js',
 					scopePath + 'offline.html',
+					...CORE_SCRIPTS,
 				])
 			)
 			.then(() => self.skipWaiting())
@@ -173,37 +181,52 @@ self.addEventListener('fetch', (event) => {
 		return;
 	}
 
-	// app.css / app.js / offline-boot.js: cache-first, exactly as before
-	// this worker's scope widened (offline-boot.js is the one addition —
-	// see this file's own docblock on why it has to be precached the same
-	// way). ignoreSearch so a ?ver= cache-busting param still hits the
-	// precached entry.
+	// app.css / app.js / offline-boot.js: cache-first (offline-boot.js is
+	// the one addition since this worker's scope widened — see this file's
+	// own docblock on why it has to be precached the same way).
+	//
+	// The cache is checked for the exact URL first, ?ver= included. The
+	// page asks for ?ver=<plugin version>, so on the first launch after a
+	// plugin update the new version misses the cache and comes from the
+	// network, even though the previous release's worker is still the one
+	// answering. Matching while ignoring ?ver= (as this used to do first)
+	// served the previous release's files for that whole launch. The match
+	// that ignores ?ver= is now only the fallback when the network can't
+	// answer: offline, or the precached copy, which is stored without ?ver=.
 	// featured-content.css/.js (a Featured Content gallery's slider) are
-	// cached the same way, so a bookmarked gallery is a slider offline too.
+	// cached the same way, so a bookmarked gallery is a slider offline too,
+	// and so are core's wp-hooks/wp-i18n (CORE_SCRIPTS, above).
 	const isStaticAsset = [
 		'app.css',
 		'app.js',
 		'offline-boot.js',
 		'featured-content.css',
 		'featured-content.js',
-	].some((file) => url.pathname === ASSETS_BASE_PATH + file);
+	].some((file) => url.pathname === ASSETS_BASE_PATH + file) || CORE_SCRIPT_PATHS.includes(url.pathname);
 	if (isStaticAsset) {
 		event.respondWith(
-			caches.match(event.request, { ignoreSearch: true }).then((cached) => {
+			caches.match(event.request).then((cached) => {
 				if (cached) {
 					return cached;
 				}
-				return fetch(event.request).then((response) => {
-					if (response.ok) {
-						const copy = response.clone();
-						// Same event.waitUntil() reasoning as the config.json
-						// branch below: without it, the cache write can lose
-						// the race against the worker being torn down once
-						// respondWith()'s own promise has already resolved.
-						event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
-					}
-					return response;
-				});
+				const anyVersion = () =>
+					caches.match(event.request, { ignoreSearch: true });
+				return fetch(event.request)
+					.then((response) => {
+						if (response.ok) {
+							const copy = response.clone();
+							// Same event.waitUntil() reasoning as the config.json
+							// branch below: without it, the cache write can lose
+							// the race against the worker being torn down once
+							// respondWith()'s own promise has already resolved.
+							event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)));
+							return response;
+						}
+						return anyVersion().then((fallback) => fallback || response);
+					})
+					.catch(() =>
+						anyVersion().then((fallback) => fallback || Promise.reject(new TypeError('offline')))
+					);
 			})
 		);
 		return;
@@ -256,4 +279,58 @@ self.addEventListener('fetch', (event) => {
 	// Everything else (REST, admin, login, media, any other origin-relative
 	// request) passes straight to the network untouched — we never call
 	// respondWith() for it.
+});
+
+// Web push: show the message the site sent (see Daymark_Push_Sender), and
+// open the app where it points when the notification is tapped. Every
+// push must show a notification; Safari revokes push for a site that
+// doesn't.
+self.addEventListener('push', (event) => {
+	let data = {};
+	try {
+		data = event.data ? event.data.json() : {};
+	} catch (e) {
+		data = {};
+	}
+	const text = (value) => (typeof value === 'string' ? value : '');
+	const options = {
+		body: text(data.body),
+		data: { url: text(data.url) },
+	};
+	if (text(data.icon)) {
+		options.icon = data.icon;
+	}
+	if (text(data.tag)) {
+		options.tag = data.tag;
+	}
+	event.waitUntil(self.registration.showNotification(text(data.title) || 'Daymark', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const scope = self.registration.scope;
+	let target = scope;
+	try {
+		const url = new URL((event.notification.data && event.notification.data.url) || scope, scope);
+		// Only ever open this site.
+		if (url.origin === self.location.origin) {
+			target = url.href;
+		}
+	} catch (e) {
+		target = scope;
+	}
+	event.waitUntil(
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+			const open = windows.find((client) => client.url.startsWith(scope) && 'focus' in client);
+			if (open) {
+				return open.focus().then((client) => {
+					if (client && 'navigate' in client) {
+						return client.navigate(target).catch(() => client);
+					}
+					return client;
+				});
+			}
+			return self.clients.openWindow(target);
+		})
+	);
 });

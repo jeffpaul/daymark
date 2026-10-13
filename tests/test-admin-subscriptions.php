@@ -2109,6 +2109,27 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/update\.php\?action=install-plugin(?:&amp;|&#038;|&)plugin=webmention(?:&amp;|&#038;|&)_wpnonce=/', $output );
 	}
 
+	/**
+	 * Parse This isn't in the wordpress.org directory, so its card links to
+	 * GitHub and never offers an Install button, even to an administrator.
+	 */
+	public function test_connectors_tab_links_parse_this_to_github(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+
+		$_GET['tab'] = 'connectors';
+		$output      = $this->render();
+		unset( $_GET['tab'] );
+
+		$this->assertStringContainsString( 'https://github.com/dshanske/parse-this', $output );
+		// The "PHPUnit with Parse This" CI job loads the real plugin, and an
+		// active plugin's card shows "Active" instead of a download button.
+		if ( ! defined( 'PARSE_THIS_VERSION' ) ) {
+			$this->assertStringContainsString( 'Get it from GitHub', $output );
+		}
+		$this->assertStringNotContainsString( 'wordpress.org/plugins/parse-this', $output );
+		$this->assertDoesNotMatchRegularExpression( '/install-plugin(?:&amp;|&#038;|&)plugin=parse-this/', $output );
+	}
+
 	/** A connector that's installed and active shows an "Active" state, not an Install/Activate action. */
 	public function test_connectors_tab_shows_active_state_for_an_active_connector(): void {
 		$this->install_fake_plugin( 'webmention', 'webmention.php' );
@@ -2371,6 +2392,26 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_hide_notes_on_home' );
 	}
 
+	/** The General tab offers the app badge setting, off by default. */
+	public function test_general_tab_renders_app_badge_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_app_badge_unread"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $output );
+		$this->assertFalse( Daymark_Settings::app_badge_unread() );
+	}
+
+	/** Saving the app badge setting checked turns it on and returns to the General tab. */
+	public function test_app_badge_save_turns_setting_on(): void {
+		$location = $this->call_handler( 'handle_app_badge_save', 'daymark_app_badge_save', array( 'daymark_app_badge_unread' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::app_badge_unread() );
+		$this->assertMatchesRegularExpression( '/name="daymark_app_badge_unread"[^>]*checked/', $this->render( 'general' ) );
+
+		delete_option( 'daymark_app_badge_unread' );
+	}
+
 	/** A filter that overrides the Notes setting disables the checkbox and says so. */
 	public function test_notes_setting_overridden_by_filter_is_disabled(): void {
 		add_filter( 'daymark_hide_notes_on_home', '__return_true' );
@@ -2379,6 +2420,28 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 
 		$this->assertMatchesRegularExpression( '/name="daymark_hide_notes_on_home"[^>]*disabled/', $output );
 		$this->assertStringContainsString( 'Turned on by code on this site', $output );
+	}
+
+	/** The General tab offers the compact list setting, off by default. */
+	public function test_general_tab_renders_compact_timeline_setting(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_compact_timeline"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_compact_timeline"[^>]*checked/', $output );
+	}
+
+	/** Saving the compact list setting checked turns it on; saving it unchecked turns it off. */
+	public function test_timeline_display_save_toggles_setting(): void {
+		$location = $this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array( 'daymark_compact_timeline' => '1' ) );
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertTrue( Daymark_Settings::compact_timeline() );
+		$this->assertMatchesRegularExpression( '/name="daymark_compact_timeline"[^>]*checked/', $this->render( 'general' ) );
+
+		$this->call_handler( 'handle_timeline_display_save', 'daymark_timeline_display_save', array() );
+		$this->assertFalse( Daymark_Settings::compact_timeline() );
+
+		delete_option( 'daymark_compact_timeline' );
 	}
 
 	/** The General tab offers the Bionic Reading font, off by default. */

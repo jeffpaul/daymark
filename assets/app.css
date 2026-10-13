@@ -262,9 +262,35 @@ h2[tabindex='-1']:focus {
 }
 
 @supports not (text-box: trim-start cap alphabetic) {
-	.daymark-topbar--top .daymark-backlink {
+	.daymark-topbar--top .daymark-backlink,
+	.daymark-topbar--top .daymark-postview-steps {
 		margin-top: 9px;
 	}
+}
+
+/* The post view's Previous and Next buttons, at the header's trailing
+   edge. Their chevrons sit at the top of the 44px tap target, like the
+   back link's arrow, so all three line up with the title's first line. */
+.daymark-postview-steps {
+	display: flex;
+	flex: none;
+}
+
+.daymark-postview-step {
+	align-items: flex-start;
+	color: var(--daymark-text-secondary);
+	cursor: pointer;
+}
+
+/* Next while it loads the list's next page. */
+.daymark-postview-step.is-loading {
+	opacity: 0.5;
+	cursor: progress;
+}
+
+.daymark-postview-step:disabled {
+	opacity: 0.35;
+	cursor: default;
 }
 
 /* Daymark's own icon + wordmark act as one home-link. `gap` matches
@@ -1449,6 +1475,31 @@ h2[tabindex='-1']:focus {
 	outline-offset: -2px;
 }
 
+/* The compact list (Settings -> Daymark -> General): one row per post, the
+   title beside a small thumbnail on the right, no media banner, excerpt, or
+   footer. The title still shows in full, like a full card's title. */
+.daymark-recent__item--compact {
+	flex-wrap: nowrap;
+	min-height: var(--daymark-tap-min);
+}
+
+/* A compact card is often shorter than the site icon and rail icon beside
+   it. Stretching it to the row's height keeps every row the same height
+   and the gaps between rows even. */
+.daymark-recent__item-wrap--compact .daymark-recent__item {
+	align-self: stretch;
+}
+
+.daymark-recent__title--compact {
+	flex: 1;
+	min-width: 0;
+}
+
+.daymark-recent__compactthumb {
+	display: inline-flex;
+	flex-shrink: 0;
+}
+
 .daymark-recent__item--card .daymark-item-stats button {
 	position: relative;
 	z-index: 2;
@@ -2093,6 +2144,22 @@ button.daymark-stat {
 	background: var(--daymark-accent-wash);
 }
 
+/* Me: push notifications for this device. */
+.daymark-mepush,
+.daymark-mepush__options:not([hidden]) {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mepush__options .daymark-btn--text {
+	align-self: flex-start;
+}
+
+.daymark-mepush [data-push-status]:empty {
+	display: none;
+}
+
 /* A row that opens a WordPress screen: its icon sits right after the text. */
 .daymark-melink__external {
 	flex-shrink: 0;
@@ -2547,6 +2614,32 @@ button.daymark-stat {
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-follow__row {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-xs);
+}
+
+.daymark-follow__row .daymark-recent__item {
+	flex: 1;
+	min-width: 0;
+}
+
+.daymark-follow__star {
+	flex-shrink: 0;
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-follow__star:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-follow__star.daymark-stat--active svg {
+	fill: currentColor;
 }
 
 .daymark-follow__open {
@@ -4801,4 +4894,39 @@ button.daymark-stat {
 .daymark-bookmarklet__notice--error {
 	background: var(--daymark-danger-bg);
 	color: #fff;
+}
+
+/* Read to me: the Listen button and audio player at the top of the full
+   post view. */
+.daymark-listen {
+	margin-bottom: var(--daymark-spacing-md);
+}
+
+.daymark-listen__start {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-listen__start svg {
+	width: 18px;
+	height: 18px;
+}
+
+.daymark-listen__status:empty {
+	display: none;
+}
+
+.daymark-listen__status,
+.daymark-listen__note {
+	margin: var(--daymark-spacing-xs) 0 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-listen__audio {
+	display: block;
+	width: 100%;
+	min-height: var(--daymark-tap-min);
 }

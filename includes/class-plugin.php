@@ -116,6 +116,13 @@ final class Daymark_Plugin {
 	public Daymark_Notification_State $notification_state;
 
 	/**
+	 * Read to me: cached audio versions of posts.
+	 *
+	 * @var Daymark_Speech
+	 */
+	public Daymark_Speech $speech;
+
+	/**
 	 * Per-user bookmark set membership.
 	 *
 	 * @var Daymark_Bookmarks
@@ -216,6 +223,20 @@ final class Daymark_Plugin {
 	 * @var Daymark_Webmention_Receiver
 	 */
 	public Daymark_Webmention_Receiver $webmention_receiver;
+
+	/**
+	 * Web push notifications.
+	 *
+	 * @var Daymark_Push
+	 */
+	public Daymark_Push $push;
+
+	/**
+	 * New followers and follow announcements.
+	 *
+	 * @var Daymark_Followers
+	 */
+	public Daymark_Followers $followers;
 
 	/**
 	 * Subscription source registry (inbound mirror of the syndication
@@ -373,6 +394,7 @@ final class Daymark_Plugin {
 		$this->notifications                = new Daymark_Notifications();
 		$this->notification_state           = new Daymark_Notification_State();
 		$this->bookmarks                    = new Daymark_Bookmarks();
+		$this->speech                       = new Daymark_Speech();
 		$this->uploads                      = new Daymark_Uploads();
 		$this->plugin_overlap               = new Daymark_Plugin_Overlap();
 		$this->syndication_links            = new Daymark_Syndication_Links();
@@ -404,6 +426,8 @@ final class Daymark_Plugin {
 		$this->post_export                  = new Daymark_Post_Export();
 		$this->webmention                   = new Daymark_Webmention();
 		$this->webmention_receiver          = new Daymark_Webmention_Receiver();
+		$this->push                         = new Daymark_Push();
+		$this->followers                    = new Daymark_Followers();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -487,6 +511,7 @@ final class Daymark_Plugin {
 		$this->backflow_sync->register();
 		$this->publisher->register();
 		$this->bookmarks->register();
+		$this->speech->register();
 		$this->notification_state->register();
 		$this->uploads->register();
 		$this->subscription_post_type->register();
@@ -507,6 +532,8 @@ final class Daymark_Plugin {
 		$this->post_export->register();
 		$this->webmention->register();
 		$this->webmention_receiver->register();
+		$this->push->register();
+		$this->followers->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
@@ -590,6 +617,7 @@ final class Daymark_Plugin {
 	public static function deactivate(): void {
 		Daymark_Backflow_Sync::unschedule();
 		Daymark_Subscription_Poller::unschedule();
+		Daymark_Followers::unschedule();
 		Daymark_Uploads::unschedule();
 		flush_rewrite_rules();
 	}

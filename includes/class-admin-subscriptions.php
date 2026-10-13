@@ -186,6 +186,9 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
 		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
 		add_action( 'admin_post_daymark_reading_font_save', array( $this, 'handle_reading_font_save' ) );
+		add_action( 'admin_post_daymark_timeline_display_save', array( $this, 'handle_timeline_display_save' ) );
+		add_action( 'admin_post_daymark_announce_follows_save', array( $this, 'handle_announce_follows_save' ) );
+		add_action( 'admin_post_daymark_app_badge_save', array( $this, 'handle_app_badge_save' ) );
 		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
 		add_action( 'admin_post_daymark_subscriptions_bulk', array( $this, 'handle_bulk' ) );
@@ -654,8 +657,9 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * The General tab: how often followed sites are checked, whether
-	 * they're shared as a public blogroll, what new Marks start with, and
-	 * where Notes show on the site.
+	 * they're shared as a public blogroll, what new Marks start with,
+	 * where Notes show on the site, how the app lists posts, and whether
+	 * the app icon shows an unread count.
 	 *
 	 * @return void
 	 */
@@ -666,12 +670,17 @@ class Daymark_Admin_Subscriptions {
 		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
 		<?php $this->render_blogroll_form(); ?>
+		<?php $this->render_announce_follows_form(); ?>
 		<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
 		<?php $this->render_publishing_defaults_form(); ?>
 		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
 		<?php $this->render_notes_form(); ?>
 		<h2><?php esc_html_e( 'Reading', 'daymark' ); ?></h2>
 		<?php $this->render_reading_font_form(); ?>
+		<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
+		<?php $this->render_timeline_display_form(); ?>
+		<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
+		<?php $this->render_app_badge_form(); ?>
 		<?php
 	}
 
@@ -1218,6 +1227,9 @@ class Daymark_Admin_Subscriptions {
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
 			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
 			'reading_font_saved'        => __( 'Reading setting saved.', 'daymark' ),
+			'timeline_display_saved'    => __( 'Timeline setting saved.', 'daymark' ),
+			'announce_follows_saved'    => __( 'Follow setting saved.', 'daymark' ),
+			'app_badge_saved'           => __( 'App icon setting saved.', 'daymark' ),
 			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
 			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
 			'poll_interval_saved'       => __( 'Check frequency saved.', 'daymark' ),
@@ -2923,6 +2935,12 @@ class Daymark_Admin_Subscriptions {
 	 * pattern"). render_connectors_tab() branches on this to skip
 	 * connector_status()/Install/Activate entirely for a 'service' entry.
 	 *
+	 * A plugin that isn't in the wordpress.org directory names its home
+	 * page in `source_url` instead of a `wporg_slug` (Parse This is only on
+	 * GitHub). Its card links there and offers no Install button, since
+	 * WordPress's installer only installs wordpress.org plugins; status
+	 * and Activate still come from `folder_slug`.
+	 *
 	 * `classes`/`constants`, where present, are an additional fallback
 	 * signal for connector_status() (issue #342): a defining class/constant
 	 * present at runtime can only be true for a plugin that's genuinely
@@ -2932,7 +2950,7 @@ class Daymark_Admin_Subscriptions {
 	 * mirror `Daymark_Publish_Helpers::PLUGINS['atmosphere']`'s own,
 	 * already-working multi-signal detection of the same plugin.
 	 *
-	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, folder_slug?: string, classes?: string[], constants?: string[], url?: string, description: string}>
+	 * @return array<string, array{label: string, type?: string, wporg_slug?: string, source_url?: string, folder_slug?: string, classes?: string[], constants?: string[], url?: string, description: string}>
 	 */
 	private static function recommended_connectors(): array {
 		return array(
@@ -2993,7 +3011,7 @@ class Daymark_Admin_Subscriptions {
 			'parse_this'      => array(
 				'label'       => 'Parse This',
 				'group'       => 'optional',
-				'wporg_slug'  => Daymark_Parse_This::SLUG,
+				'source_url'  => Daymark_Parse_This::SOURCE_URL,
 				'folder_slug' => Daymark_Parse_This::SLUG,
 				'constants'   => array( 'PARSE_THIS_VERSION' ),
 				'summary'     => __( 'Reads the pages Daymark shows you more fully.', 'daymark' ),
@@ -3157,7 +3175,14 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_connector_card( array $connector ): void {
 		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
-		$link       = $is_service ? $connector['url'] : 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+		$on_wporg   = ! $is_service && ! empty( $connector['wporg_slug'] );
+		if ( $is_service ) {
+			$link = $connector['url'];
+		} elseif ( $on_wporg ) {
+			$link = 'https://wordpress.org/plugins/' . $connector['wporg_slug'] . '/';
+		} else {
+			$link = $connector['source_url'] ?? '';
+		}
 		?>
 		<div class="card" style="max-width:none;margin:0;">
 			<h3>
@@ -3189,6 +3214,8 @@ class Daymark_Admin_Subscriptions {
 						<?php if ( null !== $plugin_file && current_user_can( 'activate_plugins' ) ) : ?>
 							<a href="<?php echo esc_url( $this->connector_activate_url( $plugin_file ) ); ?>" class="button button-secondary"><?php esc_html_e( 'Activate', 'daymark' ); ?></a>
 						<?php endif; ?>
+					<?php elseif ( ! $on_wporg ) : ?>
+						<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer" class="button button-secondary"><?php esc_html_e( 'Get it from GitHub', 'daymark' ); ?></a>
 					<?php elseif ( current_user_can( 'install_plugins' ) ) : ?>
 						<a href="<?php echo esc_url( $this->connector_install_url( $connector['wporg_slug'] ) ); ?>" class="button button-primary"><?php esc_html_e( 'Install Now', 'daymark' ); ?></a>
 					<?php else : ?>
@@ -3423,6 +3450,161 @@ class Daymark_Admin_Subscriptions {
 		update_option( Daymark_Settings::HIDE_NOTES_ON_HOME, isset( $_POST[ Daymark_Settings::HIDE_NOTES_ON_HOME ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'notes_saved' ), 'general' );
+	}
+
+	/**
+	 * The app badge setting: whether the installed app's icon shows the
+	 * number of unread notifications. Off by default.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	private function render_app_badge_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::APP_BADGE, false );
+		$effective  = Daymark_Settings::app_badge_unread();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_app_badge_save" />
+			<?php wp_nonce_field( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::APP_BADGE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Show the number of unread notifications on the app icon', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'The number appears on Daymark\'s icon once Daymark is added to a home screen or installed. It matches the Unread tab in Notifications and updates while the app is open. Some browsers and phones don\'t show app badges.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-app-badge-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the app badge setting (admin_post_daymark_app_badge_save).
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	public function handle_app_badge_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_app_badge_save', 'daymark_app_badge_save_nonce' );
+
+		update_option( Daymark_Settings::APP_BADGE, isset( $_POST[ Daymark_Settings::APP_BADGE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'app_badge_saved' ), 'general' );
+	}
+
+	/**
+	 * Whether following a site tells that site (a follow Webmention, see
+	 * Daymark_Followers). On by default.
+	 *
+	 * @return void
+	 */
+	private function render_announce_follows_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::ANNOUNCE_FOLLOWS, true );
+		$effective  = Daymark_Settings::announce_follows();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_announce_follows_save" />
+			<?php wp_nonce_field( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::ANNOUNCE_FOLLOWS ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Tell sites when you follow them', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'When you follow a site, Daymark sends it a Webmention from a small, unlisted page on your site that says you follow it. Daymark sites and other IndieWeb sites can then show you as a follower. Unfollowing removes the page. Sites you followed before turning this on aren’t told.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-announce-follows-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the follow announcement setting (admin_post_daymark_announce_follows_save).
+	 *
+	 * @return void
+	 */
+	public function handle_announce_follows_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' );
+
+		update_option( Daymark_Settings::ANNOUNCE_FOLLOWS, isset( $_POST[ Daymark_Settings::ANNOUNCE_FOLLOWS ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'announce_follows_saved' ), 'general' );
+	}
+
+	/**
+	 * The Timeline setting: whether the app lists posts compactly, as just
+	 * a title and thumbnail. Off by default.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	private function render_timeline_display_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::COMPACT_TIMELINE, false );
+		$effective  = Daymark_Settings::compact_timeline();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_timeline_display_save" />
+			<?php wp_nonce_field( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::COMPACT_TIMELINE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Show posts as a compact list', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'The Timeline, Search, and Explore show each post as just its title and a small thumbnail, so more posts fit on the screen. Open a post to see all of it and to like, comment, or reblog. Drafts still show in full.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-timeline-display-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Timeline setting (admin_post_daymark_timeline_display_save).
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	public function handle_timeline_display_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' );
+
+		update_option( Daymark_Settings::COMPACT_TIMELINE, isset( $_POST[ Daymark_Settings::COMPACT_TIMELINE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'timeline_display_saved' ), 'general' );
 	}
 
 	/**
@@ -3681,7 +3863,11 @@ class Daymark_Admin_Subscriptions {
 	 *
 	 * @since 0.13.0
 	 *
-	 * @return array<string, array{label: string, description: string, default: bool, effective: callable}>
+	 * An optional `unavailable` callable returns a note shown under the
+	 * setting when something else it needs is missing (for Read to me, a
+	 * provider that can make speech), or '' when nothing is missing.
+	 *
+	 * @return array<string, array{label: string, description: string, default: bool, effective: callable, unavailable?: callable}>
 	 */
 	private static function privacy_option_definitions(): array {
 		return array(
@@ -3722,6 +3908,17 @@ class Daymark_Admin_Subscriptions {
 				'description' => __( 'While you write, send your caption and the photos you pick to your AI provider to suggest tags and alt text. When this is off, nothing is sent until you tap an AI button.', 'daymark' ),
 				'default'     => true,
 				'effective'   => array( 'Daymark_Settings', 'ai_auto_suggest' ),
+			),
+			Daymark_Settings::TEXT_TO_SPEECH        => array(
+				'label'       => __( 'Read to me', 'daymark' ),
+				'description' => __( 'Add a Listen button to the top of a post in the app\'s full post view. The first time someone taps it, the post\'s text goes to your AI provider to make an audio version. Daymark saves that audio, so each post is only sent once unless its text changes. Your provider may charge for each recording.', 'daymark' ),
+				'default'     => false,
+				'effective'   => array( 'Daymark_Settings', 'text_to_speech' ),
+				'unavailable' => static function (): string {
+					return Daymark_Speech::provider_supports()
+						? ''
+						: __( 'Your AI provider can\'t turn text into speech, so the Listen button won\'t show until you connect one that can.', 'daymark' );
+				},
 			),
 		);
 	}
@@ -3790,6 +3987,10 @@ class Daymark_Admin_Subscriptions {
 							</label>
 							<?php if ( $state['overridden'] ) : ?>
 								<p class="description"><?php echo esc_html( self::overridden_note( $state['effective'] ) ); ?></p>
+							<?php endif; ?>
+							<?php $unavailable = isset( $definition['unavailable'] ) ? (string) call_user_func( $definition['unavailable'] ) : ''; ?>
+							<?php if ( '' !== $unavailable ) : ?>
+								<p class="description"><?php echo esc_html( $unavailable ); ?></p>
 							<?php endif; ?>
 						</td>
 					</tr>
