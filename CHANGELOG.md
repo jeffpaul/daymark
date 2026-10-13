@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- New "Read to me" setting (Settings -> Daymark -> Data & privacy, off by default). When it's on and your AI provider can turn text into speech, a post in the app's full post view shows a Listen button at the top. The first tap makes an audio version, and Daymark saves it so the post is only sent to your provider once. ([#522](https://github.com/jeffpaul/daymark/pull/522))
 - The full post view now has Previous and Next buttons at the top. They move to the post above or below on the Timeline, Search results, or On this day list you opened it from, without going back to the list first. At the last post loaded so far, Next loads the next batch of posts, so you can keep reading to the end of the list. Back then returns to the list at the last post you read. ([#521](https://github.com/jeffpaul/daymark/pull/521))
 - You can now get push notifications on your phone or computer when someone comments on one of your Marks. Turn them on per device on the Me screen in the app. On iPhone and iPad, add Daymark to your Home Screen first. ([#525](https://github.com/jeffpaul/daymark/pull/525))
 - Star a site you follow in Explore to make it a favorite. Daymark checks favorites every hour, and with push notifications on, sends one when a favorite site publishes. Tapping it opens the new post. ([#526](https://github.com/jeffpaul/daymark/pull/526))
