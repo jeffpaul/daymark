@@ -55,6 +55,13 @@ const ASSETS_BASE_URL = '__DAYMARK_ASSETS_URL__';
 // Only the path portion is ever compared against a request's own url.pathname.
 const ASSETS_BASE_PATH = new URL(ASSETS_BASE_URL).pathname;
 
+// WordPress core's wp-hooks and wp-i18n (absolute URLs, in load order), filled
+// in by Daymark_Routes::build_service_worker_script(). The offline shell
+// loads them so the app keeps the site's language offline; they're cached
+// with the app's own files.
+const CORE_SCRIPTS = "__DAYMARK_CORE_SCRIPTS__";
+const CORE_SCRIPT_PATHS = CORE_SCRIPTS.map((src) => new URL(src).pathname);
+
 self.addEventListener('install', (event) => {
 	const scopePath = new URL(self.registration.scope).pathname;
 	event.waitUntil(
@@ -68,6 +75,7 @@ self.addEventListener('install', (event) => {
 					ASSETS_BASE_URL + 'featured-content.css',
 					ASSETS_BASE_URL + 'featured-content.js',
 					scopePath + 'offline.html',
+					...CORE_SCRIPTS,
 				])
 			)
 			.then(() => self.skipWaiting())
@@ -186,14 +194,15 @@ self.addEventListener('fetch', (event) => {
 	// that ignores ?ver= is now only the fallback when the network can't
 	// answer: offline, or the precached copy, which is stored without ?ver=.
 	// featured-content.css/.js (a Featured Content gallery's slider) are
-	// cached the same way, so a bookmarked gallery is a slider offline too.
+	// cached the same way, so a bookmarked gallery is a slider offline too,
+	// and so are core's wp-hooks/wp-i18n (CORE_SCRIPTS, above).
 	const isStaticAsset = [
 		'app.css',
 		'app.js',
 		'offline-boot.js',
 		'featured-content.css',
 		'featured-content.js',
-	].some((file) => url.pathname === ASSETS_BASE_PATH + file);
+	].some((file) => url.pathname === ASSETS_BASE_PATH + file) || CORE_SCRIPT_PATHS.includes(url.pathname);
 	if (isStaticAsset) {
 		event.respondWith(
 			caches.match(event.request).then((cached) => {

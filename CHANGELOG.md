@@ -28,7 +28,12 @@ can't act on them.
 ### Fixed
 
 - The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too. ([#516](https://github.com/jeffpaul/daymark/pull/516))
+- More of Daymark now appears in your language once translations for it exist on translate.wordpress.org: the Featured Content control in the block editor, the offline version of the app, weather labels, and the fallback suggestions shown when an AI provider can't answer. Dates in the app now use WordPress's own translated month and day names. ([#523](https://github.com/jeffpaul/daymark/pull/523))
 - After a Daymark update, the app saved to your home screen now runs the new version the first time you open it. Before, it kept running the old version for one more launch, and on iPhone that could last until the phone fully closed the app. ([#518](https://github.com/jeffpaul/daymark/pull/518))
+
+### Developer
+
+- `bin/check-i18n.sh` checks every translatable string the way wordpress.org extracts them, and CI now runs it. ([#523](https://github.com/jeffpaul/daymark/pull/523))
 
 ## [0.20.0] - 2026-10-09
 
