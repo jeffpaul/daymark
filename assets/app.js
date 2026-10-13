@@ -11,23 +11,16 @@
 (function () {
 	'use strict';
 
-	// wp.i18n backs every translated string (issue #253) — always present
-	// on the normal online app shell, which registers it as a hard script
-	// dependency (templates/app-shell.php). The offline-fallback shell
-	// (templates/offline-shell.php) deliberately loads nothing but this
-	// file and its own bootstrap script — see that template's own
-	// docblock — so wp.i18n is never available there. Without this
-	// fallback, destructuring it throws immediately and aborts this
-	// entire script before anything renders: the offline shell's own
-	// "Loading Daymark…" placeholder never resolves (found via a Playwright
-	// cold-offline test's page-error relay, issue #126). Plain,
-	// untranslated implementations here match this codebase's "never
-	// throws" posture elsewhere — English-only output is an acceptable
-	// trade for a resilience fallback that exists for when nothing else is
-	// working either. sprintf's own subset (this file only ever uses %s,
-	// %d, positional %1$s/%2$s, and %% for a literal percent sign) is small enough to reimplement
-	// directly rather than pull in a library for a path that only runs
-	// offline.
+	// wp.i18n backs every translated string (issue #253). The online app
+	// shell loads it as a dependency of this script (templates/app-shell.php),
+	// and the offline-fallback shell loads core's own copy too, with the
+	// site's translations taken from config.json (templates/offline-shell.php,
+	// assets/offline-boot.js). This fallback only runs if wp.i18n still
+	// failed to load, for example from an old cache. Without it,
+	// destructuring wp.i18n would throw and stop this whole script before
+	// anything renders (found by a Playwright cold-offline test, issue #126).
+	// It shows English. Its sprintf covers only what this file uses: %s, %d,
+	// positional %1$s/%2$s, and %% for a literal percent sign.
 	const i18n = (window.wp && window.wp.i18n) || {
 		__: (text) => text,
 		_n: (single, plural, count) => (count === 1 ? single : plural),
@@ -570,52 +563,59 @@
 		return Number.isNaN(date.getTime()) ? null : date;
 	}
 
-	const PHP_MONTH_NAMES = [
-		__('January', 'daymark'),
-		__('February', 'daymark'),
-		__('March', 'daymark'),
-		__('April', 'daymark'),
-		__('May', 'daymark'),
-		__('June', 'daymark'),
-		__('July', 'daymark'),
-		__('August', 'daymark'),
-		__('September', 'daymark'),
-		__('October', 'daymark'),
-		__('November', 'daymark'),
-		__('December', 'daymark'),
-	];
-	const PHP_MONTH_ABBR = [
-		__('Jan', 'daymark'),
-		__('Feb', 'daymark'),
-		__('Mar', 'daymark'),
-		__('Apr', 'daymark'),
-		__('May', 'daymark'),
-		__('Jun', 'daymark'),
-		__('Jul', 'daymark'),
-		__('Aug', 'daymark'),
-		__('Sep', 'daymark'),
-		__('Oct', 'daymark'),
-		__('Nov', 'daymark'),
-		__('Dec', 'daymark'),
-	];
-	const PHP_DAY_NAMES = [
-		__('Sunday', 'daymark'),
-		__('Monday', 'daymark'),
-		__('Tuesday', 'daymark'),
-		__('Wednesday', 'daymark'),
-		__('Thursday', 'daymark'),
-		__('Friday', 'daymark'),
-		__('Saturday', 'daymark'),
-	];
-	const PHP_DAY_ABBR = [
-		__('Sun', 'daymark'),
-		__('Mon', 'daymark'),
-		__('Tue', 'daymark'),
-		__('Wed', 'daymark'),
-		__('Thu', 'daymark'),
-		__('Fri', 'daymark'),
-		__('Sat', 'daymark'),
-	];
+	// Month and weekday names for the Date Format, in the site's language.
+	// The server sends them from WordPress core's own translations
+	// (config.dateNames, see Daymark_Routes::date_names()), so they match
+	// wp-admin exactly and Daymark's translators never repeat that work.
+	// The English lists are only a fallback for a config without them.
+	function dateNameList(key, fallback) {
+		const list = config.dateNames && config.dateNames[key];
+		return Array.isArray(list) && list.length === fallback.length ? list : fallback;
+	}
+	const PHP_MONTH_NAMES = dateNameList('months', [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December',
+	]);
+	const PHP_MONTH_ABBR = dateNameList('monthsShort', [
+		'Jan',
+		'Feb',
+		'Mar',
+		'Apr',
+		'May',
+		'Jun',
+		'Jul',
+		'Aug',
+		'Sep',
+		'Oct',
+		'Nov',
+		'Dec',
+	]);
+	const PHP_DAY_NAMES = dateNameList('weekdays', [
+		'Sunday',
+		'Monday',
+		'Tuesday',
+		'Wednesday',
+		'Thursday',
+		'Friday',
+		'Saturday',
+	]);
+	const PHP_DAY_ABBR = dateNameList('weekdaysShort', ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+
+	// The page's language (from language_attributes() on <html>), for the
+	// few places that still format with the browser's Intl support. Using
+	// it, rather than the browser default, keeps a time like "3:05 PM" in
+	// the same language as the translated text around it.
+	const SITE_LANG = document.documentElement.lang || undefined;
 
 	function ordinalSuffix(day) {
 		if (day % 10 === 1 && day !== 11) {
@@ -707,7 +707,7 @@
 	// the server never sent a format (shouldn't happen — every WP install
 	// has this option set).
 	function formatAbsoluteDate(date) {
-		return config.dateFormat ? formatDateWithPhpFormat(date, config.dateFormat) : date.toLocaleDateString();
+		return config.dateFormat ? formatDateWithPhpFormat(date, config.dateFormat) : date.toLocaleDateString(SITE_LANG);
 	}
 
 	function relativeTime(value) {
@@ -721,15 +721,27 @@
 		}
 		const minutes = Math.floor(seconds / 60);
 		if (minutes < 60) {
-			return sprintf(__('%dm ago', 'daymark'), minutes);
+			return sprintf(
+				/* translators: %d: number of minutes since the post was published. Keep it short. */
+				__('%dm ago', 'daymark'),
+				minutes
+			);
 		}
 		const hours = Math.floor(minutes / 60);
 		if (hours < 24) {
-			return sprintf(__('%dh ago', 'daymark'), hours);
+			return sprintf(
+				/* translators: %d: number of hours since the post was published. Keep it short. */
+				__('%dh ago', 'daymark'),
+				hours
+			);
 		}
 		const days = Math.floor(hours / 24);
 		if (days < 7) {
-			return sprintf(__('%dd ago', 'daymark'), days);
+			return sprintf(
+				/* translators: %d: number of days since the post was published. Keep it short. */
+				__('%dd ago', 'daymark'),
+				days
+			);
 		}
 		return formatAbsoluteDate(date);
 	}
@@ -750,7 +762,7 @@
 			/* translators: 1: date, 2: time */
 			__('%1$s at %2$s', 'daymark'),
 			formatAbsoluteDate(date),
-			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+			date.toLocaleTimeString(SITE_LANG, { hour: 'numeric', minute: '2-digit' })
 		);
 		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
 			relativeTime(value)
@@ -10933,7 +10945,7 @@
 				__('In reply to a post', 'daymark'),
 			],
 			repost: [
-				/* translators: %s: site name, e.g. example.com */
+				/* translators: %s: the original post's author and/or site, e.g. "Jane Doe, example.com". */
 				__('Reblogged from %s', 'daymark'),
 				__('Reblogged a post', 'daymark'),
 			],
@@ -12349,7 +12361,7 @@
 			const item = hand && hand.item ? hand.item : {};
 			const linkText = item.title || item.permalink || '';
 			const defaultTitle = sprintf(
-				/* translators: %s: title of the reposted post */
+				/* translators: %s: title of the reblogged post */
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
@@ -12640,8 +12652,8 @@
 					}
 					const names = helpers.map((h) => esc(h.label)).join(', ');
 					return `<p class="daymark-helpers-note">${sprintf(
-						/* translators: %s: list of publishing helper plugin names */
 						esc(
+							/* translators: %s: list of publishing helper plugin names */
 							__(
 								'Your site’s publishing tools will also share this Mark, per their own settings: %s.',
 								'daymark'
@@ -12933,8 +12945,11 @@
 					}
 					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
 					status.textContent = sprintf(
-						/* translators: %s: error message */
-						isDraft ? __('Save failed: %s', 'daymark') : __('Publish failed: %s', 'daymark'),
+						isDraft
+							? /* translators: %s: error message */
+								__('Save failed: %s', 'daymark')
+							: /* translators: %s: error message */
+								__('Publish failed: %s', 'daymark'),
 						err2.message
 					);
 				}
@@ -13805,7 +13820,7 @@
 						isDead
 							? item.last_error
 							: sprintf(
-									/* translators: %s: fetch failure reason */
+									/* translators: %s: the most recent fetch failure's reason. */
 									__('Recent fetch issue: %s', 'daymark'),
 									item.last_error
 							  )
