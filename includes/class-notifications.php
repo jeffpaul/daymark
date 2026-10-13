@@ -428,6 +428,31 @@ class Daymark_Notifications {
 	}
 
 	/**
+	 * How many of the current user's notifications are unread: the same
+	 * number as the Notifications screen's Unread tab, since both count
+	 * the same list. Used for the app badge.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return int
+	 */
+	public function unread_count(): int {
+		if ( ! get_current_user_id() ) {
+			return 0;
+		}
+
+		$unread = 0;
+
+		foreach ( $this->get_notifications() as $item ) {
+			if ( empty( $item['read'] ) ) {
+				++$unread;
+			}
+		}
+
+		return $unread;
+	}
+
+	/**
 	 * When the current user last opened Notifications, as a Unix
 	 * timestamp; 0 if never.
 	 *

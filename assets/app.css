@@ -1441,6 +1441,31 @@ h2[tabindex='-1']:focus {
 	outline-offset: -2px;
 }
 
+/* The compact list (Settings -> Daymark -> General): one row per post, the
+   title beside a small thumbnail on the right, no media banner, excerpt, or
+   footer. The title still shows in full, like a full card's title. */
+.daymark-recent__item--compact {
+	flex-wrap: nowrap;
+	min-height: var(--daymark-tap-min);
+}
+
+/* A compact card is often shorter than the site icon and rail icon beside
+   it. Stretching it to the row's height keeps every row the same height
+   and the gaps between rows even. */
+.daymark-recent__item-wrap--compact .daymark-recent__item {
+	align-self: stretch;
+}
+
+.daymark-recent__title--compact {
+	flex: 1;
+	min-width: 0;
+}
+
+.daymark-recent__compactthumb {
+	display: inline-flex;
+	flex-shrink: 0;
+}
+
 .daymark-recent__item--card .daymark-item-stats button {
 	position: relative;
 	z-index: 2;

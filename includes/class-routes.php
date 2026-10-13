@@ -554,6 +554,7 @@ class Daymark_Routes {
 	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0 ): array {
 		$user                     = wp_get_current_user();
 		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
+		$app_badge                = Daymark_Settings::app_badge_unread();
 
 		/*
 		 * Connector list and per-type destination defaults, from the
@@ -711,12 +712,18 @@ class Daymark_Routes {
 			// federation plugin, for the Publish screen's "Your site is the
 			// destination" note.
 			'reach'                  => self::federation_reach(),
+			// Whether lists show each post as just its title and thumbnail.
+			'compactTimeline'        => Daymark_Settings::compact_timeline(),
 			// Whether starting a Check In may ask for the device's location.
 			'capture'                => array(
 				'location' => Daymark_Settings::capture_location(),
 			),
 			'notifications'          => array(
-				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
+				'hasUnread'   => Daymark_Plugin::instance()->notifications->has_unread(),
+				// Whether to show the unread count on the installed app's
+				// icon, and that count (only worked out when it's on).
+				'badge'       => $app_badge,
+				'unreadCount' => $app_badge ? Daymark_Plugin::instance()->notifications->unread_count() : 0,
 			),
 			'controllableHelpers'    => $controllable_helpers,
 			'publishHelpers'         => $awareness_helpers,

@@ -20,8 +20,14 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General. ([#520](https://github.com/jeffpaul/daymark/pull/520))
+- A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
+
 ### Fixed
 
+- The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too. ([#516](https://github.com/jeffpaul/daymark/pull/516))
 - More of Daymark now appears in your language once translations for it exist on translate.wordpress.org: the Featured Content control in the block editor, the offline version of the app, weather labels, and the fallback suggestions shown when an AI provider can't answer. Dates in the app now use WordPress's own translated month and day names. ([#523](https://github.com/jeffpaul/daymark/pull/523))
 
 ### Developer
