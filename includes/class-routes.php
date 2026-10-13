@@ -443,9 +443,10 @@ class Daymark_Routes {
 	 * @param string $screen           Current app screen ('home', 'notifications', etc.).
 	 * @param string $pending_type     One-shot composer type hint, or ''.
 	 * @param int    $pending_draft_id One-shot share-sheet draft ID, or 0.
+	 * @param int    $pending_post_id  A followed site's post to open (a push from a favorite site), or 0.
 	 * @return array<string, mixed>
 	 */
-	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0 ): array {
+	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0, int $pending_post_id = 0 ): array {
 		$user                     = wp_get_current_user();
 		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
 		$app_badge                = Daymark_Settings::app_badge_unread();
@@ -652,6 +653,7 @@ class Daymark_Routes {
 			// device — see Daymark_Interaction_Hints.
 			'interactionHintsSeen'   => Daymark_Interaction_Hints::get_seen( (int) $user->ID ),
 			'pendingDraftId'         => $pending_draft_id,
+			'pendingPostId'          => $pending_post_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);
 	}

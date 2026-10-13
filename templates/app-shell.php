@@ -96,7 +96,12 @@ $daymark_requested_draft_id = isset( $_GET['daymark_draft'] ) ? absint( wp_unsla
 // One source of truth for this array, shared with GET /daymark/config.json
 // (the cold-offline-load path, issue #126) — see build_app_config()'s own
 // docblock in class-routes.php.
-$daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_requested_type, $daymark_requested_draft_id );
+// Set by a push from a favorite site (Daymark_Push::send_favorite_pushes()):
+// the app opens that post. GET /subscription-posts/{id} checks the id, so a
+// tampered value just fails that fetch and the app opens normally.
+$daymark_requested_post_id = isset( $_GET['daymark_post'] ) ? absint( wp_unslash( $_GET['daymark_post'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
+
+$daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_requested_type, $daymark_requested_draft_id, $daymark_requested_post_id );
 
 /*
  * The app's assets go through the script/style API (registration,

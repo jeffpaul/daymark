@@ -30,6 +30,12 @@ class Daymark_Subscription_Poller {
 	public const CRON_HOOK = 'daymark_subscription_poll';
 
 	/**
+	 * Hourly check of favorite sites only, so their new posts (and pushes)
+	 * arrive within the hour even when every site is checked daily.
+	 */
+	public const FAVORITES_CRON_HOOK = 'daymark_subscription_poll_favorites';
+
+	/**
 	 * Name registered with WordPress's `cron_schedules` filter for the
 	 * interval sourced from the `daymark_subscription_poll_interval` filter.
 	 * A custom schedule (rather than a built-in name like 'daily') is
@@ -85,6 +91,7 @@ class Daymark_Subscription_Poller {
 		// docblock for why an OPML import fires this instead of polling
 		// individual newly created subscriptions synchronously.
 		add_action( self::CRON_HOOK . '_now', array( $this, 'run_scheduled_poll' ) );
+		add_action( self::FAVORITES_CRON_HOOK, array( $this, 'run_favorites_poll' ) );
 		add_filter( 'cron_schedules', array( __CLASS__, 'register_cron_schedule' ) ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- Interval is intentionally filterable; see daymark_subscription_poll_interval.
 		// Self-heal the recurring schedule: sites where the plugin was
 		// already active when this feature arrived never ran activation.
@@ -122,6 +129,10 @@ class Daymark_Subscription_Poller {
 	 * @return void
 	 */
 	public static function schedule(): void {
+		if ( ! wp_next_scheduled( self::FAVORITES_CRON_HOOK ) ) {
+			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', self::FAVORITES_CRON_HOOK );
+		}
+
 		if ( wp_next_scheduled( self::CRON_HOOK ) ) {
 			return;
 		}
@@ -139,6 +150,7 @@ class Daymark_Subscription_Poller {
 	 */
 	public static function unschedule(): void {
 		wp_clear_scheduled_hook( self::CRON_HOOK );
+		wp_clear_scheduled_hook( self::FAVORITES_CRON_HOOK );
 	}
 
 	/**
@@ -186,6 +198,35 @@ class Daymark_Subscription_Poller {
 			$id = absint( $subscription['id'] ?? 0 );
 
 			if ( $id <= 0 ) {
+				continue;
+			}
+
+			$this->poll_subscription( $id );
+			$this->prune_subscription( $id );
+		}
+	}
+
+	/**
+	 * The hourly cron callback: polls, then prunes, favorite sites only.
+	 *
+	 * Skipped when every site is already checked at least hourly, and a
+	 * favorite checked in the last 50 minutes (by the regular poll, a manual
+	 * refresh, or a WebSub delivery) is left alone.
+	 *
+	 * @return void
+	 */
+	public function run_favorites_poll(): void {
+		if ( Daymark_Settings::poll_interval() <= HOUR_IN_SECONDS ) {
+			return;
+		}
+
+		$recent = time() - 50 * MINUTE_IN_SECONDS;
+
+		foreach ( Daymark_Plugin::instance()->subscriptions->get_favorites() as $subscription ) {
+			$id      = absint( $subscription['id'] ?? 0 );
+			$checked = empty( $subscription['last_checked_at'] ) ? 0 : (int) strtotime( (string) $subscription['last_checked_at'] . ' UTC' );
+
+			if ( $id <= 0 || $checked > $recent ) {
 				continue;
 			}
 
@@ -426,6 +467,16 @@ class Daymark_Subscription_Poller {
 		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
 		update_post_meta( $post_id, 'body_content', '' );
 		update_post_meta( $post_id, 'fetched_full_at', '' );
+
+		/**
+		 * Fires after a followed site's new post is saved, from a poll, a
+		 * manual refresh, or a WebSub delivery. Not for a post already seen.
+		 *
+		 * @param int                  $post_id         Subscription post ID.
+		 * @param int                  $subscription_id Subscription ID.
+		 * @param array<string, mixed> $normalized      The source's normalized item.
+		 */
+		do_action( 'daymark_subscription_post_ingested', (int) $post_id, absint( $subscription_id ), $normalized );
 
 		return (int) $post_id;
 	}

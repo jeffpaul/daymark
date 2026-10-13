@@ -684,6 +684,26 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Star or unstar a followed site as a favorite: checked hourly, and
+		// its new posts send a push. Site-wide state, so the same gate as
+		// following and unfollowing.
+		register_rest_route(
+			$this->namespace,
+			'/subscriptions/(?P<id>\d+)/favorite',
+			array(
+				'methods'             => array( WP_REST_Server::CREATABLE, WP_REST_Server::DELETABLE ),
+				'callback'            => array( $this, 'set_subscription_favorite' ),
+				'permission_callback' => array( $this, 'permissions_check_manage' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/subscriptions/refresh',
@@ -3370,6 +3390,27 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST (star) or DELETE (unstar) /daymark/v1/subscriptions/{id}/favorite.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error The updated subscription.
+	 */
+	public function set_subscription_favorite( WP_REST_Request $request ) {
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$id            = absint( $request->get_param( 'id' ) );
+
+		if ( ! $subscriptions->set_favorite( $id, 'DELETE' !== $request->get_method() ) ) {
+			return new WP_Error(
+				'daymark_subscription_not_found',
+				__( 'Subscription not found.', 'daymark' ),
+				array( 'status' => 404 )
+			);
+		}
+
+		return rest_ensure_response( $this->prepare_subscription( (array) $subscriptions->get( $id ) ) );
+	}
+
+	/**
 	 * POST /daymark/v1/push/subscriptions — save this device's push
 	 * subscription (PushSubscription.toJSON()) for the current user.
 	 *
@@ -4808,6 +4849,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Human-readable reason for the most recent failed check (issue
 			// #81); '' when the subscription has never failed a check.
 			'last_error'                => sanitize_text_field( (string) ( $row['last_error'] ?? '' ) ),
+			// Starred as a favorite: checked hourly, and new posts push.
+			'favorite'                  => Daymark_Subscriptions::is_favorite( $row ),
 			'created_at'                => sanitize_text_field( (string) ( $row['created_at'] ?? '' ) ),
 		);
 	}

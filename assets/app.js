@@ -134,7 +134,10 @@
 	// Safari offers push only to an app added to the Home Screen.
 
 	// Which kinds of push a person can choose, in display order.
-	const PUSH_KINDS = [{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') }];
+	const PUSH_KINDS = [
+		{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') },
+		{ key: 'favorites', label: () => __('New posts from favorite sites', 'daymark') },
+	];
 
 	function pushSupported() {
 		return (
@@ -968,6 +971,9 @@
 	const OVERFLOW_GLYPH =
 		'<circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle>';
 	const UNSUBSCRIBE_GLYPH = '<circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line>';
+	// Feather "star": a favorite followed site (Explore's Following list).
+	const STAR_GLYPH =
+		'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -4244,6 +4250,58 @@
 		return `<option value="">${esc(__('All sites', 'daymark'))}</option><option value="mine">${esc(
 			__('My marks', 'daymark')
 		)}</option>${subscriptionOptions}`;
+	}
+
+	// The star beside a followed site in Explore: a favorite is checked
+	// every hour, and its new posts send a push (Daymark_Push).
+	function favoriteToggleMarkup(id, label, on) {
+		const text = on
+			? sprintf(
+					/* translators: %s: site name */
+					__('Remove %s from favorites', 'daymark'),
+					label
+			  )
+			: sprintf(
+					/* translators: %s: site name */
+					__('Add %s to favorites', 'daymark'),
+					label
+			  );
+		return `<button type="button" class="daymark-stat daymark-follow__star${
+			on ? ' daymark-stat--active' : ''
+		}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(text)}" title="${esc(text)}" data-favorite-toggle="${esc(
+			String(id)
+		)}" data-favorite-label="${esc(label)}">${statIcon(STAR_GLYPH)}</button>`;
+	}
+
+	function toggleFavoriteSite(button) {
+		if (button.hasAttribute('aria-busy')) {
+			return;
+		}
+		const id = button.getAttribute('data-favorite-toggle');
+		const label = button.getAttribute('data-favorite-label') || '';
+		const on = 'true' !== button.getAttribute('aria-pressed');
+		const apply = (state) => {
+			const fresh = document.createElement('div');
+			fresh.innerHTML = favoriteToggleMarkup(id, label, state);
+			const next = fresh.firstElementChild;
+			button.replaceWith(next);
+			return next;
+		};
+		const next = apply(on);
+		next.setAttribute('aria-busy', 'true');
+		next.focus();
+		const path = 'subscriptions/' + encodeURIComponent(id) + '/favorite';
+		(on ? apiPost(path, {}) : apiDelete(path))
+			.then(() => {
+				next.removeAttribute('aria-busy');
+				showFlashBubble(
+					next,
+					on ? __('Added to favorites', 'daymark') : __('Removed from favorites', 'daymark')
+				);
+			})
+			.catch(() => {
+				apply(!on).focus();
+			});
 	}
 
 	// Active subscriptions, for the Source filter and Explore's Following
@@ -8359,6 +8417,13 @@
 								: ''
 						}
 					</div>
+					${
+						config.canManageSubscriptions
+							? `<p class="daymark-field__help">${esc(
+									__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
+							  )}</p>`
+							: ''
+					}
 					<div class="daymark-recent__list" data-explore-following>
 						${skeletonRows(2)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
@@ -8387,6 +8452,11 @@
 			const following = root.querySelector('[data-explore-following]');
 			if (following) {
 				following.addEventListener('click', (event) => {
+					const star = event.target.closest('[data-favorite-toggle]');
+					if (star) {
+						toggleFavoriteSite(star);
+						return;
+					}
 					const trigger = event.target.closest('[data-explore-subscription]');
 					if (!trigger) {
 						return;
@@ -8460,9 +8530,10 @@
 			}
 			const subscriptionLabel = (sub) =>
 				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+			// Favorites first, then A to Z.
 			list.innerHTML = subscriptions
 				.slice()
-				.sort((a, b) => subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
+				.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
 				.map((sub) => {
 					const label = subscriptionLabel(sub);
 					const icon = sub.site_icon_url
@@ -8470,11 +8541,15 @@
 						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
 								label.charAt(0).toUpperCase()
 						  )}</span>`;
-					return `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
+					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
 						String(sub.id)
 					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
 						label
 					)}</span></span></button>`;
+					if (!config.canManageSubscriptions) {
+						return open;
+					}
+					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
 				})
 				.join('');
 		},
@@ -14355,6 +14430,26 @@
 	// to the ordinary boot instead of leaving the shell blank.
 	if (config.pendingDraftId) {
 		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
+	} else if (config.pendingPostId && !window.location.hash) {
+		// Tapped a push about a favorite site's new post: open that post,
+		// with Back going to the Timeline. Drop the parameter so a reload
+		// lands on the Timeline instead of opening the post again.
+		try {
+			const clean = new URL(window.location.href);
+			clean.searchParams.delete('daymark_post');
+			window.history.replaceState(null, '', clean.pathname + clean.search);
+		} catch (err) {
+			// Leave the address as it is.
+		}
+		apiGet('subscription-posts/' + Number(config.pendingPostId))
+			.then((item) => {
+				if (!item || !item.id) {
+					throw new Error('missing');
+				}
+				pendingPostView = { kind: 'sub', item, returnTo: '#home' };
+				navigate('#post');
+			})
+			.catch(() => showScreen(initialHash));
 	} else if (config.pendingType) {
 		// An external launcher (wp-admin's "+New -> Daymark" item,
 		// Daymark_Admin_Bar) wants the composer to open pre-set to a
