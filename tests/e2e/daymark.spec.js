@@ -567,7 +567,22 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 // showing the quoted post and an editable title before anything is
 // created. Covers the full round trip: open the screen, confirm its
 // content, publish, and land back on Home with the toggle now active.
+// Undo a reblog shown as active on a card's Reblog toggle. Undoing is
+// instant (no preview screen); the first-time explainer may follow it.
+async function undoReblog(page, toggle) {
+	await toggle.click();
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	if (await hint.isVisible().catch(() => false)) {
+		await page.locator('[data-sheet-dismiss]').click();
+	}
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+}
+
 test('Reblog preview screen shows the quoted post and publishes on confirm', async ({ page }) => {
+	// Searches the Timeline for the followed post twice, which can be slow
+	// on a busy CI runner.
+	test.setTimeout(60000);
+
 	await loginAs(page);
 	await ensureSubscription(page);
 	await page.goto('/daymark');
@@ -575,6 +590,11 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 	const card = await findSubscriptionCard(page);
 	const title = (await card.locator('.daymark-recent__title').textContent()).trim();
 	const repostToggle = card.locator('[data-repost-toggle]');
+	// A failed earlier attempt (or run) can leave this post reblogged, which
+	// would fail every retry here. Start from an un-reblogged post.
+	if ('true' === (await repostToggle.getAttribute('aria-pressed'))) {
+		await undoReblog(page, repostToggle);
+	}
 	await expect(repostToggle).toHaveAttribute('aria-pressed', 'false');
 	await repostToggle.click();
 
@@ -600,10 +620,11 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 	await page.locator('[data-action="reblog-publish"]').click();
 
 	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
-	await expect((await findSubscriptionCard(page)).locator('[data-repost-toggle]')).toHaveAttribute(
-		'aria-pressed',
-		'true'
-	);
+	const reblogged = (await findSubscriptionCard(page)).locator('[data-repost-toggle]');
+	await expect(reblogged).toHaveAttribute('aria-pressed', 'true');
+
+	// Undo it, so the next run (or a retry) starts from the same state.
+	await undoReblog(page, reblogged);
 });
 
 // The ⋯ overflow menu (issue #326): Open original/Share/Routing/Refresh
