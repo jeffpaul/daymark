@@ -61,6 +61,11 @@ final class Daymark_Settings {
 	public const BLOGROLL_PUBLIC = 'daymark_blogroll_public';
 
 	/**
+	 * Option: tell a site when you start following it (a follow Webmention).
+	 */
+	public const ANNOUNCE_FOLLOWS = 'daymark_announce_follows';
+
+	/**
 	 * Option: keep Notes (Aside-format posts) off the blog's home page and
 	 * out of its main feed.
 	 */
@@ -384,6 +389,25 @@ final class Daymark_Settings {
 		 * @param bool $public Defaults to the `daymark_blogroll_public` option.
 		 */
 		return (bool) apply_filters( 'daymark_blogroll_public', (bool) get_option( self::BLOGROLL_PUBLIC, false ) );
+	}
+
+	/**
+	 * Whether following a site tells that site, with a follow Webmention
+	 * from an unlisted page on this site (Daymark_Followers). On by
+	 * default, so Daymark sites can show each other as followers.
+	 *
+	 * @return bool
+	 */
+	public static function announce_follows(): bool {
+		/**
+		 * Whether following a site sends it a follow Webmention.
+		 *
+		 * Defaults to the `daymark_announce_follows` option (Settings ->
+		 * Daymark -> General, on by default).
+		 *
+		 * @param bool $announce Defaults to the `daymark_announce_follows` option.
+		 */
+		return (bool) apply_filters( 'daymark_announce_follows', (bool) get_option( self::ANNOUNCE_FOLLOWS, true ) );
 	}
 
 	/**

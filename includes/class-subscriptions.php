@@ -247,7 +247,17 @@ class Daymark_Subscriptions {
 			);
 		}
 
-		return (int) $wpdb->insert_id;
+		$id = (int) $wpdb->insert_id;
+
+		/**
+		 * Fires after a site is followed (a subscription row is created).
+		 *
+		 * @param int                  $id   Subscription ID.
+		 * @param array<string, mixed> $data The stored row.
+		 */
+		do_action( 'daymark_subscription_created', $id, $data );
+
+		return $id;
 	}
 
 	/**
@@ -1406,12 +1416,24 @@ class Daymark_Subscriptions {
 			return false;
 		}
 
+		$row = $this->get( $id );
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API; $wpdb->delete() parameterizes values internally.
 		$deleted = $wpdb->delete(
 			self::table_name(),
 			array( 'id' => $id ),
 			array( '%d' )
 		);
+
+		if ( ! empty( $deleted ) && null !== $row ) {
+			/**
+			 * Fires after a site is unfollowed (its subscription row deleted).
+			 *
+			 * @param int                  $id  Subscription ID.
+			 * @param array<string, mixed> $row The deleted row.
+			 */
+			do_action( 'daymark_subscription_deleted', $id, $row );
+		}
 
 		return ! empty( $deleted );
 	}

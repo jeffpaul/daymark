@@ -55,6 +55,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-notifications.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notification-state.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-push.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-push-sender.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-followers.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmarks.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-timeline-position.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-interaction-hints.php';

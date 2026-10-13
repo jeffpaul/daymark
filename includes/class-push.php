@@ -64,6 +64,7 @@ class Daymark_Push {
 	public const PREF_DEFAULTS = array(
 		'comments'  => true,
 		'favorites' => true,
+		'followers' => true,
 	);
 
 	/**

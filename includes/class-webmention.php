@@ -382,6 +382,34 @@ class Daymark_Webmention {
 	}
 
 	/**
+	 * Send one Webmention for a page that isn't a post (such as a follow
+	 * page), through the Webmention plugin when it's active, else Daymark.
+	 *
+	 * @param string $source Our page.
+	 * @param string $target Their page.
+	 * @return true|string True when accepted; 'retry' or 'skip' otherwise.
+	 */
+	public static function send_one( string $source, string $target ) {
+		if ( ! self::builtin_active() ) {
+			if ( ! function_exists( 'send_webmention' ) ) {
+				return 'skip';
+			}
+
+			$response = send_webmention( $source, $target );
+
+			if ( is_wp_error( $response ) ) {
+				return 'retry';
+			}
+
+			$code = (int) wp_remote_retrieve_response_code( $response );
+
+			return $code >= 200 && $code < 300 ? true : ( $code >= 500 ? 'retry' : 'skip' );
+		}
+
+		return self::send( $source, $target );
+	}
+
+	/**
 	 * Send one Webmention: find the target's endpoint, then POST to it.
 	 *
 	 * @param string $source Our page.

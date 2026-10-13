@@ -130,6 +130,7 @@
 	const PUSH_KINDS = [
 		{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') },
 		{ key: 'favorites', label: () => __('New posts from favorite sites', 'daymark') },
+		{ key: 'followers', label: () => __('New followers and subscribers', 'daymark') },
 	];
 
 	function pushSupported() {

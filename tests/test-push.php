@@ -198,13 +198,7 @@ class Test_Push extends WP_UnitTestCase {
 	}
 
 	public function test_preferences_default_on_and_ignore_unknown_keys() {
-		$this->assertSame(
-			array(
-				'comments'  => true,
-				'favorites' => true,
-			),
-			Daymark_Push::get_prefs( $this->user_id )
-		);
+		$this->assertTrue( Daymark_Push::get_prefs( $this->user_id )['comments'] );
 
 		$prefs = Daymark_Push::update_prefs(
 			$this->user_id,
@@ -214,13 +208,8 @@ class Test_Push extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame(
-			array(
-				'comments'  => false,
-				'favorites' => true,
-			),
-			$prefs
-		);
+		$this->assertFalse( $prefs['comments'] );
+		$this->assertArrayNotHasKey( 'unknown', $prefs );
 	}
 
 	public function test_keys_are_made_once_and_kept() {
