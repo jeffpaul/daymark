@@ -59,6 +59,25 @@ in one read, so write it for him first. See CONTRIBUTING.md's "Start with a
 plain-language summary" section, and the Summary fields in the issue forms
 and PR template.
 
+## Working agreement: translations
+
+Daymark will be translated by volunteers on translate.wordpress.org, and
+reaching many languages is a product priority. Every change must stay
+translation-ready:
+
+- Wrap every user-facing string, in PHP and in JavaScript, with the `daymark`
+  text domain. Use placeholders instead of joining strings, `_n()` for counts,
+  and a `/* translators: */` comment directly before the call.
+- A new script with strings needs `wp_set_script_translations()` for its
+  handle, or its strings stay in English.
+- Run `bin/check-i18n.sh` before opening a PR. CI runs it too.
+- Write new CSS with logical properties (`margin-inline-start`, not
+  `margin-left`), so right-to-left languages work. RTL layout is tracked in
+  [#524](https://github.com/jeffpaul/daymark/issues/524).
+
+CONTRIBUTING.md has the full rules, and the "Translation-ready pass" decision
+row below has the background.
+
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
