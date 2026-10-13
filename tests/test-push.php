@@ -304,6 +304,17 @@ class Test_Push extends WP_UnitTestCase {
 		$this->assertCount( 0, $this->scheduled_pushes() );
 	}
 
+	public function test_notify_everyone_reaches_writers_with_devices() {
+		$subscriber = (int) self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$no_device  = (int) self::factory()->user->create( array( 'role' => 'editor' ) );
+		unset( $no_device );
+		Daymark_Push::save_subscription( $this->user_id, $this->browser_subscription() );
+		Daymark_Push::save_subscription( $subscriber, $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/reader' ) );
+
+		$this->assertSame( 1, Daymark_Push::notify_everyone( 'comments', array( 'title' => 'Hi' ) ) );
+		$this->assertSame( $this->user_id, $this->scheduled_pushes()[0][0] );
+	}
+
 	public function test_message_url_stays_on_this_site() {
 		$message = Daymark_Push::sanitize_message(
 			array(
