@@ -75,6 +75,7 @@ jobs:
             'https://jeffpaul.com': 'Jeffrey Paul',
             'https://jondesrosiers.com': '',
             'https://aaron.jorb.in': 'Aaron Jorbin',
+            'https://xkcd.com': 'xkcd',
           };
 
           // runPHP steps don't auto-bootstrap WordPress — require wp-load.php
