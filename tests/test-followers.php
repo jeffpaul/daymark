@@ -177,7 +177,7 @@ class Test_Followers extends WP_UnitTestCase {
 		$request->set_param( 'source', 'https://bo.example/?daymark_follow=abc' );
 		$request->set_param( 'target', home_url( '/' ) );
 
-		$response = rest_do_request( $request );
+		$response = ( new Daymark_Webmention_Receiver() )->receive( $request );
 
 		$this->assertSame( 202, $response->get_status() );
 		$this->assertSame( array( array( 'https://bo.example/?daymark_follow=abc' ) ), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
@@ -249,7 +249,20 @@ class Test_Followers extends WP_UnitTestCase {
 		$older = gmdate( 'c', time() - DAY_IN_SECONDS );
 
 		// First check: note where the list stands, push nothing.
-		$this->assertSame( 0, Daymark_Followers::record_jetpack_subscribers( array( 'subscribers' => array( array( 'ID' => 1, 'label' => 'Old', 'date_subscribed' => $older ) ) ) ) );
+		$this->assertSame(
+			0,
+			Daymark_Followers::record_jetpack_subscribers(
+				array(
+					'subscribers' => array(
+						array(
+							'ID'              => 1,
+							'label'           => 'Old',
+							'date_subscribed' => $older,
+						),
+					),
+				)
+			)
+		);
 		$this->assertCount( 0, $this->scheduled( Daymark_Push::CRON_HOOK ) );
 
 		// One new subscriber.

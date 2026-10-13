@@ -267,7 +267,7 @@ class Daymark_Followers {
 	 */
 	private static function token_for( string $root ): string {
 		foreach ( self::pages() as $token => $page ) {
-			if ( $root === ( $page['target'] ?? '' ) ) {
+			if ( ( $page['target'] ?? '' ) === $root ) {
 				return (string) $token;
 			}
 		}
