@@ -122,13 +122,9 @@ wp_register_script(
 wp_register_script(
 	'daymark-app',
 	DAYMARK_PLUGIN_URL . 'assets/app.js',
-	// 'wp-i18n' is a WordPress core script (no new dependency) — this is
-	// the i18n-readiness plumbing (issue #252) wp.org's own automated
-	// JS-string extraction needs. assets/app.js itself doesn't call
-	// wp.i18n.__() yet (tracked separately, issue #253, to avoid
-	// colliding with the in-flight gallery-reordering PR touching this
-	// same file); registering the dependency and translations now means
-	// nothing else has to change here once that follow-up lands.
+	// 'wp-i18n' is a WordPress core script (no new dependency). Every
+	// visible string in assets/app.js goes through wp.i18n (issues #252,
+	// #253), and wp_set_script_translations() below loads them.
 	array( 'wp-i18n' ),
 	DAYMARK_VERSION,
 	array(

@@ -81,6 +81,24 @@ jobs:
           set -e
           find assets -name '*.js' -print0 | xargs -0 -n1 node --check
 
+  i18n:
+    name: Translation-ready strings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: wp-cli
+
+      # Extracts every translatable string the way translate.wordpress.org
+      # does, and fails on any extractor warning or wrong text domain. See
+      # the script's own header for what it checks.
+      - name: Check translatable strings
+        run: bin/check-i18n.sh
+
   changelog:
     name: Changelog in sync
     runs-on: ubuntu-latest

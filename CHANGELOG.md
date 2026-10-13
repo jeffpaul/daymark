@@ -20,6 +20,14 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- More of Daymark now appears in your language once translations for it exist on translate.wordpress.org: the Featured Content control in the block editor, the offline version of the app, weather labels, and the fallback suggestions shown when an AI provider can't answer. Dates in the app now use WordPress's own translated month and day names.
+
+### Developer
+
+- `bin/check-i18n.sh` checks every translatable string the way wordpress.org extracts them, and CI now runs it.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added
