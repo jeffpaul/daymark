@@ -627,37 +627,6 @@ class Daymark_Push {
 	}
 
 	/**
-	 * Queue a push to everyone with devices who wants this kind.
-	 *
-	 * For site-wide events (a favorite site publishing, a new follower),
-	 * which aren't tied to one author. Only people who can write Marks get
-	 * them.
-	 *
-	 * @param string               $kind    Preference key.
-	 * @param array<string, mixed> $message title, body, url, tag.
-	 * @return int How many people a push was queued for.
-	 */
-	public static function notify_everyone( string $kind, array $message ): int {
-		$user_ids = get_users(
-			array(
-				'fields'       => 'ID',
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Only users who turned push on; personal-site scale.
-				'meta_key'     => self::SUBSCRIPTION_META,
-				'meta_compare' => 'EXISTS',
-			)
-		);
-		$queued   = 0;
-
-		foreach ( $user_ids as $user_id ) {
-			if ( user_can( (int) $user_id, 'edit_posts' ) && self::notify_user( (int) $user_id, $kind, $message ) ) {
-				++$queued;
-			}
-		}
-
-		return $queued;
-	}
-
-	/**
 	 * Note a favorite site's new post, to push when the request ends.
 	 *
 	 * Only a post published after the site was starred, and not older than
