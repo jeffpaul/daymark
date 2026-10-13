@@ -86,6 +86,17 @@ wp_enqueue_style( 'daymark-app' );
 	 */
 	?>
 	<?php wp_print_scripts( array( 'daymark-featured-content' ) ); ?>
+	<?php
+	/*
+	 * Core's wp-hooks and wp-i18n as plain <script src> tags, not through
+	 * wp_print_scripts(): that would also print wp-i18n's inline setup
+	 * script, which this page's CSP blocks. offline-boot.js loads the
+	 * translations into wp.i18n itself, from config.json.
+	 */
+	foreach ( Daymark_Routes::offline_core_script_urls() as $daymark_core_script ) {
+		printf( '<script src="%s"></script>' . "\n", esc_url( $daymark_core_script ) ); // phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- Printed by hand on purpose; see the comment above.
+	}
+	?>
 	<script
 		src="<?php echo esc_url( DAYMARK_PLUGIN_URL . 'assets/offline-boot.js' ); ?>"
 		data-config-url="<?php echo esc_url( Daymark_Routes::app_url( 'config.json' ) ); ?>"
