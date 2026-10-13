@@ -22,15 +22,21 @@ can't act on them.
 
 ### Added
 
+- The full post view now has Previous and Next buttons at the top. They move to the post above or below on the Timeline, Search results, or On this day list you opened it from, without going back to the list first. At the last post loaded so far, Next loads the next batch of posts, so you can keep reading to the end of the list. Back then returns to the list at the last post you read. ([#521](https://github.com/jeffpaul/daymark/pull/521))
 - You can now get push notifications on your phone or computer when someone comments on one of your Marks. Turn them on per device on the Me screen in the app. On iPhone and iPad, add Daymark to your Home Screen first. ([#525](https://github.com/jeffpaul/daymark/pull/525))
 - Star a site you follow in Explore to make it a favorite. Daymark checks favorites every hour, and with push notifications on, sends one when a favorite site publishes. Tapping it opens the new post. ([#526](https://github.com/jeffpaul/daymark/pull/526))
 - A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General. ([#520](https://github.com/jeffpaul/daymark/pull/520))
 - A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
 
+### Changed
+
+- The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs. ([#517](https://github.com/jeffpaul/daymark/pull/517))
+
 ### Fixed
 
 - The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too. ([#516](https://github.com/jeffpaul/daymark/pull/516))
 - More of Daymark now appears in your language once translations for it exist on translate.wordpress.org: the Featured Content control in the block editor, the offline version of the app, weather labels, and the fallback suggestions shown when an AI provider can't answer. Dates in the app now use WordPress's own translated month and day names. ([#523](https://github.com/jeffpaul/daymark/pull/523))
+- After a Daymark update, the app saved to your home screen now runs the new version the first time you open it. Before, it kept running the old version for one more launch, and on iPhone that could last until the phone fully closed the app. ([#518](https://github.com/jeffpaul/daymark/pull/518))
 
 ### Developer
 
