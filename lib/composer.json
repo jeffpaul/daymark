@@ -1,0 +1,33 @@
+{
+    "name": "jeffpaul/daymark-bundled-libraries",
+    "description": "Runtime libraries bundled with Daymark, copied into lib/vendor-prefixed/ under the Daymark\\Vendor\\ namespace by bin/build-bundled-libs.sh. Not used directly.",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.2",
+        "minishlink/web-push": "^11.0",
+        "nyholm/psr7": "^1.8"
+    },
+    "require-dev": {
+        "brianhenryie/strauss": "^0.22"
+    },
+    "config": {
+        "platform": {
+            "php": "8.2.0"
+        },
+        "allow-plugins": {
+            "php-http/discovery": false
+        },
+        "sort-packages": true
+    },
+    "extra": {
+        "strauss": {
+            "target_directory": "vendor-prefixed",
+            "namespace_prefix": "Daymark\\Vendor\\",
+            "classmap_prefix": "Daymark_Vendor_",
+            "constant_prefix": "DAYMARK_VENDOR_",
+            "delete_vendor_packages": false,
+            "include_modified_date": false,
+            "include_author": false
+        }
+    }
+}

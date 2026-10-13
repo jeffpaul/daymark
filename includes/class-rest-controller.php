@@ -1043,6 +1043,59 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// Web push: register or remove this device, choose which kinds of
+		// push to get, and send yourself a test. Saving a device and
+		// preferences are local per-user writes with no outbound request;
+		// the test sends to every device, so it's rate limited.
+		register_rest_route(
+			$this->namespace,
+			'/push/subscriptions',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'save_push_subscription' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'subscription' => array(
+							'type'     => 'object',
+							'required' => true,
+						),
+					),
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'delete_push_subscription' ),
+					'permission_callback' => array( $this, 'permissions_check' ),
+					'args'                => array(
+						'endpoint' => array(
+							'type'     => 'string',
+							'required' => true,
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/push/preferences',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'update_push_preferences' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/push/test',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'send_push_test' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
 		// Per-item Notifications state: read, unread, archive, unarchive.
 		// Pure local per-user writes with no outbound request, so no
 		// rate-limit bucket (same posture as dismissing a plugin notice).
@@ -3314,6 +3367,103 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( array( 'position' => $position ) );
+	}
+
+	/**
+	 * POST /daymark/v1/push/subscriptions — save this device's push
+	 * subscription (PushSubscription.toJSON()) for the current user.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function save_push_subscription( WP_REST_Request $request ) {
+		$raw = $request->get_param( 'subscription' );
+		$sub = Daymark_Push::save_subscription( get_current_user_id(), is_array( $raw ) ? $raw : array() );
+
+		if ( is_wp_error( $sub ) ) {
+			return $sub;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'subscribed' => true,
+				'devices'    => count( Daymark_Push::get_subscriptions( get_current_user_id() ) ),
+				'prefs'      => Daymark_Push::get_prefs( get_current_user_id() ),
+			),
+			201
+		);
+	}
+
+	/**
+	 * DELETE /daymark/v1/push/subscriptions — forget one device.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function delete_push_subscription( WP_REST_Request $request ): WP_REST_Response {
+		Daymark_Push::delete_subscription( get_current_user_id(), (string) $request->get_param( 'endpoint' ) );
+
+		return new WP_REST_Response(
+			array(
+				'subscribed' => false,
+				'devices'    => count( Daymark_Push::get_subscriptions( get_current_user_id() ) ),
+			)
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/push/preferences — turn kinds of push on or off.
+	 * Body: { "comments": true } etc. Unknown keys are ignored.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function update_push_preferences( WP_REST_Request $request ): WP_REST_Response {
+		$changes = $request->get_json_params();
+
+		return new WP_REST_Response(
+			array(
+				'prefs' => Daymark_Push::update_prefs( get_current_user_id(), is_array( $changes ) ? $changes : array() ),
+			)
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/push/test — send a test push to every device the
+	 * current user registered, now rather than through WP-Cron, so the
+	 * result can be reported.
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function send_push_test( WP_REST_Request $request ) {
+		unset( $request );
+
+		if ( empty( Daymark_Push::get_subscriptions( get_current_user_id() ) ) ) {
+			return new WP_Error(
+				'daymark_push_no_devices',
+				__( 'Turn on notifications on this device first.', 'daymark' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_PUSH_TEST );
+
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
+		$result = Daymark_Push_Sender::send_to_user(
+			get_current_user_id(),
+			array(
+				'title' => __( 'Daymark notifications are on', 'daymark' ),
+				'body'  => __( 'This is how a new comment on one of your Marks will look.', 'daymark' ),
+				'url'   => Daymark_Routes::app_url( 'me' ),
+				'tag'   => 'test',
+			)
+		);
+
+		return new WP_REST_Response( $result );
 	}
 
 	/**

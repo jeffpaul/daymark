@@ -48,6 +48,7 @@ delete_option( 'daymark_blogroll_public' );
 delete_option( 'daymark_hide_notes_on_home' );
 delete_option( 'daymark_compact_timeline' );
 delete_option( 'daymark_app_badge_unread' );
+delete_option( 'daymark_push_vapid' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,
@@ -60,6 +61,9 @@ delete_metadata( 'user', 0, 'daymark_notification_read', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_unread', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_archived', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
+delete_metadata( 'user', 0, 'daymark_push_subscription', '', true );
+delete_metadata( 'user', 0, 'daymark_push_prefs', '', true );
+delete_metadata( 'comment', 0, '_daymark_push_sent', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
@@ -80,6 +84,7 @@ wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
 // received Webmention, with arguments).
 wp_unschedule_hook( 'daymark_webmention_send' );
 wp_unschedule_hook( 'daymark_webmention_verify' );
+wp_unschedule_hook( 'daymark_push_dispatch' );
 
 // The share image Daymark resolved for a post's remote Featured Content
 // (issue #408) is a cache derived from that content, not content itself,

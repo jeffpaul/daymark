@@ -24,6 +24,8 @@ DEPENDENCIES.md
 SECURITY.md
 composer.json
 composer.lock
+lib/composer.json
+lib/composer.lock
 package.json
 package-lock.json
 phpcs.xml

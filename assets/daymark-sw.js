@@ -257,3 +257,57 @@ self.addEventListener('fetch', (event) => {
 	// request) passes straight to the network untouched — we never call
 	// respondWith() for it.
 });
+
+// Web push: show the message the site sent (see Daymark_Push_Sender), and
+// open the app where it points when the notification is tapped. Every
+// push must show a notification; Safari revokes push for a site that
+// doesn't.
+self.addEventListener('push', (event) => {
+	let data = {};
+	try {
+		data = event.data ? event.data.json() : {};
+	} catch (e) {
+		data = {};
+	}
+	const text = (value) => (typeof value === 'string' ? value : '');
+	const options = {
+		body: text(data.body),
+		data: { url: text(data.url) },
+	};
+	if (text(data.icon)) {
+		options.icon = data.icon;
+	}
+	if (text(data.tag)) {
+		options.tag = data.tag;
+	}
+	event.waitUntil(self.registration.showNotification(text(data.title) || 'Daymark', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const scope = self.registration.scope;
+	let target = scope;
+	try {
+		const url = new URL((event.notification.data && event.notification.data.url) || scope, scope);
+		// Only ever open this site.
+		if (url.origin === self.location.origin) {
+			target = url.href;
+		}
+	} catch (e) {
+		target = scope;
+	}
+	event.waitUntil(
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+			const open = windows.find((client) => client.url.startsWith(scope) && 'focus' in client);
+			if (open) {
+				return open.focus().then((client) => {
+					if (client && 'navigate' in client) {
+						return client.navigate(target).catch(() => client);
+					}
+					return client;
+				});
+			}
+			return self.clients.openWindow(target);
+		})
+	);
+});
