@@ -347,7 +347,8 @@ class Test_Push extends WP_UnitTestCase {
 		$result = Daymark_Push_Sender::send_to_user(
 			$this->user_id,
 			array(
-				'title' => 'Hi',
+				// Long enough that random ciphertext can't contain it by chance.
+				'title' => 'Plain text marker 7f3a9c',
 				'tag'   => 'comment-1',
 			)
 		);
@@ -374,7 +375,7 @@ class Test_Push extends WP_UnitTestCase {
 		$this->assertStringStartsWith( 'vapid t=', $headers['authorization'] );
 		$this->assertArrayNotHasKey( 'host', $headers );
 		$this->assertGreaterThan( 100, strlen( $request['args']['body'] ) );
-		$this->assertStringNotContainsString( 'Hi', $request['args']['body'] );
+		$this->assertStringNotContainsString( 'Plain text marker 7f3a9c', $request['args']['body'] );
 
 		// The token is for Apple's push service.
 		$jwt = explode( '.', substr( strtok( $headers['authorization'], ',' ), strlen( 'vapid t=' ) ) );
