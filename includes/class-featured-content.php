@@ -1051,6 +1051,11 @@ class Daymark_Featured_Content {
 			true
 		);
 
+		// Loads this script's strings from the site's language pack into
+		// wp.i18n under the 'daymark' domain. Without it, every __() call
+		// in featured-content-editor.js stays in English.
+		wp_set_script_translations( 'daymark-featured-content-editor', 'daymark' );
+
 		wp_enqueue_style(
 			'daymark-featured-content-editor',
 			DAYMARK_PLUGIN_URL . 'assets/featured-content-editor.css',
