@@ -198,7 +198,13 @@ class Test_Push extends WP_UnitTestCase {
 	}
 
 	public function test_preferences_default_on_and_ignore_unknown_keys() {
-		$this->assertSame( array( 'comments' => true ), Daymark_Push::get_prefs( $this->user_id ) );
+		$this->assertSame(
+			array(
+				'comments'  => true,
+				'favorites' => true,
+			),
+			Daymark_Push::get_prefs( $this->user_id )
+		);
 
 		$prefs = Daymark_Push::update_prefs(
 			$this->user_id,
@@ -208,7 +214,13 @@ class Test_Push extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame( array( 'comments' => false ), $prefs );
+		$this->assertSame(
+			array(
+				'comments'  => false,
+				'favorites' => true,
+			),
+			$prefs
+		);
 	}
 
 	public function test_keys_are_made_once_and_kept() {
@@ -335,7 +347,8 @@ class Test_Push extends WP_UnitTestCase {
 		$result = Daymark_Push_Sender::send_to_user(
 			$this->user_id,
 			array(
-				'title' => 'Hi',
+				// Long enough that random ciphertext can't contain it by chance.
+				'title' => 'Plain text marker 7f3a9c',
 				'tag'   => 'comment-1',
 			)
 		);
@@ -362,7 +375,7 @@ class Test_Push extends WP_UnitTestCase {
 		$this->assertStringStartsWith( 'vapid t=', $headers['authorization'] );
 		$this->assertArrayNotHasKey( 'host', $headers );
 		$this->assertGreaterThan( 100, strlen( $request['args']['body'] ) );
-		$this->assertStringNotContainsString( 'Hi', $request['args']['body'] );
+		$this->assertStringNotContainsString( 'Plain text marker 7f3a9c', $request['args']['body'] );
 
 		// The token is for Apple's push service.
 		$jwt = explode( '.', substr( strtok( $headers['authorization'], ',' ), strlen( 'vapid t=' ) ) );
@@ -408,7 +421,7 @@ class Test_Push extends WP_UnitTestCase {
 
 	public function test_rest_preferences_and_test_push() {
 		$prefs = $this->rest( 'POST', '/push/preferences', array( 'comments' => false ) );
-		$this->assertSame( array( 'comments' => false ), $prefs->get_data()['prefs'] );
+		$this->assertFalse( $prefs->get_data()['prefs']['comments'] );
 
 		$no_devices = $this->rest( 'POST', '/push/test' );
 		$this->assertSame( 400, $no_devices->get_status() );

@@ -28,7 +28,7 @@ class Daymark_Subscriptions {
 	 *
 	 * @var string
 	 */
-	private const DB_VERSION = '1.3.0';
+	private const DB_VERSION = '1.4.0';
 
 	/**
 	 * Option name storing the currently installed schema version.
@@ -139,6 +139,12 @@ class Daymark_Subscriptions {
 	 * HMAC secret the hub echoes signed content deliveries with; it is
 	 * never exposed outside this table.
 	 *
+	 * `favorited_at` (added in 1.4.0) is when the site was starred as a
+	 * favorite, or NULL when it isn't one. A favorite is checked hourly and
+	 * sends a push for each new post published after it was starred (see
+	 * Daymark_Push::queue_favorite_post()). Site-wide, like the rest of
+	 * this table: Daymark is built for one person per site.
+	 *
 	 * @return string
 	 */
 	private static function get_schema_sql(): string {
@@ -165,6 +171,7 @@ class Daymark_Subscriptions {
 			websub_status varchar(20) NOT NULL DEFAULT 'none',
 			websub_lease_expires_at datetime DEFAULT NULL,
 			websub_secret varchar(64) NOT NULL DEFAULT '',
+			favorited_at datetime DEFAULT NULL,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY feed_url (feed_url),
@@ -1075,6 +1082,72 @@ class Daymark_Subscriptions {
 		);
 
 		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * List active favorite subscriptions, most recently starred first.
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_favorites(): array {
+		global $wpdb;
+
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE status = %s AND favorited_at IS NOT NULL ORDER BY favorited_at DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Table name only, not user input.
+				'active'
+			),
+			ARRAY_A
+		);
+
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * Star or unstar a subscription as a favorite. Starring an existing
+	 * favorite keeps its original time, so posts it already pushed for
+	 * aren't pushed again.
+	 *
+	 * @param int  $id       Subscription ID.
+	 * @param bool $favorite Whether it's a favorite.
+	 * @return bool False when the subscription doesn't exist or the write failed.
+	 */
+	public function set_favorite( int $id, bool $favorite ): bool {
+		global $wpdb;
+
+		$subscription = $this->get( $id );
+
+		if ( null === $subscription ) {
+			return false;
+		}
+
+		if ( $favorite && ! empty( $subscription['favorited_at'] ) ) {
+			return true;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Custom table with no WP data API; $wpdb->update() parameterizes values internally.
+		$updated = $wpdb->update(
+			self::table_name(),
+			array( 'favorited_at' => $favorite ? current_time( 'mysql', true ) : null ),
+			array( 'id' => absint( $id ) ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $updated;
+	}
+
+	/**
+	 * Whether a subscription row is a favorite.
+	 *
+	 * @param array<string, mixed>|null $subscription Row.
+	 * @return bool
+	 */
+	public static function is_favorite( ?array $subscription ): bool {
+		return is_array( $subscription ) && ! empty( $subscription['favorited_at'] );
 	}
 
 	/**

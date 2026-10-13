@@ -2608,6 +2608,32 @@ button.daymark-stat {
 	gap: var(--daymark-spacing-sm);
 }
 
+.daymark-follow__row {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-xs);
+}
+
+.daymark-follow__row .daymark-recent__item {
+	flex: 1;
+	min-width: 0;
+}
+
+.daymark-follow__star {
+	flex-shrink: 0;
+	min-height: var(--daymark-tap-min);
+}
+
+.daymark-follow__star:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-follow__star.daymark-stat--active svg {
+	fill: currentColor;
+}
+
 .daymark-follow__open {
 	width: auto;
 	padding: 0 var(--daymark-spacing-md);
