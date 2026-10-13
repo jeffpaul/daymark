@@ -225,6 +225,13 @@ final class Daymark_Plugin {
 	public Daymark_Push $push;
 
 	/**
+	 * New followers and follow announcements.
+	 *
+	 * @var Daymark_Followers
+	 */
+	public Daymark_Followers $followers;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -412,6 +419,7 @@ final class Daymark_Plugin {
 		$this->webmention                   = new Daymark_Webmention();
 		$this->webmention_receiver          = new Daymark_Webmention_Receiver();
 		$this->push                         = new Daymark_Push();
+		$this->followers                    = new Daymark_Followers();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -516,6 +524,7 @@ final class Daymark_Plugin {
 		$this->webmention->register();
 		$this->webmention_receiver->register();
 		$this->push->register();
+		$this->followers->register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();
@@ -599,6 +608,7 @@ final class Daymark_Plugin {
 	public static function deactivate(): void {
 		Daymark_Backflow_Sync::unschedule();
 		Daymark_Subscription_Poller::unschedule();
+		Daymark_Followers::unschedule();
 		Daymark_Uploads::unschedule();
 		flush_rewrite_rules();
 	}

@@ -49,6 +49,11 @@ delete_option( 'daymark_hide_notes_on_home' );
 delete_option( 'daymark_compact_timeline' );
 delete_option( 'daymark_app_badge_unread' );
 delete_option( 'daymark_push_vapid' );
+delete_option( 'daymark_followers' );
+delete_option( 'daymark_follow_pages' );
+delete_option( 'daymark_follow_queue' );
+delete_option( 'daymark_announce_follows' );
+delete_option( 'daymark_jetpack_followers_since' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,
@@ -85,6 +90,9 @@ wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
 wp_unschedule_hook( 'daymark_webmention_send' );
 wp_unschedule_hook( 'daymark_webmention_verify' );
 wp_unschedule_hook( 'daymark_push_dispatch' );
+wp_unschedule_hook( 'daymark_follow_send' );
+wp_unschedule_hook( 'daymark_follow_verify' );
+wp_unschedule_hook( 'daymark_followers_check_jetpack' );
 
 // The share image Daymark resolved for a post's remote Featured Content
 // (issue #408) is a cache derived from that content, not content itself,

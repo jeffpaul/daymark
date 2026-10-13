@@ -134,7 +134,10 @@
 	// Safari offers push only to an app added to the Home Screen.
 
 	// Which kinds of push a person can choose, in display order.
-	const PUSH_KINDS = [{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') }];
+	const PUSH_KINDS = [
+		{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') },
+		{ key: 'followers', label: () => __('New followers and subscribers', 'daymark') },
+	];
 
 	function pushSupported() {
 		return (
