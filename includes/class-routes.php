@@ -605,6 +605,14 @@ class Daymark_Routes {
 			'capture'                => array(
 				'location' => Daymark_Settings::capture_location(),
 			),
+			// The Bionic Reading font (Settings -> Daymark -> General, off
+			// by default). `faces` are the site's own font files (its Font
+			// Library, else a web font address); none means the app uses
+			// the font only where the device has it installed.
+			'readingFont'            => array(
+				'bionic' => Daymark_Settings::bionic_reading_font(),
+				'faces'  => Daymark_Settings::bionic_reading_font_faces(),
+			),
 			'notifications'          => array(
 				'hasUnread' => Daymark_Plugin::instance()->notifications->has_unread(),
 			),

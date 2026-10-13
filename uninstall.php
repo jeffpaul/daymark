@@ -46,6 +46,9 @@ delete_option( 'daymark_ai_auto_suggest' );
 delete_option( 'daymark_subscription_poll_interval' );
 delete_option( 'daymark_blogroll_public' );
 delete_option( 'daymark_hide_notes_on_home' );
+delete_option( 'daymark_bionic_reading_font' );
+delete_option( 'daymark_bionic_reading_font_url' );
+delete_option( 'daymark_bionic_reading_font_family' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,

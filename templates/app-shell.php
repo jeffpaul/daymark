@@ -66,7 +66,10 @@ $daymark_csp_parts = array(
 	// reason: Subscriptions legitimately surfaces other sites' content.
 	'frame-src ' . "'self' https:",
 	"connect-src 'self'",
-	"font-src 'self' data:",
+	// The site's own Bionic Reading font files may live on a CDN or
+	// offload host; allow just those origins, and only while the
+	// setting is on (Daymark_Settings::bionic_reading_font_origins()).
+	trim( "font-src 'self' data: " . implode( ' ', Daymark_Settings::bionic_reading_font_origins() ) ),
 	"object-src 'none'",
 	"base-uri 'self'",
 	"frame-ancestors 'none'",

@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- A new Reading setting in Settings -> Daymark -> General shows the Daymark app's text in the [Bionic Reading](https://bionic-reading.com/) font. It is off by default. Daymark can't include the font, so it uses a Bionic Reading family from the site's Font Library, a web font file you host, or a copy installed on the reader's device.
+
 ## [0.20.0] - 2026-10-09
 
 ### Added

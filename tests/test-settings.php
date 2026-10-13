@@ -77,7 +77,7 @@ class Test_Settings extends WP_UnitTestCase {
 
 	/** Uninstall's list covers every option this class reads. */
 	public function test_options_lists_every_setting(): void {
-		$this->assertCount( 11, array_unique( Daymark_Settings::options() ) );
+		$this->assertCount( 14, array_unique( Daymark_Settings::options() ) );
 	}
 
 	/** The app config carries the AI auto-suggest and location capture settings. */
@@ -91,6 +91,25 @@ class Test_Settings extends WP_UnitTestCase {
 		$this->assertFalse( $config['ai']['autoSuggest'] );
 		$this->assertFalse( $config['capture']['location'] );
 		$this->assertIsArray( $config['reach'] );
+		$this->assertSame(
+			array(
+				'bionic' => false,
+				'faces'  => array(),
+			),
+			$config['readingFont']
+		);
+	}
+
+	/** With the font on and a web font address, the app config carries that one face. */
+	public function test_app_config_carries_reading_font_face(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		update_option( Daymark_Settings::BIONIC_READING_FONT, '1' );
+		update_option( Daymark_Settings::BIONIC_READING_FONT_URL, 'https://cdn.example.com/BionicReading.woff2' );
+
+		$config = Daymark_Routes::build_app_config();
+
+		$this->assertTrue( $config['readingFont']['bionic'] );
+		$this->assertSame( 'https://cdn.example.com/BionicReading.woff2', $config['readingFont']['faces'][0]['src'] );
 	}
 
 	/** The app knows whether the user can publish, so a Contributor isn't told a draft was published. */
