@@ -2136,6 +2136,22 @@ button.daymark-stat {
 	background: var(--daymark-accent-wash);
 }
 
+/* Me: push notifications for this device. */
+.daymark-mepush,
+.daymark-mepush__options:not([hidden]) {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mepush__options .daymark-btn--text {
+	align-self: flex-start;
+}
+
+.daymark-mepush [data-push-status]:empty {
+	display: none;
+}
+
 /* A row that opens a WordPress screen: its icon sits right after the text. */
 .daymark-melink__external {
 	flex-shrink: 0;

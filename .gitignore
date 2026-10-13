@@ -20,3 +20,4 @@ playwright-report/
 
 # Generated hooks documentation site
 wp-hooks-docs/
+!lib/composer.lock

@@ -725,6 +725,13 @@ class Daymark_Routes {
 				'badge'       => $app_badge,
 				'unreadCount' => $app_badge ? Daymark_Plugin::instance()->notifications->unread_count() : 0,
 			),
+			// Web push: the site's public signing key (empty when the
+			// bundled library can't load, which hides the switch), and
+			// which kinds of push this person wants.
+			'push'                   => array(
+				'publicKey' => Daymark_Push::public_key(),
+				'prefs'     => Daymark_Push::get_prefs( (int) $user->ID ),
+			),
 			'controllableHelpers'    => $controllable_helpers,
 			'publishHelpers'         => $awareness_helpers,
 			'currentUser'            => array(

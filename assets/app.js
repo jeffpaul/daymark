@@ -119,6 +119,225 @@
 		return isIosDevice() ? 'ios' : '';
 	}
 
+	// --- Web push (Me screen) ---
+	//
+	// Push is turned on per device: the browser makes a push subscription
+	// signed for this site's public key, and the app hands it to the site
+	// (POST /push/subscriptions). See Daymark_Push. On iPhone and iPad,
+	// Safari offers push only to an app added to the Home Screen.
+
+	// Which kinds of push a person can choose, in display order.
+	const PUSH_KINDS = [{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') }];
+
+	function pushSupported() {
+		return (
+			!config.offlineShell &&
+			!!(config.push && config.push.publicKey) &&
+			'serviceWorker' in navigator &&
+			'PushManager' in window &&
+			'Notification' in window
+		);
+	}
+
+	// The base64url VAPID key as the bytes PushManager.subscribe() wants.
+	function vapidKeyBytes(base64url) {
+		const padded = (base64url + '==='.slice((base64url.length + 3) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+		const raw = window.atob(padded);
+		const bytes = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) {
+			bytes[i] = raw.charCodeAt(i);
+		}
+		return bytes;
+	}
+
+	function pushRegistration() {
+		if (!('serviceWorker' in navigator) || !config.appUrl) {
+			return Promise.resolve(null);
+		}
+		return navigator.serviceWorker.getRegistration(config.appUrl).catch(() => null);
+	}
+
+	function pushSettingsMarkup() {
+		const iosNeedsInstall = !pushSupported() && isIosDevice() && !isInstalledApp();
+		if (!pushSupported() && !iosNeedsInstall) {
+			return '';
+		}
+		const prefs = (config.push && config.push.prefs) || {};
+		const kinds = PUSH_KINDS.map(
+			(kind) => `
+				<li class="daymark-dest">
+					<label class="daymark-dest__row" for="daymark-push-${esc(kind.key)}">
+						<span class="daymark-dest__info"><span class="daymark-dest__name">${esc(kind.label())}</span></span>
+						<span class="daymark-toggle">
+							<input type="checkbox" class="daymark-toggle__input" id="daymark-push-${esc(kind.key)}" data-push-pref="${esc(
+								kind.key
+							)}"${prefs[kind.key] ? ' checked' : ''} />
+							<span class="daymark-toggle__track" aria-hidden="true"></span>
+						</span>
+					</label>
+				</li>`
+		).join('');
+		return `
+				<section class="daymark-mepush" data-me-push aria-labelledby="daymark-me-push-heading">
+					<h2 id="daymark-me-push-heading" class="daymark-section-heading">${esc(__('Push notifications', 'daymark'))}</h2>
+					${
+						iosNeedsInstall
+							? `<p class="daymark-field__help">${esc(
+									__('To get notifications on this iPhone or iPad, add Daymark to your Home Screen first, then open it from there.', 'daymark')
+							  )}</p>`
+							: `<ul class="daymark-destlist">
+						<li class="daymark-dest">
+							<label class="daymark-dest__row" for="daymark-push-device">
+								<span class="daymark-dest__info"><span class="daymark-dest__name">${esc(
+									__('Notifications on this device', 'daymark')
+								)}</span></span>
+								<span class="daymark-toggle">
+									<input type="checkbox" class="daymark-toggle__input" id="daymark-push-device" data-push-device />
+									<span class="daymark-toggle__track" aria-hidden="true"></span>
+								</span>
+							</label>
+						</li>
+					</ul>
+					<div class="daymark-mepush__options" data-push-options hidden>
+						<p class="daymark-field__help">${esc(__('Send a notification for:', 'daymark'))}</p>
+						<ul class="daymark-destlist">${kinds}</ul>
+						<button type="button" class="daymark-btn daymark-btn--text" data-push-test>${esc(__('Send a test notification', 'daymark'))}</button>
+					</div>
+					<p class="daymark-field__help" data-push-status role="status"></p>`
+					}
+				</section>`;
+	}
+
+	async function bindPushSettings(section) {
+		if (!section || !pushSupported()) {
+			return;
+		}
+		const device = section.querySelector('[data-push-device]');
+		const options = section.querySelector('[data-push-options]');
+		const status = section.querySelector('[data-push-status]');
+		const test = section.querySelector('[data-push-test]');
+		const say = (text) => {
+			if (status) {
+				status.textContent = text;
+			}
+		};
+		const show = (on) => {
+			device.checked = on;
+			options.hidden = !on;
+		};
+
+		const registration = await pushRegistration();
+		if (!section.isConnected) {
+			return;
+		}
+		if (!registration) {
+			device.disabled = true;
+			say(__('Notifications need Daymark’s offline support, which this browser hasn’t set up yet. Reload and try again.', 'daymark'));
+			return;
+		}
+		if ('denied' === Notification.permission) {
+			device.disabled = true;
+			say(__('Notifications are blocked for this site. Allow them in your browser or device settings, then come back.', 'daymark'));
+			return;
+		}
+
+		const existing = await registration.pushManager.getSubscription().catch(() => null);
+		show(!!existing && 'granted' === Notification.permission);
+		if (existing && 'granted' === Notification.permission) {
+			// Re-send it, in case the site forgot this device (removed after
+			// a failed delivery, or saved under someone else on a shared
+			// browser). Saving is idempotent.
+			apiPost('push/subscriptions', { subscription: existing.toJSON() }).catch(() => {});
+		}
+
+		device.addEventListener('change', async () => {
+			device.disabled = true;
+			say('');
+			try {
+				if (device.checked) {
+					const permission = await Notification.requestPermission();
+					if ('granted' !== permission) {
+						show(false);
+						say(__('Notifications weren’t allowed, so none will be sent to this device.', 'daymark'));
+						return;
+					}
+					const ready = await navigator.serviceWorker.ready;
+					const sub =
+						(await ready.pushManager.getSubscription()) ||
+						(await ready.pushManager.subscribe({
+							userVisibleOnly: true,
+							applicationServerKey: vapidKeyBytes(config.push.publicKey),
+						}));
+					const saved = await apiPost('push/subscriptions', { subscription: sub.toJSON() });
+					if (saved && saved.prefs) {
+						config.push.prefs = saved.prefs;
+					}
+					show(true);
+					say(__('Notifications are on for this device.', 'daymark'));
+				} else {
+					const sub = await registration.pushManager.getSubscription();
+					if (sub) {
+						await apiDelete('push/subscriptions?endpoint=' + encodeURIComponent(sub.endpoint)).catch(() => {});
+						await sub.unsubscribe().catch(() => {});
+					}
+					show(false);
+					say(__('Notifications are off for this device.', 'daymark'));
+				}
+			} catch (err) {
+				show(!device.checked);
+				say(
+					sprintf(
+						/* translators: %s: error message */
+						__('Couldn’t change notifications. %s', 'daymark'),
+						err && err.message ? err.message : ''
+					)
+				);
+			} finally {
+				device.disabled = false;
+			}
+		});
+
+		section.querySelectorAll('[data-push-pref]').forEach((input) => {
+			input.addEventListener('change', () => {
+				const key = input.getAttribute('data-push-pref');
+				apiPost('push/preferences', { [key]: input.checked })
+					.then((res) => {
+						if (res && res.prefs) {
+							config.push.prefs = res.prefs;
+						}
+					})
+					.catch((err) => {
+						input.checked = !input.checked;
+						say(err && err.message ? err.message : __('Couldn’t save that change.', 'daymark'));
+					});
+			});
+		});
+
+		if (test) {
+			test.addEventListener('click', () => {
+				test.disabled = true;
+				say(__('Sending…', 'daymark'));
+				apiPost('push/test', {})
+					.then((res) => {
+						const sent = res && res.sent ? Number(res.sent) : 0;
+						say(
+							sent
+								? sprintf(
+										/* translators: %d: number of devices */
+										_n('Sent to %d device.', 'Sent to %d devices.', sent, 'daymark'),
+										sent
+								  )
+								: __('The push service didn’t accept the test. Try turning notifications off and on again.', 'daymark')
+						);
+					})
+					.catch((err) => say(err && err.message ? err.message : ''))
+					.finally(() => {
+						test.disabled = false;
+					});
+			});
+		}
+	}
+
 	function installCardDismissKey() {
 		const userId = config.currentUser ? Number(config.currentUser.id) : 0;
 		return 'daymark-install-dismissed-u' + userId;
@@ -8380,6 +8599,7 @@
 							: ''
 					}
 				</nav>
+				${pushSettingsMarkup()}
 				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
 					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-me-drafts>
@@ -8405,6 +8625,8 @@
 				install.addEventListener('click', () => startInstall(install));
 			}
 			refreshInstallUi();
+
+			bindPushSettings(root.querySelector('[data-me-push]'));
 
 			const logout = root.querySelector('[data-me-logout]');
 			if (logout) {
