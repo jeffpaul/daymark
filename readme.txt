@@ -4,7 +4,7 @@ Tags:              publishing, mobile, pwa, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
-Stable tag:        0.20.0
+Stable tag:        0.21.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
@@ -207,7 +207,34 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 == Changelog ==
 
+= 0.21.0 - 2026-10-13 =
+**Added**
+
+* New "Read to me" setting (Settings -> Daymark -> Data & privacy, off by default). When it's on and your AI provider can turn text into speech, a post in the app's full post view shows a Listen button at the top. The first tap makes an audio version, and Daymark saves it so the post is only sent to your provider once.
+* The full post view now has Previous and Next buttons at the top. They move to the post above or below on the Timeline, Search results, or On this day list you opened it from, without going back to the list first. At the last post loaded so far, Next loads the next batch of posts, so you can keep reading to the end of the list. Back then returns to the list at the last post you read.
+* You can now get push notifications on your phone or computer when someone comments on one of your Marks. Turn them on per device on the Me screen in the app. On iPhone and iPad, add Daymark to your Home Screen first.
+* Star a site you follow in Explore to make it a favorite. Daymark checks favorites every hour, and with push notifications on, sends one when a favorite site publishes. Tapping it opens the new post.
+* Push notifications now also tell you when you gain a follower: another Daymark or IndieWeb site, someone on the fediverse (through the ActivityPub plugin, which the Friends plugin also uses), or a Jetpack email or WordPress.com subscriber. Following a site now tells that site, which you can turn off in Settings -> Daymark -> General.
+* A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General.
+* A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default.
+* A new Reading setting in Settings -> Daymark -> General shows the Daymark app's text in the [Bionic Reading](https://bionic-reading.com/) font. It is off by default. Daymark can't include the font, so it uses a Bionic Reading family from the site's Font Library, a web font file you host, or a copy installed on the reader's device.
+
+**Changed**
+
+* The "Try Daymark" Playground demo now also follows xkcd, so its Timeline shows comic image posts next to the sample blogs.
+
+**Fixed**
+
+* The Parse This card on Settings -> Daymark -> Connectors now links to Parse This on GitHub, where it's published, and no longer shows an Install button that couldn't work. Parse This isn't in the WordPress.org plugin directory. The readme's Parse This answer says so too.
+* More of Daymark now appears in your language once translations for it exist on translate.wordpress.org: the Featured Content control in the block editor, the offline version of the app, weather labels, and the fallback suggestions shown when an AI provider can't answer. Dates in the app now use WordPress's own translated month and day names.
+* After a Daymark update, the app saved to your home screen now runs the new version the first time you open it. Before, it kept running the old version for one more launch, and on iPhone that could last until the phone fully closed the app.
+
+**Developer**
+
+* `bin/check-i18n.sh` checks every translatable string the way wordpress.org extracts them, and CI now runs it.
+
 = 0.20.0 - 2026-10-09 =
+
 **Added**
 
 * Connector plugins can now report how many likes and reblogs a Mark got on their network, on the same hourly check that brings back replies. Daymark adds those counts to the Mark's like and reblog counts on the Timeline. Before, likes and reblogs on a network Daymark checks for replies were never counted.
@@ -427,50 +454,12 @@ Mostly, for the part that matters most: creating a Mark works fully offline once
 
 * Fixed the release workflow's tag/version guard, which was comparing the plugin header's `Version:` and readme.txt's `Stable tag:` fields against the pushed tag using a whitespace-sensitive match — both fields are column-aligned with padding, so the extracted value silently carried that padding and never matched, failing the 0.16.0 tag push before it built or published anything. The guard now strips all whitespace from every value before comparing.
 
-= 0.16.0 - 2026-09-12 =
-
-**Added**
-
-* Subscribing to a new site now shows every feed Daymark found for it up front, with the one most likely to capture the full post and its metadata (WordPress REST API, then Friends, then RSS/Atom, then microformats2) checked for you by default — pick any others you'd also like to follow before confirming.
-* Subscribing to (or "Choose from available feeds" on) a multilingual site — Polylang, WPML, MultilingualPress, and similar — now shows a separate feed candidate for each language it advertises, labeled by language, so you can follow the one you actually read instead of an unfiltered, every-language feed.
-* A "link"-kind subscription post's own detected link now shows a clickable preview — title, excerpt, and featured/Open Graph image — when the linked page has Open Graph or Twitter Card tags, closing the gap the existing oEmbed-only preview left for an ordinary article link.
-* Notifications now flags when Post Kinds, the Microformats 2 plugin, Syndication Links, or IndieBlocks is active alongside Daymark — each duplicates something Daymark already renders natively on your Marks (Like/Repost/Comment markup, h-entry/h-card output, or syndication links). Daymark never suppresses the other plugin's own behavior; the notice just lets you know, with a link to Plugins, and stays until you dismiss it.
-
-**Changed**
-
-* Settings -> Daymark's "Check for other feeds" action is now "Choose from available feeds", and lets you check as many of the discovered feeds as you like — each one you check becomes its own new subscription, so you can follow more than one feed from the same site instead of only switching between them.
-* The picker's default-checked candidate now prefers a feed matching your site's own Settings -> General -> Site Language, falling back to English and then today's richness ranking — rather than always defaulting to the richest source regardless of language.
-* On a Timeline card and the full-screen post view, the Like/Comment/Reblog/Bookmark/... interaction row now sits below the site name and date instead of above it.
-* Settings -> Daymark's "Choose from available feeds" picker no longer locks an already-subscribed candidate's checkbox — unchecking one (your current feed, or another feed you also follow from the same site) and submitting now unsubscribes it, immediately removing its previously-loaded posts, while any newly-checked candidate is subscribed to as before. This is what lets you actually switch a site's feed in one submit — e.g. swapping an unscoped WordPress REST API feed that mixed every language together for a correctly language-scoped RSS/Atom feed — instead of only ever adding feeds. The button is renamed "Update feeds".
-* Subscribing to a brand-new site now shows its discovered feeds inline, directly below the Subscribe button, instead of after a full page reload — the button's loading label reads "Loading feed details…" while discovery runs. The picker is now a single-select list (pick exactly one feed to follow) with an editable site name (a pencil icon next to the discovered title, matching the existing per-subscription name editor) and a "Save Subscription" button that saves the feed and the (optionally edited) name together.
-* README.md and readme.txt now lead with plain-language reasons to publish with Daymark instead of a technical feature list, aimed at a non-technical site owner deciding whether to install it. README.md's developer/extender detail (architecture, hooks, connectors, contributing) moved below a clear divider instead of being interleaved with the pitch.
-* readme.txt's generated Changelog section now only lists the 5 most recent releases, ending with a link to the full history on GitHub, instead of growing to list every release forever.
-
-**Developer**
-
-* Extracted CLAUDE.md's ~31 narrow UI/UX visual-polish decision rows into a new docs/ui-polish-history.md (grouped by theme) and consolidated its 4 subscription content-type/post_format-mapping rows into docs/subscription-type-mapping.md, replacing each with a one-line pointer — CLAUDE.md is auto-loaded as project memory for every session on this repo, so trimming it to load-bearing architectural decisions is a direct cost saving with no loss of the underlying reasoning.
-* CONTRIBUTING.md gained guidance aimed at a wider contributor base ahead of a wordpress.org launch: forking instructions for contributors without push access, a pointer to SECURITY.md for vulnerability reports, guidance on claiming an issue before starting significant work, and a note that a first-time contributor's CI runs need maintainer approval before they start.
-
-**Fixed**
-
-* The public "Try Daymark right now in your browser" Playground preview now uses the same install-and-subscriptions-only blueprint as the PR preview button, dropping the extra demo-Mark seeding step that could still crash inside WordPress Playground.
-* The "Try Daymark right now in your browser" Playground preview no longer crashes with a critical-error screen while seeding its demo Marks — the demo-image generation helper now guards against a Playground environment whose GD extension can't produce a JPEG, and each demo Mark's publish is now isolated so one failing to seed can't take the rest of the preview down with it.
-* The Comment icon in the interaction row no longer shows a visible break in its speech-bubble outline — its icon data was a mangled copy of the intended glyph.
-* The Connectors settings tab now correctly recognizes ATmosphere as active even when it's installed under a different folder than its historical `wordpress-atmosphere` name (e.g. a republished build) — it now falls back to detecting the plugin's own defining class/constant, the same way Daymark's publish-side ATmosphere detection already does, instead of relying on a single folder-name check.
-* The ⋯ overflow menu (Open original/Share/Routing/Refresh content/Unsubscribe) now opens as a small floating overlay anchored off the ⋯ icon, the same simple-dropdown treatment the old Draft ⋯ menu used, instead of growing the card's own frame open and pushing the rest of the post down the screen.
-* Tightened the gap between the header and the top of the Timeline, removed the Notifications icon's bordered-box outline (the footer nav icons never had one), and resized the header's Daymark icon and the Notifications icon to match the footer nav icons' own size.
-* Tapping Comment on a subscribed post now checks first whether Daymark can actually deliver a comment there at all — when it can't (most sites, since Webmention is the only delivery path Daymark can guarantee), it skips its own composer entirely and sends you straight to the original post's own comment form, instead of letting you type a comment only to discover afterward that it couldn't be delivered and you'd need to retype it there yourself. When the pre-check does look deliverable but the actual send still fails, the previous raw rejection text ("Sorry, you must be logged in to comment") is now a clear explanation instead — plus the same link straight to the post's own comment form. Settings -> Daymark's Connectors tab now also explains this benefit directly in the Webmention entry's own description: having it active lets other Daymark users comment on your posts from within their own Daymark app instead of being redirected to your site.
-* The Reblog/Comment caption sheet's text cursor no longer renders in the wrong place — floating below the visible textarea, overlapping the sheet's own buttons and the page underneath — when the on-screen keyboard is open on iOS Safari. The sheet now tracks the keyboard using the Visual Viewport API instead of a plain CSS viewport unit, which iOS never shrinks to account for the keyboard.
-* Reblogging a subscribed post now publishes a Mark titled "Reblog: {origin title}" whose content is a real link to the origin post (its own title as the link text) — previously the Mark's title and content were both just the caption text ("Reposted \"...\"" or whatever you typed), with no link to what you'd actually reblogged anywhere in it. Typing a comment in the Reblog sheet now adds it as its own paragraph below that link, instead of replacing a caption that never linked anywhere.
-* Every Mark's permalink page no longer visibly shows Daymark's own machine-readable metadata (its permalink repeated as text, publish date, a reply/repost/like target as a bare out-of-context URL, and your avatar/name) below the actual content — that block is now visually hidden, since it duplicated information the theme's own template already shows a human reader. It's unaffected for the IndieWeb tooling (Webmention, ActivityPub, Bridgy, feed readers) it's actually for, since that reads the page's raw HTML regardless of what's visually hidden.
-* The first-time explainer overlay for Comment and Reblog now appears before you start typing, not after you've already sent a comment or published a reblog — dismissing it takes you straight into the compose step it was meant to introduce. Like, Bookmark, "Open original", and Share are unchanged; their overlay still appears right after the (instant) tap, since there's no compose step for it to sit ahead of.
-* A subscription post whose own excerpt field was left as a leftover placeholder value (e.g. just the word "Excerpt", never replaced before publishing) no longer shows that literal placeholder text on its Timeline card — it now falls back to real content, the same way an entirely empty excerpt already did. A genuinely short manual excerpt is unaffected.
-* Tapping Like on a subscription post no longer creates a post that can show up on your own site's home page, archives, search, RSS/Atom feed, REST API, or XML sitemap — it stays visible only at its own direct permalink, which is what lets your Webmention plugin still verify and deliver the outbound Like to the original post. It also never syndicates to a real destination, whatever your remembered Note-type preference is. Reblog is unaffected — it's still real, visible, publishable content, exactly as before.
-* Subscribing to a site inside WordPress Playground previews no longer fails with "Please enter a valid site URL." for every URL, including well-known real sites — Playground's own sandboxed PHP runtime doesn't genuinely support DNS lookups, which was making Daymark's own SSRF safety check wrongly treat every site as unsafe.
-
 [View the full changelog history](https://github.com/jeffpaul/daymark/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 0.21.0 =
+Push notifications arrive: get one on your phone or computer for comments on your Marks, new posts from sites you star as favorites, and new followers. A new Read to me setting adds an AI audio version of a post. The full post view gains Previous and Next buttons. New settings show a compact Timeline list, an unread count on the app icon, and the Bionic Reading font. An installed app now runs a Daymark update the first time you open it.
 
 = 0.20.0 =
 Daymark now sends and receives Webmentions itself, so Likes, Reblogs, and comments reach another Daymark site with nothing else to install. Notifications gains tabs, date headings, read and archive, and grouped likes. Follow sites from the app, including JSON Feed sites, and import your WordPress.com Reader follows. Videos upload in parts that resume after a dropped connection. Also new: a dark theme, a Reblog and Like bookmarklet, site defaults for new Marks, and Shortnotes and IndieBlocks notes on the Timeline. Location is now captured only for Check Ins.
