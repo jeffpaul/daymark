@@ -619,11 +619,11 @@ final class Daymark_Settings {
 	public static function font_library_families(): array {
 		$posts = get_posts(
 			array(
-				'post_type'        => 'wp_font_family',
-				'post_status'      => 'publish',
-				'numberposts'      => 50,
-				'orderby'          => 'date',
-				'order'            => 'DESC',
+				'post_type'   => 'wp_font_family',
+				'post_status' => 'publish',
+				'numberposts' => 50,
+				'orderby'     => 'date',
+				'order'       => 'DESC',
 			)
 		);
 
@@ -713,12 +713,12 @@ final class Daymark_Settings {
 	private static function font_library_faces( int $family_id ): array {
 		$posts = get_posts(
 			array(
-				'post_type'        => 'wp_font_face',
-				'post_status'      => 'publish',
-				'post_parent'      => $family_id,
-				'numberposts'      => 50,
-				'orderby'          => 'ID',
-				'order'            => 'ASC',
+				'post_type'   => 'wp_font_face',
+				'post_status' => 'publish',
+				'post_parent' => $family_id,
+				'numberposts' => 50,
+				'orderby'     => 'ID',
+				'order'       => 'ASC',
 			)
 		);
 
