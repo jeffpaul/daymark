@@ -20,6 +20,8 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-13
+
 ### Added
 
 - New "Read to me" setting (Settings -> Daymark -> Data & privacy, off by default). When it's on and your AI provider can turn text into speech, a post in the app's full post view shows a Listen button at the top. The first tap makes an audio version, and Daymark saves it so the post is only sent to your provider once. ([#522](https://github.com/jeffpaul/daymark/pull/522))
@@ -29,7 +31,7 @@ can't act on them.
 - Push notifications now also tell you when you gain a follower: another Daymark or IndieWeb site, someone on the fediverse (through the ActivityPub plugin, which the Friends plugin also uses), or a Jetpack email or WordPress.com subscriber. Following a site now tells that site, which you can turn off in Settings -> Daymark -> General. ([#527](https://github.com/jeffpaul/daymark/pull/527))
 - A new setting shows the Timeline, Search, and Explore as a compact list: each post becomes one row with its title and a small thumbnail, so more posts fit on the screen. It's off by default; turn it on under Settings -> Daymark -> General. ([#520](https://github.com/jeffpaul/daymark/pull/520))
 - A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
-- A new Reading setting in Settings -> Daymark -> General shows the Daymark app's text in the [Bionic Reading](https://bionic-reading.com/) font. It is off by default. Daymark can't include the font, so it uses a Bionic Reading family from the site's Font Library, a web font file you host, or a copy installed on the reader's device.
+- A new Reading setting in Settings -> Daymark -> General shows the Daymark app's text in the [Bionic Reading](https://bionic-reading.com/) font. It is off by default. Daymark can't include the font, so it uses a Bionic Reading family from the site's Font Library, a web font file you host, or a copy installed on the reader's device. ([#533](https://github.com/jeffpaul/daymark/pull/533))
 
 ### Changed
 
@@ -758,7 +760,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.17.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.21.0...HEAD
+[0.21.0]: https://github.com/jeffpaul/daymark/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/jeffpaul/daymark/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/jeffpaul/daymark/compare/0.18.0...0.19.0
 [0.18.0]: https://github.com/jeffpaul/daymark/compare/0.17.0...0.18.0
