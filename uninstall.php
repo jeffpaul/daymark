@@ -46,7 +46,14 @@ delete_option( 'daymark_ai_auto_suggest' );
 delete_option( 'daymark_subscription_poll_interval' );
 delete_option( 'daymark_blogroll_public' );
 delete_option( 'daymark_hide_notes_on_home' );
+delete_option( 'daymark_compact_timeline' );
 delete_option( 'daymark_app_badge_unread' );
+delete_option( 'daymark_push_vapid' );
+delete_option( 'daymark_followers' );
+delete_option( 'daymark_follow_pages' );
+delete_option( 'daymark_follow_queue' );
+delete_option( 'daymark_announce_follows' );
+delete_option( 'daymark_jetpack_followers_since' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,
@@ -59,6 +66,9 @@ delete_metadata( 'user', 0, 'daymark_notification_read', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_unread', '', true );
 delete_metadata( 'user', 0, 'daymark_notification_archived', '', true );
 delete_metadata( 'user', 0, 'daymark_bookmark', '', true );
+delete_metadata( 'user', 0, 'daymark_push_subscription', '', true );
+delete_metadata( 'user', 0, 'daymark_push_prefs', '', true );
+delete_metadata( 'comment', 0, '_daymark_push_sent', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_last_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
@@ -70,6 +80,7 @@ delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
 wp_clear_scheduled_hook( 'daymark_backflow_sync' );
 wp_clear_scheduled_hook( 'daymark_backflow_sync_now' );
 wp_clear_scheduled_hook( 'daymark_subscription_poll' );
+wp_clear_scheduled_hook( 'daymark_subscription_poll_favorites' );
 wp_clear_scheduled_hook( 'daymark_uploads_cleanup' );
 // Per-subscription WebSub retry checks carry an argument, so clear every one.
 wp_unschedule_hook( 'daymark_websub_verify_timeout' );
@@ -79,6 +90,10 @@ wp_unschedule_hook( 'daymark_featured_content_resolve_image' );
 // received Webmention, with arguments).
 wp_unschedule_hook( 'daymark_webmention_send' );
 wp_unschedule_hook( 'daymark_webmention_verify' );
+wp_unschedule_hook( 'daymark_push_dispatch' );
+wp_unschedule_hook( 'daymark_follow_send' );
+wp_unschedule_hook( 'daymark_follow_verify' );
+wp_unschedule_hook( 'daymark_followers_check_jetpack' );
 
 // The share image Daymark resolved for a post's remote Featured Content
 // (issue #408) is a cache derived from that content, not content itself,

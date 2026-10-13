@@ -11,23 +11,16 @@
 (function () {
 	'use strict';
 
-	// wp.i18n backs every translated string (issue #253) — always present
-	// on the normal online app shell, which registers it as a hard script
-	// dependency (templates/app-shell.php). The offline-fallback shell
-	// (templates/offline-shell.php) deliberately loads nothing but this
-	// file and its own bootstrap script — see that template's own
-	// docblock — so wp.i18n is never available there. Without this
-	// fallback, destructuring it throws immediately and aborts this
-	// entire script before anything renders: the offline shell's own
-	// "Loading Daymark…" placeholder never resolves (found via a Playwright
-	// cold-offline test's page-error relay, issue #126). Plain,
-	// untranslated implementations here match this codebase's "never
-	// throws" posture elsewhere — English-only output is an acceptable
-	// trade for a resilience fallback that exists for when nothing else is
-	// working either. sprintf's own subset (this file only ever uses %s,
-	// %d, positional %1$s/%2$s, and %% for a literal percent sign) is small enough to reimplement
-	// directly rather than pull in a library for a path that only runs
-	// offline.
+	// wp.i18n backs every translated string (issue #253). The online app
+	// shell loads it as a dependency of this script (templates/app-shell.php),
+	// and the offline-fallback shell loads core's own copy too, with the
+	// site's translations taken from config.json (templates/offline-shell.php,
+	// assets/offline-boot.js). This fallback only runs if wp.i18n still
+	// failed to load, for example from an old cache. Without it,
+	// destructuring wp.i18n would throw and stop this whole script before
+	// anything renders (found by a Playwright cold-offline test, issue #126).
+	// It shows English. Its sprintf covers only what this file uses: %s, %d,
+	// positional %1$s/%2$s, and %% for a literal percent sign.
 	const i18n = (window.wp && window.wp.i18n) || {
 		__: (text) => text,
 		_n: (single, plural, count) => (count === 1 ? single : plural),
@@ -124,6 +117,229 @@
 			return 'prompt';
 		}
 		return isIosDevice() ? 'ios' : '';
+	}
+
+	// --- Web push (Me screen) ---
+	//
+	// Push is turned on per device: the browser makes a push subscription
+	// signed for this site's public key, and the app hands it to the site
+	// (POST /push/subscriptions). See Daymark_Push. On iPhone and iPad,
+	// Safari offers push only to an app added to the Home Screen.
+
+	// Which kinds of push a person can choose, in display order.
+	const PUSH_KINDS = [
+		{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') },
+		{ key: 'favorites', label: () => __('New posts from favorite sites', 'daymark') },
+		{ key: 'followers', label: () => __('New followers and subscribers', 'daymark') },
+	];
+
+	function pushSupported() {
+		return (
+			!config.offlineShell &&
+			!!(config.push && config.push.publicKey) &&
+			'serviceWorker' in navigator &&
+			'PushManager' in window &&
+			'Notification' in window
+		);
+	}
+
+	// The base64url VAPID key as the bytes PushManager.subscribe() wants.
+	function vapidKeyBytes(base64url) {
+		const padded = (base64url + '==='.slice((base64url.length + 3) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+		const raw = window.atob(padded);
+		const bytes = new Uint8Array(raw.length);
+		for (let i = 0; i < raw.length; i++) {
+			bytes[i] = raw.charCodeAt(i);
+		}
+		return bytes;
+	}
+
+	function pushRegistration() {
+		if (!('serviceWorker' in navigator) || !config.appUrl) {
+			return Promise.resolve(null);
+		}
+		return navigator.serviceWorker.getRegistration(config.appUrl).catch(() => null);
+	}
+
+	function pushSettingsMarkup() {
+		const iosNeedsInstall = !pushSupported() && isIosDevice() && !isInstalledApp();
+		if (!pushSupported() && !iosNeedsInstall) {
+			return '';
+		}
+		const prefs = (config.push && config.push.prefs) || {};
+		const kinds = PUSH_KINDS.map(
+			(kind) => `
+				<li class="daymark-dest">
+					<label class="daymark-dest__row" for="daymark-push-${esc(kind.key)}">
+						<span class="daymark-dest__info"><span class="daymark-dest__name">${esc(kind.label())}</span></span>
+						<span class="daymark-toggle">
+							<input type="checkbox" class="daymark-toggle__input" id="daymark-push-${esc(kind.key)}" data-push-pref="${esc(
+								kind.key
+							)}"${prefs[kind.key] ? ' checked' : ''} />
+							<span class="daymark-toggle__track" aria-hidden="true"></span>
+						</span>
+					</label>
+				</li>`
+		).join('');
+		return `
+				<section class="daymark-mepush" data-me-push aria-labelledby="daymark-me-push-heading">
+					<h2 id="daymark-me-push-heading" class="daymark-section-heading">${esc(__('Push notifications', 'daymark'))}</h2>
+					${
+						iosNeedsInstall
+							? `<p class="daymark-field__help">${esc(
+									__('To get notifications on this iPhone or iPad, add Daymark to your Home Screen first, then open it from there.', 'daymark')
+							  )}</p>`
+							: `<ul class="daymark-destlist">
+						<li class="daymark-dest">
+							<label class="daymark-dest__row" for="daymark-push-device">
+								<span class="daymark-dest__info"><span class="daymark-dest__name">${esc(
+									__('Notifications on this device', 'daymark')
+								)}</span></span>
+								<span class="daymark-toggle">
+									<input type="checkbox" class="daymark-toggle__input" id="daymark-push-device" data-push-device />
+									<span class="daymark-toggle__track" aria-hidden="true"></span>
+								</span>
+							</label>
+						</li>
+					</ul>
+					<div class="daymark-mepush__options" data-push-options hidden>
+						<p class="daymark-field__help">${esc(__('Send a notification for:', 'daymark'))}</p>
+						<ul class="daymark-destlist">${kinds}</ul>
+						<button type="button" class="daymark-btn daymark-btn--text" data-push-test>${esc(__('Send a test notification', 'daymark'))}</button>
+					</div>
+					<p class="daymark-field__help" data-push-status role="status"></p>`
+					}
+				</section>`;
+	}
+
+	async function bindPushSettings(section) {
+		if (!section || !pushSupported()) {
+			return;
+		}
+		const device = section.querySelector('[data-push-device]');
+		const options = section.querySelector('[data-push-options]');
+		const status = section.querySelector('[data-push-status]');
+		const test = section.querySelector('[data-push-test]');
+		const say = (text) => {
+			if (status) {
+				status.textContent = text;
+			}
+		};
+		const show = (on) => {
+			device.checked = on;
+			options.hidden = !on;
+		};
+
+		const registration = await pushRegistration();
+		if (!section.isConnected) {
+			return;
+		}
+		if (!registration) {
+			device.disabled = true;
+			say(__('Notifications need Daymark’s offline support, which this browser hasn’t set up yet. Reload and try again.', 'daymark'));
+			return;
+		}
+		if ('denied' === Notification.permission) {
+			device.disabled = true;
+			say(__('Notifications are blocked for this site. Allow them in your browser or device settings, then come back.', 'daymark'));
+			return;
+		}
+
+		const existing = await registration.pushManager.getSubscription().catch(() => null);
+		show(!!existing && 'granted' === Notification.permission);
+		if (existing && 'granted' === Notification.permission) {
+			// Re-send it, in case the site forgot this device (removed after
+			// a failed delivery, or saved under someone else on a shared
+			// browser). Saving is idempotent.
+			apiPost('push/subscriptions', { subscription: existing.toJSON() }).catch(() => {});
+		}
+
+		device.addEventListener('change', async () => {
+			device.disabled = true;
+			say('');
+			try {
+				if (device.checked) {
+					const permission = await Notification.requestPermission();
+					if ('granted' !== permission) {
+						show(false);
+						say(__('Notifications weren’t allowed, so none will be sent to this device.', 'daymark'));
+						return;
+					}
+					const ready = await navigator.serviceWorker.ready;
+					const sub =
+						(await ready.pushManager.getSubscription()) ||
+						(await ready.pushManager.subscribe({
+							userVisibleOnly: true,
+							applicationServerKey: vapidKeyBytes(config.push.publicKey),
+						}));
+					const saved = await apiPost('push/subscriptions', { subscription: sub.toJSON() });
+					if (saved && saved.prefs) {
+						config.push.prefs = saved.prefs;
+					}
+					show(true);
+					say(__('Notifications are on for this device.', 'daymark'));
+				} else {
+					const sub = await registration.pushManager.getSubscription();
+					if (sub) {
+						await apiDelete('push/subscriptions?endpoint=' + encodeURIComponent(sub.endpoint)).catch(() => {});
+						await sub.unsubscribe().catch(() => {});
+					}
+					show(false);
+					say(__('Notifications are off for this device.', 'daymark'));
+				}
+			} catch (err) {
+				show(!device.checked);
+				say(
+					sprintf(
+						/* translators: %s: error message */
+						__('Couldn’t change notifications. %s', 'daymark'),
+						err && err.message ? err.message : ''
+					)
+				);
+			} finally {
+				device.disabled = false;
+			}
+		});
+
+		section.querySelectorAll('[data-push-pref]').forEach((input) => {
+			input.addEventListener('change', () => {
+				const key = input.getAttribute('data-push-pref');
+				apiPost('push/preferences', { [key]: input.checked })
+					.then((res) => {
+						if (res && res.prefs) {
+							config.push.prefs = res.prefs;
+						}
+					})
+					.catch((err) => {
+						input.checked = !input.checked;
+						say(err && err.message ? err.message : __('Couldn’t save that change.', 'daymark'));
+					});
+			});
+		});
+
+		if (test) {
+			test.addEventListener('click', () => {
+				test.disabled = true;
+				say(__('Sending…', 'daymark'));
+				apiPost('push/test', {})
+					.then((res) => {
+						const sent = res && res.sent ? Number(res.sent) : 0;
+						say(
+							sent
+								? sprintf(
+										/* translators: %d: number of devices */
+										_n('Sent to %d device.', 'Sent to %d devices.', sent, 'daymark'),
+										sent
+								  )
+								: __('The push service didn’t accept the test. Try turning notifications off and on again.', 'daymark')
+						);
+					})
+					.catch((err) => say(err && err.message ? err.message : ''))
+					.finally(() => {
+						test.disabled = false;
+					});
+			});
+		}
 	}
 
 	function installCardDismissKey() {
@@ -348,52 +564,59 @@
 		return Number.isNaN(date.getTime()) ? null : date;
 	}
 
-	const PHP_MONTH_NAMES = [
-		__('January', 'daymark'),
-		__('February', 'daymark'),
-		__('March', 'daymark'),
-		__('April', 'daymark'),
-		__('May', 'daymark'),
-		__('June', 'daymark'),
-		__('July', 'daymark'),
-		__('August', 'daymark'),
-		__('September', 'daymark'),
-		__('October', 'daymark'),
-		__('November', 'daymark'),
-		__('December', 'daymark'),
-	];
-	const PHP_MONTH_ABBR = [
-		__('Jan', 'daymark'),
-		__('Feb', 'daymark'),
-		__('Mar', 'daymark'),
-		__('Apr', 'daymark'),
-		__('May', 'daymark'),
-		__('Jun', 'daymark'),
-		__('Jul', 'daymark'),
-		__('Aug', 'daymark'),
-		__('Sep', 'daymark'),
-		__('Oct', 'daymark'),
-		__('Nov', 'daymark'),
-		__('Dec', 'daymark'),
-	];
-	const PHP_DAY_NAMES = [
-		__('Sunday', 'daymark'),
-		__('Monday', 'daymark'),
-		__('Tuesday', 'daymark'),
-		__('Wednesday', 'daymark'),
-		__('Thursday', 'daymark'),
-		__('Friday', 'daymark'),
-		__('Saturday', 'daymark'),
-	];
-	const PHP_DAY_ABBR = [
-		__('Sun', 'daymark'),
-		__('Mon', 'daymark'),
-		__('Tue', 'daymark'),
-		__('Wed', 'daymark'),
-		__('Thu', 'daymark'),
-		__('Fri', 'daymark'),
-		__('Sat', 'daymark'),
-	];
+	// Month and weekday names for the Date Format, in the site's language.
+	// The server sends them from WordPress core's own translations
+	// (config.dateNames, see Daymark_Routes::date_names()), so they match
+	// wp-admin exactly and Daymark's translators never repeat that work.
+	// The English lists are only a fallback for a config without them.
+	function dateNameList(key, fallback) {
+		const list = config.dateNames && config.dateNames[key];
+		return Array.isArray(list) && list.length === fallback.length ? list : fallback;
+	}
+	const PHP_MONTH_NAMES = dateNameList('months', [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December',
+	]);
+	const PHP_MONTH_ABBR = dateNameList('monthsShort', [
+		'Jan',
+		'Feb',
+		'Mar',
+		'Apr',
+		'May',
+		'Jun',
+		'Jul',
+		'Aug',
+		'Sep',
+		'Oct',
+		'Nov',
+		'Dec',
+	]);
+	const PHP_DAY_NAMES = dateNameList('weekdays', [
+		'Sunday',
+		'Monday',
+		'Tuesday',
+		'Wednesday',
+		'Thursday',
+		'Friday',
+		'Saturday',
+	]);
+	const PHP_DAY_ABBR = dateNameList('weekdaysShort', ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+
+	// The page's language (from language_attributes() on <html>), for the
+	// few places that still format with the browser's Intl support. Using
+	// it, rather than the browser default, keeps a time like "3:05 PM" in
+	// the same language as the translated text around it.
+	const SITE_LANG = document.documentElement.lang || undefined;
 
 	function ordinalSuffix(day) {
 		if (day % 10 === 1 && day !== 11) {
@@ -485,7 +708,7 @@
 	// the server never sent a format (shouldn't happen — every WP install
 	// has this option set).
 	function formatAbsoluteDate(date) {
-		return config.dateFormat ? formatDateWithPhpFormat(date, config.dateFormat) : date.toLocaleDateString();
+		return config.dateFormat ? formatDateWithPhpFormat(date, config.dateFormat) : date.toLocaleDateString(SITE_LANG);
 	}
 
 	function relativeTime(value) {
@@ -499,15 +722,27 @@
 		}
 		const minutes = Math.floor(seconds / 60);
 		if (minutes < 60) {
-			return sprintf(__('%dm ago', 'daymark'), minutes);
+			return sprintf(
+				/* translators: %d: number of minutes since the post was published. Keep it short. */
+				__('%dm ago', 'daymark'),
+				minutes
+			);
 		}
 		const hours = Math.floor(minutes / 60);
 		if (hours < 24) {
-			return sprintf(__('%dh ago', 'daymark'), hours);
+			return sprintf(
+				/* translators: %d: number of hours since the post was published. Keep it short. */
+				__('%dh ago', 'daymark'),
+				hours
+			);
 		}
 		const days = Math.floor(hours / 24);
 		if (days < 7) {
-			return sprintf(__('%dd ago', 'daymark'), days);
+			return sprintf(
+				/* translators: %d: number of days since the post was published. Keep it short. */
+				__('%dd ago', 'daymark'),
+				days
+			);
 		}
 		return formatAbsoluteDate(date);
 	}
@@ -528,7 +763,7 @@
 			/* translators: 1: date, 2: time */
 			__('%1$s at %2$s', 'daymark'),
 			formatAbsoluteDate(date),
-			date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+			date.toLocaleTimeString(SITE_LANG, { hour: 'numeric', minute: '2-digit' })
 		);
 		return `<time datetime="${esc(date.toISOString())}" title="${esc(full)}">${esc(
 			relativeTime(value)
@@ -752,6 +987,9 @@
 	// Feather "volume-2": the full post view's Listen button (Read to me).
 	const LISTEN_GLYPH =
 		'<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>';
+	// Feather "star": a favorite followed site (Explore's Following list).
+	const STAR_GLYPH =
+		'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -4030,6 +4268,58 @@
 		)}</option>${subscriptionOptions}`;
 	}
 
+	// The star beside a followed site in Explore: a favorite is checked
+	// every hour, and its new posts send a push (Daymark_Push).
+	function favoriteToggleMarkup(id, label, on) {
+		const text = on
+			? sprintf(
+					/* translators: %s: site name */
+					__('Remove %s from favorites', 'daymark'),
+					label
+			  )
+			: sprintf(
+					/* translators: %s: site name */
+					__('Add %s to favorites', 'daymark'),
+					label
+			  );
+		return `<button type="button" class="daymark-stat daymark-follow__star${
+			on ? ' daymark-stat--active' : ''
+		}" aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(text)}" title="${esc(text)}" data-favorite-toggle="${esc(
+			String(id)
+		)}" data-favorite-label="${esc(label)}">${statIcon(STAR_GLYPH)}</button>`;
+	}
+
+	function toggleFavoriteSite(button) {
+		if (button.hasAttribute('aria-busy')) {
+			return;
+		}
+		const id = button.getAttribute('data-favorite-toggle');
+		const label = button.getAttribute('data-favorite-label') || '';
+		const on = 'true' !== button.getAttribute('aria-pressed');
+		const apply = (state) => {
+			const fresh = document.createElement('div');
+			fresh.innerHTML = favoriteToggleMarkup(id, label, state);
+			const next = fresh.firstElementChild;
+			button.replaceWith(next);
+			return next;
+		};
+		const next = apply(on);
+		next.setAttribute('aria-busy', 'true');
+		next.focus();
+		const path = 'subscriptions/' + encodeURIComponent(id) + '/favorite';
+		(on ? apiPost(path, {}) : apiDelete(path))
+			.then(() => {
+				next.removeAttribute('aria-busy');
+				showFlashBubble(
+					next,
+					on ? __('Added to favorites', 'daymark') : __('Removed from favorites', 'daymark')
+				);
+			})
+			.catch(() => {
+				apply(!on).focus();
+			});
+	}
+
 	// Active subscriptions, for the Source filter and Explore's Following
 	// section — never throws; an empty list just means those UIs show
 	// nothing extra rather than failing.
@@ -4135,6 +4425,58 @@
 		return `<div class="daymark-recent__leadcol">${siteIconHtml}${renderTypeIcon(kind)}</div>`;
 	}
 
+	// --- Compact list (Settings -> Daymark -> General) ---
+	//
+	// When the site turns on the compact list (config.compactTimeline), a
+	// published card shows only its title and one small thumbnail, so many
+	// more posts fit on a screen. The lead column (site icon and rail icon)
+	// stays, so the list still reads as a Timeline. Opening a card shows the
+	// full post view, where every action still is. Drafts keep their full
+	// card, since tapping one reopens the composer.
+	function isCompactList() {
+		return !!config.compactTimeline;
+	}
+
+	// The one image a compact card shows, or '' for none. Featured Content
+	// wins, the same order the full card's media slot uses
+	// (mediaKindForItem()); a site icon never stands in for a thumbnail.
+	function compactThumbSrc(item) {
+		const fc = item.featured_content;
+		if (fc) {
+			if (Array.isArray(fc.images) && fc.images.length) {
+				return fc.images[0];
+			}
+			if (fc.image) {
+				return fc.image;
+			}
+			if ('link' === fc.type && fc.preview && fc.preview.image) {
+				return fc.preview.image;
+			}
+		}
+		if (item.gallery && Array.isArray(item.gallery.images) && item.gallery.images.length) {
+			return item.gallery.images[0];
+		}
+		return item.thumbnail || item.featured_image_url || '';
+	}
+
+	// A compact card: the title as the card's "open" button (see
+	// renderCardTitle()), then the thumbnail when there is one. `dataAttr`
+	// is the card's own data-expand-post/data-subpost attribute, so every
+	// tap handler and observer finds it the same way as a full card.
+	function renderCompactCard(item, kind, title, dataAttr, titleId) {
+		const src = compactThumbSrc(item);
+		const glyph = (CARD_KIND_LABELS[kind] || 'S').charAt(0);
+		const thumb = src
+			? `<span class="daymark-recent__compactthumb">${imgWithFallback(src, 'daymark-recent__thumb', glyph)}</span>`
+			: '';
+		return `<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--compact" ${dataAttr}>
+					<span class="daymark-recent__title daymark-recent__title--compact" id="${esc(
+						titleId
+					)}"><button type="button" class="daymark-recent__open">${esc(title)}</button></span>
+					${thumb}
+				</div>`;
+	}
+
 	// One Mark's card markup — the thumbnail-or-glyph + title + meta + stats
 	// core (renderMarkCore()) wrapped in its own tap target plus, for a
 	// Draft only, the shared ⋯ edit/delete actions menu. Used everywhere a
@@ -4212,6 +4554,14 @@
 						</div>
 					</div>
 				</div>`;
+		if (!isDraft && isCompactList()) {
+			const compactTitleId = nextCardTitleId();
+			return `
+			<article class="daymark-recent__item-wrap daymark-recent__item-wrap--compact" data-item="${id}" aria-labelledby="${compactTitleId}">
+				${renderLeadColumn(siteIcon, kind)}
+				${renderCompactCard(item, kind, title, `data-expand-post="${id}"`, compactTitleId)}
+			</article>`;
+		}
 		const layoutKind = cardLayoutKind(item, kind);
 		// A published card is a plain container holding real controls: its
 		// title button opens the post (and stretches over the whole card, see
@@ -4463,6 +4813,10 @@
 	const OEMBED_PREVIEW_LOOKAHEAD = '600px';
 
 	function observeOembedPreviewCandidates(screen, container) {
+		// A compact card has no media slot or preview to fill in.
+		if (isCompactList()) {
+			return;
+		}
 		if (!('IntersectionObserver' in window) || !container) {
 			return;
 		}
@@ -4827,7 +5181,7 @@
 			const item = screen._bySubId.get(subTrigger.getAttribute('data-subpost'));
 			if (item) {
 				saveFeedSnapshot(screen, subTrigger);
-				openPostView('sub', item);
+				openPostView('sub', item, postViewList(screen));
 			}
 			return;
 		}
@@ -4839,7 +5193,7 @@
 			const item = screen._byMarkId.get(markTrigger.getAttribute('data-expand-post'));
 			if (item) {
 				saveFeedSnapshot(screen, markTrigger);
-				openPostView('mark', item);
+				openPostView('mark', item, postViewList(screen));
 			}
 			return;
 		}
@@ -5283,6 +5637,21 @@
 	// its play button beside it rather than inside it, so both go.
 	function refreshCardMedia(id, item) {
 		document.querySelectorAll(`[data-expand-post="${CSS.escape(String(id))}"]`).forEach((card) => {
+			if (card.classList.contains('daymark-recent__item--compact')) {
+				// A compact card is redrawn whole: it may not have had a
+				// thumbnail at all until now.
+				const titleEl = card.querySelector('.daymark-recent__title');
+				const title = titleEl ? titleEl.textContent : '';
+				const titleId = titleEl ? titleEl.id : nextCardTitleId();
+				card.outerHTML = renderCompactCard(
+					item,
+					resolveCardKind(item),
+					title,
+					`data-expand-post="${esc(String(id))}"`,
+					titleId
+				);
+				return;
+			}
 			const old = card.querySelector('.daymark-recent__thumbwrap');
 			if (!old) {
 				return;
@@ -8064,6 +8433,13 @@
 								: ''
 						}
 					</div>
+					${
+						config.canManageSubscriptions
+							? `<p class="daymark-field__help">${esc(
+									__('Star a site to check it every hour and get a notification when it posts.', 'daymark')
+							  )}</p>`
+							: ''
+					}
 					<div class="daymark-recent__list" data-explore-following>
 						${skeletonRows(2)}
 						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
@@ -8092,6 +8468,11 @@
 			const following = root.querySelector('[data-explore-following]');
 			if (following) {
 				following.addEventListener('click', (event) => {
+					const star = event.target.closest('[data-favorite-toggle]');
+					if (star) {
+						toggleFavoriteSite(star);
+						return;
+					}
 					const trigger = event.target.closest('[data-explore-subscription]');
 					if (!trigger) {
 						return;
@@ -8165,9 +8546,10 @@
 			}
 			const subscriptionLabel = (sub) =>
 				sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url;
+			// Favorites first, then A to Z.
 			list.innerHTML = subscriptions
 				.slice()
-				.sort((a, b) => subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
+				.sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || subscriptionLabel(a).localeCompare(subscriptionLabel(b)))
 				.map((sub) => {
 					const label = subscriptionLabel(sub);
 					const icon = sub.site_icon_url
@@ -8175,11 +8557,15 @@
 						: `<span class="daymark-recent__thumb daymark-recent__thumb--glyph" aria-hidden="true">${esc(
 								label.charAt(0).toUpperCase()
 						  )}</span>`;
-					return `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
+					const open = `<button type="button" class="daymark-recent__item daymark-recent__item--button" data-explore-subscription="${esc(
 						String(sub.id)
 					)}">${icon}<span class="daymark-recent__body"><span class="daymark-recent__title">${esc(
 						label
 					)}</span></span></button>`;
+					if (!config.canManageSubscriptions) {
+						return open;
+					}
+					return `<div class="daymark-follow__row">${open}${favoriteToggleMarkup(sub.id, label, !!sub.favorite)}</div>`;
 				})
 				.join('');
 		},
@@ -8292,6 +8678,7 @@
 							: ''
 					}
 				</nav>
+				${pushSettingsMarkup()}
 				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
 					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-me-drafts>
@@ -8317,6 +8704,8 @@
 				install.addEventListener('click', () => startInstall(install));
 			}
 			refreshInstallUi();
+
+			bindPushSettings(root.querySelector('[data-me-push]'));
 
 			const logout = root.querySelector('[data-me-logout]');
 			if (logout) {
@@ -10632,7 +11021,7 @@
 				__('In reply to a post', 'daymark'),
 			],
 			repost: [
-				/* translators: %s: site name, e.g. example.com */
+				/* translators: %s: the original post's author and/or site, e.g. "Jane Doe, example.com". */
 				__('Reblogged from %s', 'daymark'),
 				__('Reblogged a post', 'daymark'),
 			],
@@ -11342,6 +11731,25 @@
 		// (renderMarkItem()) — Unsubscribe's own confirm step needs real
 		// interactive content of its own.
 		const siteLabel = subscriptionSiteLabel(item);
+		const siteIcon = renderSiteIconButton({
+			iconSrc: item.site_icon_url || '',
+			iconAlt: siteLabel,
+			ariaLabel: sprintf(
+				/* translators: %s: site name */
+				__('Show posts from %s', 'daymark'),
+				siteLabel
+			),
+			filterValue: String(item.subscription_id),
+			siteUrl: item.site_url || '',
+		});
+		if (isCompactList()) {
+			const compactTitleId = nextCardTitleId();
+			return `
+				<article class="daymark-recent__item-wrap daymark-recent__item-wrap--compact" aria-labelledby="${compactTitleId}">
+					${renderLeadColumn(siteIcon, kind)}
+					${renderCompactCard(item, kind, title, `data-subpost="${id}"`, compactTitleId)}
+				</article>`;
+		}
 		const overflowItems = subscriptionOverflowMenuItems(item);
 		// An article with a real featured image shows it as the same
 		// full-width banner an image Mark has, not a small thumbnail beside
@@ -11361,20 +11769,7 @@
 		const [leadTitle, bodyTitle] = renderCardTitle(title, layoutKind, media, titleId);
 		return `
 				<article class="daymark-recent__item-wrap" aria-labelledby="${titleId}">
-					${renderLeadColumn(
-						renderSiteIconButton({
-							iconSrc: item.site_icon_url || '',
-							iconAlt: siteLabel,
-							ariaLabel: sprintf(
-								/* translators: %s: site name */
-								__('Show posts from %s', 'daymark'),
-								siteLabel
-							),
-							filterValue: String(item.subscription_id),
-							siteUrl: item.site_url || '',
-						}),
-						kind
-					)}
+					${renderLeadColumn(siteIcon, kind)}
 					<div class="daymark-recent__item daymark-recent__item--card daymark-recent__item--${esc(
 						layoutKind
 					)}" data-subpost="${id}">
@@ -11697,10 +12092,120 @@
 		}
 	}
 
-	function openPostView(kind, item) {
-		pendingPostView = { kind, item, returnTo: window.location.hash || '#home' };
+	// `list` is the list the card was tapped in (see postViewList()), so
+	// the post view's Previous and Next buttons can step through it.
+	function openPostView(kind, item, list) {
+		pendingPostView = {
+			kind,
+			item,
+			returnTo: window.location.hash || '#home',
+			list: list || { items: [], pager: null },
+		};
 		navigate('#post');
 	}
+
+	// The list the post view steps through: the tapped screen's items, in
+	// list order, plus how to fetch its next page. It holds the same item
+	// objects the screen does, so a Like on a stepped-to post shows on its
+	// card after Back. When saveFeedSnapshot() just saved this screen,
+	// `items` is the snapshot's own array, so a page the post view loads
+	// is there too when Back re-renders the list. Home and Search page
+	// through GET /timeline; "On this day" has a single page, so no pager.
+	function postViewList(screen) {
+		const items =
+			feedSnapshot && Array.isArray(feedSnapshot.items) ? feedSnapshot.items : (screen._items || []).slice();
+		let pager = null;
+		if (screen === HomeScreen) {
+			pager = { params: '', page: screen.recentPage, perPage: RECENT_PER_PAGE, done: !!screen.recentDone };
+		} else if (screen === SearchScreen) {
+			pager = {
+				params: screen._searchParams || '',
+				page: screen._searchPage || 1,
+				perPage: SEARCH_PER_PAGE,
+				done: screen._searchDone !== false,
+			};
+		}
+		return { items, pager, source: screen };
+	}
+
+	// Fetch the list's next page into memory, once at a time; a second
+	// call while one is running waits for the same request. Resolves true
+	// when it added at least one post. A post already in the list (the
+	// Timeline can shift by a post while you read) is skipped, so stepping
+	// never revisits one. The saved list snapshot gets the new paging
+	// state, so Back shows these posts and infinite scroll resumes after
+	// them. Rejects on a failed request, leaving the pager able to retry.
+	function loadMorePostViewList(list) {
+		const pager = list && list.pager;
+		if (!pager || pager.done) {
+			return Promise.resolve(false);
+		}
+		if (pager.loading) {
+			return pager.loading;
+		}
+		const params = new URLSearchParams(pager.params);
+		params.set('per_page', String(pager.perPage));
+		params.set('page', String(pager.page + 1));
+		pager.loading = apiGet('timeline?' + params.toString())
+			.then((result) => {
+				const arr = Array.isArray(result) ? result : [];
+				pager.page += 1;
+				if (arr.length < pager.perPage) {
+					pager.done = true;
+				}
+				let added = 0;
+				arr.forEach((item) => {
+					if (timelineItemIndex(list.items, item) < 0) {
+						list.items.push(item);
+						added++;
+					}
+				});
+				if (feedSnapshot && feedSnapshot.items === list.items) {
+					if (list.source === HomeScreen) {
+						feedSnapshot.recentPage = pager.page;
+						feedSnapshot.recentDone = pager.done;
+					} else if (list.source === SearchScreen) {
+						feedSnapshot.searchPage = pager.page;
+						feedSnapshot.searchDone = pager.done;
+					}
+				}
+				return added > 0;
+			})
+			.finally(() => {
+				pager.loading = null;
+			});
+		return pager.loading;
+	}
+
+	function postViewHasMore(list) {
+		return !!(list && list.pager && !list.pager.done);
+	}
+
+	// The posts the post view can step to: published ones only, since a
+	// Draft card opens the composer instead of the post view.
+	function postViewSteppable(item) {
+		return !!item && (!item.status || 'publish' === item.status);
+	}
+
+	// The nearest openable post before (`direction` -1) or after (+1)
+	// `item` in `items`, or null at either end of the list.
+	function postViewNeighbor(items, item, direction) {
+		let index = timelineItemIndex(items, item);
+		if (index < 0) {
+			return null;
+		}
+		for (index += direction; index >= 0 && index < items.length; index += direction) {
+			if (postViewSteppable(items[index])) {
+				return items[index];
+			}
+		}
+		return null;
+	}
+
+	const CHEVRON_UP_GLYPH =
+		'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>';
+	const CHEVRON_DOWN_GLYPH =
+		'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
 	// --- Screen: full-screen post view ---
 	//
@@ -11766,6 +12271,7 @@
 					__('Back to Timeline', 'daymark')
 				)}
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(title)}</h1>
+				${this.stepButtonsHtml(view)}
 			</header>
 			<section class="daymark-screen">
 				<div class="daymark-postview" data-postview-body>
@@ -11792,10 +12298,103 @@
 		// refreshSubscriptionPost() the same way a Timeline card's own
 		// toggles reach back into their screen.
 		bindEvents() {
+			root.querySelectorAll('[data-postview-step]').forEach((button) =>
+				button.addEventListener('click', () =>
+					this.step(Number(button.getAttribute('data-postview-step')))
+				)
+			);
 			root.querySelectorAll('.daymark-postview-meta, .daymark-postview-footer').forEach((el) =>
 				el.addEventListener('click', (event) => onFeedListClick(this, event))
 			);
 			bindDismissible(this, [itemMenusDismissEntry()]);
+		},
+
+		// Previous (the newer post above this one on the list it was
+		// opened from) and Next (the older one below). Omitted when the
+		// view came from a list of one; a button with nothing to step to
+		// stays visible but disabled, so the pair never shifts the title.
+		stepButtonsHtml(view) {
+			const list = view && view.list;
+			const items = list && Array.isArray(list.items) ? list.items : [];
+			if (!view || (items.filter(postViewSteppable).length < 2 && !postViewHasMore(list))) {
+				return '';
+			}
+			const button = (direction, label, glyph) => {
+				const disabled =
+					!postViewNeighbor(items, view.item, direction) && !(direction > 0 && postViewHasMore(list));
+				return `<button type="button" class="daymark-iconbtn daymark-postview-step" data-postview-step="${direction}" aria-label="${esc(
+					label
+				)}" title="${esc(label)}"${disabled ? ' disabled' : ''}>${glyph}</button>`;
+			};
+			return `<div class="daymark-postview-steps">${button(
+				-1,
+				__('Previous post', 'daymark'),
+				CHEVRON_UP_GLYPH
+			)}${button(1, __('Next post', 'daymark'), CHEVRON_DOWN_GLYPH)}</div>`;
+		},
+
+		// Swap this screen to the neighboring post. At the last loaded post,
+		// Next first loads the list's next page (or waits for the one
+		// prefetch() already started). Back still returns to the list, now
+		// at the post shown last: the saved list snapshot's anchor moves to
+		// that post's card.
+		async step(direction) {
+			const view = this.view;
+			if (!view || this._stepping) {
+				return;
+			}
+			let next = postViewNeighbor(view.list.items, view.item, direction);
+			if (!next && direction > 0 && postViewHasMore(view.list)) {
+				const button = root.querySelector('[data-postview-step="1"]');
+				this._stepping = true;
+				if (button) {
+					button.setAttribute('aria-busy', 'true');
+					button.classList.add('is-loading');
+				}
+				try {
+					// A page of only Drafts adds nothing to step to; keep going.
+					while (!next && postViewHasMore(view.list)) {
+						await loadMorePostViewList(view.list);
+						next = postViewNeighbor(view.list.items, view.item, direction);
+					}
+				} catch (err) {
+					announce(__('Couldn’t load more posts. Try again.', 'daymark'));
+				} finally {
+					this._stepping = false;
+					if (button && button.isConnected) {
+						button.removeAttribute('aria-busy');
+						button.classList.remove('is-loading');
+						if (!next && !postViewHasMore(view.list)) {
+							button.disabled = true;
+						}
+					}
+				}
+				// The reader left the post view while the page loaded.
+				if (this.view !== view || (button && !root.contains(button))) {
+					return;
+				}
+			}
+			if (!next) {
+				return;
+			}
+			if (feedSnapshot && feedSnapshot.hash === view.returnTo) {
+				feedSnapshot.anchorSelector = timelineCardSelector(next);
+			}
+			pendingPostView = {
+				kind: 'subscription_post' === next.item_type ? 'sub' : 'mark',
+				item: next,
+				returnTo: view.returnTo,
+				list: view.list,
+			};
+			window.scrollTo(0, 0);
+			navigate('#post');
+			// showScreen() focused the new title. A keyboard user stepping
+			// through posts keeps their place on the same button instead,
+			// once the title has been announced.
+			const same = root.querySelector('[data-postview-step="' + direction + '"]');
+			if (same && !same.disabled && document.activeElement !== same) {
+				requestAnimationFrame(() => same.focus({ preventScroll: true }));
+			}
 		},
 
 		// showScreen()'s own guard already redirects a direct/refreshed
@@ -11814,7 +12413,19 @@
 			rememberItem(this, this.view.item);
 			teardownLikeAvailabilityObserver(this);
 			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			this.prefetch();
 			await this.load(false);
+		},
+
+		// On the last loaded post, start loading the list's next page now,
+		// so Next is ready by the time the reader has read this one. A
+		// failure here is silent; tapping Next tries again.
+		prefetch() {
+			const view = this.view;
+			if (!view || postViewNeighbor(view.list.items, view.item, 1) || !postViewHasMore(view.list)) {
+				return;
+			}
+			loadMorePostViewList(view.list).catch(() => {});
 		},
 
 		// `forceRefresh` only ever applies to a subscription post — a Mark
@@ -12124,7 +12735,7 @@
 			const item = hand && hand.item ? hand.item : {};
 			const linkText = item.title || item.permalink || '';
 			const defaultTitle = sprintf(
-				/* translators: %s: title of the reposted post */
+				/* translators: %s: title of the reblogged post */
 				__('Reblog: %s', 'daymark'),
 				linkText
 			);
@@ -12415,8 +13026,8 @@
 					}
 					const names = helpers.map((h) => esc(h.label)).join(', ');
 					return `<p class="daymark-helpers-note">${sprintf(
-						/* translators: %s: list of publishing helper plugin names */
 						esc(
+							/* translators: %s: list of publishing helper plugin names */
 							__(
 								'Your site’s publishing tools will also share this Mark, per their own settings: %s.',
 								'daymark'
@@ -12708,8 +13319,11 @@
 					}
 					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
 					status.textContent = sprintf(
-						/* translators: %s: error message */
-						isDraft ? __('Save failed: %s', 'daymark') : __('Publish failed: %s', 'daymark'),
+						isDraft
+							? /* translators: %s: error message */
+								__('Save failed: %s', 'daymark')
+							: /* translators: %s: error message */
+								__('Publish failed: %s', 'daymark'),
 						err2.message
 					);
 				}
@@ -13580,7 +14194,7 @@
 						isDead
 							? item.last_error
 							: sprintf(
-									/* translators: %s: fetch failure reason */
+									/* translators: %s: the most recent fetch failure's reason. */
 									__('Recent fetch issue: %s', 'daymark'),
 									item.last_error
 							  )
@@ -14133,6 +14747,26 @@
 	// to the ordinary boot instead of leaving the shell blank.
 	if (config.pendingDraftId) {
 		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
+	} else if (config.pendingPostId && !window.location.hash) {
+		// Tapped a push about a favorite site's new post: open that post,
+		// with Back going to the Timeline. Drop the parameter so a reload
+		// lands on the Timeline instead of opening the post again.
+		try {
+			const clean = new URL(window.location.href);
+			clean.searchParams.delete('daymark_post');
+			window.history.replaceState(null, '', clean.pathname + clean.search);
+		} catch (err) {
+			// Leave the address as it is.
+		}
+		apiGet('subscription-posts/' + Number(config.pendingPostId))
+			.then((item) => {
+				if (!item || !item.id) {
+					throw new Error('missing');
+				}
+				pendingPostView = { kind: 'sub', item, returnTo: '#home' };
+				navigate('#post');
+			})
+			.catch(() => showScreen(initialHash));
 	} else if (config.pendingType) {
 		// An external launcher (wp-admin's "+New -> Daymark" item,
 		// Daymark_Admin_Bar) wants the composer to open pre-set to a
@@ -14164,6 +14798,27 @@
 	// /daymark navigation any other cold load gets. Nothing already queued
 	// is lost: IndexedDB survives the reload and flushes again on the very
 	// next boot, same as this listener already does below.
+	// A home-screen app often resumes from the background instead of
+	// reloading, and the browser only looks for a new service worker on a
+	// page load. Asking on return to the foreground means a plugin update
+	// installs in the background and is used from the next launch, rather
+	// than waiting until the phone happens to close the app. At most once
+	// an hour, since each check is a request for /daymark/sw.js.
+	let lastAppUpdateCheck = Date.now();
+	function checkForAppUpdate() {
+		if (!('serviceWorker' in navigator) || config.offlineShell || !navigator.onLine) {
+			return;
+		}
+		if (Date.now() - lastAppUpdateCheck < 60 * 60 * 1000) {
+			return;
+		}
+		lastAppUpdateCheck = Date.now();
+		navigator.serviceWorker
+			.getRegistration(config.appUrl)
+			.then((registration) => (registration ? registration.update() : null))
+			.catch(() => {});
+	}
+
 	// Set the app badge from the boot config. The offline-fallback shell's
 	// cached config can be stale, so it leaves the badge as it was.
 	if (!config.offlineShell) {
@@ -14180,6 +14835,7 @@
 			checkUnreadNotifications();
 			// iOS drops a backgrounded app's requests; retry uploads now.
 			wakeUploads();
+			checkForAppUpdate();
 		}
 	});
 

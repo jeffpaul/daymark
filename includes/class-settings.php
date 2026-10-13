@@ -67,10 +67,21 @@ final class Daymark_Settings {
 	public const BLOGROLL_PUBLIC = 'daymark_blogroll_public';
 
 	/**
+	 * Option: tell a site when you start following it (a follow Webmention).
+	 */
+	public const ANNOUNCE_FOLLOWS = 'daymark_announce_follows';
+
+	/**
 	 * Option: keep Notes (Aside-format posts) off the blog's home page and
 	 * out of its main feed.
 	 */
 	public const HIDE_NOTES_ON_HOME = 'daymark_hide_notes_on_home';
+
+	/**
+	 * Option: show the app's Timeline as a compact list (title and
+	 * thumbnail only) instead of full cards.
+	 */
+	public const COMPACT_TIMELINE = 'daymark_compact_timeline';
 
 	/**
 	 * Option: show the number of unread notifications on the installed
@@ -117,6 +128,7 @@ final class Daymark_Settings {
 			self::POLL_INTERVAL,
 			self::BLOGROLL_PUBLIC,
 			self::HIDE_NOTES_ON_HOME,
+			self::COMPACT_TIMELINE,
 			self::APP_BADGE,
 			self::DEFAULT_DESTINATIONS,
 			self::DEFAULT_CATEGORIES,
@@ -410,6 +422,25 @@ final class Daymark_Settings {
 	}
 
 	/**
+	 * Whether following a site tells that site, with a follow Webmention
+	 * from an unlisted page on this site (Daymark_Followers). On by
+	 * default, so Daymark sites can show each other as followers.
+	 *
+	 * @return bool
+	 */
+	public static function announce_follows(): bool {
+		/**
+		 * Whether following a site sends it a follow Webmention.
+		 *
+		 * Defaults to the `daymark_announce_follows` option (Settings ->
+		 * Daymark -> General, on by default).
+		 *
+		 * @param bool $announce Defaults to the `daymark_announce_follows` option.
+		 */
+		return (bool) apply_filters( 'daymark_announce_follows', (bool) get_option( self::ANNOUNCE_FOLLOWS, true ) );
+	}
+
+	/**
 	 * Whether Notes are kept off the blog's home page and out of its main
 	 * feed. A Note is any post with the Aside post format, whether it came
 	 * from Daymark or the block editor (Daymark_Notes). Off by default, so
@@ -454,5 +485,28 @@ final class Daymark_Settings {
 		 * @param bool $show Defaults to the `daymark_app_badge_unread` option.
 		 */
 		return (bool) apply_filters( 'daymark_app_badge_unread', (bool) get_option( self::APP_BADGE, false ) );
+	}
+
+	/**
+	 * Whether the app shows the Timeline, Search, and Explore as a compact
+	 * list: each post as its title and one small thumbnail. Off by default,
+	 * so posts show as full cards.
+	 *
+	 * @return bool
+	 */
+	public static function compact_timeline(): bool {
+		/**
+		 * Whether the app lists posts compactly (title and thumbnail only)
+		 * instead of as full cards.
+		 *
+		 * Defaults to the `daymark_compact_timeline` option (Settings ->
+		 * Daymark -> General, off by default). Drafts and the full post
+		 * view are unchanged either way.
+		 *
+		 * @since 0.21.0
+		 *
+		 * @param bool $compact Defaults to the `daymark_compact_timeline` option.
+		 */
+		return (bool) apply_filters( 'daymark_compact_timeline', (bool) get_option( self::COMPACT_TIMELINE, false ) );
 	}
 }

@@ -956,12 +956,12 @@ class Daymark_AI_Assist {
 		}
 
 		$captions = array(
-			'image'   => 'A quiet scene, captured.',
-			'gallery' => 'A few scenes, gathered together.',
-			'video'   => 'A scene in motion.',
-			'audio'   => 'A scene in sound.',
-			'note'    => 'A small note from today.',
-			'mixed'   => 'A mixed-media mark.',
+			'image'   => __( 'A quiet scene, captured.', 'daymark' ),
+			'gallery' => __( 'A few scenes, gathered together.', 'daymark' ),
+			'video'   => __( 'A scene in motion.', 'daymark' ),
+			'audio'   => __( 'A scene in sound.', 'daymark' ),
+			'note'    => __( 'A small note from today.', 'daymark' ),
+			'mixed'   => __( 'A mixed-media mark.', 'daymark' ),
 		);
 
 		return $captions[ $context['type'] ] ?? $captions['note'];
@@ -986,15 +986,15 @@ class Daymark_AI_Assist {
 		}
 
 		$titles = array(
-			'image'   => 'A captured scene',
-			'gallery' => 'A gathered set',
-			'video'   => 'A scene in motion',
-			'audio'   => 'A scene in sound',
-			'note'    => 'A small note',
-			'mixed'   => 'A mixed-media mark',
+			'image'   => __( 'A captured scene', 'daymark' ),
+			'gallery' => __( 'A gathered set', 'daymark' ),
+			'video'   => __( 'A scene in motion', 'daymark' ),
+			'audio'   => __( 'A scene in sound', 'daymark' ),
+			'note'    => __( 'A small note', 'daymark' ),
+			'mixed'   => __( 'A mixed-media mark', 'daymark' ),
 		);
 
-		return $titles[ $context['type'] ] ?? 'A mark';
+		return $titles[ $context['type'] ] ?? __( 'A mark', 'daymark' );
 	}
 
 	/**
@@ -1008,11 +1008,11 @@ class Daymark_AI_Assist {
 		// wp_ai_client_prompt( $this->build_alt_text_prompt( $context ) )->generate_text()
 		// in suggest_alt_text().
 		$labels = array(
-			'image'   => 'Photo',
-			'gallery' => 'Photo gallery',
-			'video'   => 'Video',
-			'audio'   => 'Audio file',
-			'mixed'   => 'Media',
+			'image'   => __( 'Photo', 'daymark' ),
+			'gallery' => __( 'Photo gallery', 'daymark' ),
+			'video'   => __( 'Video', 'daymark' ),
+			'audio'   => __( 'Audio file', 'daymark' ),
+			'mixed'   => __( 'Media', 'daymark' ),
 		);
 
 		return $labels[ $context['type'] ] ?? '';

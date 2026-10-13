@@ -185,6 +185,8 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
 		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
+		add_action( 'admin_post_daymark_timeline_display_save', array( $this, 'handle_timeline_display_save' ) );
+		add_action( 'admin_post_daymark_announce_follows_save', array( $this, 'handle_announce_follows_save' ) );
 		add_action( 'admin_post_daymark_app_badge_save', array( $this, 'handle_app_badge_save' ) );
 		add_action( 'admin_post_daymark_publishing_defaults_save', array( $this, 'handle_publishing_defaults_save' ) );
 		add_action( 'admin_post_daymark_links_import', array( $this, 'handle_links_import' ) );
@@ -654,9 +656,9 @@ class Daymark_Admin_Subscriptions {
 
 	/**
 	 * The General tab: how often followed sites are checked, whether
-	 * they're shared as a public blogroll, what new Marks start with, and
-	 * where Notes show on the site, and whether the app icon shows an
-	 * unread count.
+	 * they're shared as a public blogroll, what new Marks start with,
+	 * where Notes show on the site, how the app lists posts, and whether
+	 * the app icon shows an unread count.
 	 *
 	 * @return void
 	 */
@@ -667,10 +669,13 @@ class Daymark_Admin_Subscriptions {
 		<h2><?php esc_html_e( 'Sites you follow', 'daymark' ); ?></h2>
 		<?php $this->render_poll_interval_form(); ?>
 		<?php $this->render_blogroll_form(); ?>
+		<?php $this->render_announce_follows_form(); ?>
 		<h2><?php esc_html_e( 'New Marks', 'daymark' ); ?></h2>
 		<?php $this->render_publishing_defaults_form(); ?>
 		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
 		<?php $this->render_notes_form(); ?>
+		<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
+		<?php $this->render_timeline_display_form(); ?>
 		<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
 		<?php $this->render_app_badge_form(); ?>
 		<?php
@@ -1218,6 +1223,8 @@ class Daymark_Admin_Subscriptions {
 			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
 			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
+			'timeline_display_saved'    => __( 'Timeline setting saved.', 'daymark' ),
+			'announce_follows_saved'    => __( 'Follow setting saved.', 'daymark' ),
 			'app_badge_saved'           => __( 'App icon setting saved.', 'daymark' ),
 			'publishing_defaults_saved' => __( 'Defaults for new Marks saved.', 'daymark' ),
 			'bridgy_fed_saved'          => __( 'Bridgy Fed setting saved.', 'daymark' ),
@@ -3492,6 +3499,108 @@ class Daymark_Admin_Subscriptions {
 		update_option( Daymark_Settings::APP_BADGE, isset( $_POST[ Daymark_Settings::APP_BADGE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'app_badge_saved' ), 'general' );
+	}
+
+	/**
+	 * Whether following a site tells that site (a follow Webmention, see
+	 * Daymark_Followers). On by default.
+	 *
+	 * @return void
+	 */
+	private function render_announce_follows_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::ANNOUNCE_FOLLOWS, true );
+		$effective  = Daymark_Settings::announce_follows();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_announce_follows_save" />
+			<?php wp_nonce_field( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::ANNOUNCE_FOLLOWS ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Tell sites when you follow them', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'When you follow a site, Daymark sends it a Webmention from a small, unlisted page on your site that says you follow it. Daymark sites and other IndieWeb sites can then show you as a follower. Unfollowing removes the page. Sites you followed before turning this on aren’t told.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-announce-follows-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the follow announcement setting (admin_post_daymark_announce_follows_save).
+	 *
+	 * @return void
+	 */
+	public function handle_announce_follows_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_announce_follows_save', 'daymark_announce_follows_save_nonce' );
+
+		update_option( Daymark_Settings::ANNOUNCE_FOLLOWS, isset( $_POST[ Daymark_Settings::ANNOUNCE_FOLLOWS ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'announce_follows_saved' ), 'general' );
+	}
+
+	/**
+	 * The Timeline setting: whether the app lists posts compactly, as just
+	 * a title and thumbnail. Off by default.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	private function render_timeline_display_form(): void {
+		$stored     = (bool) get_option( Daymark_Settings::COMPACT_TIMELINE, false );
+		$effective  = Daymark_Settings::compact_timeline();
+		$overridden = $stored !== $effective;
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_timeline_display_save" />
+			<?php wp_nonce_field( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::COMPACT_TIMELINE ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php esc_html_e( 'Show posts as a compact list', 'daymark' ); ?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'The Timeline, Search, and Explore show each post as just its title and a small thumbnail, so more posts fit on the screen. Open a post to see all of it and to like, comment, or reblog. Drafts still show in full.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php else : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-timeline-display-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Timeline setting (admin_post_daymark_timeline_display_save).
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	public function handle_timeline_display_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_timeline_display_save', 'daymark_timeline_display_save_nonce' );
+
+		update_option( Daymark_Settings::COMPACT_TIMELINE, isset( $_POST[ Daymark_Settings::COMPACT_TIMELINE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'timeline_display_saved' ), 'general' );
 	}
 
 	/**

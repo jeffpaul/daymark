@@ -174,6 +174,14 @@ class Daymark_Rate_Limiter {
 	public const ACTION_SPEECH = 'speech';
 
 	/**
+	 * Send a test push to your own devices (POST /push/test). Each one is
+	 * a request to every device's push service, so it's kept small.
+	 *
+	 * @var string
+	 */
+	public const ACTION_PUSH_TEST = 'push_test';
+
+	/**
 	 * Default limits: action => [ limit, window_seconds ].
 	 *
 	 * @var array<string, array{limit: int, window: int}>
@@ -237,6 +245,10 @@ class Daymark_Rate_Limiter {
 		),
 		self::ACTION_SPEECH                  => array(
 			'limit'  => 10,
+			'window' => 15 * MINUTE_IN_SECONDS,
+		),
+		self::ACTION_PUSH_TEST               => array(
+			'limit'  => 5,
 			'window' => 15 * MINUTE_IN_SECONDS,
 		),
 	);

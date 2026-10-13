@@ -194,7 +194,7 @@ class Daymark_Jetpack_Engagement {
 	 *
 	 * @return int
 	 */
-	private static function own_site_id(): int {
+	public static function own_site_id(): int {
 		try {
 			$manager = new \Automattic\Jetpack\Connection\Manager();
 

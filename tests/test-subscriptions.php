@@ -133,7 +133,9 @@ class Test_Subscriptions extends WP_UnitTestCase {
 		$table   = Daymark_Subscriptions::table_name();
 		$columns = $wpdb->get_col( "DESCRIBE {$table}" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared -- Test assertion against a custom table's schema; table name only, not user input.
 
-		$this->assertSame(
+		// Order-insensitive: an upgraded table gets new columns at the end
+		// (dbDelta's ALTER), a fresh one in schema order.
+		$this->assertEqualsCanonicalizing(
 			array(
 				'id',
 				'site_url',
@@ -151,6 +153,7 @@ class Test_Subscriptions extends WP_UnitTestCase {
 				'websub_status',
 				'websub_lease_expires_at',
 				'websub_secret',
+				'favorited_at',
 				'created_at',
 			),
 			$columns

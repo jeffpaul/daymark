@@ -83,7 +83,7 @@ class Daymark_Subscription_OPML {
 
 		$head = $dom->createElement( 'head' );
 		$opml->appendChild( $head );
-		$head->appendChild( $dom->createElement( 'title', 'Daymark Subscriptions' ) );
+		$head->appendChild( $dom->createElement( 'title', __( 'Daymark Subscriptions', 'daymark' ) ) );
 		// RFC 822 date, the format OPML's own spec expects for dateCreated.
 		$head->appendChild( $dom->createElement( 'dateCreated', gmdate( 'D, d M Y H:i:s \G\M\T' ) ) );
 
