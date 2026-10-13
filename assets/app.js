@@ -54,6 +54,51 @@
 		return;
 	}
 
+	applyReadingFont(config.readingFont || {});
+
+	// The Bionic Reading font (Settings -> Daymark -> General, off by
+	// default). Daymark can't ship the font, so it loads the site's own
+	// copy: a Font Library family, or a licensed web font file. The font
+	// stack in app.css then falls back to a copy installed on the
+	// device, and to the usual system font after that.
+	function applyReadingFont(setting) {
+		if (!setting.bionic) {
+			return;
+		}
+
+		document.documentElement.classList.add('daymark-bionic-reading');
+
+		const faces = Array.isArray(setting.faces) ? setting.faces : [];
+
+		if (!faces.length || typeof FontFace !== 'function' || !document.fonts) {
+			return;
+		}
+
+		faces.forEach((face) => {
+			if (!face || !face.src) {
+				return;
+			}
+
+			try {
+				const fontFace = new FontFace(
+					'Daymark Bionic Reading',
+					'url(' + JSON.stringify(String(face.src)) + ')',
+					{
+						style: face.style || 'normal',
+						weight: face.weight || '400',
+						display: 'swap',
+					}
+				);
+				document.fonts.add(fontFace);
+				fontFace.load().catch(() => {
+					// A missing or blocked file just leaves the fallback fonts.
+				});
+			} catch (err) {
+				// An unusable face also leaves the fallback fonts.
+			}
+		});
+	}
+
 	// One polite live region for short screen-reader summaries ("5 more
 	// posts loaded", "12 results"). Feed lists themselves are not live
 	// regions: a live list made a screen reader read every card aloud

@@ -185,6 +185,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
 		add_action( 'admin_post_daymark_notes_save', array( $this, 'handle_notes_save' ) );
+		add_action( 'admin_post_daymark_reading_font_save', array( $this, 'handle_reading_font_save' ) );
 		add_action( 'admin_post_daymark_timeline_display_save', array( $this, 'handle_timeline_display_save' ) );
 		add_action( 'admin_post_daymark_announce_follows_save', array( $this, 'handle_announce_follows_save' ) );
 		add_action( 'admin_post_daymark_app_badge_save', array( $this, 'handle_app_badge_save' ) );
@@ -674,6 +675,8 @@ class Daymark_Admin_Subscriptions {
 		<?php $this->render_publishing_defaults_form(); ?>
 		<h2><?php esc_html_e( 'Notes', 'daymark' ); ?></h2>
 		<?php $this->render_notes_form(); ?>
+		<h2><?php esc_html_e( 'Reading', 'daymark' ); ?></h2>
+		<?php $this->render_reading_font_form(); ?>
 		<h2><?php esc_html_e( 'Timeline', 'daymark' ); ?></h2>
 		<?php $this->render_timeline_display_form(); ?>
 		<h2><?php esc_html_e( 'App icon', 'daymark' ); ?></h2>
@@ -1223,6 +1226,7 @@ class Daymark_Admin_Subscriptions {
 			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
 			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
+			'reading_font_saved'        => __( 'Reading setting saved.', 'daymark' ),
 			'timeline_display_saved'    => __( 'Timeline setting saved.', 'daymark' ),
 			'announce_follows_saved'    => __( 'Follow setting saved.', 'daymark' ),
 			'app_badge_saved'           => __( 'App icon setting saved.', 'daymark' ),
@@ -3601,6 +3605,130 @@ class Daymark_Admin_Subscriptions {
 		update_option( Daymark_Settings::COMPACT_TIMELINE, isset( $_POST[ Daymark_Settings::COMPACT_TIMELINE ] ) ? '1' : '' ); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
 		$this->redirect( array( self::NOTICE_QUERY_VAR => 'timeline_display_saved' ), 'general' );
+	}
+
+	/**
+	 * The Reading setting: whether the app shows its text in the Bionic
+	 * Reading font, which Font Library family supplies it, and an optional
+	 * address of the site's own licensed web font file. Off by default.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	private function render_reading_font_form(): void {
+		$stored         = (bool) get_option( Daymark_Settings::BIONIC_READING_FONT, false );
+		$effective      = Daymark_Settings::bionic_reading_font();
+		$overridden     = $stored !== $effective;
+		$stored_url     = Daymark_Settings::sanitize_font_url( (string) get_option( Daymark_Settings::BIONIC_READING_FONT_URL, '' ) );
+		$effective_url  = Daymark_Settings::bionic_reading_font_url();
+		$url_overridden = $stored_url !== $effective_url;
+		$families       = Daymark_Settings::font_library_families();
+		$family         = Daymark_Settings::bionic_reading_font_family();
+		$stored_family  = (int) get_option( Daymark_Settings::BIONIC_READING_FONT_FAMILY, 0 );
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_reading_font_save" />
+			<?php wp_nonce_field( 'daymark_reading_font_save', 'daymark_reading_font_save_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT ); ?>" value="1" <?php checked( $effective ); ?> <?php disabled( $overridden ); ?> />
+					<?php
+					printf(
+						/* translators: %s: link to the Bionic Reading website. */
+						esc_html__( 'Show Daymark\'s text in the %s font', 'daymark' ),
+						'<a href="https://bionic-reading.com/" target="_blank" rel="noopener noreferrer">Bionic Reading</a>'
+					);
+					?>
+				</label>
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'Bionic Reading makes the start of each word bold, which helps some people read faster. The font is sold by Bionic Reading, and Daymark can\'t include it. Daymark uses your site\'s own copy of the font if it has one. Otherwise it uses the font on devices where it is installed, and the usual font everywhere else.', 'daymark' ); ?>
+			</p>
+			<?php if ( $families ) : ?>
+				<p>
+					<label for="daymark-bionic-reading-font-family"><?php esc_html_e( 'Font Library family', 'daymark' ); ?></label><br />
+					<select id="daymark-bionic-reading-font-family" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT_FAMILY ); ?>">
+						<?php foreach ( $families as $family_id => $family_name ) : ?>
+							<option value="<?php echo esc_attr( (string) $family_id ); ?>" <?php selected( $family, $family_id ); ?>><?php echo esc_html( $family_name ); ?></option>
+						<?php endforeach; ?>
+						<option value="-1" <?php selected( 0 === $family && $stored_family < 0 ); ?>><?php esc_html_e( 'Don\'t use the Font Library', 'daymark' ); ?></option>
+					</select>
+				</p>
+				<p class="description">
+					<?php esc_html_e( 'Daymark found the font in your site\'s Font Library and uses those files. The web font file below is only used when no Font Library family is chosen.', 'daymark' ); ?>
+				</p>
+			<?php else : ?>
+				<p class="description">
+					<?php esc_html_e( 'If you upload the font to your site\'s Font Library (in the Site Editor, under Styles, then Typography), Daymark finds and uses it here. A family whose name contains "Bionic Reading" is picked up.', 'daymark' ); ?>
+				</p>
+			<?php endif; ?>
+			<p>
+				<label for="daymark-bionic-reading-font-url"><?php esc_html_e( 'Web font file (optional)', 'daymark' ); ?></label><br />
+				<input type="url" class="regular-text code" id="daymark-bionic-reading-font-url" name="<?php echo esc_attr( Daymark_Settings::BIONIC_READING_FONT_URL ); ?>" value="<?php echo esc_attr( $effective_url ); ?>" placeholder="https://" <?php disabled( $url_overridden ); ?> />
+			</p>
+			<p class="description">
+				<?php esc_html_e( 'The address of a .woff2 or .woff file of the font, on a server you control. Bionic Reading\'s Web license allows this; its personal license does not.', 'daymark' ); ?>
+			</p>
+			<?php if ( $overridden ) : ?>
+				<p class="description"><?php echo esc_html( self::overridden_note( $effective ) ); ?></p>
+			<?php endif; ?>
+			<?php if ( ! $overridden || ! $url_overridden ) : ?>
+				<?php submit_button( __( 'Save', 'daymark' ), 'secondary', 'daymark-reading-font-submit', false ); ?>
+			<?php endif; ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Save the Reading setting (admin_post_daymark_reading_font_save). A
+	 * value a filter overrides is left as stored.
+	 *
+	 * @since 0.21.0
+	 *
+	 * @return void
+	 */
+	public function handle_reading_font_save(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_reading_font_save', 'daymark_reading_font_save_nonce' );
+
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
+		$stored_url  = Daymark_Settings::sanitize_font_url( (string) get_option( Daymark_Settings::BIONIC_READING_FONT_URL, '' ) );
+		$save_url    = Daymark_Settings::bionic_reading_font_url() === $stored_url && isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT_URL ] );
+		$save_toggle = Daymark_Settings::bionic_reading_font() === (bool) get_option( Daymark_Settings::BIONIC_READING_FONT, false );
+
+		if ( $save_url ) {
+			$raw = sanitize_text_field( wp_unslash( $_POST[ Daymark_Settings::BIONIC_READING_FONT_URL ] ) );
+			$url = Daymark_Settings::sanitize_font_url( $raw );
+
+			// Check the address before saving anything, so a typo doesn't
+			// leave the font half set up.
+			if ( '' !== $raw && '' === $url ) {
+				$this->redirect_with_error( __( 'The web font file must be an http or https address ending in .woff2 or .woff.', 'daymark' ), 'general' );
+			}
+
+			update_option( Daymark_Settings::BIONIC_READING_FONT_URL, $url );
+		}
+
+		if ( isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT_FAMILY ] ) ) {
+			$family_id = (int) $_POST[ Daymark_Settings::BIONIC_READING_FONT_FAMILY ];
+
+			// -1 means "don't use the Font Library"; otherwise only a
+			// family the list actually offered is stored.
+			if ( -1 === $family_id || isset( Daymark_Settings::font_library_families()[ $family_id ] ) ) {
+				update_option( Daymark_Settings::BIONIC_READING_FONT_FAMILY, $family_id );
+			}
+		}
+
+		if ( $save_toggle ) {
+			update_option( Daymark_Settings::BIONIC_READING_FONT, isset( $_POST[ Daymark_Settings::BIONIC_READING_FONT ] ) ? '1' : '' );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => 'reading_font_saved' ), 'general' );
 	}
 
 	/**

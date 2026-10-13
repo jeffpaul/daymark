@@ -41,6 +41,14 @@
 	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* The Bionic Reading font, when Settings -> Daymark turns it on (app.js
+   adds the class). "Daymark Bionic Reading" is the site's own web font
+   file, loaded by app.js; "Bionic Reading" is a copy installed on the
+   device. Without either, the usual system font shows. */
+:root.daymark-bionic-reading {
+	--daymark-font: 'Daymark Bionic Reading', 'Bionic Reading', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 /* Dark theme, following the device setting. Only the tokens change. The
    accent gets lighter so it still reads on a dark background, and text on
    an accent fill turns dark to keep its contrast. */

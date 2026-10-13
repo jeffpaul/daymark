@@ -54,6 +54,9 @@ delete_option( 'daymark_follow_pages' );
 delete_option( 'daymark_follow_queue' );
 delete_option( 'daymark_announce_follows' );
 delete_option( 'daymark_jetpack_followers_since' );
+delete_option( 'daymark_bionic_reading_font' );
+delete_option( 'daymark_bionic_reading_font_url' );
+delete_option( 'daymark_bionic_reading_font_family' );
 
 // Per-user routing/filing preferences, notification read-state, dismissed
 // notices and hints, and the rel=me profile URL used in h-card markup,

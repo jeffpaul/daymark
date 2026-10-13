@@ -2444,6 +2444,140 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		delete_option( 'daymark_compact_timeline' );
 	}
 
+	/** The General tab offers the Bionic Reading font, off by default. */
+	public function test_general_tab_renders_reading_font_setting_off(): void {
+		$output = $this->render( 'general' );
+
+		$this->assertStringContainsString( 'name="daymark_bionic_reading_font"', $output );
+		$this->assertDoesNotMatchRegularExpression( '/name="daymark_bionic_reading_font"[^>]*checked/', $output );
+		$this->assertStringContainsString( 'name="daymark_bionic_reading_font_url"', $output );
+		$this->assertFalse( Daymark_Settings::bionic_reading_font() );
+	}
+
+	/** Saving the Reading setting stores the toggle and a valid font address. */
+	public function test_reading_font_save_turns_setting_on(): void {
+		$location = $this->call_handler(
+			'handle_reading_font_save',
+			'daymark_reading_font_save',
+			array(
+				'daymark_bionic_reading_font'     => '1',
+				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.woff2',
+			)
+		);
+
+		$this->assertStringContainsString( 'tab=general', $location );
+		$this->assertStringContainsString( 'daymark_notice=reading_font_saved', $location );
+		$this->assertTrue( Daymark_Settings::bionic_reading_font() );
+		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_url() );
+		$this->assertSame( array( 'https://cdn.example.com' ), Daymark_Settings::bionic_reading_font_origins() );
+
+		delete_option( 'daymark_bionic_reading_font' );
+		delete_option( 'daymark_bionic_reading_font_url' );
+	}
+
+	/** An address that isn't a .woff2/.woff file is refused, and nothing is saved. */
+	public function test_reading_font_save_rejects_non_font_address(): void {
+		$location = $this->call_handler(
+			'handle_reading_font_save',
+			'daymark_reading_font_save',
+			array(
+				'daymark_bionic_reading_font'     => '1',
+				'daymark_bionic_reading_font_url' => 'https://cdn.example.com/fonts/BionicReading.ttf',
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=error', $location );
+		$this->assertFalse( Daymark_Settings::bionic_reading_font() );
+		$this->assertSame( '', Daymark_Settings::bionic_reading_font_url() );
+	}
+
+	/** A font file on the site's own origin needs no extra font-src origin. */
+	public function test_reading_font_same_origin_needs_no_csp_origin(): void {
+		update_option( 'daymark_bionic_reading_font', '1' );
+		update_option( 'daymark_bionic_reading_font_url', home_url( '/wp-content/uploads/BionicReading.woff2' ) );
+
+		$this->assertSame( array(), Daymark_Settings::bionic_reading_font_origins() );
+
+		delete_option( 'daymark_bionic_reading_font' );
+		delete_option( 'daymark_bionic_reading_font_url' );
+	}
+
+	/** A "Bionic Reading" Font Library family wins over the web font address, face by face. */
+	public function test_reading_font_uses_font_library_family(): void {
+		$family = self::factory()->post->create(
+			array(
+				'post_type'   => 'wp_font_family',
+				'post_status' => 'publish',
+				'post_title'  => 'Bionic Reading',
+				'post_name'   => 'bionic-reading',
+			)
+		);
+		self::factory()->post->create(
+			array(
+				'post_type'    => 'wp_font_face',
+				'post_status'  => 'publish',
+				'post_parent'  => $family,
+				'post_content' => wp_json_encode(
+					array(
+						'fontFamily' => 'Bionic Reading',
+						'fontStyle'  => 'italic',
+						'fontWeight' => '400',
+						'src'        => home_url( '/wp-content/fonts/bionic-reading-italic.woff2' ),
+					)
+				),
+			)
+		);
+		update_option( 'daymark_bionic_reading_font', '1' );
+		update_option( 'daymark_bionic_reading_font_url', 'https://cdn.example.com/fonts/BionicReading.woff2' );
+
+		$this->assertSame( $family, Daymark_Settings::bionic_reading_font_family() );
+		$this->assertSame(
+			array(
+				array(
+					'src'    => home_url( '/wp-content/fonts/bionic-reading-italic.woff2' ),
+					'style'  => 'italic',
+					'weight' => '400',
+				),
+			),
+			Daymark_Settings::bionic_reading_font_faces()
+		);
+		$this->assertSame( array(), Daymark_Settings::bionic_reading_font_origins() );
+		$this->assertMatchesRegularExpression( '/<option value="' . $family . '"[^>]*selected/', $this->render( 'general' ) );
+
+		// Choosing "Don't use the Font Library" falls back to the address.
+		update_option( 'daymark_bionic_reading_font_family', -1 );
+		$this->assertSame( 0, Daymark_Settings::bionic_reading_font_family() );
+		$this->assertSame( 'https://cdn.example.com/fonts/BionicReading.woff2', Daymark_Settings::bionic_reading_font_faces()[0]['src'] );
+
+		delete_option( 'daymark_bionic_reading_font' );
+		delete_option( 'daymark_bionic_reading_font_url' );
+		delete_option( 'daymark_bionic_reading_font_family' );
+	}
+
+	/** Font Library families without "Bionic Reading" in the name are ignored. */
+	public function test_reading_font_ignores_other_font_library_families(): void {
+		self::factory()->post->create(
+			array(
+				'post_type'   => 'wp_font_family',
+				'post_status' => 'publish',
+				'post_title'  => 'Inter',
+			)
+		);
+
+		$this->assertSame( array(), Daymark_Settings::font_library_families() );
+		$this->assertSame( 0, Daymark_Settings::bionic_reading_font_family() );
+	}
+
+	/** A filter that overrides the font toggle disables the checkbox and says so. */
+	public function test_reading_font_overridden_by_filter_is_disabled(): void {
+		add_filter( 'daymark_bionic_reading_font', '__return_true' );
+		$output = $this->render( 'general' );
+		remove_filter( 'daymark_bionic_reading_font', '__return_true' );
+
+		$this->assertMatchesRegularExpression( '/name="daymark_bionic_reading_font"[^>]*disabled/', $output );
+		$this->assertStringContainsString( 'Turned on by code on this site', $output );
+	}
+
 	/** The Failing view lists only subscriptions having trouble, and the view links count both. */
 	public function test_failing_view_lists_only_failing_subscriptions(): void {
 		$this->subscriptions->create(
