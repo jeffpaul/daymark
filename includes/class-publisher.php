@@ -236,44 +236,66 @@ class Daymark_Publisher {
 	private const CAMERA_META_FIELDS = array( 'camera', 'aperture', 'iso', 'focal_length', 'shutter_speed' );
 
 	/**
-	 * Open-Meteo WMO weather codes mapped to a short human-readable label.
-	 * Not exhaustive — an unmapped code still stores its raw numeric value
-	 * with a generic label rather than being dropped.
+	 * Open-Meteo WMO weather codes mapped to a short human-readable label,
+	 * in the site's language. Not exhaustive: an unmapped code still stores
+	 * its raw numeric value with a '—' label rather than being dropped.
+	 *
+	 * A method rather than a class constant, because a constant can't call
+	 * __(). The label is stored at publish time, so it stays in the
+	 * language the site used when the Mark was published.
 	 *
 	 * @since 0.11.0
 	 *
-	 * @var array<int, string>
+	 * @param int $code WMO weather code.
+	 * @return string Label, or '—' for an unmapped code.
 	 */
-	private const WEATHER_CONDITION_LABELS = array(
-		0  => 'Clear',
-		1  => 'Mostly clear',
-		2  => 'Partly cloudy',
-		3  => 'Overcast',
-		45 => 'Fog',
-		48 => 'Fog',
-		51 => 'Drizzle',
-		53 => 'Drizzle',
-		55 => 'Drizzle',
-		56 => 'Freezing drizzle',
-		57 => 'Freezing drizzle',
-		61 => 'Rain',
-		63 => 'Rain',
-		65 => 'Rain',
-		66 => 'Freezing rain',
-		67 => 'Freezing rain',
-		71 => 'Snow',
-		73 => 'Snow',
-		75 => 'Snow',
-		77 => 'Snow',
-		80 => 'Rain showers',
-		81 => 'Rain showers',
-		82 => 'Rain showers',
-		85 => 'Snow showers',
-		86 => 'Snow showers',
-		95 => 'Thunderstorm',
-		96 => 'Thunderstorm',
-		99 => 'Thunderstorm',
-	);
+	private static function weather_condition_label( int $code ): string {
+		switch ( $code ) {
+			case 0:
+				return _x( 'Clear', 'weather', 'daymark' );
+			case 1:
+				return _x( 'Mostly clear', 'weather', 'daymark' );
+			case 2:
+				return _x( 'Partly cloudy', 'weather', 'daymark' );
+			case 3:
+				return _x( 'Overcast', 'weather', 'daymark' );
+			case 45:
+			case 48:
+				return _x( 'Fog', 'weather', 'daymark' );
+			case 51:
+			case 53:
+			case 55:
+				return _x( 'Drizzle', 'weather', 'daymark' );
+			case 56:
+			case 57:
+				return _x( 'Freezing drizzle', 'weather', 'daymark' );
+			case 61:
+			case 63:
+			case 65:
+				return _x( 'Rain', 'weather', 'daymark' );
+			case 66:
+			case 67:
+				return _x( 'Freezing rain', 'weather', 'daymark' );
+			case 71:
+			case 73:
+			case 75:
+			case 77:
+				return _x( 'Snow', 'weather', 'daymark' );
+			case 80:
+			case 81:
+			case 82:
+				return _x( 'Rain showers', 'weather', 'daymark' );
+			case 85:
+			case 86:
+				return _x( 'Snow showers', 'weather', 'daymark' );
+			case 95:
+			case 96:
+			case 99:
+				return _x( 'Thunderstorm', 'weather', 'daymark' );
+			default:
+				return '—';
+		}
+	}
 
 	/**
 	 * HEIC/HEIF photos, the default format on iPhone (issue #481). Core
@@ -1609,7 +1631,7 @@ class Daymark_Publisher {
 			? sprintf(
 				'<figcaption class="wp-element-caption">%s</figcaption>',
 				sprintf(
-					/* translators: %s: linked credit for the reblogged post, e.g. "Jane Doe, example.com" */
+					/* translators: %s: the original post's author and/or site, e.g. "Jane Doe, example.com". */
 					__( 'Reblogged from %s', 'daymark' ),
 					sprintf( '<a href="%s">%s</a>', esc_url( $url ), esc_html( $source ) )
 				)
@@ -2326,7 +2348,7 @@ class Daymark_Publisher {
 			return array(
 				'temperature' => (float) $body['current']['temperature_2m'],
 				'unit'        => 'C',
-				'condition'   => self::WEATHER_CONDITION_LABELS[ $code ] ?? '—',
+				'condition'   => self::weather_condition_label( $code ),
 				'code'        => $code,
 			);
 		} catch ( Throwable $e ) {
@@ -2473,7 +2495,7 @@ class Daymark_Publisher {
 		);
 
 		// Condition text only — the '—' fallback (a WMO code with no label in
-		// WEATHER_CONDITION_LABELS) isn't a meaningful summary to persist.
+		// weather_condition_label()) isn't a meaningful summary to persist.
 		if ( ! empty( $weather['condition'] ) && '—' !== $weather['condition'] ) {
 			$bridge['summary'] = $weather['condition'];
 		}

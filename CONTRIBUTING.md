@@ -275,7 +275,18 @@ stubbed AT Protocol API — see the setup notes at the top of
   a translation can reorder around an inserted value. Precede a `sprintf()`
   call with a `/* translators: ... */` comment whenever its placeholder's
   meaning isn't self-evident from the string alone, matching the PHP-side
-  convention.
+  convention. The comment has to sit directly before the `__()` call
+  itself, not before an outer `esc()` or ternary, or the extractor misses
+  it; and a string used in several places needs the same comment in each.
+  Every other script with strings works the same way, and its PHP
+  enqueue must call `wp_set_script_translations( '<handle>', 'daymark' )`,
+  or its strings stay in English even with a language pack installed
+  (`tests/test-i18n.php` fails if one is missing). Month and weekday
+  names come from core (`Daymark_Routes::date_names()`), so don't add
+  your own. A label stored in the database, such as a weather condition,
+  is translated when it's saved. Run `bin/check-i18n.sh` (needs WP-CLI)
+  before opening a PR: it extracts every string the way wordpress.org
+  does and fails on any warning, and CI runs it too.
   Leave untranslated: AI prompt strings sent to a provider in
   `Daymark_AI_Assist` (translating these changes model behavior, not
   user-facing text) and third-party plugin/service names (e.g. "Jetpack
