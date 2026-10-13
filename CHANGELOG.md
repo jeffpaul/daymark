@@ -23,6 +23,7 @@ can't act on them.
 ### Added
 
 - New "Read to me" setting (Settings -> Daymark -> Data & privacy, off by default). When it's on and your AI provider can turn text into speech, a post in the app's full post view shows a Listen button at the top. The first tap makes an audio version, and Daymark saves it so the post is only sent to your provider once. ([#522](https://github.com/jeffpaul/daymark/pull/522))
+- A new setting in Settings -> Daymark -> General shows the number of unread notifications on Daymark's app icon once the app is installed. It is off by default. ([#519](https://github.com/jeffpaul/daymark/pull/519))
 
 ### Fixed
 

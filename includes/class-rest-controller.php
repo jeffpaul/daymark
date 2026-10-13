@@ -2739,7 +2739,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 	/**
 	 * GET /daymark/v1/notifications/status — whether the current user has
-	 * unread notifications, without marking anything seen. The app checks
+	 * unread notifications, without marking anything seen. When the app
+	 * badge setting is on, it also returns `unread_count`. The app checks
 	 * it when it comes back to the foreground and when you move between
 	 * screens, so the bell's dot updates during a visit instead of only on
 	 * a page load.
@@ -2752,9 +2753,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	public function get_notifications_status( WP_REST_Request $request ) {
 		unset( $request );
 
-		return rest_ensure_response(
-			array( 'has_unread' => Daymark_Plugin::instance()->notifications->has_unread() )
-		);
+		$notifications = Daymark_Plugin::instance()->notifications;
+		$status        = array( 'has_unread' => $notifications->has_unread() );
+
+		// The unread count is only worked out when the app badge is on,
+		// since it reads the whole notifications list.
+		if ( Daymark_Settings::app_badge_unread() ) {
+			$status['unread_count'] = $notifications->unread_count();
+		}
+
+		return rest_ensure_response( $status );
 	}
 
 	/**
