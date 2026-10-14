@@ -2782,4 +2782,216 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertLessThan( $optional, $start );
 		$this->assertStringNotContainsString( 'CLAUDE.md', $output );
 	}
+
+	/** Each row renders a favorite toggle form with appropriate icon and state. */
+	public function test_subscription_row_renders_favorite_form(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://favorite-row.example/',
+				'feed_url'   => 'https://favorite-row.example/feed/',
+				'site_title' => 'Favorite Site',
+			)
+		);
+
+		$output = $this->render();
+		$this->assertStringContainsString( 'action" value="daymark_subscription_favorite"', $output );
+		$this->assertStringContainsString( 'name="daymark_favorite" value="1"', $output );
+		$this->assertStringContainsString( 'dashicons-star-empty', $output );
+		$this->assertStringContainsString( 'Star as favorite', $output );
+
+		$this->subscriptions->set_favorite( $id, true );
+
+		$starred_output = $this->render();
+		$this->assertStringContainsString( 'name="daymark_favorite" value="0"', $starred_output );
+		$this->assertStringContainsString( 'dashicons-star-filled', $starred_output );
+		$this->assertStringContainsString( 'Remove from favorites', $starred_output );
+		$this->assertStringContainsString( 'is-favorite', $starred_output );
+	}
+
+	/** Single-subscription favorite handler stars and unstars the subscription. */
+	public function test_handle_favorite_stars_and_unstars_subscription(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://favorite-toggle.example/',
+				'feed_url'   => 'https://favorite-toggle.example/feed/',
+				'site_title' => 'Toggle Site',
+			)
+		);
+
+		$location = $this->call_handler(
+			'handle_favorite',
+			'daymark_subscription_favorite_' . $id,
+			array(
+				'daymark_subscription_id' => (string) $id,
+				'daymark_favorite'        => '1',
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=favorited', $location );
+		$this->assertTrue( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $id ) ) );
+
+		$location_unstar = $this->call_handler(
+			'handle_favorite',
+			'daymark_subscription_favorite_' . $id,
+			array(
+				'daymark_subscription_id' => (string) $id,
+				'daymark_favorite'        => '0',
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=unfavorited', $location_unstar );
+		$this->assertFalse( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $id ) ) );
+	}
+
+	/** Bulk actions support starring and unstarring selected subscriptions. */
+	public function test_bulk_actions_support_star_and_unstar(): void {
+		$one = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://star1.example/',
+				'feed_url'   => 'https://star1.example/feed/',
+				'site_title' => 'Star 1',
+			)
+		);
+		$two = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://star2.example/',
+				'feed_url'   => 'https://star2.example/feed/',
+				'site_title' => 'Star 2',
+			)
+		);
+
+		$location = $this->call_handler(
+			'handle_bulk',
+			'daymark_subscriptions_bulk',
+			array(
+				'daymark_bulk_action'      => 'star',
+				'daymark_subscription_ids' => array( (string) $one, (string) $two ),
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=bulk_starred', $location );
+		$this->assertStringContainsString( 'daymark_count=2', $location );
+		$this->assertTrue( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $one ) ) );
+		$this->assertTrue( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $two ) ) );
+
+		$location_unstar = $this->call_handler(
+			'handle_bulk',
+			'daymark_subscriptions_bulk',
+			array(
+				'daymark_bulk_action'      => 'unstar',
+				'daymark_subscription_ids' => array( (string) $one, (string) $two ),
+			)
+		);
+
+		$this->assertStringContainsString( 'daymark_notice=bulk_unstarred', $location_unstar );
+		$this->assertStringContainsString( 'daymark_count=2', $location_unstar );
+		$this->assertFalse( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $one ) ) );
+		$this->assertFalse( Daymark_Subscriptions::is_favorite( $this->subscriptions->get( $two ) ) );
+	}
+
+	/** The Favorites view link shows correct counts and filters by favorite. */
+	public function test_favorites_view_links_and_filtering(): void {
+		$fav = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://fav-view.example/',
+				'feed_url'   => 'https://fav-view.example/feed/',
+				'site_title' => 'Favorite One',
+			)
+		);
+		$this->subscriptions->set_favorite( $fav, true );
+
+		$regular = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://reg-view.example/',
+				'feed_url'   => 'https://reg-view.example/feed/',
+				'site_title' => 'Regular One',
+			)
+		);
+
+		$all = $this->render();
+		$this->assertStringContainsString( 'All (2)', $all );
+		$this->assertStringContainsString( 'Favorites (1)', $all );
+		$this->assertStringContainsString( 'Favorite One', $all );
+		$this->assertStringContainsString( 'Regular One', $all );
+
+		$_GET['view']   = 'favorites';
+		$favorites_view = $this->render();
+		unset( $_GET['view'] );
+
+		$this->assertStringContainsString( 'Favorite One', $favorites_view );
+		$this->assertStringNotContainsString( 'Regular One', $favorites_view );
+	}
+
+	/** An empty Favorites view shows a specific empty state. */
+	public function test_empty_favorites_view_shows_message(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://only-reg.example/',
+				'feed_url'   => 'https://only-reg.example/feed/',
+				'site_title' => 'Only Regular',
+			)
+		);
+
+		$_GET['view'] = 'favorites';
+		$output       = $this->render();
+		unset( $_GET['view'] );
+
+		$this->assertStringContainsString( 'No favorite sites yet.', $output );
+		$this->assertStringNotContainsString( 'Only Regular', $output );
+	}
+
+	/** Site column sorts favorites first by default. */
+	public function test_site_column_sorts_favorites_first_by_default(): void {
+		$alpha = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example/',
+				'feed_url'   => 'https://alpha.example/feed/',
+				'site_title' => 'Alpha Site',
+			)
+		);
+		$bravo = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://bravo.example/',
+				'feed_url'   => 'https://bravo.example/feed/',
+				'site_title' => 'Bravo Site',
+			)
+		);
+
+		// Star Bravo so it should sort before Alpha despite alphabetical order.
+		$this->subscriptions->set_favorite( $bravo, true );
+
+		$output = $this->render();
+
+		$pos_alpha = strpos( $output, 'Alpha Site' );
+		$pos_bravo = strpos( $output, 'Bravo Site' );
+
+		$this->assertNotFalse( $pos_alpha );
+		$this->assertNotFalse( $pos_bravo );
+		$this->assertLessThan( $pos_alpha, $pos_bravo );
+	}
+
+	/** Favorite-related notices render their expected success messages. */
+	public function test_favorite_notices_render_messages(): void {
+		$_GET['daymark_notice'] = 'favorited';
+		$fav_output             = $this->render();
+		unset( $_GET['daymark_notice'] );
+		$this->assertStringContainsString( 'Starred as favorite.', $fav_output );
+
+		$_GET['daymark_notice'] = 'unfavorited';
+		$unfav_output           = $this->render();
+		unset( $_GET['daymark_notice'] );
+		$this->assertStringContainsString( 'Removed from favorites.', $unfav_output );
+
+		$_GET['daymark_notice'] = 'bulk_starred';
+		$_GET['daymark_count']  = '2';
+		$bulk_starred_output    = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'] );
+		$this->assertStringContainsString( 'Starred 2 sites as favorites.', $bulk_starred_output );
+
+		$_GET['daymark_notice'] = 'bulk_unstarred';
+		$_GET['daymark_count']  = '2';
+		$bulk_unstarred_output  = $this->render();
+		unset( $_GET['daymark_notice'], $_GET['daymark_count'] );
+		$this->assertStringContainsString( 'Removed 2 sites from favorites.', $bulk_unstarred_output );
+	}
 }

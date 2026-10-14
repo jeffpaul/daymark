@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#531](https://github.com/jeffpaul/daymark/issues/531))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added
