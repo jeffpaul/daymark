@@ -13030,7 +13030,7 @@
 
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#create">&larr; ${esc(__('Back', 'daymark'))}</a>
+				<a class="daymark-backlink" href="#create"><span aria-hidden="true">&larr;</span> ${esc(__('Back', 'daymark'))}</a>
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					__('Where should this go?', 'daymark')
 				)}</h1>
@@ -13851,11 +13851,14 @@
 				if (index < 0) {
 					return;
 				}
+				const isRtl =
+					'rtl' === (document.documentElement.getAttribute('dir') || '').toLowerCase() ||
+					(typeof window.getComputedStyle === 'function' && 'rtl' === window.getComputedStyle(tablist).direction);
 				let next = null;
 				if ('ArrowRight' === event.key) {
-					next = tabs[(index + 1) % tabs.length];
+					next = tabs[isRtl ? (index - 1 + tabs.length) % tabs.length : (index + 1) % tabs.length];
 				} else if ('ArrowLeft' === event.key) {
-					next = tabs[(index - 1 + tabs.length) % tabs.length];
+					next = tabs[isRtl ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length];
 				} else if ('Home' === event.key) {
 					next = tabs[0];
 				} else if ('End' === event.key) {

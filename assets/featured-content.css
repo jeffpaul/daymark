@@ -19,8 +19,9 @@
 
 .daymark-featured-quote {
 	margin: 0;
-	padding: 0.25rem 0 0.25rem 1rem;
-	border-left: 4px solid currentColor;
+	padding: 0.25rem 0;
+	padding-inline-start: 1rem;
+	border-inline-start: 4px solid currentColor;
 }
 
 .daymark-featured-quote p {
@@ -167,11 +168,11 @@
 }
 
 .daymark-fc-gallery.is-enhanced .daymark-fc-gallery__nav--prev {
-	left: 8px;
+	inset-inline-start: 8px;
 }
 
 .daymark-fc-gallery.is-enhanced .daymark-fc-gallery__nav--next {
-	right: 8px;
+	inset-inline-end: 8px;
 }
 
 .daymark-fc-gallery__nav--prev::before,
@@ -181,18 +182,22 @@
 	width: 8px;
 	height: 8px;
 	margin: 0 auto;
-	border-top: 2px solid #1e1e1e;
-	border-right: 2px solid #1e1e1e;
+	border: solid #1e1e1e;
+	border-width: 2px 2px 0 0;
 }
 
 .daymark-fc-gallery__nav--prev::before {
 	transform: rotate( -135deg );
-	margin-left: 18px;
+	margin-inline-start: 18px;
 }
 
 .daymark-fc-gallery__nav--next::before {
 	transform: rotate( 45deg );
-	margin-right: 18px;
+	margin-inline-end: 18px;
+}
+
+[dir="rtl"] .daymark-fc-gallery__nav {
+	transform: scaleX(-1);
 }
 
 .daymark-fc-gallery.is-enhanced .daymark-fc-gallery__dots {

@@ -1056,7 +1056,7 @@ class Daymark_Admin_Subscriptions {
 							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 						<?php endif; ?>
 						<br />
-						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $shown ); ?></code>
+						<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $shown ); ?></code>
 					</label>
 				<?php endforeach; ?>
 			</div>
@@ -1675,7 +1675,7 @@ class Daymark_Admin_Subscriptions {
 					<legend><strong><?php esc_html_e( 'Feeds found for this site:', 'daymark' ); ?></strong></legend>
 					<?php $this->render_candidate_checkboxes( $candidates, '', true, false ); ?>
 				</fieldset>
-				<?php submit_button( __( 'Save Subscription', 'daymark' ), 'primary', 'daymark-subscribe-confirm-submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
+				<?php submit_button( __( 'Save Subscription', 'daymark' ), 'primary', 'daymark-subscribe-confirm-submit', false, array( 'style' => 'margin-inline-end:6px;' ) ); ?>
 			</form>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
 				<input type="hidden" name="action" value="daymark_subscribe_cancel" />
@@ -1887,7 +1887,7 @@ class Daymark_Admin_Subscriptions {
 					<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 				<?php endif; ?>
 				<br />
-				<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $candidate_url ); ?></code>
+				<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $candidate_url ); ?></code>
 			</label>
 			<?php
 		}
@@ -2307,7 +2307,7 @@ class Daymark_Admin_Subscriptions {
 			</th>
 			<td>
 				<?php if ( '' !== $icon_url ) : ?>
-					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;margin-right:6px;" onerror="this.remove()" />
+					<img src="<?php echo esc_url( $icon_url ); ?>" alt="" width="20" height="20" style="width:20px;height:20px;border-radius:2px;vertical-align:middle;margin-inline-end:6px;" onerror="this.remove()" />
 				<?php endif; ?>
 				<strong data-daymark-title-text><?php echo esc_html( $row_label ); ?></strong>
 				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
@@ -2414,7 +2414,7 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_refresh_icon_form( int $id ): void {
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-right:6px;">
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-inline-end:6px;">
 			<input type="hidden" name="action" value="daymark_subscription_refresh_icon" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_refresh_icon_' . $id, 'daymark_subscription_refresh_icon_nonce' ); ?>
@@ -2458,7 +2458,7 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_edit_title_form( int $id, string $site_title, string $site_url ): void {
 		?>
-		<details class="daymark-subscription-edit-title" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" data-daymark-fallback-label="<?php echo esc_attr( $site_url ); ?>" style="display:inline-block;vertical-align:middle;margin-left:4px;">
+		<details class="daymark-subscription-edit-title" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" data-daymark-fallback-label="<?php echo esc_attr( $site_url ); ?>" style="display:inline-block;vertical-align:middle;margin-inline-start:4px;">
 			<summary class="daymark-edit-title-trigger" aria-label="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>" title="<?php esc_attr_e( 'Edit site name', 'daymark' ); ?>" style="cursor:pointer;list-style:none;display:inline-block;">
 				<span class="dashicons dashicons-edit" aria-hidden="true" style="font-size:16px;width:16px;height:16px;vertical-align:text-bottom;"></span>
 			</summary>
@@ -2651,7 +2651,7 @@ class Daymark_Admin_Subscriptions {
 					<?php esc_html_e( 'Also unfollow the feeds I unchecked. Their saved posts move to Trash.', 'daymark' ); ?>
 				</label>
 			</p>
-			<?php submit_button( __( 'Update feeds', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-right:6px;' ) ); ?>
+			<?php submit_button( __( 'Update feeds', 'daymark' ), 'secondary small', 'submit', false, array( 'style' => 'margin-inline-end:6px;' ) ); ?>
 		</form>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline-block;margin-top:6px;">
 			<input type="hidden" name="action" value="daymark_subscription_discover_sources_dismiss" />
@@ -2855,7 +2855,7 @@ class Daymark_Admin_Subscriptions {
 							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 						<?php endif; ?>
 						<br />
-						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $xml_url ); ?></code>
+						<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $xml_url ); ?></code>
 					</label>
 				<?php endforeach; ?>
 			</div>

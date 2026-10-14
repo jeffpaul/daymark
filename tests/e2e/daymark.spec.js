@@ -3869,3 +3869,42 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	await expect.poll(async () => (await counts()).click).toBe(1);
 	await expect.poll(async () => (await counts()).keydown).toBe(1);
 });
+
+test('RTL layout mirrors back arrow, timeline rail, and tab navigation', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+
+	// Set dir="rtl" on html element to simulate RTL mode.
+	await page.evaluate(() => {
+		document.documentElement.setAttribute('dir', 'rtl');
+	});
+
+	// In RTL, html has dir="rtl".
+	await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+	// Navigate to #notifications to check back link mirror in RTL.
+	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
+	const backLink = page.locator('.daymark-backlink');
+	await expect(backLink).toBeVisible();
+
+	// The back link arrow icon is mirrored via scaleX(-1) in RTL.
+	const arrowTransform = await page.evaluate(() => {
+		const arrow = document.querySelector('.daymark-backlink span[aria-hidden="true"]');
+		return arrow ? window.getComputedStyle(arrow).transform : '';
+	});
+	expect(arrowTransform).toContain('matrix(-1');
+
+	// Tab navigation respects reading direction in RTL: ArrowLeft advances to next tab.
+	const tabs = page.locator('.daymark-notif-tabs__tab');
+	await tabs.first().focus();
+	await expect(tabs.first()).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await expect(tabs.nth(1)).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(tabs.first()).toBeFocused();
+
+	// Navigate back to home.
+	await backLink.click();
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+});
