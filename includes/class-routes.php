@@ -489,8 +489,8 @@ class Daymark_Routes {
 		$sw_js   = is_readable( $sw_path ) ? (string) file_get_contents( $sw_path ) : ''; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading this plugin's own bundled static JS file off disk, not a remote fetch.
 
 		return str_replace(
-			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__', '"__DAYMARK_CORE_SCRIPTS__"' ),
-			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version(), (string) wp_json_encode( self::offline_core_script_urls(), JSON_UNESCAPED_SLASHES ) ),
+			array( '__DAYMARK_ASSETS_URL__', '__DAYMARK_CACHE_VERSION__', '"__DAYMARK_CORE_SCRIPTS__"', '__DAYMARK_REST_URL__' ),
+			array( DAYMARK_PLUGIN_URL . 'assets/', self::service_worker_cache_version(), (string) wp_json_encode( self::offline_core_script_urls(), JSON_UNESCAPED_SLASHES ), esc_url_raw( rest_url( 'daymark/v1/' ) ) ),
 			$sw_js
 		);
 	}

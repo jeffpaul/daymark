@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- Push notifications keep arriving after the browser changes or rotates a device's push address, saving the new address right away through the service worker and re-syncing on app start. ([#530](https://github.com/jeffpaul/daymark/issues/530))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added

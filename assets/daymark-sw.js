@@ -50,6 +50,12 @@
 // installed app kept its install-day app.js for good.
 const CACHE_NAME = 'daymark-__DAYMARK_CACHE_VERSION__';
 
+// The REST route base URL, filled in by Daymark_Routes::build_service_worker_script().
+const REST_BASE_URL = '__DAYMARK_REST_URL__';
+// Cache holding this device's push token and endpoint, preserved across version updates.
+const PUSH_CACHE_NAME = 'daymark-push-v1';
+const PUSH_TOKEN_CACHE_KEY = '/daymark/push-token';
+
 // The substituted value is an absolute URL (scheme + host + path).
 const ASSETS_BASE_URL = '__DAYMARK_ASSETS_URL__';
 // Only the path portion is ever compared against a request's own url.pathname.
@@ -89,7 +95,7 @@ self.addEventListener('activate', (event) => {
 			.then((keys) =>
 				Promise.all(
 					keys
-						.filter((key) => key.startsWith('daymark-') && key !== CACHE_NAME)
+						.filter((key) => key.startsWith('daymark-') && key !== CACHE_NAME && key !== PUSH_CACHE_NAME)
 						.map((key) => caches.delete(key))
 				)
 			)
@@ -123,7 +129,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('message', (event) => {
 	if (event.data && 'daymark-clear-offline-cache' === event.data.type) {
 		event.waitUntil(
-			caches.delete(CACHE_NAME).then(() => {
+			Promise.all([caches.delete(CACHE_NAME), caches.delete(PUSH_CACHE_NAME)]).then(() => {
 				if (event.ports && event.ports[0]) {
 					event.ports[0].postMessage({ done: true });
 				}
@@ -334,3 +340,106 @@ self.addEventListener('notificationclick', (event) => {
 		})
 	);
 });
+
+async function getStoredPushToken() {
+	try {
+		const cache = await caches.open(PUSH_CACHE_NAME);
+		const match = await cache.match(PUSH_TOKEN_CACHE_KEY);
+		if (match) {
+			return await match.json();
+		}
+	} catch (e) {
+		/* Storage unavailable or unreadable. */
+	}
+	return null;
+}
+
+async function storePushToken(endpoint, token) {
+	try {
+		const cache = await caches.open(PUSH_CACHE_NAME);
+		const data = new Response(JSON.stringify({ endpoint, token }), {
+			headers: { 'Content-Type': 'application/json' },
+		});
+		await cache.put(PUSH_TOKEN_CACHE_KEY, data);
+	} catch (e) {
+		/* Best effort token storage. */
+	}
+}
+
+// Browsers fire pushsubscriptionchange when a push subscription is renewed
+// or replaced (key rotation, reset push service, etc. — issue #530).
+// Resubscribe if needed, notify any open app windows so they can re-sync,
+// and send the new subscription to the site using the stored capability token.
+self.addEventListener('pushsubscriptionchange', (event) => {
+	event.waitUntil(
+		(async () => {
+			let newSub = event.newSubscription;
+			if (!newSub) {
+				const oldSub = event.oldSubscription;
+				const key = (oldSub && oldSub.options && oldSub.options.applicationServerKey) || null;
+				try {
+					if (key) {
+						newSub = await self.registration.pushManager.subscribe({
+							userVisibleOnly: true,
+							applicationServerKey: key,
+						});
+					} else {
+						newSub = await self.registration.pushManager.getSubscription();
+					}
+				} catch (e) {
+					newSub = null;
+				}
+			}
+
+			if (!newSub) {
+				return;
+			}
+
+			const subData = newSub.toJSON ? newSub.toJSON() : newSub;
+
+			// 1. Tell any open app windows to re-sync with their authenticated session.
+			try {
+				const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+				for (const client of windows) {
+					client.postMessage({
+						type: 'daymark-push-subscription-change',
+						subscription: subData,
+					});
+				}
+			} catch (e) {
+				/* Best effort window notification. */
+			}
+
+			// 2. Also send directly to the site using the per-subscription capability token.
+			const stored = await getStoredPushToken();
+			const oldEndpoint = (event.oldSubscription && event.oldSubscription.endpoint) || (stored && stored.endpoint);
+			const restBase = REST_BASE_URL.startsWith('__') ? '' : REST_BASE_URL;
+
+			if (stored && stored.token && oldEndpoint && restBase) {
+				try {
+					const response = await fetch(restBase + 'push/subscriptions/replace', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							old_endpoint: oldEndpoint,
+							token: stored.token,
+							subscription: subData,
+						}),
+					});
+
+					if (response.ok) {
+						const result = await response.json();
+						if (result && result.token && newSub.endpoint) {
+							await storePushToken(newSub.endpoint, result.token);
+						}
+					}
+				} catch (e) {
+					/* Best effort background update; app-start re-sync serves as fallback. */
+				}
+			}
+		})()
+	);
+});
+

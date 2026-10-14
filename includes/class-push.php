@@ -263,9 +263,89 @@ class Daymark_Push {
 			self::delete_subscription( $user_id, (string) $existing[0]['endpoint'] );
 		}
 
+		$sub['token'] = wp_generate_password( 32, false, false );
+
 		add_user_meta( $user_id, self::SUBSCRIPTION_META, self::encode( $sub ) );
 
 		return $sub;
+	}
+
+	/**
+	 * Replace a device's push subscription when the browser changes its
+	 * push address (issue #530). Authenticated by the per-subscription
+	 * secret token created when the device first subscribed, so a background
+	 * service worker can update the address without a REST nonce or cookie.
+	 *
+	 * Preserves the one-device-per-user rule and endpoint allowlist.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string               $old_endpoint Previous endpoint URL.
+	 * @param array<string, mixed> $new_raw      New subscription data from the browser.
+	 * @param string               $token        Per-subscription capability token.
+	 * @return array<string, mixed>|WP_Error The updated subscription on success.
+	 */
+	public static function replace_subscription( string $old_endpoint, array $new_raw, string $token ) {
+		$token        = trim( $token );
+		$old_endpoint = trim( $old_endpoint );
+
+		if ( '' === $token || '' === $old_endpoint || ! self::is_allowed_endpoint( $old_endpoint ) ) {
+			return new WP_Error(
+				'daymark_push_invalid_token',
+				__( 'Invalid push subscription or token.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		$new_sub = self::normalize_subscription( $new_raw );
+
+		if ( is_wp_error( $new_sub ) ) {
+			return $new_sub;
+		}
+
+		$user_ids = get_users(
+			array(
+				'fields'       => 'ID',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Rare write path, personal-site scale.
+				'meta_key'     => self::SUBSCRIPTION_META,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Rare write path, personal-site scale.
+				'meta_value'   => $old_endpoint,
+				'meta_compare' => 'LIKE',
+			)
+		);
+
+		$matched_user_id = 0;
+
+		foreach ( $user_ids as $uid ) {
+			$uid = (int) $uid;
+
+			foreach ( (array) get_user_meta( $uid, self::SUBSCRIPTION_META, false ) as $row ) {
+				$data = is_string( $row ) ? json_decode( $row, true ) : null;
+
+				if ( is_array( $data ) && (string) ( $data['endpoint'] ?? '' ) === $old_endpoint ) {
+					$stored_token = (string) ( $data['token'] ?? '' );
+
+					if ( '' !== $stored_token && hash_equals( $stored_token, $token ) ) {
+						$matched_user_id = $uid;
+						break 2;
+					}
+				}
+			}
+		}
+
+		if ( $matched_user_id <= 0 ) {
+			return new WP_Error(
+				'daymark_push_invalid_token',
+				__( 'Invalid push subscription or token.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
+		if ( $old_endpoint !== (string) $new_sub['endpoint'] ) {
+			self::delete_endpoint_everywhere( $old_endpoint );
+		}
+
+		return self::save_subscription( $matched_user_id, $new_raw );
 	}
 
 	/**
