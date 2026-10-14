@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Right-to-left (RTL) layout support for Arabic, Hebrew, Persian, Urdu, and other right-to-left languages. Daymark's layout, menus, arrows, Timeline spine, and gallery sliders now mirror to match reading direction when WordPress uses an RTL language. Keys and swipe gestures in the gallery slider and tab list follow reading direction, and CI enforces logical CSS properties. ([#537](https://github.com/jeffpaul/daymark/pull/537))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added

@@ -81,6 +81,9 @@ jobs:
           set -e
           find assets -name '*.js' -print0 | xargs -0 -n1 node --check
 
+      - name: RTL stylesheet check (logical CSS properties)
+        run: bin/check-rtl-css.sh
+
   i18n:
     name: Translation-ready strings
     runs-on: ubuntu-latest

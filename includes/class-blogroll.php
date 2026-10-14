@@ -231,7 +231,7 @@ class Daymark_Blogroll {
 
 			$icon = (string) ( $site['site_icon_url'] ?? '' );
 			$img  = $show_icons && '' !== $icon
-				? sprintf( '<img src="%s" alt="" width="20" height="20" loading="lazy" style="vertical-align:middle;margin-right:0.5em;border-radius:4px;" /> ', esc_url( $icon ) )
+				? sprintf( '<img src="%s" alt="" width="20" height="20" loading="lazy" style="vertical-align:middle;margin-inline-end:0.5em;border-radius:4px;" /> ', esc_url( $icon ) )
 				: '';
 
 			$items .= sprintf( '<li>%1$s<a href="%2$s">%3$s</a></li>', $img, $url, esc_html( self::label( $site ) ) );
