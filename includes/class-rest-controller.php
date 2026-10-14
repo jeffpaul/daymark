@@ -1121,6 +1121,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/push/subscriptions/replace',
+			array(
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'replace_push_subscription' ),
+					'permission_callback' => '__return_true',
+					'args'                => array(
+						'old_endpoint' => array(
+							'type'              => 'string',
+							'required'          => true,
+							'validate_callback' => static function ( $param ) {
+								return is_string( $param ) && '' !== trim( $param );
+							},
+						),
+						'token'        => array(
+							'type'              => 'string',
+							'required'          => true,
+							'validate_callback' => static function ( $param ) {
+								return is_string( $param ) && '' !== trim( $param );
+							},
+						),
+						'subscription' => array(
+							'type'     => 'object',
+							'required' => true,
+						),
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/push/preferences',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -3522,10 +3554,49 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return new WP_REST_Response(
 			array(
 				'subscribed' => true,
+				'token'      => (string) ( $sub['token'] ?? '' ),
 				'devices'    => count( Daymark_Push::get_subscriptions( get_current_user_id() ) ),
 				'prefs'      => Daymark_Push::get_prefs( get_current_user_id() ),
 			),
 			201
+		);
+	}
+
+	/**
+	 * POST /daymark/v1/push/subscriptions/replace — replace a device's push
+	 * address when the browser rotates or changes it (issue #530).
+	 *
+	 * Uses the per-subscription capability token returned when the device
+	 * first subscribed, enabling the service worker to update its push address
+	 * without requiring a logged-in user session or REST nonce.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function replace_push_subscription( WP_REST_Request $request ) {
+		$old_endpoint = (string) $request->get_param( 'old_endpoint' );
+		$token        = (string) $request->get_param( 'token' );
+		$raw_sub      = $request->get_param( 'subscription' );
+
+		$sub = Daymark_Push::replace_subscription(
+			$old_endpoint,
+			is_array( $raw_sub ) ? $raw_sub : array(),
+			$token
+		);
+
+		if ( is_wp_error( $sub ) ) {
+			return $sub;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'subscribed' => true,
+				'token'      => (string) ( $sub['token'] ?? '' ),
+				'endpoint'   => (string) ( $sub['endpoint'] ?? '' ),
+			),
+			200
 		);
 	}
 

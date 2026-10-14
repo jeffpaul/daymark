@@ -426,4 +426,139 @@ class Test_Push extends WP_UnitTestCase {
 
 		$this->assertSame( rest_authorization_required_code(), rest_do_request( $request )->get_status() );
 	}
+
+	public function test_save_subscription_returns_token() {
+		$sub   = $this->browser_subscription();
+		$saved = Daymark_Push::save_subscription( $this->user_id, $sub );
+
+		$this->assertIsArray( $saved );
+		$this->assertArrayHasKey( 'token', $saved );
+		$this->assertSame( 32, strlen( $saved['token'] ) );
+
+		$stored = Daymark_Push::get_subscriptions( $this->user_id );
+		$this->assertCount( 1, $stored );
+		$this->assertSame( $saved['token'], $stored[0]['token'] );
+	}
+
+	public function test_replace_subscription_updates_device_address_and_rotates_token() {
+		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/old-device-token' );
+		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );
+		$token   = $saved['token'];
+
+		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/new-device-token' );
+		$updated = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, $token );
+
+		$this->assertIsArray( $updated );
+		$this->assertSame( $new_sub['endpoint'], $updated['endpoint'] );
+		$this->assertNotEmpty( $updated['token'] );
+		$this->assertNotSame( $token, $updated['token'] );
+
+		$stored = Daymark_Push::get_subscriptions( $this->user_id );
+		$this->assertCount( 1, $stored );
+		$this->assertSame( $new_sub['endpoint'], $stored[0]['endpoint'] );
+		$this->assertSame( $updated['token'], $stored[0]['token'] );
+	}
+
+	public function test_replace_subscription_rejects_invalid_token_or_unknown_endpoint() {
+		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/token-test' );
+		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );
+		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/new-token-test' );
+
+		// Wrong token.
+		$bad_token = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, 'wrong-token' );
+		$this->assertWPError( $bad_token );
+		$this->assertSame( 'daymark_push_invalid_token', $bad_token->get_error_code() );
+		$this->assertSame( 403, $bad_token->get_error_data()['status'] );
+
+		// Unknown endpoint.
+		$bad_endpoint = Daymark_Push::replace_subscription( 'https://fcm.googleapis.com/fcm/send/unknown', $new_sub, $saved['token'] );
+		$this->assertWPError( $bad_endpoint );
+		$this->assertSame( 'daymark_push_invalid_token', $bad_endpoint->get_error_code() );
+
+		// Empty token or endpoint.
+		$this->assertWPError( Daymark_Push::replace_subscription( '', $new_sub, $saved['token'] ) );
+		$this->assertWPError( Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, '' ) );
+	}
+
+	public function test_replace_subscription_rejects_disallowed_host() {
+		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/host-test' );
+		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );
+
+		$evil_sub = $this->browser_subscription( 'https://evil.example.test/push' );
+		$result   = Daymark_Push::replace_subscription( $old_sub['endpoint'], $evil_sub, $saved['token'] );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_push_endpoint', $result->get_error_code() );
+	}
+
+	public function test_replace_subscription_enforces_one_device_per_user() {
+		$other_user = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+		$new_sub    = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/shared-device' );
+		Daymark_Push::save_subscription( $other_user, $new_sub );
+		$this->assertCount( 1, Daymark_Push::get_subscriptions( $other_user ) );
+
+		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/user-device' );
+		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );
+
+		$result = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, $saved['token'] );
+		$this->assertIsArray( $result );
+
+		$this->assertCount( 0, Daymark_Push::get_subscriptions( $other_user ) );
+		$this->assertCount( 1, Daymark_Push::get_subscriptions( $this->user_id ) );
+		$this->assertSame( $new_sub['endpoint'], Daymark_Push::get_subscriptions( $this->user_id )[0]['endpoint'] );
+	}
+
+	public function test_rest_replace_subscription_succeeds_without_cookie_nonce() {
+		$sub   = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/rest-old' );
+		$saved = $this->rest( 'POST', '/push/subscriptions', array( 'subscription' => $sub ) );
+		$token = $saved->get_data()['token'];
+		$this->assertNotEmpty( $token );
+
+		// Simulate an unauthenticated request from a background service worker.
+		wp_set_current_user( 0 );
+
+		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/rest-new' );
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body(
+			(string) wp_json_encode(
+				array(
+					'old_endpoint' => $sub['endpoint'],
+					'token'        => $token,
+					'subscription' => $new_sub,
+				)
+			)
+		);
+
+		$response = rest_do_request( $request );
+		$this->assertSame( 200, $response->get_status() );
+		$data = $response->get_data();
+		$this->assertTrue( $data['subscribed'] );
+		$this->assertSame( $new_sub['endpoint'], $data['endpoint'] );
+		$this->assertNotEmpty( $data['token'] );
+
+		// Verify stored on the user.
+		$stored = Daymark_Push::get_subscriptions( $this->user_id );
+		$this->assertCount( 1, $stored );
+		$this->assertSame( $new_sub['endpoint'], $stored[0]['endpoint'] );
+	}
+
+	public function test_rest_replace_subscription_rejects_bad_token() {
+		wp_set_current_user( 0 );
+
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body(
+			(string) wp_json_encode(
+				array(
+					'old_endpoint' => 'https://fcm.googleapis.com/fcm/send/nonexistent',
+					'token'        => 'invalid-token',
+					'subscription' => $this->browser_subscription(),
+				)
+			)
+		);
+
+		$response = rest_do_request( $request );
+		$this->assertSame( 403, $response->get_status() );
+	}
 }
