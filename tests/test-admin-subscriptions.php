@@ -2281,18 +2281,20 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	 * Call an admin_post handler, stopping it at its redirect instead of at
 	 * exit(). Returns the URL it redirected to.
 	 *
-	 * @param string               $method Handler method name.
-	 * @param string               $nonce  Nonce action, also its field name plus `_nonce`.
-	 * @param array<string, mixed> $post   Submitted fields.
+	 * @param string               $method      Handler method name.
+	 * @param string               $nonce       Nonce action, also its field name plus `_nonce` if $nonce_field is omitted.
+	 * @param array<string, mixed> $post        Submitted fields.
+	 * @param string|null          $nonce_field Optional explicit nonce field name in $_REQUEST.
 	 * @return string
 	 */
-	private function call_handler( string $method, string $nonce, array $post ): string {
+	private function call_handler( string $method, string $nonce, array $post, ?string $nonce_field = null ): string {
 		$stop = static function ( $location ) {
 			throw new RuntimeException( esc_url_raw( (string) $location ) );
 		};
 
-		$_POST                         = $post;
-		$_REQUEST[ $nonce . '_nonce' ] = wp_create_nonce( $nonce );
+		$field              = $nonce_field ?? ( $nonce . '_nonce' );
+		$_POST              = $post;
+		$_REQUEST[ $field ] = wp_create_nonce( $nonce );
 		add_filter( 'wp_redirect', $stop );
 
 		try {
@@ -2303,7 +2305,7 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		} finally {
 			remove_filter( 'wp_redirect', $stop );
 			$_POST = array();
-			unset( $_REQUEST[ $nonce . '_nonce' ] );
+			unset( $_REQUEST[ $field ] );
 		}
 
 		return $location;
@@ -2824,7 +2826,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 			array(
 				'daymark_subscription_id' => (string) $id,
 				'daymark_favorite'        => '1',
-			)
+			),
+			'daymark_subscription_favorite_nonce'
 		);
 
 		$this->assertStringContainsString( 'daymark_notice=favorited', $location );
@@ -2836,7 +2839,8 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 			array(
 				'daymark_subscription_id' => (string) $id,
 				'daymark_favorite'        => '0',
-			)
+			),
+			'daymark_subscription_favorite_nonce'
 		);
 
 		$this->assertStringContainsString( 'daymark_notice=unfavorited', $location_unstar );
