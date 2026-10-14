@@ -52,6 +52,10 @@
  * 7. The subscriptions table's "Select all" checkbox, and a confirmation
  *    before a bulk Unsubscribe. Without JavaScript the boxes are checked
  *    one by one and the bulk action runs as submitted. See bindBulkActions().
+ * 8. Per-row Favorite toggle forms submit via the REST favorite endpoint
+ *    (issue #531), updating that row's star icon, state, and tooltip in place
+ *    rather than reloading the whole page. Without JavaScript, falls back to
+ *    its plain admin-post.php submit. See bindFavoriteForms().
  */
 (function () {
 	'use strict';
@@ -60,6 +64,7 @@
 		bindNewSubscribeForm();
 		bindNewSubscribeNameEditor( document.getElementById( 'daymark-new-subscribe-root' ) );
 		bindRefreshForms();
+		bindFavoriteForms();
 		bindEditTitleDisclosures();
 		bindDiscoverSourcesForms();
 		bindReaderImportToggle();
@@ -531,6 +536,128 @@
 
 		errorEl.textContent = message;
 		errorEl.hidden = false;
+	}
+
+	/**
+	 * Wires every per-subscription Favorite form to toggle inline via the
+	 * REST API instead of a full admin-post.php POST-redirect-GET (behavior 8).
+	 *
+	 * @return void
+	 */
+	function bindFavoriteForms() {
+		var config = window.daymarkAdminSubscriptions;
+
+		if ( ! config ) {
+			return;
+		}
+
+		var forms = document.querySelectorAll( '.daymark-subscription-favorite-form' );
+
+		forms.forEach( function ( form ) {
+			form.addEventListener( 'submit', function ( event ) {
+				event.preventDefault();
+				toggleSubscriptionFavorite( form, config );
+			} );
+		} );
+	}
+
+	/**
+	 * Submit one Favorite toggle form via the REST favorite endpoint and
+	 * update the button icon, state, and label in place.
+	 *
+	 * @param {HTMLFormElement} form   The Favorite form that was submitted.
+	 * @param {Object}          config Localized daymarkAdminSubscriptions config.
+	 * @return void
+	 */
+	function toggleSubscriptionFavorite( form, config ) {
+		var id = form.getAttribute( 'data-daymark-subscription-id' );
+		var button = form.querySelector( '.daymark-subscription-favorite-trigger' );
+		var icon = button ? button.querySelector( '.dashicons' ) : null;
+		var hiddenInput = form.querySelector( 'input[name="daymark_favorite"]' );
+
+		if ( ! id || ! button || ! icon ) {
+			form.submit();
+			return;
+		}
+
+		if ( button.disabled ) {
+			return;
+		}
+
+		var currentlyFavorited = button.classList.contains( 'is-favorite' );
+		var nextFavorited = ! currentlyFavorited;
+
+		button.disabled = true;
+
+		var method = nextFavorited ? 'POST' : 'DELETE';
+		fetch( config.restUrl + encodeURIComponent( id ) + '/favorite', {
+			method: method,
+			credentials: 'same-origin',
+			headers: { 'X-WP-Nonce': config.restNonce }
+		} )
+			.then( function ( response ) {
+				return response.json().catch( function () {
+					return null;
+				} ).then( function ( body ) {
+					return { ok: response.ok, body: body };
+				} );
+			} )
+			.then( function ( result ) {
+				if ( result.ok ) {
+					applyFavoriteState( button, icon, hiddenInput, nextFavorited, config );
+				} else {
+					var message = result.body && result.body.message ? result.body.message : config.i18n.genericError;
+					alert( message );
+				}
+			} )
+			.catch( function () {
+				alert( config.i18n.genericError );
+			} )
+			.then( function () {
+				button.disabled = false;
+			} );
+	}
+
+	/**
+	 * Update the star button's UI state.
+	 *
+	 * @param {HTMLButtonElement} button      The star trigger button.
+	 * @param {HTMLElement}       icon        The dashicon element inside the button.
+	 * @param {HTMLInputElement}  hiddenInput The hidden form input.
+	 * @param {boolean}           isFavorite  Whether it is favorited.
+	 * @param {Object}            config      Localized config.
+	 * @return void
+	 */
+	function applyFavoriteState( button, icon, hiddenInput, isFavorite, config ) {
+		var label = isFavorite ? config.i18n.unstarFavorite : config.i18n.starFavorite;
+
+		if ( isFavorite ) {
+			button.classList.add( 'is-favorite' );
+			icon.classList.remove( 'dashicons-star-empty' );
+			icon.classList.add( 'dashicons-star-filled' );
+		} else {
+			button.classList.remove( 'is-favorite' );
+			icon.classList.remove( 'dashicons-star-filled' );
+			icon.classList.add( 'dashicons-star-empty' );
+		}
+
+		button.setAttribute( 'aria-label', label );
+		button.setAttribute( 'title', label );
+		button.setAttribute( 'data-daymark-favorited', isFavorite ? '1' : '0' );
+
+		if ( hiddenInput ) {
+			hiddenInput.value = isFavorite ? '0' : '1';
+		}
+
+		var favLink = document.querySelector( '.subsubsub a[href*="view=favorites"]' );
+		if ( favLink ) {
+			var match = favLink.textContent.match( /\((\d+)\)/ );
+			if ( match ) {
+				var count = parseInt( match[1], 10 );
+				var newCount = isFavorite ? count + 1 : Math.max( 0, count - 1 );
+				favLink.textContent = favLink.textContent.replace( /\(\d+\)/, '(' + newCount + ')' );
+			}
+		}
 	}
 
 	/**
