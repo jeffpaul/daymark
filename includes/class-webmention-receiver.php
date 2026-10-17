@@ -164,19 +164,9 @@ class Daymark_Webmention_Receiver {
 
 		// A follow names the site itself, not a post (Daymark_Followers).
 		if ( Daymark_Followers::is_site_target( $target ) ) {
-			if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
-				return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
-			}
+			$accepted = Daymark_Followers::accept_follow( $source );
 
-			if ( ! Daymark_Followers::queue_verification( $source ) ) {
-				return new WP_Error(
-					'daymark_webmention_rate_limited',
-					__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
-					array( 'status' => 429 )
-				);
-			}
-
-			return new WP_REST_Response( array( 'status' => 'accepted' ), 202 );
+			return is_wp_error( $accepted ) ? $accepted : new WP_REST_Response( array( 'status' => 'accepted' ), 202 );
 		}
 
 		$post_id = self::target_post_id( $target );
