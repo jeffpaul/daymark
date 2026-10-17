@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Fixed
+
+- A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added

@@ -8,9 +8,11 @@
  *   `u-follow-of` (the IndieWeb follow post, https://indieweb.org/follow)
  *   and sends that site a Webmention pointing at it. When it unfollows,
  *   the page answers 410 and the Webmention is sent again, so the other
- *   site removes the follow. Receiving works the other way round, through
- *   Daymark's own Webmention endpoint, with the site's home page as the
- *   target.
+ *   site removes the follow. Receiving works the other way round, with
+ *   the site's home page as the target: through Daymark's own Webmention
+ *   endpoint, or, while the Webmention plugin is active, by taking
+ *   home-page targets off that plugin's endpoint before it answers (it
+ *   accepts only targets that resolve to a post).
  * - The fediverse, through the ActivityPub plugin's `activitypub_handled_follow`
  *   action. The Friends plugin (4.x) follows over ActivityPub too.
  * - Jetpack email and WordPress.com subscribers: checked hourly through
@@ -92,6 +94,7 @@ class Daymark_Followers {
 		add_action( self::CRON_VERIFY, array( __CLASS__, 'verify' ) );
 		add_action( self::CRON_JETPACK, array( __CLASS__, 'check_jetpack' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'maybe_serve_follow_page' ), 0 );
+		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'receive_through_webmention_plugin' ), 10, 3 );
 		add_action( 'activitypub_handled_follow', array( __CLASS__, 'on_activitypub_follow' ), 10, 4 );
 		add_action( 'init', array( __CLASS__, 'schedule' ), 30 );
 	}
@@ -456,6 +459,94 @@ class Daymark_Followers {
 		return '' !== $target && self::site_root( $target ) === self::site_root( home_url( '/' ) )
 			&& in_array( $path, array( '', '/' ), true )
 			&& '' === (string) wp_parse_url( $target, PHP_URL_QUERY );
+	}
+
+	/**
+	 * Accept a follow Webmention from `$source`: check it can be reached
+	 * safely and queue its verification. Shared by Daymark's own receiver
+	 * and the Webmention plugin's endpoint.
+	 *
+	 * @param string $source Follow page URL.
+	 * @return true|WP_Error
+	 */
+	public static function accept_follow( string $source ) {
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
+			return new WP_Error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ), array( 'status' => 400 ) );
+		}
+
+		if ( ! self::queue_verification( $source ) ) {
+			return new WP_Error(
+				'daymark_webmention_rate_limited',
+				__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Follows sent to the Webmention plugin's endpoint
+	 * (`POST /webmention/1.0/endpoint`). That plugin accepts only a target
+	 * that resolves to a post, and maps the home page to its "home page
+	 * mentions" page (option `webmention_home_mentions`), refusing the
+	 * Webmention when none is set. So a home-page target is queued for
+	 * Daymark_Followers::verify() here first. With no home-mentions page the
+	 * request is answered 202 here; with one, the plugin also handles it as
+	 * usual, so a plain mention of the home page still reaches that page.
+	 *
+	 * The route only exists while the plugin is active, and Daymark's own
+	 * receiver is off then, so a follow is never queued twice.
+	 *
+	 * @param mixed           $result  Response so far; null to let dispatch continue.
+	 * @param WP_REST_Server  $server  Server.
+	 * @param WP_REST_Request $request Request.
+	 * @return mixed
+	 */
+	public static function receive_through_webmention_plugin( $result, $server, $request ) {
+		unset( $server );
+
+		if ( null !== $result || ! $request instanceof WP_REST_Request || 'POST' !== $request->get_method()
+			|| '/webmention/1.0/endpoint' !== untrailingslashit( $request->get_route() ) ) {
+			return $result;
+		}
+
+		/**
+		 * Whether Daymark records follows sent to the Webmention plugin's
+		 * endpoint.
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		if ( ! apply_filters( 'daymark_receive_follows_with_webmention_plugin', true ) ) {
+			return $result;
+		}
+
+		$source = esc_url_raw( trim( (string) $request->get_param( 'source' ) ), array( 'http', 'https' ) );
+		$target = esc_url_raw( trim( (string) $request->get_param( 'target' ) ), array( 'http', 'https' ) );
+
+		if ( '' === $source || '' === (string) wp_parse_url( $source, PHP_URL_HOST ) || ! self::is_site_target( $target ) || self::is_site_target( $source ) ) {
+			return $result;
+		}
+
+		$accepted = self::accept_follow( $source );
+
+		if ( is_wp_error( $accepted ) ) {
+			return $accepted;
+		}
+
+		if ( absint( get_option( 'webmention_home_mentions' ) ) > 0 ) {
+			return $result;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'source'  => $source,
+				'target'  => $target,
+				'code'    => 'scheduled',
+				'message' => __( 'Webmention is scheduled', 'daymark' ),
+			),
+			202
+		);
 	}
 
 	/**
