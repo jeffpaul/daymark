@@ -825,6 +825,7 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_post_format( $post_id, $type );
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		$daymark_data = array(
 			'post_id'              => $post_id,
@@ -1172,6 +1173,9 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
+
+		// After the reply/reblog meta above, which decides the kind.
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		return $post_id;
 	}

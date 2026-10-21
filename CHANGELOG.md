@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#PR](https://github.com/jeffpaul/daymark/pull/PR))
+
 ### Fixed
 
 - A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
