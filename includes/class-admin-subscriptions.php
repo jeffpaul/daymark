@@ -2797,7 +2797,9 @@ class Daymark_Admin_Subscriptions {
 		$subscribed = array();
 
 		foreach ( Daymark_Plugin::instance()->subscriptions->get_all() as $subscription ) {
-			$subscribed[ strtolower( untrailingslashit( (string) ( $subscription['feed_url'] ?? '' ) ) ) ] = true;
+			foreach ( array( 'feed_url', 'site_url' ) as $field ) {
+				$subscribed[ strtolower( untrailingslashit( (string) ( $subscription[ $field ] ?? '' ) ) ) ] = true;
+			}
 		}
 		?>
 		<p>
@@ -2837,9 +2839,12 @@ class Daymark_Admin_Subscriptions {
 			<div style="max-height:400px;overflow:auto;border:1px solid #dcdcde;background:#fff;padding:4px 12px;max-width:600px;">
 				<?php foreach ( $entries as $index => $entry ) : ?>
 					<?php
-					$xml_url = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
-					$label   = isset( $entry['label'] ) ? (string) $entry['label'] : $xml_url;
-					$already = isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] );
+					$xml_url  = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
+					$html_url = isset( $entry['html_url'] ) ? (string) $entry['html_url'] : '';
+					$shown    = '' !== $xml_url ? $xml_url : $html_url;
+					$label    = isset( $entry['label'] ) ? (string) $entry['label'] : $shown;
+					$already  = ( '' !== $xml_url && isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] ) )
+						|| ( '' !== $html_url && isset( $subscribed[ strtolower( untrailingslashit( $html_url ) ) ] ) );
 					?>
 					<label style="display:block;margin:6px 0;">
 						<input
@@ -2855,7 +2860,7 @@ class Daymark_Admin_Subscriptions {
 							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 						<?php endif; ?>
 						<br />
-						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $xml_url ); ?></code>
+						<code class="daymark-candidate-url" style="margin-left:24px;"><?php echo esc_html( $shown ); ?></code>
 					</label>
 				<?php endforeach; ?>
 			</div>
