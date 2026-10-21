@@ -61,7 +61,7 @@ class Daymark_Plugin_Overlap {
 	private const OVERLAPS = array(
 		'post-kinds'        => array(
 			'label'    => 'Post Kinds',
-			'overlaps' => 'may add its own Like, Reblog, and Comment markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
+			'overlaps' => 'files your posts under kinds such as Note and Reply. Daymark files its Marks under the matching kind and keeps Post Kinds\' reply and repost box off them, so both can stay on — consider deactivating Post Kinds only if you don\'t use its kinds',
 			'slugs'    => array( 'indieweb-post-kinds' ),
 			'classes'  => array( 'Post_Kinds_Plugin' ),
 		),

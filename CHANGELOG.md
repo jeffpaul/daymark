@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
+
 ### Fixed
 
 - Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, and finds each site's feed the same way adding a site by URL does. ([#541](https://github.com/jeffpaul/daymark/pull/541))
