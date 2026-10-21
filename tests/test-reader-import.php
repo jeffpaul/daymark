@@ -1,15 +1,15 @@
 <?php
 /**
  * Tests for the WordPress.com Reader follows import (issue #435):
- * Daymark_Reader_Import's status, paged fetch, and response parsing, the
+ * Daymark_Reader_Import's status, fetch, and response parsing, the
  * shared Daymark_Subscription_OPML::import_entries() path it feeds, and the
  * Settings -> Daymark -> Import/Export section that drives it.
  *
  * The real Jetpack classes are never loaded here, so status() is
  * 'unavailable' unless a test filters `daymark_reader_import_status`, and
- * each page of the WordPress.com response is stubbed through
- * `daymark_reader_import_pre_fetch_page`. The stubbed body follows the shape
- * WordPress.com's own client (wp-calypso) reads from `read/following/mine`.
+ * the WordPress.com response is stubbed through
+ * `daymark_reader_import_pre_fetch`. The stubbed body follows the shape
+ * Jetpack's own Blogroll block reads from wpcom/v2 `/me/following`.
  *
  * @package Daymark
  */
@@ -23,18 +23,25 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	private $subscriptions;
 
 	/**
-	 * Stubbed pages, keyed by 1-based page number.
+	 * The stubbed `/me/following` response.
 	 *
-	 * @var array<int, mixed>
+	 * @var mixed
 	 */
-	private array $pages = array();
+	private $response = array();
 
 	/**
-	 * Pages actually requested, in order.
+	 * How many times the follow list was requested.
 	 *
-	 * @var int[]
+	 * @var int
 	 */
-	private array $requested_pages = array();
+	private int $fetches = 0;
+
+	/**
+	 * Outbound URLs requested (and blocked), in order.
+	 *
+	 * @var string[]
+	 */
+	private array $http_urls = array();
 
 	public function set_up(): void {
 		parent::set_up();
@@ -42,17 +49,20 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		Daymark_Subscriptions::install();
 
 		$this->subscriptions   = new Daymark_Subscriptions();
-		$this->pages           = array();
-		$this->requested_pages = array();
+		$this->response      = array();
+		$this->fetches       = 0;
+		$this->http_urls     = array();
+
+		Daymark_Subscription_Html_Cache::reset();
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
-		add_filter( 'daymark_reader_import_pre_fetch_page', array( $this, 'stub_page' ), 10, 2 );
+		add_filter( 'daymark_reader_import_pre_fetch', array( $this, 'stub_fetch' ) );
 		add_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10, 3 );
 	}
 
 	public function tear_down(): void {
-		remove_filter( 'daymark_reader_import_pre_fetch_page', array( $this, 'stub_page' ), 10 );
+		remove_filter( 'daymark_reader_import_pre_fetch', array( $this, 'stub_fetch' ) );
 		remove_filter( 'pre_http_request', array( $this, 'block_http_request' ), 10 );
 		remove_all_filters( 'daymark_reader_import_status' );
 		remove_all_filters( 'daymark_subscription_opml_max_entries' );
@@ -63,18 +73,12 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @param mixed $pre  Existing short-circuit value.
-	 * @param int   $page Requested page.
-	 * @return mixed
+	 * @return mixed The stubbed response.
 	 */
-	public function stub_page( $pre, $page ) {
-		$this->requested_pages[] = (int) $page;
+	public function stub_fetch() {
+		++$this->fetches;
 
-		return $this->pages[ (int) $page ] ?? array(
-			'subscriptions' => array(),
-			'page'          => (int) $page,
-			'number'        => Daymark_Reader_Import::PAGE_SIZE,
-		);
+		return $this->response;
 	}
 
 	/**
@@ -84,6 +88,8 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	 * @return WP_Error
 	 */
 	public function block_http_request( $preempt, $parsed_args, $url ) {
+		$this->http_urls[] = (string) $url;
+
 		return new WP_Error( 'daymark_test_http_blocked', 'Unmocked HTTP request blocked in test: ' . $url );
 	}
 
@@ -98,7 +104,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	}
 
 	/**
-	 * One raw `read/following/mine` subscription item.
+	 * One raw `/me/following` item.
 	 *
 	 * @param int    $n    Distinguishing number.
 	 * @param string $name Site name.
@@ -106,41 +112,30 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	 */
 	private function follow( int $n, string $name = '' ): array {
 		return array(
-			'ID'        => (string) ( 1000 + $n ),
-			'URL'       => 'https://site' . $n . '.example/feed/',
-			'blog_ID'   => (string) ( 2000 + $n ),
-			'feed_ID'   => (string) ( 3000 + $n ),
-			'name'      => '' !== $name ? $name : 'Site ' . $n,
-			'site_icon' => 'https://site' . $n . '.example/icon.png',
-			'meta'      => array(
-				'links' => array(
-					'site' => 'https://public-api.wordpress.com/rest/v1.1/sites/' . ( 2000 + $n ),
-					'feed' => 'https://public-api.wordpress.com/rest/v1.1/read/feed/' . ( 3000 + $n ),
-				),
-			),
+			'blog_id'           => (string) ( 2000 + $n ),
+			'URL'               => 'https://site' . $n . '.example',
+			'name'              => '' !== $name ? $name : 'Site ' . $n,
+			'site_icon'         => 'https://site' . $n . '.example/icon.png',
+			'description'       => 'About site ' . $n,
+			'is_non_wpcom_site' => false,
 		);
 	}
 
 	/**
-	 * A page of follows numbered $from..$to.
+	 * Follows numbered $from..$to.
 	 *
-	 * @param int $from  First number.
-	 * @param int $to    Last number.
-	 * @param int $total total_subscriptions to report.
-	 * @return array<string, mixed>
+	 * @param int $from First number.
+	 * @param int $to   Last number.
+	 * @return array<int, array<string, mixed>>
 	 */
-	private function page_of( int $from, int $to, int $total ): array {
+	private function follows( int $from, int $to ): array {
 		$items = array();
 
 		for ( $n = $from; $n <= $to; $n++ ) {
 			$items[] = $this->follow( $n );
 		}
 
-		return array(
-			'subscriptions'       => $items,
-			'total_subscriptions' => $total,
-			'number'              => Daymark_Reader_Import::PAGE_SIZE,
-		);
+		return $items;
 	}
 
 	/** Renders the settings page's Import/Export tab. */
@@ -184,48 +179,28 @@ class Test_Reader_Import extends WP_UnitTestCase {
 
 		$this->assertWPError( $result );
 		$this->assertSame( 'daymark_reader_import_unavailable', $result->get_error_code() );
-		$this->assertSame( array(), $this->requested_pages, 'Nothing is requested for a user who is not connected.' );
+		$this->assertSame( 0, $this->fetches, 'Nothing is requested for a user who is not connected.' );
 	}
 
 	public function test_fetch_without_jetpack_errors_instead_of_fataling() {
-		remove_filter( 'daymark_reader_import_pre_fetch_page', array( $this, 'stub_page' ), 10 );
+		remove_filter( 'daymark_reader_import_pre_fetch', array( $this, 'stub_fetch' ) );
+		$this->set_status( Daymark_Reader_Import::STATUS_READY );
 
 		$this->assertWPError( Daymark_Reader_Import::fetch_follows() );
 	}
 
-	public function test_fetch_single_short_page() {
+	public function test_fetch_reads_the_whole_list_in_one_request() {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = $this->page_of( 1, 3, 3 );
+		$this->response = $this->follows( 1, 120 );
 
 		$result = Daymark_Reader_Import::fetch_follows();
 
 		$this->assertIsArray( $result );
-		$this->assertCount( 3, $result['entries'] );
-		$this->assertSame( 3, $result['total'] );
-		$this->assertFalse( $result['truncated'] );
-		$this->assertSame( array( 1 ), $this->requested_pages, 'A page shorter than the page size is the last one.' );
-	}
-
-	public function test_fetch_walks_every_page() {
-		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = $this->page_of( 1, 100, 120 );
-		$this->pages[2] = $this->page_of( 101, 120, 120 );
-
-		$result = Daymark_Reader_Import::fetch_follows();
-
 		$this->assertCount( 120, $result['entries'] );
-		$this->assertSame( array( 1, 2 ), $this->requested_pages );
-		$this->assertSame( 'https://site120.example/feed/', $result['entries'][119]['xml_url'] );
-	}
-
-	public function test_fetch_stops_after_an_exactly_full_last_page() {
-		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = $this->page_of( 1, 100, 100 );
-
-		$result = Daymark_Reader_Import::fetch_follows();
-
-		$this->assertCount( 100, $result['entries'] );
-		$this->assertSame( array( 1, 2 ), $this->requested_pages, 'An empty second page ends the walk.' );
+		$this->assertSame( 120, $result['total'] );
+		$this->assertFalse( $result['truncated'] );
+		$this->assertSame( 1, $this->fetches );
+		$this->assertSame( 'https://site120.example', $result['entries'][119]['html_url'] );
 	}
 
 	public function test_fetch_truncates_at_the_entry_cap() {
@@ -236,36 +211,32 @@ class Test_Reader_Import extends WP_UnitTestCase {
 				return 150;
 			}
 		);
-		$this->pages[1] = $this->page_of( 1, 100, 250 );
-		$this->pages[2] = $this->page_of( 101, 200, 250 );
-		$this->pages[3] = $this->page_of( 201, 250, 250 );
+		$this->response = $this->follows( 1, 250 );
 
 		$result = Daymark_Reader_Import::fetch_follows();
 
 		$this->assertCount( 150, $result['entries'] );
 		$this->assertTrue( $result['truncated'] );
 		$this->assertSame( 250, $result['total'] );
-		$this->assertNotContains( 3, $this->requested_pages, 'Nothing past the cap is requested.' );
 	}
 
-	public function test_fetch_drops_duplicate_feed_urls() {
+	public function test_fetch_drops_duplicate_site_urls() {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = array(
-			'subscriptions' => array(
-				$this->follow( 1 ),
-				array_merge( $this->follow( 1 ), array( 'URL' => 'https://SITE1.example/feed' ) ),
-				$this->follow( 2 ),
-			),
+		$this->response = array(
+			$this->follow( 1 ),
+			array_merge( $this->follow( 1 ), array( 'URL' => 'https://SITE1.example/' ) ),
+			$this->follow( 2 ),
 		);
 
 		$result = Daymark_Reader_Import::fetch_follows();
 
 		$this->assertCount( 2, $result['entries'] );
+		$this->assertSame( 2, $result['total'] );
 	}
 
 	public function test_fetch_passes_through_a_wordpress_com_error() {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = new WP_Error( 'daymark_reader_import_failed', 'WordPress.com is down.' );
+		$this->response = new WP_Error( 'daymark_reader_import_failed', 'WordPress.com is down.' );
 
 		$result = Daymark_Reader_Import::fetch_follows();
 
@@ -275,19 +246,33 @@ class Test_Reader_Import extends WP_UnitTestCase {
 
 	public function test_fetch_treats_an_unexpected_stub_value_as_a_failure() {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = 'not an array';
+		$this->response = 'not an array';
 
 		$this->assertWPError( Daymark_Reader_Import::fetch_follows() );
 	}
 
-	public function test_fetch_tolerates_a_response_with_no_subscriptions_key() {
+	public function test_fetch_treats_an_error_object_as_a_failure() {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
-		$this->pages[1] = array( 'error' => 'unexpected' );
+		$this->response = array(
+			'code'    => 'rest_no_route',
+			'message' => 'No route was found matching the URL and request method.',
+		);
+
+		$result = Daymark_Reader_Import::fetch_follows();
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_reader_import_failed', $result->get_error_code() );
+	}
+
+	public function test_fetch_accepts_an_empty_list() {
+		$this->set_status( Daymark_Reader_Import::STATUS_READY );
+		$this->response = array();
 
 		$result = Daymark_Reader_Import::fetch_follows();
 
 		$this->assertIsArray( $result );
 		$this->assertSame( array(), $result['entries'] );
+		$this->assertSame( 0, $result['total'] );
 	}
 
 	// -----------------------------------------------------------------
@@ -300,7 +285,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$this->assertSame(
 			array(
 				'label'    => 'Ada & Co',
-				'xml_url'  => 'https://site7.example/feed/',
+				'xml_url'  => '',
 				'html_url' => 'https://site7.example',
 				'icon_url' => 'https://site7.example/icon.png',
 			),
@@ -317,12 +302,21 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$this->assertSame( 'site3.example', $entries[0]['label'] );
 	}
 
-	public function test_parse_skips_items_without_a_usable_feed_url() {
+	public function test_parse_keeps_a_site_url_path() {
+		$item        = $this->follow( 5 );
+		$item['URL'] = 'https://site5.example/blog/';
+
+		$entries = Daymark_Reader_Import::parse_follows( array( $item ) );
+
+		$this->assertSame( 'https://site5.example/blog/', $entries[0]['html_url'] );
+	}
+
+	public function test_parse_skips_items_without_a_usable_site_url() {
 		$entries = Daymark_Reader_Import::parse_follows(
 			array(
 				array( 'URL' => '' ),
 				array( 'URL' => 'javascript:alert(1)' ),
-				array( 'URL' => 'ftp://files.example/feed' ),
+				array( 'URL' => 'ftp://files.example/' ),
 				array( 'name' => 'No URL at all' ),
 				'not an array',
 				$this->follow( 1 ),
@@ -330,7 +324,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		);
 
 		$this->assertCount( 1, $entries );
-		$this->assertSame( 'https://site1.example/feed/', $entries[0]['xml_url'] );
+		$this->assertSame( 'https://site1.example', $entries[0]['html_url'] );
 	}
 
 	public function test_parse_drops_a_non_http_icon() {
@@ -346,40 +340,23 @@ class Test_Reader_Import extends WP_UnitTestCase {
 	// Import through the shared OPML per-entry path.
 	// -----------------------------------------------------------------
 
-	public function test_imported_follows_become_ordinary_subscriptions() {
-		wp_clear_scheduled_hook( Daymark_Subscription_Poller::CRON_HOOK . '_now' );
-
-		$entries = Daymark_Reader_Import::parse_follows( array( $this->follow( 1 ), $this->follow( 2 ) ) );
+	public function test_an_imported_follow_finds_its_feed_from_the_site_url() {
+		$entries = Daymark_Reader_Import::parse_follows( array( $this->follow( 1 ) ) );
 		$results = ( new Daymark_Subscription_OPML() )->import_entries( $entries );
 
-		$this->assertSame( array( 'subscribed', 'subscribed' ), wp_list_pluck( $results, 'status' ) );
-
-		$row = $this->subscriptions->get_by_feed_url( 'https://site1.example/feed/' );
-		$this->assertNotNull( $row );
-		$this->assertSame( 'feed', $row['source_type'] );
-		$this->assertSame( 'Site 1', $row['site_title'] );
-		$this->assertSame( 'https://site1.example', $row['site_url'] );
-
-		$this->assertNotFalse( wp_next_scheduled( Daymark_Subscription_Poller::CRON_HOOK . '_now' ), 'New subscriptions are polled right away.' );
+		$this->assertContains( 'https://site1.example', $this->http_urls, 'The site itself is fetched to find its feed, as when adding a site by URL.' );
+		$this->assertSame( 'failed', $results[0]['status'], 'With every request blocked, no feed is found and nothing is created.' );
+		$this->assertSame( array(), $this->subscriptions->get_all() );
 	}
 
-	public function test_an_already_followed_site_is_reported_as_a_duplicate() {
-		$entries = Daymark_Reader_Import::parse_follows( array( $this->follow( 1 ) ) );
-		$opml    = new Daymark_Subscription_OPML();
-
-		$opml->import_entries( $entries );
-		$results = $opml->import_entries( $entries );
-
-		$this->assertSame( 'duplicate', $results[0]['status'] );
-	}
-
-	public function test_an_unsafe_feed_url_is_rejected_by_the_url_guard() {
+	public function test_an_unsafe_site_url_is_rejected_without_a_request() {
 		$item        = $this->follow( 1 );
-		$item['URL'] = 'http://127.0.0.1/feed/';
+		$item['URL'] = 'http://127.0.0.1/';
 
 		$results = ( new Daymark_Subscription_OPML() )->import_entries( Daymark_Reader_Import::parse_follows( array( $item ) ) );
 
 		$this->assertSame( 'failed', $results[0]['status'] );
+		$this->assertSame( array(), $this->http_urls );
 		$this->assertSame( array(), $this->subscriptions->get_all() );
 	}
 
@@ -418,7 +395,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$this->set_status( Daymark_Reader_Import::STATUS_READY );
 		$this->subscriptions->create(
 			array(
-				'site_url' => 'https://site2.example',
+				'site_url' => 'https://site2.example/',
 				'feed_url' => 'https://site2.example/feed/',
 			)
 		);
@@ -441,6 +418,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/value="1"\s+checked="checked"\s+disabled=\'disabled\'/', $output, 'An already-subscribed site is shown but cannot be selected again.' );
 		$this->assertStringContainsString( 'already subscribed', $output );
 		$this->assertStringNotContainsString( '<b>Site</b>', $output );
+		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-left:24px;">https://site1.example</code>', $output, 'The site address is shown, since there is no feed URL.' );
 		$this->assertStringNotContainsString( 'Only the first', $output );
 		$this->assertStringNotContainsString( 'Load my Reader follows', $output );
 	}
@@ -468,8 +446,8 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$selected = Daymark_Admin_Subscriptions::selected_reader_entries( $entries, array( '2', 0, 2, 99, 'abc', -1 ) );
 
 		$this->assertSame(
-			array( 'https://site1.example/feed/', 'https://site3.example/feed/' ),
-			wp_list_pluck( $selected, 'xml_url' )
+			array( 'https://site1.example', 'https://site3.example' ),
+			wp_list_pluck( $selected, 'html_url' )
 		);
 	}
 
