@@ -48,7 +48,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 
 		Daymark_Subscriptions::install();
 
-		$this->subscriptions   = new Daymark_Subscriptions();
+		$this->subscriptions = new Daymark_Subscriptions();
 		$this->response      = array();
 		$this->fetches       = 0;
 		$this->http_urls     = array();
