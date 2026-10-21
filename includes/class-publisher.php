@@ -2460,9 +2460,9 @@ class Daymark_Publisher {
 	 * human-readable condition while `weather_temperature` feeds any
 	 * measurement-configured display.
 	 *
-	 * Simple Location's helper deletes any property whose value is empty,
-	 * so an exact 0 °C reading is not stored on its side (it also reads as
-	 * absent there); there is no clean way around that from this end.
+	 * Simple Location deletes a property whose value is missing or an
+	 * empty string. Since its 6.0.0 it keeps 0 (its `has_value()` check),
+	 * so an exact 0 °C reading is stored; earlier versions dropped it.
 	 *
 	 * Deliberately not a live sync: this runs once, at publish time, only
 	 * when fetch_weather() succeeded — an edit to an existing Mark never
