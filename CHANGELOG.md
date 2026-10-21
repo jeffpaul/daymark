@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#PR](https://github.com/jeffpaul/daymark/pull/PR))
+- On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
 
 ### Fixed
 
