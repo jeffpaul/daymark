@@ -74,6 +74,10 @@ jobs:
           php-version: '8.2'
           coverage: none
           tools: composer
+          # Strauss reflects functions it parses; with ext-ldap loaded the
+          # php83 polyfill's ldap_connect_wallet() default (an Oracle-only
+          # constant) is fatal. The build doesn't need ldap.
+          extensions: :ldap
 
       # lib/vendor-prefixed/ ships in the zip, so it must be exactly what
       # lib/composer.lock builds. This catches a lockfile bump (such as a
