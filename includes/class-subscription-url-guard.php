@@ -106,6 +106,35 @@ class Daymark_Subscription_Url_Guard {
 	}
 
 	/**
+	 * Whether a URL's host resolves to at least one address.
+	 *
+	 * The check() method deliberately treats an unresolvable host as safe; this is for
+	 * callers that queue work for a URL someone else supplied (the public
+	 * Webmention endpoint) and must not let made-up hostnames each count as
+	 * a new sender. Where DNS can't be trusted (WordPress Playground, see
+	 * should_skip_dns_resolution()) every host counts as resolvable.
+	 *
+	 * @param string $url URL.
+	 * @return bool
+	 */
+	public static function host_resolves( string $url ): bool {
+		$host = trim( (string) wp_parse_url( $url, PHP_URL_HOST ), '[]' );
+
+		if ( '' === $host ) {
+			return false;
+		}
+
+		if ( array() !== self::resolve_addresses( $host ) ) {
+			return true;
+		}
+
+		// No filtered answer and DNS skipped: nothing to go on, so accept.
+		/** This filter is documented in resolve_addresses() below. */
+		return null === apply_filters( 'daymark_subscription_url_guard_resolved_addresses', null, $host )
+			&& self::should_skip_dns_resolution();
+	}
+
+	/**
 	 * Resolve a host to the IP address(es) it points at.
 	 *
 	 * An empty result (the host could not be resolved at all) is treated by

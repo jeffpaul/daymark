@@ -50,6 +50,13 @@ class Daymark_Webmention_Receiver {
 	public const CRON_VERIFY = 'daymark_webmention_verify';
 
 	/**
+	 * Transient counting verifications queued this hour by every sender.
+	 *
+	 * @var string
+	 */
+	public const GLOBAL_LIMIT_KEY = 'daymark_wm_rx_all';
+
+	/**
 	 * Largest source page read, in bytes.
 	 *
 	 * @var int
@@ -175,19 +182,19 @@ class Daymark_Webmention_Receiver {
 			return self::error( 'daymark_webmention_invalid_target', __( 'The target is not a post on this site that accepts Webmentions.', 'daymark' ) );
 		}
 
-		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
-			return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
+		$checked = self::check_source( $source );
+
+		if ( is_wp_error( $checked ) ) {
+			return $checked;
 		}
 
 		$args = array( $source, $target, $post_id );
 
 		if ( false === wp_next_scheduled( self::CRON_VERIFY, $args ) ) {
-			if ( ! self::within_limit( $source ) ) {
-				return new WP_Error(
-					'daymark_webmention_rate_limited',
-					__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
-					array( 'status' => 429 )
-				);
+			$allowed = self::reserve_slot( $source );
+
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
 			}
 
 			wp_schedule_single_event( time(), self::CRON_VERIFY, $args );
@@ -516,6 +523,61 @@ class Daymark_Webmention_Receiver {
 				/* translators: %s: name of the person or site. */
 				return sprintf( __( '%s mentioned this.', 'daymark' ), $author );
 		}
+	}
+
+	/**
+	 * Whether a Webmention source may be queued at all: safe to fetch, and
+	 * its host resolves. Refusing hosts that don't resolve stops a sender
+	 * from inventing a fresh hostname per request to dodge the per-host
+	 * limit. Shared with Daymark_Followers::accept_follow().
+	 *
+	 * @param string $source Source URL.
+	 * @return true|WP_Error 400 error when refused.
+	 */
+	public static function check_source( string $source ) {
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) || ! Daymark_Subscription_Url_Guard::host_resolves( $source ) ) {
+			return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Count one queued verification against the site-wide hourly cap and
+	 * the source host's hourly limit. The site-wide cap bounds the cron
+	 * events anonymous senders can queue, however many hosts they use.
+	 *
+	 * @param string $source Source URL.
+	 * @return true|WP_Error 429 error when over either limit.
+	 */
+	public static function reserve_slot( string $source ) {
+		$global = (int) get_transient( self::GLOBAL_LIMIT_KEY );
+
+		/**
+		 * Webmentions (including follows) all senders together may queue
+		 * per hour.
+		 *
+		 * @param int $limit Default 200.
+		 */
+		if ( $global >= (int) apply_filters( 'daymark_webmention_receive_global_limit', 200 ) ) {
+			return new WP_Error(
+				'daymark_webmention_rate_limited',
+				__( 'This site is receiving too many Webmentions. Try again later.', 'daymark' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		if ( ! self::within_limit( $source ) ) {
+			return new WP_Error(
+				'daymark_webmention_rate_limited',
+				__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		set_transient( self::GLOBAL_LIMIT_KEY, $global + 1, HOUR_IN_SECONDS );
+
+		return true;
 	}
 
 	/**
