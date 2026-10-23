@@ -3154,6 +3154,31 @@
 		});
 	}
 
+	// Shared-device safeguard: a push subscription belongs to the browser,
+	// not the WordPress session, so without this the next person signed in
+	// on this browser would keep getting the previous user's reply
+	// notifications. Before a deliberate Log out, forget this device's
+	// subscription on the site (while the nonce still works) and in the
+	// browser. Best-effort and time-limited like clearOfflineShellCache():
+	// never blocks the logout. A logout from wp-login.php can't do this,
+	// because the site can't tell which of a user's devices is logging out.
+	function unsubscribePushOnLogout() {
+		const work = (async () => {
+			const registration = await pushRegistration();
+			const sub = registration && registration.pushManager
+				? await registration.pushManager.getSubscription().catch(() => null)
+				: null;
+			if (!sub) {
+				return;
+			}
+			await Promise.all([
+				apiDelete('push/subscriptions?endpoint=' + encodeURIComponent(sub.endpoint)).catch(() => {}),
+				sub.unsubscribe().catch(() => {}),
+			]);
+		})().catch(() => {});
+		return Promise.race([work, new Promise((resolve) => setTimeout(resolve, 800))]);
+	}
+
 	// Loads a Mark that's still only queued locally (never reached the
 	// server) back into the composer — the offline counterpart to
 	// openDraft(), rehydrating picked media from the stored Blobs instead
@@ -8757,7 +8782,7 @@
 				logout.addEventListener('click', (event) => {
 					event.preventDefault();
 					const href = logout.href;
-					clearOfflineShellCache().then(() => {
+					Promise.all([clearOfflineShellCache(), unsubscribePushOnLogout()]).then(() => {
 						window.location.href = href;
 					});
 				});
