@@ -470,19 +470,13 @@ class Daymark_Followers {
 	 * @return true|WP_Error
 	 */
 	public static function accept_follow( string $source ) {
-		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
-			return new WP_Error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ), array( 'status' => 400 ) );
+		$checked = Daymark_Webmention_Receiver::check_source( $source );
+
+		if ( is_wp_error( $checked ) ) {
+			return $checked;
 		}
 
-		if ( ! self::queue_verification( $source ) ) {
-			return new WP_Error(
-				'daymark_webmention_rate_limited',
-				__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
-				array( 'status' => 429 )
-			);
-		}
-
-		return true;
+		return self::queue_verification( $source );
 	}
 
 	/**
@@ -551,18 +545,20 @@ class Daymark_Followers {
 
 	/**
 	 * Queue the check of a follow Webmention, within the receiver's
-	 * per-host limit.
+	 * site-wide and per-host limits.
 	 *
 	 * @param string $source Follow page URL.
-	 * @return bool False when the sender is over its limit.
+	 * @return true|WP_Error 429 error when over a limit.
 	 */
-	public static function queue_verification( string $source ): bool {
+	public static function queue_verification( string $source ) {
 		if ( false !== wp_next_scheduled( self::CRON_VERIFY, array( $source ) ) ) {
 			return true;
 		}
 
-		if ( ! Daymark_Webmention_Receiver::within_limit( $source ) ) {
-			return false;
+		$allowed = Daymark_Webmention_Receiver::reserve_slot( $source );
+
+		if ( is_wp_error( $allowed ) ) {
+			return $allowed;
 		}
 
 		wp_schedule_single_event( time(), self::CRON_VERIFY, array( $source ) );
