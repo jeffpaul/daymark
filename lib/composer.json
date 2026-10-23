@@ -8,7 +8,7 @@
         "nyholm/psr7": "^1.8"
     },
     "require-dev": {
-        "brianhenryie/strauss": "^0.22"
+        "brianhenryie/strauss": "^0.31"
     },
     "config": {
         "platform": {
