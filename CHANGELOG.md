@@ -31,6 +31,7 @@ can't act on them.
 
 ### Security
 
+- Comments that other sites send to yours by Webmention can no longer carry hidden code. Daymark undid a site's disguised markup after its safety check instead of before, so a crafted reply could run code when you opened your comments screen. ([#545](https://github.com/jeffpaul/daymark/pull/545))
 - A preview of a followed site's post can no longer show a page from your own site inside the app, which would have let that page run with your login. Daymark's outbound-request test now covers more ways of making a request, and the daily cleanup now removes every old unused upload rather than 100 a day. ([#548](https://github.com/jeffpaul/daymark/pull/548))
 
 ## [0.21.0] - 2026-10-13
