@@ -36,6 +36,10 @@ can't act on them.
 - Password-protected posts no longer give away what they protect. Someone signed in who couldn't open such a post could still see its excerpt, photos, and featured content on the Timeline, and could find words from it by searching; they now see only its title and date. ([#546](https://github.com/jeffpaul/daymark/pull/546))
 - Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. ([#544](https://github.com/jeffpaul/daymark/pull/544))
 
+### Developer
+
+- CI now pins its third-party actions and tools to exact versions, Dependabot watches the libraries shipped in `lib/`, and a new check fails when `lib/vendor-prefixed/` doesn't match `lib/composer.lock`. ([#547](https://github.com/jeffpaul/daymark/pull/547))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added
