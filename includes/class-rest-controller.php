@@ -1706,6 +1706,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$search = sanitize_text_field( (string) $request->get_param( 's' ) );
 		if ( '' !== $search ) {
 			$args['s'] = $search;
+			$args      = $this->exclude_protected_from_search( $args );
 		}
 
 		$query = new WP_Query( $args );
@@ -1941,6 +1942,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			if ( '' !== $search ) {
 				$marks_args['s'] = $search;
+				$marks_args      = $this->exclude_protected_from_search( $marks_args );
 			}
 
 			if ( null !== $bookmarked_post_in ) {
@@ -2016,6 +2018,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 				if ( '' !== $search ) {
 					$notes_args['s'] = $search;
+					$notes_args      = $this->exclude_protected_from_search( $notes_args );
 				}
 
 				if ( null !== $bookmarked_post_in ) {
@@ -2425,6 +2428,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			);
 		}
 
+		if ( $this->is_locked_for_current_user( $post ) ) {
+			return new WP_Error(
+				'daymark_password_protected',
+				__( 'This post is password protected.', 'daymark' ),
+				array( 'status' => 403 )
+			);
+		}
+
 		$fc = Daymark_Featured_Content::get_featured_content( $post );
 
 		if ( empty( $fc ) || 'link' !== $fc['type'] ) {
@@ -2480,6 +2491,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'daymark_not_found',
 				__( 'Post not found.', 'daymark' ),
 				array( 'status' => 404 )
+			);
+		}
+
+		if ( $this->is_locked_for_current_user( $post ) ) {
+			return new WP_Error(
+				'daymark_password_protected',
+				__( 'This post is password protected.', 'daymark' ),
+				array( 'status' => 403 )
 			);
 		}
 
@@ -5113,6 +5132,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * Whether a post is password protected and the current user can't read
+	 * it: the same check get_mark_content() applies before serving a body.
+	 * Whoever can edit the post can already read it, so they are exempt.
+	 *
+	 * @param WP_Post|int $post Post or post ID.
+	 * @return bool
+	 */
+	private function is_locked_for_current_user( $post ): bool {
+		$post = get_post( $post );
+
+		return $post instanceof WP_Post
+			&& post_password_required( $post )
+			&& ! current_user_can( 'edit_post', $post->ID );
+	}
+
+	/**
+	 * Keyword search runs against post_content, and WP_Query only leaves
+	 * out password-protected posts for logged-out visitors, so a signed-in
+	 * user could find words in a protected post's body by searching for
+	 * them. Anyone who can't edit other people's posts searches without
+	 * them (which also leaves out their own protected posts).
+	 *
+	 * @param array<string, mixed> $args WP_Query arguments carrying `s`.
+	 * @return array<string, mixed>
+	 */
+	private function exclude_protected_from_search( array $args ): array {
+		if ( ! current_user_can( 'edit_others_posts' ) ) {
+			$args['has_password'] = false;
+		}
+
+		return $args;
+	}
+
+	/**
 	 * Prepare a Mark summary response array.
 	 *
 	 * @param int $post_id Mark post ID.
@@ -5180,6 +5233,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				? sanitize_text_field( (string) get_the_author_meta( 'display_name', $author_id ) )
 				: '',
 		);
+
+		// A password-protected post the current user can't read shows only
+		// its title, date, and type: no excerpt, photos, or Featured
+		// Content, which would give away what the password protects.
+		if ( $this->is_locked_for_current_user( $post_id ) ) {
+			$summary['excerpt']   = '';
+			$summary['thumbnail'] = '';
+			$summary['protected'] = true;
+
+			return $summary;
+		}
 
 		// Quiet metadata capture: only ever present when a value was
 		// actually resolved for this Mark — omitted (not null-valued)

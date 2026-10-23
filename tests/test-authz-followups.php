@@ -279,4 +279,108 @@ class Test_Authz_Followups extends WP_UnitTestCase {
 
 		( new Daymark_Share_Target() )->handle();
 	}
+
+	/**
+	 * A password-protected post with a manual excerpt and a quote Featured
+	 * Content, by the owner.
+	 *
+	 * @return int
+	 */
+	private function create_protected_post(): int {
+		$post_id = $this->create_post(
+			$this->owner,
+			array(
+				'_daymark_is_mark'               => '1',
+				'_daymark_primary_type'          => 'note',
+				'_daymark_featured_content_type' => 'quote',
+				'_daymark_featured_content'      => wp_json_encode( array( 'quote' => array( 'text' => 'The secret quote.' ) ) ),
+			),
+			array(
+				'post_password' => 'hunter2',
+				'post_title'    => 'Locked post',
+				'post_excerpt'  => 'The secret excerpt.',
+				'post_content'  => '<p>The secret body mentions zanzibarquokka.</p>',
+			)
+		);
+
+		return $post_id;
+	}
+
+	/** On the Timeline, another user sees a protected post's title but nothing from its body. */
+	public function test_protected_post_summary_withholds_content_from_other_users() {
+		$post_id = $this->create_protected_post();
+
+		foreach ( array( $this->other_author, $this->contributor ) as $user_id ) {
+			wp_set_current_user( $user_id );
+
+			$item = $this->timeline_item( $post_id );
+
+			$this->assertNotNull( $item );
+			$this->assertTrue( $item['protected'] );
+			$this->assertSame( '', $item['excerpt'] );
+			$this->assertArrayNotHasKey( 'featured_content', $item );
+			$this->assertStringNotContainsString( 'secret', (string) wp_json_encode( $item ) );
+		}
+	}
+
+	/** The post's own author still sees its excerpt and Featured Content. */
+	public function test_protected_post_summary_is_complete_for_its_author() {
+		$post_id = $this->create_protected_post();
+
+		wp_set_current_user( $this->owner );
+
+		$item = $this->timeline_item( $post_id );
+
+		$this->assertArrayNotHasKey( 'protected', $item );
+		$this->assertSame( 'The secret excerpt.', $item['excerpt'] );
+		$this->assertSame( 'quote', $item['featured_content']['type'] );
+	}
+
+	/** Searching for a word only in a protected post's body doesn't find it for another user. */
+	public function test_search_does_not_match_protected_post_body() {
+		$post_id = $this->create_protected_post();
+
+		wp_set_current_user( $this->contributor );
+
+		foreach ( array( '/timeline', '/marks' ) as $route ) {
+			$request = $this->request_for( $route );
+			$request->set_param( 's', 'zanzibarquokka' );
+
+			$response = rest_do_request( $request );
+
+			$this->assertSame( 200, $response->get_status(), $route );
+			$this->assertNotContains( $post_id, wp_list_pluck( (array) $response->get_data(), 'id' ), $route );
+		}
+	}
+
+	/** Someone who can edit others' posts still finds it by searching. */
+	public function test_search_matches_protected_post_for_an_editor() {
+		$post_id = $this->create_protected_post();
+		$editor  = (int) self::factory()->user->create( array( 'role' => 'editor' ) );
+
+		wp_set_current_user( $editor );
+
+		$request = $this->request_for( '/timeline' );
+		$request->set_param( 's', 'zanzibarquokka' );
+
+		$this->assertContains( $post_id, wp_list_pluck( (array) rest_do_request( $request )->get_data(), 'id' ) );
+	}
+
+	/** The two Featured Content routes refuse a protected post to another user, and serve its author. */
+	public function test_featured_content_routes_refuse_protected_post() {
+		$post_id = $this->create_protected_post();
+
+		foreach ( array( 'featured-content-link', 'featured-content-image' ) as $route ) {
+			wp_set_current_user( $this->other_author );
+
+			$response = rest_do_request( $this->request_for( "/marks/{$post_id}/{$route}" ) );
+
+			$this->assertSame( 403, $response->get_status(), $route );
+			$this->assertSame( 'daymark_password_protected', $response->get_data()['code'], $route );
+
+			wp_set_current_user( $this->owner );
+
+			$this->assertSame( 200, rest_do_request( $this->request_for( "/marks/{$post_id}/{$route}" ) )->get_status(), $route );
+		}
+	}
 }
