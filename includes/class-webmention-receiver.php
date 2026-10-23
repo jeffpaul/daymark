@@ -396,16 +396,21 @@ class Daymark_Webmention_Receiver {
 	 * @return int Comment ID, or 0.
 	 */
 	public static function store( int $post_id, string $source, string $target, array $read ): int {
-		$type    = (string) $read['type'];
-		$content = (string) $read['content'];
+		$type = (string) $read['type'];
+
+		// wp_insert_comment() skips the kses filters wp_new_comment() runs, and
+		// this text comes from another site, so sanitize it here: the author is
+		// plain text, and the content keeps no markup beyond kses' basics.
+		$author  = sanitize_text_field( (string) $read['author'] );
+		$content = wp_kses_data( (string) $read['content'] );
 
 		if ( '' === $content ) {
-			$content = self::placeholder_text( $type, (string) $read['author'] );
+			$content = wp_kses_data( self::placeholder_text( $type, $author ) );
 		}
 
 		$data = array(
 			'comment_post_ID'      => $post_id,
-			'comment_author'       => (string) $read['author'],
+			'comment_author'       => $author,
 			'comment_author_email' => '',
 			'comment_author_url'   => (string) $read['author_url'],
 			'comment_content'      => $content,
@@ -607,11 +612,15 @@ class Daymark_Webmention_Receiver {
 	/**
 	 * Plain, single-spaced text from HTML.
 	 *
+	 * Entities are decoded before tags are stripped, so entity-encoded markup
+	 * in the source (`&lt;img onerror=…&gt;`) is removed rather than turned
+	 * into real HTML.
+	 *
 	 * @param string $html HTML.
 	 * @return string
 	 */
 	private static function plain_text( string $html ): string {
-		$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES );
+		$text = wp_strip_all_tags( html_entity_decode( $html, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 
 		return trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
 	}
