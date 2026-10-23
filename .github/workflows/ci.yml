@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
           coverage: none
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           coverage: none
@@ -61,6 +61,31 @@ jobs:
 
       - name: Run PHPCS (tests)
         run: composer phpcs-tests
+
+  bundled-libs:
+    name: Bundled libraries match lib/composer.lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.2'
+          coverage: none
+          tools: composer
+          # Strauss reflects functions it parses; with ext-ldap loaded the
+          # php83 polyfill's ldap_connect_wallet() default (an Oracle-only
+          # constant) is fatal. The build doesn't need ldap.
+          extensions: :ldap
+
+      # lib/vendor-prefixed/ ships in the zip, so it must be exactly what
+      # lib/composer.lock builds. This catches a lockfile bump (such as a
+      # Dependabot PR) committed without rebuilding, or a hand edit.
+      - name: Rebuild and compare
+        run: |
+          bash bin/build-bundled-libs.sh
+          bash bin/check-bundled-libs.sh
 
   asset-checks:
     name: JSON + JS syntax
@@ -88,7 +113,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           tools: wp-cli

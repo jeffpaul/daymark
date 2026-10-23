@@ -37,6 +37,10 @@ can't act on them.
 - Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. ([#544](https://github.com/jeffpaul/daymark/pull/544))
 - A preview of a followed site's post can no longer show a page from your own site inside the app, which would have let that page run with your login. Daymark's outbound-request test now covers more ways of making a request, and the daily cleanup now removes every old unused upload rather than 100 a day. ([#548](https://github.com/jeffpaul/daymark/pull/548))
 
+### Developer
+
+- CI now pins its third-party actions and tools to exact versions, Dependabot watches the libraries shipped in `lib/`, and a new check fails when `lib/vendor-prefixed/` doesn't match `lib/composer.lock`. ([#547](https://github.com/jeffpaul/daymark/pull/547))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added
