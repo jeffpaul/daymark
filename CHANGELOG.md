@@ -29,6 +29,11 @@ can't act on them.
 - Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, and finds each site's feed the same way adding a site by URL does. ([#541](https://github.com/jeffpaul/daymark/pull/541))
 - A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
 
+### Security
+
+- Comments that other sites send to yours by Webmention can no longer carry hidden code. Daymark undid a site's disguised markup after its safety check instead of before, so a crafted reply could run code when you opened your comments screen. ([#545](https://github.com/jeffpaul/daymark/pull/545))
+- Anyone on the internet could flood a site's Webmention endpoint with made-up web addresses, piling up background jobs that slow every page. Daymark now refuses senders whose address doesn't exist and caps how many Webmentions all senders together can queue each hour. ([#549](https://github.com/jeffpaul/daymark/pull/549))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added
