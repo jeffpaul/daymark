@@ -318,4 +318,58 @@ class Test_Webmention extends WP_UnitTestCase {
 
 		$this->assertSame( 0, (int) get_comments( array( 'post_id' => $post_id, 'status' => 'all', 'count' => true ) ) ); // phpcs:ignore WordPress.Arrays.ArrayDeclarationSpacing.AssociativeArrayFound -- Short test lookup.
 	}
+
+	/** Entity-encoded markup in a source page is stored as plain text, never as HTML. */
+	public function test_verify_strips_entity_encoded_markup() {
+		list( $post_id, $permalink ) = $this->local_target();
+
+		$source = 'https://friend.example/xss/';
+		$this->mock_response(
+			$source,
+			'<div class="h-entry"><div class="e-content"><p>Hi &lt;img src=x onerror=alert(1)&gt; &lt;script&gt;alert(2)&lt;/script&gt;there</p></div>'
+			. '<a class="p-author h-card" href="https://friend.example/"><span class="p-name">Eve &lt;img src=x onerror=alert(3)&gt;</span></a>'
+			. '<a class="u-in-reply-to" href="' . esc_url( $permalink ) . '">x</a></div>'
+		);
+
+		( new Daymark_Webmention_Receiver() )->verify( $source, $permalink, $post_id );
+
+		$comments = get_comments(
+			array(
+				'post_id' => $post_id,
+				'status'  => 'all',
+			)
+		);
+
+		$this->assertCount( 1, $comments );
+		$this->assertStringNotContainsString( '<', $comments[0]->comment_content );
+		$this->assertStringNotContainsString( '<', $comments[0]->comment_author );
+		$this->assertStringContainsString( 'Hi', $comments[0]->comment_content );
+		$this->assertStringContainsString( 'Eve', $comments[0]->comment_author );
+	}
+
+	/** A like's placeholder text, built from the author, carries no markup either. */
+	public function test_verify_like_placeholder_has_no_markup() {
+		list( $post_id, $permalink ) = $this->local_target();
+
+		$source = 'https://friend.example/xss-like/';
+		$this->mock_response(
+			$source,
+			'<a class="u-like-of" href="' . esc_url( $permalink ) . '">x</a><a class="p-author h-card" href="https://friend.example/"><span class="p-name">&lt;script&gt;alert(1)&lt;/script&gt;Mallory</span></a>'
+		);
+
+		( new Daymark_Webmention_Receiver() )->verify( $source, $permalink, $post_id );
+
+		$comments = get_comments(
+			array(
+				'post_id' => $post_id,
+				'type'    => 'like',
+				'status'  => 'all',
+			)
+		);
+
+		$this->assertCount( 1, $comments );
+		$this->assertStringNotContainsString( '<', $comments[0]->comment_content );
+		$this->assertStringNotContainsString( '<', $comments[0]->comment_author );
+		$this->assertStringContainsString( 'Mallory', $comments[0]->comment_author );
+	}
 }
