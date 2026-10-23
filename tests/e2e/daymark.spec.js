@@ -1508,9 +1508,11 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 
-	// The picker renders with the seeded categories; pick "E2E Photos".
-	const fileUnder = page.locator('.daymark-publish-subhead');
-	await expect(fileUnder).toHaveText('File under');
+	// The picker renders folded, with the seeded categories inside; open
+	// it and pick "E2E Photos".
+	const categoriesFold = page.locator('[data-fold="categories"]');
+	await expect(categoriesFold).not.toHaveAttribute('open', '');
+	await categoriesFold.locator('summary').click();
 	// The category rows sit at the bottom, under the sticky action bar, so a
 	// force-click on the visually-hidden input lands on the footer instead.
 	// Scroll the row clear, then toggle via its visible label text.
@@ -1518,6 +1520,8 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await photosRow.scrollIntoViewIfNeeded();
 	await photosRow.getByText('E2E Photos').click();
 	await expect(photosRow.locator('[data-category]')).toBeChecked();
+	// The folded summary names the selection.
+	await expect(page.locator('[data-fold-value="categories"]')).toContainText('E2E Photos');
 
 	await page.locator('[data-action="publish"]').click();
 	await expect(page.getByText('Published to your site')).toBeVisible();
@@ -1537,6 +1541,34 @@ test('categories: File under picker files the Mark and remembers the choice per 
 		.filter({ hasText: 'E2E Photos' })
 		.locator('[data-category]');
 	await expect(rememberedPhotos).toBeChecked();
+});
+
+// Tags: the Publish screen's folded Tags section shows the current tags
+// and lets the person add one, which the published Mark keeps.
+test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }) => {
+	const caption = `E2E tags ${RUN_ID}`;
+	const tag = `e2e-tag-${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+
+	const tagsFold = page.locator('[data-fold="tags"]');
+	await expect(tagsFold).not.toHaveAttribute('open', '');
+	await tagsFold.locator('summary').click();
+	await tagsFold.locator('[data-tag-input]').fill(tag);
+	await tagsFold.locator('[data-tag-input]').press('Enter');
+	await expect(tagsFold.locator('.daymark-tags__chip')).toContainText(tag);
+	await expect(page.locator('[data-fold-value="tags"]')).toContainText(tag);
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	await page.goto('/wp-admin/edit.php');
+	const row = page.locator('tr').filter({ hasText: caption }).first();
+	await expect(row).toContainText(tag);
 });
 
 // Image Mark via the file picker: per-image alt field, correct article

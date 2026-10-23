@@ -1044,8 +1044,13 @@ class Daymark_Publisher {
 			Daymark_Uploads::release_staged( $requested['new'] );
 		}
 
-		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
-		if ( $tags ) {
+		// With tags_set the request carries the Mark's complete tag list,
+		// so it replaces what's stored (and an empty list clears it).
+		// Without it, tags are only added, as before.
+		$tags = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) ) );
+		if ( ! empty( $data['tags_set'] ) ) {
+			wp_set_post_tags( $post_id, $tags, false );
+		} elseif ( $tags ) {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 

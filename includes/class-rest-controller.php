@@ -2907,6 +2907,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$payload['targets']     = $target_list;
 		$payload['helpers']     = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
 		$payload['categories']  = array_map( 'intval', wp_get_post_categories( $post_id ) );
+		$payload['tags']        = wp_get_post_tags( $post_id, array( 'fields' => 'names' ) );
 		$payload['in_reply_to'] = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
 		// Per-connector routing detail (issue #255 — "where did this go"),
 		// server-resolved so it's accurate even for a connector that's
@@ -3769,6 +3770,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Files already uploaded through Daymark_Uploads (issue #483).
 			'media_ids'           => $media_ids,
 			'tags'                => $request->get_param( 'tags' ),
+			// The client sends its whole tag list on every save, so an
+			// update replaces the Mark's tags rather than adding to them.
+			'tags_set'            => rest_sanitize_boolean( $request->get_param( 'tags_set' ) ),
 			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture — see create_mark()'s matching comment.
 			'captured_at'         => sanitize_text_field( (string) $request->get_param( 'captured_at' ) ),
