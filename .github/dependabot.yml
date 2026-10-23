@@ -17,7 +17,8 @@ updates:
         patterns:
           - "*"
 
-  # PHP dev dependencies (PHPUnit, WPCS, etc.) — runtime has none.
+  # PHP dev dependencies (PHPUnit, WPCS, etc.) in the root composer.json.
+  # The plugin's runtime libraries live in /lib instead (below).
   - package-ecosystem: "composer"
     directory: "/"
     schedule:
@@ -27,6 +28,24 @@ updates:
       prefix: "deps(dev)"
     groups:
       composer-dev:
+        patterns:
+          - "*"
+
+  # Runtime libraries shipped in the plugin zip (web-push and its JWT,
+  # crypto, and math dependencies), copied into lib/vendor-prefixed/ by
+  # bin/build-bundled-libs.sh. Dependabot only updates lib/composer.lock:
+  # before merging its PR, run `bash bin/build-bundled-libs.sh` and commit
+  # the rebuilt lib/vendor-prefixed/ to the same branch. CI's "Bundled
+  # libraries match lib/composer.lock" check fails until that's done.
+  - package-ecosystem: "composer"
+    directory: "/lib"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      composer-bundled:
         patterns:
           - "*"
 
