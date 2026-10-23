@@ -32,6 +32,7 @@ can't act on them.
 ### Security
 
 - Comments that other sites send to yours by Webmention can no longer carry hidden code. Daymark undid a site's disguised markup after its safety check instead of before, so a crafted reply could run code when you opened your comments screen. ([#545](https://github.com/jeffpaul/daymark/pull/545))
+- Anyone on the internet could flood a site's Webmention endpoint with made-up web addresses, piling up background jobs that slow every page. Daymark now refuses senders whose address doesn't exist and caps how many Webmentions all senders together can queue each hour. ([#549](https://github.com/jeffpaul/daymark/pull/549))
 - Password-protected posts no longer give away what they protect. Someone signed in who couldn't open such a post could still see its excerpt, photos, and featured content on the Timeline, and could find words from it by searching; they now see only its title and date. ([#546](https://github.com/jeffpaul/daymark/pull/546))
 
 ## [0.21.0] - 2026-10-13
