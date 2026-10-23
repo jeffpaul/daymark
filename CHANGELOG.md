@@ -31,7 +31,7 @@ can't act on them.
 
 ### Security
 
-- Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. (PR_LINK)
+- Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. ([#544](https://github.com/jeffpaul/daymark/pull/544))
 
 ## [0.21.0] - 2026-10-13
 
