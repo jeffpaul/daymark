@@ -29,6 +29,10 @@ can't act on them.
 - Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, and finds each site's feed the same way adding a site by URL does. ([#541](https://github.com/jeffpaul/daymark/pull/541))
 - A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
 
+### Developer
+
+- CI now pins its third-party actions and tools to exact versions, Dependabot watches the libraries shipped in `lib/`, and a new check fails when `lib/vendor-prefixed/` doesn't match `lib/composer.lock`. ([#547](https://github.com/jeffpaul/daymark/pull/547))
+
 ## [0.21.0] - 2026-10-13
 
 ### Added
