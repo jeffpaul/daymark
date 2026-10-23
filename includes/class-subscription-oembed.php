@@ -361,7 +361,12 @@ class Daymark_Subscription_Oembed {
 				if ( 'IFRAME' === $tag ) {
 					$src = self::safe_src( $processor->get_attribute( 'src' ) );
 
-					if ( '' === $src ) {
+					// The rebuilt iframe keeps allow-scripts and
+					// allow-same-origin, which together mean no sandbox at
+					// all when the frame is this site's own origin. A
+					// followed site's embed could point it at /wp-admin/,
+					// so a frame on this site's own host is never built.
+					if ( '' === $src || self::is_own_host( $src ) ) {
 						continue;
 					}
 
@@ -435,6 +440,29 @@ class Daymark_Subscription_Oembed {
 		$scheme = strtolower( (string) ( wp_parse_url( $src, PHP_URL_SCHEME ) ?? '' ) );
 
 		return in_array( $scheme, array( 'http', 'https' ), true ) ? $src : '';
+	}
+
+	/**
+	 * Whether a URL's host is this site's own (its home or WordPress
+	 * address host), compared case-insensitively.
+	 *
+	 * @param string $url Absolute URL.
+	 * @return bool
+	 */
+	private static function is_own_host( string $url ): bool {
+		$host = strtolower( (string) ( wp_parse_url( $url, PHP_URL_HOST ) ?? '' ) );
+
+		if ( '' === $host ) {
+			return false;
+		}
+
+		foreach ( array( home_url(), site_url() ) as $own ) {
+			if ( strtolower( (string) ( wp_parse_url( $own, PHP_URL_HOST ) ?? '' ) ) === $host ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
