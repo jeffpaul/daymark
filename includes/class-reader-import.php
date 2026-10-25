@@ -10,17 +10,19 @@
  * OPML import uses (Daymark_Subscription_OPML::import_entries()). An
  * imported row is therefore indistinguishable from one added by hand.
  *
- * Endpoint: `GET /read/following/mine` on the WordPress.com REST API,
- * version 1.2, paged with `page` and `number` (server cap 100 per page).
- * The response is `{subscriptions: [...], total_subscriptions, page, number}`,
- * and each subscription carries `URL` (the followed feed's URL), `blog_ID`,
- * `feed_ID`, `name`, and `site_icon`. Confirmed against WordPress.com's own
- * first-party client, Automattic/wp-calypso
- * (`packages/api-core/src/read-follows/fetchers.ts`, `adapters.ts`, `types.ts`,
- * and `packages/data-stores/src/reader/queries/use-site-subscriptions-query.ts`,
- * which documents the 100-per-page cap). The request URL shape
- * (`{base}/rest/v1.2/{path}`) was confirmed against Jetpack's own
- * `Client::validate_args_for_wpcom_json_api_request()`.
+ * Endpoint: `GET /me/following` on WordPress.com's wpcom/v2 API, called
+ * with `Client::wpcom_json_api_request_as_user( '/me/following', '2' )`.
+ * This is what a Jetpack maintainer pointed to on Automattic/jetpack#8347:
+ * the v1.x Reader endpoints (`read/following/mine`) are not opened to
+ * Jetpack connections, and called that way answer with an empty list. The
+ * request and the response were confirmed against Jetpack's own Blogroll
+ * block, which calls the same endpoint
+ * (`_inc/lib/core-api/wpcom-endpoints/class-wpcom-rest-api-v2-endpoint-following.php`
+ * and `extensions/blocks/blogroll/utils.js`): the response is a plain JSON
+ * array, one object per followed site, carrying `blog_id`, `URL` (the
+ * site's own address, not its feed), `name`, `site_icon`, `description`,
+ * and `is_non_wpcom_site`. Jetpack sends no paging arguments, so this reads
+ * the list in one request.
  *
  * NOT independently confirmed against a live Jetpack install. This
  * environment cannot install a third-party plugin, the same posture as
@@ -65,14 +67,6 @@ class Daymark_Reader_Import {
 	public const STATUS_READY = 'ready';
 
 	/**
-	 * Follows requested per page — the server's own cap (see the class
-	 * docblock).
-	 *
-	 * @var int
-	 */
-	public const PAGE_SIZE = 100;
-
-	/**
 	 * Whether the Reader import can be offered to the current user.
 	 *
 	 * @return string One of the STATUS_* constants.
@@ -112,10 +106,9 @@ class Daymark_Reader_Import {
 	}
 
 	/**
-	 * Fetch the current user's Reader follows, page by page, up to
-	 * max_entries(). Unlike an OPML file, a follow list can't be split by
-	 * the user, so a list over the cap is truncated (and says so) rather
-	 * than rejected.
+	 * Fetch the current user's Reader follows, up to max_entries(). Unlike
+	 * an OPML file, a follow list can't be split by the user, so a list over
+	 * the cap is truncated (and says so) rather than rejected.
 	 *
 	 * @return array{entries: array<int, array{label: string, xml_url: string, html_url: string, icon_url: string}>, total: int, truncated: bool}|WP_Error
 	 */
@@ -127,99 +120,66 @@ class Daymark_Reader_Import {
 			);
 		}
 
-		$max       = self::max_entries();
-		$entries   = array();
-		$seen      = array();
-		$total     = 0;
-		$truncated = false;
-		$max_pages = (int) ceil( max( 1, $max ) / self::PAGE_SIZE ) + 1;
+		$items = self::fetch_list();
 
-		for ( $page = 1; $page <= $max_pages; $page++ ) {
-			$body = self::fetch_page( $page );
-
-			if ( is_wp_error( $body ) ) {
-				return $body;
-			}
-
-			$total = max( $total, absint( $body['total_subscriptions'] ?? 0 ) );
-			$items = is_array( $body['subscriptions'] ?? null ) ? $body['subscriptions'] : array();
-
-			foreach ( self::parse_follows( $items ) as $entry ) {
-				$key = strtolower( untrailingslashit( $entry['xml_url'] ) );
-
-				if ( isset( $seen[ $key ] ) ) {
-					continue;
-				}
-
-				if ( count( $entries ) >= $max ) {
-					$truncated = true;
-					break 2;
-				}
-
-				$seen[ $key ] = true;
-				$entries[]    = $entry;
-			}
-
-			if ( count( $items ) < self::PAGE_SIZE ) {
-				break;
-			}
+		if ( is_wp_error( $items ) ) {
+			return $items;
 		}
 
-		if ( $total > count( $entries ) && count( $entries ) >= $max ) {
-			$truncated = true;
+		$max     = self::max_entries();
+		$entries = array();
+		$seen    = array();
+
+		foreach ( self::parse_follows( $items ) as $entry ) {
+			$key = strtolower( untrailingslashit( $entry['html_url'] ) );
+
+			if ( isset( $seen[ $key ] ) ) {
+				continue;
+			}
+
+			$seen[ $key ] = true;
+			$entries[]    = $entry;
 		}
+
+		$total = count( $entries );
 
 		return array(
-			'entries'   => $entries,
-			'total'     => max( $total, count( $entries ) ),
-			'truncated' => $truncated,
+			'entries'   => array_slice( $entries, 0, $max ),
+			'total'     => $total,
+			'truncated' => $total > $max,
 		);
 	}
 
 	/**
-	 * Fetch and decode one page of `read/following/mine`.
+	 * Fetch and decode the `/me/following` list.
 	 *
-	 * @param int $page 1-based page number.
-	 * @return array<string, mixed>|WP_Error
+	 * @return array<int, mixed>|WP_Error
 	 */
-	private static function fetch_page( int $page ) {
+	private static function fetch_list() {
 		/**
-		 * Short-circuits one page of the Reader follows request. Return a
-		 * decoded response array (or a WP_Error) to skip the real
+		 * Short-circuits the Reader follows request. Return the decoded
+		 * response (a list of followed sites) or a WP_Error to skip the real
 		 * WordPress.com call. Used by the test suite, since the real
 		 * Jetpack classes can't be loaded there.
 		 *
-		 * @since 0.20.0
+		 * @since 0.22.0
 		 *
-		 * @param array|WP_Error|null $pre  Null to make the real request.
-		 * @param int                 $page 1-based page number.
-		 * @param int                 $per  Follows per page.
+		 * @param array|WP_Error|null $pre Null to make the real request.
 		 */
-		$pre = apply_filters( 'daymark_reader_import_pre_fetch_page', null, $page, self::PAGE_SIZE );
+		$pre = apply_filters( 'daymark_reader_import_pre_fetch', null );
 
 		if ( null !== $pre ) {
-			return is_array( $pre ) || is_wp_error( $pre ) ? $pre : self::request_failed_error();
+			return self::as_follow_list( $pre );
 		}
 
 		try {
 			$response = \Automattic\Jetpack\Connection\Client::wpcom_json_api_request_as_user(
-				add_query_arg(
-					array(
-						'page'   => $page,
-						'number' => self::PAGE_SIZE,
-						'meta'   => '',
-					),
-					'read/following/mine'
-				),
-				'1.2',
+				'/me/following',
+				'2',
 				array(
 					'method'  => 'GET',
 					'timeout' => 20,
-				),
-				null,
-				// v1.x endpoints live under `rest`, not the wpcom/v2 base;
-				// see Daymark_Jetpack_Engagement::write_action().
-				'rest'
+				)
 			);
 		} catch ( \Throwable $e ) {
 			return self::request_failed_error();
@@ -230,9 +190,28 @@ class Daymark_Reader_Import {
 		}
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
-		$body = json_decode( (string) wp_remote_retrieve_body( $response ), true );
 
-		if ( $code < 200 || $code >= 300 || ! is_array( $body ) ) {
+		if ( $code < 200 || $code >= 300 ) {
+			return self::request_failed_error();
+		}
+
+		return self::as_follow_list( json_decode( (string) wp_remote_retrieve_body( $response ), true ) );
+	}
+
+	/**
+	 * Accept a decoded response only when it is the plain list the endpoint
+	 * returns. An object (for example a `{code, message}` error body) or
+	 * anything else counts as a failure.
+	 *
+	 * @param mixed $body Decoded response, or a WP_Error.
+	 * @return array<int, mixed>|WP_Error
+	 */
+	private static function as_follow_list( $body ) {
+		if ( is_wp_error( $body ) ) {
+			return $body;
+		}
+
+		if ( ! is_array( $body ) || ! array_is_list( $body ) ) {
 			return self::request_failed_error();
 		}
 
@@ -253,16 +232,16 @@ class Daymark_Reader_Import {
 	}
 
 	/**
-	 * Turn raw `subscriptions` items into Daymark_Subscription_OPML
-	 * import_entries() entries. An item without a usable http(s) feed URL
-	 * is skipped. The site URL is the feed URL's scheme and host, the same
-	 * fallback the OPML import uses when a file has no `htmlUrl`, since the
-	 * follow list carries no separate site address (`meta.links.site` is an
-	 * API link, not the site). The label is the site's own name, else its
-	 * host. Nothing here is trusted yet: import_entries() runs every URL
+	 * Turn raw `/me/following` items into Daymark_Subscription_OPML
+	 * import_entries() entries. Each item's `URL` is the followed site's own
+	 * address, so it becomes the entry's site URL with no feed URL: the
+	 * import then finds the site's feed the same way adding a site by URL
+	 * does, rather than trusting a guessed feed address. An item without a
+	 * usable http(s) URL is skipped. The label is the site's own name, else
+	 * its host. Nothing here is trusted yet: import_entries() runs every URL
 	 * through the same validation and SSRF guard as an OPML entry.
 	 *
-	 * @param array<int, mixed> $items Raw `subscriptions` items.
+	 * @param array<int, mixed> $items Raw `/me/following` items.
 	 * @return array<int, array{label: string, xml_url: string, html_url: string, icon_url: string}>
 	 */
 	public static function parse_follows( array $items ): array {
@@ -273,21 +252,20 @@ class Daymark_Reader_Import {
 				continue;
 			}
 
-			$feed_url = esc_url_raw( trim( (string) ( $item['URL'] ?? '' ) ), array( 'http', 'https' ) );
-			$host     = (string) wp_parse_url( $feed_url, PHP_URL_HOST );
+			$site_url = esc_url_raw( trim( (string) ( $item['URL'] ?? '' ) ), array( 'http', 'https' ) );
+			$host     = (string) wp_parse_url( $site_url, PHP_URL_HOST );
 
-			if ( '' === $feed_url || '' === $host ) {
+			if ( '' === $site_url || '' === $host ) {
 				continue;
 			}
 
-			$scheme = strtolower( (string) wp_parse_url( $feed_url, PHP_URL_SCHEME ) );
-			$name   = sanitize_text_field( html_entity_decode( (string) ( $item['name'] ?? '' ), ENT_QUOTES, 'UTF-8' ) );
-			$icon   = is_string( $item['site_icon'] ?? null ) ? $item['site_icon'] : '';
+			$name = sanitize_text_field( html_entity_decode( (string) ( $item['name'] ?? '' ), ENT_QUOTES, 'UTF-8' ) );
+			$icon = is_string( $item['site_icon'] ?? null ) ? $item['site_icon'] : '';
 
 			$entries[] = array(
 				'label'    => '' !== $name ? $name : $host,
-				'xml_url'  => $feed_url,
-				'html_url' => $scheme . '://' . $host,
+				'xml_url'  => '',
+				'html_url' => $site_url,
 				'icon_url' => esc_url_raw( trim( $icon ), array( 'http', 'https' ) ),
 			);
 		}

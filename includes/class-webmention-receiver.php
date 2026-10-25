@@ -50,6 +50,13 @@ class Daymark_Webmention_Receiver {
 	public const CRON_VERIFY = 'daymark_webmention_verify';
 
 	/**
+	 * Transient counting verifications queued this hour by every sender.
+	 *
+	 * @var string
+	 */
+	public const GLOBAL_LIMIT_KEY = 'daymark_wm_rx_all';
+
+	/**
 	 * Largest source page read, in bytes.
 	 *
 	 * @var int
@@ -164,19 +171,9 @@ class Daymark_Webmention_Receiver {
 
 		// A follow names the site itself, not a post (Daymark_Followers).
 		if ( Daymark_Followers::is_site_target( $target ) ) {
-			if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
-				return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
-			}
+			$accepted = Daymark_Followers::accept_follow( $source );
 
-			if ( ! Daymark_Followers::queue_verification( $source ) ) {
-				return new WP_Error(
-					'daymark_webmention_rate_limited',
-					__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
-					array( 'status' => 429 )
-				);
-			}
-
-			return new WP_REST_Response( array( 'status' => 'accepted' ), 202 );
+			return is_wp_error( $accepted ) ? $accepted : new WP_REST_Response( array( 'status' => 'accepted' ), 202 );
 		}
 
 		$post_id = self::target_post_id( $target );
@@ -185,19 +182,19 @@ class Daymark_Webmention_Receiver {
 			return self::error( 'daymark_webmention_invalid_target', __( 'The target is not a post on this site that accepts Webmentions.', 'daymark' ) );
 		}
 
-		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) ) {
-			return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
+		$checked = self::check_source( $source );
+
+		if ( is_wp_error( $checked ) ) {
+			return $checked;
 		}
 
 		$args = array( $source, $target, $post_id );
 
 		if ( false === wp_next_scheduled( self::CRON_VERIFY, $args ) ) {
-			if ( ! self::within_limit( $source ) ) {
-				return new WP_Error(
-					'daymark_webmention_rate_limited',
-					__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
-					array( 'status' => 429 )
-				);
+			$allowed = self::reserve_slot( $source );
+
+			if ( is_wp_error( $allowed ) ) {
+				return $allowed;
 			}
 
 			wp_schedule_single_event( time(), self::CRON_VERIFY, $args );
@@ -399,16 +396,21 @@ class Daymark_Webmention_Receiver {
 	 * @return int Comment ID, or 0.
 	 */
 	public static function store( int $post_id, string $source, string $target, array $read ): int {
-		$type    = (string) $read['type'];
-		$content = (string) $read['content'];
+		$type = (string) $read['type'];
+
+		// wp_insert_comment() skips the kses filters wp_new_comment() runs, and
+		// this text comes from another site, so sanitize it here: the author is
+		// plain text, and the content keeps no markup beyond kses' basics.
+		$author  = sanitize_text_field( (string) $read['author'] );
+		$content = wp_kses_data( (string) $read['content'] );
 
 		if ( '' === $content ) {
-			$content = self::placeholder_text( $type, (string) $read['author'] );
+			$content = wp_kses_data( self::placeholder_text( $type, $author ) );
 		}
 
 		$data = array(
 			'comment_post_ID'      => $post_id,
-			'comment_author'       => (string) $read['author'],
+			'comment_author'       => $author,
 			'comment_author_email' => '',
 			'comment_author_url'   => (string) $read['author_url'],
 			'comment_content'      => $content,
@@ -529,6 +531,61 @@ class Daymark_Webmention_Receiver {
 	}
 
 	/**
+	 * Whether a Webmention source may be queued at all: safe to fetch, and
+	 * its host resolves. Refusing hosts that don't resolve stops a sender
+	 * from inventing a fresh hostname per request to dodge the per-host
+	 * limit. Shared with Daymark_Followers::accept_follow().
+	 *
+	 * @param string $source Source URL.
+	 * @return true|WP_Error 400 error when refused.
+	 */
+	public static function check_source( string $source ) {
+		if ( is_wp_error( Daymark_Subscription_Url_Guard::check( $source ) ) || ! Daymark_Subscription_Url_Guard::host_resolves( $source ) ) {
+			return self::error( 'daymark_webmention_invalid_source', __( 'The source could not be safely reached.', 'daymark' ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Count one queued verification against the site-wide hourly cap and
+	 * the source host's hourly limit. The site-wide cap bounds the cron
+	 * events anonymous senders can queue, however many hosts they use.
+	 *
+	 * @param string $source Source URL.
+	 * @return true|WP_Error 429 error when over either limit.
+	 */
+	public static function reserve_slot( string $source ) {
+		$global = (int) get_transient( self::GLOBAL_LIMIT_KEY );
+
+		/**
+		 * Webmentions (including follows) all senders together may queue
+		 * per hour.
+		 *
+		 * @param int $limit Default 200.
+		 */
+		if ( $global >= (int) apply_filters( 'daymark_webmention_receive_global_limit', 200 ) ) {
+			return new WP_Error(
+				'daymark_webmention_rate_limited',
+				__( 'This site is receiving too many Webmentions. Try again later.', 'daymark' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		if ( ! self::within_limit( $source ) ) {
+			return new WP_Error(
+				'daymark_webmention_rate_limited',
+				__( 'Too many Webmentions from this site. Try again later.', 'daymark' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		set_transient( self::GLOBAL_LIMIT_KEY, $global + 1, HOUR_IN_SECONDS );
+
+		return true;
+	}
+
+	/**
 	 * Count one queued verification against the source host's hourly limit.
 	 *
 	 * @param string $source Source URL.
@@ -555,11 +612,15 @@ class Daymark_Webmention_Receiver {
 	/**
 	 * Plain, single-spaced text from HTML.
 	 *
+	 * Entities are decoded before tags are stripped, so entity-encoded markup
+	 * in the source (`&lt;img onerror=…&gt;`) is removed rather than turned
+	 * into real HTML.
+	 *
 	 * @param string $html HTML.
 	 * @return string
 	 */
 	private static function plain_text( string $html ): string {
-		$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES );
+		$text = wp_strip_all_tags( html_entity_decode( $html, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 
 		return trim( (string) preg_replace( '/\s+/u', ' ', $text ) );
 	}

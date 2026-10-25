@@ -67,6 +67,13 @@ final class Daymark_Plugin {
 	public Daymark_Notes $notes;
 
 	/**
+	 * Post Kinds integration: files Marks under the matching kind.
+	 *
+	 * @var Daymark_Post_Kinds
+	 */
+	public Daymark_Post_Kinds $post_kinds;
+
+	/**
 	 * Block editor counter for a Note's length.
 	 *
 	 * @var Daymark_Note_Length
@@ -400,6 +407,7 @@ final class Daymark_Plugin {
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
 		$this->notes                        = new Daymark_Notes();
+		$this->post_kinds                   = new Daymark_Post_Kinds();
 		$this->note_length                  = new Daymark_Note_Length();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
@@ -506,6 +514,7 @@ final class Daymark_Plugin {
 		$this->syndication_links->register();
 		$this->like_visibility->register();
 		$this->notes->register();
+		$this->post_kinds->register();
 		$this->note_length->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();

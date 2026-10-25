@@ -825,6 +825,7 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_post_format( $post_id, $type );
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		$daymark_data = array(
 			'post_id'              => $post_id,
@@ -1043,8 +1044,13 @@ class Daymark_Publisher {
 			Daymark_Uploads::release_staged( $requested['new'] );
 		}
 
-		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
-		if ( $tags ) {
+		// With tags_set the request carries the Mark's complete tag list,
+		// so it replaces what's stored (and an empty list clears it).
+		// Without it, tags are only added, as before.
+		$tags = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) ) );
+		if ( ! empty( $data['tags_set'] ) ) {
+			wp_set_post_tags( $post_id, $tags, false );
+		} elseif ( $tags ) {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
@@ -1172,6 +1178,9 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
+
+		// After the reply/reblog meta above, which decides the kind.
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		return $post_id;
 	}
@@ -2456,9 +2465,9 @@ class Daymark_Publisher {
 	 * human-readable condition while `weather_temperature` feeds any
 	 * measurement-configured display.
 	 *
-	 * Simple Location's helper deletes any property whose value is empty,
-	 * so an exact 0 °C reading is not stored on its side (it also reads as
-	 * absent there); there is no clean way around that from this end.
+	 * Simple Location deletes a property whose value is missing or an
+	 * empty string. Since its 6.0.0 it keeps 0 (its `has_value()` check),
+	 * so an exact 0 °C reading is stored; earlier versions dropped it.
 	 *
 	 * Deliberately not a live sync: this runs once, at publish time, only
 	 * when fetch_weather() succeeded — an edit to an existing Mark never
