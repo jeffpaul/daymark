@@ -206,6 +206,95 @@
 		return navigator.serviceWorker.getRegistration(config.appUrl).catch(() => null);
 	}
 
+	const PUSH_CACHE_NAME = 'daymark-push-v1';
+	const PUSH_TOKEN_CACHE_KEY = '/daymark/push-token';
+
+	async function getStoredPushToken() {
+		if (!('caches' in window)) {
+			return null;
+		}
+		try {
+			const cache = await caches.open(PUSH_CACHE_NAME);
+			const match = await cache.match(PUSH_TOKEN_CACHE_KEY);
+			if (match) {
+				return await match.json();
+			}
+		} catch (e) {
+			/* Storage unavailable or unreadable. */
+		}
+		return null;
+	}
+
+	async function storePushToken(endpoint, token) {
+		if (!('caches' in window) || !endpoint || !token) {
+			return;
+		}
+		try {
+			const cache = await caches.open(PUSH_CACHE_NAME);
+			await cache.put(
+				PUSH_TOKEN_CACHE_KEY,
+				new Response(JSON.stringify({ endpoint, token }), {
+					headers: { 'Content-Type': 'application/json' },
+				})
+			);
+		} catch (e) {
+			/* Storage blocked or failed. */
+		}
+	}
+
+	async function clearPushToken() {
+		if (!('caches' in window)) {
+			return;
+		}
+		try {
+			const cache = await caches.open(PUSH_CACHE_NAME);
+			await cache.delete(PUSH_TOKEN_CACHE_KEY);
+		} catch (e) {
+			/* Best effort cleanup. */
+		}
+	}
+
+	let syncPushPromise = null;
+
+	async function syncPushSubscription() {
+		if (syncPushPromise) {
+			return syncPushPromise;
+		}
+		syncPushPromise = (async () => {
+			if (!pushSupported() || 'granted' !== Notification.permission) {
+				return;
+			}
+			const registration = await pushRegistration();
+			if (!registration) {
+				return;
+			}
+			const existing = await registration.pushManager.getSubscription().catch(() => null);
+			if (!existing) {
+				return;
+			}
+			try {
+				const stored = await getStoredPushToken();
+				const payload = { subscription: existing.toJSON() };
+				if (stored && stored.token && stored.endpoint === existing.endpoint) {
+					payload.token = stored.token;
+				}
+				const saved = await apiPost('push/subscriptions', payload);
+				if (saved && saved.token) {
+					await storePushToken(existing.endpoint, saved.token);
+				}
+				if (saved && saved.prefs) {
+					config.push.prefs = saved.prefs;
+				}
+				return saved;
+			} catch (e) {
+				/* Best effort sync. */
+			}
+		})().finally(() => {
+			syncPushPromise = null;
+		});
+		return syncPushPromise;
+	}
+
 	function pushSettingsMarkup() {
 		const iosNeedsInstall = !pushSupported() && isIosDevice() && !isInstalledApp();
 		if (!pushSupported() && !iosNeedsInstall) {
@@ -296,7 +385,7 @@
 			// Re-send it, in case the site forgot this device (removed after
 			// a failed delivery, or saved under someone else on a shared
 			// browser). Saving is idempotent.
-			apiPost('push/subscriptions', { subscription: existing.toJSON() }).catch(() => {});
+			syncPushSubscription().catch(() => {});
 		}
 
 		device.addEventListener('change', async () => {
@@ -317,9 +406,17 @@
 							userVisibleOnly: true,
 							applicationServerKey: vapidKeyBytes(config.push.publicKey),
 						}));
-					const saved = await apiPost('push/subscriptions', { subscription: sub.toJSON() });
+					const stored = await getStoredPushToken();
+					const payload = { subscription: sub.toJSON() };
+					if (stored && stored.token && stored.endpoint === sub.endpoint) {
+						payload.token = stored.token;
+					}
+					const saved = await apiPost('push/subscriptions', payload);
 					if (saved && saved.prefs) {
 						config.push.prefs = saved.prefs;
+					}
+					if (saved && saved.token) {
+						await storePushToken(sub.endpoint, saved.token);
 					}
 					show(true);
 					say(__('Notifications are on for this device.', 'daymark'));
@@ -329,6 +426,7 @@
 						await apiDelete('push/subscriptions?endpoint=' + encodeURIComponent(sub.endpoint)).catch(() => {});
 						await sub.unsubscribe().catch(() => {});
 					}
+					await clearPushToken();
 					show(false);
 					say(__('Notifications are off for this device.', 'daymark'));
 				}
@@ -3143,6 +3241,7 @@
 	// unsupported all resolve the same way: proceed with the real logout
 	// regardless, never block it on this.
 	function clearOfflineShellCache() {
+		clearPushToken().catch(() => {});
 		return new Promise((resolve) => {
 			const controller = navigator.serviceWorker && navigator.serviceWorker.controller;
 			if (!controller) {
@@ -15080,6 +15179,13 @@
 	// is already best-effort end to end (see its own docblock).
 	syncBookmarkCache().catch(() => {});
 
+	// --- Push notifications: re-sync push subscription at boot (issue #530) ---
+	//
+	// Fallback for browsers that don't fire pushsubscriptionchange (Safari
+	// on iOS/iPadOS) or if the push address was changed while the app was
+	// closed. Re-sending is idempotent.
+	syncPushSubscription().catch(() => {});
+
 	// --- Service worker (PWA; cold-offline-load support, issue #126) ---
 	//
 	// Registered at /daymark/sw.js (a plain templated echo of
@@ -15100,6 +15206,14 @@
 	// Feature-detected and failure-tolerant throughout: if registration
 	// fails (HTTP-only local sites, older browsers), the app works
 	// unchanged, exactly as before this feature existed.
+	if ('serviceWorker' in navigator) {
+		navigator.serviceWorker.addEventListener('message', (event) => {
+			if (event.data && 'daymark-push-subscription-change' === event.data.type) {
+				syncPushSubscription().catch(() => {});
+			}
+		});
+	}
+
 	if ('serviceWorker' in navigator && config.appUrl) {
 		navigator.serviceWorker
 			.getRegistrations()
