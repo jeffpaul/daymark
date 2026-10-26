@@ -515,6 +515,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | POST | `/daymark/v1/webmention` | **No** — any site may send a Webmention; only registered while the built-in support is on. Checks the target locally, rate-limits per source host, and verifies later in WP-Cron (see the built-in Webmention decision) |
 | POST/DELETE | `/daymark/v1/subscriptions/{id}/favorite` | Yes — manage_options + nonce (stars or unstars a followed site as a favorite; site-wide, like following) |
 | POST/DELETE | `/daymark/v1/push/subscriptions` | Yes — edit_posts + nonce (saves or removes this device's push subscription for the current user; a local write, no rate limit) |
+| POST | `/daymark/v1/push/subscriptions/replace` | **No** — unauthenticated background service worker update when browser rotates push address (issue #530); authorized by per-device capability token matching hashed user meta + user can `edit_posts`; IP rate-limited (`ACTION_PUSH_REPLACE`) |
 | POST | `/daymark/v1/push/preferences` | Yes — edit_posts + nonce (which kinds of push the current user gets) |
 | POST | `/daymark/v1/push/test` | Yes — edit_posts + nonce (sends a test push to the current user's devices; `ACTION_PUSH_TEST` rate limit) |
 | GET/POST | `/daymark/v1/websub/{subscription_id}` | **No** — a WebSub hub calls this, not a Daymark user; see the WebSub decision above for what actually authorizes each method (a pending/topic match plus the callback token for GET, an HMAC signature for POST) |

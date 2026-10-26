@@ -437,7 +437,20 @@ class Test_Push extends WP_UnitTestCase {
 
 		$stored = Daymark_Push::get_subscriptions( $this->user_id );
 		$this->assertCount( 1, $stored );
-		$this->assertSame( $saved['token'], $stored[0]['token'] );
+		$this->assertSame( hash( 'sha256', $saved['token'] ), $stored[0]['token'] );
+	}
+
+	public function test_save_subscription_reuses_existing_token() {
+		$sub   = $this->browser_subscription();
+		$saved = Daymark_Push::save_subscription( $this->user_id, $sub );
+		$token = $saved['token'];
+
+		$resaved = Daymark_Push::save_subscription( $this->user_id, $sub, $token );
+		$this->assertSame( $token, $resaved['token'] );
+
+		$stored = Daymark_Push::get_subscriptions( $this->user_id );
+		$this->assertCount( 1, $stored );
+		$this->assertSame( hash( 'sha256', $token ), $stored[0]['token'] );
 	}
 
 	public function test_replace_subscription_updates_device_address_and_rotates_token() {
@@ -456,7 +469,7 @@ class Test_Push extends WP_UnitTestCase {
 		$stored = Daymark_Push::get_subscriptions( $this->user_id );
 		$this->assertCount( 1, $stored );
 		$this->assertSame( $new_sub['endpoint'], $stored[0]['endpoint'] );
-		$this->assertSame( $updated['token'], $stored[0]['token'] );
+		$this->assertSame( hash( 'sha256', $updated['token'] ), $stored[0]['token'] );
 	}
 
 	public function test_replace_subscription_rejects_invalid_token_or_unknown_endpoint() {
@@ -464,11 +477,16 @@ class Test_Push extends WP_UnitTestCase {
 		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );
 		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/new-token-test' );
 
-		// Wrong token.
-		$bad_token = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, 'wrong-token' );
+		// Wrong token (valid format but unmatched).
+		$bad_token = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, str_repeat( 'x', 32 ) );
 		$this->assertWPError( $bad_token );
 		$this->assertSame( 'daymark_push_invalid_token', $bad_token->get_error_code() );
 		$this->assertSame( 403, $bad_token->get_error_data()['status'] );
+
+		// Invalid format token (not 32-char alphanumeric).
+		$bad_format = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, 'wrong-token' );
+		$this->assertWPError( $bad_format );
+		$this->assertSame( 'daymark_push_invalid_token', $bad_format->get_error_code() );
 
 		// Unknown endpoint.
 		$bad_endpoint = Daymark_Push::replace_subscription( 'https://fcm.googleapis.com/fcm/send/unknown', $new_sub, $saved['token'] );
@@ -478,6 +496,23 @@ class Test_Push extends WP_UnitTestCase {
 		// Empty token or endpoint.
 		$this->assertWPError( Daymark_Push::replace_subscription( '', $new_sub, $saved['token'] ) );
 		$this->assertWPError( Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, '' ) );
+	}
+
+	public function test_replace_subscription_rejects_user_without_edit_posts() {
+		$subscriber_id = (int) self::factory()->user->create( array( 'role' => 'subscriber' ) );
+		$old_sub       = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/subscriber-device' );
+		$token         = wp_generate_password( 32, false, false );
+
+		$record          = $old_sub;
+		$record['token'] = hash( 'sha256', $token );
+		add_user_meta( $subscriber_id, Daymark_Push::SUBSCRIPTION_META, wp_json_encode( $record ) );
+
+		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/subscriber-device-new' );
+		$result  = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, $token );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_push_invalid_token', $result->get_error_code() );
+		$this->assertSame( 403, $result->get_error_data()['status'] );
 	}
 
 	public function test_replace_subscription_rejects_disallowed_host() {
@@ -546,6 +581,7 @@ class Test_Push extends WP_UnitTestCase {
 	public function test_rest_replace_subscription_rejects_bad_token() {
 		wp_set_current_user( 0 );
 
+		// Invalid format (not 32-character alphanumeric): rejected by route validation (400).
 		$request = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
 		$request->set_header( 'Content-Type', 'application/json' );
 		$request->set_body(
@@ -559,6 +595,76 @@ class Test_Push extends WP_UnitTestCase {
 		);
 
 		$response = rest_do_request( $request );
-		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( 400, $response->get_status() );
+
+		// Valid 32-character token format but unknown/unmatched: rejected by handler (403).
+		$request_unmatched = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
+		$request_unmatched->set_header( 'Content-Type', 'application/json' );
+		$request_unmatched->set_body(
+			(string) wp_json_encode(
+				array(
+					'old_endpoint' => 'https://fcm.googleapis.com/fcm/send/nonexistent',
+					'token'        => str_repeat( 'a', 32 ),
+					'subscription' => $this->browser_subscription(),
+				)
+			)
+		);
+
+		$response_unmatched = rest_do_request( $request_unmatched );
+		$this->assertSame( 403, $response_unmatched->get_status() );
+	}
+
+	public function test_rest_replace_subscription_rate_limits_by_ip() {
+		wp_set_current_user( 0 );
+
+		Daymark_Plugin::instance()->rate_limiter->reset_ip( Daymark_Rate_Limiter::ACTION_PUSH_REPLACE, '127.0.0.1' );
+
+		// Lower the limit to 2 for this test.
+		$filter = static function ( $limits, $action ) {
+			if ( Daymark_Rate_Limiter::ACTION_PUSH_REPLACE === $action ) {
+				$limits[ $action ] = array(
+					'limit'  => 2,
+					'window' => 300,
+				);
+			}
+			return $limits;
+		};
+		add_filter( 'daymark_rate_limits', $filter, 10, 2 );
+
+		try {
+			for ( $i = 0; $i < 2; $i++ ) {
+				$request = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
+				$request->set_header( 'Content-Type', 'application/json' );
+				$request->set_body(
+					(string) wp_json_encode(
+						array(
+							'old_endpoint' => 'https://fcm.googleapis.com/fcm/send/test',
+							'token'        => str_repeat( 'b', 32 ),
+							'subscription' => $this->browser_subscription(),
+						)
+					)
+				);
+				$response = rest_do_request( $request );
+				$this->assertSame( 403, $response->get_status() );
+			}
+
+			// 3rd request from same IP exceeds limit.
+			$request = new WP_REST_Request( 'POST', '/daymark/v1/push/subscriptions/replace' );
+			$request->set_header( 'Content-Type', 'application/json' );
+			$request->set_body(
+				(string) wp_json_encode(
+					array(
+						'old_endpoint' => 'https://fcm.googleapis.com/fcm/send/test',
+						'token'        => str_repeat( 'b', 32 ),
+						'subscription' => $this->browser_subscription(),
+					)
+				)
+			);
+			$response = rest_do_request( $request );
+			$this->assertSame( 429, $response->get_status() );
+		} finally {
+			remove_filter( 'daymark_rate_limits', $filter );
+			Daymark_Plugin::instance()->rate_limiter->reset_ip( Daymark_Rate_Limiter::ACTION_PUSH_REPLACE, '127.0.0.1' );
+		}
 	}
 }

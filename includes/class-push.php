@@ -237,18 +237,45 @@ class Daymark_Push {
 	 * the same endpoint, and removing that endpoint from any other user
 	 * (a shared browser now signed in as someone else).
 	 *
-	 * @param int                  $user_id User ID.
-	 * @param array<string, mixed> $raw     Subscription from the browser.
-	 * @return array<string, mixed>|WP_Error The stored subscription.
+	 * When the subscription is created, a per-device capability token is
+	 * generated and stored as a SHA-256 hash in user meta. The plaintext
+	 * token is returned in the response for the browser to store in Cache
+	 * Storage for pushsubscriptionchange updates (issue #530).
+	 *
+	 * When re-saving the same endpoint for the same user, any existing token
+	 * is preserved so multiple concurrent syncs (e.g. multi-tab launch) do
+	 * not invalidate the browser's stored token.
+	 *
+	 * @since 0.21.0
+	 * @since 0.22.0 Added per-subscription capability token support.
+	 *
+	 * @param int                  $user_id      User ID.
+	 * @param array<string, mixed> $raw          Subscription from the browser.
+	 * @param string               $token        Optional. Existing capability token from the client.
+	 * @param bool                 $force_rotate Optional. Force generating a new token even on re-save.
+	 * @return array<string, mixed>|WP_Error The stored subscription with plaintext token.
 	 */
-	public static function save_subscription( int $user_id, array $raw ) {
+	public static function save_subscription( int $user_id, array $raw, string $token = '', bool $force_rotate = false ) {
 		$sub = self::normalize_subscription( $raw );
 
 		if ( is_wp_error( $sub ) ) {
 			return $sub;
 		}
 
-		self::delete_endpoint_everywhere( (string) $sub['endpoint'] );
+		$endpoint            = (string) $sub['endpoint'];
+		$existing_token_hash = '';
+
+		// Carry over any existing token for this user and endpoint so repeated
+		// syncs (boot, Me screen, multi-tab launch) don't rotate the token.
+		foreach ( (array) get_user_meta( $user_id, self::SUBSCRIPTION_META, false ) as $row ) {
+			$data = is_string( $row ) ? json_decode( $row, true ) : null;
+			if ( is_array( $data ) && (string) ( $data['endpoint'] ?? '' ) === $endpoint ) {
+				$existing_token_hash = (string) ( $data['token'] ?? '' );
+				break;
+			}
+		}
+
+		self::delete_endpoint_everywhere( $endpoint );
 
 		$existing = self::get_subscriptions( $user_id );
 
@@ -263,9 +290,29 @@ class Daymark_Push {
 			self::delete_subscription( $user_id, (string) $existing[0]['endpoint'] );
 		}
 
-		$sub['token'] = wp_generate_password( 32, false, false );
+		$plain_token = '';
+
+		if ( ! $force_rotate && '' !== $token && '' !== $existing_token_hash ) {
+			$matches = ( 64 === strlen( $existing_token_hash ) )
+				? hash_equals( $existing_token_hash, hash( 'sha256', $token ) )
+				: hash_equals( $existing_token_hash, $token );
+
+			if ( $matches ) {
+				$plain_token = $token;
+			}
+		}
+
+		if ( '' === $plain_token ) {
+			$plain_token = wp_generate_password( 32, false, false );
+		}
+
+		// Store the SHA-256 hash in user meta, not the plaintext token.
+		$sub['token'] = hash( 'sha256', $plain_token );
 
 		add_user_meta( $user_id, self::SUBSCRIPTION_META, self::encode( $sub ) );
+
+		// Return the plaintext token in the response array so the client can cache it.
+		$sub['token'] = $plain_token;
 
 		return $sub;
 	}
@@ -289,7 +336,7 @@ class Daymark_Push {
 		$token        = trim( $token );
 		$old_endpoint = trim( $old_endpoint );
 
-		if ( '' === $token || '' === $old_endpoint || ! self::is_allowed_endpoint( $old_endpoint ) ) {
+		if ( '' === $token || 32 !== strlen( $token ) || ! ctype_alnum( $token ) || '' === $old_endpoint || ! self::is_allowed_endpoint( $old_endpoint ) ) {
 			return new WP_Error(
 				'daymark_push_invalid_token',
 				__( 'Invalid push subscription or token.', 'daymark' ),
@@ -324,8 +371,11 @@ class Daymark_Push {
 
 				if ( is_array( $data ) && (string) ( $data['endpoint'] ?? '' ) === $old_endpoint ) {
 					$stored_token = (string) ( $data['token'] ?? '' );
+					$matches      = ( 64 === strlen( $stored_token ) )
+						? hash_equals( $stored_token, hash( 'sha256', $token ) )
+						: hash_equals( $stored_token, $token );
 
-					if ( '' !== $stored_token && hash_equals( $stored_token, $token ) ) {
+					if ( '' !== $stored_token && $matches ) {
 						$matched_user_id = $uid;
 						break 2;
 					}
@@ -333,7 +383,7 @@ class Daymark_Push {
 			}
 		}
 
-		if ( $matched_user_id <= 0 ) {
+		if ( $matched_user_id <= 0 || ! user_can( $matched_user_id, 'edit_posts' ) ) {
 			return new WP_Error(
 				'daymark_push_invalid_token',
 				__( 'Invalid push subscription or token.', 'daymark' ),
@@ -341,11 +391,9 @@ class Daymark_Push {
 			);
 		}
 
-		if ( $old_endpoint !== (string) $new_sub['endpoint'] ) {
-			self::delete_endpoint_everywhere( $old_endpoint );
-		}
+		self::delete_endpoint_everywhere( $old_endpoint );
 
-		return self::save_subscription( $matched_user_id, $new_raw );
+		return self::save_subscription( $matched_user_id, $new_raw, '', true );
 	}
 
 	/**

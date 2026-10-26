@@ -1103,6 +1103,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'type'     => 'object',
 							'required' => true,
 						),
+						'token'        => array(
+							'type'              => 'string',
+							'required'          => false,
+							'validate_callback' => static function ( $param ) {
+								return is_string( $param ) && ( '' === $param || ( 32 === strlen( $param ) && ctype_alnum( $param ) ) );
+							},
+						),
 					),
 				),
 				array(
@@ -1132,14 +1139,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'type'              => 'string',
 							'required'          => true,
 							'validate_callback' => static function ( $param ) {
-								return is_string( $param ) && '' !== trim( $param );
+								return is_string( $param ) && Daymark_Push::is_allowed_endpoint( $param );
 							},
 						),
 						'token'        => array(
 							'type'              => 'string',
 							'required'          => true,
 							'validate_callback' => static function ( $param ) {
-								return is_string( $param ) && '' !== trim( $param );
+								return is_string( $param ) && 32 === strlen( $param ) && ctype_alnum( $param );
 							},
 						),
 						'subscription' => array(
@@ -1396,6 +1403,28 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 */
 	private function rate_limit( string $action ) {
 		$attempt = Daymark_Plugin::instance()->rate_limiter->attempt( $action );
+
+		if ( is_wp_error( $attempt ) ) {
+			return new WP_Error(
+				$attempt->get_error_code(),
+				$attempt->get_error_message(),
+				$attempt->get_error_data()
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Rate limit an unauthenticated action by client IP address.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $action One of Daymark_Rate_Limiter::ACTION_* constants.
+	 * @return true|WP_Error
+	 */
+	private function rate_limit_ip( string $action ) {
+		$attempt = Daymark_Plugin::instance()->rate_limiter->attempt_ip( $action );
 
 		if ( is_wp_error( $attempt ) ) {
 			return new WP_Error(
@@ -3564,8 +3593,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function save_push_subscription( WP_REST_Request $request ) {
-		$raw = $request->get_param( 'subscription' );
-		$sub = Daymark_Push::save_subscription( get_current_user_id(), is_array( $raw ) ? $raw : array() );
+		$raw   = $request->get_param( 'subscription' );
+		$token = (string) $request->get_param( 'token' );
+		$sub   = Daymark_Push::save_subscription(
+			get_current_user_id(),
+			is_array( $raw ) ? $raw : array(),
+			$token
+		);
 
 		if ( is_wp_error( $sub ) ) {
 			return $sub;
@@ -3596,6 +3630,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function replace_push_subscription( WP_REST_Request $request ) {
+		$rate = $this->rate_limit_ip( Daymark_Rate_Limiter::ACTION_PUSH_REPLACE );
+		if ( is_wp_error( $rate ) ) {
+			return $rate;
+		}
+
 		$old_endpoint = (string) $request->get_param( 'old_endpoint' );
 		$token        = (string) $request->get_param( 'token' );
 		$raw_sub      = $request->get_param( 'subscription' );

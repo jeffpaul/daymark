@@ -209,6 +209,22 @@
 	const PUSH_CACHE_NAME = 'daymark-push-v1';
 	const PUSH_TOKEN_CACHE_KEY = '/daymark/push-token';
 
+	async function getStoredPushToken() {
+		if (!('caches' in window)) {
+			return null;
+		}
+		try {
+			const cache = await caches.open(PUSH_CACHE_NAME);
+			const match = await cache.match(PUSH_TOKEN_CACHE_KEY);
+			if (match) {
+				return await match.json();
+			}
+		} catch (e) {
+			/* Storage unavailable or unreadable. */
+		}
+		return null;
+	}
+
 	async function storePushToken(endpoint, token) {
 		if (!('caches' in window) || !endpoint || !token) {
 			return;
@@ -238,26 +254,45 @@
 		}
 	}
 
+	let syncPushPromise = null;
+
 	async function syncPushSubscription() {
-		if (!pushSupported() || 'granted' !== Notification.permission) {
-			return;
+		if (syncPushPromise) {
+			return syncPushPromise;
 		}
-		const registration = await pushRegistration();
-		if (!registration) {
-			return;
-		}
-		const existing = await registration.pushManager.getSubscription().catch(() => null);
-		if (!existing) {
-			return;
-		}
-		try {
-			const saved = await apiPost('push/subscriptions', { subscription: existing.toJSON() });
-			if (saved && saved.token) {
-				await storePushToken(existing.endpoint, saved.token);
+		syncPushPromise = (async () => {
+			if (!pushSupported() || 'granted' !== Notification.permission) {
+				return;
 			}
-		} catch (e) {
-			/* Best effort sync. */
-		}
+			const registration = await pushRegistration();
+			if (!registration) {
+				return;
+			}
+			const existing = await registration.pushManager.getSubscription().catch(() => null);
+			if (!existing) {
+				return;
+			}
+			try {
+				const stored = await getStoredPushToken();
+				const payload = { subscription: existing.toJSON() };
+				if (stored && stored.token && stored.endpoint === existing.endpoint) {
+					payload.token = stored.token;
+				}
+				const saved = await apiPost('push/subscriptions', payload);
+				if (saved && saved.token) {
+					await storePushToken(existing.endpoint, saved.token);
+				}
+				if (saved && saved.prefs) {
+					config.push.prefs = saved.prefs;
+				}
+				return saved;
+			} catch (e) {
+				/* Best effort sync. */
+			}
+		})().finally(() => {
+			syncPushPromise = null;
+		});
+		return syncPushPromise;
 	}
 
 	function pushSettingsMarkup() {
@@ -350,13 +385,7 @@
 			// Re-send it, in case the site forgot this device (removed after
 			// a failed delivery, or saved under someone else on a shared
 			// browser). Saving is idempotent.
-			apiPost('push/subscriptions', { subscription: existing.toJSON() })
-				.then((saved) => {
-					if (saved && saved.token) {
-						storePushToken(existing.endpoint, saved.token);
-					}
-				})
-				.catch(() => {});
+			syncPushSubscription().catch(() => {});
 		}
 
 		device.addEventListener('change', async () => {
@@ -377,7 +406,12 @@
 							userVisibleOnly: true,
 							applicationServerKey: vapidKeyBytes(config.push.publicKey),
 						}));
-					const saved = await apiPost('push/subscriptions', { subscription: sub.toJSON() });
+					const stored = await getStoredPushToken();
+					const payload = { subscription: sub.toJSON() };
+					if (stored && stored.token && stored.endpoint === sub.endpoint) {
+						payload.token = stored.token;
+					}
+					const saved = await apiPost('push/subscriptions', payload);
 					if (saved && saved.prefs) {
 						config.push.prefs = saved.prefs;
 					}
