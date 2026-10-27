@@ -106,6 +106,27 @@ class Test_Subscription_Oembed extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'doWidgetThings', $result['html'] );
 	}
 
+	/**
+	 * An embed pointing its iframe at this site itself is never rebuilt:
+	 * allow-scripts plus allow-same-origin on this site's own origin would
+	 * mean no sandbox at all (e.g. a frame of /wp-admin/).
+	 */
+	public function test_iframe_on_this_sites_own_host_is_rejected() {
+		$own = wp_parse_url( home_url(), PHP_URL_HOST );
+
+		$this->oembed_results['https://social.example/@person/2'] = '<iframe src="https://' . strtoupper( $own ) . '/wp-admin/" width="400" height="200"></iframe>';
+
+		$this->assertSame( array(), Daymark_Subscription_Oembed::resolve( 'https://social.example/@person/2' ) );
+		$this->assertSame( array(), Daymark_Subscription_Oembed::safe_embed_from_html( '<iframe src="' . esc_url( site_url( '/wp-admin/' ) ) . '"></iframe>' ) );
+	}
+
+	/** An image hosted on this site itself is still allowed. */
+	public function test_photo_on_this_sites_own_host_is_allowed() {
+		$result = Daymark_Subscription_Oembed::safe_embed_from_html( '<img src="' . esc_url( home_url( '/wp-content/uploads/a.jpg' ) ) . '" alt="">' );
+
+		$this->assertSame( 'photo', $result['type'] );
+	}
+
 	/** A "photo"-type oEmbed response (a bare <img>) resolves to a photo preview. */
 	public function test_resolve_extracts_safe_photo() {
 		$this->oembed_results['https://photos.example/1'] = '<img src="https://photos.example/1.jpg" alt="A photo" width="800" height="600" />';

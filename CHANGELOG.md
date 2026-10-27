@@ -22,6 +22,8 @@ can't act on them.
 
 ### Changed
 
+- The Publish screen now shows categories and tags as two folded sections. Folded, each shows the current choice (your usual categories, or the tags AI suggested); tap to change it. Before, tags could only be changed inside AI Assist, so suggested tags were added with nowhere to see or remove them, and a tag removed from a draft came back.
+
 - On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
 
 ### Fixed
@@ -35,6 +37,7 @@ can't act on them.
 - Anyone on the internet could flood a site's Webmention endpoint with made-up web addresses, piling up background jobs that slow every page. Daymark now refuses senders whose address doesn't exist and caps how many Webmentions all senders together can queue each hour. ([#549](https://github.com/jeffpaul/daymark/pull/549))
 - Password-protected posts no longer give away what they protect. Someone signed in who couldn't open such a post could still see its excerpt, photos, and featured content on the Timeline, and could find words from it by searching; they now see only its title and date. ([#546](https://github.com/jeffpaul/daymark/pull/546))
 - Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. ([#544](https://github.com/jeffpaul/daymark/pull/544))
+- A preview of a followed site's post can no longer show a page from your own site inside the app, which would have let that page run with your login. Daymark's outbound-request test now covers more ways of making a request, and the daily cleanup now removes every old unused upload rather than 100 a day. ([#548](https://github.com/jeffpaul/daymark/pull/548))
 
 ### Developer
 
