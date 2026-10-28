@@ -108,6 +108,11 @@ class Daymark_Subscription_OPML {
 	 * list the site's standard `/feed/` address instead, which other feed
 	 * readers understand.
 	 *
+	 * A feed whose address may carry a private token is left out: one with
+	 * login details, or with a query string other than a few harmless
+	 * keys (see is_public_feed_url()). A paid podcast feed, for example,
+	 * often authenticates through its URL, and the blogroll is public.
+	 *
 	 * @since 0.20.0
 	 *
 	 * @param array<int, array<string, mixed>> $subscriptions Subscription rows to list.
@@ -138,6 +143,10 @@ class Daymark_Subscription_OPML {
 				$feed_url = trailingslashit( $site_url ) . 'feed/';
 			}
 
+			if ( ! self::is_public_feed_url( $feed_url ) ) {
+				continue;
+			}
+
 			$site_title = trim( (string) ( $subscription['site_title'] ?? '' ) );
 			$label      = '' !== $site_title ? $site_title : $site_url;
 
@@ -153,6 +162,64 @@ class Daymark_Subscription_OPML {
 		$xml = $dom->saveXML();
 
 		return false !== $xml ? $xml : '';
+	}
+
+	/**
+	 * Whether a feed address is safe to publish in the public blogroll.
+	 *
+	 * Some feeds authenticate through their own URL, such as a paid podcast
+	 * feed's `?token=` or `https://user:pass@` address, and the public
+	 * blogroll must not hand those out. An address with login details is
+	 * never public. One with a query string is public only when every key
+	 * is on a short list of keys that pick a format or a section rather
+	 * than a person (WordPress's own `?feed=rss2` among them). A token kept
+	 * in the path itself can't be told apart from an ordinary path, so it
+	 * is not caught here.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $feed_url Feed address.
+	 * @return bool
+	 */
+	public static function is_public_feed_url( string $feed_url ): bool {
+		$parts = wp_parse_url( $feed_url );
+
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+			return false;
+		}
+
+		if ( isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return false;
+		}
+
+		if ( empty( $parts['query'] ) ) {
+			return true;
+		}
+
+		/**
+		 * Filters the query-string keys a feed address may carry and still
+		 * be listed in the public blogroll. Any other key keeps the feed
+		 * out, since it might be a private token.
+		 *
+		 * @since 0.22.0
+		 *
+		 * @param string[] $keys Allowed keys.
+		 */
+		$allowed = (array) apply_filters(
+			'daymark_blogroll_public_feed_query_keys',
+			array( 'feed', 'format', 'type', 'lang', 'language', 'cat', 'category', 'tag', 'paged' )
+		);
+		$allowed = array_map( 'strtolower', array_map( 'strval', $allowed ) );
+
+		wp_parse_str( $parts['query'], $query );
+
+		foreach ( array_keys( $query ) as $key ) {
+			if ( ! in_array( strtolower( (string) $key ), $allowed, true ) ) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

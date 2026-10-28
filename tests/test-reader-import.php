@@ -469,4 +469,102 @@ class Test_Reader_Import extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( 'Import complete: 1 subscribed, 0 already subscribed, 0 failed.', $output );
 	}
+
+	// -----------------------------------------------------------------
+	// feed_URL and include_feeds (Automattic/jetpack#8347).
+	// -----------------------------------------------------------------
+
+	/**
+	 * A follow as WordPress.com returns it since it added `feed_URL`.
+	 *
+	 * @param int $n Distinguishing number.
+	 * @return array<string, mixed>
+	 */
+	private function follow_with_feed( int $n ): array {
+		return array_merge( $this->follow( $n ), array( 'feed_URL' => 'https://site' . $n . '.example/feed/' ) );
+	}
+
+	public function test_parse_uses_the_feed_url() {
+		$entries = Daymark_Reader_Import::parse_follows( array( $this->follow_with_feed( 4 ) ) );
+
+		$this->assertSame( 'https://site4.example/feed/', $entries[0]['xml_url'] );
+		$this->assertSame( 'https://site4.example', $entries[0]['html_url'] );
+	}
+
+	public function test_parse_drops_a_non_http_feed_url() {
+		$item             = $this->follow( 4 );
+		$item['feed_URL'] = 'javascript:alert(1)';
+
+		$entries = Daymark_Reader_Import::parse_follows( array( $item ) );
+
+		$this->assertSame( '', $entries[0]['xml_url'], 'An unusable feed URL falls back to finding the feed from the site URL.' );
+	}
+
+	public function test_parse_accepts_a_feed_that_is_not_a_wordpress_site() {
+		$entries = Daymark_Reader_Import::parse_follows(
+			array(
+				array(
+					'blog_id'     => 0,
+					'URL'         => 'https://example.org',
+					'name'        => 'Example feed',
+					'site_icon'   => null,
+					'description' => '',
+					'feed_URL'    => 'https://example.org/feed.xml',
+				),
+			)
+		);
+
+		$this->assertSame(
+			array(
+				'label'    => 'Example feed',
+				'xml_url'  => 'https://example.org/feed.xml',
+				'html_url' => 'https://example.org',
+				'icon_url' => '',
+			),
+			$entries[0]
+		);
+	}
+
+	public function test_fetch_keeps_two_feeds_from_one_site() {
+		$this->set_status( Daymark_Reader_Import::STATUS_READY );
+		$this->response = array(
+			$this->follow_with_feed( 1 ),
+			array_merge( $this->follow( 1 ), array( 'feed_URL' => 'https://site1.example/notes/feed/' ) ),
+			$this->follow_with_feed( 1 ),
+		);
+
+		$result = Daymark_Reader_Import::fetch_follows();
+
+		$this->assertSame( 2, $result['total'], 'Two different feeds from one site are both kept; the exact repeat is dropped.' );
+	}
+
+	public function test_an_imported_follow_with_a_feed_url_subscribes_without_a_request() {
+		$results = ( new Daymark_Subscription_OPML() )->import_entries(
+			Daymark_Reader_Import::parse_follows( array( $this->follow_with_feed( 1 ) ) )
+		);
+
+		$this->assertSame( 'subscribed', $results[0]['status'] );
+		$this->assertSame( array(), $this->http_urls, 'The feed URL is used directly, so the site is not fetched to find it.' );
+		$this->assertNotNull( $this->subscriptions->get_by_feed_url( 'https://site1.example/feed/' ) );
+	}
+
+	public function test_checklist_shows_the_site_address_not_the_feed_url() {
+		$this->set_status( Daymark_Reader_Import::STATUS_READY );
+		$item             = $this->follow( 1 );
+		$item['feed_URL'] = 'https://site1.example/feed/?token=secret';
+		set_transient(
+			'daymark_reader_import_follows_' . get_current_user_id(),
+			array(
+				'entries'   => Daymark_Reader_Import::parse_follows( array( $item ) ),
+				'total'     => 1,
+				'truncated' => false,
+			),
+			HOUR_IN_SECONDS
+		);
+
+		$output = $this->render_import_export_tab();
+
+		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-left:24px;">https://site1.example</code>', $output );
+		$this->assertStringNotContainsString( 'secret', $output, 'A feed URL can carry a private token, so it is not shown.' );
+	}
 }
