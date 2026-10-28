@@ -10,19 +10,28 @@
  * OPML import uses (Daymark_Subscription_OPML::import_entries()). An
  * imported row is therefore indistinguishable from one added by hand.
  *
- * Endpoint: `GET /me/following` on WordPress.com's wpcom/v2 API, called
- * with `Client::wpcom_json_api_request_as_user( '/me/following', '2' )`.
- * This is what a Jetpack maintainer pointed to on Automattic/jetpack#8347:
- * the v1.x Reader endpoints (`read/following/mine`) are not opened to
- * Jetpack connections, and called that way answer with an empty list. The
- * request and the response were confirmed against Jetpack's own Blogroll
- * block, which calls the same endpoint
+ * Endpoint: `GET /me/following?include_feeds=true` on WordPress.com's
+ * wpcom/v2 API, called with `Client::wpcom_json_api_request_as_user()` and
+ * version `'2'`. This is what a Jetpack maintainer pointed to on
+ * Automattic/jetpack#8347: the v1.x Reader endpoints (`read/following/mine`)
+ * are not opened to Jetpack connections, and called that way answer with an
+ * empty list. The request and the response were first confirmed against
+ * Jetpack's own Blogroll block, which calls the same endpoint
  * (`_inc/lib/core-api/wpcom-endpoints/class-wpcom-rest-api-v2-endpoint-following.php`
- * and `extensions/blocks/blogroll/utils.js`): the response is a plain JSON
- * array, one object per followed site, carrying `blog_id`, `URL` (the
- * site's own address, not its feed), `name`, `site_icon`, `description`,
- * and `is_non_wpcom_site`. Jetpack sends no paging arguments, so this reads
- * the list in one request.
+ * and `extensions/blocks/blogroll/utils.js`). On the same issue the
+ * maintainer then described, and added, the rest: the response is a plain
+ * JSON array, one object per followed site, with no paging and a cap of
+ * 2000 follows; each object carries `blog_id`, `URL` (the site's own
+ * address), `name`, `site_icon`, `description`, and `feed_URL` (the feed
+ * the Reader follows). `include_feeds=true` also returns follows that are
+ * not WordPress.com or Jetpack sites; their `blog_id` is 0, which a
+ * disconnected Jetpack site also has, so nothing here relies on it. A
+ * `feed_URL` can carry a private token (a paid podcast feed, for example),
+ * so the import picker shows the site's address, never the feed URL, and
+ * Daymark_Subscription_OPML::export_public() keeps such feeds out of the
+ * public blogroll. The endpoint is not cached on WordPress.com and can be
+ * slow for a long follow list, so it is only called when the user asks
+ * for their list, and the result is kept for an hour while they choose.
  *
  * NOT independently confirmed against a live Jetpack install. This
  * environment cannot install a third-party plugin, the same posture as
@@ -131,7 +140,7 @@ class Daymark_Reader_Import {
 		$seen    = array();
 
 		foreach ( self::parse_follows( $items ) as $entry ) {
-			$key = strtolower( untrailingslashit( $entry['html_url'] ) );
+			$key = strtolower( untrailingslashit( '' !== $entry['xml_url'] ? $entry['xml_url'] : $entry['html_url'] ) );
 
 			if ( isset( $seen[ $key ] ) ) {
 				continue;
@@ -174,11 +183,11 @@ class Daymark_Reader_Import {
 
 		try {
 			$response = \Automattic\Jetpack\Connection\Client::wpcom_json_api_request_as_user(
-				'/me/following',
+				'/me/following?include_feeds=true',
 				'2',
 				array(
 					'method'  => 'GET',
-					'timeout' => 20,
+					'timeout' => 30,
 				)
 			);
 		} catch ( \Throwable $e ) {
@@ -233,13 +242,16 @@ class Daymark_Reader_Import {
 
 	/**
 	 * Turn raw `/me/following` items into Daymark_Subscription_OPML
-	 * import_entries() entries. Each item's `URL` is the followed site's own
-	 * address, so it becomes the entry's site URL with no feed URL: the
-	 * import then finds the site's feed the same way adding a site by URL
-	 * does, rather than trusting a guessed feed address. An item without a
-	 * usable http(s) URL is skipped. The label is the site's own name, else
-	 * its host. Nothing here is trusted yet: import_entries() runs every URL
-	 * through the same validation and SSRF guard as an OPML entry.
+	 * import_entries() entries. Each item's `URL` (the followed site's own
+	 * address) becomes the entry's site URL, and its `feed_URL` the entry's
+	 * feed URL, so the import subscribes to that feed directly, the same
+	 * fast path an OPML outline with an `xmlUrl` takes. An item with no
+	 * usable `feed_URL` (a response from before WordPress.com added it)
+	 * keeps an empty feed URL, and the import finds the site's feed the
+	 * same way adding a site by URL does. An item without a usable http(s)
+	 * `URL` is skipped. The label is the site's own name, else its host.
+	 * Nothing here is trusted yet: import_entries() runs every URL through
+	 * the same validation and SSRF guard as an OPML entry.
 	 *
 	 * @param array<int, mixed> $items Raw `/me/following` items.
 	 * @return array<int, array{label: string, xml_url: string, html_url: string, icon_url: string}>
@@ -261,10 +273,11 @@ class Daymark_Reader_Import {
 
 			$name = sanitize_text_field( html_entity_decode( (string) ( $item['name'] ?? '' ), ENT_QUOTES, 'UTF-8' ) );
 			$icon = is_string( $item['site_icon'] ?? null ) ? $item['site_icon'] : '';
+			$feed = is_string( $item['feed_URL'] ?? null ) ? $item['feed_URL'] : '';
 
 			$entries[] = array(
 				'label'    => '' !== $name ? $name : $host,
-				'xml_url'  => '',
+				'xml_url'  => esc_url_raw( trim( $feed ), array( 'http', 'https' ) ),
 				'html_url' => $site_url,
 				'icon_url' => esc_url_raw( trim( $icon ), array( 'http', 'https' ) ),
 			);

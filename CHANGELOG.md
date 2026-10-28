@@ -28,7 +28,8 @@ can't act on them.
 
 ### Fixed
 
-- Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, and finds each site's feed the same way adding a site by URL does. ([#541](https://github.com/jeffpaul/daymark/pull/541))
+- Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, also brings in feeds you follow that aren't WordPress sites, and subscribes to each site's feed directly, so a long list imports quickly. ([#541](https://github.com/jeffpaul/daymark/pull/541), [#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- The public blogroll no longer lists a feed whose address might hold a private key, such as a paid podcast feed. Those feeds are still followed; they're just left out of the public list. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
 - A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
 
 ### Security

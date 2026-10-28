@@ -2841,7 +2841,7 @@ class Daymark_Admin_Subscriptions {
 					<?php
 					$xml_url  = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
 					$html_url = isset( $entry['html_url'] ) ? (string) $entry['html_url'] : '';
-					$shown    = '' !== $xml_url ? $xml_url : $html_url;
+					$shown    = '' !== $html_url ? $html_url : $xml_url;
 					$label    = isset( $entry['label'] ) ? (string) $entry['label'] : $shown;
 					$already  = ( '' !== $xml_url && isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] ) )
 						|| ( '' !== $html_url && isset( $subscribed[ strtolower( untrailingslashit( $html_url ) ) ] ) );
