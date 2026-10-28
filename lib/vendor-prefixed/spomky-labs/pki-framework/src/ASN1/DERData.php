@@ -14,7 +14,7 @@ use Daymark\Vendor\SpomkyLabs\Pki\ASN1\Feature\ElementBase;
  * Container for raw DER encoded data.
  *
  * May be inserted into structure without decoding first.
- * @see \Daymark\Vendor\SpomkyLabs\Pki\Test\ASN1\DERDataTest
+ * @see \SpomkyLabs\Pki\Test\ASN1\DERDataTest
  */
 final class DERData extends Element
 {
