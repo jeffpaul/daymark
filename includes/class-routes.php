@@ -374,10 +374,10 @@ class Daymark_Routes {
 	 * The iPhone/iPad home-screen icon (apple-touch-icon): Daymark's own
 	 * icon, 180x180, square and fully opaque.
 	 *
-	 * iOS rounds the corners itself and wants an opaque image. The bundled
-	 * icon-192.png is a rounded tile with transparent corners and margins,
-	 * which iOS fills with black or, on newer versions, can drop entirely and
-	 * show a blank tile instead. apple-touch-icon.png is the same artwork
+	 * Apple's iOS rounds the corners itself and wants an opaque image. The
+	 * bundled icon-192.png is a rounded tile with transparent corners and
+	 * margins, which iOS fills with black or, on newer versions, can drop
+	 * entirely and show a blank tile instead. apple-touch-icon.png is the same artwork
 	 * redrawn edge to edge by bin/build-app-icons.py.
 	 *
 	 * @return string
@@ -426,7 +426,7 @@ class Daymark_Routes {
 		static $versions = array();
 
 		if ( ! isset( $versions[ $file ] ) ) {
-			$hash               = md5_file( DAYMARK_PLUGIN_DIR . 'assets/' . $file );
+			$hash              = md5_file( DAYMARK_PLUGIN_DIR . 'assets/' . $file );
 			$versions[ $file ] = false === $hash ? DAYMARK_VERSION : substr( $hash, 0, 8 );
 		}
 
