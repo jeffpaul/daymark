@@ -907,6 +907,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/engagement',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_engagement' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/subscription-posts/(?P<id>\d+)/like-availability',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -4820,6 +4837,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'url'    => esc_url_raw( (string) ( $target['url'] ?? '' ) ),
 			)
 		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/engagement — whether Like and
+	 * Comment can reach this post's site, and when either can't, a short note
+	 * saying why, with a link to the fix for someone allowed to make it
+	 * (issue #561). The full post view asks for it when it opens.
+	 *
+	 * Rate-limited like like-availability: only when the post's page (or its
+	 * ActivityPub object) isn't cached yet, on the background allowance
+	 * (ACTION_SUBSCRIPTION_POST_FETCH).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_engagement( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		if ( Daymark_Engagement_Status::needs_lookup( $post_id ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		return rest_ensure_response( Daymark_Engagement_Status::for_post( $post_id ) );
 	}
 
 	/**

@@ -5942,6 +5942,18 @@
 	// one live check, not two — the server itself also caches the
 	// underlying origin fetch (Daymark_Comment_Delivery::discover_origin_signals()),
 	// so even a fresh reload of the same post is fast.
+	// The full post view's note on why Like or Comment can't reach a
+	// followed post's site (issue #561): the server's sentences, then its
+	// link to the fix when the viewer may make it. Text only, escaped.
+	function engagementNoteHtml(note) {
+		const sentences = Array.isArray(note.sentences) ? note.sentences : [];
+		const text = esc(sentences.join(' '));
+		const link = note.link && note.link.url
+			? ` <a href="${esc(note.link.url)}">${esc(note.link.label)}</a>`
+			: '';
+		return text + link;
+	}
+
 	async function resolveCommentTarget(item, id) {
 		if (item.commentTarget) {
 			return item.commentTarget;
@@ -12450,6 +12462,7 @@
 				</div>
 				<div class="daymark-postview-meta">
 					${renderCardTimestampRow(item, siteLabel)}
+					${isMark ? '' : '<p class="daymark-engagement-note" data-engagement-note hidden></p>'}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
 				${isMark ? '' : this.repliesSectionHtml()}
@@ -12591,7 +12604,13 @@
 			this._bySubId = new Map();
 			rememberItem(this, this.view.item);
 			teardownLikeAvailabilityObserver(this);
-			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			if ('sub' === this.view.kind) {
+				// One request says whether Like and Comment reach this post's
+				// site, and why not when either can't (issue #561).
+				this.loadEngagement();
+			} else {
+				observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			}
 			this.prefetch();
 			// Opened from a notification or push about a reply: load the
 			// replies alongside the post. Replies already loaded this
@@ -12605,6 +12624,42 @@
 		// On the last loaded post, start loading the list's next page now,
 		// so Next is ready by the time the reader has read this one. A
 		// failure here is silent; tapping Next tries again.
+		// Asks the site whether Like and Comment can reach this followed
+		// post's own site. Hides an undeliverable Like, primes the Comment
+		// pre-check so a tap doesn't ask again, and shows the note saying
+		// why (with a link to the fix for someone allowed to make it). If
+		// the request fails, Like falls back to its own lazy check.
+		async loadEngagement() {
+			const view = this.view;
+			const item = view.item;
+			let result;
+			try {
+				result = await apiGet('subscription-posts/' + item.id + '/engagement');
+			} catch (err) {
+				if (this.view === view) {
+					observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+				}
+				return;
+			}
+			if (this.view !== view || !result) {
+				return;
+			}
+			if (result.like) {
+				item.like_available = !!result.like.available;
+				if (!item.like_available) {
+					removeLikeToggles(String(item.id));
+				}
+			}
+			if (result.comment && result.comment.method) {
+				item.commentTarget = result.comment;
+			}
+			const slot = root.querySelector('[data-engagement-note]');
+			if (slot && result.note) {
+				slot.innerHTML = engagementNoteHtml(result.note);
+				slot.hidden = false;
+			}
+		},
+
 		prefetch() {
 			const view = this.view;
 			if (

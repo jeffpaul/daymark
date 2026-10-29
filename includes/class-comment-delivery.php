@@ -190,13 +190,24 @@ class Daymark_Comment_Delivery {
 			);
 		}
 
-		$signals = self::discover_origin_signals( $permalink );
+		return self::target_for_signals( $permalink, self::discover_origin_signals( $permalink ) );
+	}
 
-		if ( ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
+	/**
+	 * Where a comment on this permalink goes, given its origin signals:
+	 * resolve_comment_target()'s answer without the lookup, so
+	 * Daymark_Engagement_Status can reuse signals it already has.
+	 *
+	 * @param string               $permalink Validated origin permalink.
+	 * @param array<string, mixed> $signals   Origin signals for it.
+	 * @return array{method: string, url?: string}
+	 */
+	public static function target_for_signals( string $permalink, array $signals ): array {
+		if ( (int) ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
 			return array( 'method' => 'jetpack' );
 		}
 
-		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
+		if ( '' !== (string) ( $signals['webmention_endpoint'] ?? '' ) && Daymark_Webmention::can_send() ) {
 			return array( 'method' => 'webmention' );
 		}
 
@@ -214,7 +225,7 @@ class Daymark_Comment_Delivery {
 	 * already uses, never a second fetch of the same page.
 	 *
 	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|WP_Error
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool}|WP_Error
 	 */
 	public static function origin_signals_for_post( int $subscription_post_id ) {
 		$permalink = self::validate_subscription_permalink( $subscription_post_id );
@@ -258,7 +269,7 @@ class Daymark_Comment_Delivery {
 	 * validate_subscription_permalink()'s URL guard when it was written.
 	 *
 	 * @param string $permalink Subscription post permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|null
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool}|null
 	 */
 	public static function cached_origin_signals( string $permalink ): ?array {
 		if ( '' === $permalink ) {
@@ -526,7 +537,7 @@ class Daymark_Comment_Delivery {
 	 * active locally, so a non-Jetpack site pays nothing for this check.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool}
 	 */
 	private static function discover_origin_signals( string $permalink ): array {
 		$cache_key = self::signals_cache_key( $permalink );
@@ -551,7 +562,7 @@ class Daymark_Comment_Delivery {
 	 * The actual, uncached fetch discover_origin_signals() wraps.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool}
 	 */
 	private static function fetch_origin_signals( string $permalink ): array {
 		// Resolved independently of the permalink fetch below: WordPress.com
@@ -568,6 +579,11 @@ class Daymark_Comment_Delivery {
 			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
 			'activitypub_object'  => false,
 			'bluesky'             => self::is_bluesky_url( $permalink ),
+			// The page couldn't be loaded, so the signals above say nothing
+			// about what it supports (Daymark_Engagement_Status says so).
+			// Missing from entries cached before this key existed: treat
+			// those as reached.
+			'reached'             => false,
 		);
 
 		$response = Daymark_Outbound_Guard::get(
@@ -608,6 +624,7 @@ class Daymark_Comment_Delivery {
 			// Fed can deliver a Like to one (issue #441).
 			'activitypub_object'  => '' !== self::find_link_href( $html, 'alternate', 'application/activity+json' ),
 			'bluesky'             => self::is_bluesky_url( $permalink ),
+			'reached'             => true,
 		);
 	}
 

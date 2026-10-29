@@ -88,6 +88,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-remote-replies.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-replies.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-engagement-status.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention-receiver.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-post-export.php';

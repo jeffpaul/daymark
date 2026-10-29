@@ -4389,6 +4389,19 @@ button.daymark-stat {
 	gap: var(--daymark-spacing-xs);
 }
 
+/* Why Like or Comment can't reach a followed post's site (issue #561),
+   with a link to the fix when the viewer can make it. */
+.daymark-engagement-note {
+	margin: 0;
+	font-size: 0.875rem;
+	line-height: 1.45;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-engagement-note a {
+	color: var(--daymark-accent);
+}
+
 /* Opening "Where this went" from the floating footer scrolls its panel
    into view; this margin keeps it clear of the footer. */
 .daymark-postview-meta .daymark-recent__routing {

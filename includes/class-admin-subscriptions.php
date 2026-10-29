@@ -384,6 +384,20 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * The Connectors tab, scrolled to one connector's card (issue #561:
+	 * the post view links here when installing or turning on something
+	 * would let Daymark like or comment on a post).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $key A recommended_connectors() key, such as 'activitypub'.
+	 * @return string
+	 */
+	public static function connector_url( string $key ): string {
+		return self::tab_url( 'connectors' ) . '#daymark-connector-' . sanitize_key( $key );
+	}
+
+	/**
 	 * Tab key => nav label. Order is display order; the first entry is the
 	 * default tab (resolve_active_tab()'s own fallback). General comes
 	 * first so the screen opens on settings, not on the list of followed
@@ -3295,7 +3309,7 @@ class Daymark_Admin_Subscriptions {
 		$groups     = array(
 			'start'    => array(
 				'heading' => __( 'Start here', 'daymark' ),
-				'intro'   => __( 'These two make Likes, comments, and replies work with other sites.', 'daymark' ),
+				'intro'   => __( 'Daymark already exchanges Likes, comments, and replies with other Daymark and Webmention sites. Add this to do the same with Mastodon and the rest of the fediverse.', 'daymark' ),
 			),
 			'optional' => array(
 				'heading' => __( 'Optional', 'daymark' ),
@@ -3308,12 +3322,12 @@ class Daymark_Admin_Subscriptions {
 			<h2><?php echo esc_html( $text['heading'] ); ?></h2>
 			<p><?php echo esc_html( $text['intro'] ); ?></p>
 			<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1em;max-width:900px;">
-				<?php foreach ( $connectors as $connector ) : ?>
+				<?php foreach ( $connectors as $key => $connector ) : ?>
 					<?php
 					if ( ( $connector['group'] ?? 'optional' ) !== $group ) {
 						continue;
 					}
-					$this->render_connector_card( $connector );
+					$this->render_connector_card( $connector, $key );
 					?>
 				<?php endforeach; ?>
 			</div>
@@ -3326,9 +3340,10 @@ class Daymark_Admin_Subscriptions {
 	 * install action, and the longer details behind a "More" disclosure.
 	 *
 	 * @param array<string, mixed> $connector One recommended_connectors() entry.
+	 * @param string               $key       Its recommended_connectors() key, for the card's id (connector_url()).
 	 * @return void
 	 */
-	private function render_connector_card( array $connector ): void {
+	private function render_connector_card( array $connector, string $key = '' ): void {
 		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
 		$on_wporg   = ! $is_service && ! empty( $connector['wporg_slug'] );
 		if ( $is_service ) {
@@ -3339,7 +3354,7 @@ class Daymark_Admin_Subscriptions {
 			$link = $connector['source_url'] ?? '';
 		}
 		?>
-		<div class="card" style="max-width:none;margin:0;">
+		<div class="card"<?php echo '' !== $key ? ' id="daymark-connector-' . esc_attr( sanitize_key( $key ) ) . '"' : ''; ?> style="max-width:none;margin:0;scroll-margin-block-start:48px;">
 			<h3>
 				<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
 			</h3>
