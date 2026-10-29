@@ -11,21 +11,42 @@
 [![GPLv2 License](https://img.shields.io/github/license/jeffpaul/daymark.svg)](https://github.com/jeffpaul/daymark/blob/main/LICENSE)
 [![WordPress Playground Demo](https://img.shields.io/badge/Playground_Demo-8A2BE2?logo=wordpress&logoColor=FFFFFF&labelColor=3858E9&color=3858E9)](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)
 
-> Publish to your own site as fast as you'd post to a social app — photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
+> Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
 
-## Your phone is full of moments worth sharing
+## Your friends, your feed, your site
 
-Daymark makes your own WordPress site the fastest, most natural place to
-share them — no app store, no algorithm deciding who sees it, no platform
-that can change the rules on you tomorrow.
+Daymark is your own social app, built on your WordPress site. Follow the
+people you care about by subscribing to their blogs and websites. Their
+new posts arrive in one simple timeline, newest first, with no algorithm
+and no ads, and you can like, comment on, reblog, bookmark, or share any
+of them without leaving the app. It reads like your feed reader and feels
+like a social app, so keeping up with your friends can be a daily habit
+that doesn't need a social network.
 
-Open Daymark on your phone, tap to capture a photo, a video, or a quick
-voice note (or pick one you already took), add a caption, and publish.
-That's it. What you publish lives on your own site, under your own name,
-for as long as you want it there.
+When you have something to share, post a photo, video, voice note,
+check-in, or quick thought in seconds. It lives on your own site first,
+under your own name, then goes out to the social networks you've
+connected, and replies and likes from there come back to your site.
+Friends can reach you however suits them: on your site, from their own
+Daymark, or on the network where they saw your post.
 
-## Why people love publishing with Daymark
+## Why people love Daymark
 
+- **Your friends, in order.** Follow any blog or site with a feed, any
+  WordPress site, or a friend you already follow in the Friends plugin.
+  Their posts appear in your Timeline newest first, beside your own, and
+  Daymark opens right where you left off.
+- **Like, comment, and reblog like you would on a social app.** Your
+  like or comment reaches the original site, and a reblog becomes a post
+  on your own site with your thoughts on top.
+- **Bring the people you already follow.** Import an OPML file from your
+  feed reader, or, with Jetpack, the sites you follow in the WordPress.com
+  Reader.
+- **Never miss the people who matter most.** Star a favorite site and
+  your phone gets a notification when it publishes.
+- **Daymark sites know each other.** When you follow a friend who uses
+  Daymark, their site is told, and likes, reblogs, and comments travel
+  between your two sites with nothing else to install.
 - **It feels like your favorite social app — because your site deserves
   to.** Add Daymark to your phone's home screen and it opens like a real
   app: fast, focused, and built for one-handed use.
@@ -34,8 +55,6 @@ for as long as you want it there.
   shot? Grabbing it from your library is just as easy.
 - **Share to Daymark from other apps on Android**, using your phone's own
   Share button. (iPhone and iPad don't let web apps receive shares yet.)
-- **Follow the sites you love.** Their new posts appear in your Timeline
-  beside your own, ready to like, comment on, reblog, or bookmark.
 - **You never lose your work**, online or off — Daymark quietly saves as
   you go and publishes the moment you're back online.
 - **Tap Publish and move on with your day.** No spinner to wait out, even
@@ -44,8 +63,9 @@ for as long as you want it there.
   — not a locked-in format — so it keeps working with your theme, your
   feeds, your backups, even if you ever stop using Daymark.
 - **Reach further, without extra work.** Daymark works alongside the
-  sharing plugins you already use, and brings replies from other networks
-  back to you automatically.
+  sharing plugins you already use (such as ActivityPub for Mastodon and
+  ATmosphere for Bluesky), and brings replies from those networks back to
+  you automatically.
 - **A helping hand, never a replacement for yours.** Optional AI
   suggestions for captions, titles, tags, and alt text — always yours to
   accept, edit, or ignore.

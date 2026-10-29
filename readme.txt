@@ -1,6 +1,6 @@
 === Daymark ===
 Contributors:      jeffpaul
-Tags:              publishing, mobile, pwa, syndication, indieweb
+Tags:              social, rss, publishing, syndication, indieweb
 Requires at least: 7.0
 Tested up to:      7.1
 Requires PHP:      8.2
@@ -8,20 +8,24 @@ Stable tag:        0.21.0
 License:           GPL-2.0-or-later
 License URI:       https://spdx.org/licenses/GPL-2.0-or-later.html
 
-Publish to your own site as fast as you'd post to a social app: photos, videos, voice notes, and quick thoughts, all from your phone, all truly yours.
+Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
 
 == Description ==
 
-Your phone is full of moments worth sharing. Daymark makes your own WordPress site the fastest, most natural place to share them — no app store, no algorithm, no platform that can change the rules on you tomorrow.
+Daymark is your own social app, built on your WordPress site. Follow the people you care about by subscribing to their blogs and websites. Their new posts arrive in one simple timeline, newest first, with no algorithm and no ads, and you can like, comment on, reblog, bookmark, or share any of them without leaving the app. It reads like your feed reader and feels like a social app, so keeping up with your friends can be a daily habit that doesn't need a social network.
 
-Open Daymark on your phone, tap to capture a photo, a video, or a quick voice note (or pick one you already took), add a caption, and publish. That's it. What you publish lives on your own site, under your own name, for as long as you want it there.
+When you have something to share, post a photo, video, voice note, check-in, or quick thought in seconds. It lives on your own site first, under your own name, then goes out to the social networks you've connected, and replies and likes from there come back to your site. Friends can reach you however suits them: on your site, from their own Daymark, or on the network where they saw your post.
 
-= Why people love publishing with Daymark =
+= Why people love Daymark =
 
+* **Your friends, in order.** Follow any blog or site with a feed, any WordPress site, or a friend you already follow in the Friends plugin. Their posts appear in your Timeline newest first, beside your own, and Daymark opens right where you left off.
+* **Like, comment, and reblog like you would on a social app.** Your like or comment reaches the original site, and a reblog becomes a post on your own site with your thoughts on top.
+* **Bring the people you already follow.** Import an OPML file from your feed reader, or, with Jetpack, the sites you follow in the WordPress.com Reader.
+* **Never miss the people who matter most.** Star a favorite site and your phone gets a notification when it publishes.
+* **Daymark sites know each other.** When you follow a friend who uses Daymark, their site is told, and likes, reblogs, and comments travel between your two sites with nothing else to install.
 * **It feels like your favorite social app — because your site deserves to.** Add Daymark to your phone's home screen and it opens like a real app: fast, focused, and built for one-handed use. No admin menus, no clutter — just capture, caption, and go.
 * **Your camera is one tap away.** Choose Photo, Video, or Audio and Daymark opens your camera or microphone right away, ready to capture the moment. Already have the shot? Grabbing it from your library is just as easy.
 * **Share to Daymark from other apps on Android.** Found something worth posting in Photos, Chrome, or any other app? Use your phone's own Share button and send it straight to Daymark — it's waiting for your caption before you've even opened the app. (iPhone and iPad don't let web apps receive shares yet.)
-* **Follow the sites you love.** Subscribe to any blog or site with a feed, and its new posts appear in your Daymark Timeline beside your own. Like, comment, reblog, or bookmark them without leaving the app.
 * **You never lose your work.** Start a caption, get interrupted, lose your signal on the subway — Daymark quietly saves everything as you go. Publish with no connection at all and it goes out the moment you're back online. Nothing you write is ever at risk of disappearing.
 * **Tap Publish and move on with your day.** You're never stuck staring at a spinner, even for a big video or a whole gallery of photos — Daymark confirms instantly and finishes the upload quietly in the background.
 * **It's genuinely yours, for good.** Everything you publish is a real WordPress post, not a locked-in, proprietary format. Your content works with your theme, your feeds, your backups — and stays exactly where it is even if you ever stop using Daymark.

@@ -22,6 +22,8 @@ can't act on them.
 
 ### Changed
 
+- Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.
+
 - With Simple Location 6.1.0 or later, a Check In's weather now shows Simple Location's weather icon and Open-Meteo credit, not just the temperature and a text summary. Simple Location 6.1.0 can read the weather codes from Open-Meteo, the service Daymark uses, so Daymark now passes them along. ([#552](https://github.com/jeffpaul/daymark/pull/552))
 
 - The Publish screen now shows categories and tags as two folded sections. Folded, each shows the current choice (your usual categories, or the tags AI suggested); tap to change it. Before, tags could only be changed inside AI Assist, so suggested tags were added with nowhere to see or remove them, and a tag removed from a draft came back.

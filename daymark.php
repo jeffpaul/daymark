@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Daymark
  * Plugin URI:        https://github.com/jeffpaul/daymark
- * Description:       Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
+ * Description:       Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
  * Version:           0.21.0
  * Requires at least: 7.0
  * Requires PHP:      8.2
