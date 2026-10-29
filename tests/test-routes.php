@@ -341,4 +341,56 @@ class Test_Routes extends WP_UnitTestCase {
 
 		remove_filter( 'get_site_icon_url', $filter );
 	}
+
+	/**
+	 * Android gets maskable icons alongside the transparent "any" ones, and
+	 * every icon URL carries a version so a phone that cached an older or
+	 * failed copy fetches it again.
+	 */
+	public function test_manifest_icons_include_maskable_and_are_versioned() {
+		$manifest   = Daymark_Routes::build_manifest();
+		$by_purpose = array();
+
+		foreach ( $manifest['icons'] as $icon ) {
+			$by_purpose[ $icon['purpose'] ][] = $icon['sizes'];
+			$this->assertMatchesRegularExpression( '/\?ver=[0-9a-f]{8}$/', $icon['src'] );
+		}
+
+		$this->assertSame( array( '192x192', '512x512' ), $by_purpose['any'] );
+		$this->assertSame( array( '192x192', '512x512' ), $by_purpose['maskable'] );
+	}
+
+	/**
+	 * Every home-screen icon file is exactly the size it is declared as and
+	 * fully opaque, corners included. iOS drops a transparent
+	 * apple-touch-icon (a blank tile), and a maskable icon with transparent
+	 * corners shows them on any launcher shape that isn't a circle.
+	 */
+	public function test_home_screen_icon_files_are_opaque_and_sized() {
+		$files = array(
+			'apple-touch-icon.png'  => 180,
+			'icon-maskable-192.png' => 192,
+			'icon-maskable-512.png' => 512,
+		);
+
+		foreach ( $files as $file => $size ) {
+			$path = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
+			$info = getimagesize( $path );
+
+			$this->assertSame( array( $size, $size ), array( $info[0], $info[1] ), "{$file} size" );
+			$this->assertSame( 'image/png', $info['mime'], "{$file} type" );
+
+			if ( ! function_exists( 'imagecreatefrompng' ) ) {
+				continue;
+			}
+
+			$image = imagecreatefrompng( $path );
+			foreach ( array( 0, $size - 1 ) as $x ) {
+				foreach ( array( 0, $size - 1 ) as $y ) {
+					$alpha = ( imagecolorat( $image, $x, $y ) >> 24 ) & 0x7F;
+					$this->assertSame( 0, $alpha, "{$file} corner {$x},{$y} must be opaque" );
+				}
+			}
+		}
+	}
 }
