@@ -2974,6 +2974,90 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 		$this->assertLessThan( $pos_alpha, $pos_bravo );
 	}
 
+	/** An explicit Site sort orders purely by name, with no favorites-first grouping, in either direction. */
+	public function test_explicit_site_sort_ignores_favorites(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://alpha.example/',
+				'feed_url'   => 'https://alpha.example/feed/',
+				'site_title' => 'Alpha Site',
+			)
+		);
+		$bravo = $this->subscriptions->create(
+			array(
+				'site_url'   => 'https://bravo.example/',
+				'feed_url'   => 'https://bravo.example/feed/',
+				'site_title' => 'Bravo Site',
+			)
+		);
+		$this->subscriptions->create(
+			array(
+				'site_url'   => 'https://charlie.example/',
+				'feed_url'   => 'https://charlie.example/feed/',
+				'site_title' => 'Charlie Site',
+			)
+		);
+		$this->subscriptions->set_favorite( $bravo, true );
+
+		$_GET['orderby'] = 'site';
+		$_GET['order']   = 'asc';
+		$ascending       = $this->render();
+		$_GET['order']   = 'desc';
+		$descending      = $this->render();
+		unset( $_GET['orderby'], $_GET['order'] );
+
+		$this->assertLessThan( strpos( $ascending, 'Bravo Site' ), strpos( $ascending, 'Alpha Site' ) );
+		$this->assertLessThan( strpos( $ascending, 'Charlie Site' ), strpos( $ascending, 'Bravo Site' ) );
+		$this->assertLessThan( strpos( $descending, 'Bravo Site' ), strpos( $descending, 'Charlie Site' ) );
+		$this->assertLessThan( strpos( $descending, 'Alpha Site' ), strpos( $descending, 'Bravo Site' ) );
+	}
+
+	/** The search form and page links don't carry the default sort, so they keep favorites first. */
+	public function test_default_sort_is_not_carried_into_search_form(): void {
+		$this->subscriptions->create(
+			array(
+				'site_url' => 'https://example.test',
+				'feed_url' => 'https://example.test/feed',
+			)
+		);
+
+		$output = $this->render();
+
+		$this->assertStringNotContainsString( 'name="orderby"', $output );
+		$this->assertStringNotContainsString( 'name="order"', $output );
+	}
+
+	/** The star has a stable accessible name, exposes its state with aria-pressed, and has an in-row error element. */
+	public function test_favorite_button_exposes_pressed_state(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://pressed.example/',
+				'feed_url' => 'https://pressed.example/feed/',
+			)
+		);
+
+		$output = $this->render();
+		$this->assertStringContainsString( 'aria-label="Favorite" aria-pressed="false"', $output );
+		$this->assertStringContainsString( 'daymark-subscription-favorite-error', $output );
+		$this->assertStringContainsString( 'margin-inline-start:4px', $output );
+
+		$this->subscriptions->set_favorite( $id, true );
+		$this->assertStringContainsString( 'aria-label="Favorite" aria-pressed="true"', $this->render() );
+	}
+
+	/** The Favorites view link carries its count in a data attribute for the script to update. */
+	public function test_favorites_view_link_has_count_attribute(): void {
+		$id = $this->subscriptions->create(
+			array(
+				'site_url' => 'https://count.example/',
+				'feed_url' => 'https://count.example/feed/',
+			)
+		);
+		$this->subscriptions->set_favorite( $id, true );
+
+		$this->assertStringContainsString( 'data-daymark-favorites-count="1"', $this->render() );
+	}
+
 	/** Favorite-related notices render their expected success messages. */
 	public function test_favorite_notices_render_messages(): void {
 		$_GET['daymark_notice'] = 'favorited';

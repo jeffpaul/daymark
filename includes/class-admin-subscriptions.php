@@ -355,6 +355,9 @@ class Daymark_Admin_Subscriptions {
 					'recentFetchIssue'       => __( 'Recent fetch issue: %s', 'daymark' ),
 					'starFavorite'           => __( 'Star as favorite', 'daymark' ),
 					'unstarFavorite'         => __( 'Remove from favorites', 'daymark' ),
+					/* translators: %d: number of favorite subscriptions */
+					'favoritesView'          => __( 'Favorites (%d)', 'daymark' ),
+					'noFavorites'            => __( 'No favorite sites yet.', 'daymark' ),
 				),
 			)
 		);
@@ -502,7 +505,7 @@ class Daymark_Admin_Subscriptions {
 		}
 		$subscriptions = $this->filter_subscriptions( $subscriptions, $search );
 		$sort          = $this->resolve_sort_request();
-		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
+		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'], ! $sort['explicit'] );
 		$matching      = count( $subscriptions );
 		$pages         = max( 1, (int) ceil( $matching / self::PER_PAGE ) );
 		$page          = min( $pages, $this->resolve_page_request() );
@@ -513,7 +516,7 @@ class Daymark_Admin_Subscriptions {
 		<?php $this->render_subscribe_form(); ?>
 		<?php if ( $total_count > 0 ) : ?>
 			<?php $this->render_view_links( $view, $total_count, $favorites_count, $failing_count ); ?>
-			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
+			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'], $sort['explicit'] ); ?>
 			<?php $this->render_bulk_form(); ?>
 		<?php endif; ?>
 		<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count, $view ); ?>
@@ -572,8 +575,12 @@ class Daymark_Admin_Subscriptions {
 			$args[ self::SEARCH_QUERY_VAR ] = $this->resolve_search_request();
 		}
 
-		$args['orderby'] = $sort['orderby'];
-		$args['order']   = $sort['order'];
+		// Only an explicitly chosen sort is carried forward, so paging through
+		// the default order keeps it the default (favorites first).
+		if ( $sort['explicit'] ) {
+			$args['orderby'] = $sort['orderby'];
+			$args['order']   = $sort['order'];
+		}
 
 		return $args;
 	}
@@ -600,7 +607,7 @@ class Daymark_Admin_Subscriptions {
 				</a> |
 			</li>
 			<li>
-				<a href="<?php echo esc_url( add_query_arg( self::VIEW_QUERY_VAR, 'favorites', $base ) ); ?>"<?php echo 'favorites' === $view ? ' class="current" aria-current="page"' : ''; ?>>
+				<a href="<?php echo esc_url( add_query_arg( self::VIEW_QUERY_VAR, 'favorites', $base ) ); ?>" data-daymark-favorites-count="<?php echo esc_attr( (string) $favorites_count ); ?>"<?php echo 'favorites' === $view ? ' class="current" aria-current="page"' : ''; ?>>
 					<?php
 					/* translators: %d: number of favorite subscriptions */
 					printf( esc_html__( 'Favorites (%d)', 'daymark' ), (int) $favorites_count );
@@ -2044,9 +2051,12 @@ class Daymark_Admin_Subscriptions {
 	 * @param string $orderby The active sort column — always one of
 	 *                        SORTABLE_COLUMNS (see DEFAULT_ORDERBY).
 	 * @param string $order   'asc' or 'desc'.
+	 * @param bool   $explicit_sort Whether the sort was chosen in the URL. The
+	 *                              default sort isn't carried, so a search from
+	 *                              it keeps favorites first.
 	 * @return void
 	 */
-	private function render_search_form( string $search, string $orderby, string $order ): void {
+	private function render_search_form( string $search, string $orderby, string $order, bool $explicit_sort = true ): void {
 		?>
 		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
@@ -2054,8 +2064,10 @@ class Daymark_Admin_Subscriptions {
 			<?php if ( '' !== $this->resolve_view_request() ) : ?>
 				<input type="hidden" name="<?php echo esc_attr( self::VIEW_QUERY_VAR ); ?>" value="<?php echo esc_attr( $this->resolve_view_request() ); ?>" />
 			<?php endif; ?>
-			<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
-			<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
+			<?php if ( $explicit_sort ) : ?>
+				<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
+				<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
+			<?php endif; ?>
 			<p class="search-box">
 				<label class="screen-reader-text" for="daymark-subscription-search-input"><?php esc_html_e( 'Search Subscriptions', 'daymark' ); ?></label>
 				<input
@@ -2246,10 +2258,11 @@ class Daymark_Admin_Subscriptions {
 	 * state-changing action — so, like render_notice()'s query-string read
 	 * above, no nonce applies here.
 	 *
-	 * @return array{orderby: string, order: string} `orderby` is always one
-	 *         of SORTABLE_COLUMNS — DEFAULT_ORDERBY when `?orderby=` is
-	 *         absent or invalid, never ''; `order` is always 'asc' or
-	 *         'desc'.
+	 * @return array{orderby: string, order: string, explicit: bool} `orderby`
+	 *         is always one of SORTABLE_COLUMNS — DEFAULT_ORDERBY when
+	 *         `?orderby=` is absent or invalid, never ''; `order` is always
+	 *         'asc' or 'desc'; `explicit` is true only when `?orderby=` named
+	 *         a real column (the default sort puts favorites first).
 	 */
 	private function resolve_sort_request(): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
@@ -2257,13 +2270,16 @@ class Daymark_Admin_Subscriptions {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
 		$order = isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '';
 
-		if ( ! in_array( $orderby, self::SORTABLE_COLUMNS, true ) ) {
+		$explicit = in_array( $orderby, self::SORTABLE_COLUMNS, true );
+
+		if ( ! $explicit ) {
 			$orderby = self::DEFAULT_ORDERBY;
 		}
 
 		return array(
-			'orderby' => $orderby,
-			'order'   => 'desc' === $order ? 'desc' : 'asc',
+			'orderby'  => $orderby,
+			'order'    => 'desc' === $order ? 'desc' : 'asc',
+			'explicit' => $explicit,
 		);
 	}
 
@@ -2276,12 +2292,25 @@ class Daymark_Admin_Subscriptions {
 	 * @param array<int, array<string, mixed>> $subscriptions Rows to sort.
 	 * @param string                           $orderby       One of SORTABLE_COLUMNS.
 	 * @param string                           $order         'asc' or 'desc'.
+	 * @param bool                             $favorites_first Put favorites above the rest. Only
+	 *                                                          the default sort does (issue #531);
+	 *                                                          an explicit column sort orders purely
+	 *                                                          by that column.
 	 * @return array<int, array<string, mixed>>
 	 */
-	private function sort_subscriptions( array $subscriptions, string $orderby, string $order ): array {
+	private function sort_subscriptions( array $subscriptions, string $orderby, string $order, bool $favorites_first = false ): array {
 		usort(
 			$subscriptions,
-			static function ( array $a, array $b ) use ( $orderby, $order ) {
+			static function ( array $a, array $b ) use ( $orderby, $order, $favorites_first ) {
+				if ( $favorites_first ) {
+					$fav_a = Daymark_Subscriptions::is_favorite( $a ) ? 1 : 0;
+					$fav_b = Daymark_Subscriptions::is_favorite( $b ) ? 1 : 0;
+
+					if ( $fav_a !== $fav_b ) {
+						return $fav_b <=> $fav_a;
+					}
+				}
+
 				if ( 'status' === $orderby ) {
 					$cmp = strcasecmp( (string) ( $a['status'] ?? '' ), (string) ( $b['status'] ?? '' ) );
 
@@ -2295,14 +2324,6 @@ class Daymark_Admin_Subscriptions {
 					$cmp = ( false !== $a_time ? $a_time : 0 ) <=> ( false !== $b_time ? $b_time : 0 );
 
 					return 'desc' === $order ? -$cmp : $cmp;
-				}
-
-				// Favorites sort first by default on the Site column (issue #531).
-				$fav_a = Daymark_Subscriptions::is_favorite( $a ) ? 1 : 0;
-				$fav_b = Daymark_Subscriptions::is_favorite( $b ) ? 1 : 0;
-
-				if ( $fav_a !== $fav_b ) {
-					return $fav_b <=> $fav_a;
 				}
 
 				$cmp = strcasecmp( self::subscription_label( $a ), self::subscription_label( $b ) );
@@ -2555,7 +2576,9 @@ class Daymark_Admin_Subscriptions {
 	 * Render one subscription's star/unstar favorite toggle form (issue #531).
 	 *
 	 * A button-link displaying a star dashicon (`dashicons-star-filled` when
-	 * starred, `dashicons-star-empty` when not). Submits via a plain
+	 * starred, `dashicons-star-empty` when not). Its accessible name stays
+	 * "Favorite" and `aria-pressed` carries the state; the tooltip names the
+	 * action a click takes. Submits via a plain
 	 * admin-post form (`daymark_subscription_favorite`) as the no-JS fallback,
 	 * progressively enhanced in assets/admin-subscriptions.js via the REST
 	 * favorite endpoint (`POST`/`DELETE /subscriptions/{id}/favorite`) to update
@@ -2569,19 +2592,20 @@ class Daymark_Admin_Subscriptions {
 	 */
 	private function render_favorite_form( int $id, bool $is_favorite ): void {
 		$next_favorite = ! $is_favorite;
-		$label         = $is_favorite
+		$tooltip       = $is_favorite
 			? __( 'Remove from favorites', 'daymark' )
 			: __( 'Star as favorite', 'daymark' );
 		$icon_class    = $is_favorite ? 'dashicons-star-filled' : 'dashicons-star-empty';
 		?>
-		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-favorite-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;vertical-align:middle;margin-left:4px;">
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-favorite-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;vertical-align:middle;margin-inline-start:4px;">
 			<input type="hidden" name="action" value="daymark_subscription_favorite" />
 			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
 			<input type="hidden" name="daymark_favorite" value="<?php echo $next_favorite ? '1' : '0'; ?>" />
 			<?php wp_nonce_field( 'daymark_subscription_favorite_' . $id, 'daymark_subscription_favorite_nonce' ); ?>
-			<button type="submit" class="button-link daymark-subscription-favorite-trigger<?php echo $is_favorite ? ' is-favorite' : ''; ?>" aria-label="<?php echo esc_attr( $label ); ?>" title="<?php echo esc_attr( $label ); ?>" data-daymark-favorited="<?php echo $is_favorite ? '1' : '0'; ?>">
+			<button type="submit" class="button-link daymark-subscription-favorite-trigger<?php echo $is_favorite ? ' is-favorite' : ''; ?>" aria-label="<?php esc_attr_e( 'Favorite', 'daymark' ); ?>" aria-pressed="<?php echo $is_favorite ? 'true' : 'false'; ?>" title="<?php echo esc_attr( $tooltip ); ?>" data-daymark-favorited="<?php echo $is_favorite ? '1' : '0'; ?>">
 				<span class="dashicons <?php echo esc_attr( $icon_class ); ?>" aria-hidden="true"></span>
 			</button>
+			<span class="description daymark-subscription-favorite-error" role="alert" hidden></span>
 		</form>
 		<?php
 	}
