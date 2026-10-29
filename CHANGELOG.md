@@ -22,7 +22,7 @@ can't act on them.
 
 ### Added
 
-- You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#535](https://github.com/jeffpaul/daymark/pull/535))
+- You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
 
 ### Changed
 
