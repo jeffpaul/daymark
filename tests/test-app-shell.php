@@ -282,9 +282,9 @@ class Test_App_Shell extends WP_UnitTestCase {
 			'apple-touch-icon must never use the Site Icon'
 		);
 		$this->assertStringContainsString(
-			str_replace( '/', '\/', Daymark_Routes::daymark_icon_url( 180 ) ),
+			'rel="apple-touch-icon" sizes="180x180" href="' . esc_url( Daymark_Routes::apple_touch_icon_url() ) . '"',
 			$html,
-			'apple-touch-icon must use Daymark\'s own bundled icon'
+			'apple-touch-icon must use Daymark\'s own opaque 180x180 icon'
 		);
 		$this->assertStringContainsString(
 			'rel="icon" href="https://example.test/site-icon.png"',
