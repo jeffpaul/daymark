@@ -29,6 +29,9 @@ class Test_Plugin_Copies extends WP_UnitTestCase {
 			)
 		);
 		update_post_meta( $this->mark_id, '_daymark_is_mark', '1' );
+
+		// The Mark was saved in an earlier request, not the one each test runs.
+		Daymark_Syndication_Links::reset();
 	}
 
 	public function tear_down(): void {
@@ -372,6 +375,8 @@ class Test_Plugin_Copies extends WP_UnitTestCase {
 
 	/** Daymark hands its copies to Syndication Links, skipping ones it already has. */
 	public function test_adds_copies_to_syndication_links_plugin_list() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_true' );
+		$this->showing_page();
 		update_post_meta( $this->mark_id, '_wpt_tweet_id', '42' );
 		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
 
@@ -393,5 +398,205 @@ class Test_Plugin_Copies extends WP_UnitTestCase {
 			Daymark_Plugin::instance()->syndication_links->add_to_syndication_links_plugin( array(), $other ),
 			'Only Marks get Daymark\'s additions'
 		);
+	}
+
+	/**
+	 * Syndication Links saves what it reads from its list when it fills its
+	 * post-editor box or adds a link, so Daymark adds nothing outside a
+	 * page being shown, or while a post is saved during one.
+	 */
+	public function test_adds_nothing_to_syndication_links_plugin_list_outside_a_page() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_true' );
+		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+		$links = Daymark_Plugin::instance()->syndication_links;
+		$saved = array( 'https://twitter.com/demo/status/42' );
+
+		// wp-admin, the REST API, WP-Cron: template_redirect never fired.
+		unset( $GLOBALS['wp_actions']['template_redirect'] );
+		$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ) );
+
+		$this->showing_page();
+
+		// A post saved while a page is shown (another plugin posting it).
+		foreach ( array( 'save_post', 'wp_after_insert_post', 'template_include' ) as $hook ) {
+			$GLOBALS['wp_current_filter'][] = $hook;
+			$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ), $hook );
+			array_pop( $GLOBALS['wp_current_filter'] );
+		}
+
+		$this->assertCount( 2, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ) );
+	}
+
+	/**
+	 * A post saved while a page is shown (a scheduled Mark published late,
+	 * a front-end form) gets nothing added to Syndication Links' list at
+	 * any point of its save, or for the rest of the request: a publishing
+	 * plugin may post it, and Syndication Links save its link, from any of
+	 * those hooks or after them. Another Mark shown on the same page still
+	 * gets its copies.
+	 */
+	public function test_adds_nothing_to_a_post_saved_while_a_page_is_shown() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_true' );
+		$links = Daymark_Plugin::instance()->syndication_links;
+		$saved = array( 'https://twitter.com/demo/status/42' );
+
+		$scheduled = self::factory()->post->create(
+			array(
+				'post_status' => 'future',
+				'post_date'   => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ),
+				'post_title'  => 'Scheduled Mark',
+			)
+		);
+		update_post_meta( $scheduled, '_daymark_is_mark', '1' );
+		update_post_meta( $scheduled, '_share_on_mastodon_url', 'https://mastodon.social/@demo/3' );
+		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+
+		// Its time has come, so saving it later keeps it published.
+		global $wpdb;
+		$past = gmdate( 'Y-m-d H:i:s', time() - MINUTE_IN_SECONDS );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Test setup: wp_update_post() would publish it now.
+		$wpdb->update(
+			$wpdb->posts,
+			array(
+				'post_date'     => $past,
+				'post_date_gmt' => $past,
+			),
+			array( 'ID' => $scheduled )
+		);
+		clean_post_cache( $scheduled );
+
+		// A new request starts, and shows a page.
+		$this->new_request();
+		$this->showing_page();
+
+		$hooks = array(
+			'transition_post_status',
+			'future_to_publish',
+			'publish_post',
+			'publish_to_publish',
+			'edit_post',
+			'post_updated',
+			'save_post_post',
+			'save_post',
+			'wp_insert_post',
+			'wp_after_insert_post',
+		);
+		$read  = array();
+
+		foreach ( $hooks as $hook ) {
+			add_action(
+				$hook,
+				static function () use ( $hook, $links, $saved, $scheduled, &$read ) {
+					$read[ $hook ][] = $links->add_to_syndication_links_plugin( $saved, $scheduled );
+				}
+			);
+		}
+
+		// Published late, then edited, during the same request.
+		wp_publish_post( $scheduled );
+		wp_update_post(
+			array(
+				'ID'         => $scheduled,
+				'post_title' => 'Scheduled Mark, edited',
+			)
+		);
+
+		foreach ( $hooks as $hook ) {
+			$this->assertNotEmpty( $read[ $hook ] ?? array(), "{$hook} fired" );
+
+			foreach ( $read[ $hook ] as $urls ) {
+				$this->assertSame( $saved, $urls, $hook );
+			}
+		}
+
+		// Later in the same request, such as a plugin posting it on shutdown.
+		$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $scheduled ) );
+
+		// A Mark this request didn't save is still shown with its copies.
+		$this->assertSame(
+			array( 'https://twitter.com/demo/status/42', 'https://mastodon.social/@demo/1' ),
+			$links->add_to_syndication_links_plugin( $saved, $this->mark_id )
+		);
+	}
+
+	/**
+	 * Nothing is shown once the response is finished, so a plugin reading
+	 * the list on shutdown (to save a link it posted) gets nothing added.
+	 */
+	public function test_adds_nothing_on_shutdown() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_true' );
+		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+		$this->new_request();
+		$this->showing_page();
+		$links = Daymark_Plugin::instance()->syndication_links;
+		$saved = array( 'https://twitter.com/demo/status/42' );
+
+		$GLOBALS['wp_current_filter'][] = 'shutdown';
+		$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ) );
+		array_pop( $GLOBALS['wp_current_filter'] );
+
+		$this->assertCount( 2, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ) );
+	}
+
+	/**
+	 * A site with themes turned off never fires template_redirect, but
+	 * still serves its feeds, and the copies belong in them.
+	 */
+	public function test_adds_copies_to_a_feed_served_with_themes_off() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_true' );
+		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+		$this->new_request();
+		unset( $GLOBALS['wp_actions']['template_redirect'] );
+		$links = Daymark_Plugin::instance()->syndication_links;
+		$saved = array( 'https://twitter.com/demo/status/42' );
+
+		$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ), 'Not a feed' );
+
+		$GLOBALS['wp_current_filter'][] = 'do_feed_rss2';
+		$this->assertSame(
+			array( 'https://twitter.com/demo/status/42', 'https://mastodon.social/@demo/1' ),
+			$links->add_to_syndication_links_plugin( $saved, $this->mark_id )
+		);
+
+		// A post saved while the feed is served still gets nothing.
+		$GLOBALS['wp_current_filter'][] = 'save_post';
+		$this->assertSame( $saved, $links->add_to_syndication_links_plugin( $saved, $this->mark_id ) );
+		array_pop( $GLOBALS['wp_current_filter'] );
+		array_pop( $GLOBALS['wp_current_filter'] );
+	}
+
+	/** While Daymark prints its own "Also on" line, Syndication Links' list is left alone. */
+	public function test_adds_nothing_while_syndication_links_plugin_is_treated_as_inactive() {
+		add_filter( 'daymark_syndication_links_plugin_active', '__return_false' );
+		$this->showing_page();
+		update_post_meta( $this->mark_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+
+		$this->assertSame(
+			array( 'https://twitter.com/demo/status/42' ),
+			Daymark_Plugin::instance()->syndication_links->add_to_syndication_links_plugin(
+				array( 'https://twitter.com/demo/status/42' ),
+				$this->mark_id
+			)
+		);
+	}
+
+	/**
+	 * Act as though a front-end page is being shown. The test case puts
+	 * the action counts back after each test.
+	 *
+	 * @return void
+	 */
+	private function showing_page(): void {
+		$GLOBALS['wp_actions']['template_redirect'] = 1;
+	}
+
+	/**
+	 * Start what Daymark treats as a new request: the posts this test
+	 * created were saved in an earlier one.
+	 *
+	 * @return void
+	 */
+	private function new_request(): void {
+		Daymark_Syndication_Links::reset();
 	}
 }

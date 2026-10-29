@@ -573,6 +573,19 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$this->assertContains( 'https://example.com/a-great-post/feed/', wp_list_pluck( $result['candidates'], 'url' ) );
 	}
 
+	public function test_find_feeds_keeps_a_percent_encoded_page_address() {
+		$this->sign_in_as_admin();
+		$this->url                           = 'https://example.com/news/caf%C3%A9-au-lait/';
+		$this->pages['https://example.com/'] = '<html><head><title>Host</title></head><body></body></html>';
+		$this->pages[ $this->url ]           = $this->page_with_feed( 'Café au lait', 'https://example.com/news/caf%C3%A9-au-lait/feed/' );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $this->url, $result['site_url'] );
+		$this->assertContains( 'https://example.com/news/caf%C3%A9-au-lait/feed/', wp_list_pluck( $result['candidates'], 'url' ) );
+	}
+
 	public function test_popup_shows_the_feed_picker_after_a_lookup() {
 		$this->sign_in_as_admin();
 		$this->pages['https://example.com/'] = $this->page_with_feed( 'Example Site', '/feed/' );

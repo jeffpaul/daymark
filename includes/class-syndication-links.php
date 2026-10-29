@@ -15,7 +15,8 @@
  * Jetpack Social or Share on Mastodon recorded themselves
  * (Daymark_Plugin_Copies, issue #558). When the Syndication Links plugin
  * is active it prints a post's syndication links itself, so Daymark adds
- * its addresses to that plugin's list instead of printing a second line.
+ * its addresses to that plugin's list while a page or feed is shown,
+ * instead of printing a second line.
  *
  * @package Daymark
  */
@@ -30,6 +31,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Daymark_Syndication_Links {
 
 	/**
+	 * Posts this request has started saving, by ID.
+	 *
+	 * @var array<int, true>
+	 */
+	private static $saving = array();
+
+	/**
 	 * Hook up.
 	 *
 	 * @return void
@@ -39,6 +47,39 @@ class Daymark_Syndication_Links {
 		// Syndication Links' own per-plugin readers run at the default
 		// priority, so its list already holds their addresses by now.
 		add_filter( 'get_post_syndication_links', array( $this, 'add_to_syndication_links_plugin' ), 20, 2 );
+		// First on the hook, so a post is noted before any publishing
+		// plugin shares it from the same hook.
+		add_action( 'transition_post_status', array( $this, 'note_saving' ), PHP_INT_MIN, 3 );
+	}
+
+	/**
+	 * Notes that this request is saving a post. Every save
+	 * (`wp_insert_post()`, `wp_publish_post()`) fires
+	 * `transition_post_status` before its other hooks.
+	 *
+	 * @param string       $new_status New status.
+	 * @param string       $old_status Old status.
+	 * @param WP_Post|null $post       The post.
+	 * @return void
+	 */
+	public function note_saving( $new_status, $old_status, $post ): void {
+		if ( $post instanceof WP_Post ) {
+			self::$saving[ (int) $post->ID ] = true;
+		}
+	}
+
+	/**
+	 * Forgets which posts this request saved.
+	 *
+	 * Production code never needs this: each request is a fresh PHP
+	 * process, so the list starts empty. It exists for PHPUnit, where every
+	 * test runs in one process and a post a test created would otherwise
+	 * still count as saved in the next test.
+	 *
+	 * @return void
+	 */
+	public static function reset(): void {
+		self::$saving = array();
 	}
 
 	/**
@@ -154,6 +195,16 @@ class Daymark_Syndication_Links {
 	 * (it saves XPoster's tweets as `twitter.com/{account}/status/{id}`,
 	 * for example, while Daymark reads `x.com/i/web/status/{id}`).
 	 *
+	 * Only while a page or feed is being shown, and never for a post this
+	 * request saved. Syndication Links also reads this list to fill its
+	 * box in the post editor and before it saves a new link, and saves
+	 * whatever it read, so addresses added then would be stored in its own
+	 * list and stay there after the plugin that made the copy forgets it.
+	 * A publishing plugin can share a post, and Syndication Links save the
+	 * link, from any hook of that post's save or later in the request
+	 * (on `shutdown`, for example), which is why a post this request saved
+	 * gets nothing added for the rest of it.
+	 *
 	 * @param mixed $urls    Addresses Syndication Links has so far.
 	 * @param mixed $post_id Post ID.
 	 * @return mixed
@@ -161,7 +212,14 @@ class Daymark_Syndication_Links {
 	public function add_to_syndication_links_plugin( $urls, $post_id = 0 ) {
 		$post_id = (int) $post_id;
 
-		if ( ! is_array( $urls ) || $post_id <= 0 || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+		if (
+			! is_array( $urls )
+			|| $post_id <= 0
+			|| ! self::syndication_links_plugin_active()
+			|| ! self::is_showing_page()
+			|| isset( self::$saving[ $post_id ] )
+			|| '1' !== get_post_meta( $post_id, '_daymark_is_mark', true )
+		) {
 			return $urls;
 		}
 
@@ -185,6 +243,44 @@ class Daymark_Syndication_Links {
 		}
 
 		return $urls;
+	}
+
+	/**
+	 * Whether this request is showing a front-end page or feed, and is not
+	 * saving a post or finishing up while it does. wp-admin, admin-ajax,
+	 * the REST API, WP-Cron and WP-CLI never reach `template_redirect` or
+	 * serve a feed; a site with themes turned off skips
+	 * `template_redirect` but still serves feeds; Daymark's own front-end
+	 * forms (the bookmarklet, the share sheet) publish inside the
+	 * `template_include` filter, before the page is shown; and nothing is
+	 * shown once `shutdown` runs.
+	 *
+	 * @return bool
+	 */
+	private static function is_showing_page(): bool {
+		return ( did_action( 'template_redirect' ) > 0 || self::doing_feed() )
+			&& ! doing_filter( 'template_include' )
+			&& ! doing_action( 'save_post' )
+			&& ! doing_action( 'wp_after_insert_post' )
+			&& ! doing_action( 'shutdown' );
+	}
+
+	/**
+	 * Whether a feed is being served: `do_feed()` runs the feed inside a
+	 * `do_feed_{$feed}` action, with or without themes.
+	 *
+	 * @return bool
+	 */
+	private static function doing_feed(): bool {
+		global $wp_current_filter;
+
+		foreach ( (array) $wp_current_filter as $hook ) {
+			if ( is_string( $hook ) && str_starts_with( $hook, 'do_feed_' ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

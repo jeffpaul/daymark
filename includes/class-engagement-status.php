@@ -30,7 +30,8 @@ class Daymark_Engagement_Status {
 	/**
 	 * Whether for_post() would have to look something up (the post's page,
 	 * or its ActivityPub object), which is when the REST route spends a
-	 * rate-limit allowance. A cached answer costs nothing.
+	 * rate-limit allowance. A cached answer costs nothing, and so does an
+	 * address Daymark won't fetch, since nothing is looked up for it.
 	 *
 	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
 	 * @return bool
@@ -43,7 +44,7 @@ class Daymark_Engagement_Status {
 		}
 
 		if ( null === Daymark_Comment_Delivery::cached_origin_signals( $permalink ) ) {
-			return true;
+			return Daymark_Comment_Delivery::can_look_up( $permalink );
 		}
 
 		return Daymark_ActivityPub_Engagement::available_for_user()

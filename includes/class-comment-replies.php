@@ -10,14 +10,17 @@
  *
  * Which comments are watched: one sent straight to the site's comments API
  * (Daymark knows its ID from the response), and one sent as a Webmention
- * (Daymark looks it up once on the site, by your site's address, since a
- * Webmention reply has no ID Daymark is told about). Only WordPress sites
- * can be watched: Daymark asks for `wp/v2/comments?parent={your comment}`.
+ * (Daymark looks it up on the site by your site's address and the
+ * comment's words, since a Webmention reply has no ID Daymark is told
+ * about; see find_own_comment()). Only WordPress sites can be watched:
+ * Daymark asks for `wp/v2/comments?parent={your comment}`.
  * A comment sent through WordPress.com (Jetpack) isn't watched yet.
  *
  * A reply that also reaches your own site as a Webmention to your comment's
  * Mark (the Webmention plugin, or Daymark's own receiver) is shown once:
- * the Mark's own comment wins, and its push isn't sent twice.
+ * the Mark's own comment wins once it's approved, keeping the reply's read
+ * and archived state and, when the reply was found first, its date (see
+ * superseded()), and its push isn't sent twice.
  *
  * Checks ride the hourly backflow sync (and the freshen run when
  * Notifications opens): hourly for two days, then every six hours for the
@@ -100,9 +103,25 @@ class Daymark_Comment_Replies {
 	private const KEEP_AFTER_WINDOW = 15 * DAY_IN_SECONDS;
 
 	/**
-	 * Local Webmention reply keys per Mark, for this request.
+	 * Characters of a comment kept to find it on the original site.
 	 *
-	 * @var array<int, array<string, bool>>
+	 * @var int
+	 */
+	private const EXCERPT_CHARS = 140;
+
+	/**
+	 * Shortest text (in characters, after match_text()) that can match the
+	 * start of a longer comment; shorter text must match a whole comment.
+	 *
+	 * @var int
+	 */
+	private const MIN_MATCH = 10;
+
+	/**
+	 * Approved Webmention comments per Mark, by reply key (see
+	 * local_reply_keys()), until a comment or its meta changes.
+	 *
+	 * @var array<int, array<string, int[]>>
 	 */
 	private static array $local_keys = array();
 
@@ -114,6 +133,12 @@ class Daymark_Comment_Replies {
 	public static function register(): void {
 		add_action( Daymark_Backflow_Sync::CRON_HOOK, array( __CLASS__, 'check_due' ), 20 );
 		add_action( Daymark_Backflow_Sync::CRON_HOOK . '_now', array( __CLASS__, 'check_due' ), 20 );
+
+		// A copy added, edited, approved, held, or deleted takes effect
+		// within the same request.
+		foreach ( array( 'wp_insert_comment', 'edit_comment', 'transition_comment_status', 'deleted_comment', 'added_comment_meta', 'updated_comment_meta', 'deleted_comment_meta' ) as $hook ) {
+			add_action( $hook, array( __CLASS__, 'flush_local_keys' ) );
+		}
 	}
 
 	/**
@@ -185,7 +210,7 @@ class Daymark_Comment_Replies {
 			'remote'    => $remote,
 			'comment'   => $comment,
 			'mark'      => $mark,
-			'excerpt'   => Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), 140 ),
+			'excerpt'   => Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), self::EXCERPT_CHARS ),
 			'created'   => time(),
 			'checked'   => 0,
 			'fails'     => 0,
@@ -234,16 +259,7 @@ class Daymark_Comment_Replies {
 			$window = self::window();
 			$due    = array();
 
-			$user_ids = get_users(
-				array(
-					'fields'       => 'ID',
-					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Only people with watched comments; personal-site scale.
-					'meta_key'     => self::META,
-					'meta_compare' => 'EXISTS',
-				)
-			);
-
-			foreach ( $user_ids as $user_id ) {
+			foreach ( self::watcher_ids() as $user_id ) {
 				foreach ( get_user_meta( (int) $user_id, self::META, false ) as $watch ) {
 					if ( ! self::is_complete( $watch ) || $now - (int) $watch['created'] > $window + self::KEEP_AFTER_WINDOW ) {
 						delete_user_meta( (int) $user_id, self::META, wp_slash( $watch ) );
@@ -318,7 +334,7 @@ class Daymark_Comment_Replies {
 		$items = array();
 
 		foreach ( self::get_watches( $user_id ) as $watch ) {
-			$replies = self::visible_replies( $watch );
+			$replies = self::visible_replies( $user_id, $watch );
 
 			if ( array() === $replies ) {
 				continue;
@@ -334,7 +350,7 @@ class Daymark_Comment_Replies {
 					'timestamp' => $found,
 					'item'      => array(
 						'type'                 => 'comment_reply',
-						'reply_key'            => sanitize_key( $watch['id'] . '-' . (string) ( $reply['id'] ?? '' ) ),
+						'reply_key'            => self::item_key( $watch, $reply ),
 						'author'               => sanitize_text_field( (string) ( $reply['author'] ?? '' ) ),
 						'author_url'           => esc_url_raw( (string) ( $reply['author_url'] ?? '' ) ),
 						'avatar'               => esc_url_raw( (string) ( $reply['avatar'] ?? '' ), array( 'https' ) ),
@@ -366,6 +382,70 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
+	 * The approved Webmention comments that bring a reply Daymark found for
+	 * this user to the comment's Mark, when Notifications lists that Mark's
+	 * comments for them (see Daymark_Notifications::lists_mark_for()), by
+	 * the comment's notification ID: the found reply's notification ID, and
+	 * when Daymark found it. Notifications shows such a comment in the found
+	 * reply's
+	 * place (see visible_replies()), with the same read and archived state
+	 * (see Daymark_Notification_State::carry_over()), dated when Daymark
+	 * found the reply. A reply whose comment was already approved when
+	 * Daymark found it was never shown, so it isn't listed.
+	 *
+	 * @param int $user_id User.
+	 * @return array<string, array{from: string, found: int}>
+	 */
+	public static function superseded( int $user_id ): array {
+		$superseded = array();
+
+		foreach ( self::get_watches( $user_id ) as $watch ) {
+			if ( array() === $watch['replies'] || ! Daymark_Notifications::lists_mark_for( $user_id, (int) $watch['mark'] ) ) {
+				continue;
+			}
+
+			$local = self::local_reply_keys( (int) $watch['mark'] );
+
+			foreach ( $watch['replies'] as $reply ) {
+				if ( ! is_array( $reply ) || ! empty( $reply['local'] ) ) {
+					continue;
+				}
+
+				$key = self::reply_key( (string) ( $reply['url'] ?? '' ) );
+
+				if ( '' === $key || ! isset( $local[ $key ] ) ) {
+					continue;
+				}
+
+				$from = Daymark_Notifications::item_id(
+					array(
+						'type'      => 'comment_reply',
+						'reply_key' => self::item_key( $watch, $reply ),
+					)
+				);
+
+				foreach ( $local[ $key ] as $comment_id ) {
+					$copy = Daymark_Notifications::item_id(
+						array(
+							'type'       => 'comment',
+							'comment_ID' => $comment_id,
+						)
+					);
+
+					if ( ! isset( $superseded[ $copy ] ) ) {
+						$superseded[ $copy ] = array(
+							'from'  => $from,
+							'found' => absint( $reply['found'] ?? 0 ),
+						);
+					}
+				}
+			}
+		}
+
+		return $superseded;
+	}
+
+	/**
 	 * Whether Daymark found a reply after a given time.
 	 *
 	 * @param int $user_id User.
@@ -374,7 +454,7 @@ class Daymark_Comment_Replies {
 	 */
 	public static function has_new_since( int $user_id, int $since ): bool {
 		foreach ( self::get_watches( $user_id ) as $watch ) {
-			foreach ( self::visible_replies( $watch ) as $reply ) {
+			foreach ( self::visible_replies( $user_id, $watch ) as $reply ) {
 				if ( absint( $reply['found'] ?? 0 ) > $since ) {
 					return true;
 				}
@@ -509,7 +589,7 @@ class Daymark_Comment_Replies {
 		$new              = array();
 
 		if ( 0 === (int) $watch['comment'] ) {
-			$own              = self::find_own_comment( $watch );
+			$own              = self::find_own_comment( $user_id, $watch );
 			$status           = $own['status'];
 			$watch['comment'] = $own['id'];
 		}
@@ -588,14 +668,26 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Find a Webmention comment's ID on the original site: the newest
-	 * comment there from this site's address, posted since the comment was
-	 * sent, whose text starts like it (or the only such comment).
+	 * Find a Webmention comment's ID on the original site, among that
+	 * post's newest comments from this site's address.
 	 *
-	 * @param array<string, mixed> $watch Watch.
+	 * Anyone can type your site's address into a comment form, so the
+	 * address alone never makes a comment yours: its words must match too.
+	 * Every watch on the same post that is still looking for its comment
+	 * (this person's or another author's on this site, finished or not)
+	 * is matched at the same time, best words first and then the closest
+	 * time, so two people's comments are never swapped, whichever is
+	 * checked first. A comment another watch already found is never used,
+	 * nor one stored more than an hour before the comment was sent.
+	 *
+	 * A comment the site edited, or one with no letters, numbers, or
+	 * emoji, isn't found, and its replies aren't followed.
+	 *
+	 * @param int                  $user_id User the watch belongs to.
+	 * @param array<string, mixed> $watch   Watch.
 	 * @return array{status: string, id: int}
 	 */
-	private static function find_own_comment( array $watch ): array {
+	private static function find_own_comment( int $user_id, array $watch ): array {
 		$fetched = Daymark_Remote_Replies::fetch_comments(
 			(string) $watch['root'],
 			array(
@@ -615,34 +707,203 @@ class Daymark_Comment_Replies {
 			);
 		}
 
-		$since      = (int) $watch['created'] - HOUR_IN_SECONDS;
-		$needle     = mb_substr( self::match_text( (string) $watch['excerpt'] ), 0, 40 );
-		$candidates = array();
+		$on_post = self::claims_on_post( $user_id, $watch );
+		$pairs   = array();
 
 		foreach ( $fetched['items'] as $item ) {
-			$id   = absint( $item['id'] ?? 0 );
-			$date = Daymark_Remote_Replies::timestamp( (string) ( $item['date_gmt'] ?? '' ) );
+			$id = absint( $item['id'] ?? 0 );
 
-			if ( 0 === $id || ! self::is_own_url( (string) ( $item['author_url'] ?? '' ) ) || ( $date > 0 && $date < $since ) ) {
+			if ( 0 === $id || isset( $on_post['taken'][ $id ] ) || ! self::is_own_url( (string) ( $item['author_url'] ?? '' ) ) ) {
 				continue;
 			}
 
+			$date = Daymark_Remote_Replies::timestamp( (string) ( $item['date_gmt'] ?? '' ) );
 			$text = self::match_text( is_array( $item['content'] ?? null ) ? (string) ( $item['content']['rendered'] ?? '' ) : '' );
 
-			if ( '' !== $needle && false !== mb_strpos( $text, $needle ) ) {
+			foreach ( $on_post['claims'] as $index => $claim ) {
+				if ( $date > 0 && $date < $claim['created'] - HOUR_IN_SECONDS ) {
+					continue;
+				}
+
+				$score = self::match_score( $text, $claim['variants'], $claim['cut'] );
+
+				if ( $score > 0 ) {
+					$pairs[] = array(
+						'claim'   => $index,
+						'comment' => $id,
+						'score'   => $score,
+						'gap'     => $date > 0 ? abs( $date - $claim['created'] ) : PHP_INT_MAX,
+						'created' => $claim['created'],
+						'user'    => $claim['user'],
+						'watch'   => $claim['id'],
+					);
+				}
+			}
+		}
+
+		usort(
+			$pairs,
+			static function ( array $a, array $b ): int {
+				return array( $b['score'], $a['gap'], $a['created'], $a['user'], $a['watch'], $a['comment'] )
+					<=> array( $a['score'], $b['gap'], $b['created'], $b['user'], $b['watch'], $b['comment'] );
+			}
+		);
+
+		$used_claims   = array();
+		$used_comments = array();
+
+		foreach ( $pairs as $pair ) {
+			if ( isset( $used_claims[ $pair['claim'] ] ) || isset( $used_comments[ $pair['comment'] ] ) ) {
+				continue;
+			}
+
+			if ( $on_post['claims'][ $pair['claim'] ]['self'] ) {
 				return array(
 					'status' => Daymark_Remote_Replies::STATUS_OK,
-					'id'     => $id,
+					'id'     => $pair['comment'],
 				);
 			}
 
-			$candidates[] = $id;
+			$used_claims[ $pair['claim'] ]     = true;
+			$used_comments[ $pair['comment'] ] = true;
 		}
 
 		return array(
 			'status' => Daymark_Remote_Replies::STATUS_OK,
-			'id'     => 1 === count( $candidates ) ? $candidates[0] : 0,
+			'id'     => 0,
 		);
+	}
+
+	/**
+	 * The watches on the same post, by anyone on this site: the comment
+	 * IDs they already found, and each one still looking for its comment
+	 * (this watch first).
+	 *
+	 * @param int                  $user_id User the watch belongs to.
+	 * @param array<string, mixed> $watch   Watch.
+	 * @return array{taken: array<int, bool>, claims: array<int, array<string, mixed>>}
+	 */
+	private static function claims_on_post( int $user_id, array $watch ): array {
+		$taken  = array();
+		$claims = array( self::claim( $user_id, $watch, true ) );
+
+		foreach ( self::watcher_ids() as $other_user ) {
+			foreach ( self::get_watches( (int) $other_user ) as $other ) {
+				$same_watch = (int) $other_user === $user_id && $other['id'] === $watch['id'];
+
+				if ( $same_watch || $other['root'] !== $watch['root'] || (int) $other['remote'] !== (int) $watch['remote'] ) {
+					continue;
+				}
+
+				if ( (int) $other['comment'] > 0 ) {
+					$taken[ (int) $other['comment'] ] = true;
+				} else {
+					$claims[] = self::claim( (int) $other_user, $other, false );
+				}
+			}
+		}
+
+		return array(
+			'taken'  => $taken,
+			'claims' => $claims,
+		);
+	}
+
+	/**
+	 * What a watch still looking for its comment matches by.
+	 *
+	 * @param int                  $user_id User the watch belongs to.
+	 * @param array<string, mixed> $watch   Watch.
+	 * @param bool                 $is_self Whether it's the watch being checked.
+	 * @return array{self: bool, user: int, id: string, created: int, variants: string[], cut: bool}
+	 */
+	private static function claim( int $user_id, array $watch, bool $is_self ): array {
+		$excerpt = (string) $watch['excerpt'];
+
+		return array(
+			'self'     => $is_self,
+			'user'     => $user_id,
+			'id'       => (string) $watch['id'],
+			'created'  => (int) $watch['created'],
+			'variants' => self::match_variants( $excerpt ),
+			// The excerpt was shortened, so only its start can match.
+			'cut'      => '…' === mb_substr( $excerpt, -1 ) && mb_strlen( $excerpt ) >= self::EXCERPT_CHARS - 1,
+		);
+	}
+
+	/**
+	 * A comment's text as sent, and as a WordPress site shows it (curly
+	 * quotes, dashes, × in "2x4", smileys as emoji), both reduced by
+	 * match_text().
+	 *
+	 * @param string $excerpt Plain text of the comment as sent.
+	 * @return string[]
+	 */
+	private static function match_variants( string $excerpt ): array {
+		$shown = convert_smilies( wptexturize( htmlspecialchars( $excerpt, ENT_NOQUOTES, 'UTF-8' ) ) );
+
+		return array_values( array_unique( array_filter( array( self::match_text( $excerpt ), self::match_text( $shown ) ), 'strlen' ) ) );
+	}
+
+	/**
+	 * How well a comment's text matches one of a watch's variants: the
+	 * whole text, or (for ten characters or more) its start followed by
+	 * more words. 0 means no match; a longer match scores higher, and a
+	 * whole-text match beats a start of the same length.
+	 *
+	 * @param string   $text     The comment on the site, reduced by match_text().
+	 * @param string[] $variants The watch's variants.
+	 * @param bool     $cut      Whether the watch's excerpt was shortened.
+	 * @return int
+	 */
+	private static function match_score( string $text, array $variants, bool $cut ): int {
+		$best = 0;
+
+		foreach ( $variants as $variant ) {
+			$length = mb_strlen( $variant );
+
+			if ( $text === $variant ) {
+				$best = max( $best, 2 * $length + 1 );
+				continue;
+			}
+
+			if ( $length >= self::MIN_MATCH && str_starts_with( $text, $variant . ' ' ) ) {
+				$best = max( $best, 2 * $length );
+				continue;
+			}
+
+			// A shortened excerpt may end mid-word, so leave that word out.
+			$space = mb_strrpos( $variant, ' ' );
+
+			if ( $cut && false !== $space ) {
+				$start = mb_substr( $variant, 0, $space );
+
+				if ( mb_strlen( $start ) >= self::MIN_MATCH && str_starts_with( $text, $start . ' ' ) ) {
+					$best = max( $best, 2 * mb_strlen( $start ) );
+				}
+			}
+		}
+
+		return $best;
+	}
+
+	/**
+	 * The people with watched comments, each once (the query returns a
+	 * person once per watch).
+	 *
+	 * @return int[]
+	 */
+	private static function watcher_ids(): array {
+		$ids = get_users(
+			array(
+				'fields'       => 'ID',
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Only people with watched comments; personal-site scale.
+				'meta_key'     => self::META,
+				'meta_compare' => 'EXISTS',
+			)
+		);
+
+		return array_values( array_unique( array_map( 'intval', $ids ) ) );
 	}
 
 	/**
@@ -700,13 +961,19 @@ class Daymark_Comment_Replies {
 
 	/**
 	 * A watch's replies that belong in Notifications: not ones that reached
-	 * the Mark as a comment too.
+	 * the Mark as an approved comment too, when Notifications lists that
+	 * Mark's comments (see superseded()).
 	 *
-	 * @param array<string, mixed> $watch Watch.
+	 * @param int                  $user_id User the watch belongs to.
+	 * @param array<string, mixed> $watch   Watch.
 	 * @return array<int, array<string, mixed>>
 	 */
-	private static function visible_replies( array $watch ): array {
-		$local   = self::local_reply_keys( (int) $watch['mark'] );
+	private static function visible_replies( int $user_id, array $watch ): array {
+		if ( array() === $watch['replies'] ) {
+			return array();
+		}
+
+		$local   = Daymark_Notifications::lists_mark_for( $user_id, (int) $watch['mark'] ) ? self::local_reply_keys( (int) $watch['mark'] ) : array();
 		$replies = array();
 
 		foreach ( $watch['replies'] as $reply ) {
@@ -727,10 +994,11 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Keys of the approved Webmention comments on a Mark (see reply_key()).
+	 * The approved Webmention comments on a Mark, by reply key (see
+	 * reply_key()).
 	 *
 	 * @param int $mark_id Mark post ID.
-	 * @return array<string, bool>
+	 * @return array<string, int[]> Reply key => comment IDs.
 	 */
 	private static function local_reply_keys( int $mark_id ): array {
 		if ( $mark_id <= 0 ) {
@@ -743,10 +1011,13 @@ class Daymark_Comment_Replies {
 
 		$keys = array();
 
+		// Only types Notifications lists, so a found reply is never hidden
+		// behind a comment that isn't shown there either.
 		$comment_ids = get_comments(
 			array(
 				'post_id'  => $mark_id,
 				'status'   => 'approve',
+				'type'     => Daymark_Notifications::COMMENT_TYPES,
 				'fields'   => 'ids',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- One Mark's comments.
 				'meta_key' => 'webmention_source_url',
@@ -757,7 +1028,7 @@ class Daymark_Comment_Replies {
 			$key = self::reply_key( (string) get_comment_meta( (int) $comment_id, 'webmention_source_url', true ) );
 
 			if ( '' !== $key ) {
-				$keys[ $key ] = true;
+				$keys[ $key ][] = (int) $comment_id;
 			}
 		}
 
@@ -767,12 +1038,25 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Forget the cached local reply keys (tests, and after new comments).
+	 * Forget the cached Webmention comments per Mark. Runs whenever a
+	 * comment or its meta changes (see register()), and in tests.
 	 *
 	 * @return void
 	 */
 	public static function flush_local_keys(): void {
 		self::$local_keys = array();
+	}
+
+	/**
+	 * A found reply's key in its notification ID: the watch, then the
+	 * reply's ID on the original site.
+	 *
+	 * @param array<string, mixed> $watch Watch.
+	 * @param array<string, mixed> $reply Stored reply.
+	 * @return string
+	 */
+	private static function item_key( array $watch, array $reply ): string {
+		return sanitize_key( $watch['id'] . '-' . (string) ( $reply['id'] ?? '' ) );
 	}
 
 	/**
@@ -860,12 +1144,17 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Text reduced for a loose "starts like" comparison.
+	 * Text reduced for comparing a comment as sent with the same comment
+	 * as a site shows it: lowercase letters, numbers, and emoji, one space
+	 * between words, including between paragraphs.
 	 *
 	 * @param string $html Text or HTML.
 	 * @return string
 	 */
 	private static function match_text( string $html ): string {
-		return mb_strtolower( (string) preg_replace( '/[^\p{L}\p{N}]+/u', ' ', Daymark_Remote_Replies::plain( $html, 400 ) ) );
+		$html = (string) preg_replace( '#<(?:br|hr|/?(?:p|div|li|ul|ol|blockquote|h[1-6]|pre|figure|figcaption|tr|td|th|table))\b[^>]*>#i', ' $0 ', $html );
+		$text = (string) preg_replace( '/[^\p{L}\p{M}\p{N}\p{So}]+/u', ' ', Daymark_Remote_Replies::plain( $html, 400 ) );
+
+		return trim( mb_strtolower( $text ) );
 	}
 }

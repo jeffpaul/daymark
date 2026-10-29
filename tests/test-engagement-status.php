@@ -242,6 +242,33 @@ class Test_Engagement_Status extends WP_UnitTestCase {
 		$this->assertSame( 429, $this->get( $post_id )->get_status() );
 	}
 
+	public function test_route_spends_nothing_on_an_address_it_will_not_look_up() {
+		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'author' ) ) );
+		add_filter(
+			'daymark_rate_limits',
+			static function ( $limits ) {
+				$limits[ Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH ]['limit'] = 1;
+				return $limits;
+			}
+		);
+
+		// The URL guard refuses this port, so nothing is fetched or cached.
+		$this->permalink = 'https://example.com:8443/x';
+		$post_id         = $this->create_subscription_post();
+		$limiter         = Daymark_Plugin::instance()->rate_limiter;
+
+		$this->assertFalse( Daymark_Engagement_Status::needs_lookup( $post_id ) );
+
+		foreach ( array( 1, 2 ) as $attempt ) {
+			$response = $this->get( $post_id );
+
+			$this->assertSame( 200, $response->get_status(), 'Request ' . $attempt );
+			$this->assertSame( 'unreachable', $response->get_data()['note']['reason'] );
+		}
+
+		$this->assertSame( 1, $limiter->remaining( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH ) );
+	}
+
 	public function test_route_refuses_a_post_that_is_not_a_followed_post() {
 		wp_set_current_user( (int) self::factory()->user->create( array( 'role' => 'author' ) ) );
 

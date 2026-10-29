@@ -49,6 +49,9 @@
 					el(ServerSideRender, {
 						block: 'daymark/follow-me',
 						attributes: Object.assign({}, props.attributes, { preview: true }),
+						// The wrapper above already carries the block's spacing and
+						// class; don't apply them a second time inside it.
+						skipBlockSupportAttributes: true,
 					})
 				)
 			);

@@ -5936,12 +5936,6 @@
 		});
 	}
 
-	// Cached on the item itself (screen._bySubId already keeps it around
-	// for the lifetime of the current Timeline/Search/PostScreen render),
-	// so tapping the same post's Comment icon twice in one session costs
-	// one live check, not two — the server itself also caches the
-	// underlying origin fetch (Daymark_Comment_Delivery::discover_origin_signals()),
-	// so even a fresh reload of the same post is fast.
 	// The full post view's note on why Like or Comment can't reach a
 	// followed post's site (issue #561): the server's sentences, then its
 	// link to the fix when the viewer may make it. Text only, escaped.
@@ -5954,6 +5948,12 @@
 		return text + link;
 	}
 
+	// Cached on the item itself (screen._bySubId already keeps it around
+	// for the lifetime of the current Timeline/Search/PostScreen render),
+	// so tapping the same post's Comment icon twice in one session costs
+	// one live check, not two — the server itself also caches the
+	// underlying origin fetch (Daymark_Comment_Delivery::discover_origin_signals()),
+	// so even a fresh reload of the same post is fast.
 	async function resolveCommentTarget(item, id) {
 		if (item.commentTarget) {
 			return item.commentTarget;
@@ -6033,6 +6033,25 @@
 				const label = withDeliveryStatus(__('Comment', 'daymark'), result.delivery);
 				trigger.setAttribute('aria-label', label);
 				trigger.setAttribute('title', label);
+			}
+			// Replies loaded, or still loading, from before this comment
+			// don't have it.
+			PostScreen.forgetReplies(id, item);
+			if (item) {
+				// When it's already on the site (posted there directly, or
+				// through WordPress.com, and not held for moderation), load
+				// them again now; a Webmention reaches the site later, so the
+				// next Show replies asks again instead.
+				const onSite = 'jetpack' === result.method || ('native' === result.method && 'published' === result.status);
+				if (
+					onSite &&
+					PostScreen.view &&
+					PostScreen.view.item === item &&
+					root.querySelector('[data-thread-body]') &&
+					!root.querySelector('[data-thread-show]')
+				) {
+					PostScreen.loadReplies();
+				}
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 		} catch (err) {
@@ -12621,9 +12640,6 @@
 			await this.load(false);
 		},
 
-		// On the last loaded post, start loading the list's next page now,
-		// so Next is ready by the time the reader has read this one. A
-		// failure here is silent; tapping Next tries again.
 		// Asks the site whether Like and Comment can reach this followed
 		// post's own site. Hides an undeliverable Like, primes the Comment
 		// pre-check so a tap doesn't ask again, and shows the note saying
@@ -12660,6 +12676,9 @@
 			}
 		},
 
+		// On the last loaded post, start loading the list's next page now,
+		// so Next is ready by the time the reader has read this one. A
+		// failure here is silent; tapping Next tries again.
 		prefetch() {
 			const view = this.view;
 			if (
@@ -12840,31 +12859,54 @@
 			// One request per post at a time, kept here rather than on the
 			// item (items are stored in IndexedDB with a bookmark, which
 			// can't hold a promise). Stepping away and back while it runs
-			// waits for the same request.
+			// waits for the same request, unless a comment was sent since
+			// it started (forgetReplies()): then a new request replaces it.
 			this._repliesRequests = this._repliesRequests || new Map();
 			const key = String(item.id);
-			let request = this._repliesRequests.get(key);
-			if (!request) {
-				request = apiGet('subscription-posts/' + item.id + '/replies');
-				this._repliesRequests.set(key, request);
-				request.then(
-					() => this._repliesRequests.delete(key),
-					() => this._repliesRequests.delete(key)
-				);
+			let entry = this._repliesRequests.get(key);
+			if (!entry || entry.stale) {
+				const previous = entry;
+				entry = {
+					request: apiGet('subscription-posts/' + item.id + '/replies'),
+					stale: false,
+					replaced: false,
+				};
+				if (previous) {
+					previous.replaced = true;
+				}
+				const started = entry;
+				this._repliesRequests.set(key, started);
+				const done = () => {
+					if (this._repliesRequests.get(key) === started) {
+						this._repliesRequests.delete(key);
+					}
+				};
+				started.request.then(done, done);
 			}
 			let html = '';
 			let message = '';
 			try {
-				const result = await request;
+				const result = await entry.request;
+				if (entry.replaced) {
+					// The request that replaced this one shows its answer.
+					return;
+				}
 				if (!result || 'error' === result.status) {
 					message = __("The original site didn't answer. Try again in a minute.", 'daymark');
 					html = this.repliesErrorHtml(message);
 				} else {
-					item._replies = result;
+					// A list from before a comment is shown when nothing
+					// replaced its request, but not kept.
+					if (!entry.stale) {
+						item._replies = result;
+					}
 					html = this.repliesHtml(result, item);
 					message = this.repliesSummary(result);
 				}
 			} catch (err) {
+				if (entry.replaced) {
+					return;
+				}
 				message =
 					err && 429 === err.status
 						? __("You've opened a lot of posts recently. Try again in a few minutes.", 'daymark')
@@ -12880,6 +12922,19 @@
 			current.removeAttribute('aria-busy');
 			current.innerHTML = html;
 			announce(message);
+		},
+
+		// A comment was just sent on this followed post, so replies loaded
+		// from before it, or still loading, don't have it. The next look
+		// asks the site again.
+		forgetReplies(id, item) {
+			if (item) {
+				delete item._replies;
+			}
+			const entry = this._repliesRequests && this._repliesRequests.get(String(id));
+			if (entry) {
+				entry.stale = true;
+			}
 		},
 
 		// What a screen reader hears once the replies have loaded.

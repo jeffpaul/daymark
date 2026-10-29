@@ -21,6 +21,12 @@
  * uses: add and remove are single-row writes, so two quick taps can't
  * lose each other's update.
  *
+ * A reply Daymark found on a followed site (`comment_reply-…`) and the
+ * approved Webmention comment that brings the same reply to a Mark
+ * (`comment-…`) are one notification (issue #559): Notifications shows the
+ * comment in the reply's place, and the two share their read and archived
+ * state (see carry_over() and with_links()).
+ *
  * @package Daymark
  */
 
@@ -130,13 +136,27 @@ class Daymark_Notification_State {
 	 * @return int
 	 */
 	public function read_before( int $user_id ): int {
-		$stored = get_user_meta( $user_id, self::READ_BEFORE_META, true );
-
-		if ( '' !== $stored && false !== $stored ) {
-			return (int) $stored;
+		if ( $this->has_read_watermark( $user_id ) ) {
+			return (int) get_user_meta( $user_id, self::READ_BEFORE_META, true );
 		}
 
 		return (int) get_user_meta( $user_id, Daymark_Notifications::SEEN_META, true );
+	}
+
+	/**
+	 * Whether the person has used "Mark all as read", so the watermark is
+	 * their own and moves only when they ask. Until then read_before()
+	 * falls back to their last visit, which moves on every visit.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param int $user_id User ID.
+	 * @return bool
+	 */
+	public function has_read_watermark( int $user_id ): bool {
+		$stored = get_user_meta( $user_id, self::READ_BEFORE_META, true );
+
+		return '' !== $stored && false !== $stored;
 	}
 
 	/**
@@ -185,26 +205,18 @@ class Daymark_Notification_State {
 	}
 
 	/**
-	 * Mark items read.
+	 * Mark items read, and the items linked to them (see with_links()).
 	 *
 	 * @param int      $user_id User ID.
 	 * @param string[] $ids     Clean IDs.
 	 * @return void
 	 */
 	public function mark_read( int $user_id, array $ids ): void {
-		$read = $this->ids( $user_id, self::READ_META );
-
-		foreach ( $ids as $id ) {
-			delete_user_meta( $user_id, self::UNREAD_META, $id );
-
-			if ( ! isset( $read[ $id ] ) ) {
-				add_user_meta( $user_id, self::READ_META, $id );
-			}
-		}
+		$this->write_read( $user_id, $this->with_linked( $user_id, $ids ) );
 	}
 
 	/**
-	 * Mark items unread.
+	 * Mark items unread, and the items linked to them (see with_links()).
 	 *
 	 * @param int      $user_id User ID.
 	 * @param string[] $ids     Clean IDs.
@@ -213,11 +225,30 @@ class Daymark_Notification_State {
 	public function mark_unread( int $user_id, array $ids ): void {
 		$unread = $this->ids( $user_id, self::UNREAD_META );
 
-		foreach ( $ids as $id ) {
+		foreach ( $this->with_linked( $user_id, $ids ) as $id ) {
 			delete_user_meta( $user_id, self::READ_META, $id );
 
 			if ( ! isset( $unread[ $id ] ) ) {
 				add_user_meta( $user_id, self::UNREAD_META, $id );
+			}
+		}
+	}
+
+	/**
+	 * Record items as read, exactly these IDs.
+	 *
+	 * @param int      $user_id User ID.
+	 * @param string[] $ids     Clean IDs.
+	 * @return void
+	 */
+	private function write_read( int $user_id, array $ids ): void {
+		$read = $this->ids( $user_id, self::READ_META );
+
+		foreach ( $ids as $id ) {
+			delete_user_meta( $user_id, self::UNREAD_META, $id );
+
+			if ( ! isset( $read[ $id ] ) ) {
+				add_user_meta( $user_id, self::READ_META, $id );
 			}
 		}
 	}
@@ -242,13 +273,15 @@ class Daymark_Notification_State {
 	}
 
 	/**
-	 * Archive items. An archived item also counts as read.
+	 * Archive items, and the items linked to them (see with_links()). An
+	 * archived item also counts as read.
 	 *
 	 * @param int      $user_id User ID.
 	 * @param string[] $ids     Clean IDs.
 	 * @return void
 	 */
 	public function archive( int $user_id, array $ids ): void {
+		$ids      = $this->with_linked( $user_id, $ids );
 		$archived = $this->ids( $user_id, self::ARCHIVED_META );
 
 		foreach ( $ids as $id ) {
@@ -257,20 +290,151 @@ class Daymark_Notification_State {
 			}
 		}
 
-		$this->mark_read( $user_id, $ids );
+		$this->write_read( $user_id, $ids );
 	}
 
 	/**
-	 * Bring archived items back.
+	 * Bring archived items back, and the items linked to them (see
+	 * with_links()).
 	 *
 	 * @param int      $user_id User ID.
 	 * @param string[] $ids     Clean IDs.
 	 * @return void
 	 */
 	public function unarchive( int $user_id, array $ids ): void {
-		foreach ( $ids as $id ) {
+		foreach ( $this->with_linked( $user_id, $ids ) as $id ) {
 			delete_user_meta( $user_id, self::ARCHIVED_META, $id );
 		}
+	}
+
+	/**
+	 * The current links between replies Daymark found on followed sites
+	 * and the approved Webmention comments that brought the same replies
+	 * to the user's Marks (see Daymark_Comment_Replies::superseded()).
+	 *
+	 * @param int $user_id User ID.
+	 * @return array<string, string> Comment item ID => found reply item ID.
+	 */
+	public static function links_for( int $user_id ): array {
+		return wp_list_pluck( Daymark_Comment_Replies::superseded( $user_id ), 'from' );
+	}
+
+	/**
+	 * The IDs plus every ID linked to them: a Webmention comment brings
+	 * the found reply it copies, and a found reply brings every comment
+	 * that copies it. Archiving, reading, or bringing back one of them
+	 * then does the same to the others, so the reply can't come back
+	 * under its other ID.
+	 *
+	 * @param string[]              $ids   Clean IDs.
+	 * @param array<string, string> $links Comment item ID => found reply item ID.
+	 * @return string[]
+	 */
+	public static function with_links( array $ids, array $links ): array {
+		if ( array() === $links ) {
+			return $ids;
+		}
+
+		$selected = array_fill_keys( $ids, true );
+
+		foreach ( $ids as $id ) {
+			if ( isset( $links[ $id ] ) ) {
+				$selected[ $links[ $id ] ] = true;
+			}
+		}
+
+		foreach ( $links as $copy => $from ) {
+			if ( isset( $selected[ $from ] ) ) {
+				$selected[ (string) $copy ] = true;
+			}
+		}
+
+		return array_map( 'strval', array_keys( $selected ) );
+	}
+
+	/**
+	 * Bring a found reply's state to the Webmention comment that now
+	 * stands in for it, and back (issue #559). Archived on either side
+	 * means archived on both. For read and unread, a state set on the
+	 * found reply wins, since the comment was hidden until it was approved;
+	 * otherwise the comment's own state is given to the reply. Writes only
+	 * what changes.
+	 *
+	 * @param int                   $user_id User ID.
+	 * @param array<string, string> $links   Comment item ID => found reply item ID.
+	 * @return void
+	 */
+	public function carry_over( int $user_id, array $links ): void {
+		if ( $user_id <= 0 || array() === $links ) {
+			return;
+		}
+
+		$archived = $this->ids( $user_id, self::ARCHIVED_META );
+		$read     = $this->ids( $user_id, self::READ_META );
+		$unread   = $this->ids( $user_id, self::UNREAD_META );
+
+		foreach ( $links as $copy => $from ) {
+			$copy = (string) $copy;
+			$from = (string) $from;
+			$pair = array( $copy, $from );
+
+			if ( $copy === $from || ! self::is_valid_id( $copy ) || ! self::is_valid_id( $from ) ) {
+				continue;
+			}
+
+			if ( isset( $archived[ $copy ] ) || isset( $archived[ $from ] ) ) {
+				foreach ( $pair as $id ) {
+					if ( ! isset( $archived[ $id ] ) ) {
+						add_user_meta( $user_id, self::ARCHIVED_META, $id );
+						$archived[ $id ] = true;
+					}
+				}
+			}
+
+			if ( isset( $read[ $from ] ) || isset( $unread[ $from ] ) ) {
+				$is_read = isset( $read[ $from ] );
+			} elseif ( isset( $read[ $copy ] ) || isset( $unread[ $copy ] ) ) {
+				$is_read = isset( $read[ $copy ] );
+			} else {
+				continue;
+			}
+
+			foreach ( $pair as $id ) {
+				if ( $is_read ? isset( $unread[ $id ] ) : isset( $read[ $id ] ) ) {
+					delete_user_meta( $user_id, $is_read ? self::UNREAD_META : self::READ_META, $id );
+				}
+
+				if ( $is_read ? ! isset( $read[ $id ] ) : ! isset( $unread[ $id ] ) ) {
+					add_user_meta( $user_id, $is_read ? self::READ_META : self::UNREAD_META, $id );
+				}
+
+				if ( $is_read ) {
+					$read[ $id ] = true;
+					unset( $unread[ $id ] );
+				} else {
+					$unread[ $id ] = true;
+					unset( $read[ $id ] );
+				}
+			}
+		}
+	}
+
+	/**
+	 * The IDs plus the IDs linked to them now, for a write the user asked
+	 * for. Only comment and found-reply IDs can be linked.
+	 *
+	 * @param int      $user_id User ID.
+	 * @param string[] $ids     Clean IDs.
+	 * @return string[]
+	 */
+	private function with_linked( int $user_id, array $ids ): array {
+		foreach ( $ids as $id ) {
+			if ( 0 === strpos( (string) $id, 'comment' ) ) {
+				return self::with_links( $ids, self::links_for( $user_id ) );
+			}
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -280,7 +444,8 @@ class Daymark_Notification_State {
 	 * on, shows up again, and old replies leave no rows behind.
 	 *
 	 * @param int      $user_id     User ID.
-	 * @param string[] $current_ids Every current item ID, archived included.
+	 * @param string[] $current_ids Every current item ID, archived included,
+	 *                              plus found replies a comment stands in for.
 	 * @return void
 	 */
 	public function prune( int $user_id, array $current_ids ): void {

@@ -84,6 +84,28 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Mock a request that went out and got no answer, the way WordPress
+	 * reports a timeout.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_timeout( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received' );
+	}
+
+	/**
+	 * Mock a request this site's own settings won't send, the way
+	 * WordPress reports one WP_HTTP_BLOCK_EXTERNAL blocks.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_blocked( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'http_request_not_executed', 'User has blocked requests through HTTP to the URL: ' . $url . '.' );
+	}
+
+	/**
 	 * Mock a WordPress post page that advertises its REST root and post ID.
 	 *
 	 * @param string $permalink The post's URL.
@@ -330,6 +352,65 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 		$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, $timeout );
 	}
 
+	/**
+	 * A comment sent while a lookup is still waiting on the site makes that
+	 * lookup's list out of date before it's even saved. The lookup still
+	 * answers with it, but the next one asks the site again and keeps the
+	 * new list.
+	 */
+	public function test_a_lookup_that_started_before_forget_is_not_kept(): void {
+		$permalink = 'https://origin.example/in-flight/';
+		$comments  = $this->wordpress_comments_url( 59 );
+
+		$this->mock_wordpress_post( $permalink, 59 );
+		$this->mock_response( $comments, '[]', 200, array( 'x-wp-total' => '0' ) );
+
+		// The comment is sent while the lookup waits on the comments API.
+		$forget = static function ( $preempt, $args, $url ) use ( $permalink, $comments ) {
+			unset( $args );
+
+			if ( $url === $comments ) {
+				Daymark_Remote_Replies::forget( $permalink );
+			}
+
+			return $preempt;
+		};
+
+		add_filter( 'pre_http_request', $forget, 5, 3 );
+		$first = Daymark_Remote_Replies::for_permalink( $permalink );
+		remove_filter( 'pre_http_request', $forget, 5 );
+
+		$this->assertSame( Daymark_Remote_Replies::STATUS_OK, $first['status'] );
+		$this->assertSame( array(), $first['replies'] );
+		$this->assertNull( Daymark_Remote_Replies::cached( $permalink ), 'The list from before the comment is not reused' );
+
+		// The site now lists the comment.
+		$this->mock_response(
+			$comments,
+			(string) wp_json_encode(
+				array(
+					array(
+						'id'                 => 32,
+						'parent'             => 0,
+						'author_name'        => 'You',
+						'author_url'         => '',
+						'author_avatar_urls' => array(),
+						'date_gmt'           => '2026-10-03T09:00:00',
+						'link'               => $permalink . '#comment-32',
+						'content'            => array( 'rendered' => '<p>Thanks!</p>' ),
+					),
+				)
+			),
+			200,
+			array( 'x-wp-total' => '1' )
+		);
+
+		$again = Daymark_Remote_Replies::for_permalink( $permalink );
+
+		$this->assertSame( array( '32' ), array_column( $again['replies'], 'id' ) );
+		$this->assertSame( $again, Daymark_Remote_Replies::cached( $permalink ), 'A lookup that started after the comment is kept' );
+	}
+
 	/** A site that fails is cached for one minute only, so a retry soon after can succeed. */
 	public function test_a_failing_site_is_cached_briefly(): void {
 		$permalink = 'https://origin.example/failing/';
@@ -342,7 +423,90 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 		$this->assertSame( Daymark_Remote_Replies::STATUS_ERROR, $result['status'] );
 
 		$timeout = (int) get_option( '_transient_timeout_daymark_replies_' . md5( $permalink ) );
+		$this->assertGreaterThan( time(), $timeout, 'The error was cached' );
 		$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $timeout );
+	}
+
+	/**
+	 * A post whose own page couldn't be loaded (a server error, or no
+	 * answer at all) is an error to try again soon, not a site that
+	 * doesn't share its replies. Both the replies and the failed page are
+	 * remembered for a minute only.
+	 */
+	public function test_a_page_that_could_not_be_loaded_is_an_error_cached_briefly(): void {
+		$down = 'https://origin.example/down/';
+		$this->mock_response( $down, 'Service Unavailable', 503 );
+
+		$silent = 'https://origin.example/silent/';
+		$this->mock_timeout( $silent );
+
+		foreach ( array( $down, $silent ) as $permalink ) {
+			$result = Daymark_Remote_Replies::for_permalink( $permalink );
+
+			$this->assertSame( Daymark_Remote_Replies::STATUS_ERROR, $result['status'], $permalink );
+			$this->assertSame( array(), $result['replies'], $permalink );
+			foreach ( array( 'daymark_replies_', 'daymark_comment_sig_' ) as $prefix ) {
+				$timeout = (int) get_option( '_transient_timeout_' . $prefix . md5( $permalink ) );
+
+				$this->assertGreaterThan( time(), $timeout, $prefix . $permalink );
+				$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $timeout, $prefix . $permalink );
+			}
+		}
+	}
+
+	/**
+	 * A post page that refuses Daymark's request (401, 403) or is gone
+	 * (404, 410) won't answer differently a minute later, and neither will
+	 * a request this site's own settings block: Daymark can't show that
+	 * site's replies. The result still links to the post, so the reader
+	 * can look there, and the page isn't asked again every minute.
+	 */
+	public function test_a_page_that_refuses_or_is_gone_is_unsupported_with_its_link(): void {
+		$blocked = 'https://origin.example/blocked/';
+		$this->mock_blocked( $blocked );
+
+		$permalinks = array( $blocked );
+
+		foreach ( array( 401, 403, 404, 410 ) as $code ) {
+			$permalink = 'https://origin.example/refused-' . $code . '/';
+			$this->mock_response( $permalink, 'No', $code );
+
+			$permalinks[] = $permalink;
+		}
+
+		foreach ( $permalinks as $permalink ) {
+			$result = Daymark_Remote_Replies::for_permalink( $permalink );
+
+			$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, $result['status'], $permalink );
+			$this->assertSame( $permalink, $result['url'], $permalink );
+			$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_replies_' . md5( $permalink ) ), $permalink );
+			$this->assertGreaterThanOrEqual( time() + 59 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_comment_sig_' . md5( $permalink ) ), $permalink );
+		}
+	}
+
+	/**
+	 * Signals cached before Daymark recorded whether the page loaded carry
+	 * no `reached` key; they still read as a page that loaded.
+	 */
+	public function test_signals_cached_before_reached_existed_still_read_as_loaded(): void {
+		$permalink = 'https://origin.example/older-entry/';
+
+		set_transient(
+			'daymark_comment_sig_' . md5( $permalink ),
+			array(
+				'webmention_endpoint' => '',
+				'rest_root'           => '',
+				'post_id'             => 0,
+				'jetpack_site_id'     => 0,
+				'jetpack_post_id'     => 0,
+				'activitypub_object'  => false,
+				'bluesky'             => false,
+			),
+			HOUR_IN_SECONDS
+		);
+
+		$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, Daymark_Remote_Replies::for_permalink( $permalink )['status'] );
+		$this->assertSame( array(), $this->requested );
 	}
 
 	/** An answer that isn't a list of comments is an error, not an empty list. */

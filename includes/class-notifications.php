@@ -65,6 +65,13 @@ class Daymark_Notifications {
 	public const COMMENT_TYPES = array( 'comment', 'quote', 'like', 'repost', 'mention', 'pingback', 'trackback' );
 
 	/**
+	 * Statuses of the Marks whose comments become notifications.
+	 *
+	 * @var string[]
+	 */
+	public const LISTED_STATUSES = array( 'publish', 'draft' );
+
+	/**
 	 * Mocked sample response texts per network (1–2 imported per sync).
 	 *
 	 * @var array<string, string[]>
@@ -156,6 +163,14 @@ class Daymark_Notifications {
 	 * interleaving it chronologically with dated comment activity, rather
 	 * than always pinning it to the top or the bottom of the list.
 	 *
+	 * An approved Webmention comment that brings a reply Daymark already
+	 * found on a followed site to the user's own Mark (see
+	 * Daymark_Comment_Replies::superseded()) is the same notification as
+	 * that reply: it takes the reply's read and archived state and is
+	 * dated when the reply was found, which is when it was first listed.
+	 * So a comment that arrives later isn't news twice, and one held for
+	 * moderation until after the reply was found isn't quietly old.
+	 *
 	 * When `$seen_before` is given (a Unix timestamp, normally the user's
 	 * last visit to Notifications), every item also carries an `is_new`
 	 * flag: true when it is newer than that visit. A plugin-overlap item is
@@ -173,10 +188,21 @@ class Daymark_Notifications {
 
 		$this->reply_targets = array();
 
+		// Approved Webmention comments that bring a reply Daymark found on
+		// a followed site to the user's own Mark: shown in the found
+		// reply's place, with its read and archived state (issue #559).
+		$superseded = $user_id ? Daymark_Comment_Replies::superseded( $user_id ) : array();
+		$links      = wp_list_pluck( $superseded, 'from' );
+
+		if ( $user_id ) {
+			$state->carry_over( $user_id, $links );
+		}
+
 		$archived = $state->ids( $user_id, Daymark_Notification_State::ARCHIVED_META );
 
-		// Archived comments are dropped after the query, so ask for enough
-		// extra rows that archiving never shortens the list.
+		// Archived comments are dropped after the query, and a comment that
+		// takes an older found reply's date moves down the list, so ask
+		// for enough extra rows that neither shortens the list.
 		$archived_comments = 0;
 		foreach ( array_keys( $archived ) as $archived_id ) {
 			if ( 0 === strpos( $archived_id, 'comment-' ) ) {
@@ -185,20 +211,54 @@ class Daymark_Notifications {
 		}
 
 		$dated_items      = array();
+		$dated_by_reply   = array();
 		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
 		if ( ! empty( $daymark_post_ids ) ) {
-			foreach ( $this->get_comments_for_posts( $daymark_post_ids, $limit + $archived_comments ) as $comment ) {
+			$comments = $this->get_comments_for_posts( $daymark_post_ids, $limit + $archived_comments + count( $superseded ) );
+
+			// A comment that takes a newer found reply's date moves up the
+			// list, past where that query stops, so fetch those as well.
+			$fetched = array();
+			foreach ( $comments as $comment ) {
+				$fetched[ (int) $comment->comment_ID ] = true;
+			}
+
+			$missing = array();
+			foreach ( array_keys( $superseded ) as $copy_id ) {
+				$comment_id = (int) substr( $copy_id, strlen( 'comment-' ) );
+
+				if ( $comment_id > 0 && ! isset( $fetched[ $comment_id ] ) ) {
+					$missing[] = $comment_id;
+				}
+			}
+
+			if ( array() !== $missing ) {
+				$comments = array_merge( $comments, $this->get_comments_for_posts( $daymark_post_ids, count( $missing ), $missing ) );
+			}
+
+			foreach ( $comments as $comment ) {
 				$post = get_post( (int) $comment->comment_post_ID );
 
 				if ( ! $post instanceof WP_Post ) {
 					continue;
 				}
 
-				$timestamp = strtotime( $comment->comment_date_gmt . ' UTC' );
+				$id  = 'comment-' . (int) $comment->comment_ID;
+				$own = strtotime( $comment->comment_date_gmt . ' UTC' );
+				$own = false !== $own ? $own : 0;
+
+				// A copy of a reply Daymark found is dated when the reply
+				// was found, since that's when it was first listed.
+				$found     = $superseded[ $id ]['found'] ?? 0;
+				$timestamp = $found > 0 ? $found : $own;
+
+				if ( $timestamp !== $own ) {
+					$dated_by_reply[ $id ] = $own;
+				}
 
 				$dated_items[] = array(
-					'timestamp' => false !== $timestamp ? $timestamp : 0,
+					'timestamp' => $timestamp,
 					'item'      => $this->format_comment( $comment, $post ),
 				);
 			}
@@ -256,20 +316,26 @@ class Daymark_Notifications {
 		);
 
 		if ( $user_id ) {
+			// A found reply a comment stands in for is hidden from the list
+			// but keeps its state, in case the comment is held again.
 			$state->prune(
 				$user_id,
-				array_map(
-					static function ( array $dated_item ): string {
-						return self::item_id( $dated_item['item'] );
-					},
-					$dated_items
+				array_merge(
+					array_map(
+						static function ( array $dated_item ): string {
+							return self::item_id( $dated_item['item'] );
+						},
+						$dated_items
+					),
+					array_values( $links )
 				)
 			);
 		}
 
-		$read_before = $user_id ? $state->read_before( $user_id ) : 0;
-		$read        = $state->ids( $user_id, Daymark_Notification_State::READ_META );
-		$unread      = $state->ids( $user_id, Daymark_Notification_State::UNREAD_META );
+		$read_before   = $user_id ? $state->read_before( $user_id ) : 0;
+		$has_watermark = $user_id && $state->has_read_watermark( $user_id );
+		$read          = $state->ids( $user_id, Daymark_Notification_State::READ_META );
+		$unread        = $state->ids( $user_id, Daymark_Notification_State::UNREAD_META );
 
 		$items = array();
 
@@ -287,6 +353,26 @@ class Daymark_Notifications {
 			$item['timestamp'] = $timestamp;
 			$item['date_gmt']  = $timestamp > 0 ? gmdate( 'c', $timestamp ) : '';
 			$item['read']      = Daymark_Notification_State::is_read( $id, $timestamp, $read_before, $read, $unread );
+
+			// A comment dated by its found reply goes back to its own date
+			// once Daymark forgets the reply. When the two dates disagree
+			// on read, record what the reply's date made it, so forgetting
+			// doesn't change it.
+			if ( $user_id && isset( $dated_by_reply[ $id ] ) ) {
+				$read_by_own_date = Daymark_Notification_State::is_read( $id, $dated_by_reply[ $id ], $read_before, $read, $unread );
+
+				if ( $item['read'] && ! $read_by_own_date ) {
+					$state->mark_read( $user_id, array( $id ) );
+					$read[ $id ] = true;
+				} elseif ( ! $item['read'] && $read_by_own_date && $has_watermark ) {
+					// Only after "Mark all as read". Before that, read means
+					// "from before the last visit", which moves on every
+					// visit: an unread row would keep this comment unread
+					// after everything from its time turned read.
+					$state->mark_unread( $user_id, array( $id ) );
+					$unread[ $id ] = true;
+				}
+			}
 
 			if ( null !== $seen_before ) {
 				$item['is_new'] = 'plugin_overlap' !== ( $item['type'] ?? '' )
@@ -426,9 +512,40 @@ class Daymark_Notifications {
 		$daymark_post_ids = $this->scoped_daymark_post_ids();
 
 		if ( ! empty( $daymark_post_ids ) ) {
-			$comments = $this->get_comments_for_posts( $daymark_post_ids, 1 );
+			// A comment that copies a reply Daymark found is dated when the
+			// reply was found (see get_notifications()): it's new when the
+			// reply was found after the last visit, whatever its own date.
+			$superseded   = Daymark_Comment_Replies::superseded( $user_id );
+			$dated_copies = array();
+			$found_since  = array();
 
-			if ( ! empty( $comments ) && strtotime( $comments[0]->comment_date_gmt . ' UTC' ) > $seen ) {
+			foreach ( $superseded as $copy_id => $link ) {
+				if ( $link['found'] <= 0 ) {
+					continue;
+				}
+
+				$dated_copies[ $copy_id ] = true;
+
+				if ( $link['found'] > $seen ) {
+					$found_since[] = (int) substr( $copy_id, strlen( 'comment-' ) );
+				}
+			}
+
+			if ( array() !== $found_since && array() !== $this->get_comments_for_posts( $daymark_post_ids, 1, $found_since ) ) {
+				return true;
+			}
+
+			// Every other comment by its own date, looking past those
+			// copies, at most one per copy.
+			foreach ( $this->get_comments_for_posts( $daymark_post_ids, count( $dated_copies ) + 1 ) as $comment ) {
+				if ( isset( $dated_copies[ 'comment-' . (int) $comment->comment_ID ] ) ) {
+					continue;
+				}
+
+				if ( (int) strtotime( $comment->comment_date_gmt . ' UTC' ) <= $seen ) {
+					break;
+				}
+
 				return true;
 			}
 		}
@@ -575,7 +692,7 @@ class Daymark_Notifications {
 		$query = new WP_Query(
 			array(
 				'post_type'      => 'post',
-				'post_status'    => array( 'publish', 'draft' ),
+				'post_status'    => self::LISTED_STATUSES,
 				'posts_per_page' => -1,
 				'fields'         => 'ids',
 				'no_found_rows'  => true,
@@ -595,28 +712,32 @@ class Daymark_Notifications {
 	/**
 	 * Get approved comments on the given posts, newest first.
 	 *
-	 * @param int[] $post_ids Mark post IDs.
-	 * @param int   $limit    Maximum comments to return.
+	 * @param int[] $post_ids    Mark post IDs.
+	 * @param int   $limit       Maximum comments to return.
+	 * @param int[] $comment_ids Only these comments, when given.
 	 * @return WP_Comment[]
 	 */
-	private function get_comments_for_posts( array $post_ids, int $limit = self::DEFAULT_LIMIT ): array {
-		$query = new WP_Comment_Query();
-
-		$comments = $query->query(
-			array(
-				'post__in' => $post_ids,
-				'status'   => 'approve',
-				// Replies, quote posts (a reblog with commentary, which the
-				// ActivityPub plugin stores as a `quote` comment), and the
-				// reactions federation plugins store as comments: likes,
-				// reposts, and mentions (Webmention `mention`, plus classic
-				// pingbacks and trackbacks). Each gets its own tab.
-				'type'     => self::COMMENT_TYPES,
-				'number'   => $limit,
-				'orderby'  => 'comment_date_gmt',
-				'order'    => 'DESC',
-			)
+	private function get_comments_for_posts( array $post_ids, int $limit = self::DEFAULT_LIMIT, array $comment_ids = array() ): array {
+		$args = array(
+			'post__in' => $post_ids,
+			'status'   => 'approve',
+			// Replies, quote posts (a reblog with commentary, which the
+			// ActivityPub plugin stores as a `quote` comment), and the
+			// reactions federation plugins store as comments: likes,
+			// reposts, and mentions (Webmention `mention`, plus classic
+			// pingbacks and trackbacks). Each gets its own tab.
+			'type'     => self::COMMENT_TYPES,
+			'number'   => $limit,
+			'orderby'  => 'comment_date_gmt',
+			'order'    => 'DESC',
 		);
+
+		if ( array() !== $comment_ids ) {
+			$args['comment__in'] = array_map( 'absint', $comment_ids );
+		}
+
+		$query    = new WP_Comment_Query();
+		$comments = $query->query( $args );
 
 		return is_array( $comments ) ? $comments : array();
 	}
@@ -745,6 +866,26 @@ class Daymark_Notifications {
 		}
 
 		return $this->reply_targets[ $post_id ];
+	}
+
+	/**
+	 * Whether Notifications lists comments on a Mark for someone: a Mark
+	 * with a listed status that they can edit.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param int $user_id User.
+	 * @param int $mark_id Mark post ID.
+	 * @return bool
+	 */
+	public static function lists_mark_for( int $user_id, int $mark_id ): bool {
+		$post = $mark_id > 0 ? get_post( $mark_id ) : null;
+
+		return $post instanceof WP_Post
+			&& 'post' === $post->post_type
+			&& in_array( $post->post_status, self::LISTED_STATUSES, true )
+			&& '1' === get_post_meta( $mark_id, '_daymark_is_mark', true )
+			&& user_can( $user_id, 'edit_post', $mark_id );
 	}
 
 	/**

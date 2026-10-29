@@ -96,6 +96,19 @@ class Test_Rest_Subscription_Post_Replies extends WP_UnitTestCase {
 			'<html><head><link rel="https://api.w.org/" href="https://origin.example/wp-json/"><link rel="alternate" type="application/json" href="https://origin.example/wp-json/wp/v2/posts/' . $remote . '"></head><body></body></html>',
 			'text/html; charset=UTF-8'
 		);
+		$this->mock_comments( $remote, $comments );
+
+		return $post_id;
+	}
+
+	/**
+	 * What the origin's comments API returns for a post.
+	 *
+	 * @param int                              $remote   Its post ID there.
+	 * @param array<int, array<string, mixed>> $comments The comments.
+	 * @return void
+	 */
+	private function mock_comments( int $remote, array $comments ): void {
 		$this->mock_response(
 			Daymark_Remote_Replies::comments_url(
 				'https://origin.example/wp-json/',
@@ -109,8 +122,6 @@ class Test_Rest_Subscription_Post_Replies extends WP_UnitTestCase {
 			),
 			(string) wp_json_encode( $comments )
 		);
-
-		return $post_id;
 	}
 
 	/**
@@ -240,5 +251,51 @@ class Test_Rest_Subscription_Post_Replies extends WP_UnitTestCase {
 		$this->assertSame( 200, $this->get_replies( $first )->get_status(), 'The first lookup fits the allowance' );
 		$this->assertSame( 200, $this->get_replies( $first )->get_status(), 'Asking again is served from cache, for free' );
 		$this->assertSame( 429, $this->get_replies( $second )->get_status(), 'A new lookup past the allowance is refused' );
+	}
+
+	/** Replies cached before you comment are dropped, so your comment shows on the next load. */
+	public function test_commenting_drops_the_cached_replies(): void {
+		wp_set_current_user( $this->user_id );
+
+		$permalink = 'https://origin.example/commented/';
+		$post_id   = $this->followed_wordpress_post(
+			$permalink,
+			59,
+			array( $this->comment( 20, 0, 'Bo', '2026-10-01T10:00:00' ) )
+		);
+
+		$this->assertSame( array( '20' ), wp_list_pluck( $this->get_replies( $post_id )->get_data()['replies'], 'id' ) );
+
+		// The site accepts the comment when Daymark sends it, and lists it.
+		$this->mock_comments(
+			59,
+			array(
+				$this->comment( 21, 0, 'You', '2026-10-01T11:00:00' ),
+				$this->comment( 20, 0, 'Bo', '2026-10-01T10:00:00' ),
+			)
+		);
+		$this->mock_response(
+			'https://origin.example/wp-json/wp/v2/comments',
+			(string) wp_json_encode(
+				array(
+					'id'     => 21,
+					'status' => 'approved',
+				)
+			)
+		);
+
+		$request = new WP_REST_Request( 'POST', "/daymark/v1/subscription-posts/{$post_id}/comment" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'text', 'Lovely post.' );
+		$sent = rest_do_request( $request );
+
+		$this->assertSame( 200, $sent->get_status() );
+		$this->assertSame( 'native', $sent->get_data()['method'] );
+		$this->assertSame( 'published', $sent->get_data()['status'] );
+
+		$replies = $this->get_replies( $post_id )->get_data()['replies'];
+
+		$this->assertSame( array( '20', '21' ), wp_list_pluck( $replies, 'id' ) );
+		$this->assertSame( array( false, true ), wp_list_pluck( $replies, 'is_own' ) );
 	}
 }

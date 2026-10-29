@@ -83,6 +83,28 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Mock a request that went out and got no answer, the way WordPress
+	 * reports a timeout.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_timeout( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 10001 milliseconds with 0 bytes received' );
+	}
+
+	/**
+	 * Mock a request this site's own settings won't send, the way
+	 * WordPress reports one WP_HTTP_BLOCK_EXTERNAL blocks.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_blocked( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'http_request_not_executed', 'User has blocked requests through HTTP to the URL: ' . $url . '.' );
+	}
+
+	/**
 	 * @param string $permalink Origin permalink.
 	 * @return int Subscription post ID.
 	 */
@@ -604,6 +626,108 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 		$this->mock_response( $bluesky, '<html><head></head><body></body></html>', 200, array( 'content-type' => 'text/html' ) );
 
 		$this->assertTrue( Daymark_Comment_Delivery::origin_signals_for_url( $bluesky )['bluesky'] );
+	}
+
+	/**
+	 * A page that loaded is remembered for the full hour; a page that
+	 * couldn't be loaded for a reason likely to pass (a server error, a
+	 * rate limit, a request timeout, or no answer) only for a minute, or
+	 * less when the filter asks for less, so a site that was briefly down
+	 * is looked at again soon.
+	 */
+	public function test_a_page_that_could_not_be_loaded_is_remembered_briefly(): void {
+		$loaded = 'https://origin.example/loaded/';
+		$this->mock_response( $loaded, '<html><head></head><body></body></html>', 200, array( 'content-type' => 'text/html' ) );
+
+		$signals = Daymark_Comment_Delivery::origin_signals_for_url( $loaded );
+		$this->assertTrue( $signals['reached'] );
+		$this->assertFalse( $signals['temporary'] );
+		$this->assertGreaterThanOrEqual( time() + 59 * MINUTE_IN_SECONDS, $this->signals_timeout( $loaded ) );
+
+		$down = 'https://origin.example/down/';
+		$this->mock_response( $down, 'Service Unavailable', 503 );
+
+		$busy = 'https://origin.example/busy/';
+		$this->mock_response( $busy, 'Too Many Requests', 429 );
+
+		$slow = 'https://origin.example/slow/';
+		$this->mock_response( $slow, 'Request Timeout', 408 );
+
+		$silent = 'https://origin.example/silent/';
+		$this->mock_timeout( $silent );
+
+		foreach ( array( $down, $busy, $slow, $silent ) as $permalink ) {
+			$signals = Daymark_Comment_Delivery::origin_signals_for_url( $permalink );
+			$this->assertFalse( $signals['reached'], $permalink );
+			$this->assertTrue( $signals['temporary'], $permalink );
+
+			$timeout = $this->signals_timeout( $permalink );
+			$this->assertGreaterThan( 0, $timeout, $permalink );
+			$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $timeout, $permalink );
+		}
+
+		$shorter = static function () {
+			return 30;
+		};
+		add_filter( 'daymark_subscription_comment_signals_cache_ttl', $shorter );
+		$brief = 'https://origin.example/brief/';
+		$this->mock_timeout( $brief );
+		Daymark_Comment_Delivery::origin_signals_for_url( $brief );
+		remove_filter( 'daymark_subscription_comment_signals_cache_ttl', $shorter );
+
+		$this->assertLessThanOrEqual( time() + 30, $this->signals_timeout( $brief ) );
+
+		// 0 means "never expires" to set_transient(); a failed page still
+		// gets its minute.
+		add_filter( 'daymark_subscription_comment_signals_cache_ttl', '__return_zero' );
+		$forever = 'https://origin.example/forever/';
+		$this->mock_timeout( $forever );
+		Daymark_Comment_Delivery::origin_signals_for_url( $forever );
+		remove_filter( 'daymark_subscription_comment_signals_cache_ttl', '__return_zero' );
+
+		$timeout = $this->signals_timeout( $forever );
+		$this->assertGreaterThan( 0, $timeout );
+		$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $timeout );
+	}
+
+	/**
+	 * A page that refuses Daymark's request (401, 403) or is gone (404,
+	 * 410) won't answer differently a minute later, and neither will a
+	 * request this site's own settings block. Each is remembered for the
+	 * full hour, like a page that loaded, so Like checks and Show replies
+	 * don't ask it again every minute.
+	 */
+	public function test_a_page_that_refuses_or_is_gone_is_remembered_for_the_full_time(): void {
+		$blocked = 'https://origin.example/blocked/';
+		$this->mock_blocked( $blocked );
+
+		$permalinks = array( $blocked );
+
+		foreach ( array( 401, 403, 404, 410 ) as $code ) {
+			$permalink = 'https://origin.example/refused-' . $code . '/';
+			$this->mock_response( $permalink, 'No', $code );
+
+			$permalinks[] = $permalink;
+		}
+
+		foreach ( $permalinks as $permalink ) {
+			$signals = Daymark_Comment_Delivery::origin_signals_for_url( $permalink );
+
+			$this->assertFalse( $signals['reached'], $permalink );
+			$this->assertFalse( $signals['temporary'], $permalink );
+			$this->assertGreaterThanOrEqual( time() + 59 * MINUTE_IN_SECONDS, $this->signals_timeout( $permalink ), $permalink );
+		}
+	}
+
+	/**
+	 * When a permalink's cached origin signals expire, as a Unix time (0
+	 * when they never expire or aren't cached).
+	 *
+	 * @param string $permalink Origin permalink.
+	 * @return int
+	 */
+	private function signals_timeout( string $permalink ): int {
+		return (int) get_option( '_transient_timeout_daymark_comment_sig_' . md5( $permalink ) );
 	}
 
 	/** An unsafe or non-http(s) URL is refused before any fetch. */

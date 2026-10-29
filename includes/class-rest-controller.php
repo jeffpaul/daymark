@@ -634,9 +634,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'callback'            => array( $this, 'create_subscription' ),
 					'permission_callback' => array( $this, 'permissions_check_manage' ),
 					'args'                => array(
+						// Checked as text before anything else runs: with
+						// its own sanitize callback, the type alone isn't
+						// enforced, and esc_url_raw() fails on a list.
 						'site_url' => array(
 							'type'              => 'string',
 							'required'          => true,
+							'validate_callback' => 'rest_validate_request_arg',
 							'sanitize_callback' => 'esc_url_raw',
 						),
 					),
@@ -660,10 +664,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'discover_subscription' ),
 				'permission_callback' => array( $this, 'permissions_check_manage' ),
 				'args'                => array(
+					// Trimmed only: sanitize_text_field() would delete the
+					// percent-encoding in a page address (a non-ASCII slug),
+					// and discovery checks the address itself.
 					'site_url' => array(
 						'type'              => 'string',
 						'required'          => true,
-						'sanitize_callback' => 'sanitize_text_field',
+						'validate_callback' => 'rest_validate_request_arg',
+						'sanitize_callback' => static function ( $value ) {
+							return is_string( $value ) ? trim( $value ) : '';
+						},
 					),
 				),
 			)
@@ -692,7 +702,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					// a different one since).
 					'site_url'   => array(
 						'type'              => 'string',
-						'sanitize_callback' => 'esc_url_raw',
+						'validate_callback' => 'rest_validate_request_arg',
+						'sanitize_callback' => static function ( $value ) {
+							return is_string( $value ) ? esc_url_raw( trim( $value ) ) : '';
+						},
 					),
 				),
 			)
@@ -4717,6 +4730,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
+		// Replies cached for this post from before the comment don't have
+		// it; the next Show replies asks the site again.
+		Daymark_Remote_Replies::forget( (string) get_post_meta( $id, 'permalink', true ) );
+
 		$method  = sanitize_key( (string) ( $result['method'] ?? '' ) );
 		$mark_id = absint( $result['mark_id'] ?? 0 );
 
@@ -4753,8 +4770,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * allowance for things you tap, only when the answer isn't cached.
 	 *
 	 * Each reply carries `is_own`: true for a comment Daymark sent for the
-	 * current user, matched by the ID the site gave it (never by the name
-	 * or address on the comment, which anyone could type).
+	 * current user, matched by its ID on the site: the one the site
+	 * returned, or for a Webmention the one Daymark found by this site's
+	 * address and the comment's own words (never the name or address
+	 * alone, which anyone could type).
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response|WP_Error

@@ -871,4 +871,31 @@ XML;
 		$request->set_param( 'site_url', $site_url );
 		$this->assertSame( 201, rest_do_request( $request )->get_status() );
 	}
+
+	/**
+	 * A site address sent as anything but text is refused as a bad request
+	 * on all three routes that take one, signed in or not, instead of
+	 * reaching esc_url_raw(), where a list is a PHP error (a 500).
+	 */
+	public function test_site_url_must_be_text(): void {
+		$routes = array(
+			'/daymark/v1/subscriptions',
+			'/daymark/v1/subscriptions/discover',
+			'/daymark/v1/subscriptions/follow',
+		);
+
+		foreach ( array( $this->admin_user, 0 ) as $user ) {
+			wp_set_current_user( $user );
+
+			foreach ( $routes as $route ) {
+				$request = $this->request( 'POST', $route );
+				$request->set_param( 'index', 0 );
+				$request->set_param( 'site_url', array( 'https://example.com/' ) );
+				$response = rest_do_request( $request );
+
+				$this->assertSame( 400, $response->get_status(), "{$route} as user {$user}" );
+				$this->assertSame( 'rest_invalid_param', $response->get_data()['code'], "{$route} as user {$user}" );
+			}
+		}
+	}
 }

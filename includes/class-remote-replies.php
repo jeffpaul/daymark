@@ -88,6 +88,14 @@ class Daymark_Remote_Replies {
 	private const CACHE_PREFIX = 'daymark_replies_';
 
 	/**
+	 * Transient key prefix for a permalink's cache generation: a random
+	 * token forget() replaces, which becomes part of the cache key.
+	 *
+	 * @var string
+	 */
+	private const GENERATION_PREFIX = 'daymark_replies_gen_';
+
+	/**
 	 * Maximum response size, in bytes. Filterable via
 	 * `daymark_remote_replies_max_bytes`.
 	 *
@@ -123,27 +131,21 @@ class Daymark_Remote_Replies {
 			return self::result( self::STATUS_UNSUPPORTED, '', '' );
 		}
 
-		$cached = self::cached( $permalink );
+		// The key is chosen before asking the site and kept: if a comment
+		// is sent while this lookup waits, forget() moves later lookups to
+		// a new key, and this list, from before the comment, is saved
+		// where nothing reads it.
+		$key    = self::cache_key( $permalink );
+		$cached = self::read_cache( $key );
 
 		if ( null !== $cached ) {
 			return $cached;
 		}
 
 		$result = self::load( $permalink );
+		$ttl    = self::STATUS_ERROR === $result['status'] ? MINUTE_IN_SECONDS : self::cache_ttl();
 
-		/**
-		 * Filters how long a followed post's replies are cached, in
-		 * seconds. A failed load is always cached for one minute only.
-		 *
-		 * @since 0.22.0
-		 *
-		 * @param int $seconds Cache lifetime. Default 10 minutes.
-		 */
-		$ttl = self::STATUS_ERROR === $result['status']
-			? MINUTE_IN_SECONDS
-			: max( MINUTE_IN_SECONDS, (int) apply_filters( 'daymark_remote_replies_cache_ttl', 10 * MINUTE_IN_SECONDS ) );
-
-		set_transient( self::cache_key( $permalink ), $result, $ttl );
+		set_transient( $key, $result, $ttl );
 
 		return $result;
 	}
@@ -162,9 +164,32 @@ class Daymark_Remote_Replies {
 			return null;
 		}
 
-		$cached = get_transient( self::cache_key( $permalink ) );
+		return self::read_cache( self::cache_key( $permalink ) );
+	}
 
-		return is_array( $cached ) && isset( $cached['status'], $cached['replies'] ) ? $cached : null;
+	/**
+	 * Drop a permalink's cached replies, so the next lookup asks the site
+	 * again. Called after Daymark sends a comment there, since the cached
+	 * list doesn't have it.
+	 *
+	 * It also starts a new cache generation, so a lookup that was already
+	 * waiting on the site (and so got the list from before the comment)
+	 * saves that list under the old key, where nothing reads it. The new
+	 * generation outlasts any list saved under the old key, or that key
+	 * would come back into use while the old list is still there.
+	 *
+	 * @param string $permalink The followed post's permalink.
+	 * @return void
+	 */
+	public static function forget( string $permalink ): void {
+		$permalink = esc_url_raw( trim( $permalink ) );
+
+		if ( '' === $permalink ) {
+			return;
+		}
+
+		delete_transient( self::cache_key( $permalink ) );
+		set_transient( self::generation_key( $permalink ), wp_generate_uuid4(), self::cache_ttl() + 5 * MINUTE_IN_SECONDS );
 	}
 
 	/**
@@ -495,6 +520,16 @@ class Daymark_Remote_Replies {
 	private static function load_wordpress( string $permalink ): array {
 		$signals = Daymark_Comment_Delivery::origin_signals_for_url( $permalink );
 
+		// The post's page couldn't be loaded for a reason likely to pass (no
+		// answer, a timeout, or an error such as a 503), so nothing is known
+		// about what the site shares: an error to try again soon, not
+		// "doesn't share its replies". A page that refused the request or is
+		// gone (a 403 or 404) falls through to unsupported below, with its
+		// link. Entries cached before `reached` existed don't carry it.
+		if ( ! is_wp_error( $signals ) && false === ( $signals['reached'] ?? true ) && ! empty( $signals['temporary'] ) ) {
+			return self::result( self::STATUS_ERROR, '', $permalink );
+		}
+
 		if ( is_wp_error( $signals ) || '' === (string) ( $signals['rest_root'] ?? '' ) || (int) ( $signals['post_id'] ?? 0 ) <= 0 ) {
 			return self::result( self::STATUS_UNSUPPORTED, '', $permalink );
 		}
@@ -798,12 +833,54 @@ class Daymark_Remote_Replies {
 	}
 
 	/**
-	 * Transient key for a permalink's cached result.
+	 * How long a loaded list is cached, in seconds.
+	 *
+	 * @return int
+	 */
+	private static function cache_ttl(): int {
+		/**
+		 * Filters how long a followed post's replies are cached, in
+		 * seconds. A failed load is always cached for one minute only.
+		 *
+		 * @since 0.22.0
+		 *
+		 * @param int $seconds Cache lifetime. Default 10 minutes.
+		 */
+		return max( MINUTE_IN_SECONDS, (int) apply_filters( 'daymark_remote_replies_cache_ttl', 10 * MINUTE_IN_SECONDS ) );
+	}
+
+	/**
+	 * A cached result, or null when the key holds none.
+	 *
+	 * @param string $key Transient key from cache_key().
+	 * @return array<string, mixed>|null
+	 */
+	private static function read_cache( string $key ): ?array {
+		$cached = get_transient( $key );
+
+		return is_array( $cached ) && isset( $cached['status'], $cached['replies'] ) ? $cached : null;
+	}
+
+	/**
+	 * Transient key for a permalink's cached result, in its current cache
+	 * generation.
 	 *
 	 * @param string $permalink Permalink.
 	 * @return string
 	 */
 	private static function cache_key( string $permalink ): string {
-		return self::CACHE_PREFIX . md5( $permalink );
+		$generation = get_transient( self::generation_key( $permalink ) );
+
+		return self::CACHE_PREFIX . md5( $permalink . ( is_string( $generation ) ? $generation : '' ) );
+	}
+
+	/**
+	 * Transient key for a permalink's cache generation.
+	 *
+	 * @param string $permalink Permalink.
+	 * @return string
+	 */
+	private static function generation_key( string $permalink ): string {
+		return self::GENERATION_PREFIX . md5( $permalink );
 	}
 }
