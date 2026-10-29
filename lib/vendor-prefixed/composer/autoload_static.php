@@ -4,7 +4,7 @@
 
 namespace Daymark\Vendor\Composer\Autoload;
 
-class ComposerStaticInit838d6fb96ee4e384b8765468ed1df805
+class ComposerStaticInit98c2fabd8fdef41d91165b6989bf577b
 {
     public static $files = array (
         'b3f939f90a50b246b160c613ceead0df' => __DIR__ . '/..' . '/symfony/deprecation-contracts/function.php',
@@ -715,9 +715,9 @@ class ComposerStaticInit838d6fb96ee4e384b8765468ed1df805
     public static function getInitializer(ClassLoader $loader)
     {
         return \Closure::bind(function () use ($loader) {
-            $loader->prefixLengthsPsr4 = ComposerStaticInit838d6fb96ee4e384b8765468ed1df805::$prefixLengthsPsr4;
-            $loader->prefixDirsPsr4 = ComposerStaticInit838d6fb96ee4e384b8765468ed1df805::$prefixDirsPsr4;
-            $loader->classMap = ComposerStaticInit838d6fb96ee4e384b8765468ed1df805::$classMap;
+            $loader->prefixLengthsPsr4 = ComposerStaticInit98c2fabd8fdef41d91165b6989bf577b::$prefixLengthsPsr4;
+            $loader->prefixDirsPsr4 = ComposerStaticInit98c2fabd8fdef41d91165b6989bf577b::$prefixDirsPsr4;
+            $loader->classMap = ComposerStaticInit98c2fabd8fdef41d91165b6989bf577b::$classMap;
 
         }, null, ClassLoader::class);
     }

@@ -294,6 +294,35 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Calls to these PHP functions are fine on a local path but would make
+	 * a request on a URL (PHP's stream wrappers), so each one must be a
+	 * known, reviewed call site. Keyed by file, then function, then how
+	 * many calls that file may make. Why each is local:
+	 *
+	 * - class-uploads.php: fopen() of a session's own lock and part files,
+	 *   and file_get_contents() of its own session record, all under the
+	 *   daymark-uploads folder with a random 32-hex name.
+	 * - class-routes.php: file_get_contents() of the plugin's own bundled
+	 *   service worker script.
+	 * - class-admin-subscriptions.php, class-rest-controller.php:
+	 *   file_get_contents() of an uploaded OPML file's PHP temp path
+	 *   (`$_FILES[…]['tmp_name']`), never a URL.
+	 *
+	 * Adding a call means adding it here, with the reason.
+	 *
+	 * @var array<string, array<string, int>>
+	 */
+	private const LOCAL_FILE_CALLS = array(
+		'class-uploads.php'             => array(
+			'fopen'             => 2,
+			'file_get_contents' => 1,
+		),
+		'class-routes.php'              => array( 'file_get_contents' => 1 ),
+		'class-admin-subscriptions.php' => array( 'file_get_contents' => 1 ),
+		'class-rest-controller.php'     => array( 'file_get_contents' => 1 ),
+	);
+
+	/**
 	 * Every raw HTTP call is either a `Daymark_Outbound_Guard::get()`/`post()`
 	 * (which do the work inside the guard themselves) or, for the library
 	 * calls that fetch on their own, sits lexically inside the argument list
@@ -303,7 +332,7 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	 * exactly this rule) is not a hit.
 	 */
 	public function test_no_call_site_bypasses_the_guard() {
-		$direct  = array(
+		$direct     = array(
 			'wp_safe_remote_get',
 			'wp_safe_remote_post',
 			'wp_safe_remote_request',
@@ -312,43 +341,158 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 			'wp_remote_post',
 			'wp_remote_head',
 			'wp_remote_request',
+			'wp_get_http_headers',
+			'_wp_http_get_object',
+			'media_sideload_image',
+			'stream_context_create',
 			'curl_init',
 			'curl_exec',
 			'fsockopen',
 			'stream_socket_client',
 		);
-		$wrapped = array( 'fetch_feed', 'wp_oembed_get', '_wp_oembed_get_object', 'download_url', 'get_remote_object' );
+		$wrapped    = array( 'fetch_feed', 'wp_oembed_get', '_wp_oembed_get_object', 'download_url', 'get_remote_object' );
+		$methods    = array( 'set_feed_url' );
+		$local_file = array( 'file_get_contents', 'fopen', 'copy', 'getimagesize', 'exif_read_data', 'simplexml_load_file' );
 
-		$root      = dirname( __DIR__ ) . '/includes';
-		$files     = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root, FilesystemIterator::SKIP_DOTS ) );
 		$offenders = array();
+		$counts    = array();
 
-		foreach ( $files as $file ) {
-			if ( 'php' !== $file->getExtension() || 'class-outbound-guard.php' === $file->getFilename() ) {
-				continue;
-			}
+		foreach ( $this->scanned_files() as $path ) {
+			$filename = basename( $path );
 
 			// A local source file, not a remote URL.
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			$tokens = token_get_all( (string) file_get_contents( $file->getPathname() ) );
+			$tokens = token_get_all( (string) file_get_contents( $path ) );
 			$ranges = $this->guarded_ranges( $tokens );
 
 			foreach ( $tokens as $index => $token ) {
-				if ( ! is_array( $token ) || T_STRING !== $token[0] ) {
+				$name = $this->token_name( $token );
+
+				if ( '' === $name ) {
 					continue;
 				}
 
-				$name = strtolower( $token[1] );
+				$where    = $filename . ':' . $token[2] . ' ' . $token[1];
+				$previous = $this->previous_token( $tokens, $index );
+				$next     = $this->next_token( $tokens, $index );
+				$member   = is_array( $previous ) && in_array( $previous[0], array( T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR, T_DOUBLE_COLON, T_FUNCTION ), true );
+
+				if ( 'wp_http' === $name && is_array( $previous ) && T_NEW === $previous[0] ) {
+					$offenders[] = $where . ' — use Daymark_Outbound_Guard::get()/post(), not WP_Http directly';
+					continue;
+				}
+
+				if ( in_array( $name, array( 'requests', 'wporg\\requests\\requests' ), true ) && is_array( $next ) && T_DOUBLE_COLON === $next[0] ) {
+					$offenders[] = $where . ' — use Daymark_Outbound_Guard::get()/post(), not Requests directly';
+					continue;
+				}
+
+				if ( '(' !== $next ) {
+					continue;
+				}
+
+				if ( in_array( $name, $methods, true ) ) {
+					if ( ! $this->inside_any_range( $index, $ranges ) ) {
+						$offenders[] = $where . '() — wrap this call in Daymark_Outbound_Guard::run()';
+					}
+					continue;
+				}
+
+				if ( $member ) {
+					continue;
+				}
 
 				if ( in_array( $name, $direct, true ) ) {
-					$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . '() — use Daymark_Outbound_Guard::get()/post()';
+					$offenders[] = $where . '() — use Daymark_Outbound_Guard::get()/post()';
 				} elseif ( in_array( $name, $wrapped, true ) && ! $this->inside_any_range( $index, $ranges ) ) {
-					$offenders[] = $file->getFilename() . ':' . $token[2] . ' ' . $token[1] . '() — wrap this call in Daymark_Outbound_Guard::run()';
+					$offenders[] = $where . '() — wrap this call in Daymark_Outbound_Guard::run()';
+				} elseif ( in_array( $name, $local_file, true ) ) {
+					$counts[ $filename ][ $name ] = ( $counts[ $filename ][ $name ] ?? 0 ) + 1;
+
+					if ( $counts[ $filename ][ $name ] > ( self::LOCAL_FILE_CALLS[ $filename ][ $name ] ?? 0 ) ) {
+						$offenders[] = $where . '() — not a known local-file call; add it to LOCAL_FILE_CALLS with the reason, or fetch URLs through Daymark_Outbound_Guard';
+					}
 				}
 			}
 		}
 
 		$this->assertSame( array(), $offenders );
+	}
+
+	/**
+	 * The PHP files the call-site scans read: includes/ (minus the guard
+	 * itself), templates/, and the main plugin file.
+	 *
+	 * @return string[]
+	 */
+	private function scanned_files(): array {
+		$root  = dirname( __DIR__ );
+		$paths = array( $root . '/daymark.php' );
+
+		foreach ( array( 'includes', 'templates' ) as $dir ) {
+			$files = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $root . '/' . $dir, FilesystemIterator::SKIP_DOTS ) );
+
+			foreach ( $files as $file ) {
+				if ( 'php' === $file->getExtension() && 'class-outbound-guard.php' !== $file->getFilename() ) {
+					$paths[] = $file->getPathname();
+				}
+			}
+		}
+
+		return $paths;
+	}
+
+	/**
+	 * Lowercased name of a name token (plain, qualified, or fully qualified,
+	 * without the leading backslash), or '' for any other token.
+	 *
+	 * @param mixed $token A token_get_all() entry.
+	 * @return string
+	 */
+	private function token_name( $token ): string {
+		$types = array_filter( array( T_STRING, defined( 'T_NAME_QUALIFIED' ) ? T_NAME_QUALIFIED : null, defined( 'T_NAME_FULLY_QUALIFIED' ) ? T_NAME_FULLY_QUALIFIED : null ) );
+
+		if ( ! is_array( $token ) || ! in_array( $token[0], $types, true ) ) {
+			return '';
+		}
+
+		return strtolower( ltrim( $token[1], '\\' ) );
+	}
+
+	/**
+	 * The nearest token before an index that isn't whitespace or a comment.
+	 *
+	 * @param array<int, mixed> $tokens Output of token_get_all().
+	 * @param int               $index  Token index.
+	 * @return mixed Token, or null.
+	 */
+	private function previous_token( array $tokens, int $index ) {
+		for ( $i = $index - 1; $i >= 0; $i-- ) {
+			if ( ! is_array( $tokens[ $i ] ) || ! in_array( $tokens[ $i ][0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				return $tokens[ $i ];
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * The nearest token after an index that isn't whitespace or a comment.
+	 *
+	 * @param array<int, mixed> $tokens Output of token_get_all().
+	 * @param int               $index  Token index.
+	 * @return mixed Token, or null.
+	 */
+	private function next_token( array $tokens, int $index ) {
+		$count = count( $tokens );
+
+		for ( $i = $index + 1; $i < $count; $i++ ) {
+			if ( ! is_array( $tokens[ $i ] ) || ! in_array( $tokens[ $i ][0], array( T_WHITESPACE, T_COMMENT, T_DOC_COMMENT ), true ) ) {
+				return $tokens[ $i ];
+			}
+		}
+
+		return null;
 	}
 
 	/**

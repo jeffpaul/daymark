@@ -440,10 +440,78 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
-/* "File under" category picker on the Publish screen — a secondary
-   grouping below the destinations, styled to match. */
-.daymark-publish-subhead {
-	margin-top: var(--daymark-spacing-lg);
+/* Categories and Tags on the Publish screen: folded sections below the
+   destinations (PublishScreen.foldMarkup()). Folded, the summary row
+   shows the current selection; tapping it opens the picker. */
+.daymark-publish-fold {
+	margin-block-start: var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+}
+
+.daymark-publish-fold__summary {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	min-height: var(--daymark-tap-min);
+	padding: var(--daymark-spacing-xs) var(--daymark-spacing-md);
+	list-style: none;
+	cursor: pointer;
+}
+
+.daymark-publish-fold__summary::-webkit-details-marker {
+	display: none;
+}
+
+/* Chevron at the trailing edge, turning when the section is open. */
+.daymark-publish-fold__summary::after {
+	content: "";
+	flex-shrink: 0;
+	width: 8px;
+	height: 8px;
+	margin-inline-start: auto;
+	border-inline-end: 2px solid var(--daymark-text-secondary);
+	border-block-end: 2px solid var(--daymark-text-secondary);
+	transform: rotate(45deg);
+	transition: transform 0.15s ease;
+}
+
+.daymark-publish-fold[open] > .daymark-publish-fold__summary::after {
+	transform: rotate(225deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-publish-fold__summary::after {
+		transition: none;
+	}
+}
+
+.daymark-publish-fold__label {
+	flex-shrink: 0;
+	font-size: 14px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-publish-fold__value {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: 14px;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-publish-fold__note {
+	font-size: 12px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-publish-fold__body {
+	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-md);
 }
 
 .daymark-publish-subnote {

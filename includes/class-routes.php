@@ -274,9 +274,16 @@ class Daymark_Routes {
 			// itself, matching the same "our own chrome, not the site's"
 			// reasoning icon_url()'s own header-chrome carve-out already
 			// established (see daymark_icon_url()'s docblock).
+			// The "any" icons are the rounded tile on a transparent canvas,
+			// right for a desktop install. The "maskable" ones are opaque and
+			// full bleed, with the glyph inside the safe zone, so Android can
+			// shape them like any other app icon instead of shrinking the
+			// tile onto a white plate.
 			'icons'            => array(
 				self::icon_descriptor( 192 ),
 				self::icon_descriptor( 512 ),
+				self::icon_descriptor( 192, 'maskable' ),
+				self::icon_descriptor( 512, 'maskable' ),
 			),
 			// Camera-first: a long-press on the installed home-screen icon
 			// jumps straight to the composer (CreateScreen renders fine cold
@@ -364,21 +371,66 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * The iPhone/iPad home-screen icon (apple-touch-icon): Daymark's own
+	 * icon, 180x180, square and fully opaque.
+	 *
+	 * Apple's iOS rounds the corners itself and wants an opaque image. The
+	 * bundled icon-192.png is a rounded tile with transparent corners and
+	 * margins, which iOS fills with black or, on newer versions, can drop
+	 * entirely and show a blank tile instead. apple-touch-icon.png is the same artwork
+	 * redrawn edge to edge by bin/build-app-icons.py.
+	 *
+	 * @return string
+	 */
+	public static function apple_touch_icon_url(): string {
+		return self::versioned_asset_url( 'apple-touch-icon.png' );
+	}
+
+	/**
 	 * A manifest icon descriptor at the given size — always Daymark's own
 	 * bundled icon (see build_manifest()'s own comment for why).
 	 *
-	 * @param int $size Square size in px.
+	 * @param int    $size    Square size in px.
+	 * @param string $purpose 'any' or 'maskable'.
 	 * @return array<string, string>
 	 */
-	private static function icon_descriptor( int $size ): array {
-		$url        = self::daymark_icon_url( $size );
-		$descriptor = array(
-			'src'   => $url,
-			'sizes' => $size . 'x' . $size,
-			'type'  => 'image/png',
-		);
+	private static function icon_descriptor( int $size, string $purpose = 'any' ): array {
+		if ( 'maskable' === $purpose ) {
+			$file = $size > 256 ? 'icon-maskable-512.png' : 'icon-maskable-192.png';
+		} else {
+			$file = basename( self::daymark_icon_url( $size ) );
+		}
 
-		return $descriptor;
+		return array(
+			'src'     => self::versioned_asset_url( $file ),
+			'sizes'   => $size . 'x' . $size,
+			'type'    => 'image/png',
+			'purpose' => $purpose,
+		);
+	}
+
+	/**
+	 * A bundled asset's URL with a short hash of its contents as `?ver=`.
+	 *
+	 * Phones keep a home-screen icon by its URL, so changing the artwork
+	 * would otherwise never reach anyone who already added Daymark, and a
+	 * phone that once got a bad response for an icon URL keeps showing it.
+	 * Hashing the file (rather than using the plugin version) changes the
+	 * URL only when the image itself changes, so Android doesn't re-check
+	 * the installed app's icon on every release.
+	 *
+	 * @param string $file File name under assets/.
+	 * @return string
+	 */
+	private static function versioned_asset_url( string $file ): string {
+		static $versions = array();
+
+		if ( ! isset( $versions[ $file ] ) ) {
+			$hash              = md5_file( DAYMARK_PLUGIN_DIR . 'assets/' . $file );
+			$versions[ $file ] = false === $hash ? DAYMARK_VERSION : substr( $hash, 0, 8 );
+		}
+
+		return add_query_arg( 'ver', $versions[ $file ], DAYMARK_PLUGIN_URL . 'assets/' . $file );
 	}
 
 	/**

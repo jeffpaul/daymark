@@ -484,6 +484,7 @@
 		transcriptEdited: false, // author typed/edited it: don't clobber on a later manual generation
 		tags: [],
 		tagsEdited: false, // author added/removed/accepted a tag themselves: never overwrite with a later quiet suggestion
+		tagsAutoSuggested: false, // the current tags came from the quiet AI suggestion, untouched since
 		// Quiet metadata capture (never user-visible, never blocks anything):
 		// set once per fresh composing session by maybeBeginQuietCapture().
 		capturedAt: null, // ISO 8601 string — "when this Mark was actually created"
@@ -1613,6 +1614,7 @@
 		state.transcriptEdited = false;
 		state.tags = [];
 		state.tagsEdited = false;
+		state.tagsAutoSuggested = false;
 		clearTimeout(quietTagsTimer);
 		quietTagsTimer = null;
 		state.capturedAt = null;
@@ -2517,6 +2519,9 @@
 			formData.append('media_order', JSON.stringify(mediaOrder));
 		}
 		payload.tags.forEach((tag) => formData.append('tags[]', tag));
+		// Says the tag list is complete, so an update replaces the Mark's
+		// tags (an empty list clears them) instead of only adding.
+		formData.append('tags_set', '1');
 		if (payload.capturedAt) {
 			formData.append('captured_at', payload.capturedAt);
 		}
@@ -3154,6 +3159,31 @@
 		});
 	}
 
+	// Shared-device safeguard: a push subscription belongs to the browser,
+	// not the WordPress session, so without this the next person signed in
+	// on this browser would keep getting the previous user's reply
+	// notifications. Before a deliberate Log out, forget this device's
+	// subscription on the site (while the nonce still works) and in the
+	// browser. Best-effort and time-limited like clearOfflineShellCache():
+	// never blocks the logout. A logout from wp-login.php can't do this,
+	// because the site can't tell which of a user's devices is logging out.
+	function unsubscribePushOnLogout() {
+		const work = (async () => {
+			const registration = await pushRegistration();
+			const sub = registration && registration.pushManager
+				? await registration.pushManager.getSubscription().catch(() => null)
+				: null;
+			if (!sub) {
+				return;
+			}
+			await Promise.all([
+				apiDelete('push/subscriptions?endpoint=' + encodeURIComponent(sub.endpoint)).catch(() => {}),
+				sub.unsubscribe().catch(() => {}),
+			]);
+		})().catch(() => {});
+		return Promise.race([work, new Promise((resolve) => setTimeout(resolve, 800))]);
+	}
+
 	// Loads a Mark that's still only queued locally (never reached the
 	// server) back into the composer — the offline counterpart to
 	// openDraft(), rehydrating picked media from the stored Blobs instead
@@ -3377,12 +3407,15 @@
 				return;
 			}
 			state.tags = tags;
+			state.tagsAutoSuggested = true;
 			// Keep the AI Assist sheet in sync if it happens to already be
 			// open, reusing its own render call rather than duplicating it.
 			if (AIAssistSheet.el && !AIAssistSheet.el.hidden) {
 				AIAssistSheet.tags = tags.slice();
 				AIAssistSheet.renderTags();
 			}
+			// Same for the Publish screen's Tags section.
+			PublishScreen.refreshTags();
 		} catch (err) {
 			// Best-effort and invisible — never surface an error here.
 		} finally {
@@ -3500,6 +3533,10 @@
 		state.placeNameEdited = false;
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
+		// Every save now replaces the draft's tags with this list, so it
+		// has to start from what the draft already has.
+		state.tags = Array.isArray(mark.tags) ? mark.tags.map((t) => String(t)) : [];
+		state.tagsAutoSuggested = false;
 		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : [];
 		state.primaryType = state.editing.type;
 		// No cached title to show for a resumed draft — the chip falls back
@@ -8757,7 +8794,7 @@
 				logout.addEventListener('click', (event) => {
 					event.preventDefault();
 					const href = logout.href;
-					clearOfflineShellCache().then(() => {
+					Promise.all([clearOfflineShellCache(), unsubscribePushOnLogout()]).then(() => {
 						window.location.href = href;
 					});
 				});
@@ -9982,6 +10019,146 @@
 		});
 	}
 
+	// --- Shared tag editor (AI Assist sheet and Publish screen) ---
+
+	// Chips with a remove button, an "Add a tag" field, and autocomplete
+	// from the site's existing tags. The markup and the behavior are shared
+	// so the two places a tag can be edited never drift apart.
+	function tagEditorMarkup(idPrefix, legend, hideLegend) {
+		return `
+			<fieldset class="daymark-tags">
+				<legend class="daymark-tags__legend${hideLegend ? ' daymark-visually-hidden' : ''}">${esc(legend)}</legend>
+				<ul class="daymark-tags__list" data-tag-list></ul>
+				<div class="daymark-tags__addrow">
+					<label class="daymark-visually-hidden" for="${idPrefix}-newtag">${esc(__('Add a tag', 'daymark'))}</label>
+					<input type="text" id="${idPrefix}-newtag" class="daymark-input" data-tag-input placeholder="${esc(
+						__('Add a tag', 'daymark')
+					)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="${idPrefix}-tag-suggest" />
+					<button type="button" class="daymark-btn daymark-btn--secondary" data-tag-add>${esc(
+						__('+ Add', 'daymark')
+					)}</button>
+				</div>
+				<ul class="daymark-tags__suggest" id="${idPrefix}-tag-suggest" data-tag-suggest hidden></ul>
+			</fieldset>`;
+	}
+
+	// Wires up markup from tagEditorMarkup(). getTags() returns the current
+	// list; setTags() receives the new one after an add or a remove.
+	// Returns render(), for redrawing after the list changes elsewhere
+	// (a quiet AI suggestion landing).
+	function bindTagEditor(container, { getTags, setTags, emptyText }) {
+		const list = container.querySelector('[data-tag-list]');
+		const input = container.querySelector('[data-tag-input]');
+		const suggestList = container.querySelector('[data-tag-suggest]');
+
+		const hideSuggestions = () => {
+			suggestList.hidden = true;
+			suggestList.innerHTML = '';
+			input.setAttribute('aria-expanded', 'false');
+		};
+
+		const render = () => {
+			const tags = getTags();
+			list.innerHTML = tags.length
+				? tags
+						.map(
+							(tag, index) => `
+						<li class="daymark-tags__chip">
+							<span>${esc(tag)}</span>
+							<button type="button" class="daymark-tags__remove" data-tag-remove="${index}" aria-label="${esc(
+								sprintf(
+									/* translators: %s: tag name */
+									__('Remove tag %s', 'daymark'),
+									tag
+								)
+							)}">&times;</button>
+						</li>`
+						)
+						.join('')
+				: '<li class="daymark-note-card__meta">' + esc(emptyText) + '</li>';
+			list.querySelectorAll('[data-tag-remove]').forEach((button) => {
+				button.addEventListener('click', () => {
+					const next = getTags().slice();
+					next.splice(Number(button.getAttribute('data-tag-remove')), 1);
+					setTags(next);
+					render();
+					input.focus();
+				});
+			});
+		};
+
+		const addTag = (value) => {
+			const tag = value.trim();
+			const tags = getTags();
+			if (tag && !tags.includes(tag)) {
+				setTags(tags.concat(tag));
+				render();
+			}
+			input.value = '';
+			input.focus();
+			hideSuggestions();
+		};
+
+		const showSuggestions = (results) => {
+			const tags = getTags();
+			const options = results.filter((tag) => tag && !tags.includes(tag.name));
+			if (!options.length) {
+				hideSuggestions();
+				return;
+			}
+			suggestList.innerHTML = options
+				.map(
+					(tag) =>
+						`<li><button type="button" class="daymark-tags__suggestitem" data-tag-suggest-pick="${esc(
+							tag.name
+						)}">${esc(tag.name)}</button></li>`
+				)
+				.join('');
+			suggestList.hidden = false;
+			input.setAttribute('aria-expanded', 'true');
+			suggestList.querySelectorAll('[data-tag-suggest-pick]').forEach((button) => {
+				button.addEventListener('mousedown', (event) => {
+					// mousedown (not click) fires before the input's blur handler.
+					event.preventDefault();
+					addTag(button.getAttribute('data-tag-suggest-pick'));
+				});
+			});
+		};
+
+		container.querySelector('[data-tag-add]').addEventListener('click', () => addTag(input.value));
+
+		// Existing-tag autocomplete: fewer characters typed when the site
+		// already has the tag, per the "minimal text entry" product
+		// principle — tap a suggestion instead of typing the full name.
+		const runTagSearch = debounce((query) => {
+			if (!query) {
+				hideSuggestions();
+				return;
+			}
+			apiGet('tags?search=' + encodeURIComponent(query))
+				.then((results) => showSuggestions(Array.isArray(results) ? results : []))
+				.catch(() => hideSuggestions());
+		}, 250);
+
+		input.addEventListener('input', () => runTagSearch(input.value.trim()));
+		input.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') {
+				hideSuggestions();
+			} else if (event.key === 'Enter') {
+				event.preventDefault();
+				addTag(input.value);
+			}
+		});
+		input.addEventListener('blur', () => {
+			// Let a suggestion tap register before the list disappears.
+			setTimeout(hideSuggestions, 150);
+		});
+		hideSuggestions();
+		render();
+
+		return { render };
+	}
+
 	// --- Overlay: AI Assist sheet ---
 
 	const AIAssistSheet = {
@@ -9992,6 +10169,7 @@
 		show(opener) {
 			this.opener = opener || null;
 			this.tags = state.tags.slice();
+			this.tagEditor = null;
 			if (!this.el) {
 				this.el = document.createElement('div');
 				this.el.className = 'daymark-sheet';
@@ -10098,20 +10276,7 @@
 					suggestions.caption || ''
 				)}</textarea>
 			</div>
-			<fieldset class="daymark-tags">
-				<legend class="daymark-tags__legend">${esc(__('Suggested tags', 'daymark'))}</legend>
-				<ul class="daymark-tags__list" data-tag-list></ul>
-				<div class="daymark-tags__addrow">
-					<label class="daymark-visually-hidden" for="daymark-ai-newtag">${esc(__('Add a tag', 'daymark'))}</label>
-					<input type="text" id="daymark-ai-newtag" class="daymark-input" placeholder="${esc(
-						__('Add a tag', 'daymark')
-					)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-tag-suggest" />
-					<button type="button" class="daymark-btn daymark-btn--secondary" data-tag-add>${esc(
-						__('+ Add', 'daymark')
-					)}</button>
-				</div>
-				<ul class="daymark-tags__suggest" id="daymark-tag-suggest" data-tag-suggest hidden></ul>
-			</fieldset>
+			${tagEditorMarkup('daymark-ai', __('Suggested tags', 'daymark'), false)}
 			<div class="daymark-sheet__actions">
 				<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-accept>${esc(
 					__('Accept All', 'daymark')
@@ -10123,51 +10288,13 @@
 		},
 
 		bindForm() {
-			this.renderTags();
-
-			const input = this.el.querySelector('#daymark-ai-newtag');
-			const suggestList = this.el.querySelector('[data-tag-suggest]');
-
-			const addTag = (value) => {
-				const tag = value.trim();
-				if (tag && !this.tags.includes(tag)) {
-					this.tags.push(tag);
-					this.renderTags();
-				}
-				input.value = '';
-				input.focus();
-				this.hideTagSuggestions();
-			};
-
-			this.el.querySelector('[data-tag-add]').addEventListener('click', () => addTag(input.value));
-
-			// Existing-tag autocomplete: fewer characters typed when the site
-			// already has the tag, per the "minimal text entry" product
-			// principle — tap a suggestion instead of typing the full name.
-			const runTagSearch = debounce((query) => {
-				if (!query) {
-					this.hideTagSuggestions();
-					return;
-				}
-				apiGet('tags?search=' + encodeURIComponent(query))
-					.then((results) => this.renderTagSuggestions(Array.isArray(results) ? results : [], addTag))
-					.catch(() => this.hideTagSuggestions());
-			}, 250);
-
-			input.addEventListener('input', () => runTagSearch(input.value.trim()));
-			input.addEventListener('keydown', (event) => {
-				if (event.key === 'Escape') {
-					this.hideTagSuggestions();
-				} else if (event.key === 'Enter') {
-					event.preventDefault();
-					addTag(input.value);
-				}
+			this.tagEditor = bindTagEditor(this.el.querySelector('.daymark-tags'), {
+				getTags: () => this.tags,
+				setTags: (tags) => {
+					this.tags = tags;
+				},
+				emptyText: __('No tags suggested.', 'daymark'),
 			});
-			input.addEventListener('blur', () => {
-				// Let a suggestion tap register before the list disappears.
-				setTimeout(() => this.hideTagSuggestions(), 150);
-			});
-			suggestList.hidden = true;
 
 			this.el.querySelector('[data-sheet-accept]').addEventListener('click', () => {
 				state.caption = this.el.querySelector('#daymark-ai-caption').value;
@@ -10175,6 +10302,7 @@
 				// An explicit user action, same as titleEdited/altEdited: never
 				// let a later quiet suggestion overwrite what was just accepted.
 				state.tagsEdited = true;
+				state.tagsAutoSuggested = false;
 				state.aiAssistUsed = true;
 				const captionField = document.getElementById('daymark-caption');
 				if (captionField) {
@@ -10188,74 +10316,8 @@
 		},
 
 		renderTags() {
-			const list = this.el.querySelector('[data-tag-list]');
-			if (!list) {
-				return;
-			}
-			list.innerHTML = this.tags.length
-				? this.tags
-						.map(
-							(tag, index) => `
-						<li class="daymark-tags__chip">
-							<span>${esc(tag)}</span>
-							<button type="button" class="daymark-tags__remove" data-tag-remove="${index}" aria-label="${esc(
-								sprintf(
-									/* translators: %s: tag name */
-									__('Remove tag %s', 'daymark'),
-									tag
-								)
-							)}">&times;</button>
-						</li>`
-						)
-						.join('')
-				: '<li class="daymark-note-card__meta">' + esc(__('No tags suggested.', 'daymark')) + '</li>';
-			list.querySelectorAll('[data-tag-remove]').forEach((button) => {
-				button.addEventListener('click', () => {
-					this.tags.splice(Number(button.getAttribute('data-tag-remove')), 1);
-					this.renderTags();
-				});
-			});
-		},
-
-		renderTagSuggestions(results, addTag) {
-			const list = this.el && this.el.querySelector('[data-tag-suggest]');
-			const input = this.el && this.el.querySelector('#daymark-ai-newtag');
-			if (!list || !input) {
-				return;
-			}
-			const options = results.filter((tag) => tag && !this.tags.includes(tag.name));
-			if (!options.length) {
-				this.hideTagSuggestions();
-				return;
-			}
-			list.innerHTML = options
-				.map(
-					(tag) =>
-						`<li><button type="button" class="daymark-tags__suggestitem" data-tag-suggest-pick="${esc(
-							tag.name
-						)}">${esc(tag.name)}</button></li>`
-				)
-				.join('');
-			list.hidden = false;
-			input.setAttribute('aria-expanded', 'true');
-			list.querySelectorAll('[data-tag-suggest-pick]').forEach((button) => {
-				button.addEventListener('mousedown', (event) => {
-					// mousedown (not click) fires before the input's blur handler.
-					event.preventDefault();
-					addTag(button.getAttribute('data-tag-suggest-pick'));
-				});
-			});
-		},
-
-		hideTagSuggestions() {
-			const list = this.el && this.el.querySelector('[data-tag-suggest]');
-			const input = this.el && this.el.querySelector('#daymark-ai-newtag');
-			if (list) {
-				list.hidden = true;
-				list.innerHTML = '';
-			}
-			if (input) {
-				input.setAttribute('aria-expanded', 'false');
+			if (this.tagEditor) {
+				this.tagEditor.render();
 			}
 		},
 
@@ -13082,6 +13144,7 @@
 					)}</p>`;
 				})()}
 				${this.renderCategories()}
+				${this.renderTagsFold()}
 			</section>
 			<footer class="daymark-actionbar">
 				<p class="daymark-status" data-publish-status aria-live="polite"></p>
@@ -13094,10 +13157,47 @@
 			</footer>`;
 		},
 
-		// "File under" category picker — the site-filing counterpart to
-		// destinations. Only shown when the site offers a real choice beyond
-		// its single default category (a lone "Uncategorized" is just the
-		// fallback and needs no toggle).
+		// Categories and Tags sit below the destinations as two folded
+		// sections. Folded, each shows only its current selection (the
+		// remembered or default categories, the AI-suggested or typed
+		// tags), so the common path stays one tap; unfolding lets the
+		// person change it.
+		foldMarkup(kind, label, value, body) {
+			return `
+				<details class="daymark-publish-fold" data-fold="${kind}">
+					<summary class="daymark-publish-fold__summary">
+						<span class="daymark-publish-fold__label">${esc(label)}</span>
+						<span class="daymark-publish-fold__value" data-fold-value="${kind}">${value}</span>
+					</summary>
+					<div class="daymark-publish-fold__body">${body}</div>
+				</details>`;
+		},
+
+		// The categories this Mark will be filed under, by name. With none
+		// picked, WordPress files it under the site's default category.
+		categorySummary() {
+			const names = siteCategories.filter((c) => state.categories.includes(c.id)).map((c) => c.name);
+			if (names.length) {
+				return esc(names.join(', '));
+			}
+			const fallback = siteCategories.find((c) => c.id === config.defaultCategory);
+			return fallback ? esc(fallback.name) : esc(__('None', 'daymark'));
+		},
+
+		tagSummary() {
+			if (!state.tags.length) {
+				return esc(__('None', 'daymark'));
+			}
+			const list = esc(state.tags.join(', '));
+			return state.tagsAutoSuggested
+				? `${list} <span class="daymark-publish-fold__note">${esc(__('Suggested by AI', 'daymark'))}</span>`
+				: list;
+		},
+
+		// Category picker — the site-filing counterpart to destinations.
+		// Only shown when the site offers a real choice beyond its single
+		// default category (a lone "Uncategorized" is just the fallback and
+		// needs no toggle).
 		renderCategories() {
 			const meaningful = siteCategories.filter((c) => c.id !== config.defaultCategory);
 			if (!meaningful.length) {
@@ -13130,14 +13230,42 @@
 				)
 				.join('');
 			const typeLabel = esc(TYPE_LABELS[state.primaryType] || __('these', 'daymark'));
-			return `
-				<h2 class="daymark-section-heading daymark-publish-subhead">${esc(__('File under', 'daymark'))}</h2>
-				<p class="daymark-publish-subnote">${sprintf(
+			return this.foldMarkup(
+				'categories',
+				__('Categories', 'daymark'),
+				this.categorySummary(),
+				`<p class="daymark-publish-subnote">${sprintf(
 					/* translators: %s: Mark type label (e.g. "Image") */
 					esc(__('Saved as the default for %s Marks — change it any time.', 'daymark')),
 					typeLabel
 				)}</p>
-				<ul class="daymark-destlist">${items}</ul>`;
+				<ul class="daymark-destlist">${items}</ul>`
+			);
+		},
+
+		renderTagsFold() {
+			return this.foldMarkup(
+				'tags',
+				__('Tags', 'daymark'),
+				this.tagSummary(),
+				tagEditorMarkup('daymark-publish', __('Tags', 'daymark'), true)
+			);
+		},
+
+		refreshFoldValue(kind) {
+			const value = root.querySelector(`[data-fold-value="${kind}"]`);
+			if (value) {
+				value.innerHTML = 'tags' === kind ? this.tagSummary() : this.categorySummary();
+			}
+		},
+
+		// Redraw the Tags section after the tags change somewhere else (a
+		// quiet AI suggestion landing while this screen is open).
+		refreshTags() {
+			if (this.tagEditor && root.querySelector('[data-fold="tags"]')) {
+				this.tagEditor.render();
+				this.refreshFoldValue('tags');
+			}
 		},
 
 		// Which of the current choices are a remembered choice that differs
@@ -13218,6 +13346,7 @@
 				root.querySelectorAll('[data-category]').forEach((input) => {
 					input.checked = state.categories.includes(Number(input.getAttribute('data-category')));
 				});
+				this.refreshFoldValue('categories');
 			}
 			this.refreshRememberedNote();
 			announce(__('Switched to the site defaults.', 'daymark'));
@@ -13254,10 +13383,27 @@
 					} else {
 						state.categories = state.categories.filter((c) => c !== id);
 					}
+					this.refreshFoldValue('categories');
 					this.refreshRememberedNote();
 					scheduleAutosave();
 				});
 			});
+
+			const tagFieldset = root.querySelector('[data-fold="tags"] .daymark-tags');
+			this.tagEditor = tagFieldset
+				? bindTagEditor(tagFieldset, {
+						getTags: () => state.tags,
+						setTags: (tags) => {
+							state.tags = tags;
+							// Hand-edited now: a later quiet suggestion must not replace it.
+							state.tagsEdited = true;
+							state.tagsAutoSuggested = false;
+							this.refreshFoldValue('tags');
+							scheduleAutosave();
+						},
+						emptyText: __('No tags yet.', 'daymark'),
+				  })
+				: null;
 
 			this.refreshRememberedNote();
 

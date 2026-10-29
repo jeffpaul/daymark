@@ -15,7 +15,7 @@ use Daymark\Vendor\SpomkyLabs\Pki\ASN1\Type\Primitive\BitString;
 
 /**
  * Class to handle a bit string as a field of flags.
- * @see \Daymark\Vendor\SpomkyLabs\Pki\Test\ASN1\Util\FlagsTest
+ * @see \SpomkyLabs\Pki\Test\ASN1\Util\FlagsTest
  */
 final class Flags
 {
