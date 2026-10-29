@@ -52,6 +52,10 @@
  * 7. The subscriptions table's "Select all" checkbox, and a confirmation
  *    before a bulk Unsubscribe. Without JavaScript the boxes are checked
  *    one by one and the bulk action runs as submitted. See bindBulkActions().
+ * 8. Per-row Favorite toggle forms submit via the REST favorite endpoint
+ *    (issue #531), updating that row's star icon, state, and tooltip in place
+ *    rather than reloading the whole page. Without JavaScript, falls back to
+ *    its plain admin-post.php submit. See bindFavoriteForms().
  */
 (function () {
 	'use strict';
@@ -60,6 +64,7 @@
 		bindNewSubscribeForm();
 		bindNewSubscribeNameEditor( document.getElementById( 'daymark-new-subscribe-root' ) );
 		bindRefreshForms();
+		bindFavoriteForms();
 		bindEditTitleDisclosures();
 		bindDiscoverSourcesForms();
 		bindReaderImportToggle();
@@ -531,6 +536,174 @@
 
 		errorEl.textContent = message;
 		errorEl.hidden = false;
+	}
+
+	/**
+	 * Wires every per-subscription Favorite form to toggle inline via the
+	 * REST API instead of a full admin-post.php POST-redirect-GET (behavior 8).
+	 *
+	 * @return void
+	 */
+	function bindFavoriteForms() {
+		var config = window.daymarkAdminSubscriptions;
+
+		if ( ! config ) {
+			return;
+		}
+
+		var forms = document.querySelectorAll( '.daymark-subscription-favorite-form' );
+
+		forms.forEach( function ( form ) {
+			form.addEventListener( 'submit', function ( event ) {
+				event.preventDefault();
+				toggleSubscriptionFavorite( form, config );
+			} );
+		} );
+	}
+
+	/**
+	 * Submit one Favorite toggle form via the REST favorite endpoint and
+	 * update the button icon, state, and label in place. A failure shows in
+	 * the form's own error element, like the Refresh form's.
+	 *
+	 * @param {HTMLFormElement} form   The Favorite form that was submitted.
+	 * @param {Object}          config Localized daymarkAdminSubscriptions config.
+	 * @return void
+	 */
+	function toggleSubscriptionFavorite( form, config ) {
+		var id = form.getAttribute( 'data-daymark-subscription-id' );
+		var button = form.querySelector( '.daymark-subscription-favorite-trigger' );
+		var icon = button ? button.querySelector( '.dashicons' ) : null;
+		var hiddenInput = form.querySelector( 'input[name="daymark_favorite"]' );
+		var errorEl = form.querySelector( '.daymark-subscription-favorite-error' );
+
+		if ( ! id || ! button || ! icon ) {
+			form.submit();
+			return;
+		}
+
+		if ( button.disabled ) {
+			return;
+		}
+
+		var nextFavorited = ! button.classList.contains( 'is-favorite' );
+
+		button.disabled = true;
+
+		if ( errorEl ) {
+			errorEl.hidden = true;
+			errorEl.textContent = '';
+		}
+
+		fetch( config.restUrl + encodeURIComponent( id ) + '/favorite', {
+			method: nextFavorited ? 'POST' : 'DELETE',
+			credentials: 'same-origin',
+			headers: { 'X-WP-Nonce': config.restNonce }
+		} )
+			.then( function ( response ) {
+				return response.json().catch( function () {
+					return null;
+				} ).then( function ( body ) {
+					return { ok: response.ok, body: body };
+				} );
+			} )
+			.then( function ( result ) {
+				if ( result.ok ) {
+					applyFavoriteState( form, button, icon, hiddenInput, nextFavorited, config );
+				} else {
+					showFavoriteError( errorEl, result.body && result.body.message ? result.body.message : config.i18n.genericError );
+				}
+			} )
+			.catch( function () {
+				showFavoriteError( errorEl, config.i18n.genericError );
+			} )
+			.then( function () {
+				button.disabled = false;
+			} );
+	}
+
+	/**
+	 * Show a Favorite toggle failure inside the row.
+	 *
+	 * @param {Element|null} errorEl The form's error element.
+	 * @param {string}       message Text to show.
+	 * @return void
+	 */
+	function showFavoriteError( errorEl, message ) {
+		if ( ! errorEl ) {
+			return;
+		}
+
+		errorEl.textContent = message;
+		errorEl.hidden = false;
+	}
+
+	/**
+	 * Update the star button's UI state, the Favorites view count, and, on
+	 * the Favorites view, drop a row that was just unstarred.
+	 *
+	 * @param {HTMLFormElement}   form        The Favorite form.
+	 * @param {HTMLButtonElement} button      The star trigger button.
+	 * @param {HTMLElement}       icon        The dashicon element inside the button.
+	 * @param {HTMLInputElement}  hiddenInput The hidden form input.
+	 * @param {boolean}           isFavorite  Whether it is favorited.
+	 * @param {Object}            config      Localized config.
+	 * @return void
+	 */
+	function applyFavoriteState( form, button, icon, hiddenInput, isFavorite, config ) {
+		var tooltip = isFavorite ? config.i18n.unstarFavorite : config.i18n.starFavorite;
+
+		button.classList.toggle( 'is-favorite', isFavorite );
+		icon.classList.toggle( 'dashicons-star-filled', isFavorite );
+		icon.classList.toggle( 'dashicons-star-empty', ! isFavorite );
+		button.setAttribute( 'aria-pressed', isFavorite ? 'true' : 'false' );
+		button.setAttribute( 'title', tooltip );
+		button.setAttribute( 'data-daymark-favorited', isFavorite ? '1' : '0' );
+
+		if ( hiddenInput ) {
+			hiddenInput.value = isFavorite ? '0' : '1';
+		}
+
+		var favLink = document.querySelector( '[data-daymark-favorites-count]' );
+
+		if ( favLink ) {
+			var count = parseInt( favLink.getAttribute( 'data-daymark-favorites-count' ), 10 ) || 0;
+			var newCount = isFavorite ? count + 1 : Math.max( 0, count - 1 );
+
+			favLink.setAttribute( 'data-daymark-favorites-count', String( newCount ) );
+			favLink.textContent = config.i18n.favoritesView.replace( '%d', String( newCount ) );
+		}
+
+		if ( ! isFavorite && 'favorites' === new URLSearchParams( window.location.search ).get( 'view' ) ) {
+			removeUnstarredRow( form, config );
+		}
+	}
+
+	/**
+	 * On the Favorites view, remove a row whose site was just unstarred, and
+	 * show the empty state when it was the last one.
+	 *
+	 * @param {HTMLFormElement} form   The Favorite form in that row.
+	 * @param {Object}          config Localized config.
+	 * @return void
+	 */
+	function removeUnstarredRow( form, config ) {
+		var row = form.closest( 'tr' );
+		var table = row ? row.closest( 'table' ) : null;
+
+		if ( ! row || ! table ) {
+			return;
+		}
+
+		row.parentNode.removeChild( row );
+
+		if ( table.querySelector( 'tbody tr' ) ) {
+			return;
+		}
+
+		var empty = document.createElement( 'p' );
+		empty.textContent = config.i18n.noFavorites;
+		table.parentNode.replaceChild( empty, table );
 	}
 
 	/**

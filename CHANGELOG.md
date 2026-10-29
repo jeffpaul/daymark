@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
+
 ### Changed
 
 - Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.
