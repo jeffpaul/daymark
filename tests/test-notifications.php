@@ -599,6 +599,148 @@ class Test_Notifications extends WP_UnitTestCase {
 		$this->assertFalse( $notifications->has_unread(), "Other authors don't inherit unread state" );
 	}
 
+	/**
+	 * A followed post, and a watch on the owner's comment there with one
+	 * reply Daymark found (issue #559).
+	 *
+	 * @param int $user_id  Commenter.
+	 * @param int $found_at When Daymark found the reply.
+	 * @return void
+	 */
+	private function found_reply( int $user_id, int $found_at ): void {
+		$sub_id = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'An origin post',
+			)
+		);
+		update_post_meta( $sub_id, 'permalink', 'https://origin.example/post/' );
+
+		$this->assertTrue(
+			Daymark_Comment_Replies::start_watch(
+				$user_id,
+				$sub_id,
+				array(
+					'root'    => 'https://origin.example/wp-json/',
+					'remote'  => 55,
+					'comment' => 9,
+					'text'    => 'Great post!',
+				)
+			)
+		);
+
+		$watch            = Daymark_Comment_Replies::get_watches( $user_id )[0];
+		$found            = $watch;
+		$found['seen']    = array( '12' );
+		$found['replies'] = array(
+			array(
+				'id'         => '12',
+				'author'     => 'Ana',
+				'author_url' => 'https://ana.example/',
+				'avatar'     => '',
+				'text'       => 'Thanks for reading!',
+				'url'        => 'https://origin.example/post/#comment-12',
+				'date'       => $found_at,
+				'found'      => $found_at,
+				'local'      => false,
+			),
+		);
+		update_user_meta( $user_id, Daymark_Comment_Replies::META, wp_slash( $found ), $watch );
+	}
+
+	/**
+	 * A reply Daymark found to your comment on a followed post is a
+	 * Comments item, and sets the unread flag until you look.
+	 */
+	public function test_reply_found_on_a_followed_site_is_a_comments_item() {
+		$user_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $user_id );
+		update_user_meta( $user_id, Daymark_Notifications::SEEN_META, time() - HOUR_IN_SECONDS );
+
+		$notifications = new Daymark_Notifications();
+		$this->assertFalse( $notifications->has_unread() );
+
+		$this->found_reply( $user_id, time() - 60 );
+
+		$this->assertTrue( $notifications->has_unread(), 'A newly found reply is unread' );
+
+		$items = $notifications->get_notifications();
+		$this->assertCount( 1, $items );
+		$this->assertSame( 'comment_reply', $items[0]['type'] );
+		$this->assertSame( 'comments', $items[0]['category'] );
+		$this->assertStringStartsWith( 'comment_reply-', $items[0]['id'] );
+		$this->assertTrue( Daymark_Notification_State::is_valid_id( $items[0]['id'] ) );
+		$this->assertFalse( $items[0]['read'] );
+		$this->assertSame( 'Ana', $items[0]['author'] );
+		$this->assertSame( 'An origin post', $items[0]['post_title'] );
+		$this->assertSame( 'Great post!', $items[0]['comment_excerpt'] );
+
+		$notifications->mark_seen();
+		$this->assertFalse( $notifications->has_unread(), 'Looking at Notifications clears it' );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->assertSame( array(), $notifications->get_notifications(), "Someone else's replies aren't yours" );
+	}
+
+	/**
+	 * A reply to a Mark that is your comment on a followed post names that
+	 * post, so it reads "replied to your comment on {post}". Any other
+	 * reply has no such target.
+	 */
+	public function test_reply_to_your_comment_mark_names_the_followed_post() {
+		$owner_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		wp_set_current_user( $owner_id );
+
+		$sub_id = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'An origin post',
+			)
+		);
+		update_post_meta( $sub_id, 'permalink', 'https://origin.example/post/' );
+
+		$comment_mark = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $comment_mark, '_daymark_is_mark', '1' );
+		update_post_meta( $comment_mark, '_daymark_primary_type', 'note' );
+		update_post_meta( $comment_mark, '_daymark_in_reply_to', 'https://origin.example/post/' );
+
+		$unfollowed = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $unfollowed, '_daymark_is_mark', '1' );
+		update_post_meta( $unfollowed, '_daymark_primary_type', 'note' );
+		update_post_meta( $unfollowed, '_daymark_in_reply_to', 'https://www.Elsewhere.example/a-post/' );
+
+		$plain_mark = self::factory()->post->create( array( 'post_author' => $owner_id ) );
+		update_post_meta( $plain_mark, '_daymark_is_mark', '1' );
+		update_post_meta( $plain_mark, '_daymark_primary_type', 'note' );
+
+		$to_comment    = self::factory()->comment->create( array( 'comment_post_ID' => $comment_mark ) );
+		$to_unfollowed = self::factory()->comment->create( array( 'comment_post_ID' => $unfollowed ) );
+		$to_plain      = self::factory()->comment->create( array( 'comment_post_ID' => $plain_mark ) );
+		$like          = self::factory()->comment->create(
+			array(
+				'comment_post_ID' => $comment_mark,
+				'comment_type'    => 'like',
+			)
+		);
+
+		$by_id = array_column( ( new Daymark_Notifications() )->get_notifications(), null, 'comment_ID' );
+
+		$this->assertSame(
+			array(
+				'title'                => 'An origin post',
+				'url'                  => 'https://origin.example/post/',
+				'subscription_post_id' => $sub_id,
+			),
+			$by_id[ $to_comment ]['reply_to']
+		);
+		$this->assertSame( 'elsewhere.example', $by_id[ $to_unfollowed ]['reply_to']['title'], "Not followed: the site's address" );
+		$this->assertSame( 0, $by_id[ $to_unfollowed ]['reply_to']['subscription_post_id'] );
+		$this->assertNull( $by_id[ $to_plain ]['reply_to'] );
+		$this->assertNull( $by_id[ $like ]['reply_to'], 'Only replies get one' );
+	}
+
 	/** Sync against a non-Mark post is a 404. */
 	public function test_sync_non_daymark_post_is_404() {
 		$normal_post   = self::factory()->post->create( array( 'post_type' => 'post' ) );

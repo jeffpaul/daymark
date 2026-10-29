@@ -95,6 +95,13 @@ class Daymark_Notifications {
 	);
 
 	/**
+	 * Results of reply_target() for one get_notifications() call, by Mark ID.
+	 *
+	 * @var array<int, array{title: string, url: string, subscription_post_id: int}|null>
+	 */
+	private array $reply_targets = array();
+
+	/**
 	 * Get notification items for the current user.
 	 *
 	 * Back-compat wrapper around get_notifications() (Phase 1 public API).
@@ -164,6 +171,8 @@ class Daymark_Notifications {
 		$user_id = get_current_user_id();
 		$state   = Daymark_Plugin::instance()->notification_state;
 
+		$this->reply_targets = array();
+
 		$archived = $state->ids( $user_id, Daymark_Notification_State::ARCHIVED_META );
 
 		// Archived comments are dropped after the query, so ask for enough
@@ -197,6 +206,12 @@ class Daymark_Notifications {
 
 		foreach ( $this->get_jetpack_likes( $daymark_post_ids ) as $like ) {
 			$dated_items[] = $like;
+		}
+
+		// Replies to your comments on followed posts, found by checking
+		// the original site (issue #559).
+		foreach ( Daymark_Comment_Replies::notification_items( $user_id ) as $reply ) {
+			$dated_items[] = $reply;
 		}
 
 		$with_issues = $this->get_subscriptions_with_issues();
@@ -298,6 +313,8 @@ class Daymark_Notifications {
 				return 'comment-' . absint( $item['comment_ID'] ?? 0 );
 			case 'jetpack_like':
 				return 'jetpack_like-' . absint( $item['post_id'] ?? 0 ) . '-' . sanitize_key( (string) ( $item['liker_id'] ?? '' ) );
+			case 'comment_reply':
+				return 'comment_reply-' . sanitize_key( (string) ( $item['reply_key'] ?? '' ) );
 			case 'dead_feed':
 			case 'feed_issue':
 				// Same ID whether still failing or fully dead, so archiving
@@ -325,6 +342,10 @@ class Daymark_Notifications {
 
 		if ( 'jetpack_like' === $type ) {
 			return 'likes';
+		}
+
+		if ( 'comment_reply' === $type ) {
+			return 'comments';
 		}
 
 		if ( 'comment' !== $type ) {
@@ -416,6 +437,10 @@ class Daymark_Notifications {
 			if ( $like['timestamp'] > $seen ) {
 				return true;
 			}
+		}
+
+		if ( Daymark_Comment_Replies::has_new_since( $user_id, $seen ) ) {
+			return true;
 		}
 
 		foreach ( $this->get_subscriptions_with_issues() as $subscription ) {
@@ -697,6 +722,59 @@ class Daymark_Notifications {
 			),
 			'post_url'              => esc_url_raw( (string) get_permalink( $post ) ),
 			'daymark_type'          => sanitize_key( (string) get_post_meta( $post->ID, '_daymark_primary_type', true ) ),
+			// Set when the Mark is your comment on a followed post, so a
+			// reply to it reads "replied to your comment on {that post}".
+			'reply_to'              => 'reply' === $kind ? $this->reply_target( (int) $post->ID ) : null,
+		);
+	}
+
+	/**
+	 * For a Mark that is your comment on someone else's post (it has
+	 * `_daymark_in_reply_to`), that post: its title (the followed post's,
+	 * else the site's address) and, when you follow the site, the followed
+	 * post to open. Null for any other Mark.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array{title: string, url: string, subscription_post_id: int}|null
+	 */
+	private function reply_target( int $post_id ): ?array {
+		if ( ! array_key_exists( $post_id, $this->reply_targets ) ) {
+			$this->reply_targets[ $post_id ] = self::find_reply_target( $post_id );
+		}
+
+		return $this->reply_targets[ $post_id ];
+	}
+
+	/**
+	 * Uncached reply_target(), also used for pushes.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return array{title: string, url: string, subscription_post_id: int}|null
+	 */
+	public static function find_reply_target( int $post_id ): ?array {
+		$url = esc_url_raw( (string) get_post_meta( $post_id, '_daymark_in_reply_to', true ) );
+
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$sub_id = Daymark_Bookmarklet::subscription_post_id( $url );
+		$title  = $sub_id > 0
+			? html_entity_decode( sanitize_text_field( get_the_title( $sub_id ) ), ENT_QUOTES, 'UTF-8' )
+			: '';
+
+		if ( '' === $title ) {
+			$title = (string) preg_replace( '/^www\./', '', strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) ) );
+		}
+
+		return array(
+			'title'                => $title,
+			'url'                  => $url,
+			'subscription_post_id' => $sub_id,
 		);
 	}
 

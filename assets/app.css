@@ -5000,3 +5000,205 @@ button.daymark-stat {
 	width: 100%;
 	min-height: var(--daymark-tap-min);
 }
+
+/* Replies from the original site, under a followed post in the full post
+   view (PostScreen.repliesSectionHtml(), app.js): a "Show replies" button,
+   then the conversation as nested lists, one level of indent per reply
+   depth. Read-only; each reply links to itself on the original site. */
+.daymark-thread {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+	padding-block-start: var(--daymark-spacing-md);
+	border-block-start: 1px solid var(--daymark-border);
+}
+
+.daymark-thread__heading {
+	margin: 0;
+}
+
+.daymark-thread__body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-thread__show svg {
+	width: 18px;
+	height: 18px;
+}
+
+.daymark-thread__note {
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-thread__body > .daymark-btn--text {
+	align-self: flex-start;
+	padding-inline: 0;
+}
+
+.daymark-thread__original {
+	display: inline-flex;
+	align-items: center;
+	align-self: flex-start;
+	min-height: var(--daymark-tap-min);
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.daymark-thread__list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-md);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.daymark-thread__list--nested {
+	margin-block-start: var(--daymark-spacing-md);
+	padding-inline-start: var(--daymark-spacing-md);
+	border-inline-start: 2px solid var(--daymark-border);
+}
+
+.daymark-thread__reply {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--daymark-spacing-sm);
+}
+
+/* A reply Daymark sent for you. */
+.daymark-thread__reply--own {
+	padding: var(--daymark-spacing-sm);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-thread__avatar {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	object-fit: cover;
+	background: var(--daymark-bg-subtle);
+}
+
+.daymark-thread__main {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: var(--daymark-spacing-xs);
+	min-width: 0;
+}
+
+.daymark-thread__byline {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	column-gap: var(--daymark-spacing-sm);
+	row-gap: 2px;
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-thread__author {
+	font-weight: 600;
+	color: var(--daymark-text-primary);
+	overflow-wrap: anywhere;
+}
+
+a.daymark-thread__author,
+a.daymark-thread__time {
+	text-decoration: none;
+}
+
+a.daymark-thread__author:hover,
+a.daymark-thread__time:hover {
+	text-decoration: underline;
+}
+
+.daymark-thread__handle {
+	overflow-wrap: anywhere;
+}
+
+.daymark-thread__time {
+	color: inherit;
+}
+
+.daymark-thread__content {
+	font-size: 15px;
+	line-height: 1.5;
+	color: var(--daymark-text-primary);
+	overflow-wrap: anywhere;
+}
+
+.daymark-thread__content > :first-child {
+	margin-block-start: 0;
+}
+
+.daymark-thread__content > :last-child {
+	margin-block-end: 0;
+}
+
+.daymark-thread__content p,
+.daymark-thread__content ul,
+.daymark-thread__content ol,
+.daymark-thread__content blockquote,
+.daymark-thread__content pre {
+	margin-block: 0 var(--daymark-spacing-sm);
+}
+
+.daymark-thread__content ul,
+.daymark-thread__content ol {
+	padding-inline-start: var(--daymark-spacing-lg);
+}
+
+.daymark-thread__content blockquote {
+	margin-inline: 0;
+	padding-inline-start: var(--daymark-spacing-sm);
+	border-inline-start: 3px solid var(--daymark-border);
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-thread__content pre {
+	overflow-x: auto;
+	white-space: pre-wrap;
+}
+
+/* A reply posted behind a content warning shows the warning first. */
+.daymark-thread__warning summary {
+	min-height: var(--daymark-tap-min);
+	padding-block: var(--daymark-spacing-xs);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.daymark-thread__media {
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+}
+
+/* Notifications: the start of your own comment, under a reply to it. */
+.daymark-notif__yours {
+	margin: 0;
+	padding-inline-start: var(--daymark-spacing-sm);
+	border-inline-start: 3px solid var(--daymark-border);
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+	overflow-wrap: anywhere;
+}
+
+/* A link that opens a followed post in Daymark anchors the bubble shown
+   if it can't (showFlashBubble(), app.js). */
+.daymark-notif [data-notif-subpost] {
+	position: relative;
+}
+
+.daymark-notif [data-notif-subpost][aria-busy='true'] {
+	opacity: 0.6;
+	cursor: progress;
+}

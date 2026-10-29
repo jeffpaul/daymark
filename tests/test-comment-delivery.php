@@ -212,6 +212,48 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 		$mark_id = (int) $result['mark_id'];
 		$this->assertSame( $permalink, get_post_meta( $mark_id, '_daymark_in_reply_to', true ) );
 		$this->assertStringContainsString( 'Great point!', (string) get_post_field( 'post_content', $mark_id ) );
+
+		// This page names no REST API, so there is nowhere to check for replies.
+		$this->assertFalse( $result['watching'] );
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( get_current_user_id() ) );
+	}
+
+	/**
+	 * A Webmention comment to a WordPress site is watched for replies too:
+	 * Daymark doesn't know its comment ID there yet, so it records the Mark
+	 * and looks the comment up on the first check.
+	 */
+	public function test_deliver_via_webmention_watches_a_wordpress_site_for_replies(): void {
+		$permalink = 'https://origin.example/webmention-wordpress-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="webmention" href="https://origin.example/webmention"><link rel="https://api.w.org/" href="https://origin.example/wp-json/"><link rel="alternate" type="application/json" href="https://origin.example/wp-json/wp/v2/posts/54"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+
+		$filter = $this->activate_fake_webmention_plugin();
+
+		try {
+			$result = Daymark_Comment_Delivery::deliver( $post_id, 'Great point!' );
+		} finally {
+			$this->deactivate_fake_webmention_plugin( $filter );
+		}
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'webmention', $result['method'] );
+		$this->assertTrue( $result['watching'] );
+		$this->assertStringEndsWith( 'Daymark will let you know when someone replies.', $result['message'] );
+
+		$watches = Daymark_Comment_Replies::get_watches( get_current_user_id() );
+		$this->assertCount( 1, $watches );
+		$this->assertSame( 'https://origin.example/wp-json/', $watches[0]['root'] );
+		$this->assertSame( 54, (int) $watches[0]['remote'] );
+		$this->assertSame( 0, (int) $watches[0]['comment'] );
+		$this->assertSame( (int) $result['mark_id'], (int) $watches[0]['mark'] );
+		$this->assertSame( 'Great point!', $watches[0]['excerpt'] );
 	}
 
 	/**
@@ -254,6 +296,49 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 			(int) $counts_before->publish + (int) $counts_before->draft,
 			(int) $counts_after->publish + (int) $counts_after->draft
 		);
+
+		// Daymark now checks that site for replies to comment 9.
+		$this->assertTrue( $result['watching'] );
+		$this->assertStringEndsWith( 'Daymark will let you know when someone replies.', $result['message'] );
+
+		$watches = Daymark_Comment_Replies::get_watches( get_current_user_id() );
+		$this->assertCount( 1, $watches );
+		$this->assertSame( $post_id, (int) $watches[0]['post'] );
+		$this->assertSame( 'https://origin.example/wp-json/', $watches[0]['root'] );
+		$this->assertSame( 55, (int) $watches[0]['remote'] );
+		$this->assertSame( 9, (int) $watches[0]['comment'] );
+		$this->assertSame( 0, (int) $watches[0]['mark'] );
+	}
+
+	/** Turning reply checks off leaves the message as it was. */
+	public function test_deliver_native_comment_without_reply_checks(): void {
+		$permalink = 'https://origin.example/unwatched-post/';
+		$post_id   = $this->create_subscription_post( $permalink );
+
+		$this->mock_response(
+			$permalink,
+			'<html><head><link rel="https://api.w.org/" href="https://origin.example/wp-json/"><link rel="alternate" type="application/json" href="https://origin.example/wp-json/wp/v2/posts/60"></head><body></body></html>',
+			200,
+			array( 'content-type' => 'text/html; charset=UTF-8' )
+		);
+		$this->mock_response(
+			'https://origin.example/wp-json/wp/v2/comments',
+			(string) wp_json_encode(
+				array(
+					'id'     => 11,
+					'status' => 'approved',
+				)
+			),
+			201
+		);
+		add_filter( 'daymark_watch_comment_replies', '__return_false' );
+
+		$result = Daymark_Comment_Delivery::deliver( $post_id, 'Thanks!' );
+
+		$this->assertIsArray( $result );
+		$this->assertFalse( $result['watching'] );
+		$this->assertSame( 'Your comment was posted directly to the original site.', $result['message'] );
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( get_current_user_id() ) );
 	}
 
 	/** A 'hold' status in the native response surfaces as the 'held' status. */
@@ -283,6 +368,7 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 
 		$this->assertIsArray( $result );
 		$this->assertSame( 'held', $result['status'] );
+		$this->assertSame( 'Your comment was sent and is awaiting moderation on the original site. Daymark will let you know when someone replies.', $result['message'] );
 	}
 
 	/** A rejected native comment surfaces the origin's own error message. */

@@ -85,6 +85,8 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opengraph.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-remote-replies.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-replies.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-delivery.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention-receiver.php';

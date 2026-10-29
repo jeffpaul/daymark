@@ -273,11 +273,80 @@ class Test_Notification_State extends WP_UnitTestCase {
 		$this->assertArrayHasKey( $id, $this->items() );
 	}
 
+	/**
+	 * A reply Daymark found to the owner's comment on a followed post
+	 * (issue #559).
+	 *
+	 * @return string The reply's item ID.
+	 */
+	private function found_reply(): string {
+		$sub_id = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'An origin post',
+			)
+		);
+		update_post_meta( $sub_id, 'permalink', 'https://origin.example/post/' );
+
+		Daymark_Comment_Replies::start_watch(
+			$this->user_id,
+			$sub_id,
+			array(
+				'root'    => 'https://origin.example/wp-json/',
+				'remote'  => 55,
+				'comment' => 9,
+			)
+		);
+
+		$watch            = Daymark_Comment_Replies::get_watches( $this->user_id )[0];
+		$found            = $watch;
+		$found['seen']    = array( '12' );
+		$found['replies'] = array(
+			array(
+				'id'         => '12',
+				'author'     => 'Ana',
+				'author_url' => 'https://ana.example/',
+				'avatar'     => '',
+				'text'       => 'Thanks!',
+				'url'        => 'https://origin.example/post/#comment-12',
+				'date'       => time() - 60,
+				'found'      => time() - 60,
+				'local'      => false,
+			),
+		);
+		update_user_meta( $this->user_id, Daymark_Comment_Replies::META, wp_slash( $found ), $watch );
+
+		return 'comment_reply-' . $watch['id'] . '-12';
+	}
+
+	/** A followed site's reply can be read and archived; its state goes when Daymark forgets it. */
+	public function test_followed_site_reply_state() {
+		$id = $this->found_reply();
+
+		$items = $this->items();
+		$this->assertArrayHasKey( $id, $items );
+		$this->assertSame( 'comments', $items[ $id ]['category'] );
+		$this->assertFalse( $items[ $id ]['read'] );
+
+		$this->assertSame( 200, $this->post( 'read', array( 'ids' => array( $id ) ) )->get_status() );
+		$this->assertTrue( $this->items()[ $id ]['read'] );
+
+		$this->assertSame( 200, $this->post( 'archive', array( 'ids' => array( $id ) ) )->get_status() );
+		$this->assertArrayNotHasKey( $id, $this->items() );
+
+		delete_user_meta( $this->user_id, Daymark_Comment_Replies::META );
+		$this->items();
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::READ_META, false ) );
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::ARCHIVED_META, false ) );
+	}
+
 	/** ID validation. */
 	public function test_is_valid_id() {
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'comment-12' ) );
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'jetpack_like-4-99887' ) );
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'plugin_overlap-post-kinds' ) );
+		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'comment_reply-0a1b2c3d4e5f-12' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'comment-' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'post-12' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'comment-1 OR 1=1' ) );

@@ -882,6 +882,23 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		register_rest_route(
 			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/replies',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_replies' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
 			'/subscription-posts/(?P<id>\d+)/like-availability',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -4681,8 +4698,52 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'message'  => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
 				'mark_id'  => $mark_id,
 				'delivery' => $delivery,
+				'watching' => ! empty( $result['watching'] ),
 			)
 		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/replies — the replies on a
+	 * followed post, read from its own site (issue #559): a WordPress
+	 * site's approved comments, or a Mastodon-family post's replies.
+	 * Read-only and loaded on tap; Daymark_Remote_Replies caches the answer
+	 * for a few minutes. Spends ACTION_SUBSCRIPTION_POST_OPEN, the
+	 * allowance for things you tap, only when the answer isn't cached.
+	 *
+	 * Each reply carries `is_own`: true for a comment Daymark sent for the
+	 * current user, matched by the ID the site gave it (never by the name
+	 * or address on the comment, which anyone could type).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_replies( WP_REST_Request $request ) {
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $id, 'permalink', true ) );
+
+		if ( null === Daymark_Remote_Replies::cached( $permalink ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		$result  = Daymark_Remote_Replies::for_permalink( $permalink );
+		$own_ids = Daymark_Remote_Replies::SOURCE_WORDPRESS === $result['source']
+			? Daymark_Comment_Replies::own_comment_ids( get_current_user_id(), $id, $permalink )
+			: array();
+
+		$result['replies'] = Daymark_Remote_Replies::mark_own( $result['replies'], $own_ids );
+
+		return rest_ensure_response( $result );
 	}
 
 	/**

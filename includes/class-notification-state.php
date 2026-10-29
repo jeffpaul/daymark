@@ -69,12 +69,14 @@ class Daymark_Notification_State {
 	public const MAX_IDS_PER_REQUEST = 100;
 
 	/**
-	 * Item types whose ID is not tied to a comment or like. Their state is
-	 * dropped once the item no longer exists (see prune()).
+	 * Item types whose ID is not tied to a comment or like on this site.
+	 * Their state is dropped once the item no longer exists (see prune()):
+	 * a reply found on a followed site goes once Daymark stops remembering
+	 * it (issue #559).
 	 *
 	 * @var string[]
 	 */
-	public const TRANSIENT_TYPES = array( 'feed_issue', 'feed_issues', 'plugin_overlap' );
+	public const TRANSIENT_TYPES = array( 'comment_reply', 'feed_issue', 'feed_issues', 'plugin_overlap' );
 
 	/**
 	 * Hook comment cleanup.
@@ -92,7 +94,7 @@ class Daymark_Notification_State {
 	 * @return bool
 	 */
 	public static function is_valid_id( string $id ): bool {
-		return 1 === preg_match( '/^(comment|jetpack_like|feed_issue|feed_issues|plugin_overlap)-[a-z0-9_-]{1,120}$/', $id );
+		return 1 === preg_match( '/^(comment|comment_reply|jetpack_like|feed_issue|feed_issues|plugin_overlap)-[a-z0-9_-]{1,120}$/', $id );
 	}
 
 	/**
@@ -272,9 +274,10 @@ class Daymark_Notification_State {
 	}
 
 	/**
-	 * Drop stored state for subscription-issue and plugin-overlap IDs that
-	 * no longer match a current item, so a site that recovers and fails
-	 * again later, or a plugin turned back on, shows up again.
+	 * Drop stored state for subscription-issue, plugin-overlap, and
+	 * followed-site reply IDs that no longer match a current item, so a
+	 * site that recovers and fails again later, or a plugin turned back
+	 * on, shows up again, and old replies leave no rows behind.
 	 *
 	 * @param int      $user_id     User ID.
 	 * @param string[] $current_ids Every current item ID, archived included.

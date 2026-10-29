@@ -12433,6 +12433,7 @@
 					${renderCardTimestampRow(item, siteLabel)}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
+				${isMark ? '' : this.repliesSectionHtml()}
 				<div class="daymark-postview-footer" role="toolbar" aria-label="${esc(__('Post actions', 'daymark'))}">
 					<div class="daymark-postview-footer__bar">${stats}</div>
 					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
@@ -12457,6 +12458,14 @@
 			root.querySelectorAll('.daymark-postview-meta, .daymark-postview-footer').forEach((el) =>
 				el.addEventListener('click', (event) => onFeedListClick(this, event))
 			);
+			const thread = root.querySelector('[data-thread]');
+			if (thread) {
+				thread.addEventListener('click', (event) => {
+					if (event.target.closest('[data-thread-show], [data-thread-retry]')) {
+						this.loadReplies();
+					}
+				});
+			}
 			bindDismissible(this, [itemMenusDismissEntry()]);
 		},
 
@@ -12565,6 +12574,12 @@
 			teardownLikeAvailabilityObserver(this);
 			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
 			this.prefetch();
+			// Opened from a notification or push about a reply: load the
+			// replies alongside the post. Replies already loaded this
+			// session show again straight away.
+			if ('sub' === this.view.kind && (this.view.showReplies || this.view.item._replies)) {
+				this.loadReplies();
+			}
 			await this.load(false);
 		},
 
@@ -12573,7 +12588,12 @@
 		// failure here is silent; tapping Next tries again.
 		prefetch() {
 			const view = this.view;
-			if (!view || postViewNeighbor(view.list.items, view.item, 1) || !postViewHasMore(view.list)) {
+			if (
+				!view ||
+				!view.list ||
+				postViewNeighbor(view.list.items, view.item, 1) ||
+				!postViewHasMore(view.list)
+			) {
 				return;
 			}
 			loadMorePostViewList(view.list).catch(() => {});
@@ -12702,6 +12722,235 @@
 					played.catch(() => {});
 				}
 			}
+		},
+
+		// Replies (issue #559): a followed post's comments, read from the
+		// original site when the reader asks for them. That's a WordPress
+		// site's own comments, or the replies to a fediverse post. Nothing
+		// is fetched until "Show replies" is tapped, or the reader came from
+		// a notification or push about a reply, which loads them at once.
+		// The answer is kept on the item, so coming back to this post in the
+		// same session shows it again without asking the site twice.
+		repliesSectionHtml() {
+			return `<section class="daymark-thread" data-thread aria-labelledby="daymark-thread-heading">
+				<h2 class="daymark-section-heading daymark-thread__heading" id="daymark-thread-heading">${esc(
+					__('Replies', 'daymark')
+				)}</h2>
+				<div class="daymark-thread__body" data-thread-body>
+					<button type="button" class="daymark-btn daymark-btn--secondary daymark-thread__show" data-thread-show>${statIcon(
+						COMMENT_GLYPH
+					)}<span>${esc(__('Show replies', 'daymark'))}</span></button>
+					<p class="daymark-thread__note">${esc(__('Loads the replies from the original site.', 'daymark'))}</p>
+				</div>
+			</section>`;
+		},
+
+		async loadReplies() {
+			const item = this.view && this.view.item;
+			const body = root.querySelector('[data-thread-body]');
+			if (!item || !item.id || !body) {
+				return;
+			}
+			if (item._replies) {
+				body.innerHTML = this.repliesHtml(item._replies, item);
+				return;
+			}
+			if (!navigator.onLine) {
+				body.innerHTML = this.repliesErrorHtml(__("You're offline. Replies need a connection.", 'daymark'));
+				return;
+			}
+			body.setAttribute('aria-busy', 'true');
+			body.innerHTML = `<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ${esc(
+				__('Loading replies…', 'daymark')
+			)}</p>`;
+			// One request per post at a time, kept here rather than on the
+			// item (items are stored in IndexedDB with a bookmark, which
+			// can't hold a promise). Stepping away and back while it runs
+			// waits for the same request.
+			this._repliesRequests = this._repliesRequests || new Map();
+			const key = String(item.id);
+			let request = this._repliesRequests.get(key);
+			if (!request) {
+				request = apiGet('subscription-posts/' + item.id + '/replies');
+				this._repliesRequests.set(key, request);
+				request.then(
+					() => this._repliesRequests.delete(key),
+					() => this._repliesRequests.delete(key)
+				);
+			}
+			let html = '';
+			let message = '';
+			try {
+				const result = await request;
+				if (!result || 'error' === result.status) {
+					message = __("The original site didn't answer. Try again in a minute.", 'daymark');
+					html = this.repliesErrorHtml(message);
+				} else {
+					item._replies = result;
+					html = this.repliesHtml(result, item);
+					message = this.repliesSummary(result);
+				}
+			} catch (err) {
+				message =
+					err && 429 === err.status
+						? __("You've opened a lot of posts recently. Try again in a few minutes.", 'daymark')
+						: __("Couldn't load the replies.", 'daymark');
+				html = this.repliesErrorHtml(message);
+			}
+			// Fill whichever copy of this post's screen is showing now; the
+			// reader may have stepped to another post meanwhile.
+			const current = root.querySelector('[data-thread-body]');
+			if (!current || !this.view || this.view.item !== item) {
+				return;
+			}
+			current.removeAttribute('aria-busy');
+			current.innerHTML = html;
+			announce(message);
+		},
+
+		// What a screen reader hears once the replies have loaded.
+		repliesSummary(result) {
+			const count = Array.isArray(result.replies) ? result.replies.length : 0;
+			if ('unsupported' === result.status) {
+				return __("This site doesn't share its replies with Daymark.", 'daymark');
+			}
+			if (!count) {
+				return __('No replies yet.', 'daymark');
+			}
+			return sprintf(
+				/* translators: %d: number of replies shown */
+				_n('%d reply', '%d replies', count, 'daymark'),
+				count
+			);
+		},
+
+		repliesErrorHtml(message) {
+			return `<p class="daymark-thread__note">${esc(
+				message
+			)}</p><button type="button" class="daymark-btn daymark-btn--text" data-thread-retry>${esc(
+				__('Try again', 'daymark')
+			)}</button>`;
+		},
+
+		repliesHtml(result, item) {
+			const replies = Array.isArray(result.replies) ? result.replies : [];
+			const url = result.url || item.permalink || '';
+			const original = url
+				? `<a class="daymark-thread__original" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(
+						__('See replies on the original site', 'daymark')
+				  )}</a>`
+				: '';
+			if ('unsupported' === result.status || !replies.length) {
+				return `<p class="daymark-thread__note">${esc(this.repliesSummary(result))}</p>${original}`;
+			}
+			const total = Math.max(Number(result.total) || 0, replies.length);
+			const more =
+				total > replies.length
+					? `<p class="daymark-thread__note">${esc(
+							sprintf(
+								/* translators: 1: number of replies shown, 2: number of replies the original site has */
+								_n('Showing %1$d of %2$d reply.', 'Showing %1$d of %2$d replies.', total, 'daymark'),
+								replies.length,
+								total
+							)
+					  )}</p>`
+					: '';
+			return this.threadListHtml(replies) + more + original;
+		},
+
+		// Replies arrive in reading order with a depth (0 to 3); a reply one
+		// level deeper than the one before it opens a list inside that one,
+		// so a conversation reads as nested lists.
+		threadListHtml(replies) {
+			let html = '<ol class="daymark-thread__list">';
+			let current = 0;
+			replies.forEach((reply, index) => {
+				let depth = Math.min(Math.max(Number(reply.depth) || 0, 0), 3);
+				if (0 === index) {
+					depth = 0;
+				} else if (depth > current + 1) {
+					depth = current + 1;
+				}
+				if (index > 0) {
+					if (depth === current + 1) {
+						html += '<ol class="daymark-thread__list daymark-thread__list--nested">';
+					} else {
+						html += '</li>';
+						for (let level = current; level > depth; level--) {
+							html += '</ol></li>';
+						}
+					}
+				}
+				html += '<li class="daymark-thread__item">' + this.replyHtml(reply);
+				current = depth;
+			});
+			html += '</li>';
+			for (let level = current; level > 0; level--) {
+				html += '</ol></li>';
+			}
+			return html + '</ol>';
+		},
+
+		// One reply. Its text is HTML the server already reduced to a few
+		// plain tags (paragraphs, links, emphasis, lists, quotes, code),
+		// with every link opening in a new tab; it's cleaned once more here
+		// like any other site's HTML. "You" marks a reply Daymark sent for
+		// this reader, matched by the comment ID Daymark recorded when it
+		// sent it, never by name.
+		replyHtml(reply) {
+			const name = reply.author_name || reply.handle || __('Someone', 'daymark');
+			const nameHtml = reply.author_url
+				? `<a class="daymark-thread__author" href="${esc(
+						reply.author_url
+				  )}" target="_blank" rel="nofollow noopener noreferrer ugc">${esc(name)}</a>`
+				: `<span class="daymark-thread__author">${esc(name)}</span>`;
+			const avatar = reply.avatar
+				? `<img class="daymark-thread__avatar" src="${esc(
+						reply.avatar
+				  )}" alt="" width="32" height="32" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+				: '<span class="daymark-thread__avatar daymark-thread__avatar--empty" aria-hidden="true"></span>';
+			const own = reply.is_own ? `<span class="daymark-chip daymark-thread__you">${esc(__('You', 'daymark'))}</span>` : '';
+			const handle =
+				reply.handle && reply.author_name ? `<span class="daymark-thread__handle">${esc(reply.handle)}</span>` : '';
+			const when = renderCardTimestamp(reply.date);
+			const time = when
+				? reply.url
+					? `<a class="daymark-thread__time" href="${esc(
+							reply.url
+					  )}" target="_blank" rel="nofollow noopener noreferrer ugc">${when}</a>`
+					: `<span class="daymark-thread__time">${when}</span>`
+				: '';
+			const content = `<div class="daymark-thread__content">${stripUntrustedPresentation(
+				String(reply.content || '')
+			)}</div>`;
+			const media = Number(reply.media_count) || 0;
+			return `<article class="daymark-thread__reply${reply.is_own ? ' daymark-thread__reply--own' : ''}">
+				${avatar}
+				<div class="daymark-thread__main">
+					<p class="daymark-thread__byline">${nameHtml}${own}${handle}${time}</p>
+					${
+						reply.warning
+							? `<details class="daymark-thread__warning"><summary>${esc(reply.warning)}</summary>${content}</details>`
+							: content
+					}
+					${
+						media
+							? `<p class="daymark-thread__media">${esc(
+									sprintf(
+										/* translators: %d: number of photos or videos attached to a reply */
+										_n(
+											"%d photo or video isn't shown here.",
+											"%d photos or videos aren't shown here.",
+											media,
+											'daymark'
+										),
+										media
+									)
+							  )}</p>`
+							: ''
+					}
+				</div>
+			</article>`;
 		},
 
 		// Best-effort link preview of a link-kind subscription post's own
@@ -13849,6 +14098,9 @@
 		if ('comment' === item.type) {
 			return item.comment_kind || 'reply';
 		}
+		if ('comment_reply' === item.type) {
+			return 'reply';
+		}
 		return 'site';
 	}
 
@@ -14276,13 +14528,22 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
+			if ('comment_reply' === item.type) {
+				return this.renderCommentReplyItem(item);
+			}
 
 			const kind = notificationKind(item);
 			const name = item.comment_author || item.author || __('Someone', 'daymark');
-			const title = item.post_title || __('(untitled Mark)', 'daymark');
-			const titleHtml = item.post_url
+			// A reply to your comment on a followed post (your comment is the
+			// Mark it arrived on): name that post, not the comment's Mark.
+			const replyTo = 'reply' === kind && item.reply_to && item.reply_to.url ? item.reply_to : null;
+			const title = replyTo ? replyTo.title : item.post_title || __('(untitled Mark)', 'daymark');
+			let titleHtml = item.post_url
 				? `<a href="${esc(item.post_url)}" data-notif-open>${esc(title)}</a>`
 				: `<strong>${esc(title)}</strong>`;
+			if (replyTo) {
+				titleHtml = this.followedPostLink(replyTo.url, replyTo.subscription_post_id, title);
+			}
 			const formats = {
 				/* translators: 1: person's name, 2: Mark title */
 				reply: __('%1$s commented on %2$s', 'daymark'),
@@ -14295,7 +14556,16 @@
 				/* translators: 1: person's name, 2: Mark title */
 				mention: __('%1$s mentioned %2$s', 'daymark'),
 			};
-			const summary = sprintf(esc(formats[kind] || formats.reply), `<strong>${esc(name)}</strong>`, titleHtml);
+			const summary = sprintf(
+				esc(
+					replyTo
+						? /* translators: 1: person's name, 2: title of the post you commented on */
+						  __('%1$s replied to your comment on %2$s', 'daymark')
+						: formats[kind] || formats.reply
+				),
+				`<strong>${esc(name)}</strong>`,
+				titleHtml
+			);
 
 			// Replies, quotes, and mentions carry text worth showing; a like
 			// or repost usually carries none (or a stock "liked this").
@@ -14331,6 +14601,7 @@
 						  )}</a>`
 						: ''
 				}
+				${replyTo ? this.seeRepliesLink(replyTo.url, replyTo.subscription_post_id) : ''}
 				${
 					canReply
 						? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> ${esc(
@@ -14359,6 +14630,109 @@
 				: '';
 
 			return this.renderShell(item, { figure: this.renderFigure(item), body, links, after });
+		},
+
+		// A reply to a comment you sent to a followed post, found by checking
+		// the original site (issue #559). Read-only: answering happens on
+		// that site, or by commenting again from the post's replies.
+		renderCommentReplyItem(item) {
+			const name = item.author || __('Someone', 'daymark');
+			const title = item.post_title || item.site || __('a post you follow', 'daymark');
+			const summary = sprintf(
+				esc(
+					/* translators: 1: person's name, 2: title of the post you commented on */
+					__('%1$s replied to your comment on %2$s', 'daymark')
+				),
+				`<strong>${esc(name)}</strong>`,
+				this.followedPostLink(item.post_url, item.subscription_post_id, title)
+			);
+			const text = String(item.content || '');
+			const body = `
+				<p class="daymark-notif__summary">${summary}</p>
+				${text ? `<p class="daymark-note-card__text daymark-clamp">${esc(text)}</p>` : ''}
+				${
+					text.length > 140
+						? '<button type="button" class="daymark-note-card__showmore" data-showmore aria-expanded="false">' +
+						  esc(__('Show more', 'daymark')) +
+						  '</button>'
+						: ''
+				}
+				${
+					item.comment_excerpt
+						? `<p class="daymark-notif__yours">${esc(
+								sprintf(
+									/* translators: %s: the start of the comment you sent */
+									__('Your comment: %s', 'daymark'),
+									item.comment_excerpt
+								)
+						  )}</p>`
+						: ''
+				}
+				${this.renderMeta(item, item.site ? esc(item.site) : '')}`;
+			const links = `
+				${this.seeRepliesLink(item.post_url, item.subscription_post_id)}
+				${
+					item.reply_url
+						? `<a class="daymark-note-card__link" href="${esc(
+								item.reply_url
+						  )}" target="_blank" rel="noopener" data-notif-open>${esc(__('↗ View reply', 'daymark'))}</a>`
+						: ''
+				}`;
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links });
+		},
+
+		// A link to a post on a site you follow: opens it in Daymark (with
+		// its replies) when Daymark still has it, else on its own site.
+		followedPostLink(url, subscriptionPostId, label) {
+			const id = Number(subscriptionPostId) || 0;
+			if (!url) {
+				return `<strong>${esc(label)}</strong>`;
+			}
+			return id > 0
+				? `<a href="${esc(url)}" data-notif-open data-notif-subpost="${esc(String(id))}">${esc(label)}</a>`
+				: `<a href="${esc(url)}" target="_blank" rel="noopener" data-notif-open>${esc(label)}</a>`;
+		},
+
+		seeRepliesLink(url, subscriptionPostId) {
+			const id = Number(subscriptionPostId) || 0;
+			return url && id > 0
+				? `<a class="daymark-note-card__link" href="${esc(url)}" data-notif-open data-notif-subpost="${esc(
+						String(id)
+				  )}">${esc(__('→ See all replies', 'daymark'))}</a>`
+				: '';
+		},
+
+		// Opens a followed post in the post view with its replies showing,
+		// Back returning here.
+		async openFollowedPost(id, trigger) {
+			if (this._openingPost) {
+				return;
+			}
+			this._openingPost = true;
+			trigger.setAttribute('aria-busy', 'true');
+			try {
+				const item = await apiGet('subscription-posts/' + Number(id));
+				if (!item || !item.id) {
+					throw new Error('missing');
+				}
+				pendingPostView = {
+					kind: 'sub',
+					item,
+					returnTo: '#notifications',
+					showReplies: true,
+					list: { items: [], pager: null },
+				};
+				navigate('#post');
+			} catch (err) {
+				const message = __("Couldn't open this post. Try again.", 'daymark');
+				if (trigger.isConnected) {
+					showFlashBubble(trigger, message);
+				}
+				announce(message);
+			} finally {
+				this._openingPost = false;
+				trigger.removeAttribute('aria-busy');
+			}
 		},
 
 		// Several likes on one Mark under one date heading, as a single row:
@@ -14580,6 +14954,13 @@
 					});
 					apiPost('notifications/read', { ids: unread.map((item) => item.id) }).catch(() => {});
 					this.updateCard(unread);
+				}
+				// A followed post opens in Daymark, unless the reader asked
+				// for a new tab or window.
+				const subId = Number(open.getAttribute('data-notif-subpost') || 0);
+				if (subId > 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+					event.preventDefault();
+					this.openFollowedPost(subId, open);
 				}
 				return;
 			}
@@ -14983,12 +15364,17 @@
 	if (config.pendingDraftId) {
 		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
 	} else if (config.pendingPostId && !window.location.hash) {
-		// Tapped a push about a favorite site's new post: open that post,
-		// with Back going to the Timeline. Drop the parameter so a reload
-		// lands on the Timeline instead of opening the post again.
+		// Tapped a push about a favorite site's new post, or about a reply
+		// to your comment on a followed post (daymark_replies=1, which also
+		// opens the post's replies): open that post, with Back going to the
+		// Timeline. Drop the parameters so a reload lands on the Timeline
+		// instead of opening the post again.
+		let showReplies = false;
 		try {
 			const clean = new URL(window.location.href);
+			showReplies = '1' === clean.searchParams.get('daymark_replies');
 			clean.searchParams.delete('daymark_post');
+			clean.searchParams.delete('daymark_replies');
 			window.history.replaceState(null, '', clean.pathname + clean.search);
 		} catch (err) {
 			// Leave the address as it is.
@@ -14998,7 +15384,13 @@
 				if (!item || !item.id) {
 					throw new Error('missing');
 				}
-				pendingPostView = { kind: 'sub', item, returnTo: '#home' };
+				pendingPostView = {
+					kind: 'sub',
+					item,
+					returnTo: '#home',
+					showReplies,
+					list: { items: [], pager: null },
+				};
 				navigate('#post');
 			})
 			.catch(() => showScreen(initialHash));

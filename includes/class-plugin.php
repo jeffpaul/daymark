@@ -543,6 +543,9 @@ final class Daymark_Plugin {
 		$this->webmention_receiver->register();
 		$this->push->register();
 		$this->followers->register();
+		// Check the original sites for replies to comments sent from
+		// Daymark (issue #559), alongside the hourly backflow sync.
+		Daymark_Comment_Replies::register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

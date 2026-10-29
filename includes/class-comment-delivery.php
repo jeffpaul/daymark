@@ -59,7 +59,7 @@ class Daymark_Comment_Delivery {
 	 *
 	 * @param int    $subscription_post_id A `daymark_sub_post` post ID.
 	 * @param string $text                 The comment text, already `wp_kses_post()`-safe or plain — sanitized here regardless.
-	 * @return array{method: string, status: string, message: string, mark_id?: int}|WP_Error
+	 * @return array{method: string, status: string, message: string, mark_id?: int, watching?: bool}|WP_Error
 	 */
 	public static function deliver( int $subscription_post_id, string $text ) {
 		$text = trim( wp_kses_post( $text ) );
@@ -94,7 +94,7 @@ class Daymark_Comment_Delivery {
 		}
 
 		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
-			return self::send_via_webmention( $permalink, $text );
+			return self::watch_for_replies( $subscription_post_id, $permalink, $signals, $text, self::send_via_webmention( $permalink, $text ) );
 		}
 
 		if ( '' === $signals['rest_root'] || 0 === $signals['post_id'] ) {
@@ -105,7 +105,56 @@ class Daymark_Comment_Delivery {
 			);
 		}
 
-		return self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text );
+		return self::watch_for_replies( $subscription_post_id, $permalink, $signals, $text, self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text ) );
+	}
+
+	/**
+	 * After a comment is sent, start checking the original site for
+	 * replies to it (Daymark_Comment_Replies, issue #559), when the site is
+	 * a WordPress site whose comments API Daymark can read. Says so in the
+	 * confirmation message.
+	 *
+	 * @param int                  $subscription_post_id The followed post.
+	 * @param string               $permalink            Its permalink.
+	 * @param array<string, mixed> $signals              Origin signals.
+	 * @param string               $text                 The comment text.
+	 * @param array|WP_Error       $result               What sending returned.
+	 * @return array|WP_Error The result, with `watching` set.
+	 */
+	private static function watch_for_replies( int $subscription_post_id, string $permalink, array $signals, string $text, $result ) {
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$result['watching'] = false;
+
+		if ( '' === (string) ( $signals['rest_root'] ?? '' ) || (int) ( $signals['post_id'] ?? 0 ) <= 0 ) {
+			return $result;
+		}
+
+		$result['watching'] = Daymark_Comment_Replies::start_watch(
+			get_current_user_id(),
+			$subscription_post_id,
+			array(
+				'root'    => Daymark_Remote_Replies::absolute_root( (string) $signals['rest_root'], $permalink ),
+				'remote'  => (int) $signals['post_id'],
+				'comment' => (int) ( $result['remote_comment_id'] ?? 0 ),
+				'mark'    => (int) ( $result['mark_id'] ?? 0 ),
+				'text'    => $text,
+			)
+		);
+
+		if ( $result['watching'] ) {
+			if ( 'webmention' === $result['method'] ) {
+				$result['message'] = __( 'Your comment was published on your site and will be delivered to the original post via Webmention. Daymark will let you know when someone replies.', 'daymark' );
+			} elseif ( 'held' === $result['status'] ) {
+				$result['message'] = __( 'Your comment was sent and is awaiting moderation on the original site. Daymark will let you know when someone replies.', 'daymark' );
+			} else {
+				$result['message'] = __( 'Your comment was posted directly to the original site. Daymark will let you know when someone replies.', 'daymark' );
+			}
+		}
+
+		return $result;
 	}
 
 	/**
@@ -359,7 +408,7 @@ class Daymark_Comment_Delivery {
 	 * @param string $rest_root Origin site's REST API root (e.g. `https://example.com/wp-json/`).
 	 * @param int    $post_id   Origin post's own numeric ID.
 	 * @param string $text      Comment text.
-	 * @return array{method: string, status: string, message: string}|WP_Error
+	 * @return array{method: string, status: string, message: string, remote_comment_id: int}|WP_Error
 	 */
 	private static function send_native_comment( string $rest_root, int $post_id, string $text ) {
 		$comments_url = rtrim( $rest_root, '/' ) . '/wp/v2/comments';
@@ -434,11 +483,13 @@ class Daymark_Comment_Delivery {
 		$held = is_array( $body ) && 'hold' === ( $body['status'] ?? '' );
 
 		return array(
-			'method'  => 'native',
-			'status'  => $held ? 'held' : 'published',
-			'message' => $held
+			'method'            => 'native',
+			'status'            => $held ? 'held' : 'published',
+			'message'           => $held
 				? __( 'Your comment was sent and is awaiting moderation on the original site.', 'daymark' )
 				: __( 'Your comment was posted directly to the original site.', 'daymark' ),
+			// The comment's ID there, so Daymark can check for replies to it.
+			'remote_comment_id' => is_array( $body ) ? absint( $body['id'] ?? 0 ) : 0,
 		);
 	}
 
