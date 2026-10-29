@@ -3340,10 +3340,12 @@ button.daymark-stat {
 	font-size: 14px;
 }
 
-/* A backflow_supported target's sync recency (issue #258) — a quieter
-   second line under its row, not another chip, since it's informational
-   rather than a status to react to. */
-.daymark-syndication__recency {
+/* A backflow_supported target's sync recency (issue #258), and which
+   plugin shared a copy (issue #558) — a quieter second line under its
+   row, not another chip, since it's informational rather than a status
+   to react to. */
+.daymark-syndication__recency,
+.daymark-syndication__note {
 	margin: 0;
 	padding: 0 var(--daymark-spacing-md) var(--daymark-spacing-sm);
 	font-size: 12px;

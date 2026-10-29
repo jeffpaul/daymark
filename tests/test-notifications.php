@@ -672,13 +672,13 @@ class Test_Notifications extends WP_UnitTestCase {
 			array_filter(
 				$items,
 				static function ( array $item ) {
-					return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+					return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'microformats2' === ( $item['plugin'] ?? '' );
 				}
 			)
 		);
 
 		$this->assertCount( 1, $matching );
-		$this->assertSame( 'Syndication Links', $matching[0]['label'] );
+		$this->assertSame( 'Microformats 2', $matching[0]['label'] );
 		$this->assertNotEmpty( $matching[0]['message'] );
 	}
 
@@ -698,7 +698,7 @@ class Test_Notifications extends WP_UnitTestCase {
 		wp_set_current_user( $user_id );
 		$this->activate_fake_overlap();
 
-		Daymark_Plugin::instance()->plugin_overlap->dismiss( $user_id, 'syndication-links' );
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $user_id, 'microformats2' );
 
 		$notifications = new Daymark_Notifications();
 		$items         = $notifications->get_notifications();
@@ -706,7 +706,7 @@ class Test_Notifications extends WP_UnitTestCase {
 		$matching = array_filter(
 			$items,
 			static function ( array $item ) {
-				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'microformats2' === ( $item['plugin'] ?? '' );
 			}
 		);
 
@@ -719,7 +719,7 @@ class Test_Notifications extends WP_UnitTestCase {
 		$other     = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		$this->activate_fake_overlap();
 
-		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'syndication-links' );
+		Daymark_Plugin::instance()->plugin_overlap->dismiss( $dismisser, 'microformats2' );
 
 		wp_set_current_user( $other );
 		$notifications = new Daymark_Notifications();
@@ -728,7 +728,7 @@ class Test_Notifications extends WP_UnitTestCase {
 		$matching = array_filter(
 			$items,
 			static function ( array $item ) {
-				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'syndication-links' === ( $item['plugin'] ?? '' );
+				return 'plugin_overlap' === ( $item['type'] ?? '' ) && 'microformats2' === ( $item['plugin'] ?? '' );
 			}
 		);
 

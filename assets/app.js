@@ -1148,9 +1148,21 @@
 		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
+	// Whether a Mark has anything for its "Where this went" popover: a
+	// destination Daymark routed it to itself (syndication_status isn't
+	// 'not_attempted'), or a copy a publishing plugin such as Jetpack
+	// Social or Share on Mastodon recorded (has_copies, issue #558). The
+	// toggle and its sibling panel are both gated on this one check.
+	function hasRoutingDetail(item) {
+		return !!(
+			(item.syndication_status && 'not_attempted' !== item.syndication_status) ||
+			item.has_copies
+		);
+	}
+
 	// "Where did this go" (issue #255) — a Mark-only affordance, shown once
-	// the Mark has actually been routed somewhere (syndication_status isn't
-	// 'not_attempted'; a Mark with no selected destinations has nothing to
+	// the Mark has actually been routed somewhere (see hasRoutingDetail();
+	// a Mark with no destinations and no plugin copies has nothing to
 	// report here, and a subscription post has no syndication targets of
 	// its own at all). Tapping it opens a small popover — a sibling panel
 	// in the item-wrap, not nested inside the card, which a stretched
@@ -1162,7 +1174,7 @@
 	// opening its own, so tapping this from inside an open overflow menu
 	// already reads as "swap panels," not "open two."
 	function renderRoutingToggle(item) {
-		if (!item.syndication_status || 'not_attempted' === item.syndication_status) {
+		if (!hasRoutingDetail(item)) {
 			return '';
 		}
 		const id = esc(String(item.id));
@@ -4664,7 +4676,7 @@
 		// another <button>. Gated on the same condition as
 		// renderRoutingToggle() itself, so there's no unused empty panel for
 		// a Mark with nothing to route.
-		const hasRouting = !isDraft && item.syndication_status && 'not_attempted' !== item.syndication_status;
+		const hasRouting = !isDraft && hasRoutingDetail(item);
 		// The ⋯ overflow menu's own panel (issue #326) — a sibling of the
 		// card button for the same reason the routing panel above already
 		// is. Empty (and so self-omitted by renderOverflowPanel()) for a
@@ -6203,13 +6215,45 @@
 				</li>`;
 			})
 			.join('');
+		// Copies a publishing plugin made on its own (issue #558): Jetpack
+		// Social, Share on Mastodon, XPoster, and so on. Each links to the
+		// copy when the plugin kept its address; an ActivityPub post is the
+		// site's own post, so it's listed with no link.
+		const copies = Array.isArray(mark.copies) ? mark.copies : [];
+		const copyRows = copies
+			.map((copy) => {
+				const label = copy.label || copy.service || '';
+				const target = copy.url
+					? `<a class="daymark-btn daymark-btn--text" href="${esc(
+							copy.url
+					  )}" target="_blank" rel="noopener">${esc(label)}</a>`
+					: `<span>${esc(label)}</span>`;
+				const sharedBy = copy.plugin_label
+					? `<p class="daymark-syndication__note">${esc(
+							sprintf(
+								/* translators: %s: name of the plugin that shared the Mark, e.g. "Jetpack Social" */
+								__('Shared by %s', 'daymark'),
+								copy.plugin_label
+							)
+					  )}</p>`
+					: '';
+				return `
+				<li class="daymark-syndication__item">
+					<div class="daymark-syndication__row">
+						${target}
+						<span class="daymark-chip daymark-chip--success">${esc(__('Shared', 'daymark'))}</span>
+					</div>
+					${sharedBy}
+				</li>`;
+			})
+			.join('');
 		return `<ul class="daymark-syndication" aria-label="${esc(__('Where this Mark was routed', 'daymark'))}">
 			<li class="daymark-syndication__item">
 				<div class="daymark-syndication__row">
 					${siteLink}
 					<span class="daymark-chip daymark-chip--success">${esc(__('Published', 'daymark'))}</span>
 				</div>
-			</li>${rows}
+			</li>${rows}${copyRows}
 		</ul>`;
 	}
 
@@ -12370,7 +12414,7 @@
 				? markOverflowMenuItems(item)
 				: subscriptionOverflowMenuItems(item, renderRefreshContentToggle(item));
 			const id = esc(String(item.id || ''));
-			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
+			const hasRouting = isMark && hasRoutingDetail(item);
 			return `
 			<header class="daymark-topbar daymark-topbar--top">
 				${backLinkWithIcon(

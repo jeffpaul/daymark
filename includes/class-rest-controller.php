@@ -2934,6 +2934,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// connectorLabel() (config.connectors is filtered to currently-
 		// connected connectors only).
 		$payload['external_posts'] = $this->prepare_external_posts( $post_id, $target_list );
+		$payload['copies']         = $this->prepare_plugin_copies( $post_id, $payload['external_posts'] );
 
 		return rest_ensure_response( $payload );
 	}
@@ -2997,6 +2998,37 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * The copies publishing plugins made of a Mark (issue #558), for the
+	 * "where did this go" view, minus any a Daymark connector already
+	 * reported under the same address.
+	 *
+	 * @param int                                 $post_id        Mark post ID.
+	 * @param array<string, array<string, mixed>> $external_posts From prepare_external_posts().
+	 * @return array<int, array<string, string>>
+	 */
+	private function prepare_plugin_copies( int $post_id, array $external_posts ): array {
+		$known = array();
+
+		foreach ( $external_posts as $entry ) {
+			if ( ! empty( $entry['external_url'] ) ) {
+				$known[ Daymark_Plugin_Copies::url_key( (string) $entry['external_url'] ) ] = true;
+			}
+		}
+
+		$copies = array();
+
+		foreach ( Daymark_Plugin_Copies::for_post( $post_id ) as $copy ) {
+			if ( '' !== $copy['url'] && isset( $known[ Daymark_Plugin_Copies::url_key( $copy['url'] ) ] ) ) {
+				continue;
+			}
+
+			$copies[] = $copy;
+		}
+
+		return $copies;
 	}
 
 	/**
@@ -5228,6 +5260,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Posts list's Reblogs column shows.
 			'repost_count'       => Daymark_Reblog_Count::for_post( $post_id ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
+			// Whether a publishing plugin (Jetpack Social, Share on Mastodon,
+			// and so on) shared this Mark, so its card offers the "where did
+			// this go" view even when no Daymark connector ran (issue #558).
+			// Only for someone who can open that view (GET /marks/{id} needs
+			// edit_post).
+			'has_copies'         => '1' === (string) get_post_meta( $post_id, '_daymark_is_mark', true )
+				&& current_user_can( 'edit_post', $post_id )
+				&& array() !== Daymark_Plugin_Copies::for_post( $post_id ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 			// Whose post this is, so a Timeline card can label your own
 			// posts "You" and another author's (on a multi-author site) by

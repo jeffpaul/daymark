@@ -3140,6 +3140,18 @@ class Daymark_Admin_Subscriptions {
 				'summary' => __( 'A free hosted bridge to the fediverse and Bluesky, instead of the ActivityPub plugin.', 'daymark' ),
 				'details' => __( 'Bridgy Fed is a service, not a plugin. It uses the Webmention plugin to give your site a fediverse and Bluesky presence under a handle on its own domain, where the ActivityPub plugin gives your site a handle on your own domain. Use one or the other, not both.', 'daymark' ),
 			),
+			// Backfeed for copies other plugins made (issue #558): Daymark
+			// prints a Mark's copies as u-syndication links, which is what
+			// Bridgy reads to match a copy's replies to the Mark. Networks
+			// are the ones Bridgy's own sign-up page offers.
+			'bridgy'          => array(
+				'label'   => 'Bridgy',
+				'group'   => 'optional',
+				'type'    => 'service',
+				'url'     => 'https://brid.gy/',
+				'summary' => __( 'Brings replies and likes back from your posts on Mastodon, Bluesky, Flickr, GitHub, and Reddit.', 'daymark' ),
+				'details' => __( 'Bridgy is a free service, not a plugin, and separate from Bridgy Fed: it works with accounts you already have. When a plugin such as Jetpack Social or Share on Mastodon shares a Mark, Daymark adds a link to that copy on the Mark\'s page. Bridgy uses those links to match each copy to your Mark, then sends the copy\'s replies, likes, and reposts to your site as Webmentions, which appear in Notifications. Skip any network whose replies already come back another way, such as through the ActivityPub or ATmosphere plugin, or they arrive twice.', 'daymark' ),
+			),
 			'simple_location' => array(
 				'label'       => 'Simple Location',
 				'group'       => 'optional',
