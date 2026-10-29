@@ -1,7 +1,7 @@
 {
   "name": "daymark",
   "version": "0.21.0",
-  "description": "Personal Site Publisher Mode for WordPress. Dev dependencies for browser E2E tests only.",
+  "description": "Daymark, your own social app for WordPress. Dev dependencies for browser E2E tests only.",
   "private": true,
   "license": "GPL-2.0-or-later",
   "repository": {
