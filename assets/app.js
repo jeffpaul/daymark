@@ -1036,6 +1036,9 @@
 	// Feather "star": a favorite followed site (Explore's Following list).
 	const STAR_GLYPH =
 		'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
+	// Feather "user-plus": following a site from a follow link.
+	const FOLLOW_GLYPH =
+		'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -10382,30 +10385,26 @@
 		},
 	};
 
-	// A small, generic "type some text" overlay — the same
-	// .daymark-sheet/backdrop/Escape-key/focus-management shell
-	// AIAssistSheet already established, the one existing "small overlay"
-	// convention in this codebase, reused rather than a second one invented
-	// for this narrower need (issue #317: the Comment toggle's required
-	// comment text, and Reblog's own optional comment prompt). Callers pass
-	// onSubmit (required) and, only when a "type nothing, just do the
-	// default thing" path makes sense (Reblog — Skip publishes just the
-	// reblogged post's own link, with no added comment; Comment has no such
-	// default, so it gets no Skip button at all), onSkip too.
 	// "Follow a site" (admins only, config.canManageSubscriptions): paste an
 	// address, pick one of the feeds the site offers, follow it. The same
 	// discovery and subscribe logic as Settings -> Daymark, through
 	// POST /subscriptions/discover and /subscriptions/follow. The second
-	// step sends only the index of a feed the server found, never a URL.
+	// step sends only the index of a feed the server found, never a URL,
+	// plus the site discovery returned, so a lookup made elsewhere in the
+	// meantime (another tab, the bookmarklet) can't change what it follows.
+	// A follow link (Daymark_Follow_Link) opens it with `address` filled
+	// in; nothing is looked up until the person taps Find feeds.
 	const FollowSiteSheet = {
 		el: null,
 		opener: null,
 		onFollowed: null,
 		busy: false,
+		siteUrl: '',
 
-		show(opener, onFollowed) {
+		show(opener, onFollowed, address) {
 			this.opener = opener || null;
 			this.onFollowed = onFollowed || null;
+			this.siteUrl = '';
 			if (!this.el) {
 				this.el = document.createElement('div');
 				this.el.className = 'daymark-sheet';
@@ -10413,7 +10412,7 @@
 			}
 			this.el.hidden = false;
 			syncSheetsToVisualViewport();
-			this.renderAddressStep('');
+			this.renderAddressStep(address || '', Boolean(address));
 			this.onKeydown = (event) => {
 				if (event.key === 'Escape') {
 					this.hide();
@@ -10434,7 +10433,7 @@
 			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
 		},
 
-		renderAddressStep(value) {
+		renderAddressStep(value, focusFind) {
 			this.frame(`
 				<label class="daymark-field__label" for="daymark-follow-url">${esc(__('Site address', 'daymark'))}</label>
 				<input type="url" id="daymark-follow-url" class="daymark-input" data-follow-url inputmode="url" autocomplete="url" placeholder="${esc(
@@ -10448,15 +10447,23 @@
 					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-find>${esc(__('Find feeds', 'daymark'))}</button>
 				</div>`);
 			const input = this.el.querySelector('[data-follow-url]');
+			const findButton = this.el.querySelector('[data-follow-find]');
 			const find = () => this.find(input.value.trim());
-			this.el.querySelector('[data-follow-find]').addEventListener('click', find);
+			findButton.addEventListener('click', find);
 			input.addEventListener('keydown', (event) => {
 				if (event.key === 'Enter') {
 					event.preventDefault();
 					find();
 				}
 			});
-			input.focus();
+			// Opened from a follow link, the address is already there and the
+			// next step is Find feeds; focusing the field would only bring up
+			// the phone's keyboard.
+			if (focusFind) {
+				findButton.focus();
+			} else {
+				input.focus();
+			}
 		},
 
 		async find(address) {
@@ -10492,6 +10499,7 @@
 		},
 
 		renderFeedStep(address, result) {
+			this.siteUrl = (result && result.site_url) || '';
 			const candidates = Array.isArray(result.candidates) ? result.candidates : [];
 			const open = candidates.filter((c) => !c.subscribed);
 			if (!open.length) {
@@ -10566,6 +10574,7 @@
 				const subscription = await apiPost('subscriptions/follow', {
 					index: Number(picked.value),
 					site_title: this.el.querySelector('[data-follow-name]').value.trim(),
+					site_url: this.siteUrl || undefined,
 				});
 				const handler = this.onFollowed;
 				const name = (subscription && (subscription.site_title || subscription.site_url)) || '';
@@ -10610,6 +10619,16 @@
 		},
 	};
 
+	// A small, generic "type some text" overlay — the same
+	// .daymark-sheet/backdrop/Escape-key/focus-management shell
+	// AIAssistSheet already established, the one existing "small overlay"
+	// convention in this codebase, reused rather than a second one invented
+	// for this narrower need (issue #317: the Comment toggle's required
+	// comment text, and Reblog's own optional comment prompt). Callers pass
+	// onSubmit (required) and, only when a "type nothing, just do the
+	// default thing" path makes sense (Reblog — Skip publishes just the
+	// reblogged post's own link, with no added comment; Comment has no such
+	// default, so it gets no Skip button at all), onSkip too.
 	const TextPromptSheet = {
 		el: null,
 		opener: null,
@@ -15276,6 +15295,25 @@
 		showScreen(window.location.hash);
 	});
 
+	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
+	// Timeline, a follow link). After following, Explore and Home reload so
+	// the new site and its posts appear.
+	function reloadAfterFollowing() {
+		const hash = window.location.hash || '#home';
+		if ('#explore' === hash || '#home' === hash) {
+			showScreen(hash);
+		}
+	}
+
+	root.addEventListener('click', (event) => {
+		const trigger = event.target.closest('[data-follow-site]');
+		if (!trigger || !config.canManageSubscriptions) {
+			return;
+		}
+		event.preventDefault();
+		FollowSiteSheet.show(trigger, reloadAfterFollowing);
+	});
+
 	// A drop landing outside the composer's own picker zone (issue #260)
 	// would otherwise fall through to the browser's default behavior —
 	// navigating the whole app away to the dropped file's raw content,
@@ -15284,23 +15322,6 @@
 	// Create), since the cost of getting it wrong (a lost draft) is the
 	// same everywhere; the picker zone's own dragover/drop handlers
 	// (CreateScreen.bindEvents()) still run first and do the real work.
-	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
-	// Timeline). After following, Explore and Home reload so the new site
-	// and its posts appear.
-	root.addEventListener('click', (event) => {
-		const trigger = event.target.closest('[data-follow-site]');
-		if (!trigger || !config.canManageSubscriptions) {
-			return;
-		}
-		event.preventDefault();
-		FollowSiteSheet.show(trigger, () => {
-			const hash = window.location.hash || '#home';
-			if ('#explore' === hash || '#home' === hash) {
-				showScreen(hash);
-			}
-		});
-	});
-
 	window.addEventListener('dragover', (event) => event.preventDefault());
 	window.addEventListener('drop', (event) => event.preventDefault());
 
@@ -15394,6 +15415,39 @@
 				navigate('#post');
 			})
 			.catch(() => showScreen(initialHash));
+	} else if (config.pendingFollowUrl) {
+		// A follow link (Daymark_Follow_Link), most often from a "Follow me
+		// with Daymark" block on someone else's site: open the usual screen
+		// with Follow a site on top and that site's address filled in.
+		// Nothing is looked up until the person taps Find feeds. Drop the
+		// parameter so a reload doesn't open it again.
+		try {
+			const clean = new URL(window.location.href);
+			clean.searchParams.delete('daymark_follow_site');
+			window.history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+		} catch (err) {
+			// Leave the address as it is.
+		}
+		showScreen(initialHash);
+		if (config.canManageSubscriptions) {
+			FollowSiteSheet.show(null, reloadAfterFollowing, config.pendingFollowUrl);
+		} else {
+			InteractionHintSheet.show(
+				{
+					glyph: FOLLOW_GLYPH,
+					title: __('Ask an administrator to follow this site', 'daymark'),
+					body: sprintf(
+						/* translators: %s: the address of the site someone asked to follow */
+						__(
+							'Only this site\'s administrators can follow sites with Daymark. Ask one of them to follow %s.',
+							'daymark'
+						),
+						config.pendingFollowUrl
+					),
+				},
+				null
+			);
+		}
 	} else if (config.pendingType) {
 		// An external launcher (wp-admin's "+New -> Daymark" item,
 		// Daymark_Admin_Bar) wants the composer to open pre-set to a

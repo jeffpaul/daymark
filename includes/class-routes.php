@@ -598,13 +598,14 @@ class Daymark_Routes {
 	 * strip the nonce back out before persisting a copy to Cache Storage for
 	 * offline reuse — see that file's own docblock.
 	 *
-	 * @param string $screen           Current app screen ('home', 'notifications', etc.).
-	 * @param string $pending_type     One-shot composer type hint, or ''.
-	 * @param int    $pending_draft_id One-shot share-sheet draft ID, or 0.
-	 * @param int    $pending_post_id  A followed site's post to open (a push from a favorite site), or 0.
+	 * @param string $screen             Current app screen ('home', 'notifications', etc.).
+	 * @param string $pending_type       One-shot composer type hint, or ''.
+	 * @param int    $pending_draft_id   One-shot share-sheet draft ID, or 0.
+	 * @param int    $pending_post_id    A followed site's post to open (a push from a favorite site), or 0.
+	 * @param string $pending_follow_url A site to follow, from a follow link (Daymark_Follow_Link), or ''.
 	 * @return array<string, mixed>
 	 */
-	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0, int $pending_post_id = 0 ): array {
+	public static function build_app_config( string $screen = 'home', string $pending_type = '', int $pending_draft_id = 0, int $pending_post_id = 0, string $pending_follow_url = '' ): array {
 		$user                     = wp_get_current_user();
 		$can_manage_subscriptions = current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
 		$app_badge                = Daymark_Settings::app_badge_unread();
@@ -828,6 +829,10 @@ class Daymark_Routes {
 			// device — see Daymark_Interaction_Hints.
 			'interactionHintsSeen'   => Daymark_Interaction_Hints::get_seen( (int) $user->ID ),
 			'pendingDraftId'         => $pending_draft_id,
+			// A site to open Follow a site with, from a follow link. Only
+			// fills in the address: nothing is looked up or followed until
+			// the person confirms.
+			'pendingFollowUrl'       => Daymark_Follow_Link::read_url( $pending_follow_url ),
 			'pendingPostId'          => $pending_post_id,
 			'pendingType'            => in_array( $pending_type, array( 'image', 'video', 'audio', 'note' ), true ) ? $pending_type : '',
 		);

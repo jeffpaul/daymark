@@ -749,16 +749,18 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * "Reblog and Like from your browser": the draggable bookmarklet, for
-	 * the desktop. The same button is on the bookmarklet's own install page,
-	 * which the app's Me screen links to.
+	 * "Reblog, Like, and Follow from your browser": the draggable
+	 * bookmarklet, for the desktop. The same button is on the bookmarklet's
+	 * own install page, which the app's Me screen links to. Follow is only
+	 * offered to people who can manage subscriptions, which everyone who
+	 * sees this screen can.
 	 *
 	 * @return void
 	 */
 	private function render_bookmarklet(): void {
 		?>
-		<h2><?php esc_html_e( 'Reblog and Like from your browser', 'daymark' ); ?></h2>
-		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site or Like it.', 'daymark' ); ?></p>
+		<h2><?php esc_html_e( 'Reblog, Like, and Follow from your browser', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site, Like it, or follow the site it\'s on.', 'daymark' ); ?></p>
 		<p><?php echo Daymark_Bookmarklet::button_html( 'button-primary' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html(). ?></p>
 		<p class="description"><?php esc_html_e( 'Show the bookmarks bar first if it\'s hidden. Everyone who can write Marks on this site can use it, signed in as themselves.', 'daymark' ); ?></p>
 		<?php

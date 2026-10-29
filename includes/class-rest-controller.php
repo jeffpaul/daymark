@@ -686,6 +686,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
+					// The site_url discovery returned. When sent, the
+					// follow only goes ahead if this user's last discovery
+					// was still that site (another tab may have looked up
+					// a different one since).
+					'site_url'   => array(
+						'type'              => 'string',
+						'sanitize_callback' => 'esc_url_raw',
+					),
 				),
 			)
 		);
@@ -4144,6 +4152,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * subscription's posts right away, like subscribing in Settings ->
 	 * Daymark, and applies an edited site name when one is sent.
 	 *
+	 * An optional `site_url` (the one discovery returned) makes sure the
+	 * follow is for the site the person was shown: each user keeps only
+	 * one discovery, so a lookup in another tab or the bookmarklet would
+	 * otherwise change which feed an index means. A mismatch is answered
+	 * like an expired search.
+	 *
 	 * @since 0.20.0
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -4153,6 +4167,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$stash = get_transient( self::follow_transient_key() );
 
 		if ( ! is_array( $stash ) || empty( $stash['candidates'] ) || ! is_array( $stash['candidates'] ) ) {
+			return new WP_Error(
+				'daymark_follow_expired',
+				__( 'That search has expired. Look up the site again.', 'daymark' ),
+				array( 'status' => 410 )
+			);
+		}
+
+		$expected = $request->get_param( 'site_url' );
+
+		if ( is_string( $expected ) && '' !== $expected && esc_url_raw( (string) ( $stash['site_url'] ?? '' ) ) !== $expected ) {
 			return new WP_Error(
 				'daymark_follow_expired',
 				__( 'That search has expired. Look up the site again.', 'daymark' ),

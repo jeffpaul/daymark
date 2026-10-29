@@ -23,8 +23,9 @@ can't act on them.
 ### Added
 
 - You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
-- A Mark's "Where this went" view now lists the copies your publishing plugins made (Jetpack Social, Share on Mastodon, XPoster, Autopost for X, ATmosphere, Autoblue, and ActivityPub), and the Mark's page links to them, so Bridgy can bring replies from those copies back to your site. Bridgy is now on the Connectors tab.
-- On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers.
+- A Mark's "Where this went" view now lists the copies your publishing plugins made (Jetpack Social, Share on Mastodon, XPoster, Autopost for X, ATmosphere, Autoblue, and ActivityPub), and the Mark's page links to them, so Bridgy can bring replies from those copies back to your site. Bridgy is now on the Connectors tab. ([#562](https://github.com/jeffpaul/daymark/pull/562))
+- On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers. ([#562](https://github.com/jeffpaul/daymark/pull/562))
+- Follow a site from wherever you find it. The bookmarklet can now follow the site of the post you're reading, and the new "Follow me with Daymark" block lets visitors type their own site's address to open their Daymark ready to follow yours. The block also shows your feed's address for any other feed reader. ([#562](https://github.com/jeffpaul/daymark/pull/562))
 
 ### Changed
 
