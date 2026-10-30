@@ -666,6 +666,9 @@ above.
   dismissible notification rather than being silently suppressed — Daymark
   never controls another plugin's behavior, only reads and flags the
   overlap — [#346](https://github.com/jeffpaul/daymark/issues/346).
+  Syndication Links later left this list: since
+  [#558](https://github.com/jeffpaul/daymark/issues/558), Daymark hands that
+  plugin a Mark's syndication links instead of printing its own.
 
 ---
 

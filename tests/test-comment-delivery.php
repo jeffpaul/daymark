@@ -105,6 +105,17 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Mock a page that redirects somewhere Daymark won't follow, the way
+	 * Daymark_Outbound_Guard reports it.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_refused_redirect( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'daymark_redirect_refused', 'This URL resolves to a private or internal network address.' );
+	}
+
+	/**
 	 * @param string $permalink Origin permalink.
 	 * @return int Subscription post ID.
 	 */
@@ -693,15 +704,19 @@ class Test_Comment_Delivery extends WP_UnitTestCase {
 	/**
 	 * A page that refuses Daymark's request (401, 403) or is gone (404,
 	 * 410) won't answer differently a minute later, and neither will a
-	 * request this site's own settings block. Each is remembered for the
-	 * full hour, like a page that loaded, so Like checks and Show replies
-	 * don't ask it again every minute.
+	 * request this site's own settings block or a page that redirects
+	 * somewhere Daymark won't follow. Each is remembered for the full
+	 * hour, like a page that loaded, so Like checks and Show replies don't
+	 * ask it again every minute.
 	 */
 	public function test_a_page_that_refuses_or_is_gone_is_remembered_for_the_full_time(): void {
 		$blocked = 'https://origin.example/blocked/';
 		$this->mock_blocked( $blocked );
 
-		$permalinks = array( $blocked );
+		$redirected = 'https://origin.example/redirected/';
+		$this->mock_refused_redirect( $redirected );
+
+		$permalinks = array( $blocked, $redirected );
 
 		foreach ( array( 401, 403, 404, 410 ) as $code ) {
 			$permalink = 'https://origin.example/refused-' . $code . '/';

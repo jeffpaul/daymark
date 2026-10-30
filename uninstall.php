@@ -77,8 +77,10 @@ delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_plugin_overlap_dismissed', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
-// Comments on followed posts that Daymark checks for replies (issue #559).
+// Comments on followed posts that Daymark checks for replies (issue #559),
+// and the Webmention comments that keep a forgotten reply's place.
 delete_metadata( 'user', 0, 'daymark_comment_watches', '', true );
+delete_metadata( 'comment', 0, '_daymark_found_reply', '', true );
 
 // Scheduled backflow sync events (recurring + pending one-off freshen) and
 // the subscriptions poller.

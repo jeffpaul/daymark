@@ -392,6 +392,8 @@ class Test_Plugin_Copies extends WP_UnitTestCase {
 
 		$other = self::factory()->post->create();
 		update_post_meta( $other, '_share_on_mastodon_url', 'https://mastodon.social/@demo/2' );
+		// Saved in an earlier request, so only the Mark check can say no.
+		$this->new_request();
 
 		$this->assertSame(
 			array(),

@@ -32,11 +32,23 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	 */
 	private string $redirect_to = '';
 
+	/**
+	 * Responses by URL, for tests that make a whole get() or post() call: a
+	 * raw HTTP response, or a closure that returns one or throws the way a
+	 * transport reports a failed connection. A URL not listed gets a 404.
+	 * Left empty, the first response redirects to $redirect_to and every
+	 * later one is a 200.
+	 *
+	 * @var array<string, string|Closure>
+	 */
+	private array $routes = array();
+
 	public function set_up(): void {
 		parent::set_up();
 
 		$this->requested   = array();
 		$this->redirect_to = '';
+		$this->routes      = array();
 	}
 
 	public function tear_down(): void {
@@ -129,11 +141,81 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	public function serve( string $url ): string {
 		$this->requested[] = $url;
 
+		if ( array() !== $this->routes ) {
+			$route = $this->routes[ $url ] ?? "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+
+			return $route instanceof Closure ? $route() : $route;
+		}
+
 		if ( 1 === count( $this->requested ) ) {
-			return "HTTP/1.1 302 Found\r\nLocation: " . $this->redirect_to . "\r\nContent-Length: 0\r\n\r\n";
+			return self::redirect_response( $this->redirect_to );
 		}
 
 		return "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+	}
+
+	/**
+	 * A raw 302 response.
+	 *
+	 * @param string $location Where it redirects to.
+	 * @return string
+	 */
+	private static function redirect_response( string $location ): string {
+		return "HTTP/1.1 302 Found\r\nLocation: {$location}\r\nContent-Length: 0\r\n\r\n";
+	}
+
+	/**
+	 * A route that fails the way a transport reports a connection that
+	 * couldn't be made.
+	 *
+	 * @return Closure
+	 */
+	private static function connection_failure(): Closure {
+		return static function () {
+			throw new WpOrg\Requests\Exception( 'cURL error 7: Failed to connect', 'curlerror' );
+		};
+	}
+
+	/**
+	 * Make a whole Daymark_Outbound_Guard::get() or post() call, through
+	 * WP_Http and WordPress's own redirect checks, answered by the stub
+	 * transport instead of the network.
+	 *
+	 * @param string               $method 'get' or 'post'.
+	 * @param string               $url    First URL.
+	 * @param array<string, mixed> $args   Request arguments.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private function guarded( string $method, string $url, array $args = array() ) {
+		return $this->with_stub_transport(
+			static function () use ( $method, $url, $args ) {
+				return 'post' === $method ? Daymark_Outbound_Guard::post( $url, $args ) : Daymark_Outbound_Guard::get( $url, $args );
+			}
+		);
+	}
+
+	/**
+	 * Run code whose WP_Http requests the stub transport answers instead of
+	 * the network.
+	 *
+	 * @param callable $request Makes the requests and returns a result.
+	 * @return mixed Whatever $request returned.
+	 */
+	private function with_stub_transport( callable $request ) {
+		$transport = $this->stub_transport();
+		$use_stub  = static function ( &$request_url, &$headers, &$data, &$type, &$options ) use ( $transport ) {
+			unset( $request_url, $headers, $data, $type );
+
+			$options['transport'] = $transport;
+		};
+
+		add_action( 'requests-requests.before_request', $use_stub, 10, 5 );
+
+		try {
+			return $request();
+		} finally {
+			remove_action( 'requests-requests.before_request', $use_stub, 10 );
+		}
 	}
 
 	/**
@@ -251,22 +333,27 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	 * refuse (or slow down) a redirect made by another plugin.
 	 */
 	public function test_handler_is_attached_only_while_a_request_runs() {
-		$hook = 'requests-requests.before_redirect';
+		$hook  = 'requests-requests.before_redirect';
+		$check = 'requests-requests.before_redirect_check';
 
 		$this->assertFalse( has_action( $hook, array( 'Daymark_Outbound_Guard', 'validate_redirect' ) ) );
+		$this->assertFalse( has_action( $check, array( 'Daymark_Outbound_Guard', 'note_redirect' ) ) );
 
 		Daymark_Outbound_Guard::run(
-			function () use ( $hook ) {
+			function () use ( $hook, $check ) {
 				$this->assertNotFalse( has_action( $hook, array( 'Daymark_Outbound_Guard', 'validate_redirect' ) ) );
+				$this->assertNotFalse( has_action( $check, array( 'Daymark_Outbound_Guard', 'note_redirect' ) ) );
 
 				// A nested call must not unhook the outer one when it finishes.
 				Daymark_Outbound_Guard::run( '__return_true' );
 
 				$this->assertNotFalse( has_action( $hook, array( 'Daymark_Outbound_Guard', 'validate_redirect' ) ) );
+				$this->assertNotFalse( has_action( $check, array( 'Daymark_Outbound_Guard', 'note_redirect' ) ) );
 			}
 		);
 
 		$this->assertFalse( has_action( $hook, array( 'Daymark_Outbound_Guard', 'validate_redirect' ) ) );
+		$this->assertFalse( has_action( $check, array( 'Daymark_Outbound_Guard', 'note_redirect' ) ) );
 	}
 
 	/** The handler is detached even when the wrapped request throws. */
@@ -282,6 +369,7 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 		}
 
 		$this->assertFalse( has_action( 'requests-requests.before_redirect', array( 'Daymark_Outbound_Guard', 'validate_redirect' ) ) );
+		$this->assertFalse( has_action( 'requests-requests.before_redirect_check', array( 'Daymark_Outbound_Guard', 'note_redirect' ) ) );
 	}
 
 	/** Outside the guard, another plugin's redirect is left alone. */
@@ -291,6 +379,365 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 		$response = $this->request_like_wp_http( 'http://93.184.216.34/start' );
 
 		$this->assertSame( 200, $response->status_code );
+	}
+
+	/**
+	 * get() and post().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function method_provider(): array {
+		return array(
+			'get'  => array( 'get' ),
+			'post' => array( 'post' ),
+		);
+	}
+
+	/**
+	 * A redirect Daymark's own check refuses comes back as
+	 * `daymark_redirect_refused`, not as a request that got no answer, and
+	 * its target is never requested.
+	 *
+	 * @dataProvider method_provider
+	 *
+	 * @param string $method 'get' or 'post'.
+	 */
+	public function test_a_redirect_daymark_refuses_is_named( string $method ) {
+		// Let WordPress's own check pass a private address, so that
+		// Daymark's is the one that refuses it.
+		add_filter( 'http_request_host_is_external', '__return_true' );
+
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( 'http://10.0.0.5/' ),
+		);
+
+		$response = $this->guarded( $method, 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'daymark_redirect_refused', $response->get_error_code() );
+		$this->assertSame( 'This URL resolves to a private or internal network address.', $response->get_error_message(), 'The message is kept' );
+		$this->assertFalse( Daymark_Outbound_Guard::is_temporary_failure( $response ) );
+		$this->assertSame( array( 'http://93.184.216.34/start' ), $this->requested );
+	}
+
+	/**
+	 * Redirects WordPress's own check refuses before Daymark's sees them.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function refused_by_wordpress_provider(): array {
+		return array(
+			'private address'       => array( 'http://10.0.0.5/' ),
+			'IPv6 address'          => array( 'http://[2606:4700::1]/' ),
+			'port'                  => array( 'http://93.184.216.35:8443/' ),
+			'login details'         => array( 'http://user:pass@93.184.216.35/' ),
+			'another scheme'        => array( 'ftp://93.184.216.35/' ),
+			'scheme-relative'       => array( '//10.0.0.5/x' ),
+			'scheme-relative, port' => array( '//93.184.216.35:8443/x' ),
+		);
+	}
+
+	/**
+	 * A redirect WordPress refuses first, which never reaches Daymark's own
+	 * check, is named the same way: it's refused every time too.
+	 *
+	 * @dataProvider refused_by_wordpress_provider
+	 *
+	 * @param string $location Where the first response redirects to.
+	 */
+	public function test_a_redirect_wordpress_refuses_is_named( string $location ) {
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( $location ),
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'daymark_redirect_refused', $response->get_error_code() );
+		$this->assertSame( array( 'http://93.184.216.34/start' ), $this->requested );
+	}
+
+	/**
+	 * Chains of redirects longer than a request allowing two: URL => where
+	 * it redirects to.
+	 *
+	 * @return array<string, array{0: array<string, string>}>
+	 */
+	public function redirect_chain_provider(): array {
+		return array(
+			'a loop'                                 => array(
+				array( 'http://93.184.216.34/start' => 'http://93.184.216.34/start' ),
+			),
+			'ending on a host that does not resolve' => array(
+				array(
+					'http://93.184.216.34/start' => 'http://93.184.216.34/a',
+					'http://93.184.216.34/a'     => 'http://93.184.216.34/b',
+					'http://93.184.216.34/b'     => 'http://nowhere.invalid/',
+				),
+			),
+		);
+	}
+
+	/**
+	 * A chain of redirects longer than the request allows ends the same way
+	 * every time, wherever its last redirect points, so it's named too.
+	 *
+	 * @dataProvider redirect_chain_provider
+	 *
+	 * @param array<string, string> $chain URL => where it redirects to.
+	 */
+	public function test_too_many_redirects_is_named( array $chain ) {
+		add_filter(
+			'daymark_subscription_url_guard_resolved_addresses',
+			static function ( $addresses, $host ) {
+				return 'nowhere.invalid' === $host ? array() : $addresses;
+			},
+			10,
+			2
+		);
+
+		foreach ( $chain as $url => $location ) {
+			$this->routes[ $url ] = self::redirect_response( $location );
+		}
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start', array( 'redirection' => 2 ) );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'daymark_redirect_refused', $response->get_error_code() );
+		$this->assertSame( 'Too many redirects', $response->get_error_message() );
+		$this->assertCount( 3, $this->requested, 'The first request and the two redirects it allows' );
+	}
+
+	/**
+	 * Redirects to a host that doesn't resolve.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function unresolvable_redirect_provider(): array {
+		return array(
+			'absolute'        => array( 'http://nowhere.invalid/' ),
+			'scheme-relative' => array( '//nowhere.invalid/x' ),
+		);
+	}
+
+	/**
+	 * A redirect to a host that doesn't resolve stays a temporary failure.
+	 * WordPress refuses it before Daymark's check sees it, as it refuses a
+	 * private address, but a failed DNS lookup can pass. A scheme-relative
+	 * Location is read the way the request would have followed it.
+	 *
+	 * @dataProvider unresolvable_redirect_provider
+	 *
+	 * @param string $location Where the first response redirects to.
+	 */
+	public function test_a_redirect_to_a_host_that_does_not_resolve_stays_temporary( string $location ) {
+		add_filter(
+			'daymark_subscription_url_guard_resolved_addresses',
+			static function ( $addresses, $host ) {
+				return 'nowhere.invalid' === $host ? array() : $addresses;
+			},
+			10,
+			2
+		);
+
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( $location ),
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'http_request_failed', $response->get_error_code() );
+		$this->assertTrue( Daymark_Outbound_Guard::is_temporary_failure( $response ) );
+	}
+
+	/** A connection that fails, with no redirect involved, stays temporary. */
+	public function test_a_failed_connection_stays_temporary() {
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::connection_failure(),
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'http_request_failed', $response->get_error_code() );
+		$this->assertTrue( Daymark_Outbound_Guard::is_temporary_failure( $response ) );
+	}
+
+	/**
+	 * A redirect both checks pass, whose target then can't be reached,
+	 * stays temporary: only the connection failed.
+	 */
+	public function test_a_failed_connection_after_a_followed_redirect_stays_temporary() {
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( 'http://93.184.216.35/final' ),
+			'http://93.184.216.35/final' => self::connection_failure(),
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'http_request_failed', $response->get_error_code() );
+		$this->assertSame( array( 'http://93.184.216.34/start', 'http://93.184.216.35/final' ), $this->requested );
+	}
+
+	/** get() still follows a redirect to an ordinary public address. */
+	public function test_get_follows_a_redirect_to_a_public_address() {
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( 'http://93.184.216.35/final' ),
+			'http://93.184.216.35/final' => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertSame( 200, wp_remote_retrieve_response_code( $response ) );
+		$this->assertSame( 'ok', wp_remote_retrieve_body( $response ) );
+	}
+
+	/**
+	 * A redirect refused inside a nested guarded call is reported to that
+	 * call only, so the outer request's own failed connection stays
+	 * temporary.
+	 */
+	public function test_a_refusal_in_a_nested_call_stays_in_that_call() {
+		add_filter( 'http_request_host_is_external', '__return_true' );
+
+		$inner = null;
+
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( 'http://93.184.216.35/final' ),
+			'http://93.184.216.35/final' => function () use ( &$inner ) {
+				$inner = $this->guarded( 'get', 'http://93.184.216.36/inner' );
+
+				throw new WpOrg\Requests\Exception( 'cURL error 7: Failed to connect', 'curlerror' );
+			},
+			'http://93.184.216.36/inner' => self::redirect_response( 'http://10.0.0.5/' ),
+		);
+
+		$outer = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $inner );
+		$this->assertSame( 'daymark_redirect_refused', $inner->get_error_code() );
+		$this->assertWPError( $outer );
+		$this->assertSame( 'http_request_failed', $outer->get_error_code() );
+	}
+
+	/**
+	 * A nested guarded call made while the outer request has a redirect
+	 * waiting to be checked hands that redirect back, so a refusal of it
+	 * is still named.
+	 */
+	public function test_a_nested_call_keeps_the_outer_redirect() {
+		add_action(
+			'requests-requests.before_redirect_check',
+			static function () {
+				Daymark_Outbound_Guard::run( '__return_true' );
+			},
+			20
+		);
+
+		$this->routes = array(
+			'http://93.184.216.34/start' => self::redirect_response( 'http://10.0.0.5/' ),
+		);
+
+		$response = $this->guarded( 'get', 'http://93.184.216.34/start' );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'daymark_redirect_refused', $response->get_error_code() );
+	}
+
+	/** Only a request that went out and got no answer is temporary. */
+	public function test_only_a_request_that_got_no_answer_is_temporary() {
+		$this->assertTrue( Daymark_Outbound_Guard::is_temporary_failure( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out' ) ) );
+
+		foreach ( array( 'daymark_redirect_refused', 'http_request_not_executed', 'daymark_subscription_unsafe_url' ) as $code ) {
+			$this->assertFalse( Daymark_Outbound_Guard::is_temporary_failure( new WP_Error( $code, 'Refused.' ) ), $code );
+		}
+	}
+
+	/**
+	 * End to end, through the real guard: a followed post's page that
+	 * redirects somewhere Daymark won't follow is remembered for the full
+	 * hour, while one that gets no answer is looked at again in a minute.
+	 */
+	public function test_a_post_page_that_redirects_somewhere_unsafe_is_remembered_for_the_full_time() {
+		$this->routes = array(
+			'http://93.184.216.34/moved/'  => self::redirect_response( 'http://169.254.169.254/latest/meta-data/' ),
+			'http://93.184.216.34/silent/' => self::connection_failure(),
+		);
+
+		$moved = $this->with_stub_transport(
+			static function () {
+				return Daymark_Comment_Delivery::origin_signals_for_url( 'http://93.184.216.34/moved/' );
+			}
+		);
+
+		$this->assertFalse( $moved['reached'] );
+		$this->assertFalse( $moved['temporary'] );
+		$this->assertGreaterThanOrEqual( time() + 59 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_comment_sig_' . md5( 'http://93.184.216.34/moved/' ) ) );
+
+		$silent = $this->with_stub_transport(
+			static function () {
+				return Daymark_Comment_Delivery::origin_signals_for_url( 'http://93.184.216.34/silent/' );
+			}
+		);
+
+		$this->assertFalse( $silent['reached'] );
+		$this->assertTrue( $silent['temporary'] );
+		$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_comment_sig_' . md5( 'http://93.184.216.34/silent/' ) ) );
+
+		$this->assertSame( array( 'http://93.184.216.34/moved/', 'http://93.184.216.34/silent/' ), $this->requested, 'The unsafe address was never requested' );
+	}
+
+	/**
+	 * End to end, through the real guard: a WordPress comments API that
+	 * redirects somewhere Daymark won't follow doesn't share its replies,
+	 * while one that gets no answer is an error to try again.
+	 */
+	public function test_a_comments_api_that_redirects_somewhere_unsafe_is_unsupported() {
+		$moved  = Daymark_Remote_Replies::comments_url( 'http://93.184.216.34/wp-json/', array( 'post' => 5 ) );
+		$silent = Daymark_Remote_Replies::comments_url( 'http://93.184.216.34/wp-json/', array( 'post' => 6 ) );
+
+		$this->routes = array(
+			$moved  => self::redirect_response( 'http://10.0.0.5/wp-json/wp/v2/comments' ),
+			$silent => self::connection_failure(),
+		);
+
+		$results = $this->with_stub_transport(
+			static function () {
+				return array(
+					Daymark_Remote_Replies::fetch_comments( 'http://93.184.216.34/wp-json/', array( 'post' => 5 ) ),
+					Daymark_Remote_Replies::fetch_comments( 'http://93.184.216.34/wp-json/', array( 'post' => 6 ) ),
+				);
+			}
+		);
+
+		$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, $results[0]['status'] );
+		$this->assertSame( Daymark_Remote_Replies::STATUS_ERROR, $results[1]['status'] );
+		$this->assertSame( array( $moved, $silent ), $this->requested );
+	}
+
+	/**
+	 * End to end, through the real guard: a Mastodon server whose context
+	 * API redirects somewhere Daymark won't follow doesn't share its
+	 * replies, kept for the full time, with a link to the post.
+	 */
+	public function test_a_context_api_that_redirects_somewhere_unsafe_is_unsupported() {
+		$this->routes = array(
+			'http://93.184.216.34/api/v1/statuses/111/context' => self::redirect_response( 'http://127.0.0.1/' ),
+		);
+
+		$result = $this->with_stub_transport(
+			static function () {
+				return Daymark_Remote_Replies::for_permalink( 'http://93.184.216.34/@ana/111' );
+			}
+		);
+
+		$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, $result['status'] );
+		$this->assertSame( Daymark_Remote_Replies::SOURCE_MASTODON, $result['source'] );
+		$this->assertSame( 'http://93.184.216.34/@ana/111', $result['url'] );
+		$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_replies_' . md5( 'http://93.184.216.34/@ana/111' ) ) );
+		$this->assertSame( array( 'http://93.184.216.34/api/v1/statuses/111/context' ), $this->requested );
 	}
 
 	/**

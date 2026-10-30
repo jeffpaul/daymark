@@ -16,19 +16,31 @@
  * Daymark asks for `wp/v2/comments?parent={your comment}`.
  * A comment sent through WordPress.com (Jetpack) isn't watched yet.
  *
+ * "Your site's address" is this site's home address or any page under it
+ * (see own_url_kind()). On a network whose sites share one host, another
+ * site's pages never count, so a reply from a neighbor isn't mistaken for
+ * your own answer. A comment whose address is only that shared host can
+ * still be found as yours by its words, since that's how a Webmention's
+ * author is sometimes recorded.
+ *
  * A reply that also reaches your own site as a Webmention to your comment's
  * Mark (the Webmention plugin, or Daymark's own receiver) is shown once:
  * the Mark's own comment wins once it's approved, keeping the reply's read
  * and archived state and, when the reply was found first, its date (see
- * superseded()), and its push isn't sent twice.
+ * superseded()), and its push isn't sent twice. That comment keeps them
+ * after Daymark forgets the reply (see remember_links()).
  *
  * Checks ride the hourly backflow sync (and the freshen run when
  * Notifications opens): hourly for two days, then every six hours for the
  * first week, then daily until 30 days have passed. A site that stops
  * sharing replies, or fails five checks in a row, is no longer checked.
  * Each watch lives in one row of the commenter's own user meta, kept
- * small (25 watches, 10 replies each), and is removed 45 days after the
- * comment.
+ * small (25 watches per site, 10 replies each), and is removed 45 days
+ * after the comment, also while watching is turned off. On a multisite
+ * network, a watch belongs to the site the comment was sent from: only
+ * that site checks it and lists its replies, though every site's watches
+ * on the same post are matched together when finding a Webmention
+ * comment, so neighbors' comments are never swapped.
  *
  * @package Daymark
  * @since   0.22.0
@@ -49,6 +61,15 @@ class Daymark_Comment_Replies {
 	 * @var string
 	 */
 	public const META = 'daymark_comment_watches';
+
+	/**
+	 * Comment meta key on a Webmention comment that copies a found reply
+	 * Daymark has since forgotten: which found reply it stood in for, and
+	 * when Daymark found it, by user ID (see remember_links()).
+	 *
+	 * @var string
+	 */
+	public const FOUND_META = '_daymark_found_reply';
 
 	/**
 	 * Transient that keeps two check runs from overlapping.
@@ -81,7 +102,9 @@ class Daymark_Comment_Replies {
 	private const MAX_SEEN = 60;
 
 	/**
-	 * Every field a stored watch has. A row missing one is removed.
+	 * Every field a stored watch has. A row missing one is removed. A row
+	 * also has `blog`, the site it was made on (see blog_of()), and one
+	 * whose comment ID isn't known yet has `shown` (see shown_here()).
 	 *
 	 * @var string[]
 	 */
@@ -124,6 +147,14 @@ class Daymark_Comment_Replies {
 	 * @var array<int, array<string, int[]>>
 	 */
 	private static array $local_keys = array();
+
+	/**
+	 * Links remembered on approved comments (see stored_links()), until a
+	 * comment or its meta changes.
+	 *
+	 * @var array<int, array{post: int, own: int, links: array<int, mixed>}>|null
+	 */
+	private static ?array $stored_links = null;
 
 	/**
 	 * Hook up: checks run with the backflow sync.
@@ -200,8 +231,10 @@ class Daymark_Comment_Replies {
 			}
 		}
 
-		$watch = array(
+		$excerpt = Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), self::EXCERPT_CHARS );
+		$watch   = array(
 			'id'        => bin2hex( random_bytes( 6 ) ),
+			'blog'      => get_current_blog_id(),
 			'post'      => $subscription_post_id,
 			'permalink' => $permalink,
 			'title'     => Daymark_Remote_Replies::plain( (string) get_the_title( $post ), 120 ),
@@ -210,7 +243,7 @@ class Daymark_Comment_Replies {
 			'remote'    => $remote,
 			'comment'   => $comment,
 			'mark'      => $mark,
-			'excerpt'   => Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), self::EXCERPT_CHARS ),
+			'excerpt'   => $excerpt,
 			'created'   => time(),
 			'checked'   => 0,
 			'fails'     => 0,
@@ -218,6 +251,14 @@ class Daymark_Comment_Replies {
 			'replies'   => array(),
 			'seen'      => array(),
 		);
+
+		// A comment found by its words was usually sent as a Webmention, as
+		// your Mark showed it, so keep how this site shows it now: a later
+		// check, or another site of the network weighing this watch, may
+		// show smileys differently.
+		if ( 0 === $comment ) {
+			$watch['shown'] = self::shown_here( $excerpt );
+		}
 
 		if ( false === add_user_meta( $user_id, self::META, wp_slash( $watch ) ) ) {
 			return false;
@@ -234,6 +275,7 @@ class Daymark_Comment_Replies {
 			);
 
 			foreach ( array_slice( $watches, 0, count( $watches ) - self::MAX_WATCHES ) as $oldest ) {
+				self::remember_links( $user_id, $oldest, $oldest['replies'] );
 				delete_user_meta( $user_id, self::META, wp_slash( $oldest ) );
 			}
 		}
@@ -248,27 +290,51 @@ class Daymark_Comment_Replies {
 	 * @return int How many comments were checked.
 	 */
 	public static function check_due(): int {
-		if ( ! self::enabled() || false !== get_transient( self::LOCK ) ) {
+		if ( false !== get_transient( self::LOCK ) ) {
 			return 0;
 		}
 
 		set_transient( self::LOCK, time(), 5 * MINUTE_IN_SECONDS );
 
 		try {
-			$now    = time();
-			$window = self::window();
-			$due    = array();
+			$enabled = self::enabled();
+			$now     = time();
+			$window  = self::window();
+			$due     = array();
 
 			foreach ( self::watcher_ids() as $user_id ) {
+				// The list covers the whole network, so it can include
+				// someone who can no longer use Daymark on this site: their
+				// watches here still expire, but aren't checked.
+				$can_check = $enabled && user_can( (int) $user_id, 'edit_posts' );
+
 				foreach ( get_user_meta( (int) $user_id, self::META, false ) as $watch ) {
-					if ( ! self::is_complete( $watch ) || $now - (int) $watch['created'] > $window + self::KEEP_AFTER_WINDOW ) {
+					if ( ! self::is_complete( $watch ) ) {
+						delete_user_meta( (int) $user_id, self::META, wp_slash( $watch ) );
+						continue;
+					}
+
+					// Another site on the network checks and removes its own
+					// watches, unless that site was deleted.
+					if ( ! self::belongs_here( $watch ) ) {
+						if ( self::site_gone( $watch ) ) {
+							delete_user_meta( (int) $user_id, self::META, wp_slash( $watch ) );
+						}
+
+						continue;
+					}
+
+					// Removed on time even while watching is off, so its
+					// replies leave Notifications when they should.
+					if ( self::expired( $watch ) ) {
+						self::remember_links( (int) $user_id, $watch, $watch['replies'] );
 						delete_user_meta( (int) $user_id, self::META, wp_slash( $watch ) );
 						continue;
 					}
 
 					$age = $now - (int) $watch['created'];
 
-					if ( ! empty( $watch['done'] ) || $age > $window || (int) $watch['checked'] + self::interval( $age, $watch ) > $now ) {
+					if ( ! $can_check || ! empty( $watch['done'] ) || $age > $window || (int) $watch['checked'] + self::interval( $age, $watch ) > $now ) {
 						continue;
 					}
 
@@ -315,6 +381,8 @@ class Daymark_Comment_Replies {
 				self::check_watch( $item['user'], $item['watch'] );
 				++$checked;
 			}
+
+			self::forget_stale_links();
 
 			return $checked;
 		} finally {
@@ -387,17 +455,21 @@ class Daymark_Comment_Replies {
 	 * comments for them (see Daymark_Notifications::lists_mark_for()), by
 	 * the comment's notification ID: the found reply's notification ID, and
 	 * when Daymark found it. Notifications shows such a comment in the found
-	 * reply's
-	 * place (see visible_replies()), with the same read and archived state
-	 * (see Daymark_Notification_State::carry_over()), dated when Daymark
-	 * found the reply. A reply whose comment was already approved when
-	 * Daymark found it was never shown, so it isn't listed.
+	 * reply's place (see visible_replies()), with the same read and archived
+	 * state (see Daymark_Notification_State::carry_over()), dated when
+	 * Daymark found the reply. A reply whose comment was already approved
+	 * when Daymark found it was never shown, so it isn't listed. Once
+	 * Daymark forgets a reply, its comment stays listed for as long as that
+	 * date still changes whether it's new or read (see remember_links() and
+	 * link_matters()); after that it's dated by its own date, like any other
+	 * comment.
 	 *
 	 * @param int $user_id User.
 	 * @return array<string, array{from: string, found: int}>
 	 */
 	public static function superseded( int $user_id ): array {
 		$superseded = array();
+		$listed     = array();
 
 		foreach ( self::get_watches( $user_id ) as $watch ) {
 			if ( array() === $watch['replies'] || ! Daymark_Notifications::lists_mark_for( $user_id, (int) $watch['mark'] ) ) {
@@ -442,7 +514,73 @@ class Daymark_Comment_Replies {
 			}
 		}
 
+		foreach ( self::stored_links() as $comment_id => $stored ) {
+			$link = $stored['links'][ $user_id ] ?? null;
+			$copy = Daymark_Notifications::item_id(
+				array(
+					'type'       => 'comment',
+					'comment_ID' => $comment_id,
+				)
+			);
+
+			if ( ! is_array( $link ) || '' === (string) ( $link['from'] ?? '' ) || isset( $superseded[ $copy ] )
+				|| ! self::link_matters( $user_id, absint( $link['found'] ?? 0 ), $stored['own'] ) ) {
+				continue;
+			}
+
+			if ( ! isset( $listed[ $stored['post'] ] ) ) {
+				$listed[ $stored['post'] ] = Daymark_Notifications::lists_mark_for( $user_id, $stored['post'] );
+			}
+
+			if ( $listed[ $stored['post'] ] ) {
+				$superseded[ $copy ] = array(
+					'from'  => (string) $link['from'],
+					'found' => absint( $link['found'] ?? 0 ),
+				);
+			}
+		}
+
 		return $superseded;
+	}
+
+	/**
+	 * The notification IDs of every reply this user's watches still hold,
+	 * on any site of the network, listed or not. Notifications keeps their
+	 * read and archived state until the watch is removed (see
+	 * Daymark_Notification_State::prune()): an expired watch's replies
+	 * leave the list at once, but their state moves to a Webmention copy
+	 * only when the next check removes the watch (see remember_links()),
+	 * and state is stored once per person for the whole network, while
+	 * each site lists only its own watches' replies.
+	 *
+	 * @param int $user_id User.
+	 * @return string[]
+	 */
+	public static function stored_item_ids( int $user_id ): array {
+		$ids = array();
+
+		if ( $user_id <= 0 ) {
+			return $ids;
+		}
+
+		foreach ( get_user_meta( $user_id, self::META, false ) as $watch ) {
+			if ( ! self::is_complete( $watch ) ) {
+				continue;
+			}
+
+			foreach ( $watch['replies'] as $reply ) {
+				if ( is_array( $reply ) ) {
+					$ids[] = Daymark_Notifications::item_id(
+						array(
+							'type'      => 'comment_reply',
+							'reply_key' => self::item_key( $watch, $reply ),
+						)
+					);
+				}
+			}
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -467,18 +605,29 @@ class Daymark_Comment_Replies {
 	/**
 	 * Whether Daymark already told the Mark's author about this reply
 	 * (found it by checking the original site), so the same reply arriving
-	 * later as a Webmention comment doesn't push again.
+	 * later as a Webmention comment doesn't push again. That includes a
+	 * comment held when Daymark forgot the reply and approved afterward
+	 * (see remember_links()).
 	 *
 	 * @param int    $mark_id    The comment's Mark.
 	 * @param string $source_url The incoming comment's Webmention source URL.
+	 * @param int    $comment_id The incoming comment, once stored (0 if not).
 	 * @return bool
 	 */
-	public static function already_found( int $mark_id, string $source_url ): bool {
+	public static function already_found( int $mark_id, string $source_url, int $comment_id = 0 ): bool {
 		$key  = self::reply_key( $source_url );
 		$post = $mark_id > 0 ? get_post( $mark_id ) : null;
 
 		if ( '' === $key || ! $post instanceof WP_Post ) {
 			return false;
+		}
+
+		if ( $comment_id > 0 ) {
+			$links = get_comment_meta( $comment_id, self::FOUND_META, true );
+
+			if ( is_array( $links ) && isset( $links[ (int) $post->post_author ] ) ) {
+				return true;
+			}
 		}
 
 		foreach ( self::get_watches( (int) $post->post_author ) as $watch ) {
@@ -522,8 +671,8 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * The user's watches: complete rows only, exactly as stored (so they
-	 * match for an update or a delete).
+	 * The user's watches made on this site: complete rows only, exactly as
+	 * stored (so they match for an update or a delete).
 	 *
 	 * @param int $user_id User.
 	 * @return array<int, array<string, mixed>>
@@ -533,7 +682,14 @@ class Daymark_Comment_Replies {
 			return array();
 		}
 
-		return array_values( array_filter( get_user_meta( $user_id, self::META, false ), array( __CLASS__, 'is_complete' ) ) );
+		return array_values(
+			array_filter(
+				get_user_meta( $user_id, self::META, false ),
+				static function ( $row ): bool {
+					return self::is_complete( $row ) && self::belongs_here( $row );
+				}
+			)
+		);
 	}
 
 	/**
@@ -547,6 +703,51 @@ class Daymark_Comment_Replies {
 			&& array() === array_diff_key( array_flip( self::KEYS ), $row )
 			&& is_array( $row['replies'] )
 			&& is_array( $row['seen'] );
+	}
+
+	/**
+	 * The site a watch was made on. Watches from before sites were recorded
+	 * count as the main site's.
+	 *
+	 * @param array<string, mixed> $row Watch.
+	 * @return int Site ID.
+	 */
+	private static function blog_of( array $row ): int {
+		return (int) ( $row['blog'] ?? get_main_site_id() );
+	}
+
+	/**
+	 * Whether a watch was made on this site.
+	 *
+	 * @param array<string, mixed> $row Watch.
+	 * @return bool
+	 */
+	private static function belongs_here( array $row ): bool {
+		return self::blog_of( $row ) === get_current_blog_id();
+	}
+
+	/**
+	 * Whether a watch was made on a site that no longer exists, so no site
+	 * would ever check or remove it.
+	 *
+	 * @param array<string, mixed> $row Watch.
+	 * @return bool
+	 */
+	private static function site_gone( array $row ): bool {
+		$blog = self::blog_of( $row );
+
+		return get_current_blog_id() !== $blog && ( $blog <= 0 || ! is_multisite() || ! get_site( $blog ) instanceof WP_Site );
+	}
+
+	/**
+	 * Whether a watch is past the time it's kept: the watch window, then a
+	 * while for its replies to stay in Notifications.
+	 *
+	 * @param array<string, mixed> $row Watch.
+	 * @return bool
+	 */
+	private static function expired( array $row ): bool {
+		return time() - (int) $row['created'] > self::window() + self::KEEP_AFTER_WINDOW;
 	}
 
 	/**
@@ -587,6 +788,7 @@ class Daymark_Comment_Replies {
 		$watch['checked'] = $now;
 		$status           = Daymark_Remote_Replies::STATUS_OK;
 		$new              = array();
+		$dropped          = array();
 
 		if ( 0 === (int) $watch['comment'] ) {
 			$own              = self::find_own_comment( $user_id, $watch );
@@ -622,8 +824,10 @@ class Daymark_Comment_Replies {
 					$known[ (int) $reply['id'] ] = true;
 					$watch['seen'][]             = (int) $reply['id'];
 
-					// Your own answers aren't news to you.
-					if ( self::is_own_url( $reply['author_url'] ) ) {
+					// Your own answers aren't news to you. A reply signed with
+					// only this site's host may be a neighbor's on a shared
+					// host, so it still counts.
+					if ( 'own' === self::own_url_kind( $reply['author_url'] ) ) {
 						continue;
 					}
 
@@ -646,6 +850,7 @@ class Daymark_Comment_Replies {
 					}
 				}
 
+				$dropped          = array_slice( $watch['replies'], 0, max( 0, count( $watch['replies'] ) - self::MAX_REPLIES ) );
 				$watch['replies'] = array_slice( $watch['replies'], -self::MAX_REPLIES );
 				$watch['seen']    = array_slice( $watch['seen'], -self::MAX_SEEN );
 			}
@@ -661,24 +866,31 @@ class Daymark_Comment_Replies {
 		}
 
 		// Matching on the stored value means a run that lost a race with
-		// another one saves nothing and pushes nothing.
-		if ( update_user_meta( $user_id, self::META, wp_slash( $watch ), $stored ) && array() !== $new ) {
-			self::push( $user_id, $watch, $new );
+		// another one saves nothing, remembers nothing, and pushes nothing.
+		if ( update_user_meta( $user_id, self::META, wp_slash( $watch ), $stored ) ) {
+			self::remember_links( $user_id, $watch, $dropped );
+
+			if ( array() !== $new ) {
+				self::push( $user_id, $watch, $new );
+			}
 		}
 	}
 
 	/**
 	 * Find a Webmention comment's ID on the original site, among that
-	 * post's newest comments from this site's address.
+	 * post's newest comments from this site's address, or from only its
+	 * host, which is how a Webmention's author is sometimes recorded.
 	 *
 	 * Anyone can type your site's address into a comment form, so the
 	 * address alone never makes a comment yours: its words must match too.
 	 * Every watch on the same post that is still looking for its comment
-	 * (this person's or another author's on this site, finished or not)
-	 * is matched at the same time, best words first and then the closest
-	 * time, so two people's comments are never swapped, whichever is
-	 * checked first. A comment another watch already found is never used,
-	 * nor one stored more than an hour before the comment was sent.
+	 * (anyone's, on any site of the network, finished or not) is matched
+	 * at the same time, best words first and then the closest time, so
+	 * two people's comments are never swapped, whichever is checked
+	 * first. Each watch is matched only with comments from its own site's
+	 * address, or from only the host that site shares with its neighbors.
+	 * A comment another watch already found is never used, nor one stored
+	 * more than an hour before the comment was sent.
 	 *
 	 * A comment the site edited, or one with no letters, numbers, or
 	 * emoji, isn't found, and its replies aren't followed.
@@ -713,15 +925,24 @@ class Daymark_Comment_Replies {
 		foreach ( $fetched['items'] as $item ) {
 			$id = absint( $item['id'] ?? 0 );
 
-			if ( 0 === $id || isset( $on_post['taken'][ $id ] ) || ! self::is_own_url( (string) ( $item['author_url'] ?? '' ) ) ) {
+			if ( 0 === $id || isset( $on_post['taken'][ $id ] ) ) {
 				continue;
 			}
 
-			$date = Daymark_Remote_Replies::timestamp( (string) ( $item['date_gmt'] ?? '' ) );
-			$text = self::match_text( is_array( $item['content'] ?? null ) ? (string) ( $item['content']['rendered'] ?? '' ) : '' );
+			$author_url = (string) ( $item['author_url'] ?? '' );
+			$date       = Daymark_Remote_Replies::timestamp( (string) ( $item['date_gmt'] ?? '' ) );
+			$text       = self::match_text( is_array( $item['content'] ?? null ) ? (string) ( $item['content']['rendered'] ?? '' ) : '' );
+			$kinds      = array();
 
 			foreach ( $on_post['claims'] as $index => $claim ) {
-				if ( $date > 0 && $date < $claim['created'] - HOUR_IN_SECONDS ) {
+				// Read the address as the watch's own site reads it: on a
+				// shared host, a neighbor's page is never this watch's, but
+				// the host alone can be anyone's on it.
+				if ( ! isset( $kinds[ $claim['blog'] ] ) ) {
+					$kinds[ $claim['blog'] ] = self::own_url_kind( $author_url, $claim['blog'] );
+				}
+
+				if ( '' === $kinds[ $claim['blog'] ] || ( $date > 0 && $date < $claim['created'] - HOUR_IN_SECONDS ) ) {
 					continue;
 				}
 
@@ -775,9 +996,12 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * The watches on the same post, by anyone on this site: the comment
-	 * IDs they already found, and each one still looking for its comment
-	 * (this watch first).
+	 * The watches on the same post, by anyone on any site of the network:
+	 * the comment IDs any of them already found, and each one still looking
+	 * for its comment (this watch first). Another site's watch is weighed
+	 * here but never updated: its own site records what it finds, by the
+	 * same matching. A watch past its time, or from a deleted site, is no
+	 * longer looking.
 	 *
 	 * @param int                  $user_id User the watch belongs to.
 	 * @param array<string, mixed> $watch   Watch.
@@ -788,7 +1012,11 @@ class Daymark_Comment_Replies {
 		$claims = array( self::claim( $user_id, $watch, true ) );
 
 		foreach ( self::watcher_ids() as $other_user ) {
-			foreach ( self::get_watches( (int) $other_user ) as $other ) {
+			foreach ( get_user_meta( (int) $other_user, self::META, false ) as $other ) {
+				if ( ! self::is_complete( $other ) ) {
+					continue;
+				}
+
 				$same_watch = (int) $other_user === $user_id && $other['id'] === $watch['id'];
 
 				if ( $same_watch || $other['root'] !== $watch['root'] || (int) $other['remote'] !== (int) $watch['remote'] ) {
@@ -797,7 +1025,7 @@ class Daymark_Comment_Replies {
 
 				if ( (int) $other['comment'] > 0 ) {
 					$taken[ (int) $other['comment'] ] = true;
-				} else {
+				} elseif ( ! self::expired( $other ) && ! self::site_gone( $other ) ) {
 					$claims[] = self::claim( (int) $other_user, $other, false );
 				}
 			}
@@ -815,34 +1043,142 @@ class Daymark_Comment_Replies {
 	 * @param int                  $user_id User the watch belongs to.
 	 * @param array<string, mixed> $watch   Watch.
 	 * @param bool                 $is_self Whether it's the watch being checked.
-	 * @return array{self: bool, user: int, id: string, created: int, variants: string[], cut: bool}
+	 * @return array{self: bool, user: int, id: string, blog: int, created: int, variants: string[], cut: bool}
 	 */
 	private static function claim( int $user_id, array $watch, bool $is_self ): array {
 		$excerpt = (string) $watch['excerpt'];
+		// A row stored before `shown` existed is read with this site's
+		// settings now.
+		$shown = isset( $watch['shown'] ) && is_string( $watch['shown'] ) ? $watch['shown'] : self::shown_here( $excerpt );
 
 		return array(
 			'self'     => $is_self,
 			'user'     => $user_id,
 			'id'       => (string) $watch['id'],
+			'blog'     => self::blog_of( $watch ),
 			'created'  => (int) $watch['created'],
-			'variants' => self::match_variants( $excerpt ),
+			'variants' => self::match_variants( $excerpt, $shown ),
 			// The excerpt was shortened, so only its start can match.
 			'cut'      => '…' === mb_substr( $excerpt, -1 ) && mb_strlen( $excerpt ) >= self::EXCERPT_CHARS - 1,
 		);
 	}
 
 	/**
-	 * A comment's text as sent, and as a WordPress site shows it (curly
-	 * quotes, dashes, × in "2x4", smileys as emoji), both reduced by
-	 * match_text().
+	 * A comment's text as sent and as your Mark showed it (see
+	 * shown_here()), each also as a WordPress site may show it: with
+	 * WordPress's default typography (× in "2x4", ™ for "(tm)"), with
+	 * WordPress's default smileys as emoji, with both, or with neither,
+	 * each reduced by match_text(). The original site's settings aren't
+	 * known, and needn't match this site's.
 	 *
 	 * @param string $excerpt Plain text of the comment as sent.
+	 * @param string $shown   Plain text of the comment as your Mark showed it.
 	 * @return string[]
 	 */
-	private static function match_variants( string $excerpt ): array {
-		$shown = convert_smilies( wptexturize( htmlspecialchars( $excerpt, ENT_NOQUOTES, 'UTF-8' ) ) );
+	private static function match_variants( string $excerpt, string $shown ): array {
+		$variants = array();
 
-		return array_values( array_unique( array_filter( array( self::match_text( $excerpt ), self::match_text( $shown ) ), 'strlen' ) ) );
+		foreach ( array_unique( array( $excerpt, $shown ) ) as $text ) {
+			$escaped    = htmlspecialchars( $text, ENT_NOQUOTES, 'UTF-8' );
+			$texturized = self::texturize_by_default( $escaped );
+
+			array_push(
+				$variants,
+				self::match_text( $text ),
+				self::match_text( self::smilies_by_default( $escaped ) ),
+				self::match_text( $texturized ),
+				self::match_text( self::smilies_by_default( $texturized ) )
+			);
+		}
+
+		return array_values( array_unique( array_filter( $variants, 'strlen' ) ) );
+	}
+
+	/**
+	 * A comment's text as this site shows it on the comment's Mark: with
+	 * this site's own typography and smileys (its own list, or images,
+	 * which the original site drops), as plain text. A Webmention sends
+	 * the Mark as shown, so this is what the original site received.
+	 *
+	 * @param string $excerpt Plain text of the comment as sent.
+	 * @return string
+	 */
+	private static function shown_here( string $excerpt ): string {
+		return Daymark_Remote_Replies::plain( convert_smilies( wptexturize( htmlspecialchars( $excerpt, ENT_NOQUOTES, 'UTF-8' ) ) ), 400 );
+	}
+
+	/**
+	 * The parts of WordPress's default typography that still show after
+	 * match_text() drops punctuation: × between numbers (where "2x4"
+	 * becomes "2 4") and ™ for "(tm)". Applied as wptexturize() applies
+	 * them, also when this site turned typography off. Curly quotes,
+	 * dashes, and ellipses are left out, since match_text() drops them
+	 * anyway.
+	 *
+	 * @param string $text Escaped text.
+	 * @return string
+	 */
+	private static function texturize_by_default( string $text ): string {
+		$text = str_replace( ' (tm)', ' &#8482;', $text );
+
+		// 9x9 (times), but never 0x9999, as wptexturize() does.
+		if ( preg_match( '/(?<=\d)x\d/', $text ) ) {
+			$text = (string) preg_replace( '/\b(\d(?(?<=0)[\d\.,]+|[\d\.,]*))x(\d[\d\.,]*)\b/', '$1&#215;$2', $text );
+		}
+
+		return $text;
+	}
+
+	/**
+	 * Smileys as a WordPress site shows them by default (most as emoji):
+	 * core's own list, also when this site turned smileys off or changed
+	 * its list.
+	 *
+	 * @param string $text Escaped text.
+	 * @return string
+	 */
+	private static function smilies_by_default( string $text ): string {
+		global $wp_smiliessearch, $wpsmiliestrans;
+
+		$search = $wp_smiliessearch;
+		$trans  = $wpsmiliestrans;
+		$list   = array();
+		$on     = static function (): string {
+			return '1';
+		};
+		// smilies_init() passes core's list to the filter first; keep it,
+		// whatever this site's own filters do to it.
+		$keep_core = static function ( $smilies ) use ( &$list ) {
+			$list = is_array( $smilies ) ? $smilies : array();
+			return $smilies;
+		};
+		$use_core  = static function () use ( &$list ): array {
+			return $list;
+		};
+
+		add_filter( 'pre_option_use_smilies', $on, PHP_INT_MAX );
+		add_filter( 'smilies', $keep_core, PHP_INT_MIN );
+		add_filter( 'smilies', $use_core, PHP_INT_MAX );
+
+		try {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again from core's list, restored below.
+			$wp_smiliessearch = null;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again from core's list, restored below.
+			$wpsmiliestrans = null;
+
+			smilies_init();
+
+			return convert_smilies( $text );
+		} finally {
+			remove_filter( 'pre_option_use_smilies', $on, PHP_INT_MAX );
+			remove_filter( 'smilies', $keep_core, PHP_INT_MIN );
+			remove_filter( 'smilies', $use_core, PHP_INT_MAX );
+
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored as found.
+			$wp_smiliessearch = $search;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored as found.
+			$wpsmiliestrans = $trans;
+		}
 	}
 
 	/**
@@ -888,14 +1224,15 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * The people with watched comments, each once (the query returns a
-	 * person once per watch).
+	 * The people with watched comments, on any site of the network, each
+	 * once (the query returns a person once per watch).
 	 *
 	 * @return int[]
 	 */
 	private static function watcher_ids(): array {
 		$ids = get_users(
 			array(
+				'blog_id'      => 0,
 				'fields'       => 'ID',
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Only people with watched comments; personal-site scale.
 				'meta_key'     => self::META,
@@ -962,14 +1299,15 @@ class Daymark_Comment_Replies {
 	/**
 	 * A watch's replies that belong in Notifications: not ones that reached
 	 * the Mark as an approved comment too, when Notifications lists that
-	 * Mark's comments (see superseded()).
+	 * Mark's comments (see superseded()), and none once the watch is past
+	 * the time it's kept (before the next check removes it).
 	 *
 	 * @param int                  $user_id User the watch belongs to.
 	 * @param array<string, mixed> $watch   Watch.
 	 * @return array<int, array<string, mixed>>
 	 */
 	private static function visible_replies( int $user_id, array $watch ): array {
-		if ( array() === $watch['replies'] ) {
+		if ( array() === $watch['replies'] || self::expired( $watch ) ) {
 			return array();
 		}
 
@@ -1038,13 +1376,231 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Forget the cached Webmention comments per Mark. Runs whenever a
-	 * comment or its meta changes (see register()), and in tests.
+	 * Forget the cached Webmention comments per Mark and the remembered
+	 * links. Runs whenever a comment or its meta changes (see register()),
+	 * and in tests.
 	 *
 	 * @return void
 	 */
 	public static function flush_local_keys(): void {
-		self::$local_keys = array();
+		self::$local_keys   = array();
+		self::$stored_links = null;
+	}
+
+	/**
+	 * Keep a forgotten reply's place in Notifications on its Webmention
+	 * copy.
+	 *
+	 * Daymark forgets a found reply when its watch is pushed out by newer
+	 * ones, when the watch is removed after the time it's kept, or when the
+	 * watch keeps only its newest replies. If the reply also reached the
+	 * comment's Mark as a Webmention comment, that comment took (or, once
+	 * approved, takes) the reply's place in Notifications. So the place
+	 * doesn't change when the reply is forgotten, this copies the reply's
+	 * read and archived state to the comment (see
+	 * Daymark_Notification_State::carry_over()), and stores the reply's
+	 * notification ID and the time Daymark found it on the comment, for as
+	 * long as that time still changes whether it's new or read (see
+	 * link_matters()). A comment held for moderation always gets them,
+	 * since it isn't listed yet; an approved one is also marked as pushed,
+	 * so approving it again later never pushes the reply a second time.
+	 *
+	 * @param int                              $user_id The watch's owner.
+	 * @param array<string, mixed>             $watch   The watch.
+	 * @param array<int, array<string, mixed>> $replies The replies being forgotten.
+	 * @return void
+	 */
+	private static function remember_links( int $user_id, array $watch, array $replies ): void {
+		$mark_id = (int) $watch['mark'];
+
+		if ( $mark_id <= 0 || $user_id <= 0 || array() === $replies ) {
+			return;
+		}
+
+		$wanted = array();
+
+		foreach ( $replies as $reply ) {
+			if ( ! is_array( $reply ) || ! empty( $reply['local'] ) ) {
+				continue;
+			}
+
+			$key = self::reply_key( (string) ( $reply['url'] ?? '' ) );
+
+			if ( '' === $key || isset( $wanted[ $key ] ) ) {
+				continue;
+			}
+
+			$wanted[ $key ] = array(
+				'from'  => Daymark_Notifications::item_id(
+					array(
+						'type'      => 'comment_reply',
+						'reply_key' => self::item_key( $watch, $reply ),
+					)
+				),
+				'found' => absint( $reply['found'] ?? 0 ),
+			);
+		}
+
+		if ( array() === $wanted ) {
+			return;
+		}
+
+		// Held comments too: one approved later still takes the reply's
+		// place.
+		$comments = get_comments(
+			array(
+				'post_id'  => $mark_id,
+				'status'   => 'all',
+				'type'     => Daymark_Notifications::COMMENT_TYPES,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- One Mark's comments.
+				'meta_key' => 'webmention_source_url',
+			)
+		);
+		$carried  = array();
+
+		foreach ( $comments as $comment ) {
+			if ( ! $comment instanceof WP_Comment ) {
+				continue;
+			}
+
+			$comment_id = (int) $comment->comment_ID;
+			$key        = self::reply_key( (string) get_comment_meta( $comment_id, 'webmention_source_url', true ) );
+
+			if ( '' === $key || ! isset( $wanted[ $key ] ) ) {
+				continue;
+			}
+
+			$link  = $wanted[ $key ];
+			$links = get_comment_meta( $comment_id, self::FOUND_META, true );
+			$links = is_array( $links ) ? $links : array();
+			$held  = '1' !== (string) $comment->comment_approved;
+
+			if ( ! isset( $links[ $user_id ] )
+				&& ( $held || self::link_matters( $user_id, $link['found'], (int) strtotime( $comment->comment_date_gmt . ' UTC' ) ) ) ) {
+				$links[ $user_id ] = $link;
+				update_comment_meta( $comment_id, self::FOUND_META, wp_slash( $links ) );
+			}
+
+			if ( ! $held && ! get_comment_meta( $comment_id, Daymark_Push::COMMENT_SENT_META, true ) ) {
+				update_comment_meta( $comment_id, Daymark_Push::COMMENT_SENT_META, '1' );
+			}
+
+			$carried[ Daymark_Notifications::item_id(
+				array(
+					'type'       => 'comment',
+					'comment_ID' => $comment_id,
+				)
+			) ] = $link['from'];
+		}
+
+		if ( array() !== $carried ) {
+			Daymark_Plugin::instance()->notification_state->carry_over( $user_id, $carried );
+		}
+	}
+
+	/**
+	 * The approved comments that keep a forgotten reply's place (see
+	 * remember_links()): each one's Mark, its own date, and its links by
+	 * user ID.
+	 *
+	 * @return array<int, array{post: int, own: int, links: array<int, mixed>}>
+	 */
+	private static function stored_links(): array {
+		if ( null !== self::$stored_links ) {
+			return self::$stored_links;
+		}
+
+		$stored   = array();
+		$comments = get_comments(
+			array(
+				'status'   => 'approve',
+				'type'     => Daymark_Notifications::COMMENT_TYPES,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Only comments that keep a forgotten reply's place.
+				'meta_key' => self::FOUND_META,
+			)
+		);
+
+		foreach ( $comments as $comment ) {
+			if ( ! $comment instanceof WP_Comment ) {
+				continue;
+			}
+
+			$links = get_comment_meta( (int) $comment->comment_ID, self::FOUND_META, true );
+
+			if ( is_array( $links ) && array() !== $links ) {
+				$stored[ (int) $comment->comment_ID ] = array(
+					'post'  => (int) $comment->comment_post_ID,
+					'own'   => (int) strtotime( $comment->comment_date_gmt . ' UTC' ),
+					'links' => $links,
+				);
+			}
+		}
+
+		self::$stored_links = $stored;
+
+		return $stored;
+	}
+
+	/**
+	 * Whether dating a comment by when Daymark found its reply, rather than
+	 * by its own date, still changes whether Notifications shows it as new
+	 * or as read for this user. Both dates are past and the cutoffs only
+	 * ever move to the present, so once this is false it stays false.
+	 *
+	 * @param int $user_id User.
+	 * @param int $found   When Daymark found the reply.
+	 * @param int $own     The comment's own date.
+	 * @return bool
+	 */
+	private static function link_matters( int $user_id, int $found, int $own ): bool {
+		if ( $found <= 0 || $own <= 0 || $found === $own ) {
+			return false;
+		}
+
+		$earlier = min( $found, $own );
+		$later   = max( $found, $own );
+		$cutoffs = array(
+			(int) get_user_meta( $user_id, Daymark_Notifications::SEEN_META, true ),
+			Daymark_Plugin::instance()->notification_state->read_before( $user_id ),
+		);
+
+		foreach ( $cutoffs as $cutoff ) {
+			if ( $earlier <= $cutoff && $cutoff < $later ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Drop the links (see remember_links()) that no longer change anything:
+	 * their user is gone, or both dates now show the same way (see
+	 * link_matters()). Runs after each check run. A comment held for
+	 * moderation keeps its links until it's approved, since only approved
+	 * comments are looked at here.
+	 *
+	 * @return void
+	 */
+	private static function forget_stale_links(): void {
+		foreach ( self::stored_links() as $comment_id => $stored ) {
+			$keep = array();
+
+			foreach ( $stored['links'] as $link_user => $link ) {
+				if ( is_array( $link ) && get_userdata( (int) $link_user )
+					&& self::link_matters( (int) $link_user, absint( $link['found'] ?? 0 ), $stored['own'] ) ) {
+					$keep[ $link_user ] = $link;
+				}
+			}
+
+			if ( array() === $keep ) {
+				delete_comment_meta( $comment_id, self::FOUND_META );
+			} elseif ( count( $keep ) < count( $stored['links'] ) ) {
+				update_comment_meta( $comment_id, self::FOUND_META, wp_slash( $keep ) );
+			}
+		}
+
+		self::$stored_links = null;
 	}
 
 	/**
@@ -1120,15 +1676,63 @@ class Daymark_Comment_Replies {
 	}
 
 	/**
-	 * Whether a URL is on this site's own host.
+	 * Whether a URL is this site's: 'own' for its home address or a page
+	 * under it; 'root' for only the host, when this site's home has a path
+	 * (a site in a subdirectory, which shares its host); '' otherwise,
+	 * including another site's page on the same host. Ports and schemes
+	 * aren't compared. A 'root' address can still find your comment by its
+	 * words, but a reply signed with one is never skipped as your own.
 	 *
-	 * @param string $url URL.
-	 * @return bool
+	 * @param string $url  URL.
+	 * @param int    $blog Read it as this site of the network does (0 for
+	 *                     this site).
+	 * @return string 'own', 'root', or ''.
 	 */
-	private static function is_own_url( string $url ): bool {
+	private static function own_url_kind( string $url, int $blog = 0 ): string {
+		$blog = $blog > 0 ? $blog : get_current_blog_id();
+		$home = is_multisite() && get_current_blog_id() !== $blog ? get_home_url( $blog, '/' ) : home_url( '/' );
 		$host = self::host_key( $url );
 
-		return '' !== $host && self::host_key( home_url( '/' ) ) === $host;
+		if ( '' === $host || self::host_key( $home ) !== $host ) {
+			return '';
+		}
+
+		$path      = self::path_key( $url );
+		$home_path = self::path_key( $home );
+
+		if ( '' !== $home_path ) {
+			if ( '' === $path ) {
+				return 'root';
+			}
+
+			if ( $path !== $home_path && ! str_starts_with( $path, $home_path . '/' ) ) {
+				return '';
+			}
+		}
+
+		// On a network of sites in subdirectories, a page under this
+		// site's address can still be a deeper site's (the main site's
+		// address is the start of every other site's).
+		if ( is_multisite() && ! is_subdomain_install() ) {
+			$site = get_site_by_path( (string) wp_parse_url( $home, PHP_URL_HOST ), '' === $path ? '/' : $path . '/' );
+
+			if ( $site instanceof WP_Site && $blog !== (int) $site->blog_id ) {
+				return '';
+			}
+		}
+
+		return 'own';
+	}
+
+	/**
+	 * A URL's path, lowercased and decoded, without a trailing slash ('' for
+	 * the host alone).
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	private static function path_key( string $url ): string {
+		return untrailingslashit( strtolower( rawurldecode( (string) wp_parse_url( $url, PHP_URL_PATH ) ) ) );
 	}
 
 	/**

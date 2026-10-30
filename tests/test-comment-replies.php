@@ -366,6 +366,7 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 		$this->assertSame( 9, (int) $watch['comment'] );
 		$this->assertSame( 0, (int) $watch['mark'] );
 		$this->assertSame( 'Great post!', $watch['excerpt'] );
+		$this->assertArrayNotHasKey( 'shown', $watch, 'Only a comment found by its words needs how your Mark showed it.' );
 		$this->assertSame( 0, (int) $watch['checked'] );
 		$this->assertFalse( $watch['done'] );
 		$this->assertSame( array(), $watch['replies'] );
@@ -682,7 +683,10 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 		}
 	}
 
-	/** A comment another watch already found isn't taken; the second one waits for its own. */
+	/**
+	 * A second comment on the same post waits until it reaches the site,
+	 * then is found by its words, though the site added a note after them.
+	 */
 	public function test_a_second_comment_on_the_same_post_finds_its_own(): void {
 		$sub_id = $this->create_subscription_post();
 		$this->watch(
@@ -1297,5 +1301,1020 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 		$this->assertSame( 'origin.example#7', Daymark_Comment_Replies::reply_key( 'https://origin.example/post/?replytocom=7#respond' ) );
 		$this->assertSame( '', Daymark_Comment_Replies::reply_key( 'https://origin.example/post/' ) );
 		$this->assertSame( '', Daymark_Comment_Replies::reply_key( '' ) );
+	}
+
+	/**
+	 * Make this site live in a subdirectory of its host, as a site on a
+	 * network of subdirectories does.
+	 *
+	 * @return void
+	 */
+	private function live_in_subdirectory(): void {
+		add_filter(
+			'pre_option_home',
+			static function (): string {
+				return 'http://example.org/alice';
+			}
+		);
+	}
+
+	/**
+	 * How Daymark reads an address: this site's ('own'), only its shared
+	 * host ('root'), or someone else's ('').
+	 *
+	 * @param string $url URL.
+	 * @return string
+	 */
+	private function url_kind( string $url ): string {
+		$method = new ReflectionMethod( Daymark_Comment_Replies::class, 'own_url_kind' );
+
+		return (string) $method->invoke( null, $url );
+	}
+
+	/**
+	 * A found reply as a watch stores it.
+	 *
+	 * @param int $id    Reply ID on the original site.
+	 * @param int $found When Daymark found it.
+	 * @return array<string, mixed>
+	 */
+	private function found_reply_row( int $id, int $found ): array {
+		return array(
+			'id'         => (string) $id,
+			'author'     => 'Ana',
+			'author_url' => 'https://reader.example/',
+			'avatar'     => '',
+			'text'       => 'Thanks!',
+			'url'        => self::PERMALINK . '#comment-' . $id,
+			'date'       => $found - HOUR_IN_SECONDS,
+			'found'      => $found,
+			'local'      => false,
+		);
+	}
+
+	/**
+	 * Watch a comment sent with some words, which the site shows another
+	 * way, and check once.
+	 *
+	 * @param string $sent  What was sent.
+	 * @param string $shown What the site shows (HTML).
+	 * @return int The comment found (0 if none).
+	 */
+	private function find_comment_shown_as( string $sent, string $shown ): int {
+		delete_user_meta( $this->user_id, Daymark_Comment_Replies::META );
+
+		$this->watch(
+			$this->create_subscription_post(),
+			array(
+				'comment' => 0,
+				'mark'    => 77,
+				'text'    => $sent,
+			)
+		);
+		$this->mock_json( $this->search_url(), array( $this->own_site_comment( 60, $shown ) ) );
+		$this->mock_json( $this->replies_url( 60 ), array() );
+
+		Daymark_Comment_Replies::check_due();
+
+		return (int) $this->only_watch()['comment'];
+	}
+
+	/**
+	 * On a site in a subdirectory of a shared host, only replies from its
+	 * own pages are skipped as your answers: a neighbor's site, the shared
+	 * host, or a site whose name starts the same way are someone else.
+	 */
+	public function test_on_a_site_in_a_subdirectory_only_its_own_pages_are_your_answers(): void {
+		$this->live_in_subdirectory();
+		Daymark_Push::save_subscription( $this->user_id, $this->browser_subscription() );
+		$this->watch( $this->create_subscription_post() );
+		$this->mock_json(
+			$this->replies_url(),
+			array(
+				$this->reply( 15, 'Alicia', 'Hello from next door.', 'http://example.org/alicia/' ),
+				$this->reply( 14, 'Host', 'Hello from the network.', 'http://example.org/' ),
+				$this->reply( 13, 'Bob', 'Hello from down the hall.', 'http://example.org/bob/' ),
+				$this->reply( 12, 'You', 'Thanks!', 'http://example.org/alice/2026/10/a-mark/' ),
+			)
+		);
+
+		Daymark_Comment_Replies::check_due();
+
+		$watch = $this->only_watch();
+		$this->assertSame( array( 12, 13, 14, 15 ), array_map( 'intval', $watch['seen'] ) );
+		$this->assertSame( array( 13, 14, 15 ), array_map( 'intval', wp_list_pluck( $watch['replies'], 'id' ) ) );
+
+		$pushes = $this->scheduled_pushes();
+		$this->assertCount( 1, $pushes );
+		$this->assertSame( '3 new replies', $pushes[0][1]['body'] );
+	}
+
+	/**
+	 * On a site in a subdirectory, a neighbor's comment with the same
+	 * words isn't yours; one signed with only the shared host can be.
+	 */
+	public function test_on_a_site_in_a_subdirectory_a_neighbors_comment_is_not_yours(): void {
+		$this->live_in_subdirectory();
+		$this->watch(
+			$this->create_subscription_post(),
+			array(
+				'comment' => 0,
+				'mark'    => 77,
+			)
+		);
+
+		$alicia               = $this->own_site_comment( 52, 'Great post!' );
+		$alicia['author_url'] = 'http://example.org/alicia/';
+		$bob                  = $this->own_site_comment( 50, 'Great post!' );
+		$bob['author_url']    = 'http://example.org/bob/author/bob/';
+		$this->mock_json( $this->search_url(), array( $alicia, $bob ) );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 0, (int) $this->only_watch()['comment'] );
+		$this->assertNotContains( $this->replies_url( 50 ), $this->requested );
+		$this->assertNotContains( $this->replies_url( 52 ), $this->requested );
+
+		$host               = $this->own_site_comment( 51, 'Great post!' );
+		$host['author_url'] = 'http://example.org/';
+		$this->mock_json( $this->search_url(), array( $alicia, $host, $bob ) );
+		$this->mock_json( $this->replies_url( 51 ), array() );
+		$this->rewind( 0, 2 * HOUR_IN_SECONDS );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 51, (int) $this->only_watch()['comment'] );
+	}
+
+	/** Which addresses are this site's, for a site at its host's root and for one in a subdirectory. */
+	public function test_own_url_kind_reads_a_site_in_a_subdirectory(): void {
+		$this->assertSame( 'own', $this->url_kind( 'http://example.org/' ) );
+		$this->assertSame( 'own', $this->url_kind( 'https://www.example.org/2026/10/a-mark/' ) );
+		$this->assertSame( '', $this->url_kind( 'http://other.example/' ) );
+		$this->assertSame( '', $this->url_kind( '' ) );
+
+		$this->live_in_subdirectory();
+
+		$this->assertSame( 'own', $this->url_kind( 'http://example.org/alice' ) );
+		$this->assertSame( 'own', $this->url_kind( 'http://example.org/alice/' ) );
+		$this->assertSame( 'own', $this->url_kind( 'http://example.org/ALICE/2026/10/a-mark/' ) );
+		$this->assertSame( 'own', $this->url_kind( 'https://www.example.org/alice/2026/' ) );
+		$this->assertSame( '', $this->url_kind( 'http://example.org/alicia' ) );
+		$this->assertSame( '', $this->url_kind( 'http://example.org/bob/' ) );
+		$this->assertSame( '', $this->url_kind( 'http://other.example/alice/' ) );
+		$this->assertSame( 'root', $this->url_kind( 'http://example.org/' ) );
+		$this->assertSame( 'root', $this->url_kind( 'http://example.org' ) );
+	}
+
+	/** A comment another person's watch already found isn't taken, even with the same words. */
+	public function test_a_comment_another_watch_found_is_not_taken(): void {
+		$sub_id = $this->create_subscription_post();
+		$other  = (int) self::factory()->user->create( array( 'role' => 'author' ) );
+
+		$this->watch(
+			$sub_id,
+			array(
+				'comment' => 0,
+				'mark'    => 77,
+			)
+		);
+		$this->mock_json( $this->search_url(), array( $this->own_site_comment( 41, 'Great post!', 29 * MINUTE_IN_SECONDS ) ) );
+		$this->mock_json( $this->replies_url( 41 ), array() );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 41, (int) $this->only_watch()['comment'] );
+
+		// Someone else sends the same words; theirs hasn't reached the site yet.
+		$this->watch_as(
+			$other,
+			$sub_id,
+			array(
+				'comment' => 0,
+				'mark'    => 78,
+			)
+		);
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 0, (int) $this->watch_by_mark( $other, 78 )['comment'] );
+		$this->assertCount( 1, array_keys( $this->requested, $this->replies_url( 41 ), true ), 'Only the first watch asks about comment 41' );
+
+		// Theirs arrives.
+		$this->mock_json(
+			$this->search_url(),
+			array(
+				$this->own_site_comment( 42, 'Great post!' ),
+				$this->own_site_comment( 41, 'Great post!', 29 * MINUTE_IN_SECONDS ),
+			)
+		);
+		$this->mock_json( $this->replies_url( 42 ), array() );
+		$this->set_times( $other, array( 78 => array( 0, 2 * HOUR_IN_SECONDS ) ) );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 42, (int) $this->watch_by_mark( $other, 78 )['comment'] );
+		$this->assertSame( 41, (int) $this->only_watch()['comment'] );
+		$this->assertSame( array( '42' ), Daymark_Comment_Replies::own_comment_ids( $other, $sub_id, self::PERMALINK ) );
+		$this->assertSame( array( '41' ), Daymark_Comment_Replies::own_comment_ids( $this->user_id, $sub_id, self::PERMALINK ) );
+	}
+
+	/**
+	 * A comment the site stored more than an hour before yours was sent
+	 * isn't yours, even with your words; one stored within the hour is.
+	 */
+	public function test_a_comment_from_before_yours_was_sent_is_not_yours(): void {
+		$this->watch(
+			$this->create_subscription_post(),
+			array(
+				'comment' => 0,
+				'mark'    => 77,
+			)
+		);
+		$this->mock_json( $this->search_url(), array( $this->own_site_comment( 30, 'Great post!', 61 * MINUTE_IN_SECONDS ) ) );
+		$this->mock_json( $this->replies_url( 30 ), array() );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+
+		$watch = $this->only_watch();
+		$this->assertSame( 0, (int) $watch['comment'] );
+		$this->assertSame( 0, (int) $watch['fails'] );
+		$this->assertNotContains( $this->replies_url( 30 ), $this->requested );
+
+		$this->mock_json(
+			$this->search_url(),
+			array(
+				$this->own_site_comment( 31, 'Great post!', 59 * MINUTE_IN_SECONDS ),
+				$this->own_site_comment( 30, 'Great post!', 61 * MINUTE_IN_SECONDS ),
+			)
+		);
+		$this->mock_json( $this->replies_url( 31 ), array() );
+		$this->rewind( 0, 2 * HOUR_IN_SECONDS );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 31, (int) $this->only_watch()['comment'] );
+	}
+
+	/**
+	 * A comment is found however the original site shows smileys and
+	 * "2x4", with smileys turned off on this site. This site's typography
+	 * turned off is covered in tests/test-comment-replies-typography.php.
+	 */
+	public function test_a_comment_is_found_whatever_this_sites_smiley_setting(): void {
+		update_option( 'use_smilies', '0' );
+
+		$cases = array(
+			array( 'Thanks :)', 'Thanks 🙂' ),
+			array( 'Thanks :)', 'Thanks :)' ),
+			array( 'Use a 2x4 :)', 'Use a 2&#215;4 :)' ),
+			array( 'Use a 2x4 :)', 'Use a 2x4 🙂' ),
+			array( 'Got the 1920x1080 version (tm)', 'Got the 1920&#215;1080 version &#8482;' ),
+		);
+
+		foreach ( $cases as $case ) {
+			$this->assertSame( 60, $this->find_comment_shown_as( $case[0], $case[1] ), "Sent \"{$case[0]}\", shown as \"{$case[1]}\"" );
+		}
+	}
+
+	/** Smileys are matched even when this site never set its own up, and that setup is left as found. */
+	public function test_smileys_are_matched_when_this_site_never_set_them_up(): void {
+		global $wp_smiliessearch, $wpsmiliestrans;
+
+		$search = $wp_smiliessearch;
+		$trans  = $wpsmiliestrans;
+
+		update_option( 'use_smilies', '0' );
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- As on a site that started with smileys off.
+		$wp_smiliessearch = null;
+		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- As on a site that started with smileys off.
+		$wpsmiliestrans = null;
+
+		try {
+			$this->assertSame( 60, $this->find_comment_shown_as( 'Thanks :)', 'Thanks 🙂' ) );
+			$this->assertNull( $wp_smiliessearch );
+			$this->assertNull( $wpsmiliestrans );
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wp_smiliessearch = $search;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wpsmiliestrans = $trans;
+		}
+	}
+
+	/** The forms a comment is matched by don't depend on this site's own smiley setting. */
+	public function test_match_variants_ignore_this_sites_settings(): void {
+		$method   = new ReflectionMethod( Daymark_Comment_Replies::class, 'match_variants' );
+		$expected = array(
+			'Got the 1920x1080 version (tm)' => array( 'got the 1920x1080 version tm', 'got the 1920 1080 version ™' ),
+			'Thanks :)'                      => array( 'thanks', 'thanks 🙂' ),
+			'Hex 0x1234 stays'               => array( 'hex 0x1234 stays' ),
+			'Use a 2x4 :)'                   => array( 'use a 2x4', 'use a 2x4 🙂', 'use a 2 4', 'use a 2 4 🙂' ),
+		);
+
+		foreach ( array( '1', '0' ) as $setting ) {
+			update_option( 'use_smilies', $setting );
+
+			foreach ( $expected as $sent => $variants ) {
+				$this->assertSame( $variants, $method->invoke( null, $sent, $sent ), "\"{$sent}\" with smileys set to {$setting}" );
+			}
+		}
+	}
+
+	/**
+	 * The default forms a comment is matched by use core's smileys, not
+	 * this site's own list, and leave that list as found. This site's own
+	 * list counts only through how your Mark showed the comment.
+	 */
+	public function test_match_variants_ignore_this_sites_smiley_list(): void {
+		global $wp_smiliessearch, $wpsmiliestrans;
+
+		$method = new ReflectionMethod( Daymark_Comment_Replies::class, 'match_variants' );
+		$search = $wp_smiliessearch;
+		$trans  = $wpsmiliestrans;
+
+		update_option( 'use_smilies', '1' );
+
+		try {
+			// This site's own list has only an image, for ":-)".
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- This site's own list.
+			$wp_smiliessearch = null;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- This site's own list.
+			$wpsmiliestrans = array( ':-)' => 'icon_smile.gif' );
+			smilies_init();
+			$own_search = $wp_smiliessearch;
+
+			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)', 'Thanks :)' ), "With this site's own list" );
+			$this->assertSame( array( ':-)' => 'icon_smile.gif' ), $wpsmiliestrans, "This site's list is left as found" );
+			$this->assertSame( $own_search, $wp_smiliessearch );
+
+			// This site's filter takes every smiley away.
+			add_filter( 'smilies', '__return_empty_array' );
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- As on a site that hasn't set smileys up yet.
+			$wp_smiliessearch = null;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- As on a site that hasn't set smileys up yet.
+			$wpsmiliestrans = null;
+
+			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)', 'Thanks :)' ), 'With every smiley filtered away' );
+			$this->assertNull( $wp_smiliessearch );
+			$this->assertNull( $wpsmiliestrans );
+		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wp_smiliessearch = $search;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wpsmiliestrans = $trans;
+		}
+	}
+
+	/**
+	 * A comment is found as your Mark showed it with this site's own
+	 * smileys: an emoji of its own, an image (which the original site
+	 * drops), a core code shown as an image, or a core code shown as
+	 * another emoji.
+	 */
+	public function test_a_comment_is_found_as_your_mark_showed_this_sites_own_smileys(): void {
+		$cases = array(
+			array( array( ':party:' => '🎉' ), 'Time to celebrate :party:', 'Time to celebrate 🎉' ),
+			array( array( ':party:' => 'party.png' ), 'Time to celebrate :party:', 'Time to celebrate' ),
+			array( array( ':D' => 'icon_biggrin.gif' ), 'Great post :D', 'Great post' ),
+			array( array( ':)' => '😊' ), 'Nice :) see you at the meetup tomorrow', 'Nice 😊 see you at the meetup tomorrow' ),
+		);
+
+		foreach ( $cases as $case ) {
+			$found = $this->with_own_smilies(
+				$case[0],
+				function () use ( $case ): int {
+					return $this->find_comment_shown_as( $case[1], $case[2] );
+				}
+			);
+
+			$this->assertSame( 60, $found, "Sent \"{$case[1]}\", shown as \"{$case[2]}\"" );
+		}
+	}
+
+	/**
+	 * How your Mark showed a comment is kept from when it was sent, so
+	 * the comment is still found after this site's smileys change.
+	 */
+	public function test_how_your_mark_showed_a_comment_is_kept_from_when_it_was_sent(): void {
+		$sub_id = $this->create_subscription_post();
+
+		$this->with_own_smilies(
+			array( ':party:' => '🎉' ),
+			function () use ( $sub_id ): void {
+				$this->watch(
+					$sub_id,
+					array(
+						'comment' => 0,
+						'mark'    => 77,
+						'text'    => 'Time to celebrate :party:',
+					)
+				);
+			}
+		);
+
+		$this->assertSame( 'Time to celebrate 🎉', $this->only_watch()['shown'] );
+
+		// This site is back to core's smileys when the check runs.
+		$this->mock_json( $this->search_url(), array( $this->own_site_comment( 60, 'Time to celebrate 🎉' ) ) );
+		$this->mock_json( $this->replies_url( 60 ), array() );
+
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( 60, (int) $this->only_watch()['comment'] );
+	}
+
+	/** A watch stored without how your Mark showed the comment is read with this site's smileys now. */
+	public function test_a_watch_stored_without_how_your_mark_showed_it_uses_this_sites_smileys(): void {
+		$found = $this->with_own_smilies(
+			array( ':party:' => '🎉' ),
+			function (): int {
+				$this->watch(
+					$this->create_subscription_post(),
+					array(
+						'comment' => 0,
+						'mark'    => 77,
+						'text'    => 'Time to celebrate :party:',
+					)
+				);
+				$this->alter_watches(
+					$this->user_id,
+					static function ( array $watch ): array {
+						unset( $watch['shown'] );
+						return $watch;
+					}
+				);
+				$this->assertArrayNotHasKey( 'shown', $this->only_watch() );
+
+				$this->mock_json( $this->search_url(), array( $this->own_site_comment( 60, 'Time to celebrate 🎉' ) ) );
+				$this->mock_json( $this->replies_url( 60 ), array() );
+
+				Daymark_Comment_Replies::check_due();
+
+				return (int) $this->only_watch()['comment'];
+			}
+		);
+
+		$this->assertSame( 60, $found );
+	}
+
+	/**
+	 * Run a callback with this site's own smileys added to core's, as a
+	 * plugin adds them, then put this site's smileys back as found.
+	 *
+	 * @param array<string, string> $own      Code => emoji, or image file name.
+	 * @param callable              $callback Run with this site's own smileys.
+	 * @return mixed What the callback returns.
+	 */
+	private function with_own_smilies( array $own, callable $callback ) {
+		global $wp_smiliessearch, $wpsmiliestrans;
+
+		$search = $wp_smiliessearch;
+		$trans  = $wpsmiliestrans;
+		$filter = static function ( $smilies ) use ( $own ): array {
+			return array_merge( (array) $smilies, $own );
+		};
+
+		update_option( 'use_smilies', '1' );
+		add_filter( 'smilies', $filter );
+
+		try {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again with this site's own smileys, restored below.
+			$wp_smiliessearch = null;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again with this site's own smileys, restored below.
+			$wpsmiliestrans = null;
+			smilies_init();
+
+			return $callback();
+		} finally {
+			remove_filter( 'smilies', $filter );
+
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wp_smiliessearch = $search;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wpsmiliestrans = $trans;
+		}
+	}
+
+	/**
+	 * A watch made on another site of a network isn't listed, counted,
+	 * or checked here, and its read state is kept; once that site is
+	 * gone, the watch is removed.
+	 */
+	public function test_a_watch_from_another_site_is_not_listed_or_checked_here(): void {
+		Daymark_Subscriptions::install();
+
+		$this->watch( $this->create_subscription_post() );
+		$this->mock_json( $this->replies_url(), array() );
+
+		$elsewhere = array(
+			'id'        => 'abcdef123456',
+			'blog'      => 999999,
+			'post'      => 0,
+			'permalink' => self::PERMALINK,
+			'title'     => 'An origin post',
+			'site'      => 'origin.example',
+			'root'      => self::ROOT,
+			'remote'    => 55,
+			'comment'   => 10,
+			'mark'      => 0,
+			'excerpt'   => 'Lovely.',
+			'created'   => time(),
+			'checked'   => 0,
+			'fails'     => 0,
+			'done'      => false,
+			'replies'   => array( $this->found_reply_row( 12, time() - MINUTE_IN_SECONDS ) ),
+			'seen'      => array( 12 ),
+		);
+		add_user_meta( $this->user_id, Daymark_Comment_Replies::META, wp_slash( $elsewhere ) );
+
+		$item_id = 'comment_reply-abcdef123456-12';
+
+		$this->assertCount( 1, Daymark_Comment_Replies::get_watches( $this->user_id ) );
+		$this->assertSame( array(), Daymark_Comment_Replies::notification_items( $this->user_id ) );
+		$this->assertFalse( Daymark_Comment_Replies::has_new_since( $this->user_id, 0 ) );
+		$this->assertSame( array( $item_id ), Daymark_Comment_Replies::stored_item_ids( $this->user_id ) );
+		$this->assertSame( array( '9' ), Daymark_Comment_Replies::own_comment_ids( $this->user_id, 0, self::PERMALINK ) );
+
+		$plugin = Daymark_Plugin::instance();
+		$plugin->notification_state->mark_read( $this->user_id, array( $item_id ) );
+		$plugin->notifications->get_notifications();
+		$this->assertContains( $item_id, get_user_meta( $this->user_id, Daymark_Notification_State::READ_META, false ) );
+
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertNotContains( $this->replies_url( 10 ), $this->requested );
+		$this->assertCount( 1, get_user_meta( $this->user_id, Daymark_Comment_Replies::META, false ) );
+		$this->assertSame( array(), Daymark_Comment_Replies::stored_item_ids( $this->user_id ) );
+	}
+
+	/** Someone who can no longer post here isn't checked, but their watches still expire on time. */
+	public function test_someone_who_cannot_post_is_not_checked_but_watches_expire(): void {
+		$sub_id = $this->create_subscription_post();
+		$this->watch( $sub_id );
+		$this->watch( $sub_id, array( 'comment' => 10 ) );
+		$this->alter_watches(
+			$this->user_id,
+			static function ( array $watch ): array {
+				if ( 10 === (int) $watch['comment'] ) {
+					$watch['created'] = time() - 46 * DAY_IN_SECONDS;
+				}
+				return $watch;
+			}
+		);
+
+		( new WP_User( $this->user_id ) )->set_role( 'subscriber' );
+
+		$this->assertSame( 0, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( array(), $this->requested );
+		$this->assertSame( array( 9 ), array_map( 'intval', wp_list_pluck( Daymark_Comment_Replies::get_watches( $this->user_id ), 'comment' ) ) );
+	}
+
+	/**
+	 * On a network of sites in subdirectories, each site checks, lists,
+	 * and removes only the watches made on it, and a watch made on a site
+	 * that was deleted is removed by the others.
+	 */
+	public function test_on_a_network_each_site_keeps_its_own_watches(): void {
+		if ( ! is_multisite() || is_subdomain_install() ) {
+			$this->markTestSkipped( 'Needs a network of sites in subdirectories.' );
+		}
+
+		$alice = (int) self::factory()->blog->create( array( 'path' => '/alice/' ) );
+		add_user_to_blog( $alice, $this->user_id, 'author' );
+
+		switch_to_blog( $alice );
+		$this->watch( $this->create_subscription_post() );
+		$this->alter_watches(
+			$this->user_id,
+			function ( array $watch ): array {
+				$watch['replies'] = array( $this->found_reply_row( 12, time() ) );
+				$watch['seen']    = array( 12 );
+				return $watch;
+			}
+		);
+		$item_id = 'comment_reply-' . $this->only_watch()['id'] . '-12';
+		restore_current_blog();
+
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( $this->user_id ) );
+		$this->assertSame( array(), Daymark_Comment_Replies::notification_items( $this->user_id ) );
+		$this->assertSame( array( $item_id ), Daymark_Comment_Replies::stored_item_ids( $this->user_id ) );
+		$this->assertSame( '', $this->url_kind( get_home_url( $alice, '/2026/10/a-mark/' ) ) );
+		$this->assertSame( 'own', $this->url_kind( home_url( '/2026/10/a-mark/' ) ) );
+		$this->assertSame( 0, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( array(), $this->requested );
+		$this->assertCount( 1, get_user_meta( $this->user_id, Daymark_Comment_Replies::META, false ) );
+
+		switch_to_blog( $alice );
+		$this->assertCount( 1, Daymark_Comment_Replies::get_watches( $this->user_id ) );
+		$this->assertCount( 1, Daymark_Comment_Replies::notification_items( $this->user_id ) );
+		$this->assertSame( array( $item_id ), Daymark_Comment_Replies::stored_item_ids( $this->user_id ) );
+		$this->assertSame( 'root', $this->url_kind( 'http://example.org/' ) );
+		$this->assertSame( 'own', $this->url_kind( home_url( '/2026/10/a-mark/' ) ) );
+		restore_current_blog();
+
+		wp_delete_site( $alice );
+
+		$this->assertSame( 0, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Comment_Replies::META, false ) );
+	}
+
+	/**
+	 * Two sites in subdirectories of one network, each with someone
+	 * watching the comment they sent to the same post with the same words:
+	 * Alice (this test's user) on /alice/ ten minutes ago, and Bob on /bob/
+	 * five minutes ago. Neither comment has been found yet.
+	 *
+	 * @return array{alice: int, bob: int, bob_user: int} Both sites and Bob.
+	 */
+	private function neighbors_with_the_same_words(): array {
+		$sites = array(
+			'alice'    => (int) self::factory()->blog->create( array( 'path' => '/alice/' ) ),
+			'bob'      => (int) self::factory()->blog->create( array( 'path' => '/bob/' ) ),
+			'bob_user' => (int) self::factory()->user->create( array( 'role' => 'author' ) ),
+		);
+		add_user_to_blog( $sites['alice'], $this->user_id, 'author' );
+		add_user_to_blog( $sites['bob'], $sites['bob_user'], 'author' );
+
+		$sent = array(
+			$this->user_id     => 10 * MINUTE_IN_SECONDS,
+			$sites['bob_user'] => 5 * MINUTE_IN_SECONDS,
+		);
+
+		foreach ( $sent as $user_id => $ago ) {
+			switch_to_blog( $this->user_id === $user_id ? $sites['alice'] : $sites['bob'] );
+			$this->watch_as(
+				$user_id,
+				$this->create_subscription_post(),
+				array(
+					'comment' => 0,
+					'mark'    => 77,
+				)
+			);
+			$this->alter_watches(
+				$user_id,
+				static function ( array $watch ) use ( $ago ): array {
+					$watch['created'] = time() - $ago;
+					return $watch;
+				}
+			);
+			restore_current_blog();
+		}
+
+		return $sites;
+	}
+
+	/**
+	 * A "Great post!" comment as the other site's search returns it.
+	 *
+	 * @param int    $id         Comment ID.
+	 * @param string $author_url The address the site saved for its author.
+	 * @param int    $ago        How many seconds ago the site stored it.
+	 * @return array<string, mixed>
+	 */
+	private function comment_signed( int $id, string $author_url, int $ago ): array {
+		$comment               = $this->own_site_comment( $id, 'Great post!', $ago );
+		$comment['author_url'] = $author_url;
+
+		return $comment;
+	}
+
+	/**
+	 * On a network of sites in subdirectories, a comment signed with only
+	 * the shared host could be any of its sites', so the watches of every
+	 * site are matched together. Two neighbors who sent the same words
+	 * each get the comment stored closest to when they sent theirs,
+	 * whichever site checks first.
+	 */
+	public function test_on_a_network_neighbors_with_the_same_words_are_not_swapped(): void {
+		if ( ! is_multisite() || is_subdomain_install() ) {
+			$this->markTestSkipped( 'Needs a network of sites in subdirectories.' );
+		}
+
+		$sites = $this->neighbors_with_the_same_words();
+
+		// The other site saved Bob's comment with only the shared host, as
+		// Daymark's own receiver saves every sender, and still holds Alice's.
+		$bobs = $this->comment_signed( 51, 'http://example.org/', 5 * MINUTE_IN_SECONDS );
+		$this->mock_json( $this->search_url(), array( $bobs ) );
+		$this->mock_json( $this->replies_url( 51 ), array() );
+
+		switch_to_blog( $sites['alice'] );
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 0, (int) $this->only_watch()['comment'] );
+		restore_current_blog();
+
+		switch_to_blog( $sites['bob'] );
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 51, (int) $this->watch_by_mark( $sites['bob_user'], 77 )['comment'] );
+		restore_current_blog();
+
+		// Alice's comment is approved, and her site checks again later.
+		$this->mock_json( $this->search_url(), array( $bobs, $this->comment_signed( 50, 'http://example.org/', 10 * MINUTE_IN_SECONDS ) ) );
+		$this->mock_json( $this->replies_url( 50 ), array() );
+
+		switch_to_blog( $sites['alice'] );
+		$this->alter_watches(
+			$this->user_id,
+			static function ( array $watch ): array {
+				$watch['checked'] = time() - 2 * HOUR_IN_SECONDS;
+				return $watch;
+			}
+		);
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 50, (int) $this->only_watch()['comment'] );
+		restore_current_blog();
+	}
+
+	/**
+	 * A neighbor's watch is matched only with comments its own site would
+	 * call its own, never with one signed with your site's own pages, even
+	 * when its time fits better.
+	 */
+	public function test_on_a_network_a_neighbor_never_contests_a_comment_from_your_pages(): void {
+		if ( ! is_multisite() || is_subdomain_install() ) {
+			$this->markTestSkipped( 'Needs a network of sites in subdirectories.' );
+		}
+
+		$sites = $this->neighbors_with_the_same_words();
+
+		// The other site stored Alice's comment a few minutes late (as when
+		// it checks Webmentions in the background), signed with her own
+		// page. Bob's isn't shown yet.
+		$this->mock_json( $this->search_url(), array( $this->comment_signed( 50, 'http://example.org/alice/2026/10/a-mark/', 4 * MINUTE_IN_SECONDS ) ) );
+		$this->mock_json( $this->replies_url( 50 ), array() );
+
+		switch_to_blog( $sites['bob'] );
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 0, (int) $this->watch_by_mark( $sites['bob_user'], 77 )['comment'] );
+		restore_current_blog();
+
+		switch_to_blog( $sites['alice'] );
+		$this->assertSame( 1, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( 50, (int) $this->only_watch()['comment'] );
+		restore_current_blog();
+	}
+
+	/** Turning watching off stops checks, but watches still expire on time. */
+	public function test_turning_watching_off_stops_checks_but_not_expiry(): void {
+		$sub_id = $this->create_subscription_post();
+		$this->watch( $sub_id );
+		$this->mock_json( $this->replies_url(), array( $this->reply( 12, 'Ana', 'Thanks!' ) ) );
+
+		Daymark_Comment_Replies::check_due();
+		$this->assertCount( 1, Daymark_Comment_Replies::notification_items( $this->user_id ) );
+
+		$this->watch( $sub_id, array( 'comment' => 10 ) );
+		$this->alter_watches(
+			$this->user_id,
+			static function ( array $watch ): array {
+				if ( 9 === (int) $watch['comment'] ) {
+					$watch['created'] = time() - 46 * DAY_IN_SECONDS;
+				}
+				return $watch;
+			}
+		);
+		$this->requested = array();
+
+		add_filter( 'daymark_watch_comment_replies', '__return_false' );
+
+		$this->assertSame( array(), Daymark_Comment_Replies::notification_items( $this->user_id ) );
+		$this->assertFalse( Daymark_Comment_Replies::has_new_since( $this->user_id, 0 ) );
+		$this->assertSame( 0, Daymark_Comment_Replies::check_due() );
+		$this->assertSame( array(), $this->requested );
+		$this->assertSame( array( 10 ), array_map( 'intval', wp_list_pluck( Daymark_Comment_Replies::get_watches( $this->user_id ), 'comment' ) ) );
+	}
+
+	/**
+	 * A reply held for moderation on your Mark, approved after its watch is
+	 * gone, isn't pushed: the reply was already pushed when it was found.
+	 */
+	public function test_a_held_copy_approved_after_the_reply_is_forgotten_is_not_pushed(): void {
+		Daymark_Push::save_subscription( $this->user_id, $this->browser_subscription() );
+
+		$sub_id  = $this->create_subscription_post();
+		$mark_id = (int) self::factory()->post->create( array( 'post_author' => $this->user_id ) );
+		update_post_meta( $mark_id, '_daymark_is_mark', '1' );
+		update_post_meta( $mark_id, '_daymark_in_reply_to', self::PERMALINK );
+
+		$this->watch( $sub_id, array( 'mark' => $mark_id ) );
+		$this->mock_json( $this->replies_url(), array( $this->reply( 12, 'Ana', 'Thanks for reading!' ) ) );
+
+		Daymark_Comment_Replies::check_due();
+		$this->assertCount( 1, $this->scheduled_pushes() );
+
+		$source = self::PERMALINK . '#comment-12';
+		$copy   = (int) self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $mark_id,
+				'comment_author'   => 'Ana',
+				'comment_content'  => 'Thanks for reading!',
+				'comment_approved' => '0',
+				'comment_meta'     => array( 'webmention_source_url' => $source ),
+			)
+		);
+		$this->assertCount( 1, $this->scheduled_pushes() );
+
+		// The watch ends; Daymark remembers that it found the held copy's reply.
+		$this->rewind( 46 * DAY_IN_SECONDS, 0 );
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( $this->user_id ) );
+		$this->assertFalse( Daymark_Comment_Replies::already_found( $mark_id, $source ) );
+		$this->assertTrue( Daymark_Comment_Replies::already_found( $mark_id, $source, $copy ) );
+
+		_set_cron_array( array() );
+		wp_set_comment_status( $copy, 'approve' );
+
+		$this->assertSame( array(), $this->scheduled_pushes() );
+		$this->assertSame( '1', get_comment_meta( $copy, Daymark_Push::COMMENT_SENT_META, true ) );
+
+		// Even without the link, the copy isn't pushed twice.
+		delete_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META );
+		wp_set_comment_status( $copy, 'hold' );
+		wp_set_comment_status( $copy, 'approve' );
+		$this->assertSame( array(), $this->scheduled_pushes() );
+
+		// Without either, it would be: this test isn't passing for another reason.
+		delete_comment_meta( $copy, Daymark_Push::COMMENT_SENT_META );
+		wp_set_comment_status( $copy, 'hold' );
+		wp_set_comment_status( $copy, 'approve' );
+		$this->assertCount( 1, $this->scheduled_pushes() );
+	}
+
+	/**
+	 * A reply pushed out of its watch by newer ones keeps its copy on your
+	 * Mark where the reply was listed, and read as the reply was.
+	 */
+	public function test_a_reply_trimmed_from_its_watch_keeps_its_copys_place(): void {
+		Daymark_Subscriptions::install();
+
+		$sub_id  = $this->create_subscription_post();
+		$mark_id = (int) self::factory()->post->create( array( 'post_author' => $this->user_id ) );
+		update_post_meta( $mark_id, '_daymark_is_mark', '1' );
+		update_post_meta( $mark_id, '_daymark_in_reply_to', self::PERMALINK );
+
+		$this->watch( $sub_id, array( 'mark' => $mark_id ) );
+		$this->mock_json( $this->replies_url(), array( $this->reply( 12, 'Ana', 'Thanks for reading!' ) ) );
+		Daymark_Comment_Replies::check_due();
+
+		$found    = time() - 2 * HOUR_IN_SECONDS;
+		$watch_id = $this->only_watch()['id'];
+		$this->alter_watches(
+			$this->user_id,
+			static function ( array $watch ) use ( $found ): array {
+				$watch['replies'][0]['found'] = $found;
+				return $watch;
+			}
+		);
+		$seen = time() - HOUR_IN_SECONDS;
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+
+		$copy = (int) self::factory()->comment->create(
+			array(
+				'comment_post_ID' => $mark_id,
+				'comment_author'  => 'Ana',
+				'comment_content' => 'Thanks for reading!',
+				'comment_meta'    => array( 'webmention_source_url' => self::PERMALINK . '#comment-12' ),
+			)
+		);
+
+		$this->mock_json(
+			$this->replies_url(),
+			array_map(
+				function ( int $id ): array {
+					return $this->reply( $id, 'Reader ' . $id, 'Reply ' . $id );
+				},
+				range( 22, 12 )
+			)
+		);
+		$this->rewind( 0, 2 * HOUR_IN_SECONDS );
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( range( 13, 22 ), array_map( 'intval', wp_list_pluck( $this->only_watch()['replies'], 'id' ) ) );
+		$this->assertSame(
+			array(
+				$this->user_id => array(
+					'from'  => 'comment_reply-' . $watch_id . '-12',
+					'found' => $found,
+				),
+			),
+			get_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META, true )
+		);
+
+		$items = array_column( Daymark_Plugin::instance()->notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $seen ), null, 'id' );
+		$this->assertSame( $found, $items[ 'comment-' . $copy ]['timestamp'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A watch on your Mark whose replies Daymark found two hours ago, each
+	 * also brought to the Mark as a Webmention comment dated three hours
+	 * ago and held for moderation.
+	 *
+	 * @param int[] $reply_ids Reply IDs on the original site.
+	 * @return array{watch: string, copies: array<int, int>} The watch's ID, and the held comment by reply ID.
+	 */
+	private function watch_with_held_copies( array $reply_ids ): array {
+		$sub_id  = $this->create_subscription_post();
+		$mark_id = (int) self::factory()->post->create( array( 'post_author' => $this->user_id ) );
+		update_post_meta( $mark_id, '_daymark_is_mark', '1' );
+		update_post_meta( $mark_id, '_daymark_in_reply_to', self::PERMALINK );
+
+		$this->watch( $sub_id, array( 'mark' => $mark_id ) );
+		$this->mock_json(
+			$this->replies_url(),
+			array_map(
+				function ( int $id ): array {
+					return $this->reply( $id, 'Reader ' . $id, 'Reply ' . $id );
+				},
+				$reply_ids
+			)
+		);
+		Daymark_Comment_Replies::check_due();
+
+		$found = time() - 2 * HOUR_IN_SECONDS;
+		$this->alter_watches(
+			$this->user_id,
+			static function ( array $watch ) use ( $found ): array {
+				foreach ( array_keys( $watch['replies'] ) as $index ) {
+					$watch['replies'][ $index ]['found'] = $found;
+				}
+				return $watch;
+			}
+		);
+
+		$date   = gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS );
+		$copies = array();
+
+		foreach ( $reply_ids as $id ) {
+			$copies[ $id ] = (int) self::factory()->comment->create(
+				array(
+					'comment_post_ID'  => $mark_id,
+					'comment_author'   => 'Reader ' . $id,
+					'comment_content'  => 'Reply ' . $id,
+					'comment_approved' => '0',
+					'comment_date'     => $date,
+					'comment_date_gmt' => $date,
+					'comment_meta'     => array( 'webmention_source_url' => self::PERMALINK . '#comment-' . $id ),
+				)
+			);
+		}
+
+		return array(
+			'watch'  => (string) $this->only_watch()['id'],
+			'copies' => $copies,
+		);
+	}
+
+	/**
+	 * An expired watch's replies leave Notifications before the check that
+	 * removes the watch. Opening Notifications in between keeps their
+	 * archived and read state, which the check then gives to their copies
+	 * held for moderation on your Mark.
+	 */
+	public function test_an_expired_watchs_replies_keep_their_state_until_it_is_removed(): void {
+		$held     = $this->watch_with_held_copies( array( 12, 13 ) );
+		$archived = 'comment_reply-' . $held['watch'] . '-12';
+		$read     = 'comment_reply-' . $held['watch'] . '-13';
+		$plugin   = Daymark_Plugin::instance();
+
+		$plugin->notification_state->archive( $this->user_id, array( $archived ) );
+		$plugin->notification_state->mark_read( $this->user_id, array( $read ) );
+
+		$this->rewind( 46 * DAY_IN_SECONDS, 0 );
+		$plugin->notifications->get_notifications();
+
+		$this->assertSame( array(), Daymark_Comment_Replies::notification_items( $this->user_id ) );
+		$this->assertContains( $archived, get_user_meta( $this->user_id, Daymark_Notification_State::ARCHIVED_META, false ) );
+		$this->assertContains( $read, get_user_meta( $this->user_id, Daymark_Notification_State::READ_META, false ) );
+
+		Daymark_Comment_Replies::check_due();
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( $this->user_id ) );
+
+		wp_set_comment_status( $held['copies'][12], 'approve' );
+		wp_set_comment_status( $held['copies'][13], 'approve' );
+
+		$items = array_column( $plugin->notifications->get_notifications(), null, 'id' );
+		$this->assertArrayNotHasKey( 'comment-' . $held['copies'][12], $items );
+		$this->assertTrue( $items[ 'comment-' . $held['copies'][13] ]['read'] );
+	}
+
+	/**
+	 * A reply marked unread after "Mark all as read" stays unread on its
+	 * copy held for moderation when Notifications is opened after the
+	 * watch expires and before the check that removes it.
+	 */
+	public function test_an_expired_watchs_unread_reply_stays_unread_on_its_copy(): void {
+		$held   = $this->watch_with_held_copies( array( 12 ) );
+		$unread = 'comment_reply-' . $held['watch'] . '-12';
+		$plugin = Daymark_Plugin::instance();
+
+		$plugin->notification_state->mark_all_read( $this->user_id, array() );
+		$plugin->notification_state->mark_unread( $this->user_id, array( $unread ) );
+
+		$this->rewind( 46 * DAY_IN_SECONDS, 0 );
+		$plugin->notifications->get_notifications();
+		$this->assertContains( $unread, get_user_meta( $this->user_id, Daymark_Notification_State::UNREAD_META, false ) );
+
+		Daymark_Comment_Replies::check_due();
+		wp_set_comment_status( $held['copies'][12], 'approve' );
+
+		$items = array_column( $plugin->notifications->get_notifications(), null, 'id' );
+		$this->assertFalse( $items[ 'comment-' . $held['copies'][12] ]['read'] );
 	}
 }

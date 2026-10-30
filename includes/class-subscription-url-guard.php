@@ -51,13 +51,18 @@ class Daymark_Subscription_Url_Guard {
 	 * `wp_http_validate_url()` either skips (userinfo, port) or only partly
 	 * covers (IPv4-only address-range blocking).
 	 *
-	 * @param string $url Already scheme-validated http(s) URL.
+	 * @param string $url          Already scheme-validated http(s) URL.
+	 * @param bool   $resolve_host Whether to look the host up and refuse a
+	 *                             private or internal address. False checks
+	 *                             only the URL's shape (host, login
+	 *                             details, port), for a caller that looks
+	 *                             the host up itself.
 	 * @return true|WP_Error True when safe to fetch; WP_Error with a
 	 *                       specific, human-readable rejection reason
 	 *                       otherwise (suitable both for a user-facing
 	 *                       message and for a `last_error` value).
 	 */
-	public static function check( string $url ) {
+	public static function check( string $url, bool $resolve_host = true ) {
 		$parsed = wp_parse_url( $url );
 
 		if ( ! is_array( $parsed ) || empty( $parsed['host'] ) ) {
@@ -82,6 +87,10 @@ class Daymark_Subscription_Url_Guard {
 				'daymark_subscription_unsafe_url',
 				__( 'This URL uses a port that is not allowed.', 'daymark' )
 			);
+		}
+
+		if ( ! $resolve_host ) {
+			return true;
 		}
 
 		// PHP's (and wp_parse_url()'s) host component keeps a literal IPv6

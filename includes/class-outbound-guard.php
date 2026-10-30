@@ -20,6 +20,8 @@
  *
  * Every Daymark outbound request goes through get()/post()/run() here.
  * tests/test-outbound-http-safety.php fails if a new call site bypasses it.
+ * get() and post() also tell a refused redirect from a request that got no
+ * answer, which WordPress reports the same way (is_temporary_failure()).
  *
  * @package Daymark
  */
@@ -38,6 +40,14 @@ final class Daymark_Outbound_Guard {
 	private const HOOK = 'requests-requests.before_redirect';
 
 	/**
+	 * The Requests library hook, bridged the same way, fired for every
+	 * response before Requests decides whether to follow a redirect.
+	 *
+	 * @var string
+	 */
+	private const CHECK_HOOK = 'requests-requests.before_redirect_check';
+
+	/**
 	 * Core's filter that can answer a request before it is sent; a WP_Error
 	 * returned from it is the request's result.
 	 *
@@ -54,7 +64,29 @@ final class Daymark_Outbound_Guard {
 	private static int $depth = 0;
 
 	/**
+	 * Whether a redirect was refused in the current run(): by this class,
+	 * or because the chain ran longer than the request allows.
+	 *
+	 * @var bool
+	 */
+	private static bool $redirect_refused = false;
+
+	/**
+	 * The redirect the current run() is about to follow, until this class's
+	 * own check passes it. Still set after a failed request means
+	 * WordPress's own check refused it first, since that runs earlier and
+	 * stops the request before this class's check is reached.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $pending_redirect = null;
+
+	/**
 	 * A wp_safe_remote_get() whose redirect hops are also validated.
+	 *
+	 * A request that failed because a redirect was refused comes back as
+	 * `daymark_redirect_refused`, not `http_request_failed`: see
+	 * is_temporary_failure().
 	 *
 	 * @param string               $url  Request URL.
 	 * @param array<string, mixed> $args wp_safe_remote_get() arguments.
@@ -63,13 +95,15 @@ final class Daymark_Outbound_Guard {
 	public static function get( string $url, array $args = array() ) {
 		return self::run(
 			static function () use ( $url, $args ) {
-				return wp_safe_remote_get( $url, $args );
+				return self::name_refusal( wp_safe_remote_get( $url, $args ) );
 			}
 		);
 	}
 
 	/**
 	 * A wp_safe_remote_post() whose redirect hops are also validated.
+	 *
+	 * Names a refused redirect the same way get() does.
 	 *
 	 * @param string               $url  Request URL.
 	 * @param array<string, mixed> $args wp_safe_remote_post() arguments.
@@ -78,9 +112,26 @@ final class Daymark_Outbound_Guard {
 	public static function post( string $url, array $args = array() ) {
 		return self::run(
 			static function () use ( $url, $args ) {
-				return wp_safe_remote_post( $url, $args );
+				return self::name_refusal( wp_safe_remote_post( $url, $args ) );
 			}
 		);
+	}
+
+	/**
+	 * Whether a failed get() or post() might work if tried again soon.
+	 *
+	 * WordPress reports a request that went out and got no answer (a
+	 * timeout, a refused connection, a failed DNS lookup) as
+	 * `http_request_failed`, and only that can change on a retry. A request
+	 * refused before it went out (by this site's settings or Daymark's
+	 * address check), or on a redirect (get() and post() name that
+	 * `daymark_redirect_refused`), fails the same way every time.
+	 *
+	 * @param WP_Error $error A failed get() or post() result.
+	 * @return bool
+	 */
+	public static function is_temporary_failure( WP_Error $error ): bool {
+		return 'http_request_failed' === $error->get_error_code();
 	}
 
 	/**
@@ -98,11 +149,19 @@ final class Daymark_Outbound_Guard {
 	public static function run( callable $request ) {
 		if ( 0 === self::$depth ) {
 			add_action( self::HOOK, array( __CLASS__, 'validate_redirect' ) );
+			add_action( self::CHECK_HOOK, array( __CLASS__, 'note_redirect' ), 10, 4 );
 			// Last in line, so a test's or another plugin's canned response
 			// still wins and only a request that would really go out is
 			// checked (and so is never resolved through DNS needlessly).
 			add_filter( self::PRE_REQUEST_HOOK, array( __CLASS__, 'validate_first_request' ), PHP_INT_MAX, 3 );
 		}
+
+		// A nested run() reports on its own requests, then hands the outer
+		// one's state back.
+		$outer_refused          = self::$redirect_refused;
+		$outer_pending          = self::$pending_redirect;
+		self::$redirect_refused = false;
+		self::$pending_redirect = null;
 
 		++self::$depth;
 
@@ -111,8 +170,12 @@ final class Daymark_Outbound_Guard {
 		} finally {
 			--self::$depth;
 
+			self::$redirect_refused = $outer_refused;
+			self::$pending_redirect = $outer_pending;
+
 			if ( 0 === self::$depth ) {
 				remove_action( self::HOOK, array( __CLASS__, 'validate_redirect' ) );
+				remove_action( self::CHECK_HOOK, array( __CLASS__, 'note_redirect' ), 10 );
 				remove_filter( self::PRE_REQUEST_HOOK, array( __CLASS__, 'validate_first_request' ), PHP_INT_MAX );
 			}
 		}
@@ -158,7 +221,101 @@ final class Daymark_Outbound_Guard {
 		$check = Daymark_Subscription_Url_Guard::check( is_string( $location ) ? $location : '' );
 
 		if ( is_wp_error( $check ) ) {
+			self::$redirect_refused = true;
+
 			throw new WpOrg\Requests\Exception( esc_html( $check->get_error_message() ), 'daymark.redirect_blocked' );
 		}
+
+		// WordPress's own check let it through too.
+		self::$pending_redirect = null;
+	}
+
+	/**
+	 * Note a redirect a response asks for, before WordPress or this class
+	 * checks it.
+	 *
+	 * WordPress checks a redirect target before validate_redirect() sees
+	 * it, and one it refuses never reaches this class. Noting the target
+	 * here first is what lets get() and post() tell that refusal from a
+	 * connection that failed. Mirrors what Requests does next: give up on
+	 * a chain that has reached the request's limit, or follow the
+	 * `Location` header, made absolute.
+	 *
+	 * @param mixed $response The response, a WpOrg\Requests\Response.
+	 * @param mixed $headers  Request headers (unused).
+	 * @param mixed $data     Request body (unused).
+	 * @param mixed $options  Request options.
+	 * @return void
+	 */
+	public static function note_redirect( $response, $headers = array(), $data = array(), $options = array() ): void {
+		unset( $headers, $data );
+
+		if ( ! $response instanceof WpOrg\Requests\Response || ! $response->is_redirect() || ! is_array( $options ) || true !== ( $options['follow_redirects'] ?? false ) ) {
+			return;
+		}
+
+		if ( (int) ( $options['redirected'] ?? 0 ) >= (int) ( $options['redirects'] ?? 0 ) ) {
+			// Requests stops here with "Too many redirects", every time.
+			self::$redirect_refused = true;
+
+			return;
+		}
+
+		if ( ! isset( $response->headers['location'] ) ) {
+			return;
+		}
+
+		$location = (string) $response->headers['location'];
+
+		if ( 0 !== strpos( $location, 'http://' ) && 0 !== strpos( $location, 'https://' ) ) {
+			$absolute = WpOrg\Requests\Iri::absolutize( $response->url, $location );
+			$location = $absolute ? (string) $absolute->uri : $location;
+		}
+
+		self::$pending_redirect = $location;
+	}
+
+	/**
+	 * Name a request that failed on a redirect refused for good, so callers
+	 * can tell it from a connection that failed.
+	 *
+	 * WordPress reports both as `http_request_failed`; this keeps the
+	 * message and changes the code to `daymark_redirect_refused`.
+	 *
+	 * @param array<string, mixed>|WP_Error $response A wp_safe_remote_*() result.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	private static function name_refusal( $response ) {
+		if ( ! is_wp_error( $response ) || 'http_request_failed' !== $response->get_error_code() || ! self::redirect_was_refused() ) {
+			return $response;
+		}
+
+		return new WP_Error( 'daymark_redirect_refused', $response->get_error_message() );
+	}
+
+	/**
+	 * Whether the current run()'s request failed on a redirect that will be
+	 * refused every time.
+	 *
+	 * A target WordPress refused before this class saw it counts too, unless
+	 * its host didn't resolve: WordPress refuses those as well, and a failed
+	 * DNS lookup can pass.
+	 *
+	 * @return bool
+	 */
+	private static function redirect_was_refused(): bool {
+		if ( self::$redirect_refused ) {
+			return true;
+		}
+
+		if ( null === self::$pending_redirect ) {
+			return false;
+		}
+
+		$scheme = strtolower( (string) wp_parse_url( self::$pending_redirect, PHP_URL_SCHEME ) );
+
+		return ! in_array( $scheme, array( 'http', 'https' ), true )
+			|| is_wp_error( Daymark_Subscription_Url_Guard::check( self::$pending_redirect, false ) )
+			|| Daymark_Subscription_Url_Guard::host_resolves( self::$pending_redirect );
 	}
 }
