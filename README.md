@@ -42,6 +42,10 @@ Daymark, or on the network where they saw your post.
 - **Bring the people you already follow.** Import an OPML file from your
   feed reader, or, with Jetpack, the sites you follow in the WordPress.com
   Reader.
+- **Follow a site from wherever you find it.** Click the Daymark
+  bookmarklet on a post to follow its site, and add the "Follow me with
+  Daymark" block to your own site so visitors who use Daymark can follow
+  you from theirs.
 - **Never miss the people who matter most.** Star a favorite site and
   your phone gets a notification when it publishes.
 - **Daymark sites know each other.** When you follow a friend who uses

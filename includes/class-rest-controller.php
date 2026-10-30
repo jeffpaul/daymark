@@ -634,9 +634,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'callback'            => array( $this, 'create_subscription' ),
 					'permission_callback' => array( $this, 'permissions_check_manage' ),
 					'args'                => array(
+						// Checked as text before anything else runs: with
+						// its own sanitize callback, the type alone isn't
+						// enforced, and esc_url_raw() fails on a list.
 						'site_url' => array(
 							'type'              => 'string',
 							'required'          => true,
+							'validate_callback' => 'rest_validate_request_arg',
 							'sanitize_callback' => 'esc_url_raw',
 						),
 					),
@@ -660,10 +664,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'discover_subscription' ),
 				'permission_callback' => array( $this, 'permissions_check_manage' ),
 				'args'                => array(
+					// Trimmed only: sanitize_text_field() would delete the
+					// percent-encoding in a page address (a non-ASCII slug),
+					// and discovery checks the address itself.
 					'site_url' => array(
 						'type'              => 'string',
 						'required'          => true,
-						'sanitize_callback' => 'sanitize_text_field',
+						'validate_callback' => 'rest_validate_request_arg',
+						'sanitize_callback' => static function ( $value ) {
+							return is_string( $value ) ? trim( $value ) : '';
+						},
 					),
 				),
 			)
@@ -685,6 +695,17 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'site_title' => array(
 						'type'              => 'string',
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					// The site_url discovery returned. When sent, the
+					// follow only goes ahead if this user's last discovery
+					// was still that site (another tab may have looked up
+					// a different one since).
+					'site_url'   => array(
+						'type'              => 'string',
+						'validate_callback' => 'rest_validate_request_arg',
+						'sanitize_callback' => static function ( $value ) {
+							return is_string( $value ) ? esc_url_raw( trim( $value ) ) : '';
+						},
 					),
 				),
 			)
@@ -869,6 +890,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_subscription_post_comment_target' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/replies',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_replies' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$this->namespace,
+			'/subscription-posts/(?P<id>\d+)/engagement',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_subscription_post_engagement' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
 					'id' => array(
@@ -2934,6 +2989,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// connectorLabel() (config.connectors is filtered to currently-
 		// connected connectors only).
 		$payload['external_posts'] = $this->prepare_external_posts( $post_id, $target_list );
+		$payload['copies']         = $this->prepare_plugin_copies( $post_id, $payload['external_posts'] );
 
 		return rest_ensure_response( $payload );
 	}
@@ -2997,6 +3053,37 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * The copies publishing plugins made of a Mark (issue #558), for the
+	 * "where did this go" view, minus any a Daymark connector already
+	 * reported under the same address.
+	 *
+	 * @param int                                 $post_id        Mark post ID.
+	 * @param array<string, array<string, mixed>> $external_posts From prepare_external_posts().
+	 * @return array<int, array<string, string>>
+	 */
+	private function prepare_plugin_copies( int $post_id, array $external_posts ): array {
+		$known = array();
+
+		foreach ( $external_posts as $entry ) {
+			if ( ! empty( $entry['external_url'] ) ) {
+				$known[ Daymark_Plugin_Copies::url_key( (string) $entry['external_url'] ) ] = true;
+			}
+		}
+
+		$copies = array();
+
+		foreach ( Daymark_Plugin_Copies::for_post( $post_id ) as $copy ) {
+			if ( '' !== $copy['url'] && isset( $known[ Daymark_Plugin_Copies::url_key( $copy['url'] ) ] ) ) {
+				continue;
+			}
+
+			$copies[] = $copy;
+		}
+
+		return $copies;
 	}
 
 	/**
@@ -4095,6 +4182,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * subscription's posts right away, like subscribing in Settings ->
 	 * Daymark, and applies an edited site name when one is sent.
 	 *
+	 * An optional `site_url` (the one discovery returned) makes sure the
+	 * follow is for the site the person was shown: each user keeps only
+	 * one discovery, so a lookup in another tab or the bookmarklet would
+	 * otherwise change which feed an index means. A mismatch is answered
+	 * like an expired search.
+	 *
 	 * @since 0.20.0
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -4104,6 +4197,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$stash = get_transient( self::follow_transient_key() );
 
 		if ( ! is_array( $stash ) || empty( $stash['candidates'] ) || ! is_array( $stash['candidates'] ) ) {
+			return new WP_Error(
+				'daymark_follow_expired',
+				__( 'That search has expired. Look up the site again.', 'daymark' ),
+				array( 'status' => 410 )
+			);
+		}
+
+		$expected = $request->get_param( 'site_url' );
+
+		if ( is_string( $expected ) && '' !== $expected && esc_url_raw( (string) ( $stash['site_url'] ?? '' ) ) !== $expected ) {
 			return new WP_Error(
 				'daymark_follow_expired',
 				__( 'That search has expired. Look up the site again.', 'daymark' ),
@@ -4627,6 +4730,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
+		// Replies cached for this post from before the comment don't have
+		// it; the next Show replies asks the site again.
+		Daymark_Remote_Replies::forget( (string) get_post_meta( $id, 'permalink', true ) );
+
 		$method  = sanitize_key( (string) ( $result['method'] ?? '' ) );
 		$mark_id = absint( $result['mark_id'] ?? 0 );
 
@@ -4649,8 +4756,54 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'message'  => sanitize_text_field( (string) ( $result['message'] ?? '' ) ),
 				'mark_id'  => $mark_id,
 				'delivery' => $delivery,
+				'watching' => ! empty( $result['watching'] ),
 			)
 		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/replies — the replies on a
+	 * followed post, read from its own site (issue #559): a WordPress
+	 * site's approved comments, or a Mastodon-family post's replies.
+	 * Read-only and loaded on tap; Daymark_Remote_Replies caches the answer
+	 * for a few minutes. Spends ACTION_SUBSCRIPTION_POST_OPEN, the
+	 * allowance for things you tap, only when the answer isn't cached.
+	 *
+	 * Each reply carries `is_own`: true for a comment Daymark sent for the
+	 * current user, matched by its ID on the site: the one the site
+	 * returned, or for a Webmention the one Daymark found by this site's
+	 * address and the comment's own words (never the name or address
+	 * alone, which anyone could type).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_replies( WP_REST_Request $request ) {
+		$id    = absint( $request->get_param( 'id' ) );
+		$check = $this->assert_subscription_post( $id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		$permalink = esc_url_raw( (string) get_post_meta( $id, 'permalink', true ) );
+
+		if ( null === Daymark_Remote_Replies::cached( $permalink ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_OPEN );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		$result  = Daymark_Remote_Replies::for_permalink( $permalink );
+		$own_ids = Daymark_Remote_Replies::SOURCE_WORDPRESS === $result['source']
+			? Daymark_Comment_Replies::own_comment_ids( get_current_user_id(), $id, $permalink )
+			: array();
+
+		$result['replies'] = Daymark_Remote_Replies::mark_own( $result['replies'], $own_ids );
+
+		return rest_ensure_response( $result );
 	}
 
 	/**
@@ -4703,6 +4856,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'url'    => esc_url_raw( (string) ( $target['url'] ?? '' ) ),
 			)
 		);
+	}
+
+	/**
+	 * GET /daymark/v1/subscription-posts/{id}/engagement — whether Like and
+	 * Comment can reach this post's site, and when either can't, a short note
+	 * saying why, with a link to the fix for someone allowed to make it
+	 * (issue #561). The full post view asks for it when it opens.
+	 *
+	 * Rate-limited like like-availability: only when the post's page (or its
+	 * ActivityPub object) isn't cached yet, on the background allowance
+	 * (ACTION_SUBSCRIPTION_POST_FETCH).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_subscription_post_engagement( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$check   = $this->assert_subscription_post( $post_id );
+
+		if ( is_wp_error( $check ) ) {
+			return $check;
+		}
+
+		if ( Daymark_Engagement_Status::needs_lookup( $post_id ) ) {
+			$rate = $this->rate_limit( Daymark_Rate_Limiter::ACTION_SUBSCRIPTION_POST_FETCH );
+
+			if ( is_wp_error( $rate ) ) {
+				return $rate;
+			}
+		}
+
+		return rest_ensure_response( Daymark_Engagement_Status::for_post( $post_id ) );
 	}
 
 	/**
@@ -5228,6 +5413,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Posts list's Reblogs column shows.
 			'repost_count'       => Daymark_Reblog_Count::for_post( $post_id ),
 			'syndication_status' => sanitize_key( (string) get_post_meta( $post_id, '_daymark_syndication_status', true ) ),
+			// Whether a publishing plugin (Jetpack Social, Share on Mastodon,
+			// and so on) shared this Mark, so its card offers the "where did
+			// this go" view even when no Daymark connector ran (issue #558).
+			// Only for someone who can open that view (GET /marks/{id} needs
+			// edit_post).
+			'has_copies'         => '1' === (string) get_post_meta( $post_id, '_daymark_is_mark', true )
+				&& current_user_can( 'edit_post', $post_id )
+				&& array() !== Daymark_Plugin_Copies::for_post( $post_id ),
 			'bookmarked'         => Daymark_Plugin::instance()->bookmarks->is_bookmarked( get_current_user_id(), $post_id ),
 			// Whose post this is, so a Timeline card can label your own
 			// posts "You" and another author's (on a multi-author site) by

@@ -37,7 +37,10 @@ class Daymark_Plugin_Overlap {
 	public const META_KEY = 'daymark_plugin_overlap_dismissed';
 
 	/**
-	 * The four plugins named in issue #346, and what each one overlaps.
+	 * The plugins named in issue #346 that still overlap, and what each
+	 * one overlaps. (Syndication Links was the fourth: since issue #558
+	 * Daymark hands that plugin a Mark's syndication links instead of
+	 * printing its own, so the two no longer overlap.)
 	 *
 	 * Detection signals (`slugs`/`classes`/`constants`) were confirmed
 	 * directly against each plugin's own public GitHub source (this
@@ -50,34 +53,25 @@ class Daymark_Plugin_Overlap {
 	 *   main class `Post_Kinds_Plugin`.
 	 * - Microformats 2 (indieweb/wordpress-uf2): main file `wp-uf2.php`,
 	 *   text domain / wp.org slug `wp-uf2`, main class `UF2_Plugin`.
-	 * - Syndication Links (dshanske/syndication-links): text domain /
-	 *   slug `syndication-links`, version constant
-	 *   `SYNDICATION_LINKS_VERSION`.
 	 * - IndieBlocks (janboddez/indieblocks): text domain / slug
 	 *   `indieblocks`, namespaced `IndieBlocks\Plugin` singleton.
 	 *
 	 * @var array<string, array{label: string, overlaps: string, slugs?: string[], classes?: string[], constants?: string[]}>
 	 */
 	private const OVERLAPS = array(
-		'post-kinds'        => array(
+		'post-kinds'    => array(
 			'label'    => 'Post Kinds',
 			'overlaps' => 'files your posts under kinds such as Note and Reply. Daymark files its Marks under the matching kind and keeps Post Kinds\' reply and repost box off them, so both can stay on — consider deactivating Post Kinds only if you don\'t use its kinds',
 			'slugs'    => array( 'indieweb-post-kinds' ),
 			'classes'  => array( 'Post_Kinds_Plugin' ),
 		),
-		'microformats2'     => array(
+		'microformats2' => array(
 			'label'    => 'Microformats 2',
 			'overlaps' => 'may add its own h-entry/h-card markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
 			'slugs'    => array( 'wp-uf2' ),
 			'classes'  => array( 'UF2_Plugin' ),
 		),
-		'syndication-links' => array(
-			'label'     => 'Syndication Links',
-			'overlaps'  => 'may add its own Bridgy-backfeed syndication markup alongside Daymark\'s own — consider deactivating whichever one you don\'t need',
-			'slugs'     => array( 'syndication-links' ),
-			'constants' => array( 'SYNDICATION_LINKS_VERSION' ),
-		),
-		'indieblocks'       => array(
+		'indieblocks'   => array(
 			'label'    => 'IndieBlocks',
 			'overlaps' => 'bundles its own post-kind, webmention, microformats, and syndication features — each may duplicate something Daymark already renders, so consider deactivating whichever one you don\'t need. If you turn IndieBlocks off, Notes you wrote with it no longer show in Daymark, and posts you liked with it no longer show as liked',
 			'slugs'    => array( 'indieblocks' ),
