@@ -32,7 +32,8 @@
  * default term (includes/class-kind-taxonomy.php), the kinds and their
  * microformats properties (includes/register-kinds.php), the
  * `kind_response_display` filter (includes/class-kind-view.php), and the
- * REST field (Kind_Taxonomy::rest_kind()).
+ * REST field (Kind_Taxonomy::rest_kind()). The `kind_content_response`
+ * filter is from 4.0.1 and does nothing on earlier versions.
  *
  * @package Daymark
  */
@@ -90,6 +91,7 @@ class Daymark_Post_Kinds {
 	 */
 	public function register(): void {
 		add_filter( 'kind_response_display', array( $this, 'suppress_response_box' ), 10, 2 );
+		add_filter( 'kind_content_response', array( $this, 'skip_content_response' ), 10, 2 );
 	}
 
 	/**
@@ -171,6 +173,25 @@ class Daymark_Post_Kinds {
 		}
 
 		return $content;
+	}
+
+	/**
+	 * Tell Post Kinds (4.0.1+) not to build its response box for a Mark's
+	 * content at all, rather than building it for suppress_response_box()
+	 * to throw away. This filter only covers `the_content`; feeds,
+	 * excerpts, and Post Kinds' template tags still go through
+	 * `kind_response_display`, so suppress_response_box() stays.
+	 *
+	 * @param bool         $add  Whether to add the response.
+	 * @param WP_Post|null $post The current post.
+	 * @return bool
+	 */
+	public function skip_content_response( $add, $post ) {
+		if ( $post instanceof WP_Post && '1' === (string) get_post_meta( $post->ID, '_daymark_is_mark', true ) ) {
+			return false;
+		}
+
+		return $add;
 	}
 
 	/**
