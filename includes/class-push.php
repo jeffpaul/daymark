@@ -584,6 +584,11 @@ class Daymark_Push {
 	 * Comments tab lists; likes, reblogs, and mentions stored as comments
 	 * don't push. The author's own replies never push.
 	 *
+	 * On a Mark that is the user's comment on a followed post, the push
+	 * says so ("New reply to your comment on …"), and a reply Daymark
+	 * already pushed after finding it on the original site (issue #559)
+	 * isn't pushed again when it also arrives here as a Webmention.
+	 *
 	 * @param WP_Comment $comment Comment.
 	 * @return bool Whether a push was queued.
 	 */
@@ -604,15 +609,34 @@ class Daymark_Push {
 			return false;
 		}
 
+		$reply_to = Daymark_Notifications::find_reply_target( (int) $post->ID );
+
+		if ( null !== $reply_to && Daymark_Comment_Replies::already_found( (int) $post->ID, (string) get_comment_meta( (int) $comment->comment_ID, 'webmention_source_url', true ) ) ) {
+			return false;
+		}
+
 		$name  = '' !== trim( (string) $comment->comment_author ) ? (string) $comment->comment_author : __( 'Someone', 'daymark' );
 		$title = '' !== trim( (string) $post->post_title ) ? (string) $post->post_title : __( 'your Mark', 'daymark' );
+
+		if ( null !== $reply_to ) {
+			$push_title = sprintf(
+				/* translators: %s: the original post's title, or its site when it has none. */
+				__( 'New reply to your comment on %s', 'daymark' ),
+				$reply_to['title']
+			);
+		} else {
+			$push_title = sprintf(
+				/* translators: %s: the post's title. */
+				__( 'New comment on %s', 'daymark' ),
+				$title
+			);
+		}
 
 		$queued = self::notify_user(
 			$author_id,
 			'comments',
 			array(
-				/* translators: %s: the post's title. */
-				'title' => sprintf( __( 'New comment on %s', 'daymark' ), $title ),
+				'title' => $push_title,
 				/* translators: 1: commenter's name, 2: the comment text. */
 				'body'  => sprintf( __( '%1$s: %2$s', 'daymark' ), $name, (string) $comment->comment_content ),
 				'url'   => Daymark_Routes::app_url( 'notifications' ),

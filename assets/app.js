@@ -1036,6 +1036,9 @@
 	// Feather "star": a favorite followed site (Explore's Following list).
 	const STAR_GLYPH =
 		'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>';
+	// Feather "user-plus": following a site from a follow link.
+	const FOLLOW_GLYPH =
+		'<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line>';
 
 	function statIcon(glyph) {
 		return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -1148,9 +1151,21 @@
 		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
+	// Whether a Mark has anything for its "Where this went" popover: a
+	// destination Daymark routed it to itself (syndication_status isn't
+	// 'not_attempted'), or a copy a publishing plugin such as Jetpack
+	// Social or Share on Mastodon recorded (has_copies, issue #558). The
+	// toggle and its sibling panel are both gated on this one check.
+	function hasRoutingDetail(item) {
+		return !!(
+			(item.syndication_status && 'not_attempted' !== item.syndication_status) ||
+			item.has_copies
+		);
+	}
+
 	// "Where did this go" (issue #255) — a Mark-only affordance, shown once
-	// the Mark has actually been routed somewhere (syndication_status isn't
-	// 'not_attempted'; a Mark with no selected destinations has nothing to
+	// the Mark has actually been routed somewhere (see hasRoutingDetail();
+	// a Mark with no destinations and no plugin copies has nothing to
 	// report here, and a subscription post has no syndication targets of
 	// its own at all). Tapping it opens a small popover — a sibling panel
 	// in the item-wrap, not nested inside the card, which a stretched
@@ -1162,7 +1177,7 @@
 	// opening its own, so tapping this from inside an open overflow menu
 	// already reads as "swap panels," not "open two."
 	function renderRoutingToggle(item) {
-		if (!item.syndication_status || 'not_attempted' === item.syndication_status) {
+		if (!hasRoutingDetail(item)) {
 			return '';
 		}
 		const id = esc(String(item.id));
@@ -4664,7 +4679,7 @@
 		// another <button>. Gated on the same condition as
 		// renderRoutingToggle() itself, so there's no unused empty panel for
 		// a Mark with nothing to route.
-		const hasRouting = !isDraft && item.syndication_status && 'not_attempted' !== item.syndication_status;
+		const hasRouting = !isDraft && hasRoutingDetail(item);
 		// The ⋯ overflow menu's own panel (issue #326) — a sibling of the
 		// card button for the same reason the routing panel above already
 		// is. Empty (and so self-omitted by renderOverflowPanel()) for a
@@ -5921,6 +5936,18 @@
 		});
 	}
 
+	// The full post view's note on why Like or Comment can't reach a
+	// followed post's site (issue #561): the server's sentences, then its
+	// link to the fix when the viewer may make it. Text only, escaped.
+	function engagementNoteHtml(note) {
+		const sentences = Array.isArray(note.sentences) ? note.sentences : [];
+		const text = esc(sentences.join(' '));
+		const link = note.link && note.link.url
+			? ` <a href="${esc(note.link.url)}">${esc(note.link.label)}</a>`
+			: '';
+		return text + link;
+	}
+
 	// Cached on the item itself (screen._bySubId already keeps it around
 	// for the lifetime of the current Timeline/Search/PostScreen render),
 	// so tapping the same post's Comment icon twice in one session costs
@@ -6006,6 +6033,25 @@
 				const label = withDeliveryStatus(__('Comment', 'daymark'), result.delivery);
 				trigger.setAttribute('aria-label', label);
 				trigger.setAttribute('title', label);
+			}
+			// Replies loaded, or still loading, from before this comment
+			// don't have it.
+			PostScreen.forgetReplies(id, item);
+			if (item) {
+				// When it's already on the site (posted there directly, or
+				// through WordPress.com, and not held for moderation), load
+				// them again now; a Webmention reaches the site later, so the
+				// next Show replies asks again instead.
+				const onSite = 'jetpack' === result.method || ('native' === result.method && 'published' === result.status);
+				if (
+					onSite &&
+					PostScreen.view &&
+					PostScreen.view.item === item &&
+					root.querySelector('[data-thread-body]') &&
+					!root.querySelector('[data-thread-show]')
+				) {
+					PostScreen.loadReplies();
+				}
 			}
 			showFlashBubble(trigger, result.message || __('Comment sent.', 'daymark'));
 		} catch (err) {
@@ -6203,13 +6249,45 @@
 				</li>`;
 			})
 			.join('');
+		// Copies a publishing plugin made on its own (issue #558): Jetpack
+		// Social, Share on Mastodon, XPoster, and so on. Each links to the
+		// copy when the plugin kept its address; an ActivityPub post is the
+		// site's own post, so it's listed with no link.
+		const copies = Array.isArray(mark.copies) ? mark.copies : [];
+		const copyRows = copies
+			.map((copy) => {
+				const label = copy.label || copy.service || '';
+				const target = copy.url
+					? `<a class="daymark-btn daymark-btn--text" href="${esc(
+							copy.url
+					  )}" target="_blank" rel="noopener">${esc(label)}</a>`
+					: `<span>${esc(label)}</span>`;
+				const sharedBy = copy.plugin_label
+					? `<p class="daymark-syndication__note">${esc(
+							sprintf(
+								/* translators: %s: name of the plugin that shared the Mark, e.g. "Jetpack Social" */
+								__('Shared by %s', 'daymark'),
+								copy.plugin_label
+							)
+					  )}</p>`
+					: '';
+				return `
+				<li class="daymark-syndication__item">
+					<div class="daymark-syndication__row">
+						${target}
+						<span class="daymark-chip daymark-chip--success">${esc(__('Shared', 'daymark'))}</span>
+					</div>
+					${sharedBy}
+				</li>`;
+			})
+			.join('');
 		return `<ul class="daymark-syndication" aria-label="${esc(__('Where this Mark was routed', 'daymark'))}">
 			<li class="daymark-syndication__item">
 				<div class="daymark-syndication__row">
 					${siteLink}
 					<span class="daymark-chip daymark-chip--success">${esc(__('Published', 'daymark'))}</span>
 				</div>
-			</li>${rows}
+			</li>${rows}${copyRows}
 		</ul>`;
 	}
 
@@ -10338,30 +10416,26 @@
 		},
 	};
 
-	// A small, generic "type some text" overlay — the same
-	// .daymark-sheet/backdrop/Escape-key/focus-management shell
-	// AIAssistSheet already established, the one existing "small overlay"
-	// convention in this codebase, reused rather than a second one invented
-	// for this narrower need (issue #317: the Comment toggle's required
-	// comment text, and Reblog's own optional comment prompt). Callers pass
-	// onSubmit (required) and, only when a "type nothing, just do the
-	// default thing" path makes sense (Reblog — Skip publishes just the
-	// reblogged post's own link, with no added comment; Comment has no such
-	// default, so it gets no Skip button at all), onSkip too.
 	// "Follow a site" (admins only, config.canManageSubscriptions): paste an
 	// address, pick one of the feeds the site offers, follow it. The same
 	// discovery and subscribe logic as Settings -> Daymark, through
 	// POST /subscriptions/discover and /subscriptions/follow. The second
-	// step sends only the index of a feed the server found, never a URL.
+	// step sends only the index of a feed the server found, never a URL,
+	// plus the site discovery returned, so a lookup made elsewhere in the
+	// meantime (another tab, the bookmarklet) can't change what it follows.
+	// A follow link (Daymark_Follow_Link) opens it with `address` filled
+	// in; nothing is looked up until the person taps Find feeds.
 	const FollowSiteSheet = {
 		el: null,
 		opener: null,
 		onFollowed: null,
 		busy: false,
+		siteUrl: '',
 
-		show(opener, onFollowed) {
+		show(opener, onFollowed, address) {
 			this.opener = opener || null;
 			this.onFollowed = onFollowed || null;
+			this.siteUrl = '';
 			if (!this.el) {
 				this.el = document.createElement('div');
 				this.el.className = 'daymark-sheet';
@@ -10369,7 +10443,7 @@
 			}
 			this.el.hidden = false;
 			syncSheetsToVisualViewport();
-			this.renderAddressStep('');
+			this.renderAddressStep(address || '', Boolean(address));
 			this.onKeydown = (event) => {
 				if (event.key === 'Escape') {
 					this.hide();
@@ -10390,7 +10464,7 @@
 			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
 		},
 
-		renderAddressStep(value) {
+		renderAddressStep(value, focusFind) {
 			this.frame(`
 				<label class="daymark-field__label" for="daymark-follow-url">${esc(__('Site address', 'daymark'))}</label>
 				<input type="url" id="daymark-follow-url" class="daymark-input" data-follow-url inputmode="url" autocomplete="url" placeholder="${esc(
@@ -10404,15 +10478,23 @@
 					<button type="button" class="daymark-btn daymark-btn--primary" data-follow-find>${esc(__('Find feeds', 'daymark'))}</button>
 				</div>`);
 			const input = this.el.querySelector('[data-follow-url]');
+			const findButton = this.el.querySelector('[data-follow-find]');
 			const find = () => this.find(input.value.trim());
-			this.el.querySelector('[data-follow-find]').addEventListener('click', find);
+			findButton.addEventListener('click', find);
 			input.addEventListener('keydown', (event) => {
 				if (event.key === 'Enter') {
 					event.preventDefault();
 					find();
 				}
 			});
-			input.focus();
+			// Opened from a follow link, the address is already there and the
+			// next step is Find feeds; focusing the field would only bring up
+			// the phone's keyboard.
+			if (focusFind) {
+				findButton.focus();
+			} else {
+				input.focus();
+			}
 		},
 
 		async find(address) {
@@ -10448,6 +10530,7 @@
 		},
 
 		renderFeedStep(address, result) {
+			this.siteUrl = (result && result.site_url) || '';
 			const candidates = Array.isArray(result.candidates) ? result.candidates : [];
 			const open = candidates.filter((c) => !c.subscribed);
 			if (!open.length) {
@@ -10522,6 +10605,7 @@
 				const subscription = await apiPost('subscriptions/follow', {
 					index: Number(picked.value),
 					site_title: this.el.querySelector('[data-follow-name]').value.trim(),
+					site_url: this.siteUrl || undefined,
 				});
 				const handler = this.onFollowed;
 				const name = (subscription && (subscription.site_title || subscription.site_url)) || '';
@@ -10566,6 +10650,16 @@
 		},
 	};
 
+	// A small, generic "type some text" overlay — the same
+	// .daymark-sheet/backdrop/Escape-key/focus-management shell
+	// AIAssistSheet already established, the one existing "small overlay"
+	// convention in this codebase, reused rather than a second one invented
+	// for this narrower need (issue #317: the Comment toggle's required
+	// comment text, and Reblog's own optional comment prompt). Callers pass
+	// onSubmit (required) and, only when a "type nothing, just do the
+	// default thing" path makes sense (Reblog — Skip publishes just the
+	// reblogged post's own link, with no added comment; Comment has no such
+	// default, so it gets no Skip button at all), onSkip too.
 	const TextPromptSheet = {
 		el: null,
 		opener: null,
@@ -12370,7 +12464,7 @@
 				? markOverflowMenuItems(item)
 				: subscriptionOverflowMenuItems(item, renderRefreshContentToggle(item));
 			const id = esc(String(item.id || ''));
-			const hasRouting = isMark && item.syndication_status && 'not_attempted' !== item.syndication_status;
+			const hasRouting = isMark && hasRoutingDetail(item);
 			return `
 			<header class="daymark-topbar daymark-topbar--top">
 				${backLinkWithIcon(
@@ -12387,8 +12481,10 @@
 				</div>
 				<div class="daymark-postview-meta">
 					${renderCardTimestampRow(item, siteLabel)}
+					${isMark ? '' : '<p class="daymark-engagement-note" data-engagement-note hidden></p>'}
 					${hasRouting ? `<div class="daymark-recent__routing" data-routing-panel="${id}" hidden></div>` : ''}
 				</div>
+				${isMark ? '' : this.repliesSectionHtml()}
 				<div class="daymark-postview-footer" role="toolbar" aria-label="${esc(__('Post actions', 'daymark'))}">
 					<div class="daymark-postview-footer__bar">${stats}</div>
 					${renderOverflowPanel(item, overflowItems, isMark ? '' : unsubscribeConfirmMarkup(item))}
@@ -12413,6 +12509,14 @@
 			root.querySelectorAll('.daymark-postview-meta, .daymark-postview-footer').forEach((el) =>
 				el.addEventListener('click', (event) => onFeedListClick(this, event))
 			);
+			const thread = root.querySelector('[data-thread]');
+			if (thread) {
+				thread.addEventListener('click', (event) => {
+					if (event.target.closest('[data-thread-show], [data-thread-retry]')) {
+						this.loadReplies();
+					}
+				});
+			}
 			bindDismissible(this, [itemMenusDismissEntry()]);
 		},
 
@@ -12519,9 +12623,57 @@
 			this._bySubId = new Map();
 			rememberItem(this, this.view.item);
 			teardownLikeAvailabilityObserver(this);
-			observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			if ('sub' === this.view.kind) {
+				// One request says whether Like and Comment reach this post's
+				// site, and why not when either can't (issue #561).
+				this.loadEngagement();
+			} else {
+				observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+			}
 			this.prefetch();
+			// Opened from a notification or push about a reply: load the
+			// replies alongside the post. Replies already loaded this
+			// session show again straight away.
+			if ('sub' === this.view.kind && (this.view.showReplies || this.view.item._replies)) {
+				this.loadReplies();
+			}
 			await this.load(false);
+		},
+
+		// Asks the site whether Like and Comment can reach this followed
+		// post's own site. Hides an undeliverable Like, primes the Comment
+		// pre-check so a tap doesn't ask again, and shows the note saying
+		// why (with a link to the fix for someone allowed to make it). If
+		// the request fails, Like falls back to its own lazy check.
+		async loadEngagement() {
+			const view = this.view;
+			const item = view.item;
+			let result;
+			try {
+				result = await apiGet('subscription-posts/' + item.id + '/engagement');
+			} catch (err) {
+				if (this.view === view) {
+					observeLikeAvailability(this, root.querySelector('.daymark-postview-footer'));
+				}
+				return;
+			}
+			if (this.view !== view || !result) {
+				return;
+			}
+			if (result.like) {
+				item.like_available = !!result.like.available;
+				if (!item.like_available) {
+					removeLikeToggles(String(item.id));
+				}
+			}
+			if (result.comment && result.comment.method) {
+				item.commentTarget = result.comment;
+			}
+			const slot = root.querySelector('[data-engagement-note]');
+			if (slot && result.note) {
+				slot.innerHTML = engagementNoteHtml(result.note);
+				slot.hidden = false;
+			}
 		},
 
 		// On the last loaded post, start loading the list's next page now,
@@ -12529,7 +12681,12 @@
 		// failure here is silent; tapping Next tries again.
 		prefetch() {
 			const view = this.view;
-			if (!view || postViewNeighbor(view.list.items, view.item, 1) || !postViewHasMore(view.list)) {
+			if (
+				!view ||
+				!view.list ||
+				postViewNeighbor(view.list.items, view.item, 1) ||
+				!postViewHasMore(view.list)
+			) {
 				return;
 			}
 			loadMorePostViewList(view.list).catch(() => {});
@@ -12658,6 +12815,271 @@
 					played.catch(() => {});
 				}
 			}
+		},
+
+		// Replies (issue #559): a followed post's comments, read from the
+		// original site when the reader asks for them. That's a WordPress
+		// site's own comments, or the replies to a fediverse post. Nothing
+		// is fetched until "Show replies" is tapped, or the reader came from
+		// a notification or push about a reply, which loads them at once.
+		// The answer is kept on the item, so coming back to this post in the
+		// same session shows it again without asking the site twice.
+		repliesSectionHtml() {
+			return `<section class="daymark-thread" data-thread aria-labelledby="daymark-thread-heading">
+				<h2 class="daymark-section-heading daymark-thread__heading" id="daymark-thread-heading">${esc(
+					__('Replies', 'daymark')
+				)}</h2>
+				<div class="daymark-thread__body" data-thread-body>
+					<button type="button" class="daymark-btn daymark-btn--secondary daymark-thread__show" data-thread-show>${statIcon(
+						COMMENT_GLYPH
+					)}<span>${esc(__('Show replies', 'daymark'))}</span></button>
+					<p class="daymark-thread__note">${esc(__('Loads the replies from the original site.', 'daymark'))}</p>
+				</div>
+			</section>`;
+		},
+
+		async loadReplies() {
+			const item = this.view && this.view.item;
+			const body = root.querySelector('[data-thread-body]');
+			if (!item || !item.id || !body) {
+				return;
+			}
+			if (item._replies) {
+				body.innerHTML = this.repliesHtml(item._replies, item);
+				return;
+			}
+			if (!navigator.onLine) {
+				body.innerHTML = this.repliesErrorHtml(__("You're offline. Replies need a connection.", 'daymark'));
+				return;
+			}
+			body.setAttribute('aria-busy', 'true');
+			body.innerHTML = `<p class="daymark-loading"><span class="daymark-spinner" aria-hidden="true"></span> ${esc(
+				__('Loading replies…', 'daymark')
+			)}</p>`;
+			// One request per post at a time, kept here rather than on the
+			// item (items are stored in IndexedDB with a bookmark, which
+			// can't hold a promise). Stepping away and back while it runs
+			// waits for the same request, unless a comment was sent since
+			// it started (forgetReplies()): then a new request replaces it.
+			this._repliesRequests = this._repliesRequests || new Map();
+			const key = String(item.id);
+			let entry = this._repliesRequests.get(key);
+			if (!entry || entry.stale) {
+				const previous = entry;
+				entry = {
+					request: apiGet('subscription-posts/' + item.id + '/replies'),
+					stale: false,
+					replaced: false,
+				};
+				if (previous) {
+					previous.replaced = true;
+				}
+				const started = entry;
+				this._repliesRequests.set(key, started);
+				const done = () => {
+					if (this._repliesRequests.get(key) === started) {
+						this._repliesRequests.delete(key);
+					}
+				};
+				started.request.then(done, done);
+			}
+			let html = '';
+			let message = '';
+			try {
+				const result = await entry.request;
+				if (entry.replaced) {
+					// The request that replaced this one shows its answer.
+					return;
+				}
+				if (!result || 'error' === result.status) {
+					message = __("The original site didn't answer. Try again in a minute.", 'daymark');
+					html = this.repliesErrorHtml(message);
+				} else {
+					// A list from before a comment is shown when nothing
+					// replaced its request, but not kept.
+					if (!entry.stale) {
+						item._replies = result;
+					}
+					html = this.repliesHtml(result, item);
+					message = this.repliesSummary(result);
+				}
+			} catch (err) {
+				if (entry.replaced) {
+					return;
+				}
+				message =
+					err && 429 === err.status
+						? __("You've opened a lot of posts recently. Try again in a few minutes.", 'daymark')
+						: __("Couldn't load the replies.", 'daymark');
+				html = this.repliesErrorHtml(message);
+			}
+			// Fill whichever copy of this post's screen is showing now; the
+			// reader may have stepped to another post meanwhile.
+			const current = root.querySelector('[data-thread-body]');
+			if (!current || !this.view || this.view.item !== item) {
+				return;
+			}
+			current.removeAttribute('aria-busy');
+			current.innerHTML = html;
+			announce(message);
+		},
+
+		// A comment was just sent on this followed post, so replies loaded
+		// from before it, or still loading, don't have it. The next look
+		// asks the site again.
+		forgetReplies(id, item) {
+			if (item) {
+				delete item._replies;
+			}
+			const entry = this._repliesRequests && this._repliesRequests.get(String(id));
+			if (entry) {
+				entry.stale = true;
+			}
+		},
+
+		// What a screen reader hears once the replies have loaded.
+		repliesSummary(result) {
+			const count = Array.isArray(result.replies) ? result.replies.length : 0;
+			if ('unsupported' === result.status) {
+				return __("This site doesn't share its replies with Daymark.", 'daymark');
+			}
+			if (!count) {
+				return __('No replies yet.', 'daymark');
+			}
+			return sprintf(
+				/* translators: %d: number of replies shown */
+				_n('%d reply', '%d replies', count, 'daymark'),
+				count
+			);
+		},
+
+		repliesErrorHtml(message) {
+			return `<p class="daymark-thread__note">${esc(
+				message
+			)}</p><button type="button" class="daymark-btn daymark-btn--text" data-thread-retry>${esc(
+				__('Try again', 'daymark')
+			)}</button>`;
+		},
+
+		repliesHtml(result, item) {
+			const replies = Array.isArray(result.replies) ? result.replies : [];
+			const url = result.url || item.permalink || '';
+			const original = url
+				? `<a class="daymark-thread__original" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(
+						__('See replies on the original site', 'daymark')
+				  )}</a>`
+				: '';
+			if ('unsupported' === result.status || !replies.length) {
+				return `<p class="daymark-thread__note">${esc(this.repliesSummary(result))}</p>${original}`;
+			}
+			const total = Math.max(Number(result.total) || 0, replies.length);
+			const more =
+				total > replies.length
+					? `<p class="daymark-thread__note">${esc(
+							sprintf(
+								/* translators: 1: number of replies shown, 2: number of replies the original site has */
+								_n('Showing %1$d of %2$d reply.', 'Showing %1$d of %2$d replies.', total, 'daymark'),
+								replies.length,
+								total
+							)
+					  )}</p>`
+					: '';
+			return this.threadListHtml(replies) + more + original;
+		},
+
+		// Replies arrive in reading order with a depth (0 to 3); a reply one
+		// level deeper than the one before it opens a list inside that one,
+		// so a conversation reads as nested lists.
+		threadListHtml(replies) {
+			let html = '<ol class="daymark-thread__list">';
+			let current = 0;
+			replies.forEach((reply, index) => {
+				let depth = Math.min(Math.max(Number(reply.depth) || 0, 0), 3);
+				if (0 === index) {
+					depth = 0;
+				} else if (depth > current + 1) {
+					depth = current + 1;
+				}
+				if (index > 0) {
+					if (depth === current + 1) {
+						html += '<ol class="daymark-thread__list daymark-thread__list--nested">';
+					} else {
+						html += '</li>';
+						for (let level = current; level > depth; level--) {
+							html += '</ol></li>';
+						}
+					}
+				}
+				html += '<li class="daymark-thread__item">' + this.replyHtml(reply);
+				current = depth;
+			});
+			html += '</li>';
+			for (let level = current; level > 0; level--) {
+				html += '</ol></li>';
+			}
+			return html + '</ol>';
+		},
+
+		// One reply. Its text is HTML the server already reduced to a few
+		// plain tags (paragraphs, links, emphasis, lists, quotes, code),
+		// with every link opening in a new tab; it's cleaned once more here
+		// like any other site's HTML. "You" marks a reply Daymark sent for
+		// this reader, matched by the comment ID Daymark recorded when it
+		// sent it, never by name.
+		replyHtml(reply) {
+			const name = reply.author_name || reply.handle || __('Someone', 'daymark');
+			const nameHtml = reply.author_url
+				? `<a class="daymark-thread__author" href="${esc(
+						reply.author_url
+				  )}" target="_blank" rel="nofollow noopener noreferrer ugc">${esc(name)}</a>`
+				: `<span class="daymark-thread__author">${esc(name)}</span>`;
+			const avatar = reply.avatar
+				? `<img class="daymark-thread__avatar" src="${esc(
+						reply.avatar
+				  )}" alt="" width="32" height="32" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+				: '<span class="daymark-thread__avatar daymark-thread__avatar--empty" aria-hidden="true"></span>';
+			const own = reply.is_own ? `<span class="daymark-chip daymark-thread__you">${esc(__('You', 'daymark'))}</span>` : '';
+			const handle =
+				reply.handle && reply.author_name ? `<span class="daymark-thread__handle">${esc(reply.handle)}</span>` : '';
+			const when = renderCardTimestamp(reply.date);
+			const time = when
+				? reply.url
+					? `<a class="daymark-thread__time" href="${esc(
+							reply.url
+					  )}" target="_blank" rel="nofollow noopener noreferrer ugc">${when}</a>`
+					: `<span class="daymark-thread__time">${when}</span>`
+				: '';
+			const content = `<div class="daymark-thread__content">${stripUntrustedPresentation(
+				String(reply.content || '')
+			)}</div>`;
+			const media = Number(reply.media_count) || 0;
+			return `<article class="daymark-thread__reply${reply.is_own ? ' daymark-thread__reply--own' : ''}">
+				${avatar}
+				<div class="daymark-thread__main">
+					<p class="daymark-thread__byline">${nameHtml}${own}${handle}${time}</p>
+					${
+						reply.warning
+							? `<details class="daymark-thread__warning"><summary>${esc(reply.warning)}</summary>${content}</details>`
+							: content
+					}
+					${
+						media
+							? `<p class="daymark-thread__media">${esc(
+									sprintf(
+										/* translators: %d: number of photos or videos attached to a reply */
+										_n(
+											"%d photo or video isn't shown here.",
+											"%d photos or videos aren't shown here.",
+											media,
+											'daymark'
+										),
+										media
+									)
+							  )}</p>`
+							: ''
+					}
+				</div>
+			</article>`;
 		},
 
 		// Best-effort link preview of a link-kind subscription post's own
@@ -13805,6 +14227,9 @@
 		if ('comment' === item.type) {
 			return item.comment_kind || 'reply';
 		}
+		if ('comment_reply' === item.type) {
+			return 'reply';
+		}
 		return 'site';
 	}
 
@@ -14232,13 +14657,22 @@
 			if ('plugin_overlap' === item.type) {
 				return this.renderPluginOverlapItem(item);
 			}
+			if ('comment_reply' === item.type) {
+				return this.renderCommentReplyItem(item);
+			}
 
 			const kind = notificationKind(item);
 			const name = item.comment_author || item.author || __('Someone', 'daymark');
-			const title = item.post_title || __('(untitled Mark)', 'daymark');
-			const titleHtml = item.post_url
+			// A reply to your comment on a followed post (your comment is the
+			// Mark it arrived on): name that post, not the comment's Mark.
+			const replyTo = 'reply' === kind && item.reply_to && item.reply_to.url ? item.reply_to : null;
+			const title = replyTo ? replyTo.title : item.post_title || __('(untitled Mark)', 'daymark');
+			let titleHtml = item.post_url
 				? `<a href="${esc(item.post_url)}" data-notif-open>${esc(title)}</a>`
 				: `<strong>${esc(title)}</strong>`;
+			if (replyTo) {
+				titleHtml = this.followedPostLink(replyTo.url, replyTo.subscription_post_id, title);
+			}
 			const formats = {
 				/* translators: 1: person's name, 2: Mark title */
 				reply: __('%1$s commented on %2$s', 'daymark'),
@@ -14251,7 +14685,16 @@
 				/* translators: 1: person's name, 2: Mark title */
 				mention: __('%1$s mentioned %2$s', 'daymark'),
 			};
-			const summary = sprintf(esc(formats[kind] || formats.reply), `<strong>${esc(name)}</strong>`, titleHtml);
+			const summary = sprintf(
+				esc(
+					replyTo
+						? /* translators: 1: person's name, 2: title of the post you commented on */
+						  __('%1$s replied to your comment on %2$s', 'daymark')
+						: formats[kind] || formats.reply
+				),
+				`<strong>${esc(name)}</strong>`,
+				titleHtml
+			);
 
 			// Replies, quotes, and mentions carry text worth showing; a like
 			// or repost usually carries none (or a stock "liked this").
@@ -14287,6 +14730,7 @@
 						  )}</a>`
 						: ''
 				}
+				${replyTo ? this.seeRepliesLink(replyTo.url, replyTo.subscription_post_id) : ''}
 				${
 					canReply
 						? `<button type="button" class="daymark-note-card__reply" data-reply-toggle aria-expanded="false" aria-controls="${replyId}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg> ${esc(
@@ -14315,6 +14759,109 @@
 				: '';
 
 			return this.renderShell(item, { figure: this.renderFigure(item), body, links, after });
+		},
+
+		// A reply to a comment you sent to a followed post, found by checking
+		// the original site (issue #559). Read-only: answering happens on
+		// that site, or by commenting again from the post's replies.
+		renderCommentReplyItem(item) {
+			const name = item.author || __('Someone', 'daymark');
+			const title = item.post_title || item.site || __('a post you follow', 'daymark');
+			const summary = sprintf(
+				esc(
+					/* translators: 1: person's name, 2: title of the post you commented on */
+					__('%1$s replied to your comment on %2$s', 'daymark')
+				),
+				`<strong>${esc(name)}</strong>`,
+				this.followedPostLink(item.post_url, item.subscription_post_id, title)
+			);
+			const text = String(item.content || '');
+			const body = `
+				<p class="daymark-notif__summary">${summary}</p>
+				${text ? `<p class="daymark-note-card__text daymark-clamp">${esc(text)}</p>` : ''}
+				${
+					text.length > 140
+						? '<button type="button" class="daymark-note-card__showmore" data-showmore aria-expanded="false">' +
+						  esc(__('Show more', 'daymark')) +
+						  '</button>'
+						: ''
+				}
+				${
+					item.comment_excerpt
+						? `<p class="daymark-notif__yours">${esc(
+								sprintf(
+									/* translators: %s: the start of the comment you sent */
+									__('Your comment: %s', 'daymark'),
+									item.comment_excerpt
+								)
+						  )}</p>`
+						: ''
+				}
+				${this.renderMeta(item, item.site ? esc(item.site) : '')}`;
+			const links = `
+				${this.seeRepliesLink(item.post_url, item.subscription_post_id)}
+				${
+					item.reply_url
+						? `<a class="daymark-note-card__link" href="${esc(
+								item.reply_url
+						  )}" target="_blank" rel="noopener" data-notif-open>${esc(__('↗ View reply', 'daymark'))}</a>`
+						: ''
+				}`;
+			return this.renderShell(item, { figure: this.renderFigure(item), body, links });
+		},
+
+		// A link to a post on a site you follow: opens it in Daymark (with
+		// its replies) when Daymark still has it, else on its own site.
+		followedPostLink(url, subscriptionPostId, label) {
+			const id = Number(subscriptionPostId) || 0;
+			if (!url) {
+				return `<strong>${esc(label)}</strong>`;
+			}
+			return id > 0
+				? `<a href="${esc(url)}" data-notif-open data-notif-subpost="${esc(String(id))}">${esc(label)}</a>`
+				: `<a href="${esc(url)}" target="_blank" rel="noopener" data-notif-open>${esc(label)}</a>`;
+		},
+
+		seeRepliesLink(url, subscriptionPostId) {
+			const id = Number(subscriptionPostId) || 0;
+			return url && id > 0
+				? `<a class="daymark-note-card__link" href="${esc(url)}" data-notif-open data-notif-subpost="${esc(
+						String(id)
+				  )}">${esc(__('→ See all replies', 'daymark'))}</a>`
+				: '';
+		},
+
+		// Opens a followed post in the post view with its replies showing,
+		// Back returning here.
+		async openFollowedPost(id, trigger) {
+			if (this._openingPost) {
+				return;
+			}
+			this._openingPost = true;
+			trigger.setAttribute('aria-busy', 'true');
+			try {
+				const item = await apiGet('subscription-posts/' + Number(id));
+				if (!item || !item.id) {
+					throw new Error('missing');
+				}
+				pendingPostView = {
+					kind: 'sub',
+					item,
+					returnTo: '#notifications',
+					showReplies: true,
+					list: { items: [], pager: null },
+				};
+				navigate('#post');
+			} catch (err) {
+				const message = __("Couldn't open this post. Try again.", 'daymark');
+				if (trigger.isConnected) {
+					showFlashBubble(trigger, message);
+				}
+				announce(message);
+			} finally {
+				this._openingPost = false;
+				trigger.removeAttribute('aria-busy');
+			}
 		},
 
 		// Several likes on one Mark under one date heading, as a single row:
@@ -14536,6 +15083,13 @@
 					});
 					apiPost('notifications/read', { ids: unread.map((item) => item.id) }).catch(() => {});
 					this.updateCard(unread);
+				}
+				// A followed post opens in Daymark, unless the reader asked
+				// for a new tab or window.
+				const subId = Number(open.getAttribute('data-notif-subpost') || 0);
+				if (subId > 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+					event.preventDefault();
+					this.openFollowedPost(subId, open);
 				}
 				return;
 			}
@@ -14851,6 +15405,25 @@
 		showScreen(window.location.hash);
 	});
 
+	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
+	// Timeline, a follow link). After following, Explore and Home reload so
+	// the new site and its posts appear.
+	function reloadAfterFollowing() {
+		const hash = window.location.hash || '#home';
+		if ('#explore' === hash || '#home' === hash) {
+			showScreen(hash);
+		}
+	}
+
+	root.addEventListener('click', (event) => {
+		const trigger = event.target.closest('[data-follow-site]');
+		if (!trigger || !config.canManageSubscriptions) {
+			return;
+		}
+		event.preventDefault();
+		FollowSiteSheet.show(trigger, reloadAfterFollowing);
+	});
+
 	// A drop landing outside the composer's own picker zone (issue #260)
 	// would otherwise fall through to the browser's default behavior —
 	// navigating the whole app away to the dropped file's raw content,
@@ -14859,23 +15432,6 @@
 	// Create), since the cost of getting it wrong (a lost draft) is the
 	// same everywhere; the picker zone's own dragover/drop handlers
 	// (CreateScreen.bindEvents()) still run first and do the real work.
-	// "Follow a site" from anywhere it's offered (Explore, Me, an empty
-	// Timeline). After following, Explore and Home reload so the new site
-	// and its posts appear.
-	root.addEventListener('click', (event) => {
-		const trigger = event.target.closest('[data-follow-site]');
-		if (!trigger || !config.canManageSubscriptions) {
-			return;
-		}
-		event.preventDefault();
-		FollowSiteSheet.show(trigger, () => {
-			const hash = window.location.hash || '#home';
-			if ('#explore' === hash || '#home' === hash) {
-				showScreen(hash);
-			}
-		});
-	});
-
 	window.addEventListener('dragover', (event) => event.preventDefault());
 	window.addEventListener('drop', (event) => event.preventDefault());
 
@@ -14939,12 +15495,17 @@
 	if (config.pendingDraftId) {
 		openDraft(config.pendingDraftId).catch(() => showScreen(initialHash));
 	} else if (config.pendingPostId && !window.location.hash) {
-		// Tapped a push about a favorite site's new post: open that post,
-		// with Back going to the Timeline. Drop the parameter so a reload
-		// lands on the Timeline instead of opening the post again.
+		// Tapped a push about a favorite site's new post, or about a reply
+		// to your comment on a followed post (daymark_replies=1, which also
+		// opens the post's replies): open that post, with Back going to the
+		// Timeline. Drop the parameters so a reload lands on the Timeline
+		// instead of opening the post again.
+		let showReplies = false;
 		try {
 			const clean = new URL(window.location.href);
+			showReplies = '1' === clean.searchParams.get('daymark_replies');
 			clean.searchParams.delete('daymark_post');
+			clean.searchParams.delete('daymark_replies');
 			window.history.replaceState(null, '', clean.pathname + clean.search);
 		} catch (err) {
 			// Leave the address as it is.
@@ -14954,10 +15515,49 @@
 				if (!item || !item.id) {
 					throw new Error('missing');
 				}
-				pendingPostView = { kind: 'sub', item, returnTo: '#home' };
+				pendingPostView = {
+					kind: 'sub',
+					item,
+					returnTo: '#home',
+					showReplies,
+					list: { items: [], pager: null },
+				};
 				navigate('#post');
 			})
 			.catch(() => showScreen(initialHash));
+	} else if (config.pendingFollowUrl) {
+		// A follow link (Daymark_Follow_Link), most often from a "Follow me
+		// with Daymark" block on someone else's site: open the usual screen
+		// with Follow a site on top and that site's address filled in.
+		// Nothing is looked up until the person taps Find feeds. Drop the
+		// parameter so a reload doesn't open it again.
+		try {
+			const clean = new URL(window.location.href);
+			clean.searchParams.delete('daymark_follow_site');
+			window.history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+		} catch (err) {
+			// Leave the address as it is.
+		}
+		showScreen(initialHash);
+		if (config.canManageSubscriptions) {
+			FollowSiteSheet.show(null, reloadAfterFollowing, config.pendingFollowUrl);
+		} else {
+			InteractionHintSheet.show(
+				{
+					glyph: FOLLOW_GLYPH,
+					title: __('Ask an administrator to follow this site', 'daymark'),
+					body: sprintf(
+						/* translators: %s: the address of the site someone asked to follow */
+						__(
+							'Only this site\'s administrators can follow sites with Daymark. Ask one of them to follow %s.',
+							'daymark'
+						),
+						config.pendingFollowUrl
+					),
+				},
+				null
+			);
+		}
 	} else if (config.pendingType) {
 		// An external launcher (wp-admin's "+New -> Daymark" item,
 		// Daymark_Admin_Bar) wants the composer to open pre-set to a

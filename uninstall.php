@@ -77,6 +77,8 @@ delete_metadata( 'user', 0, 'daymark_timeline_position', '', true );
 delete_metadata( 'user', 0, 'daymark_interaction_hint_seen', '', true );
 delete_metadata( 'user', 0, 'daymark_plugin_overlap_dismissed', '', true );
 delete_metadata( 'user', 0, 'daymark_rel_me_url', '', true );
+// Comments on followed posts that Daymark checks for replies (issue #559).
+delete_metadata( 'user', 0, 'daymark_comment_watches', '', true );
 
 // Scheduled backflow sync events (recurring + pending one-off freshen) and
 // the subscriptions poller.
@@ -110,6 +112,7 @@ delete_post_meta_by_key( '_daymark_webmention_attempts' );
 
 // Backflow transients: the freshen marker plus per-post sync cooldowns.
 delete_transient( 'daymark_backflow_freshened' );
+delete_transient( 'daymark_comment_replies_running' );
 
 global $wpdb;
 
@@ -136,6 +139,20 @@ $daymark_tts_transients = $wpdb->get_col(
 );
 
 foreach ( $daymark_tts_transients as $daymark_option_name ) {
+	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
+}
+
+// Replies loaded from followed posts' original sites (issue #559), one per
+// post.
+// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall-time discovery of dynamically named transients.
+$daymark_reply_transients = $wpdb->get_col(
+	$wpdb->prepare(
+		"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+		$wpdb->esc_like( '_transient_daymark_replies_' ) . '%'
+	)
+);
+
+foreach ( $daymark_reply_transients as $daymark_option_name ) {
 	delete_transient( str_replace( '_transient_', '', $daymark_option_name ) );
 }
 

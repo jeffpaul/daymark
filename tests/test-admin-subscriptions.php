@@ -2066,6 +2066,17 @@ class Test_Admin_Subscriptions extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Bridgy (backfeed, issue #558) is its own service card, separate from
+	 * Bridgy Fed.
+	 */
+	public function test_connectors_tab_renders_bridgy_backfeed_service(): void {
+		$output = $this->render( 'connectors' );
+
+		$this->assertMatchesRegularExpression( '/href="https:\/\/brid\.gy\/"[^>]*class="button button-secondary"[^>]*>Get started</', $output );
+		$this->assertStringContainsString( 'Brings replies and likes back', $output );
+	}
+
+	/**
 	 * Bridgy Fed renders unconditionally as an external link regardless of
 	 * capability — unlike a 'plugin' entry, there is no Install/Activate
 	 * action gated on install_plugins/activate_plugins to fall back from.

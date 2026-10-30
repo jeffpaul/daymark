@@ -59,7 +59,7 @@ class Daymark_Comment_Delivery {
 	 *
 	 * @param int    $subscription_post_id A `daymark_sub_post` post ID.
 	 * @param string $text                 The comment text, already `wp_kses_post()`-safe or plain — sanitized here regardless.
-	 * @return array{method: string, status: string, message: string, mark_id?: int}|WP_Error
+	 * @return array{method: string, status: string, message: string, mark_id?: int, watching?: bool}|WP_Error
 	 */
 	public static function deliver( int $subscription_post_id, string $text ) {
 		$text = trim( wp_kses_post( $text ) );
@@ -94,7 +94,7 @@ class Daymark_Comment_Delivery {
 		}
 
 		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
-			return self::send_via_webmention( $permalink, $text );
+			return self::watch_for_replies( $subscription_post_id, $permalink, $signals, $text, self::send_via_webmention( $permalink, $text ) );
 		}
 
 		if ( '' === $signals['rest_root'] || 0 === $signals['post_id'] ) {
@@ -105,7 +105,56 @@ class Daymark_Comment_Delivery {
 			);
 		}
 
-		return self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text );
+		return self::watch_for_replies( $subscription_post_id, $permalink, $signals, $text, self::send_native_comment( $signals['rest_root'], $signals['post_id'], $text ) );
+	}
+
+	/**
+	 * After a comment is sent, start checking the original site for
+	 * replies to it (Daymark_Comment_Replies, issue #559), when the site is
+	 * a WordPress site whose comments API Daymark can read. Says so in the
+	 * confirmation message.
+	 *
+	 * @param int                  $subscription_post_id The followed post.
+	 * @param string               $permalink            Its permalink.
+	 * @param array<string, mixed> $signals              Origin signals.
+	 * @param string               $text                 The comment text.
+	 * @param array|WP_Error       $result               What sending returned.
+	 * @return array|WP_Error The result, with `watching` set.
+	 */
+	private static function watch_for_replies( int $subscription_post_id, string $permalink, array $signals, string $text, $result ) {
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$result['watching'] = false;
+
+		if ( '' === (string) ( $signals['rest_root'] ?? '' ) || (int) ( $signals['post_id'] ?? 0 ) <= 0 ) {
+			return $result;
+		}
+
+		$result['watching'] = Daymark_Comment_Replies::start_watch(
+			get_current_user_id(),
+			$subscription_post_id,
+			array(
+				'root'    => Daymark_Remote_Replies::absolute_root( (string) $signals['rest_root'], $permalink ),
+				'remote'  => (int) $signals['post_id'],
+				'comment' => (int) ( $result['remote_comment_id'] ?? 0 ),
+				'mark'    => (int) ( $result['mark_id'] ?? 0 ),
+				'text'    => $text,
+			)
+		);
+
+		if ( $result['watching'] ) {
+			if ( 'webmention' === $result['method'] ) {
+				$result['message'] = __( 'Your comment was published on your site and will be delivered to the original post via Webmention. Daymark will let you know when someone replies.', 'daymark' );
+			} elseif ( 'held' === $result['status'] ) {
+				$result['message'] = __( 'Your comment was sent and is awaiting moderation on the original site. Daymark will let you know when someone replies.', 'daymark' );
+			} else {
+				$result['message'] = __( 'Your comment was posted directly to the original site. Daymark will let you know when someone replies.', 'daymark' );
+			}
+		}
+
+		return $result;
 	}
 
 	/**
@@ -141,13 +190,24 @@ class Daymark_Comment_Delivery {
 			);
 		}
 
-		$signals = self::discover_origin_signals( $permalink );
+		return self::target_for_signals( $permalink, self::discover_origin_signals( $permalink ) );
+	}
 
-		if ( ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
+	/**
+	 * Where a comment on this permalink goes, given its origin signals:
+	 * resolve_comment_target()'s answer without the lookup, so
+	 * Daymark_Engagement_Status can reuse signals it already has.
+	 *
+	 * @param string               $permalink Validated origin permalink.
+	 * @param array<string, mixed> $signals   Origin signals for it.
+	 * @return array{method: string, url?: string}
+	 */
+	public static function target_for_signals( string $permalink, array $signals ): array {
+		if ( (int) ( $signals['jetpack_site_id'] ?? 0 ) > 0 && Daymark_Jetpack_Engagement::current_user_connected() ) {
 			return array( 'method' => 'jetpack' );
 		}
 
-		if ( '' !== $signals['webmention_endpoint'] && Daymark_Webmention::can_send() ) {
+		if ( '' !== (string) ( $signals['webmention_endpoint'] ?? '' ) && Daymark_Webmention::can_send() ) {
 			return array( 'method' => 'webmention' );
 		}
 
@@ -165,7 +225,7 @@ class Daymark_Comment_Delivery {
 	 * already uses, never a second fetch of the same page.
 	 *
 	 * @param int $subscription_post_id A `daymark_sub_post` post ID.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|WP_Error
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool, temporary: bool}|WP_Error
 	 */
 	public static function origin_signals_for_post( int $subscription_post_id ) {
 		$permalink = self::validate_subscription_permalink( $subscription_post_id );
@@ -187,10 +247,9 @@ class Daymark_Comment_Delivery {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public static function origin_signals_for_url( string $url ) {
-		$url    = esc_url_raw( trim( $url ) );
-		$scheme = '' !== $url ? strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) ) : '';
+		$url = esc_url_raw( trim( $url ) );
 
-		if ( '' === $url || ! in_array( $scheme, array( 'http', 'https' ), true ) || is_wp_error( Daymark_Subscription_Url_Guard::check( $url ) ) ) {
+		if ( ! self::can_look_up( $url ) ) {
 			return new WP_Error(
 				'daymark_comment_unsafe_url',
 				__( "This post's source couldn't be safely reached.", 'daymark' ),
@@ -202,6 +261,27 @@ class Daymark_Comment_Delivery {
 	}
 
 	/**
+	 * Whether Daymark will look a URL up at all: an http(s) address the
+	 * URL guard allows. Nothing is fetched, or cached, for any other
+	 * address.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $url URL, already passed through esc_url_raw().
+	 * @return bool
+	 */
+	public static function can_look_up( string $url ): bool {
+		if ( '' === $url ) {
+			return false;
+		}
+
+		$scheme = strtolower( (string) ( wp_parse_url( $url, PHP_URL_SCHEME ) ?? '' ) );
+
+		return in_array( $scheme, array( 'http', 'https' ), true )
+			&& ! is_wp_error( Daymark_Subscription_Url_Guard::check( $url ) );
+	}
+
+	/**
 	 * The origin signals for a permalink, read from cache only — never a
 	 * fetch, never a DNS lookup. Null when nothing is cached yet. Used where
 	 * a live lookup would be too expensive (every row of a Timeline
@@ -209,7 +289,7 @@ class Daymark_Comment_Delivery {
 	 * validate_subscription_permalink()'s URL guard when it was written.
 	 *
 	 * @param string $permalink Subscription post permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}|null
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool, temporary: bool}|null
 	 */
 	public static function cached_origin_signals( string $permalink ): ?array {
 		if ( '' === $permalink ) {
@@ -251,9 +331,8 @@ class Daymark_Comment_Delivery {
 		}
 
 		$permalink = esc_url_raw( (string) get_post_meta( $subscription_post_id, 'permalink', true ) );
-		$scheme    = '' !== $permalink ? strtolower( (string) ( wp_parse_url( $permalink, PHP_URL_SCHEME ) ?? '' ) ) : '';
 
-		if ( '' === $permalink || ! in_array( $scheme, array( 'http', 'https' ), true ) || is_wp_error( Daymark_Subscription_Url_Guard::check( $permalink ) ) ) {
+		if ( ! self::can_look_up( $permalink ) ) {
 			return new WP_Error(
 				'daymark_comment_unsafe_url',
 				__( "This post's source couldn't be safely reached.", 'daymark' ),
@@ -359,7 +438,7 @@ class Daymark_Comment_Delivery {
 	 * @param string $rest_root Origin site's REST API root (e.g. `https://example.com/wp-json/`).
 	 * @param int    $post_id   Origin post's own numeric ID.
 	 * @param string $text      Comment text.
-	 * @return array{method: string, status: string, message: string}|WP_Error
+	 * @return array{method: string, status: string, message: string, remote_comment_id: int}|WP_Error
 	 */
 	private static function send_native_comment( string $rest_root, int $post_id, string $text ) {
 		$comments_url = rtrim( $rest_root, '/' ) . '/wp/v2/comments';
@@ -434,11 +513,13 @@ class Daymark_Comment_Delivery {
 		$held = is_array( $body ) && 'hold' === ( $body['status'] ?? '' );
 
 		return array(
-			'method'  => 'native',
-			'status'  => $held ? 'held' : 'published',
-			'message' => $held
+			'method'            => 'native',
+			'status'            => $held ? 'held' : 'published',
+			'message'           => $held
 				? __( 'Your comment was sent and is awaiting moderation on the original site.', 'daymark' )
 				: __( 'Your comment was posted directly to the original site.', 'daymark' ),
+			// The comment's ID there, so Daymark can check for replies to it.
+			'remote_comment_id' => is_array( $body ) ? absint( $body['id'] ?? 0 ) : 0,
 		);
 	}
 
@@ -463,9 +544,16 @@ class Daymark_Comment_Delivery {
 	 * (issues #279/#349, a day) is used deliberately: those gate a
 	 * decorative preview, this gates whether a real interaction (a
 	 * delivered comment) is even attempted, so staleness matters more here.
-	 * A failed/empty result is cached too, same as those siblings, so a
-	 * repeatedly-tapped Comment icon on an unreachable/slow site never
-	 * re-attempts the same fetch on every tap.
+	 * A page that loaded but advertises nothing is cached for the full
+	 * time, same as those siblings, and so is a page that refused the
+	 * request or is gone (a 401, 403, 404, or 410) and a request this
+	 * site's own settings won't send: neither answers differently a
+	 * minute later. A page that couldn't be loaded for a reason likely to
+	 * pass (no answer, a timeout, a rate limit, or a server error such as
+	 * a 503) is cached for a minute only: a repeatedly-tapped Comment icon
+	 * still doesn't re-fetch on every tap, but a site that was briefly
+	 * down isn't treated as unreachable for an hour, and a "Try again" can
+	 * work.
 	 *
 	 * Also resolves the Jetpack-native fast path's own eligibility signal
 	 * (issue #391) in the same cached call — `jetpack_site_id`/
@@ -475,7 +563,7 @@ class Daymark_Comment_Delivery {
 	 * active locally, so a non-Jetpack site pays nothing for this check.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool, temporary: bool}
 	 */
 	private static function discover_origin_signals( string $permalink ): array {
 		$cache_key = self::signals_cache_key( $permalink );
@@ -486,12 +574,14 @@ class Daymark_Comment_Delivery {
 		}
 
 		$result = self::fetch_origin_signals( $permalink );
+		$ttl    = (int) apply_filters( 'daymark_subscription_comment_signals_cache_ttl', HOUR_IN_SECONDS );
 
-		set_transient(
-			$cache_key,
-			$result,
-			(int) apply_filters( 'daymark_subscription_comment_signals_cache_ttl', HOUR_IN_SECONDS )
-		);
+		if ( $result['temporary'] ) {
+			// 0 would mean "never expires" to set_transient().
+			$ttl = $ttl > 0 ? min( $ttl, MINUTE_IN_SECONDS ) : MINUTE_IN_SECONDS;
+		}
+
+		set_transient( $cache_key, $result, $ttl );
 
 		return $result;
 	}
@@ -500,7 +590,7 @@ class Daymark_Comment_Delivery {
 	 * The actual, uncached fetch discover_origin_signals() wraps.
 	 *
 	 * @param string $permalink Already URL-guard-checked, http(s) permalink.
-	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool}
+	 * @return array{webmention_endpoint: string, rest_root: string, post_id: int, jetpack_site_id: int, jetpack_post_id: int, activitypub_object: bool, bluesky: bool, reached: bool, temporary: bool}
 	 */
 	private static function fetch_origin_signals( string $permalink ): array {
 		// Resolved independently of the permalink fetch below: WordPress.com
@@ -517,6 +607,14 @@ class Daymark_Comment_Delivery {
 			'jetpack_post_id'     => null !== $jetpack_origin ? $jetpack_origin['post_id'] : 0,
 			'activitypub_object'  => false,
 			'bluesky'             => self::is_bluesky_url( $permalink ),
+			// The page couldn't be loaded, so the signals above say nothing
+			// about what it supports (Daymark_Engagement_Status says so).
+			// Missing from entries cached before this key existed: treat
+			// those as reached.
+			'reached'             => false,
+			// Whether that failure is likely to pass: set below for no
+			// answer, a timeout, a rate limit, or a server error.
+			'temporary'           => false,
 		);
 
 		$response = Daymark_Outbound_Guard::get(
@@ -530,12 +628,22 @@ class Daymark_Comment_Delivery {
 		);
 
 		if ( is_wp_error( $response ) ) {
+			// No answer at all (a timeout, a refused connection, a failed
+			// DNS lookup) is how WordPress reports a request that went out
+			// and failed. Any other error, such as this site's own settings
+			// blocking outside requests, won't change on a retry.
+			$empty['temporary'] = 'http_request_failed' === $response->get_error_code();
+
 			return $empty;
 		}
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
 
 		if ( $code < 200 || $code >= 300 ) {
+			// Any other refusal (a 401, 403, 404, or 410) won't change on a
+			// retry.
+			$empty['temporary'] = $code >= 500 || in_array( $code, array( 408, 425, 429 ), true );
+
 			return $empty;
 		}
 
@@ -557,6 +665,8 @@ class Daymark_Comment_Delivery {
 			// Fed can deliver a Like to one (issue #441).
 			'activitypub_object'  => '' !== self::find_link_href( $html, 'alternate', 'application/activity+json' ),
 			'bluesky'             => self::is_bluesky_url( $permalink ),
+			'reached'             => true,
+			'temporary'           => false,
 		);
 	}
 
