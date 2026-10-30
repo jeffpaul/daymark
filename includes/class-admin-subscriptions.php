@@ -384,6 +384,20 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * The Connectors tab, scrolled to one connector's card (issue #561:
+	 * the post view links here when installing or turning on something
+	 * would let Daymark like or comment on a post).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $key A recommended_connectors() key, such as 'activitypub'.
+	 * @return string
+	 */
+	public static function connector_url( string $key ): string {
+		return self::tab_url( 'connectors' ) . '#daymark-connector-' . sanitize_key( $key );
+	}
+
+	/**
 	 * Tab key => nav label. Order is display order; the first entry is the
 	 * default tab (resolve_active_tab()'s own fallback). General comes
 	 * first so the screen opens on settings, not on the list of followed
@@ -749,16 +763,18 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * "Reblog and Like from your browser": the draggable bookmarklet, for
-	 * the desktop. The same button is on the bookmarklet's own install page,
-	 * which the app's Me screen links to.
+	 * "Reblog, Like, and Follow from your browser": the draggable
+	 * bookmarklet, for the desktop. The same button is on the bookmarklet's
+	 * own install page, which the app's Me screen links to. Follow is only
+	 * offered to people who can manage subscriptions, which everyone who
+	 * sees this screen can.
 	 *
 	 * @return void
 	 */
 	private function render_bookmarklet(): void {
 		?>
-		<h2><?php esc_html_e( 'Reblog and Like from your browser', 'daymark' ); ?></h2>
-		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site or Like it.', 'daymark' ); ?></p>
+		<h2><?php esc_html_e( 'Reblog, Like, and Follow from your browser', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site, Like it, or follow the site it\'s on.', 'daymark' ); ?></p>
 		<p><?php echo Daymark_Bookmarklet::button_html( 'button-primary' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html(). ?></p>
 		<p class="description"><?php esc_html_e( 'Show the bookmarks bar first if it\'s hidden. Everyone who can write Marks on this site can use it, signed in as themselves.', 'daymark' ); ?></p>
 		<?php
@@ -3140,6 +3156,18 @@ class Daymark_Admin_Subscriptions {
 				'summary' => __( 'A free hosted bridge to the fediverse and Bluesky, instead of the ActivityPub plugin.', 'daymark' ),
 				'details' => __( 'Bridgy Fed is a service, not a plugin. It uses the Webmention plugin to give your site a fediverse and Bluesky presence under a handle on its own domain, where the ActivityPub plugin gives your site a handle on your own domain. Use one or the other, not both.', 'daymark' ),
 			),
+			// Backfeed for copies other plugins made (issue #558): Daymark
+			// prints a Mark's copies as u-syndication links, which is what
+			// Bridgy reads to match a copy's replies to the Mark. Networks
+			// are the ones Bridgy's own sign-up page offers.
+			'bridgy'          => array(
+				'label'   => 'Bridgy',
+				'group'   => 'optional',
+				'type'    => 'service',
+				'url'     => 'https://brid.gy/',
+				'summary' => __( 'Brings replies and likes back from your posts on Mastodon, Bluesky, Flickr, GitHub, and Reddit.', 'daymark' ),
+				'details' => __( 'Bridgy is a free service, not a plugin, and separate from Bridgy Fed: it works with accounts you already have. When a plugin such as Jetpack Social or Share on Mastodon shares a Mark, Daymark adds a link to that copy on the Mark\'s page. Bridgy uses those links to match each copy to your Mark, then sends the copy\'s replies, likes, and reposts to your site as Webmentions, which appear in Notifications. Skip any network whose replies already come back another way, such as through the ActivityPub or ATmosphere plugin, or they arrive twice.', 'daymark' ),
+			),
 			'simple_location' => array(
 				'label'       => 'Simple Location',
 				'group'       => 'optional',
@@ -3281,7 +3309,7 @@ class Daymark_Admin_Subscriptions {
 		$groups     = array(
 			'start'    => array(
 				'heading' => __( 'Start here', 'daymark' ),
-				'intro'   => __( 'These two make Likes, comments, and replies work with other sites.', 'daymark' ),
+				'intro'   => __( 'Daymark already exchanges Likes, comments, and replies with other Daymark and Webmention sites. Add this to do the same with Mastodon and the rest of the fediverse.', 'daymark' ),
 			),
 			'optional' => array(
 				'heading' => __( 'Optional', 'daymark' ),
@@ -3294,12 +3322,12 @@ class Daymark_Admin_Subscriptions {
 			<h2><?php echo esc_html( $text['heading'] ); ?></h2>
 			<p><?php echo esc_html( $text['intro'] ); ?></p>
 			<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1em;max-width:900px;">
-				<?php foreach ( $connectors as $connector ) : ?>
+				<?php foreach ( $connectors as $key => $connector ) : ?>
 					<?php
 					if ( ( $connector['group'] ?? 'optional' ) !== $group ) {
 						continue;
 					}
-					$this->render_connector_card( $connector );
+					$this->render_connector_card( $connector, $key );
 					?>
 				<?php endforeach; ?>
 			</div>
@@ -3312,9 +3340,10 @@ class Daymark_Admin_Subscriptions {
 	 * install action, and the longer details behind a "More" disclosure.
 	 *
 	 * @param array<string, mixed> $connector One recommended_connectors() entry.
+	 * @param string               $key       Its recommended_connectors() key, for the card's id (connector_url()).
 	 * @return void
 	 */
-	private function render_connector_card( array $connector ): void {
+	private function render_connector_card( array $connector, string $key = '' ): void {
 		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
 		$on_wporg   = ! $is_service && ! empty( $connector['wporg_slug'] );
 		if ( $is_service ) {
@@ -3325,7 +3354,7 @@ class Daymark_Admin_Subscriptions {
 			$link = $connector['source_url'] ?? '';
 		}
 		?>
-		<div class="card" style="max-width:none;margin:0;">
+		<div class="card"<?php echo '' !== $key ? ' id="daymark-connector-' . esc_attr( sanitize_key( $key ) ) . '"' : ''; ?> style="max-width:none;margin:0;scroll-margin-block-start:48px;">
 			<h3>
 				<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
 			</h3>

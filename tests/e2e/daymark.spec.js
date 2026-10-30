@@ -889,8 +889,10 @@ test('scrolling a pruned subscription-post card near the viewport rehydrates it 
 });
 
 // Following a site from the app: Me's "Follow a site" opens a sheet that
-// looks up the site's feeds, preselects one, and follows it by index. Both
-// routes are mocked, so this checks the app's flow, not a real site.
+// looks up the site's feeds, preselects one, and follows it by index, along
+// with the site the lookup found (the server refuses the follow if its
+// stored lookup is now for a different site). Both routes are mocked, so
+// this checks the app's flow, not a real site.
 test('Follow a site from the Me screen picks a feed and follows it', async ({ page }) => {
 	await loginAs(page);
 
@@ -937,7 +939,7 @@ test('Follow a site from the Me screen picks a feed and follows it', async ({ pa
 	await sheet.locator('[data-follow-submit]').click();
 
 	await expect(page.locator('[data-follow-submit]')).toHaveCount(0);
-	expect(followBody).toEqual({ index: 1, site_title: 'My Friend' });
+	expect(followBody).toEqual({ index: 1, site_title: 'My Friend', site_url: 'https://follow.example/' });
 });
 
 // When a followed site turns out not to accept Likes, the Like icon is

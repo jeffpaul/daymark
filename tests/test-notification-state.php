@@ -37,6 +37,8 @@ class Test_Notification_State extends WP_UnitTestCase {
 		$this->post_id = self::factory()->post->create( array( 'post_author' => $this->user_id ) );
 		update_post_meta( $this->post_id, '_daymark_is_mark', '1' );
 		update_post_meta( $this->post_id, '_daymark_primary_type', 'note' );
+
+		Daymark_Comment_Replies::flush_local_keys();
 	}
 
 	/**
@@ -273,11 +275,469 @@ class Test_Notification_State extends WP_UnitTestCase {
 		$this->assertArrayHasKey( $id, $this->items() );
 	}
 
+	/**
+	 * A reply Daymark found to the owner's comment on a followed post
+	 * (issue #559).
+	 *
+	 * @param int $mark_id    The Mark that carries the owner's comment; 0 for none.
+	 * @param int $found_time When Daymark found the reply; 0 for a minute ago.
+	 * @return string The reply's item ID.
+	 */
+	private function found_reply( int $mark_id = 0, int $found_time = 0 ): string {
+		$sub_id = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'An origin post',
+			)
+		);
+		update_post_meta( $sub_id, 'permalink', 'https://origin.example/post/' );
+
+		Daymark_Comment_Replies::start_watch(
+			$this->user_id,
+			$sub_id,
+			array(
+				'root'    => 'https://origin.example/wp-json/',
+				'remote'  => 55,
+				'comment' => 9,
+				'mark'    => $mark_id,
+			)
+		);
+
+		$found_time       = $found_time > 0 ? $found_time : time() - 60;
+		$watch            = Daymark_Comment_Replies::get_watches( $this->user_id )[0];
+		$found            = $watch;
+		$found['seen']    = array( '12' );
+		$found['replies'] = array(
+			array(
+				'id'         => '12',
+				'author'     => 'Ana',
+				'author_url' => 'https://ana.example/',
+				'avatar'     => '',
+				'text'       => 'Thanks!',
+				'url'        => 'https://origin.example/post/#comment-12',
+				'date'       => $found_time,
+				'found'      => $found_time,
+				'local'      => false,
+			),
+		);
+		update_user_meta( $this->user_id, Daymark_Comment_Replies::META, wp_slash( $found ), $watch );
+
+		return 'comment_reply-' . $watch['id'] . '-12';
+	}
+
+	/**
+	 * The same reply reaching the owner's Mark as a Webmention comment.
+	 *
+	 * @param int    $approved 1 approved, 0 held for moderation.
+	 * @param string $date     GMT date; '' for now.
+	 * @param string $type     Comment type.
+	 * @return int Comment ID.
+	 */
+	private function webmention_copy( int $approved, string $date = '', string $type = 'comment' ): int {
+		$date = '' !== $date ? $date : gmdate( 'Y-m-d H:i:s' );
+
+		return (int) self::factory()->comment->create(
+			array(
+				'comment_post_ID'  => $this->post_id,
+				'comment_type'     => $type,
+				'comment_approved' => $approved,
+				'comment_author'   => 'Ana',
+				'comment_content'  => 'Thanks!',
+				'comment_date_gmt' => $date,
+				'comment_date'     => $date,
+				'comment_meta'     => array( 'webmention_source_url' => 'https://origin.example/post/#comment-12' ),
+			)
+		);
+	}
+
+	/**
+	 * Approve a Webmention copy, or hold it for moderation again.
+	 *
+	 * @param int    $copy   Comment ID.
+	 * @param string $status approve or hold.
+	 * @return void
+	 */
+	private function set_copy_status( int $copy, string $status ): void {
+		wp_set_comment_status( $copy, $status );
+	}
+
+	/**
+	 * A found reply you archived stays archived when its Webmention copy on
+	 * the Mark is approved and takes its place; unarchiving either brings
+	 * the reply back.
+	 */
+	public function test_an_archived_reply_stays_archived_when_its_copy_is_approved() {
+		update_post_meta( $this->post_id, '_daymark_in_reply_to', 'https://origin.example/post/' );
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->assertArrayHasKey( $id, $this->items(), 'A held copy leaves the found reply listed' );
+		$this->post( 'archive', array( 'ids' => array( $id ) ) );
+
+		$this->set_copy_status( $copy, 'approve' );
+
+		$items = $this->items();
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, $items, 'The approved copy is the same reply, still archived' );
+
+		$this->assertSame( 200, $this->post( 'unarchive', array( 'ids' => array( 'comment-' . $copy ) ) )->get_status() );
+
+		$items = $this->items();
+		$this->assertArrayHasKey( 'comment-' . $copy, $items );
+		$this->assertArrayNotHasKey( $id, $items, 'Shown once, as the copy' );
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::ARCHIVED_META, false ) );
+	}
+
+	/** A reply archived while its copy was approved stays archived when the copy is held again. */
+	public function test_an_archived_reply_stays_archived_when_its_copy_is_held_again() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->post( 'archive', array( 'ids' => array( $id ) ) );
+		$this->set_copy_status( $copy, 'approve' );
+		$this->items();
+
+		$this->set_copy_status( $copy, 'hold' );
+
+		$this->assertArrayNotHasKey( $id, $this->items() );
+	}
+
+	/** A copy you archived before Daymark found the reply keeps the reply archived too. */
+	public function test_an_archived_copy_keeps_the_found_reply_archived() {
+		$copy = $this->webmention_copy( 1, gmdate( 'Y-m-d H:i:s', time() - HOUR_IN_SECONDS ) );
+		$this->post( 'archive', array( 'ids' => array( 'comment-' . $copy ) ) );
+
+		$id = $this->found_reply( $this->post_id );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, $this->items() );
+
+		$this->set_copy_status( $copy, 'hold' );
+
+		$this->assertArrayNotHasKey( $id, $this->items() );
+	}
+
+	/** A found reply you read keeps that once its copy takes its place, and marking the copy unread reaches the reply. */
+	public function test_a_reply_keeps_its_read_state_when_its_copy_is_approved() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->post( 'read', array( 'ids' => array( $id ) ) );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		$this->post( 'unread', array( 'ids' => array( 'comment-' . $copy ) ) );
+		$this->assertFalse( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		$this->set_copy_status( $copy, 'hold' );
+		$this->assertFalse( $this->items()[ $id ]['read'] );
+	}
+
+	/** A reply marked unread after "Mark all as read" stays unread once its copy takes its place. */
+	public function test_a_reply_marked_unread_stays_unread_when_its_copy_is_approved() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - HOUR_IN_SECONDS ) );
+
+		$this->post( 'read', array( 'all' => true ) );
+		$this->post( 'unread', array( 'ids' => array( $id ) ) );
+		$this->assertFalse( $this->items()[ $id ]['read'] );
+
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertFalse( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/** Replying to the copy marks it read, though the found reply was marked unread. */
+	public function test_replying_to_the_copy_marks_it_read() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->post( 'unread', array( 'ids' => array( $id ) ) );
+		$this->set_copy_status( $copy, 'approve' );
+		$this->assertFalse( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/notifications/' . $copy . '/reply' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'content', 'You are welcome.' );
+		$this->assertSame( 201, rest_do_request( $request )->get_status() );
+
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A copy that arrives after you saw the found reply keeps the reply's
+	 * date: it isn't new, it's read, and it doesn't light the bell.
+	 */
+	public function test_a_copy_of_a_reply_you_saw_is_not_new() {
+		$notifications = Daymark_Plugin::instance()->notifications;
+		$found_time    = time() - 2 * HOUR_IN_SECONDS;
+		$seen          = time() - HOUR_IN_SECONDS;
+
+		$this->found_reply( $this->post_id, $found_time );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->assertFalse( $notifications->has_unread() );
+
+		$items = array_column( $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $seen ), null, 'id' );
+		$this->assertSame( $found_time, $items[ 'comment-' . $copy ]['timestamp'], 'It keeps the found reply\'s place' );
+		$this->assertSame( gmdate( 'c', $found_time ), $items[ 'comment-' . $copy ]['date_gmt'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/** A copy of a reply found since you last looked is still new. */
+	public function test_a_copy_of_a_reply_you_have_not_seen_is_new() {
+		$notifications = Daymark_Plugin::instance()->notifications;
+		$found_time    = time() - HOUR_IN_SECONDS;
+		$seen          = time() - 2 * HOUR_IN_SECONDS;
+
+		$this->found_reply( $this->post_id, $found_time );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->assertTrue( $notifications->has_unread() );
+
+		$items = array_column( $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $seen ), null, 'id' );
+		$this->assertSame( $found_time, $items[ 'comment-' . $copy ]['timestamp'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A copy held for moderation until after Daymark found the reply was
+	 * never listed before the reply was. Once approved it takes the reply's
+	 * date: it stays new and unread, and the bell stays lit.
+	 */
+	public function test_a_copy_held_until_after_the_reply_was_found_stays_new() {
+		$notifications = Daymark_Plugin::instance()->notifications;
+		$copy_time     = time() - 3 * HOUR_IN_SECONDS;
+		$seen          = time() - 2 * HOUR_IN_SECONDS;
+		$found_time    = time() - HOUR_IN_SECONDS;
+
+		$copy = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', $copy_time ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$id = $this->found_reply( $this->post_id, $found_time );
+
+		$this->assertTrue( $notifications->has_unread(), 'The found reply is news' );
+		$this->assertFalse( $this->items()[ $id ]['read'] );
+
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertTrue( $notifications->has_unread(), 'Approving its copy does not clear the bell' );
+
+		$items = array_column( $notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $seen ), null, 'id' );
+		$this->assertArrayNotHasKey( $id, $items, 'Shown once, as the copy' );
+		$this->assertSame( $found_time, $items[ 'comment-' . $copy ]['timestamp'], 'Dated when it was first listed' );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * The bell sees such a copy behind an older comment you already saw,
+	 * though the copy itself was written before both.
+	 */
+	public function test_the_bell_sees_a_copy_dated_by_a_newly_found_reply() {
+		$copy = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS ) );
+		$this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - 90 * MINUTE_IN_SECONDS ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() - HOUR_IN_SECONDS );
+		$this->found_reply( $this->post_id, time() - 30 * MINUTE_IN_SECONDS );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertTrue( Daymark_Plugin::instance()->notifications->has_unread() );
+	}
+
+	/**
+	 * A copy that takes a newer reply's date is listed in the reply's
+	 * place, though newer comments push the comment itself past the list.
+	 */
+	public function test_a_copy_moved_up_the_list_is_listed() {
+		$copy   = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) );
+		$newest = $this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - HOUR_IN_SECONDS ) );
+		$this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - 2 * HOUR_IN_SECONDS ) );
+		$this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS ) );
+		$this->found_reply( $this->post_id, time() - MINUTE_IN_SECONDS );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$items = Daymark_Plugin::instance()->notifications->get_notifications( 2 );
+
+		$this->assertSame( array( 'comment-' . $copy, 'comment-' . $newest ), array_column( $items, 'id' ) );
+	}
+
+	/**
+	 * After "Mark all as read", such a copy stays unread once Daymark
+	 * forgets the reply and the copy goes back to its own, older date.
+	 */
+	public function test_a_copy_unread_by_the_reply_date_stays_unread_after_the_reply_is_forgotten() {
+		$copy = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS ) );
+		update_user_meta( $this->user_id, Daymark_Notification_State::READ_BEFORE_META, time() - 2 * HOUR_IN_SECONDS );
+		$this->found_reply( $this->post_id, time() - HOUR_IN_SECONDS );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertFalse( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		delete_user_meta( $this->user_id, Daymark_Comment_Replies::META );
+
+		$this->assertFalse( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		$this->post( 'read', array( 'all' => true ) );
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * Without "Mark all as read", such a copy is read by the same rule as
+	 * a comment from when the reply was found, and nothing is recorded.
+	 */
+	public function test_a_copy_held_until_after_the_reply_was_found_reads_like_any_other_item() {
+		$found_time = time() - HOUR_IN_SECONDS;
+		$copy       = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS ) );
+		$control    = $this->comment( 'comment', gmdate( 'Y-m-d H:i:s', $found_time ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() - 2 * HOUR_IN_SECONDS );
+		$this->found_reply( $this->post_id, $found_time );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$items = $this->items();
+		$this->assertFalse( $items[ 'comment-' . $copy ]['read'] );
+		$this->assertFalse( $items[ 'comment-' . $control ]['read'] );
+
+		// Another visit.
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() );
+
+		$items = $this->items();
+		$this->assertSame( $items[ 'comment-' . $control ]['read'], $items[ 'comment-' . $copy ]['read'] );
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::UNREAD_META, false ) );
+	}
+
+	/** A copy read because it took the found reply's date stays read after Daymark forgets the reply. */
+	public function test_a_copy_read_by_the_reply_date_stays_read_after_the_reply_is_forgotten() {
+		$this->found_reply( $this->post_id, time() - 2 * HOUR_IN_SECONDS );
+		update_user_meta( $this->user_id, Daymark_Notification_State::READ_BEFORE_META, time() - HOUR_IN_SECONDS );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+
+		delete_user_meta( $this->user_id, Daymark_Comment_Replies::META );
+
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/** The bell still sees a new comment listed after a copy of an old reply. */
+	public function test_the_bell_sees_a_new_comment_behind_a_copy() {
+		$notifications = Daymark_Plugin::instance()->notifications;
+
+		$this->found_reply( $this->post_id, time() - 2 * HOUR_IN_SECONDS );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() - HOUR_IN_SECONDS );
+		$this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - 30 * MINUTE_IN_SECONDS ) );
+		$this->webmention_copy( 1 );
+
+		$this->assertTrue( $notifications->has_unread() );
+	}
+
+	/**
+	 * A copy that takes an older reply's date can't hide a newer comment
+	 * past the list's limit.
+	 */
+	public function test_a_copy_moved_down_the_list_does_not_hide_a_comment() {
+		$this->found_reply( $this->post_id, time() - DAY_IN_SECONDS );
+		$older = $this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - 2 * HOUR_IN_SECONDS ) );
+		$newer = $this->comment( 'comment', gmdate( 'Y-m-d H:i:s', time() - HOUR_IN_SECONDS ) );
+		$copy  = $this->webmention_copy( 1 );
+
+		$items = Daymark_Plugin::instance()->notifications->get_notifications( 2 );
+
+		$this->assertSame( array( 'comment-' . $newer, 'comment-' . $older ), array_column( $items, 'id' ) );
+		$this->assertNotContains( 'comment-' . $copy, array_column( $items, 'id' ) );
+	}
+
+	/**
+	 * A Webmention comment of a type Notifications doesn't list leaves the
+	 * found reply showing, and the reply shows once its copy is changed to
+	 * a type Notifications does list.
+	 */
+	public function test_a_copy_notifications_does_not_list_leaves_the_reply_shown() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 1, '', 'webmention' );
+
+		$items = $this->items();
+		$this->assertArrayHasKey( $id, $items );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, $items );
+
+		wp_update_comment(
+			array(
+				'comment_ID'   => $copy,
+				'comment_type' => 'comment',
+			)
+		);
+
+		$items = $this->items();
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertArrayHasKey( 'comment-' . $copy, $items );
+	}
+
+	/**
+	 * A Webmention comment on a Mark Notifications doesn't list (here a
+	 * private one) leaves the found reply showing, and takes its place
+	 * again once the Mark is listed.
+	 */
+	public function test_a_copy_on_a_mark_notifications_does_not_list_leaves_the_reply_shown() {
+		$id   = $this->found_reply( $this->post_id );
+		$copy = $this->webmention_copy( 1 );
+
+		$items = $this->items();
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertArrayHasKey( 'comment-' . $copy, $items );
+
+		wp_update_post(
+			array(
+				'ID'          => $this->post_id,
+				'post_status' => 'private',
+			)
+		);
+
+		$items = $this->items();
+		$this->assertArrayHasKey( $id, $items );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, $items );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, Daymark_Comment_Replies::superseded( $this->user_id ) );
+
+		wp_update_post(
+			array(
+				'ID'          => $this->post_id,
+				'post_status' => 'publish',
+			)
+		);
+
+		$items = $this->items();
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertArrayHasKey( 'comment-' . $copy, $items );
+	}
+
+	/** A followed site's reply can be read and archived; its state goes when Daymark forgets it. */
+	public function test_followed_site_reply_state() {
+		$id = $this->found_reply();
+
+		$items = $this->items();
+		$this->assertArrayHasKey( $id, $items );
+		$this->assertSame( 'comments', $items[ $id ]['category'] );
+		$this->assertFalse( $items[ $id ]['read'] );
+
+		$this->assertSame( 200, $this->post( 'read', array( 'ids' => array( $id ) ) )->get_status() );
+		$this->assertTrue( $this->items()[ $id ]['read'] );
+
+		$this->assertSame( 200, $this->post( 'archive', array( 'ids' => array( $id ) ) )->get_status() );
+		$this->assertArrayNotHasKey( $id, $this->items() );
+
+		delete_user_meta( $this->user_id, Daymark_Comment_Replies::META );
+		$this->items();
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::READ_META, false ) );
+		$this->assertSame( array(), get_user_meta( $this->user_id, Daymark_Notification_State::ARCHIVED_META, false ) );
+	}
+
 	/** ID validation. */
 	public function test_is_valid_id() {
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'comment-12' ) );
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'jetpack_like-4-99887' ) );
 		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'plugin_overlap-post-kinds' ) );
+		$this->assertTrue( Daymark_Notification_State::is_valid_id( 'comment_reply-0a1b2c3d4e5f-12' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'comment-' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'post-12' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'comment-1 OR 1=1' ) );

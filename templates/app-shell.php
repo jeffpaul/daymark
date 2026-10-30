@@ -18,10 +18,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 $daymark_screen = get_query_var( Daymark_Routes::QUERY_VAR );
 $daymark_screen = ( is_string( $daymark_screen ) && '' !== $daymark_screen ) ? $daymark_screen : 'home';
 
+// A site to follow, from a follow link (Daymark_Follow_Link): the app opens
+// Follow a site with this address filled in. Nothing is looked up or
+// followed until the person confirms there, and following itself still
+// needs Daymark_Admin_Subscriptions::CAPABILITY.
+// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- read-only navigation param, not a state-changing action; validated by Daymark_Follow_Link::read_url().
+$daymark_follow_url = isset( $_GET[ Daymark_Follow_Link::QUERY_VAR ] ) ? Daymark_Follow_Link::read_url( wp_unslash( $_GET[ Daymark_Follow_Link::QUERY_VAR ] ) ) : '';
+
 if ( ! is_user_logged_in() ) {
-	$daymark_return_url = 'notifications' === $daymark_screen
-		? Daymark_Routes::app_url( 'notifications' )
-		: Daymark_Routes::app_url();
+	if ( '' !== $daymark_follow_url ) {
+		// Keep the site to follow through signing in.
+		$daymark_return_url = Daymark_Follow_Link::app_url( $daymark_follow_url );
+	} else {
+		$daymark_return_url = 'notifications' === $daymark_screen
+			? Daymark_Routes::app_url( 'notifications' )
+			: Daymark_Routes::app_url();
+	}
 	wp_safe_redirect( wp_login_url( $daymark_return_url ) );
 	exit;
 }
@@ -104,7 +116,7 @@ $daymark_requested_draft_id = isset( $_GET['daymark_draft'] ) ? absint( wp_unsla
 // tampered value just fails that fetch and the app opens normally.
 $daymark_requested_post_id = isset( $_GET['daymark_post'] ) ? absint( wp_unslash( $_GET['daymark_post'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only navigation param, not a state-changing action.
 
-$daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_requested_type, $daymark_requested_draft_id, $daymark_requested_post_id );
+$daymark_config = Daymark_Routes::build_app_config( $daymark_screen, $daymark_requested_type, $daymark_requested_draft_id, $daymark_requested_post_id, $daymark_follow_url );
 
 /*
  * The app's assets go through the script/style API (registration,

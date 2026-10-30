@@ -446,15 +446,20 @@ class Daymark_Webmention_Receiver {
 		$data['comment_date']     = current_time( 'mysql' );
 		$data['comment_date_gmt'] = current_time( 'mysql', true );
 
+		// Saved by wp_insert_comment() before it fires its action, so code
+		// on that action (such as the push for a new reply) can already
+		// tell where the comment came from.
+		$data['comment_meta'] = array(
+			'protocol'              => 'webmention',
+			'webmention_source_url' => esc_url_raw( $source ),
+			'webmention_target_url' => esc_url_raw( $target ),
+		);
+
 		$comment_id = (int) wp_insert_comment( wp_slash( $data ) );
 
 		if ( $comment_id <= 0 ) {
 			return 0;
 		}
-
-		add_comment_meta( $comment_id, 'protocol', 'webmention', true );
-		add_comment_meta( $comment_id, 'webmention_source_url', esc_url_raw( $source ), true );
-		add_comment_meta( $comment_id, 'webmention_target_url', esc_url_raw( $target ), true );
 
 		// A reply or mention notifies the post author or moderator the way a
 		// typed comment does; a like or reblog only shows in the counts.
