@@ -6,7 +6,8 @@
  * The real plugin is not a test dependency, so Daymark_ActivityPub_Engagement
  * is exercised against minimal fakes of exactly the surface it calls:
  * `Activitypub\add_to_outbox()`, `Activitypub\user_can_activitypub()`,
- * `Activitypub\Activity\Activity`, `Activitypub\Http::get_remote_object()`,
+ * `Activitypub\Activity\Activity`, `Activitypub\Proxy::get()`,
+ * `Activitypub\Http::get_remote_object()` (before 9.4.0),
  * `Activitypub\Collection\Outbox::undo()`, `Activitypub\Collection\Actors::get_by_id()`
  * and the `ACTIVITYPUB_PLUGIN_VERSION` constant.
  *
@@ -28,6 +29,7 @@ require_once __DIR__ . '/class-daymark-test-activitypub-stub.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/class-activity.php';
 require_once __DIR__ . '/class-http.php';
+require_once __DIR__ . '/class-proxy.php';
 require_once __DIR__ . '/class-outbox.php';
 require_once __DIR__ . '/class-daymark-test-activitypub-actor.php';
 require_once __DIR__ . '/class-actors.php';

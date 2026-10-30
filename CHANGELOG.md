@@ -40,6 +40,8 @@ can't act on them.
 
 - With Post Kinds 4.0.1 or later, Daymark tells Post Kinds not to build its reply/repost box for Marks at all, instead of building it and then hiding it, so Mark pages do a little less work. Nothing on the page looks different. ([#563](https://github.com/jeffpaul/daymark/pull/563))
 
+- With ActivityPub 9.4.0 or later, Daymark looks up fediverse posts for Likes and Reblogs the way the plugin now asks, so sites with debugging turned on no longer log a deprecation notice each time. Likes and Reblogs work the same as before. ([#564](https://github.com/jeffpaul/daymark/pull/564))
+
 ### Fixed
 
 - Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))
