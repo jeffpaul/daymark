@@ -34,6 +34,8 @@ can't act on them.
 
 - On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
 
+- With Post Kinds 4.0.1 or later, Daymark tells Post Kinds not to build its reply/repost box for Marks at all, instead of building it and then hiding it, so Mark pages do a little less work. Nothing on the page looks different. ([#563](https://github.com/jeffpaul/daymark/pull/563))
+
 ### Fixed
 
 - Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))
