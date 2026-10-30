@@ -101,8 +101,8 @@ class Test_Comment_Replies_Typography extends WP_UnitTestCase {
 
 		$method = new ReflectionMethod( Daymark_Comment_Replies::class, 'match_variants' );
 
-		$this->assertContains( 'use a 2 4', $method->invoke( null, 'Use a 2x4 :)' ) );
-		$this->assertContains( 'got the 1920 1080 version ™', $method->invoke( null, 'Got the 1920x1080 version (tm)' ) );
+		$this->assertContains( 'use a 2 4', $method->invoke( null, 'Use a 2x4 :)', 'Use a 2x4 🙂' ) );
+		$this->assertContains( 'got the 1920 1080 version ™', $method->invoke( null, 'Got the 1920x1080 version (tm)', 'Got the 1920x1080 version (tm)' ) );
 	}
 
 	/**

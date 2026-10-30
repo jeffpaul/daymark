@@ -366,6 +366,7 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 		$this->assertSame( 9, (int) $watch['comment'] );
 		$this->assertSame( 0, (int) $watch['mark'] );
 		$this->assertSame( 'Great post!', $watch['excerpt'] );
+		$this->assertArrayNotHasKey( 'shown', $watch, 'Only a comment found by its words needs how your Mark showed it.' );
 		$this->assertSame( 0, (int) $watch['checked'] );
 		$this->assertFalse( $watch['done'] );
 		$this->assertSame( array(), $watch['replies'] );
@@ -1609,14 +1610,15 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 			update_option( 'use_smilies', $setting );
 
 			foreach ( $expected as $sent => $variants ) {
-				$this->assertSame( $variants, $method->invoke( null, $sent ), "\"{$sent}\" with smileys set to {$setting}" );
+				$this->assertSame( $variants, $method->invoke( null, $sent, $sent ), "\"{$sent}\" with smileys set to {$setting}" );
 			}
 		}
 	}
 
 	/**
-	 * The forms a comment is matched by use core's smileys, not this
-	 * site's own list, and leave that list as found.
+	 * The default forms a comment is matched by use core's smileys, not
+	 * this site's own list, and leave that list as found. This site's own
+	 * list counts only through how your Mark showed the comment.
 	 */
 	public function test_match_variants_ignore_this_sites_smiley_list(): void {
 		global $wp_smiliessearch, $wpsmiliestrans;
@@ -1636,7 +1638,7 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 			smilies_init();
 			$own_search = $wp_smiliessearch;
 
-			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)' ), "With this site's own list" );
+			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)', 'Thanks :)' ), "With this site's own list" );
 			$this->assertSame( array( ':-)' => 'icon_smile.gif' ), $wpsmiliestrans, "This site's list is left as found" );
 			$this->assertSame( $own_search, $wp_smiliessearch );
 
@@ -1647,10 +1649,140 @@ class Test_Comment_Replies extends WP_UnitTestCase {
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- As on a site that hasn't set smileys up yet.
 			$wpsmiliestrans = null;
 
-			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)' ), 'With every smiley filtered away' );
+			$this->assertSame( array( 'thanks', 'thanks 🙂' ), $method->invoke( null, 'Thanks :)', 'Thanks :)' ), 'With every smiley filtered away' );
 			$this->assertNull( $wp_smiliessearch );
 			$this->assertNull( $wpsmiliestrans );
 		} finally {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wp_smiliessearch = $search;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
+			$wpsmiliestrans = $trans;
+		}
+	}
+
+	/**
+	 * A comment is found as your Mark showed it with this site's own
+	 * smileys: an emoji of its own, an image (which the original site
+	 * drops), a core code shown as an image, or a core code shown as
+	 * another emoji.
+	 */
+	public function test_a_comment_is_found_as_your_mark_showed_this_sites_own_smileys(): void {
+		$cases = array(
+			array( array( ':party:' => '🎉' ), 'Time to celebrate :party:', 'Time to celebrate 🎉' ),
+			array( array( ':party:' => 'party.png' ), 'Time to celebrate :party:', 'Time to celebrate' ),
+			array( array( ':D' => 'icon_biggrin.gif' ), 'Great post :D', 'Great post' ),
+			array( array( ':)' => '😊' ), 'Nice :) see you at the meetup tomorrow', 'Nice 😊 see you at the meetup tomorrow' ),
+		);
+
+		foreach ( $cases as $case ) {
+			$found = $this->with_own_smilies(
+				$case[0],
+				function () use ( $case ): int {
+					return $this->find_comment_shown_as( $case[1], $case[2] );
+				}
+			);
+
+			$this->assertSame( 60, $found, "Sent \"{$case[1]}\", shown as \"{$case[2]}\"" );
+		}
+	}
+
+	/**
+	 * How your Mark showed a comment is kept from when it was sent, so
+	 * the comment is still found after this site's smileys change.
+	 */
+	public function test_how_your_mark_showed_a_comment_is_kept_from_when_it_was_sent(): void {
+		$sub_id = $this->create_subscription_post();
+
+		$this->with_own_smilies(
+			array( ':party:' => '🎉' ),
+			function () use ( $sub_id ): void {
+				$this->watch(
+					$sub_id,
+					array(
+						'comment' => 0,
+						'mark'    => 77,
+						'text'    => 'Time to celebrate :party:',
+					)
+				);
+			}
+		);
+
+		$this->assertSame( 'Time to celebrate 🎉', $this->only_watch()['shown'] );
+
+		// This site is back to core's smileys when the check runs.
+		$this->mock_json( $this->search_url(), array( $this->own_site_comment( 60, 'Time to celebrate 🎉' ) ) );
+		$this->mock_json( $this->replies_url( 60 ), array() );
+
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( 60, (int) $this->only_watch()['comment'] );
+	}
+
+	/** A watch stored without how your Mark showed the comment is read with this site's smileys now. */
+	public function test_a_watch_stored_without_how_your_mark_showed_it_uses_this_sites_smileys(): void {
+		$found = $this->with_own_smilies(
+			array( ':party:' => '🎉' ),
+			function (): int {
+				$this->watch(
+					$this->create_subscription_post(),
+					array(
+						'comment' => 0,
+						'mark'    => 77,
+						'text'    => 'Time to celebrate :party:',
+					)
+				);
+				$this->alter_watches(
+					$this->user_id,
+					static function ( array $watch ): array {
+						unset( $watch['shown'] );
+						return $watch;
+					}
+				);
+				$this->assertArrayNotHasKey( 'shown', $this->only_watch() );
+
+				$this->mock_json( $this->search_url(), array( $this->own_site_comment( 60, 'Time to celebrate 🎉' ) ) );
+				$this->mock_json( $this->replies_url( 60 ), array() );
+
+				Daymark_Comment_Replies::check_due();
+
+				return (int) $this->only_watch()['comment'];
+			}
+		);
+
+		$this->assertSame( 60, $found );
+	}
+
+	/**
+	 * Run a callback with this site's own smileys added to core's, as a
+	 * plugin adds them, then put this site's smileys back as found.
+	 *
+	 * @param array<string, string> $own      Code => emoji, or image file name.
+	 * @param callable              $callback Run with this site's own smileys.
+	 * @return mixed What the callback returns.
+	 */
+	private function with_own_smilies( array $own, callable $callback ) {
+		global $wp_smiliessearch, $wpsmiliestrans;
+
+		$search = $wp_smiliessearch;
+		$trans  = $wpsmiliestrans;
+		$filter = static function ( $smilies ) use ( $own ): array {
+			return array_merge( (array) $smilies, $own );
+		};
+
+		update_option( 'use_smilies', '1' );
+		add_filter( 'smilies', $filter );
+
+		try {
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again with this site's own smileys, restored below.
+			$wp_smiliessearch = null;
+			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Built again with this site's own smileys, restored below.
+			$wpsmiliestrans = null;
+			smilies_init();
+
+			return $callback();
+		} finally {
+			remove_filter( 'smilies', $filter );
+
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.
 			$wp_smiliessearch = $search;
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restored for the next test.

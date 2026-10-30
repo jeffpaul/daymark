@@ -103,7 +103,8 @@ class Daymark_Comment_Replies {
 
 	/**
 	 * Every field a stored watch has. A row missing one is removed. A row
-	 * also has `blog`, the site it was made on (see blog_of()).
+	 * also has `blog`, the site it was made on (see blog_of()), and one
+	 * whose comment ID isn't known yet has `shown` (see shown_here()).
 	 *
 	 * @var string[]
 	 */
@@ -230,7 +231,8 @@ class Daymark_Comment_Replies {
 			}
 		}
 
-		$watch = array(
+		$excerpt = Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), self::EXCERPT_CHARS );
+		$watch   = array(
 			'id'        => bin2hex( random_bytes( 6 ) ),
 			'blog'      => get_current_blog_id(),
 			'post'      => $subscription_post_id,
@@ -241,7 +243,7 @@ class Daymark_Comment_Replies {
 			'remote'    => $remote,
 			'comment'   => $comment,
 			'mark'      => $mark,
-			'excerpt'   => Daymark_Remote_Replies::plain( (string) ( $target['text'] ?? '' ), self::EXCERPT_CHARS ),
+			'excerpt'   => $excerpt,
 			'created'   => time(),
 			'checked'   => 0,
 			'fails'     => 0,
@@ -249,6 +251,14 @@ class Daymark_Comment_Replies {
 			'replies'   => array(),
 			'seen'      => array(),
 		);
+
+		// A comment found by its words was usually sent as a Webmention, as
+		// your Mark showed it, so keep how this site shows it now: a later
+		// check, or another site of the network weighing this watch, may
+		// show smileys differently.
+		if ( 0 === $comment ) {
+			$watch['shown'] = self::shown_here( $excerpt );
+		}
 
 		if ( false === add_user_meta( $user_id, self::META, wp_slash( $watch ) ) ) {
 			return false;
@@ -1037,6 +1047,9 @@ class Daymark_Comment_Replies {
 	 */
 	private static function claim( int $user_id, array $watch, bool $is_self ): array {
 		$excerpt = (string) $watch['excerpt'];
+		// A row stored before `shown` existed is read with this site's
+		// settings now.
+		$shown = isset( $watch['shown'] ) && is_string( $watch['shown'] ) ? $watch['shown'] : self::shown_here( $excerpt );
 
 		return array(
 			'self'     => $is_self,
@@ -1044,33 +1057,54 @@ class Daymark_Comment_Replies {
 			'id'       => (string) $watch['id'],
 			'blog'     => self::blog_of( $watch ),
 			'created'  => (int) $watch['created'],
-			'variants' => self::match_variants( $excerpt ),
+			'variants' => self::match_variants( $excerpt, $shown ),
 			// The excerpt was shortened, so only its start can match.
 			'cut'      => '…' === mb_substr( $excerpt, -1 ) && mb_strlen( $excerpt ) >= self::EXCERPT_CHARS - 1,
 		);
 	}
 
 	/**
-	 * A comment's text as sent, and as a WordPress site may show it: with
+	 * A comment's text as sent and as your Mark showed it (see
+	 * shown_here()), each also as a WordPress site may show it: with
 	 * WordPress's default typography (× in "2x4", ™ for "(tm)"), with
 	 * WordPress's default smileys as emoji, with both, or with neither,
 	 * each reduced by match_text(). The original site's settings aren't
 	 * known, and needn't match this site's.
 	 *
 	 * @param string $excerpt Plain text of the comment as sent.
+	 * @param string $shown   Plain text of the comment as your Mark showed it.
 	 * @return string[]
 	 */
-	private static function match_variants( string $excerpt ): array {
-		$escaped    = htmlspecialchars( $excerpt, ENT_NOQUOTES, 'UTF-8' );
-		$texturized = self::texturize_by_default( $escaped );
-		$variants   = array(
-			self::match_text( $excerpt ),
-			self::match_text( self::smilies_by_default( $escaped ) ),
-			self::match_text( $texturized ),
-			self::match_text( self::smilies_by_default( $texturized ) ),
-		);
+	private static function match_variants( string $excerpt, string $shown ): array {
+		$variants = array();
+
+		foreach ( array_unique( array( $excerpt, $shown ) ) as $text ) {
+			$escaped    = htmlspecialchars( $text, ENT_NOQUOTES, 'UTF-8' );
+			$texturized = self::texturize_by_default( $escaped );
+
+			array_push(
+				$variants,
+				self::match_text( $text ),
+				self::match_text( self::smilies_by_default( $escaped ) ),
+				self::match_text( $texturized ),
+				self::match_text( self::smilies_by_default( $texturized ) )
+			);
+		}
 
 		return array_values( array_unique( array_filter( $variants, 'strlen' ) ) );
+	}
+
+	/**
+	 * A comment's text as this site shows it on the comment's Mark: with
+	 * this site's own typography and smileys (its own list, or images,
+	 * which the original site drops), as plain text. A Webmention sends
+	 * the Mark as shown, so this is what the original site received.
+	 *
+	 * @param string $excerpt Plain text of the comment as sent.
+	 * @return string
+	 */
+	private static function shown_here( string $excerpt ): string {
+		return Daymark_Remote_Replies::plain( convert_smilies( wptexturize( htmlspecialchars( $excerpt, ENT_NOQUOTES, 'UTF-8' ) ) ), 400 );
 	}
 
 	/**
