@@ -38,6 +38,8 @@ can't act on them.
 
 - On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
 
+- With ActivityPub 9.4.0 or later, Daymark looks up fediverse posts for Likes and Reblogs the way the plugin now asks, so sites with debugging turned on no longer log a deprecation notice each time. Likes and Reblogs work the same as before. (PRLINK)
+
 ### Fixed
 
 - Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))

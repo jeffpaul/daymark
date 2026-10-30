@@ -13,8 +13,8 @@
  * delivery) lives in Daymark:
  *
  * - resolve_target() runs the permalink through
- *   Daymark_Subscription_Url_Guard, then `\Activitypub\Http::get_remote_object()`
- *   (a signed GET with `Accept: application/activity+json`), and keeps an
+ *   Daymark_Subscription_Url_Guard, then `\Activitypub\Proxy::get()` (9.4.0+;
+ *   `\Activitypub\Http::get_remote_object()` before that) (a signed GET with `Accept: application/activity+json`), and keeps an
  *   object that has an `id` and an `attributedTo`. Cached by permalink,
  *   negative results included, like Daymark_Jetpack_Engagement::resolve_origin().
  * - like() builds a `Like` (`object` = the resolved id, `to` = its author)
@@ -268,6 +268,12 @@ class Daymark_ActivityPub_Engagement {
 			// checks that only Daymark's own calls otherwise get.
 			$object = Daymark_Outbound_Guard::run(
 				static function () use ( $permalink ) {
+					// ActivityPub 9.4.0 deprecated Http::get_remote_object()
+					// for Proxy::get(), which makes the same request.
+					if ( class_exists( '\Activitypub\Proxy' ) ) {
+						return \Activitypub\Proxy::get( $permalink );
+					}
+
 					return \Activitypub\Http::get_remote_object( $permalink );
 				}
 			);

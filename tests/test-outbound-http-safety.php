@@ -387,6 +387,15 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 					continue;
 				}
 
+				// The ActivityPub plugin's own fetchers (Proxy::get() from 9.4.0,
+				// Http::get_remote_object() before) send real requests too.
+				if ( in_array( $name, array( 'activitypub\\proxy', 'activitypub\\http' ), true ) && is_array( $next ) && T_DOUBLE_COLON === $next[0] ) {
+					if ( ! $this->inside_any_range( $index, $ranges ) ) {
+						$offenders[] = $where . ' — wrap this call in Daymark_Outbound_Guard::run()';
+					}
+					continue;
+				}
+
 				if ( '(' !== $next ) {
 					continue;
 				}
