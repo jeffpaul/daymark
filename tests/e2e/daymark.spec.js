@@ -942,6 +942,52 @@ test('Follow a site from the Me screen picks a feed and follows it', async ({ pa
 	expect(followBody).toEqual({ index: 1, site_title: 'My Friend', site_url: 'https://follow.example/' });
 });
 
+// A follow link (?daymark_follow_site=…, issue #560) opens Follow a site
+// with the address filled in, on top of the screen the app starts on. No
+// button opened that sheet, so closing it hands focus to the screen's
+// heading instead of dropping it to the page. Someone who can't follow
+// sites gets a note instead, and closing it does the same.
+test('a follow link opens Follow a site, and closing it returns focus to the screen', async ({ page }) => {
+	await loginAs(page);
+
+	// Any page on the site sends a follow link on to the app.
+	await page.goto('/?daymark_follow_site=follow-link.example');
+	const sheet = page.locator('.daymark-sheet__panel');
+	await expect(sheet.locator('#daymark-follow-title')).toHaveText('Follow a site');
+	await expect(sheet.locator('[data-follow-url]')).toHaveValue('https://follow-link.example');
+	await expect(sheet.locator('[data-follow-find]')).toBeFocused();
+	// The app drops the parameter, so a reload doesn't open the sheet again.
+	await expect(page).not.toHaveURL(/daymark_follow_site/);
+
+	await page.keyboard.press('Escape');
+	await expect(sheet).toHaveCount(0);
+	await expect(page.locator('[data-daymark-focus]')).toBeFocused();
+
+	// The same link for someone who can't follow sites.
+	await page.addInitScript(() => {
+		let stored;
+		Object.defineProperty(window, 'daymarkApp', {
+			configurable: true,
+			get: () => stored,
+			set: (value) => {
+				if (value && typeof value === 'object') {
+					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.timelinePosition = null;
+					value.canManageSubscriptions = false;
+				}
+				stored = value;
+			},
+		});
+	});
+	await page.goto('/daymark/?daymark_follow_site=follow-link.example');
+	const note = page.locator('.daymark-sheet__panel--hint');
+	await expect(note.locator('#daymark-hint-title')).toHaveText('Ask an administrator to follow this site');
+	await expect(note).toContainText('https://follow-link.example');
+	await note.locator('[data-hint-dismiss]').click();
+	await expect(note).toHaveCount(0);
+	await expect(page.locator('[data-daymark-focus]')).toBeFocused();
+});
+
 // When a followed site turns out not to accept Likes, the Like icon is
 // replaced by an invisible placeholder of the same size, so the Comment
 // icon beside it doesn't shift left.
@@ -1225,6 +1271,132 @@ test("comment delivery failure (after the pre-check said Webmention was viable) 
 
 	await sheet.getByRole('button', { name: 'Close' }).click();
 	await expect(page.locator('.daymark-sheet__panel')).toHaveCount(0);
+});
+
+// Replies on a followed post (issue #559): a list asked for before a
+// comment was sent doesn't have that comment. If the post view has been
+// drawn again since (here by going Back and opening the post again), it
+// shows Show replies, and the old list, arriving late, must not replace
+// that button. Show replies then asks the site again and gets the list
+// with the comment.
+test('a replies list from before a comment does not fill the post view once it is drawn again', async ({
+	page,
+}) => {
+	await loginAs(page);
+
+	const permalink = 'https://example.invalid/post-999011/';
+	const fakeItem = {
+		item_type: 'subscription_post',
+		id: 999011,
+		subscription_id: 1,
+		title: `E2E stale replies ${RUN_ID}`,
+		excerpt: '',
+		author: '',
+		permalink,
+		date: new Date().toISOString(),
+		post_format: 'standard',
+		featured_image_url: '',
+		content_state: 'full',
+		site_icon_url: '',
+		site_url: 'https://example.invalid/',
+		site_title: 'Example',
+		bookmarked: false,
+		replied_mark_id: 0,
+		liked_mark_id: 0,
+		like_available: true,
+		reposted_mark_id: 0,
+	};
+	const comment = `My comment ${RUN_ID}`;
+	const reply = (author, text) => ({
+		author_name: author,
+		content: `<p>${text}</p>`,
+		date: new Date().toISOString(),
+		depth: 0,
+	});
+
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([fakeItem]) });
+	});
+
+	// The first replies request waits until the comment has been sent.
+	let releaseFirst;
+	const firstHeld = new Promise((resolve) => {
+		releaseFirst = resolve;
+	});
+	let repliesCalls = 0;
+	let commentBody = null;
+	await page.route('**/daymark/v1/subscription-posts/**', async (route) => {
+		const url = route.request().url();
+		const json = (body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+		if (url.includes('/replies')) {
+			repliesCalls += 1;
+			if (1 === repliesCalls) {
+				await firstHeld;
+				await json({ status: 'ok', source: 'wordpress', url: permalink, total: 1, replies: [reply('Sam', 'Before the comment')] });
+				return;
+			}
+			await json({
+				status: 'ok',
+				source: 'wordpress',
+				url: permalink,
+				total: 2,
+				replies: [reply('Sam', 'Before the comment'), reply('Admin', comment)],
+			});
+			return;
+		}
+		if (url.includes('/engagement')) {
+			await json({ like: { available: true, method: 'jetpack' }, comment: { method: 'jetpack' }, note: null });
+			return;
+		}
+		if (url.includes('/comment-target')) {
+			await json({ method: 'jetpack' });
+			return;
+		}
+		if (url.includes('/comment')) {
+			commentBody = route.request().postDataJSON();
+			await json({ method: 'jetpack', delivery: 'sent', message: 'Comment sent.' });
+			return;
+		}
+		await json({ ...fakeItem, body_content: '<p>The post itself.</p>' });
+	});
+
+	await page.goto('/daymark');
+	const card = page.locator('[data-subpost="999011"]');
+	await card.locator('.daymark-recent__title').click();
+	await expect(page).toHaveURL(/#post$/);
+
+	const thread = page.locator('[data-thread-body]');
+	await thread.locator('[data-thread-show]').click();
+	await expect(thread).toContainText('Loading replies');
+
+	// Back, and open the same post again while the request is still running.
+	await page.locator('a.daymark-backlink--icon').click();
+	await card.locator('.daymark-recent__title').click();
+	await expect(page).toHaveURL(/#post$/);
+	await expect(thread.locator('[data-thread-show]')).toBeVisible();
+
+	const toggle = page.locator('.daymark-postview-footer [data-comment-toggle="999011"]');
+	await toggle.click();
+	// The first-ever Comment tap explains it first.
+	await page.locator('.daymark-sheet__panel--hint [data-hint-dismiss]').click();
+	await page.locator('[data-textprompt-input]').fill(comment);
+	const sent = page.waitForResponse((response) => response.url().includes('/subscription-posts/999011/comment'));
+	await page.locator('[data-textprompt-submit]').click();
+	await sent;
+	expect(commentBody).toEqual({ text: comment });
+
+	// The list from before the comment arrives now.
+	const late = page.waitForResponse((response) => response.url().includes('/replies'));
+	releaseFirst();
+	await late;
+	await page.waitForTimeout(500);
+	await expect(thread.locator('[data-thread-show]')).toBeVisible();
+	await expect(thread).not.toContainText('Before the comment');
+
+	await thread.locator('[data-thread-show]').click();
+	await expect(thread.locator('.daymark-thread__reply')).toHaveCount(2);
+	await expect(thread).toContainText(comment);
+	expect(repliesCalls).toBe(2);
 });
 
 // Pull-to-refresh on a touch screen. It checks every followed site in one

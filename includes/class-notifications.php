@@ -317,7 +317,12 @@ class Daymark_Notifications {
 
 		if ( $user_id ) {
 			// A found reply a comment stands in for is hidden from the list
-			// but keeps its state, in case the comment is held again.
+			// but keeps its state, in case the comment is held again. So
+			// does every reply a watch still holds: an expired watch's
+			// replies leave the list before the check that moves their
+			// state to a Webmention copy, and a reply found on another site
+			// of the network is listed there, but its state is stored here
+			// too (once per person for the whole network).
 			$state->prune(
 				$user_id,
 				array_merge(
@@ -327,7 +332,8 @@ class Daymark_Notifications {
 						},
 						$dated_items
 					),
-					array_values( $links )
+					array_values( $links ),
+					Daymark_Comment_Replies::stored_item_ids( $user_id )
 				)
 			);
 		}

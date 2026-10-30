@@ -173,7 +173,7 @@
 
 	// Which kinds of push a person can choose, in display order.
 	const PUSH_KINDS = [
-		{ key: 'comments', label: () => __('Comments on your Marks', 'daymark') },
+		{ key: 'comments', label: () => __('Comments on your Marks and replies to your comments', 'daymark') },
 		{ key: 'favorites', label: () => __('New posts from favorite sites', 'daymark') },
 		{ key: 'followers', label: () => __('New followers and subscribers', 'daymark') },
 	];
@@ -12844,11 +12844,15 @@
 			if (!item || !item.id || !body) {
 				return;
 			}
+			// aria-busy marks a copy of the screen that is waiting for a
+			// request, so it comes off whenever this shows something else.
 			if (item._replies) {
+				body.removeAttribute('aria-busy');
 				body.innerHTML = this.repliesHtml(item._replies, item);
 				return;
 			}
 			if (!navigator.onLine) {
+				body.removeAttribute('aria-busy');
 				body.innerHTML = this.repliesErrorHtml(__("You're offline. Replies need a connection.", 'daymark'));
 				return;
 			}
@@ -12917,6 +12921,12 @@
 			// reader may have stepped to another post meanwhile.
 			const current = root.querySelector('[data-thread-body]');
 			if (!current || !this.view || this.view.item !== item) {
+				return;
+			}
+			// A list from before a comment fills only a copy that is still
+			// waiting for it. A copy drawn since shows Show replies, which
+			// asks the site again.
+			if (entry.stale && 'true' !== current.getAttribute('aria-busy')) {
 				return;
 			}
 			current.removeAttribute('aria-busy');
@@ -15539,8 +15549,11 @@
 			// Leave the address as it is.
 		}
 		showScreen(initialHash);
+		// No button opened the sheet, so closing it hands focus back to the
+		// screen's heading, where showScreen() just put it, not to the page.
+		const heading = root.querySelector('[data-daymark-focus]');
 		if (config.canManageSubscriptions) {
-			FollowSiteSheet.show(null, reloadAfterFollowing, config.pendingFollowUrl);
+			FollowSiteSheet.show(heading, reloadAfterFollowing, config.pendingFollowUrl);
 		} else {
 			InteractionHintSheet.show(
 				{
@@ -15555,7 +15568,7 @@
 						config.pendingFollowUrl
 					),
 				},
-				null
+				heading
 			);
 		}
 	} else if (config.pendingType) {
