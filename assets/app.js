@@ -616,6 +616,11 @@
 		// reopened. Not set by autosave: an autosave turns a new Mark into a
 		// draft (state.editing) mid-session, but it's still a new Mark.
 		resumed: false,
+		// True when the destination and category lists came from a saved
+		// draft or a Mark queued from the Publish screen, so they're the
+		// Mark's real choice rather than empty placeholders. See
+		// selectionIsSet().
+		selectionLoaded: false,
 		// The type whose default destinations and categories were applied
 		// this session, so going Back and Next again keeps changes unless
 		// the type itself changed.
@@ -1688,6 +1693,29 @@
 		return Array.isArray(defaults) ? defaults.slice() : [];
 	}
 
+	// Whether the destination and category lists are the Mark's real
+	// choice, so a save sends them even when empty: an empty list then
+	// means "none" rather than "use the defaults". A new Mark's lists are
+	// empty placeholders until Next applies the type's defaults, and an
+	// autosave before that must leave the server to apply them.
+	function selectionIsSet() {
+		return state.selectionLoaded || state.defaultsAppliedFor === state.primaryType;
+	}
+
+	// The site remembers a Mark's destinations and categories as the
+	// choice for its type (Daymark_Publisher::remember_destination_prefs()).
+	// After a Publish or Save as Draft, keep this page's copy in step, so
+	// the next Mark of that type starts from the same choice without a
+	// reload. Not after an autosave: the "Starting from your last…" note
+	// compares against the last Mark you finished, not this one.
+	function rememberSelectionLocally(payload) {
+		if (!payload || !payload.selectionSet || !payload.primaryType) {
+			return;
+		}
+		typeDefaults[payload.primaryType] = payload.targets.slice();
+		categoryDefaults[payload.primaryType] = payload.categories.map(Number);
+	}
+
 	function siteCategoriesFor(type) {
 		const defaults = siteCategoryDefaults[type];
 		return Array.isArray(defaults) ? defaults.map(Number) : [];
@@ -1751,6 +1779,7 @@
 		state.aiAssistUsed = false;
 		state.editing = null;
 		state.resumed = false;
+		state.selectionLoaded = false;
 		state.defaultsAppliedFor = null;
 		state.helpers = defaultHelpers();
 		state.offlineQueueId = null;
@@ -2580,6 +2609,10 @@
 			aiAssistUsed: !!state.aiAssistUsed,
 			targets: state.targets.slice(),
 			categories: state.categories.slice(),
+			// Whether the two lists above are the Mark's real choice (see
+			// selectionIsSet()). Stored with a queued Mark, so a replay and
+			// a reopened Mark both know.
+			selectionSet: selectionIsSet(),
 			tags: state.tags.slice(),
 			helpers:
 				Array.isArray(config.controllableHelpers) && config.controllableHelpers.length
@@ -2618,6 +2651,14 @@
 		formData.append('ai_assist_used', payload.aiAssistUsed ? '1' : '0');
 		payload.targets.forEach((target) => formData.append('targets[]', target));
 		payload.categories.forEach((id) => formData.append('categories[]', id));
+		// A form post can't carry an empty list, so say when these lists
+		// are complete: an empty one then means "none" rather than "use the
+		// defaults". Without the flags (an autosave before Next, or a Mark
+		// queued by an older version of the app), the site decides as before.
+		if (payload.selectionSet) {
+			formData.append('targets_set', '1');
+			formData.append('categories_set', '1');
+		}
 		if (payload.helpers !== null) {
 			formData.append('publish_helpers', JSON.stringify(payload.helpers));
 		}
@@ -3330,6 +3371,14 @@
 		state.transcriptEdited = false;
 		state.targets = Array.isArray(payload.targets) ? payload.targets.slice() : [];
 		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
+		// A Mark queued from the Publish screen carries its real lists. One
+		// an autosave queued before Next carries placeholders, so it gets
+		// the type's defaults at Next like a new Mark. A Mark queued before
+		// selectionSet existed counts as chosen when it has any selection.
+		state.selectionLoaded =
+			typeof payload.selectionSet === 'boolean'
+				? payload.selectionSet
+				: state.targets.length > 0 || state.categories.length > 0;
 		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : defaultHelpers();
 		state.tags = Array.isArray(payload.tags) ? payload.tags.slice() : [];
 		// Quiet metadata capture: this session's original signals travel
@@ -3654,6 +3703,9 @@
 		state.placeNameEdited = false;
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
+		// The draft's saved lists are what the site will use, so every save
+		// sends them, even when you untick the last one.
+		state.selectionLoaded = true;
 		// Every save now replaces the draft's tags with this list, so it
 		// has to start from what the draft already has.
 		state.tags = Array.isArray(mark.tags) ? mark.tags.map((t) => String(t)) : [];
@@ -9577,9 +9629,10 @@
 				state.primaryType = effectiveType();
 				// A reopened draft keeps its stored destination and category
 				// selections; a new Mark starts from the per-type defaults,
-				// once per type. Checked with state.resumed rather than state.editing,
-				// since an autosave makes a new Mark a draft before Next.
-				if (!state.resumed && state.defaultsAppliedFor !== state.primaryType) {
+				// once per type. Checked with state.selectionLoaded rather than
+				// state.editing, since an autosave makes a new Mark a draft
+				// before Next.
+				if (!state.selectionLoaded && state.defaultsAppliedFor !== state.primaryType) {
 					state.targets = defaultTargetsFor(state.primaryType);
 					state.categories = defaultCategoriesFor(state.primaryType);
 					state.defaultsAppliedFor = state.primaryType;
@@ -13834,7 +13887,7 @@
 		// keeps its own saved choices. A choice the person has since changed
 		// on this screen no longer counts, since it isn't the remembered one.
 		rememberedChoices() {
-			if (state.resumed) {
+			if (state.selectionLoaded) {
 				return { targets: false, categories: false };
 			}
 			const type = state.primaryType;
@@ -14042,6 +14095,7 @@
 				// in the background via syncPendingMark(). See
 				// publishInBackground()'s own comment for why.
 				const pendingId = await publishInBackground(path, targetId, payload, state.offlineQueueId);
+				rememberSelectionLocally(payload);
 				state.lastPublish = {
 					pendingId,
 					wasDraft: isDraft || needsReview,
@@ -14060,6 +14114,7 @@
 					const response = await sendMarkPayload(path, payload, { waitForUploads: true });
 					forgetUploads(payload);
 					onMarkSaved(response);
+					rememberSelectionLocally(payload);
 					state.lastPublish = applyServerStatus({
 						response,
 						wasDraft: isDraft || needsReview,

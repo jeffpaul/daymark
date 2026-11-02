@@ -601,7 +601,7 @@ class Daymark_Publisher {
 
 			// Distinguish "no selection sent" (fall back to defaults) from an
 			// explicit empty selection (user deselected every destination).
-			$selection_provided = is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) );
+			$selection_provided = $this->list_provided( $raw_targets, $data['targets_set'] ?? false );
 		}
 
 		// Categories: the site-filing counterpart to destinations. Same
@@ -611,7 +611,7 @@ class Daymark_Publisher {
 		// place.
 		$raw_categories    = $data['categories'] ?? null;
 		$categories        = $this->sanitize_category_ids( $raw_categories ?? array() );
-		$category_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
+		$category_provided = $this->list_provided( $raw_categories, $data['categories_set'] ?? false );
 
 		if ( ! $category_provided ) {
 			$categories = $this->get_effective_categories( $type );
@@ -1013,14 +1013,14 @@ class Daymark_Publisher {
 		// resends like_of at all.
 		$is_like_of = '' !== (string) get_post_meta( $post_id, '_daymark_like_of', true );
 
-		if ( ! $is_like_of && ( is_array( $raw_targets ) || ( is_string( $raw_targets ) && '' !== trim( $raw_targets ) ) ) ) {
+		if ( ! $is_like_of && $this->list_provided( $raw_targets, $data['targets_set'] ?? false ) ) {
 			$targets = $this->sanitize_connector_ids( $raw_targets );
 			update_post_meta( $post_id, '_daymark_syndication_targets', wp_json_encode( $targets ) );
 			$this->remember_destination_prefs( $type, $targets );
 		}
 
 		$raw_categories      = $data['categories'] ?? null;
-		$categories_provided = is_array( $raw_categories ) || ( is_string( $raw_categories ) && '' !== trim( $raw_categories ) );
+		$categories_provided = $this->list_provided( $raw_categories, $data['categories_set'] ?? false );
 		$categories          = $categories_provided ? $this->sanitize_category_ids( $raw_categories ) : array();
 
 		$title = sanitize_text_field( (string) ( $data['title'] ?? '' ) );
@@ -2661,6 +2661,29 @@ class Daymark_Publisher {
 		$chars = array_slice( $matches[0], 0, $max_chars );
 
 		return implode( '', $chars ) . $more;
+	}
+
+	/**
+	 * Whether a request carried a destination or category list, so that an
+	 * empty list means "none" rather than "use the defaults".
+	 *
+	 * A form post can't send an empty list: unticking every destination
+	 * sends no `targets[]` field at all, which looks exactly like a request
+	 * that never mentioned destinations. So the composer also sends a
+	 * `targets_set` or `categories_set` flag saying its list is complete,
+	 * the same way `tags_set` works for tags. Without the flag (an older
+	 * client, or an API caller), a non-empty list still counts as given.
+	 *
+	 * @param mixed $raw  The list as received.
+	 * @param mixed $flag The matching `*_set` flag.
+	 * @return bool
+	 */
+	private function list_provided( $raw, $flag ): bool {
+		if ( ! empty( $flag ) ) {
+			return true;
+		}
+
+		return is_array( $raw ) || ( is_string( $raw ) && '' !== trim( $raw ) );
 	}
 
 	/**
