@@ -611,7 +611,12 @@ class Daymark_Push {
 
 		$reply_to = Daymark_Notifications::find_reply_target( (int) $post->ID );
 
-		if ( null !== $reply_to && Daymark_Comment_Replies::already_found( (int) $post->ID, (string) get_comment_meta( (int) $comment->comment_ID, 'webmention_source_url', true ) ) ) {
+		if ( null !== $reply_to && Daymark_Comment_Replies::already_found( (int) $post->ID, (string) get_comment_meta( (int) $comment->comment_ID, 'webmention_source_url', true ), (int) $comment->comment_ID ) ) {
+			// The author already heard about this reply, so approving the
+			// comment again later doesn't push it either, even after
+			// Daymark forgets the reply.
+			update_comment_meta( (int) $comment->comment_ID, self::COMMENT_SENT_META, '1' );
+
 			return false;
 		}
 

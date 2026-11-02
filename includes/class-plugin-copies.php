@@ -9,13 +9,14 @@
  * own `_daymark_external_posts` meta never knew about them, and a Mark's
  * routing view and `u-syndication` links stayed empty for every real share.
  *
- * This class only reads each plugin's own saved post meta (and, for
- * XPoster's Mastodon link, its saved account settings). It never calls a
- * plugin, never writes its data, and never makes a request. The meta is
- * read whether or not the plugin is still active, because the copy still
- * exists on the other network either way. Every format below was checked
- * against the plugin's own source; each reader's docblock names the
- * version.
+ * This class reads each plugin's own saved post meta (plus, for XPoster's
+ * Mastodon link, its saved account settings). It never writes a plugin's
+ * data and never makes a request. The one plugin code it runs is
+ * ATmosphere's own post_share_url(), when ATmosphere is loaded, to turn
+ * its saved record into a web link. The meta is read whether or not the
+ * plugin is still active, because the copy still exists on the other
+ * network either way. Every format below was checked against the plugin's
+ * own source; each reader's docblock names the version.
  *
  * @package Daymark
  */

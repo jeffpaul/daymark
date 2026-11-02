@@ -279,8 +279,11 @@ class Daymark_Remote_Replies {
 		$response = self::get_json( self::comments_url( $root, $args ) );
 
 		if ( is_wp_error( $response ) ) {
+			// Only a request that got no answer might work next time; one
+			// refused before it went out (an unsafe address, this site's
+			// settings, a redirect that won't be followed) won't.
 			return array(
-				'status' => 'daymark_replies_unsafe_url' === $response->get_error_code() ? self::STATUS_UNSUPPORTED : self::STATUS_ERROR,
+				'status' => Daymark_Outbound_Guard::is_temporary_failure( $response ) ? self::STATUS_ERROR : self::STATUS_UNSUPPORTED,
 				'items'  => array(),
 				'total'  => 0,
 			);
@@ -480,7 +483,12 @@ class Daymark_Remote_Replies {
 		$response = self::get_json( $scheme . '://' . $host . '/api/v1/statuses/' . rawurlencode( $status_id ) . '/context' );
 
 		if ( is_wp_error( $response ) ) {
-			return self::result( self::STATUS_ERROR, self::SOURCE_MASTODON, $permalink );
+			// As in fetch_comments(): only no answer is worth retrying soon.
+			return self::result(
+				Daymark_Outbound_Guard::is_temporary_failure( $response ) ? self::STATUS_ERROR : self::STATUS_UNSUPPORTED,
+				self::SOURCE_MASTODON,
+				$permalink
+			);
 		}
 
 		if ( in_array( $response['code'], array( 401, 403 ), true ) ) {
@@ -523,9 +531,10 @@ class Daymark_Remote_Replies {
 		// The post's page couldn't be loaded for a reason likely to pass (no
 		// answer, a timeout, or an error such as a 503), so nothing is known
 		// about what the site shares: an error to try again soon, not
-		// "doesn't share its replies". A page that refused the request or is
-		// gone (a 403 or 404) falls through to unsupported below, with its
-		// link. Entries cached before `reached` existed don't carry it.
+		// "doesn't share its replies". A page that refused the request, is
+		// gone (a 403 or 404), or redirects somewhere Daymark won't follow
+		// falls through to unsupported below, with its link. Entries cached
+		// before `reached` existed don't carry it.
 		if ( ! is_wp_error( $signals ) && false === ( $signals['reached'] ?? true ) && ! empty( $signals['temporary'] ) ) {
 			return self::result( self::STATUS_ERROR, '', $permalink );
 		}

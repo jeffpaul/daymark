@@ -546,14 +546,15 @@ class Daymark_Comment_Delivery {
 	 * delivered comment) is even attempted, so staleness matters more here.
 	 * A page that loaded but advertises nothing is cached for the full
 	 * time, same as those siblings, and so is a page that refused the
-	 * request or is gone (a 401, 403, 404, or 410) and a request this
-	 * site's own settings won't send: neither answers differently a
-	 * minute later. A page that couldn't be loaded for a reason likely to
-	 * pass (no answer, a timeout, a rate limit, or a server error such as
-	 * a 503) is cached for a minute only: a repeatedly-tapped Comment icon
-	 * still doesn't re-fetch on every tap, but a site that was briefly
-	 * down isn't treated as unreachable for an hour, and a "Try again" can
-	 * work.
+	 * request or is gone (a 401, 403, 404, or 410), a request this site's
+	 * own settings won't send, and a page that redirects somewhere Daymark
+	 * won't follow (an unsafe address, or a chain of redirects too long):
+	 * none answers differently a minute later. A page that couldn't be
+	 * loaded for a reason likely to pass (no answer, a timeout, a rate
+	 * limit, or a server error such as a 503) is cached for a minute only:
+	 * a repeatedly-tapped Comment icon still doesn't re-fetch on every
+	 * tap, but a site that was briefly down isn't treated as unreachable
+	 * for an hour, and a "Try again" can work.
 	 *
 	 * Also resolves the Jetpack-native fast path's own eligibility signal
 	 * (issue #391) in the same cached call — `jetpack_site_id`/
@@ -628,11 +629,11 @@ class Daymark_Comment_Delivery {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			// No answer at all (a timeout, a refused connection, a failed
-			// DNS lookup) is how WordPress reports a request that went out
-			// and failed. Any other error, such as this site's own settings
-			// blocking outside requests, won't change on a retry.
-			$empty['temporary'] = 'http_request_failed' === $response->get_error_code();
+			// No answer (a timeout, a refused connection, a failed DNS
+			// lookup) might come next time. A request refused before it went
+			// out, by this site's settings or a redirect that won't be
+			// followed, fails the same way on a retry.
+			$empty['temporary'] = Daymark_Outbound_Guard::is_temporary_failure( $response );
 
 			return $empty;
 		}

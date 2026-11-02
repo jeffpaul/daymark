@@ -24,9 +24,9 @@ can't act on them.
 
 - You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
 - A Mark's "Where this went" view now lists the copies your publishing plugins made (Jetpack Social, Share on Mastodon, XPoster, Autopost for X, ATmosphere, Autoblue, and ActivityPub), and the Mark's page links to them, so Bridgy can bring replies from those copies back to your site. Bridgy is now on the Connectors tab. ([#562](https://github.com/jeffpaul/daymark/pull/562))
-- On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers (not yet for comments sent through WordPress.com). ([#562](https://github.com/jeffpaul/daymark/pull/562))
-- Follow a site from wherever you find it. The bookmarklet can now follow the site of the post you're reading, and the new "Follow me with Daymark" block lets visitors type their own site's address to open their Daymark ready to follow yours. The block also shows your feed's address for any other feed reader. ([#562](https://github.com/jeffpaul/daymark/pull/562))
-- When Like is missing or Comment opens the post on its own site, the full post view now says why under the post, such as "This is a Bluesky post. Daymark can like it once your site is connected to Bridgy Fed." When something on your site would fix it, an administrator also gets a link to it. ([#562](https://github.com/jeffpaul/daymark/pull/562))
+- On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers (not yet for comments sent through WordPress.com). ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+- Follow a site from wherever you find it. The bookmarklet can now follow the site of the post you're reading, and the new "Follow me with Daymark" block lets visitors type their own site's address to open their Daymark ready to follow yours. The block also shows your feed's address for any other feed reader. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+- When Like is missing or Comment opens the post on its own site, the full post view now says why under the post, such as "This is a Bluesky post. Daymark can like it once your site is connected to Bridgy Fed." When something on your site would fix it, an administrator also gets a link to it. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
 
 ### Changed
 
@@ -41,6 +41,8 @@ can't act on them.
 - With Post Kinds 4.0.1 or later, Daymark tells Post Kinds not to build its reply/repost box for Marks at all, instead of building it and then hiding it, so Mark pages do a little less work. Nothing on the page looks different. ([#563](https://github.com/jeffpaul/daymark/pull/563))
 
 - With ActivityPub 9.4.0 or later, Daymark looks up fediverse posts for Likes and Reblogs the way the plugin now asks, so sites with debugging turned on no longer log a deprecation notice each time. Likes and Reblogs work the same as before. ([#564](https://github.com/jeffpaul/daymark/pull/564))
+
+- With the Syndication Links plugin active, a Mark's links to its copies on other sites now appear in that plugin's own list, following its display settings, instead of in a separate "Also on" line from Daymark. Notifications no longer suggests turning Syndication Links off. ([#562](https://github.com/jeffpaul/daymark/pull/562))
 
 ### Fixed
 

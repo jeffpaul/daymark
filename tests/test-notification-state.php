@@ -742,4 +742,267 @@ class Test_Notification_State extends WP_UnitTestCase {
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'post-12' ) );
 		$this->assertFalse( Daymark_Notification_State::is_valid_id( 'comment-1 OR 1=1' ) );
 	}
+
+	/**
+	 * Notification items keyed by ID, with is_new against a last visit.
+	 *
+	 * @param int $seen The last visit to Notifications.
+	 * @return array<string, array<string, mixed>>
+	 */
+	private function items_seen( int $seen ): array {
+		return array_column( Daymark_Plugin::instance()->notifications->get_notifications( Daymark_Notifications::DEFAULT_LIMIT, $seen ), null, 'id' );
+	}
+
+	/**
+	 * Age every watch past the time it's kept, then run a check, which
+	 * forgets them and their replies.
+	 *
+	 * @return void
+	 */
+	private function expire_watches(): void {
+		foreach ( Daymark_Comment_Replies::get_watches( $this->user_id ) as $watch ) {
+			$expired            = $watch;
+			$expired['created'] = time() - 46 * DAY_IN_SECONDS;
+			update_user_meta( $this->user_id, Daymark_Comment_Replies::META, wp_slash( $expired ), $watch );
+		}
+
+		delete_transient( Daymark_Comment_Replies::LOCK );
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( array(), Daymark_Comment_Replies::get_watches( $this->user_id ) );
+	}
+
+	/**
+	 * After Daymark forgets a found reply, its copy still sits where the
+	 * reply was found: not new, read, and not lighting the bell.
+	 *
+	 * @param int    $copy       The copy's comment ID.
+	 * @param string $id         The forgotten reply's item ID.
+	 * @param int    $found_time When Daymark found the reply.
+	 * @param int    $seen       The last visit to Notifications.
+	 * @return void
+	 */
+	private function assert_copy_keeps_the_reply_date( int $copy, string $id, int $found_time, int $seen ): void {
+		$this->assertSame(
+			array(
+				$this->user_id => array(
+					'from'  => $id,
+					'found' => $found_time,
+				),
+			),
+			get_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META, true )
+		);
+		$this->assertFalse( Daymark_Plugin::instance()->notifications->has_unread() );
+
+		$items = $this->items_seen( $seen );
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertSame( $found_time, $items[ 'comment-' . $copy ]['timestamp'], 'It keeps the found reply\'s place' );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A copy of a reply you saw keeps the reply's date after Daymark stops
+	 * keeping the reply, so it doesn't turn new again.
+	 */
+	public function test_a_copy_keeps_the_reply_date_after_the_reply_expires() {
+		$found_time = time() - 2 * HOUR_IN_SECONDS;
+		$seen       = time() - HOUR_IN_SECONDS;
+
+		$id = $this->found_reply( $this->post_id, $found_time );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->expire_watches();
+
+		$this->assert_copy_keeps_the_reply_date( $copy, $id, $found_time, $seen );
+	}
+
+	/**
+	 * A copy held for moderation when Daymark stopped keeping the reply
+	 * still takes the reply's date once it's approved.
+	 */
+	public function test_a_copy_approved_after_the_reply_expires_keeps_the_reply_date() {
+		$found_time = time() - 2 * HOUR_IN_SECONDS;
+		$seen       = time() - HOUR_IN_SECONDS;
+
+		$id = $this->found_reply( $this->post_id, $found_time );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->expire_watches();
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assert_copy_keeps_the_reply_date( $copy, $id, $found_time, $seen );
+	}
+
+	/**
+	 * A copy written before your last visit, of a reply found after it,
+	 * stays new and unread after Daymark stops keeping the reply.
+	 */
+	public function test_a_copy_of_a_newly_found_reply_stays_new_after_the_reply_expires() {
+		$notifications = Daymark_Plugin::instance()->notifications;
+		$seen          = time() - 2 * HOUR_IN_SECONDS;
+		$found_time    = time() - HOUR_IN_SECONDS;
+
+		$copy = $this->webmention_copy( 0, gmdate( 'Y-m-d H:i:s', time() - 3 * HOUR_IN_SECONDS ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$this->found_reply( $this->post_id, $found_time );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->expire_watches();
+
+		$this->assertTrue( $notifications->has_unread() );
+
+		$items = $this->items_seen( $seen );
+		$this->assertSame( $found_time, $items[ 'comment-' . $copy ]['timestamp'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A copy keeps the reply's date when its watch is dropped to make
+	 * room for newer ones.
+	 */
+	public function test_a_copy_keeps_the_reply_date_after_its_watch_is_trimmed() {
+		$found_time = time() - 2 * HOUR_IN_SECONDS;
+		$seen       = time() - HOUR_IN_SECONDS;
+
+		$id    = $this->found_reply( $this->post_id, $found_time );
+		$watch = Daymark_Comment_Replies::get_watches( $this->user_id )[0];
+		$older = $watch;
+
+		$older['created'] = time() - 4 * HOUR_IN_SECONDS;
+		update_user_meta( $this->user_id, Daymark_Comment_Replies::META, wp_slash( $older ), $watch );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 1 );
+
+		$other = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'Another origin post',
+			)
+		);
+		update_post_meta( $other, 'permalink', 'https://origin.example/other/' );
+
+		for ( $i = 0; $i < 25; $i++ ) {
+			$this->assertTrue(
+				Daymark_Comment_Replies::start_watch(
+					$this->user_id,
+					$other,
+					array(
+						'root'    => 'https://origin.example/wp-json/',
+						'remote'  => 56,
+						'comment' => 100 + $i,
+					)
+				)
+			);
+		}
+
+		$watches = Daymark_Comment_Replies::get_watches( $this->user_id );
+		$this->assertCount( 25, $watches );
+		$this->assertNotContains( $watch['id'], array_column( $watches, 'id' ), 'The oldest watch made room' );
+
+		$this->assert_copy_keeps_the_reply_date( $copy, $id, $found_time, $seen );
+	}
+
+	/**
+	 * A reply you read, whose copy arrives after "Mark all as read", keeps
+	 * that read state after Daymark stops keeping the reply.
+	 */
+	public function test_a_copy_keeps_the_replys_read_state_after_the_reply_expires() {
+		update_user_meta( $this->user_id, Daymark_Notification_State::READ_BEFORE_META, time() - 5 * HOUR_IN_SECONDS );
+		$id = $this->found_reply( $this->post_id, time() - HOUR_IN_SECONDS );
+		$this->post( 'read', array( 'ids' => array( $id ) ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() - 2 * HOUR_IN_SECONDS );
+		$copy = $this->webmention_copy( 0 );
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->expire_watches();
+
+		$this->assertSame( '', get_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META, true ), 'Its own date reads the same way' );
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/** The same, for a copy approved after Daymark stopped keeping the reply. */
+	public function test_a_copy_approved_after_the_reply_expires_keeps_its_read_state() {
+		update_user_meta( $this->user_id, Daymark_Notification_State::READ_BEFORE_META, time() - 5 * HOUR_IN_SECONDS );
+		$id = $this->found_reply( $this->post_id, time() - HOUR_IN_SECONDS );
+		$this->post( 'read', array( 'ids' => array( $id ) ) );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, time() - 2 * HOUR_IN_SECONDS );
+		$copy = $this->webmention_copy( 0 );
+
+		$this->expire_watches();
+		$this->set_copy_status( $copy, 'approve' );
+
+		$this->assertTrue( $this->items()[ 'comment-' . $copy ]['read'] );
+	}
+
+	/** A reply you archived stays archived as its copy after Daymark stops keeping the reply. */
+	public function test_a_copy_stays_archived_after_the_reply_expires() {
+		$id = $this->found_reply( $this->post_id );
+		$this->post( 'archive', array( 'ids' => array( $id ) ) );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->expire_watches();
+
+		$items = $this->items();
+		$this->assertArrayNotHasKey( $id, $items );
+		$this->assertArrayNotHasKey( 'comment-' . $copy, $items );
+	}
+
+	/**
+	 * Once both dates read the same way, the next check drops the link
+	 * and the copy is listed by its own date.
+	 */
+	public function test_a_link_is_dropped_once_it_no_longer_changes_anything() {
+		$found_time = time() - 2 * HOUR_IN_SECONDS;
+		$seen       = time() - HOUR_IN_SECONDS;
+
+		$id = $this->found_reply( $this->post_id, $found_time );
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		$copy = $this->webmention_copy( 1 );
+
+		$this->expire_watches();
+		$this->assert_copy_keeps_the_reply_date( $copy, $id, $found_time, $seen );
+
+		// Another visit.
+		$seen = time();
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+		delete_transient( Daymark_Comment_Replies::LOCK );
+		Daymark_Comment_Replies::check_due();
+
+		$this->assertSame( '', get_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META, true ) );
+		$this->assertFalse( Daymark_Plugin::instance()->notifications->has_unread() );
+
+		$items = $this->items_seen( $seen );
+		$this->assertSame( (int) strtotime( get_comment( $copy )->comment_date_gmt . ' UTC' ), $items[ 'comment-' . $copy ]['timestamp'] );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['read'] );
+	}
+
+	/**
+	 * A copy that reads the same either way isn't linked when Daymark
+	 * stops keeping the reply, but it's still marked as pushed, so
+	 * approving it again later doesn't push the reply a second time.
+	 */
+	public function test_a_copy_that_reads_the_same_either_way_is_marked_pushed_but_not_linked() {
+		$this->found_reply( $this->post_id, time() - 2 * HOUR_IN_SECONDS );
+		$copy = $this->webmention_copy( 1 );
+		$seen = time();
+		update_user_meta( $this->user_id, Daymark_Notifications::SEEN_META, $seen );
+
+		$this->assertSame( '', get_comment_meta( $copy, Daymark_Push::COMMENT_SENT_META, true ) );
+
+		$this->expire_watches();
+
+		$this->assertSame( '', get_comment_meta( $copy, Daymark_Comment_Replies::FOUND_META, true ) );
+		$this->assertSame( '1', get_comment_meta( $copy, Daymark_Push::COMMENT_SENT_META, true ) );
+		$this->assertFalse( Daymark_Plugin::instance()->notifications->has_unread() );
+
+		$items = $this->items_seen( $seen );
+		$this->assertFalse( $items[ 'comment-' . $copy ]['is_new'] );
+		$this->assertTrue( $items[ 'comment-' . $copy ]['read'] );
+	}
 }

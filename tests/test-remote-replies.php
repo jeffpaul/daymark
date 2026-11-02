@@ -106,6 +106,27 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Mock a URL that redirects somewhere Daymark won't follow, the way
+	 * Daymark_Outbound_Guard reports it.
+	 *
+	 * @param string $url URL to mock.
+	 * @return void
+	 */
+	private function mock_refused_redirect( string $url ): void {
+		$this->http_responses[ $url ] = new WP_Error( 'daymark_redirect_refused', 'This URL resolves to a private or internal network address.' );
+	}
+
+	/**
+	 * When a permalink's cached replies expire, as a Unix time.
+	 *
+	 * @param string $permalink The followed post's permalink.
+	 * @return int
+	 */
+	private function replies_timeout( string $permalink ): int {
+		return (int) get_option( '_transient_timeout_daymark_replies_' . md5( $permalink ) );
+	}
+
+	/**
 	 * Mock a WordPress post page that advertises its REST root and post ID.
 	 *
 	 * @param string $permalink The post's URL.
@@ -457,15 +478,19 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 	/**
 	 * A post page that refuses Daymark's request (401, 403) or is gone
 	 * (404, 410) won't answer differently a minute later, and neither will
-	 * a request this site's own settings block: Daymark can't show that
-	 * site's replies. The result still links to the post, so the reader
-	 * can look there, and the page isn't asked again every minute.
+	 * a request this site's own settings block or a page that redirects
+	 * somewhere Daymark won't follow: Daymark can't show that site's
+	 * replies. The result still links to the post, so the reader can look
+	 * there, and the page isn't asked again every minute.
 	 */
 	public function test_a_page_that_refuses_or_is_gone_is_unsupported_with_its_link(): void {
 		$blocked = 'https://origin.example/blocked/';
 		$this->mock_blocked( $blocked );
 
-		$permalinks = array( $blocked );
+		$redirected = 'https://origin.example/redirected/';
+		$this->mock_refused_redirect( $redirected );
+
+		$permalinks = array( $blocked, $redirected );
 
 		foreach ( array( 401, 403, 404, 410 ) as $code ) {
 			$permalink = 'https://origin.example/refused-' . $code . '/';
@@ -481,6 +506,66 @@ class Test_Remote_Replies extends WP_UnitTestCase {
 			$this->assertSame( $permalink, $result['url'], $permalink );
 			$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_replies_' . md5( $permalink ) ), $permalink );
 			$this->assertGreaterThanOrEqual( time() + 59 * MINUTE_IN_SECONDS, (int) get_option( '_transient_timeout_daymark_comment_sig_' . md5( $permalink ) ), $permalink );
+		}
+	}
+
+	/**
+	 * A replies API that redirects somewhere Daymark won't follow, or that
+	 * this site's own settings won't reach, won't answer differently a
+	 * minute later: unsupported, with a link to the post, and kept for the
+	 * full time. That goes for a WordPress site's comments API and a
+	 * Mastodon server's context API alike.
+	 */
+	public function test_a_replies_api_that_will_not_answer_is_unsupported(): void {
+		$redirected = 'https://origin.example/moved-comments/';
+		$this->mock_wordpress_post( $redirected, 60 );
+		$this->mock_refused_redirect( $this->wordpress_comments_url( 60 ) );
+
+		$blocked = 'https://origin.example/blocked-comments/';
+		$this->mock_wordpress_post( $blocked, 61 );
+		$this->mock_blocked( $this->wordpress_comments_url( 61 ) );
+
+		foreach ( array( $redirected, $blocked ) as $permalink ) {
+			$result = Daymark_Remote_Replies::for_permalink( $permalink );
+
+			$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, $result['status'], $permalink );
+			$this->assertSame( Daymark_Remote_Replies::SOURCE_WORDPRESS, $result['source'], $permalink );
+			$this->assertSame( $permalink . '#comments', $result['url'], $permalink );
+			$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, $this->replies_timeout( $permalink ), $permalink );
+		}
+
+		$mastodon = 'https://mastodon.example/@ana/555';
+		$this->mock_refused_redirect( 'https://mastodon.example/api/v1/statuses/555/context' );
+
+		$result = Daymark_Remote_Replies::for_permalink( $mastodon );
+
+		$this->assertSame( Daymark_Remote_Replies::STATUS_UNSUPPORTED, $result['status'] );
+		$this->assertSame( Daymark_Remote_Replies::SOURCE_MASTODON, $result['source'] );
+		$this->assertSame( $mastodon, $result['url'] );
+		$this->assertGreaterThanOrEqual( time() + 9 * MINUTE_IN_SECONDS, $this->replies_timeout( $mastodon ) );
+		$this->assertNotContains( $mastodon, $this->requested, 'A Mastodon post keeps its own source, with no WordPress lookup' );
+	}
+
+	/**
+	 * A replies API that gives no answer at all might answer next time:
+	 * an error, kept for a minute only, on either kind of site.
+	 */
+	public function test_a_replies_api_that_does_not_answer_is_an_error_cached_briefly(): void {
+		$wordpress = 'https://origin.example/slow-comments/';
+		$this->mock_wordpress_post( $wordpress, 62 );
+		$this->mock_timeout( $this->wordpress_comments_url( 62 ) );
+
+		$mastodon = 'https://mastodon.example/@ana/666';
+		$this->mock_timeout( 'https://mastodon.example/api/v1/statuses/666/context' );
+
+		foreach ( array( $wordpress, $mastodon ) as $permalink ) {
+			$result = Daymark_Remote_Replies::for_permalink( $permalink );
+
+			$this->assertSame( Daymark_Remote_Replies::STATUS_ERROR, $result['status'], $permalink );
+
+			$timeout = $this->replies_timeout( $permalink );
+			$this->assertGreaterThan( time(), $timeout, $permalink );
+			$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $timeout, $permalink );
 		}
 	}
 
