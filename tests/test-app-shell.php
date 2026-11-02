@@ -292,4 +292,32 @@ class Test_App_Shell extends WP_UnitTestCase {
 			'The browser-tab favicon must still prefer the Site Icon'
 		);
 	}
+
+	/**
+	 * When the site uses a right-to-left language, the app shell renders dir="rtl".
+	 */
+	public function test_app_shell_renders_rtl_direction() {
+		global $wp_locale, $text_direction;
+
+		$orig_locale_dir = isset( $wp_locale ) ? $wp_locale->text_direction : null;
+		$orig_text_dir   = $text_direction ?? 'ltr';
+
+		if ( isset( $wp_locale ) ) {
+			$wp_locale->text_direction = 'rtl';
+		}
+		$text_direction = 'rtl';
+
+		$html = $this->render_shell();
+
+		if ( isset( $wp_locale ) && null !== $orig_locale_dir ) {
+			$wp_locale->text_direction = $orig_locale_dir;
+		}
+		$text_direction = $orig_text_dir;
+
+		$this->assertMatchesRegularExpression(
+			'/<html[^>]+dir=["\']rtl["\']/i',
+			$html,
+			'App shell must output dir="rtl" on html in RTL mode'
+		);
+	}
 }
