@@ -3852,6 +3852,65 @@ test('controllable helper: per-Mark toggle appears and is sent on publish', asyn
 	expect(sentBody).toContain('daymark-e2e-helper');
 });
 
+// A helper whose plugin shares every post on its own (ATmosphere) starts
+// on, reads as a destination, and the "It also reaches …" note follows its
+// toggle. The fixture's network helper is opted in by cookie; the reach
+// entry tied to it is set here, since only ATmosphere adds one server-side
+// (covered by PHPUnit).
+test('controllable helper: a default-on helper starts on and the reach note follows it', async ({ page }) => {
+	await page.addInitScript(() => {
+		let stored;
+		Object.defineProperty(window, 'daymarkApp', {
+			configurable: true,
+			get: () => stored,
+			set: (value) => {
+				if (value && typeof value === 'object') {
+					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.timelinePosition = null;
+					value.reach = [{ label: 'E2E Network', helper: 'daymark-e2e-network' }];
+				}
+				stored = value;
+			},
+		});
+	});
+	await loginAs(page);
+	await page
+		.context()
+		.addCookies([{ name: 'daymark_e2e_network_helper', value: '1', url: new URL(page.url()).origin }]);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E network helper ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+
+	const toggle = page.locator('[data-helper="daymark-e2e-network"]');
+	await expect(toggle).toBeChecked();
+	await expect(page.locator('label[for="daymark-helper-daymark-e2e-network"]')).toContainText(
+		'E2E Network via E2E Plugin'
+	);
+	const note = page.locator('[data-reach-note]');
+	await expect(note).toContainText('It also reaches E2E Network.');
+
+	await toggle.click({ force: true });
+	await expect(toggle).not.toBeChecked();
+	await expect(note).not.toContainText('E2E Network');
+	await toggle.click({ force: true });
+	await expect(note).toContainText('It also reaches E2E Network.');
+
+	// The last save of this Mark (an autosave may have created it first,
+	// making Publish an update) carries the selection.
+	let sentBody = '';
+	await page.route('**/daymark/v1/marks**', async (route) => {
+		if ('GET' !== route.request().method()) {
+			sentBody = route.request().postData() || '';
+		}
+		await route.continue();
+	});
+
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+	expect(sentBody).toContain('daymark-e2e-network');
+});
+
 // A registered, connected connector appears as a real destination, can be
 // toggled and published to, and is remembered per Mark type. The E2E
 // Connector fixture registers a fake connected network; this guards the

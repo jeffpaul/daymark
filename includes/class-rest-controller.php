@@ -3024,13 +3024,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$helpers = json_decode( (string) get_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, true ), true );
 
 		$target_list = is_array( $targets ) ? array_values( array_filter( array_map( 'sanitize_key', $targets ) ) ) : array();
+		// null when the Mark never recorded a choice, so the composer starts
+		// each toggle where the plugin itself would land.
+		$helper_list = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : null;
 
 		$payload                = $this->prepare_mark_summary( $post_id );
 		$payload['caption']     = $caption;
 		$payload['transcript']  = (string) get_post_meta( $post_id, '_daymark_transcript', true );
 		$payload['media']       = $media;
 		$payload['targets']     = $target_list;
-		$payload['helpers']     = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : array();
+		$payload['helpers']     = $helper_list;
 		$payload['categories']  = array_map( 'intval', wp_get_post_categories( $post_id ) );
 		$payload['tags']        = wp_get_post_tags( $post_id, array( 'fields' => 'names' ) );
 		$payload['in_reply_to'] = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );

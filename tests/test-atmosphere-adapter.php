@@ -64,6 +64,64 @@ namespace {
 			$this->assertNotContains( 'atmosphere', Daymark_Publish_Helpers::controllable_ids() );
 		}
 
+		/** The wordpress.org copy (folder `atmosphere`) is offered, not only the GitHub one. */
+		public function test_offered_from_wordpress_org_folder() {
+			update_option( 'active_plugins', array( 'atmosphere/atmosphere.php' ) );
+
+			$this->assertContains( 'atmosphere', Daymark_Publish_Helpers::controllable_ids() );
+		}
+
+		/** The toggle reads as a Bluesky destination and starts on, as ATmosphere would. */
+		public function test_toggle_reads_as_bluesky_and_starts_on() {
+			$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+
+			$this->assertSame( 'Bluesky via ATmosphere', $helpers['atmosphere']['label'] );
+			$this->assertSame( 'ATmosphere', $helpers['atmosphere']['plugin'] );
+			$this->assertSame( 'Bluesky', $helpers['atmosphere']['network'] );
+			$this->assertTrue( $helpers['atmosphere']['default'] );
+		}
+
+		/** The Publish screen names Bluesky only while ATmosphere would share, tied to its toggle. */
+		public function test_reach_names_bluesky_tied_to_the_toggle() {
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+			$this->assertContains(
+				array(
+					'label'  => 'Bluesky',
+					'helper' => 'atmosphere',
+				),
+				Daymark_Routes::build_app_config()['reach']
+			);
+
+			$GLOBALS['daymark_test_atmo_autopub'] = false;
+			$this->assertNotContains( 'atmosphere', wp_list_pluck( Daymark_Routes::build_app_config()['reach'], 'helper' ) );
+		}
+
+		/** Switching the toggle off skips Bluesky for that Mark only. */
+		public function test_switching_off_skips_bluesky_for_that_mark_only() {
+			update_option( 'active_plugins', array( 'atmosphere/atmosphere.php' ) );
+			wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+			Daymark_Publish_Helpers::register_adapters();
+
+			$publisher = new Daymark_Publisher();
+			$off       = (int) $publisher->publish(
+				array(
+					'caption'         => 'Not to Bluesky',
+					'publish_helpers' => array(),
+				)
+			);
+			$on        = (int) $publisher->publish(
+				array(
+					'caption'         => 'To Bluesky',
+					'publish_helpers' => array( 'atmosphere' ),
+				)
+			);
+
+			$this->assertSame( 'publish', get_post_status( $off ) );
+			$this->assertSame( '1', (string) get_post_meta( $off, 'atmosphere_disabled', true ) );
+			$this->assertSame( '', (string) get_post_meta( $on, 'atmosphere_disabled', true ) );
+		}
+
 		private function publish_daymark_with_selection( array $selection ): int {
 			$post_id = (int) self::factory()->post->create(
 				array(

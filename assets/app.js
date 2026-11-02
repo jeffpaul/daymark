@@ -620,7 +620,9 @@
 		// this session, so going Back and Next again keeps changes unless
 		// the type itself changed.
 		defaultsAppliedFor: null,
-		helpers: [], // enabled controllable third-party publishing helper ids
+		// Enabled controllable third-party publishing helper ids. Each starts
+		// where its plugin would land on its own (see defaultHelpers()).
+		helpers: defaultHelpers(),
 		offlineQueueId: null, // IndexedDB id while this composition is queued offline (see submitOrQueue())
 	};
 
@@ -1703,6 +1705,15 @@
 	// clobbering whatever the composer is doing now.
 	let composerGeneration = 0;
 
+	// The controllable helpers whose toggle starts on for a new Mark: the
+	// ones whose plugin shares every post unless told not to (ATmosphere).
+	// A Mark that never recorded a choice starts here too, so publishing
+	// without touching a toggle leaves each plugin where it would land.
+	function defaultHelpers() {
+		const helpers = Array.isArray(config.controllableHelpers) ? config.controllableHelpers : [];
+		return helpers.filter((helper) => helper && helper.default).map((helper) => helper.id);
+	}
+
 	function resetComposer() {
 		composerGeneration += 1;
 		clearTimeout(autosaveState.timer);
@@ -1741,7 +1752,7 @@
 		state.editing = null;
 		state.resumed = false;
 		state.defaultsAppliedFor = null;
-		state.helpers = [];
+		state.helpers = defaultHelpers();
 		state.offlineQueueId = null;
 	}
 
@@ -3319,7 +3330,7 @@
 		state.transcriptEdited = false;
 		state.targets = Array.isArray(payload.targets) ? payload.targets.slice() : [];
 		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
-		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : [];
+		state.helpers = Array.isArray(payload.helpers) ? payload.helpers.slice() : defaultHelpers();
 		state.tags = Array.isArray(payload.tags) ? payload.tags.slice() : [];
 		// Quiet metadata capture: this session's original signals travel
 		// with the queued payload — restore them rather than re-resolving
@@ -3647,7 +3658,7 @@
 		// has to start from what the draft already has.
 		state.tags = Array.isArray(mark.tags) ? mark.tags.map((t) => String(t)) : [];
 		state.tagsAutoSuggested = false;
-		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : [];
+		state.helpers = Array.isArray(mark.helpers) ? mark.helpers.slice() : defaultHelpers();
 		state.primaryType = state.editing.type;
 		// No cached title to show for a resumed draft — the chip falls back
 		// to the URL itself (see CreateScreen.render()).
@@ -13550,7 +13561,7 @@
 				? '' // populated below
 				: `<li class="daymark-dest daymark-dest--locked">
 					<span class="daymark-dest__row"><span class="daymark-dest__info">
-						<span class="daymark-recent__meta">${noDestinationsNote()}</span>
+						<span class="daymark-recent__meta" data-reach-note>${noDestinationsNote()}</span>
 					</span></span>
 				</li>`;
 
@@ -13594,8 +13605,11 @@
 				})
 				.join('');
 
-			// Controllable third-party helpers: publish through the plugin's
-			// own flow when toggled on (default off — opt-in).
+			// Controllable third-party helpers: the plugin shares this Mark
+			// through its own flow while the toggle is on. Each starts where
+			// the plugin would land on its own (see defaultHelpers()), and
+			// reads as a destination ("Bluesky via ATmosphere") when the
+			// plugin names the network it shares to.
 			const controllable = Array.isArray(config.controllableHelpers)
 				? config.controllableHelpers
 				: [];
@@ -13606,7 +13620,11 @@
 					<label class="daymark-dest__row" for="daymark-helper-${esc(helper.id)}">
 						<span class="daymark-dest__info">
 							<span class="daymark-dest__name">${esc(helper.label)}</span>
-							<span class="daymark-chip daymark-chip--muted">${esc(__('Via plugin', 'daymark'))}</span>
+							${
+								helper.network
+									? ''
+									: `<span class="daymark-chip daymark-chip--muted">${esc(__('Via plugin', 'daymark'))}</span>`
+							}
 						</span>
 						<span class="daymark-toggle">
 							<input type="checkbox" class="daymark-toggle__input" id="daymark-helper-${esc(
@@ -13614,11 +13632,17 @@
 							)}" data-helper="${esc(helper.id)}"${
 						state.helpers.includes(helper.id) ? ' checked' : ''
 					} aria-label="${esc(
-						sprintf(
-							/* translators: %s: helper plugin name */
-							__('Also publish through %s', 'daymark'),
-							helper.label
-						)
+						helper.network
+							? sprintf(
+									/* translators: %s: a destination such as "Bluesky via ATmosphere" */
+									__('Share to %s', 'daymark'),
+									helper.label
+							  )
+							: sprintf(
+									/* translators: %s: helper plugin name */
+									__('Also publish through %s', 'daymark'),
+									helper.label
+							  )
 					)}" />
 							<span class="daymark-toggle__track" aria-hidden="true"></span>
 						</span>
@@ -13954,6 +13978,11 @@
 					} else {
 						state.helpers = state.helpers.filter((h) => h !== id);
 					}
+					// "It also reaches Bluesky" follows the Bluesky toggle.
+					const reachNote = root.querySelector('[data-reach-note]');
+					if (reachNote) {
+						reachNote.innerHTML = noDestinationsNote();
+					}
 					scheduleAutosave();
 				});
 			});
@@ -14062,20 +14091,30 @@
 	// The Publish screen's note when no destination connector is installed.
 	// Your site is the destination; this says where a Mark also goes
 	// through an active federation plugin (config.reach), and, for someone
-	// who can set one up, links to the Connectors tab.
+	// who can set one up, links to the Connectors tab. An entry tied to a
+	// per-Mark toggle (Bluesky through ATmosphere) shows only while that
+	// toggle is on. A config cached before entries named their toggle
+	// lists plain labels.
 	function noDestinationsNote() {
-		const reach = Array.isArray(config.reach) ? config.reach : [];
+		const reach = (Array.isArray(config.reach) ? config.reach : []).map((entry) =>
+			typeof entry === 'string' ? { label: entry, helper: '' } : entry
+		);
+		const reaching = reach.filter(
+			(entry) => entry && entry.label && (!entry.helper || state.helpers.includes(entry.helper))
+		);
 		let text = __('Your site is the destination.', 'daymark');
-		if (reach.length) {
+		if (reaching.length) {
 			text +=
 				' ' +
 				sprintf(
 					/* translators: %s: a list such as "your fediverse followers, Bluesky" */
 					__('It also reaches %s.', 'daymark'),
-					reach.join(', ')
+					reaching.map((entry) => entry.label).join(', ')
 				);
 		}
 		let html = esc(text);
+		// Offer to set one up only when nothing could reach further, not
+		// when a toggle is just off for this Mark.
 		if (!reach.length && config.adminConnectorsUrl) {
 			html += ` <a href="${esc(config.adminConnectorsUrl)}">${esc(
 				__('Reach the fediverse and Bluesky', 'daymark')
