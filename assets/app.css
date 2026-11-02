@@ -456,10 +456,9 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
-/* Folded sections (foldSectionMarkup()): Categories and Tags on the
-   Publish screen, below the destinations, and the Reblog screen's Title.
-   Folded, the summary row shows the current value; tapping it opens the
-   picker or field. */
+/* Folded sections (foldSectionMarkup()): Categories and Tags under the
+   composer's caption, and the Reblog screen's Title. Folded, the summary
+   row shows the current value; tapping it opens the picker or field. */
 .daymark-publish-fold {
 	margin-block-start: var(--daymark-spacing-md);
 	border: 1px solid var(--daymark-border);
@@ -538,8 +537,9 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-secondary);
 }
 
-/* "Use site defaults" inside the Publish screen's remembered-choices note
-   (PublishScreen.refreshRememberedNote()): an inline text link that still
+/* "Use site defaults" inside a remembered-choices note (in the "Where
+   this goes" sheet and the Categories fold; see
+   PublishControls.refreshRememberedNote()): an inline text link that still
    meets the tap-target minimum. */
 .daymark-publish-subnote .daymark-btn--text {
 	padding: 0 var(--daymark-spacing-xs);
@@ -649,6 +649,110 @@ h2[tabindex='-1']:focus {
 	padding-bottom: calc(var(--daymark-spacing-md) + env(safe-area-inset-bottom, 0px));
 	background: var(--daymark-bg);
 	border-top: 1px solid var(--daymark-border);
+}
+
+/* The composer's bottom bar (CreateScreen): its status line, the "Where
+   this goes" row, then Save as draft and Publish side by side. */
+.daymark-actionbar--compose .daymark-status {
+	padding-bottom: 0;
+}
+
+/* The status line is empty unless something went wrong. Collapse it and
+   the gap after it, but keep it on the page so what it says is still
+   announced. The bar is anchored to the bottom, so a message grows it
+   upward and the buttons stay where they are. */
+.daymark-actionbar--compose .daymark-status:empty {
+	min-height: 0;
+	margin-block-end: calc(-1 * var(--daymark-spacing-sm));
+}
+
+/* Side by side; a long translation wraps Publish onto its own row
+   instead of squeezing both. */
+.daymark-actionbar__buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-actionbar__buttons .daymark-btn {
+	flex: 1 1 auto;
+	width: auto;
+	padding-inline: var(--daymark-spacing-md);
+}
+
+.daymark-actionbar__buttons .daymark-btn--primary {
+	flex-grow: 2;
+}
+
+/* "Where this goes" (PublishControls.whereBarMarkup()): Your site, which
+   is always included and opens the full list, then one chip for each
+   destination or publishing plugin that can take this Mark, tapped on or
+   off. An on chip also shows a check, so the state isn't color alone. */
+.daymark-where {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+}
+
+.daymark-where__site,
+.daymark-where__chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--daymark-spacing-xs);
+	min-height: var(--daymark-tap-min);
+	padding: 0 var(--daymark-spacing-md);
+	border: 1px solid var(--daymark-border);
+	border-radius: 999px;
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.daymark-where__site {
+	background: var(--daymark-surface);
+	color: var(--daymark-text-primary);
+}
+
+.daymark-where__site svg,
+.daymark-where__chip svg {
+	flex-shrink: 0;
+}
+
+.daymark-where__chip[aria-pressed="true"] {
+	background: var(--daymark-accent-wash);
+	border-color: var(--daymark-accent-light);
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-where__check {
+	display: none;
+}
+
+.daymark-where__chip[aria-pressed="true"] .daymark-where__check {
+	display: block;
+}
+
+/* The composer's slots for fields a type doesn't use (Title, Transcript,
+   Place, the media preview) are empty divs; without this each one adds a
+   gap above the folds below the caption. */
+.daymark-app--create .daymark-screen > div:empty {
+	display: none;
+}
+
+/* The composer's Categories and Tags, folded under the caption. */
+.daymark-composer-folds {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-composer-folds .daymark-publish-fold {
+	margin-block-start: 0;
 }
 
 /* --- Home footer: site nav + the launcher, in the thumb zone --- */
@@ -2894,14 +2998,6 @@ button.daymark-stat {
 	color: var(--daymark-text-secondary);
 }
 
-.daymark-typebadge {
-	display: flex;
-	align-items: center;
-	gap: var(--daymark-spacing-sm);
-	font-size: 14px;
-	color: var(--daymark-text-secondary);
-}
-
 /* --- AI Assist sheet --- */
 .daymark-sheet {
 	position: fixed;
@@ -3230,7 +3326,7 @@ button.daymark-stat {
 	flex-shrink: 0;
 }
 
-/* --- Publish: destination rows --- */
+/* --- "Where this goes" sheet: destination rows --- */
 .daymark-destlist {
 	list-style: none;
 	margin: 0;
@@ -3285,6 +3381,17 @@ button.daymark-stat {
 
 .daymark-dest__name {
 	font-weight: 600;
+}
+
+/* Your site's lock icon, on the text's baseline. */
+.daymark-dest__name svg {
+	vertical-align: -2px;
+}
+
+/* The sheet's body already spaces its parts. */
+.daymark-sheet__body .daymark-helpers-note,
+.daymark-sheet__body .daymark-publish-subnote {
+	margin: 0;
 }
 
 /* --- Toggle switch --- */
@@ -3895,8 +4002,8 @@ button.daymark-stat {
 }
 
 /* Home's own Timeline refresh status (e.g. "Updated just now") is only
- * ever shown briefly after a manual/pull-to-refresh — unlike Create/
- * Publish's own .daymark-status uses, which stay reserved to avoid
+ * ever shown briefly after a manual/pull-to-refresh — unlike other
+ * screens' own .daymark-status uses, which stay reserved to avoid
  * layout shift while a user is actively interacting with those screens,
  * this one sits empty the vast majority of the time. Collapsing it (and
  * the flex gap around it) when empty removes dead space between the

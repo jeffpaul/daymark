@@ -241,8 +241,8 @@ stubbed AT Protocol API — see the setup notes at the top of
 - **The deliberate Publish/Save-as-Draft tap never waits on the network.**
   `publishInBackground()`/`syncPendingMark()` in `assets/app.js` queue the
   Mark locally first (fast, local IndexedDB) and run the real request
-  afterward, in the background — `PublishScreen.publish()` navigates to
-  Success without awaiting it. This is deliberately queue-first, unlike
+  afterward, in the background — the composer's `PublishControls.publish()`
+  closes the composer without awaiting it. This is deliberately queue-first, unlike
   `submitOrQueue()` (network-first, offline-only fallback), which stays the
   right pattern for a background save nothing is waiting on — autosave and
   `flushOfflineQueue()`'s own retries keep using it unchanged. See CLAUDE.md's

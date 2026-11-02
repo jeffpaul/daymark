@@ -32,6 +32,8 @@ can't act on them.
 
 ### Changed
 
+- Publish now sits on the composer itself, so a Mark no longer needs a second "Where should this go?" screen. A "Where this goes" row shows your site and each destination as a switch you tap on or off, with the full list one tap away, and categories and tags are folded under the caption. ([#574](https://github.com/jeffpaul/daymark/pull/574))
+
 - Reblogs no longer wait for the connection: Publish takes you straight back to where you were, and a reblog made offline waits on this device and publishes once you're back online. The title, which most people leave as it is, is now folded under "Title". ([#572](https://github.com/jeffpaul/daymark/pull/572))
 
 - Publish and Save as draft now take you straight back to where you started, usually the Timeline with your new Mark on top, and a short message says "Published" (with View) or "Saved as draft." This replaces the separate Success screen; where a Mark went is still on its card's "Where this went" menu. ([#571](https://github.com/jeffpaul/daymark/pull/571))

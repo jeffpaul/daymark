@@ -366,8 +366,8 @@ class Daymark_Publish_Helpers {
 	}
 
 	/**
-	 * Active publishing-helper plugins as [{id, label}], for surfacing on
-	 * the publish screen. Awareness only.
+	 * Active publishing-helper plugins as [{id, label}], for surfacing in
+	 * the composer's "Where this goes" sheet. Awareness only.
 	 *
 	 * @return array<int, array<string, string>>
 	 */

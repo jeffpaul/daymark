@@ -9,7 +9,7 @@
  * and the daymark plugin active. Tests create posts titled "E2E ..." and do
  * not delete them — use a scratch site or clean up afterwards.
  *
- * No social connectors are required: Daymark publishes to "Your Site", and
+ * No social connectors are required: Daymark publishes to "Your site", and
  * it works with third-party publishing plugins via detection and per-Mark
  * toggles. The syndication-connector interface itself is covered by the
  * PHPUnit suite, not here.
@@ -204,6 +204,13 @@ function messageBar(page) {
 
 async function expectPublished(page, options) {
 	await expect(messageBar(page)).toContainText('Published.', options);
+}
+
+// The composer's "Where this goes" row starts with Your site, which opens a
+// sheet listing every destination and publishing plugin with its switch.
+async function openWhere(page) {
+	await page.locator('[data-where-open]').click();
+	await expect(page.locator('#daymark-where-title')).toBeFocused();
 }
 
 // Titles of the signed-in user's drafts on the site, read through the REST
@@ -1574,7 +1581,8 @@ test('on a touch screen the header refresh button stays hidden', async ({ page }
 });
 
 // Publish a note Mark to your own site and see it in the Notes view.
-// With nothing connected, "Your Site" is the only destination.
+// With nothing connected, "Your site" is the only destination. Publish is
+// on the composer itself: there is no second screen.
 test('note Mark publishes to your site and is findable via Search', async ({ page }) => {
 	const caption = `E2E note ${RUN_ID}`;
 
@@ -1583,11 +1591,17 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await openComposer(page);
 
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
-	// Your Site is always the destination; no social networks are offered
+	// Your site is always the destination; no social networks are offered
 	// unless a connector plugin registers one.
-	await expect(page.locator('.daymark-dest__name', { hasText: 'Your Site' })).toBeVisible();
+	const where = page.locator('[data-where-bar]');
+	await expect(where.locator('[data-where-open]')).toHaveText('Your site');
+	await expect(where.locator('[data-where-target]')).toHaveCount(0);
+	await openWhere(page);
+	const sheet = page.locator('.daymark-sheet:not([hidden])');
+	await expect(sheet.locator('.daymark-dest__name', { hasText: 'Your site' })).toBeVisible();
+	await sheet.locator('[data-sheet-done]').click();
+	await expect(where.locator('[data-where-open]')).toBeFocused();
 
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
@@ -1617,7 +1631,6 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	// on its own — skipping it entirely still succeeds.
 	await expect(composer.locator('#daymark-file-input')).toHaveCount(1);
 	await composer.locator('[data-checkin-place]').fill(place);
-	await page.locator('[data-action="next"]').click();
 
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
@@ -1652,7 +1665,6 @@ test('Checkin Mark keeps its type and Place field once a photo is attached', asy
 	await expect(page.locator('[data-type-badge]')).toHaveText('Check In');
 	await expect(composer.locator('[data-checkin-place]')).toBeVisible();
 
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -1733,7 +1745,6 @@ test('Timeline shows a start and end flourish once it has content', async ({ pag
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -1756,7 +1767,6 @@ test('Timeline groups same-day cards under a single "Today" header', async ({ pa
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -1778,10 +1788,9 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
-	// The picker renders folded, with the seeded categories inside; open
-	// it and pick "E2E Photos".
+	// The picker renders folded under the caption, with the seeded
+	// categories inside; open it and pick "E2E Photos".
 	const categoriesFold = page.locator('[data-fold="categories"]');
 	await expect(categoriesFold).not.toHaveAttribute('open', '');
 	await categoriesFold.locator('summary').click();
@@ -1807,7 +1816,6 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E category memory ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 	const rememberedPhotos = page
 		.locator('.daymark-dest')
 		.filter({ hasText: 'E2E Photos' })
@@ -1815,8 +1823,8 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await expect(rememberedPhotos).toBeChecked();
 });
 
-// Ticks exactly the named categories in the Publish screen's open
-// Categories fold and unticks the rest. The rows sit under the sticky
+// Ticks exactly the named categories in the composer's open Categories
+// fold and unticks the rest. The rows sit under the sticky
 // action bar, so each is scrolled clear and toggled through its visible
 // label, as in the test above.
 async function setCategories(page, names) {
@@ -1850,7 +1858,6 @@ test('categories: unticking every category sticks, and the next Mark starts from
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', travelCaption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-fold="categories"] summary').click();
 	await setCategories(page, ['E2E Travel']);
 	await page.locator('[data-action="publish"]').click();
@@ -1859,7 +1866,6 @@ test('categories: unticking every category sticks, and the next Mark starts from
 	// No reload: the next Note starts from the choice the last one saved.
 	await openComposer(page);
 	await page.fill('#daymark-caption', noneCaption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-fold="categories"] summary').click();
 	await expect(
 		page.locator('[data-fold="categories"] .daymark-dest').filter({ hasText: 'E2E Travel' }).locator('[data-category]')
@@ -1886,19 +1892,17 @@ test('categories: unticking every category sticks, and the next Mark starts from
 	// "None" is what the next Note starts from, now and after a reload.
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E category none again ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 	await expect(checkedCategories).toHaveCount(0);
 
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E category none remembered ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 	await expect(checkedCategories).toHaveCount(0);
 });
 
-// Tags: the Publish screen's folded Tags section shows the current tags
-// and lets the person add one, which the published Mark keeps.
-test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }) => {
+// Tags: the composer's folded Tags section, under the caption, shows the
+// current tags and lets the person add one, which the published Mark keeps.
+test('tags: the composer Tags section adds a tag to the Mark', async ({ page }) => {
 	const caption = `E2E tags ${RUN_ID}`;
 	const tag = `e2e-tag-${RUN_ID}`;
 
@@ -1906,7 +1910,6 @@ test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
 	const tagsFold = page.locator('[data-fold="tags"]');
 	await expect(tagsFold).not.toHaveAttribute('open', '');
@@ -1924,9 +1927,9 @@ test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }
 	await expect(row).toContainText(tag);
 });
 
-// Image Mark via the file picker: per-image alt field, correct article
-// on the publish screen, and it lands in the images view.
-test('image Mark: alt field, correct article, findable via Search', async ({ page }) => {
+// Image Mark via the file picker: per-image alt field, published straight
+// from the composer (no Next), and it lands in the images view.
+test('image Mark: alt field, publishes from the composer, findable via Search', async ({ page }) => {
 	const caption = `E2E image ${RUN_ID}`;
 
 	await loginAs(page);
@@ -1942,11 +1945,9 @@ test('image Mark: alt field, correct article, findable via Search', async ({ pag
 	await altField.fill(`E2E alt ${RUN_ID}`);
 
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
-	// Grammatical article: "an Image", not "a Image".
-	await expect(page.locator('.daymark-typebadge')).toContainText('Publishing an Image Mark');
-
+	// A photo post needs no Next: Publish is on the composer.
+	await expect(page.locator('[data-action="next"]')).toHaveCount(0);
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -1981,7 +1982,6 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 	await expect(altField).toBeVisible();
 	await altField.fill(`E2E alt ${RUN_ID}`);
 	await page.fill('#daymark-caption', imageCaption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -2060,7 +2060,6 @@ test('drag-and-drop: dropping an image onto the picker attaches it', async ({ pa
 	await altField.fill(`E2E alt ${RUN_ID}`);
 
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 });
@@ -2241,7 +2240,6 @@ test('notifications show replies to a Mark', async ({ page }) => {
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -3092,7 +3090,6 @@ test('notifications: reply icon expands an inline box and submits', async ({ pag
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -3180,7 +3177,6 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(messageBar(page)).toContainText('Saved as draft.');
 	// The draft is queued on this device and sent in the background; wait
@@ -3204,7 +3200,6 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.getByText('Edit Draft')).toBeVisible();
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
 	await page.fill('#daymark-caption', finished);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -3216,9 +3211,9 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 });
 
 // One-tap "Publish" from the Drafts list (issue #265): a draft that already
-// has a caption skips the composer entirely — no #create, no "Next" tap —
-// straight to #publish and out.
-test('draft → publish continuation: Publish from the ⋯ menu skips the composer', async ({
+// has a caption opens in the composer with focus on its Publish button, so
+// one more tap publishes it.
+test('draft → publish continuation: Publish from the ⋯ menu focuses the composer Publish button', async ({
 	page,
 }) => {
 	const caption = `E2E quickpublish ${RUN_ID}`;
@@ -3227,7 +3222,6 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(messageBar(page)).toContainText('Saved as draft.');
 	// The draft is queued on this device and sent in the background; wait
@@ -3241,10 +3235,11 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await menu.locator('[data-menu-toggle]').click();
 	await menu.locator('[data-menu-publish]').click();
 
-	// Lands directly on the Publish screen, never touching #create.
-	await expect(page).toHaveURL(/#publish$/);
-	await expect(page.getByText('Edit Draft')).toHaveCount(0);
-	await page.locator('[data-action="publish"]').click();
+	// Opens the draft in the composer with Publish focused, one tap away.
+	await expect(page).toHaveURL(/#create$/);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('[data-action="publish"]')).toBeFocused();
+	await page.keyboard.press('Enter');
 	await expectPublished(page);
 
 	await page.goto('/daymark/me');
@@ -3262,7 +3257,6 @@ test('publish goes back to where the composer was opened, and View opens the new
 	await page.goto('/daymark/search');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 
 	await expect(page).toHaveURL(/#search$/);
@@ -3355,7 +3349,6 @@ test('a Mark published while Home is loading stays on top of the Timeline', asyn
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
 	let markTimelineFetched;
 	const timelineFetched = new Promise((resolve) => {
@@ -3421,7 +3414,6 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 	// Resuming shows the autosaved caption, and the draft publishes normally.
 	await row.click();
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 });
@@ -3447,7 +3439,6 @@ test('offline: composing while offline queues locally and syncs when back online
 
 	await page.context().setOffline(true);
 	try {
-		await page.locator('[data-action="next"]').click();
 		await page.locator('[data-action="save-draft"]').click();
 		await expect(messageBar(page)).toContainText(
 			"Saved on this device. It moves to Drafts when you're back online."
@@ -3587,7 +3578,6 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 
 		await openComposer(page, 'note');
 		await page.fill('#daymark-caption', caption);
-		await page.locator('[data-action="next"]').click();
 		await page.locator('[data-action="save-draft"]').click();
 		await expect(messageBar(page)).toContainText(
 			"Saved on this device. It moves to Drafts when you're back online."
@@ -3626,7 +3616,6 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -3686,7 +3675,6 @@ test('publish is optimistic: back on the Timeline at once, the real card once th
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E optimistic ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 
 	// Hold the create request so the "still uploading" window is
 	// observable — long enough to assert against, short enough to keep the
@@ -3755,7 +3743,6 @@ test('publish does not re-upload a file whose autosave is still in flight', asyn
 	});
 
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image-2.png');
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 
 	await expectPublished(page, { timeout: 10000 });
@@ -3872,7 +3859,6 @@ test('an upload carries on after the connection drops, without starting the file
 	expect(ranges.filter((range) => range.startsWith('bytes 0-'))).toHaveLength(1);
 
 	await page.unroute('**/daymark/v1/uploads/*');
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page, { timeout: 15000 });
 
@@ -3922,7 +3908,6 @@ test('a published Mark whose upload was interrupted by a reload resumes partway'
 	});
 	await firstPart;
 
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expect(messageBar(page)).toContainText('Publishing…');
 	// Give the progress record a moment to be written.
@@ -4040,7 +4025,6 @@ test("a queued draft that fails says Couldn't save draft, and reopening it drops
 	await page.fill('#daymark-caption', caption);
 	const release = await holdUploadStart(page);
 	await page.setInputFiles('#daymark-file-input', REFUSED_FILE);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page).toHaveURL(/#home$/);
 	await expect(messageBar(page)).toContainText('Saved as draft.');
@@ -4053,7 +4037,6 @@ test("a queued draft that fails says Couldn't save draft, and reopening it drops
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
 	await expect(page.locator('[data-create-status]')).toHaveText(REFUSED_MESSAGE);
 
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
 	await expect(page).toHaveURL(/#home$/);
 	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0, {
@@ -4347,34 +4330,41 @@ test('launcher animation respects prefers-reduced-motion', async ({ page }) => {
 });
 
 // Awareness note: when a third-party publishing plugin is active, the
-// publish screen tells the user their Mark will also go out that way.
-// (The E2E publish-helper mu-plugin registers a fake "Test Publicize".)
-test('publish screen notes active third-party publishing plugins', async ({ page }) => {
+// "Where this goes" sheet tells the user their Mark will also go out that
+// way. (The E2E publish-helper mu-plugin registers a fake "Test
+// Publicize".)
+test('the Where this goes sheet notes active third-party publishing plugins', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E helpers ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
+	await openWhere(page);
 
-	const note = page.locator('.daymark-helpers-note');
+	const note = page.locator('.daymark-sheet .daymark-helpers-note');
 	await expect(note).toBeVisible();
 	await expect(note).toContainText('Test Publicize');
 });
 
-// A controllable third-party helper gets its own per-Mark toggle, and
-// the selection is sent with the publish request.
+// A controllable third-party helper gets its own per-Mark chip in the
+// "Where this goes" row, the sheet's switch shows the same choice, and the
+// selection is sent with the publish request.
 test('controllable helper: per-Mark toggle appears and is sent on publish', async ({ page }) => {
 	await loginAs(page);
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E helper ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 
-	const toggle = page.locator('[data-helper="daymark-e2e-helper"]');
-	await expect(toggle).toBeVisible();
-	await expect(toggle).not.toBeChecked(); // opt-in: default off
-	await toggle.click({ force: true });
-	await expect(toggle).toBeChecked();
+	const chip = page.locator('[data-where-helper="daymark-e2e-helper"]');
+	await expect(chip).toBeVisible();
+	await expect(chip).toHaveAccessibleName('Also publish through E2E Helper');
+	await expect(chip).toHaveAttribute('aria-pressed', 'false'); // opt-in: default off
+	await chip.click();
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
+
+	await openWhere(page);
+	await expect(page.locator('[data-helper="daymark-e2e-helper"]')).toBeChecked();
+	await page.keyboard.press('Escape');
+	await expect(page.locator('[data-where-open]')).toBeFocused();
 
 	// Capture the create request body to confirm the selection is sent.
 	let sentBody = '';
@@ -4419,8 +4409,14 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E network helper ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
 
+	// The row's chip names the network and starts on.
+	const chip = page.locator('[data-where-helper="daymark-e2e-network"]');
+	await expect(chip).toHaveText('E2E Network');
+	await expect(chip).toHaveAccessibleName('Share to E2E Network via E2E Plugin');
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
+
+	await openWhere(page);
 	const toggle = page.locator('[data-helper="daymark-e2e-network"]');
 	await expect(toggle).toBeChecked();
 	await expect(page.locator('label[for="daymark-helper-daymark-e2e-network"]')).toContainText(
@@ -4432,8 +4428,16 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	await toggle.click({ force: true });
 	await expect(toggle).not.toBeChecked();
 	await expect(note).not.toContainText('E2E Network');
-	await toggle.click({ force: true });
+
+	// The chip follows the sheet's switch, and turning it back on from the
+	// row brings the note back.
+	await page.locator('[data-sheet-done]').click();
+	await expect(chip).toHaveAttribute('aria-pressed', 'false');
+	await chip.click();
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
+	await openWhere(page);
 	await expect(note).toContainText('It also reaches E2E Network.');
+	await page.keyboard.press('Escape');
 
 	// The last save of this Mark (an autosave may have created it first,
 	// making Publish an update) carries the selection.
@@ -4468,17 +4472,22 @@ test('connected connector: destination toggle publishes and is remembered per ty
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 
-	// Offered as a connected destination, initially unchecked (the fake
-	// connector isn't a model default for notes).
+	// Offered as a connected destination, initially off (the fake
+	// connector isn't a model default for notes): a chip in the row, and a
+	// switch with its status in the sheet.
+	const chip = page.locator('[data-where-target="e2e-net"]');
+	await expect(chip).toHaveText('E2E Network');
+	await expect(chip).toHaveAttribute('aria-pressed', 'false');
+
+	await openWhere(page);
 	const toggle = page.locator('[data-connector="e2e-net"]');
-	await expect(toggle).toBeVisible();
 	await expect(page.getByText('Connected · E2E')).toBeVisible();
 	await expect(toggle).not.toBeChecked();
-
 	await toggle.click({ force: true });
 	await expect(toggle).toBeChecked();
+	await page.keyboard.press('Escape');
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
 
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
@@ -4497,8 +4506,7 @@ test('connected connector: destination toggle publishes and is remembered per ty
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E connector memory ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
-	await expect(page.locator('[data-connector="e2e-net"]')).toBeChecked();
+	await expect(page.locator('[data-where-target="e2e-net"]')).toHaveAttribute('aria-pressed', 'true');
 });
 
 // Unticking every destination sends the Mark to your site only. The app
@@ -4508,7 +4516,7 @@ test('connected connector: destination toggle publishes and is remembered per ty
 test('connected connector: unticking every destination publishes to your site only', async ({ page }) => {
 	const onCaption = `E2E connector on ${RUN_ID}`;
 	const offCaption = `E2E connector off ${RUN_ID}`;
-	const toggle = page.locator('[data-connector="e2e-net"]');
+	const chip = page.locator('[data-where-target="e2e-net"]');
 
 	await loginAs(page);
 	await page
@@ -4517,21 +4525,19 @@ test('connected connector: unticking every destination publishes to your site on
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', onCaption);
-	await page.locator('[data-action="next"]').click();
-	if (!(await toggle.isChecked())) {
-		await toggle.click({ force: true });
+	if ('true' !== (await chip.getAttribute('aria-pressed'))) {
+		await chip.click();
 	}
-	await expect(toggle).toBeChecked();
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
 	// No reload: the next Note starts with the destination ticked. Untick it.
 	await openComposer(page);
 	await page.fill('#daymark-caption', offCaption);
-	await page.locator('[data-action="next"]').click();
-	await expect(toggle).toBeChecked();
-	await toggle.click({ force: true });
-	await expect(toggle).not.toBeChecked();
+	await expect(chip).toHaveAttribute('aria-pressed', 'true');
+	await chip.click();
+	await expect(chip).toHaveAttribute('aria-pressed', 'false');
 	await page.locator('[data-action="publish"]').click();
 
 	// The site kept the empty list: the first Mark has the destination,
@@ -4550,14 +4556,12 @@ test('connected connector: unticking every destination publishes to your site on
 
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E connector off again ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
-	await expect(toggle).not.toBeChecked();
+	await expect(chip).toHaveAttribute('aria-pressed', 'false');
 
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E connector off remembered ${RUN_ID}`);
-	await page.locator('[data-action="next"]').click();
-	await expect(toggle).not.toBeChecked();
+	await expect(chip).toHaveAttribute('aria-pressed', 'false');
 });
 
 // Section pages render inside the theme with no Daymark-controlled chrome
@@ -4597,7 +4601,6 @@ test('your own Mark shows engagement as text and is labelled You', async ({ page
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 
@@ -4675,7 +4678,6 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	await page.goto('/daymark');
 	await openComposer(page);
 	await page.fill('#daymark-caption', caption);
-	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
 

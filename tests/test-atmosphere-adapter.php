@@ -81,7 +81,7 @@ namespace {
 			$this->assertTrue( $helpers['atmosphere']['default'] );
 		}
 
-		/** The Publish screen names Bluesky only while ATmosphere would share, tied to its toggle. */
+		/** The "Where this goes" sheet names Bluesky only while ATmosphere would share, tied to its toggle. */
 		public function test_reach_names_bluesky_tied_to_the_toggle() {
 			wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
 

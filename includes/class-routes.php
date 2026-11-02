@@ -650,7 +650,7 @@ class Daymark_Routes {
 			$type_defaults[ $type ] = array_values(
 				array_intersect( $publisher->get_effective_defaults( $type ), $visible_ids )
 			);
-			// The site defaults alone, so the Publish screen can tell when a
+			// The site defaults alone, so the composer can tell when a
 			// remembered choice differs from them and offer to switch back.
 			$site_defaults[ $type ] = array_values(
 				array_intersect( Daymark_Settings::destination_defaults( $type ), $visible_ids )
@@ -771,8 +771,8 @@ class Daymark_Routes {
 				'available' => Daymark_Speech::available(),
 			),
 			// Where a published Mark also reaches through an active
-			// federation plugin, for the Publish screen's "Your site is the
-			// destination" note.
+			// federation plugin, for the "Where this goes" sheet's "Your site is
+			// the destination" note.
 			'reach'                  => self::federation_reach(),
 			// Whether lists show each post as just its title and thumbnail.
 			'compactTimeline'        => Daymark_Settings::compact_timeline(),
@@ -843,8 +843,8 @@ class Daymark_Routes {
 
 	/**
 	 * Where a published Mark also goes through an active federation plugin
-	 * (ActivityPub, ATmosphere), in display order, for the Publish screen's
-	 * "Your site is the destination" note. Each entry is [label, helper]:
+	 * (ActivityPub, ATmosphere), in display order, for the "Where this goes"
+	 * sheet's "Your site is the destination" note. Each entry is [label, helper]:
 	 * `helper` is the id of the per-Mark toggle the entry depends on, or ''
 	 * when nothing in the app turns it off, so the note can follow the
 	 * toggle.
