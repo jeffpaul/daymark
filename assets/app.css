@@ -2522,8 +2522,10 @@ button.daymark-stat {
    media attached yet — but as a plain <div>, an empty one still counted as
    its own flex item in .daymark-screen's column, costing a full gap above
    the picker below it for no visible content. Matches the same :empty
-   precedent .daymark-autosave-status already established. */
-[data-existing-media-slot]:empty {
+   precedent .daymark-autosave-status already established. The Place
+   slot is the same: empty on every composer but a Check In. */
+[data-existing-media-slot]:empty,
+[data-place-slot]:empty {
 	display: none;
 }
 
@@ -3718,6 +3720,60 @@ button.daymark-stat {
 .daymark-notif-undo .daymark-btn--text {
 	width: auto;
 	color: inherit;
+}
+
+/* The message bar: one short result near the bottom of the screen, such
+   as "Published. View" after Publish closes the composer or "Saved to
+   Drafts. Discard" after leaving it. assets/app.js adds it to the page
+   once and sets --daymark-msgbar-offset to the height of whichever bottom
+   bar is on screen (positionMessageBar()), so it sits just above the
+   bottom nav or an action bar. Below sheets (z-index 100), like the
+   Notifications Undo bar. */
+.daymark-msgbar {
+	position: fixed;
+	inset-inline: var(--daymark-spacing-md);
+	bottom: calc(max(var(--daymark-msgbar-offset, 0px), env(safe-area-inset-bottom, 0px)) + var(--daymark-spacing-md));
+	z-index: 40;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-sm);
+	max-width: 560px;
+	min-height: var(--daymark-tap-min);
+	margin: 0 auto;
+	padding-block: 0;
+	padding-inline-start: var(--daymark-spacing-md);
+	padding-inline-end: var(--daymark-spacing-sm);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-text-primary);
+	color: var(--daymark-bg);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+	font-size: 15px;
+	transition: bottom 0.2s ease;
+}
+
+.daymark-msgbar.is-error {
+	background: var(--daymark-danger-bg);
+	color: #fff;
+}
+
+.daymark-msgbar__text {
+	flex: 1;
+	min-width: 0;
+	padding-block: var(--daymark-spacing-sm);
+}
+
+.daymark-msgbar .daymark-btn--text {
+	flex-shrink: 0;
+	width: auto;
+	color: inherit;
+	font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.daymark-msgbar {
+		transition: none;
+	}
 }
 
 .daymark-clamp {
