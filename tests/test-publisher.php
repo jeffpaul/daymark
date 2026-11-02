@@ -1856,7 +1856,9 @@ class Test_Publisher extends WP_UnitTestCase {
 	 * class.
 	 */
 	public function test_simple_location_bridge_is_a_no_op_when_plugin_absent() {
-		$this->assertFalse( class_exists( 'Geo_Data' ), 'Precondition: Simple Location is not active in this test run.' );
+		if ( class_exists( 'Geo_Data' ) ) {
+			$this->markTestSkipped( 'A Geo_Data stub was already defined earlier in this process.' );
+		}
 
 		$publisher = new Daymark_Publisher();
 		$post_id   = $publisher->publish(
@@ -2055,15 +2057,50 @@ class Test_Publisher extends WP_UnitTestCase {
 			eval(
 				'class Sloc_Weather_Data {
 					public static $calls = array();
+					public static $deletes = array();
 					public static function set_object_weatherdata( $type, $id, $key, $weather ) {
 						self::$calls[] = func_get_args();
+						return true;
+					}
+					public static function delete_object_weatherdata( $type, $id, $key ) {
+						self::$deletes[] = func_get_args();
 						return true;
 					}
 				}'
 			);
 		}
 
-		Sloc_Weather_Data::$calls = array();
+		Sloc_Weather_Data::$calls   = array();
+		Sloc_Weather_Data::$deletes = array();
+	}
+
+	/**
+	 * Define a recording stand-in for Simple Location's `Geo_Data` (once per
+	 * process, like the weather stub above) and clear its logs.
+	 *
+	 * @return void
+	 */
+	private function define_geo_data_stub(): void {
+		if ( ! class_exists( 'Geo_Data' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only stub class; no user input.
+			eval(
+				'class Geo_Data {
+					public static $calls = array();
+					public static $deletes = array();
+					public static function set_geodata( $type, $id, $key, $geodata ) {
+						self::$calls[] = func_get_args();
+						return true;
+					}
+					public static function delete_geodata( $type, $id, $key ) {
+						self::$deletes[] = func_get_args();
+						return true;
+					}
+				}'
+			);
+		}
+
+		Geo_Data::$calls   = array();
+		Geo_Data::$deletes = array();
 	}
 
 	/**
@@ -2227,5 +2264,219 @@ class Test_Publisher extends WP_UnitTestCase {
 			),
 			Sloc_Weather_Data::$calls[0][3]
 		);
+	}
+
+	/**
+	 * A place belongs to a Check In: one sent with any other type of Mark is
+	 * not stored, and on its own it doesn't count as content.
+	 */
+	public function test_place_name_dropped_for_non_checkin_mark() {
+		$publisher = new Daymark_Publisher();
+
+		$empty = $publisher->publish(
+			array(
+				'primary_type' => 'note',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+		$this->assertWPError( $empty );
+		$this->assertSame( 'daymark_empty', $empty->get_error_code() );
+
+		$post_id = (int) $publisher->publish(
+			array(
+				'caption'      => 'Coffee time',
+				'primary_type' => 'note',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_name', true ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Coffee time, again',
+				'primary_type' => 'note',
+				'place_name'   => 'Blue Bottle Coffee',
+			)
+		);
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_name', true ) );
+	}
+
+	/**
+	 * Turning a Check In into another kind of Mark (the composer's Place
+	 * switch, turned off) removes its place, location, and weather, and
+	 * Simple Location's copies of them.
+	 */
+	public function test_checkin_turned_into_note_clears_where_it_was() {
+		$this->define_geo_data_stub();
+		$this->define_sloc_weather_stub();
+
+		$filter    = $this->mock_open_meteo( 1 );
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Coffee time',
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'location_lat' => 37.7749,
+				'location_lng' => -122.4194,
+				'status'       => 'draft',
+			)
+		);
+		remove_filter( 'pre_http_request', $filter, 10 );
+
+		$this->assertNotEmpty( get_post_meta( $post_id, '_daymark_weather', true ), 'Precondition: the Check In captured weather.' );
+		$this->assertCount( 1, Geo_Data::$calls, 'Precondition: the location was bridged.' );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Coffee time',
+				'primary_type' => 'note',
+				'status'       => 'draft',
+			)
+		);
+
+		$this->assertSame( 'note', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		foreach ( array( '_daymark_place_name', '_daymark_location', '_daymark_weather' ) as $key ) {
+			$this->assertSame( '', get_post_meta( $post_id, $key, true ), $key );
+		}
+		$this->assertStringNotContainsString( 'p-location', get_post( $post_id )->post_content );
+		$this->assertSame(
+			array(
+				array( 'post', $post_id, 'latitude' ),
+				array( 'post', $post_id, 'longitude' ),
+				array( 'post', $post_id, 'address' ),
+			),
+			Geo_Data::$deletes
+		);
+		$this->assertSame(
+			array(
+				array( 'post', $post_id, 'temperature' ),
+				array( 'post', $post_id, 'summary' ),
+				array( 'post', $post_id, 'code' ),
+				array( 'post', $post_id, 'provider' ),
+			),
+			Sloc_Weather_Data::$deletes
+		);
+	}
+
+	/**
+	 * A Check In with no location of its own leaves Simple Location's data
+	 * alone when it stops being a Check In, since no bridge wrote any.
+	 */
+	public function test_checkin_without_location_leaves_simple_location_data_alone() {
+		$this->define_geo_data_stub();
+		$this->define_sloc_weather_stub();
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Blue Bottle Coffee',
+				'status'       => 'draft',
+			)
+		);
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Coffee time',
+				'primary_type' => 'note',
+				'status'       => 'draft',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_name', true ) );
+		$this->assertSame( array(), Geo_Data::$deletes );
+		$this->assertSame( array(), Sloc_Weather_Data::$deletes );
+	}
+
+	/**
+	 * A draft's location can reach the site after its first save (a Note
+	 * turned into a Check In, or a location that came back after the first
+	 * autosave). Weather is fetched then, once: later saves that send the
+	 * location again don't ask again.
+	 */
+	public function test_weather_fetched_once_when_checkin_location_arrives_later() {
+		$requests = 0;
+		$counter  = static function ( $preempt, $args, $url ) use ( &$requests ) {
+			unset( $args );
+			if ( false !== strpos( $url, 'api.open-meteo.com' ) ) {
+				++$requests;
+			}
+			return $preempt;
+		};
+		add_filter( 'pre_http_request', $counter, 5, 3 );
+		$filter = $this->mock_open_meteo( 1 );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Morning walk',
+				'primary_type' => 'note',
+				'status'       => 'draft',
+			)
+		);
+
+		$checkin = array(
+			'caption'      => 'Morning walk',
+			'primary_type' => 'checkin',
+			'place_name'   => 'Golden Gate Park',
+			'location_lat' => 37.7694,
+			'location_lng' => -122.4862,
+			'status'       => 'draft',
+		);
+		$publisher->update( $post_id, $checkin );
+		$publisher->update( $post_id, $checkin );
+
+		remove_filter( 'pre_http_request', $filter, 10 );
+		remove_filter( 'pre_http_request', $counter, 5 );
+
+		$this->assertSame( 1, $requests );
+		$this->assertSame( 'checkin', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertSame( 'Golden Gate Park', get_post_meta( $post_id, '_daymark_place_name', true ) );
+
+		$weather = json_decode( (string) get_post_meta( $post_id, '_daymark_weather', true ), true );
+		$this->assertSame( 21.5, $weather['temperature'] );
+	}
+
+	/**
+	 * An edit that names no type keeps a Check In a Check In, even with a
+	 * photo that would otherwise make it a photo Mark.
+	 */
+	public function test_checkin_with_photo_keeps_type_when_edit_names_none() {
+		$fixture = __DIR__ . '/e2e/fixtures/test-image.png';
+		$tmp     = wp_tempnam( 'daymark-checkin-photo-' ) . '.png';
+		copy( $fixture, $tmp );
+
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'primary_type' => 'checkin',
+				'place_name'   => 'Leaning Tower of Pisa',
+			),
+			array(
+				'files' => array(
+					'name'     => 'pisa.png',
+					'type'     => 'image/png',
+					'tmp_name' => $tmp,
+					'error'    => UPLOAD_ERR_OK,
+					'size'     => filesize( $tmp ),
+				),
+			)
+		);
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'    => 'See, it leans.',
+				'place_name' => 'Leaning Tower of Pisa',
+			)
+		);
+
+		$this->assertSame( 'checkin', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertSame( 'Leaning Tower of Pisa', get_post_meta( $post_id, '_daymark_place_name', true ) );
+		$this->assertStringContainsString( 'p-location', get_post( $post_id )->post_content );
 	}
 }

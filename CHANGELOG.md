@@ -32,6 +32,8 @@ can't act on them.
 
 ### Changed
 
+- Every Mark you write now has a small "Add" bar under the caption: Photo or video, Audio, and Place. A Note can take a photo or a place without starting over. Turning Place on makes the Mark a Check In, and turning it off again removes the place and location it saved. ([#575](https://github.com/jeffpaul/daymark/pull/575))
+
 - Publish now sits on the composer itself, so a Mark no longer needs a second "Where should this go?" screen. A "Where this goes" row shows your site and each destination as a switch you tap on or off, with the full list one tap away, and categories and tags are folded under the caption. ([#574](https://github.com/jeffpaul/daymark/pull/574))
 
 - Reblogs no longer wait for the connection: Publish takes you straight back to where you were, and a reblog made offline waits on this device and publishes once you're back online. The title, which most people leave as it is, is now folded under "Title". ([#572](https://github.com/jeffpaul/daymark/pull/572))
@@ -54,6 +56,7 @@ can't act on them.
 
 ### Fixed
 
+- A Check In saved on this device while offline now reopens as a Check In with its place, instead of as a Note. A Check In whose location arrives after it was first saved now gets its weather too. ([#575](https://github.com/jeffpaul/daymark/pull/575))
 - A file the site won't take (the wrong type, or too large) now leaves the composer right away, with the reason. Before, leaving the composer with that file in it turned your unsent draft into a "Couldn't publish" card; now the draft saves its text. A draft that fails to save now says "Couldn't save draft" instead of "Couldn't publish". ([#570](https://github.com/jeffpaul/daymark/pull/570))
 - Unticking every destination or category on the Publish screen is now kept. Before, the site treated an empty choice as no choice and used your usual destinations and categories anyway. And the next Mark of the same type now starts from the choice you just saved, instead of the one from when you opened the app. ([#569](https://github.com/jeffpaul/daymark/pull/569))
 - The Publish screen now shows a "Bluesky via ATmosphere" switch wherever ATmosphere shares your posts, and it starts on, so a Mark goes to Bluesky unless you turn it off for that Mark. Before, the switch was missing when ATmosphere came from wordpress.org, and where it did show, it started off and kept that Mark off Bluesky. ([#568](https://github.com/jeffpaul/daymark/pull/568))

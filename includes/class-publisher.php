@@ -465,6 +465,17 @@ class Daymark_Publisher {
 		$place_name = $this->resolve_place_name( $data );
 		$location   = $this->resolve_location( $data );
 
+		// A place belongs to a Check In, and a Mark is only ever a Check In
+		// by explicit request (detect_primary_type() never picks it). A
+		// place sent with any other type is dropped, so it can't make an
+		// otherwise empty Mark pass the check below or be stored on a Mark
+		// that never shows it.
+		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
+
+		if ( 'checkin' !== $requested_type ) {
+			$place_name = null;
+		}
+
 		// Files the composer already uploaded through Daymark_Uploads
 		// (issue #483). Each must be the current user's own staged upload;
 		// see Daymark_Uploads::resolve_media_ids().
@@ -505,8 +516,7 @@ class Daymark_Publisher {
 		// order, so positional alt text lines up with this list.
 		$media_ids = array_merge( $requested['new'], $sideloaded );
 
-		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
-		$type           = $this->detect_primary_type( $media_ids, $requested_type );
+		$type = $this->detect_primary_type( $media_ids, $requested_type );
 
 		// Location is kept for Check Ins only. A Check In's place is its
 		// content; on any other Mark a location was background data the
@@ -788,8 +798,10 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
 
 			// Weather is only ever attempted alongside a resolved location,
-			// and only on publish — not on every autosave/update — to avoid
-			// firing a third-party request on every keystroke-triggered save.
+			// and once per Mark: here, or in update() when a draft's
+			// location first arrives on a later save. Never on every
+			// autosave, so a keystroke-triggered save fires no third-party
+			// request.
 			$weather = $this->fetch_weather( (float) $location['lat'], (float) $location['lng'] );
 
 			if ( null !== $weather ) {
@@ -933,6 +945,16 @@ class Daymark_Publisher {
 		$place_name = $this->resolve_place_name( $data );
 		$location   = $this->resolve_location( $data );
 
+		// A place only counts on a Check In, as in publish(). A save that
+		// names no type keeps a stored Check In a Check In (see the type
+		// resolution below), so its place still counts then.
+		$stored_type    = (string) get_post_meta( $post_id, '_daymark_primary_type', true );
+		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
+
+		if ( 'checkin' !== ( '' === $requested_type ? $stored_type : $requested_type ) ) {
+			$place_name = null;
+		}
+
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
 
@@ -986,13 +1008,13 @@ class Daymark_Publisher {
 
 		$media_ids = $ordered;
 
-		$requested_type = sanitize_key( (string) ( $data['primary_type'] ?? '' ) );
-
-		// A caption-only edit (no media to detect from, no explicit type)
-		// must not silently reclassify the Mark to 'note' — keep its stored
-		// type so per-type memory (destinations, categories) stays coherent.
-		if ( '' === $requested_type && empty( $media_ids ) ) {
-			$requested_type = (string) get_post_meta( $post_id, '_daymark_primary_type', true );
+		// An edit that names no type keeps the stored one when there's no
+		// media to detect from (a caption-only edit must not silently
+		// become a 'note', which would muddle per-type memory for
+		// destinations and categories), and always for a Check In, which
+		// its photo would otherwise turn into a photo Mark.
+		if ( '' === $requested_type && ( empty( $media_ids ) || 'checkin' === $stored_type ) ) {
+			$requested_type = $stored_type;
 		}
 
 		$type = $this->detect_primary_type( $media_ids, $requested_type );
@@ -1076,6 +1098,12 @@ class Daymark_Publisher {
 		update_post_meta( $post_id, '_daymark_primary_type', $type );
 		update_post_meta( $post_id, '_daymark_media_ids', wp_json_encode( $media_ids ) );
 
+		// A Check In that becomes another kind of Mark (the composer's Place
+		// switch, turned off) keeps no record of where it was.
+		if ( 'checkin' === $stored_type && 'checkin' !== $type ) {
+			$this->clear_checkin_data( $post_id );
+		}
+
 		// Helper selection is written before the status update below so a
 		// draft→publish transition here fires each plugin's control filter
 		// against the fresh choice.
@@ -1136,8 +1164,8 @@ class Daymark_Publisher {
 		}
 
 		// Quiet metadata capture, continued (see publish()'s matching block
-		// for the full rationale). Weather is deliberately NOT re-fetched
-		// on every edit/autosave — only publish() attempts it.
+		// for the full rationale). Weather is fetched at most once per Mark
+		// (see the location block below), never on every edit or autosave.
 		if ( ! empty( $camera_info['camera'] ) ) {
 			update_post_meta( $post_id, '_daymark_camera', wp_json_encode( $camera_info['camera'] ) );
 		}
@@ -1150,7 +1178,23 @@ class Daymark_Publisher {
 		// for the checkin place block) — reused here rather than resolved
 		// a second time.
 		if ( null !== $location ) {
+			// A draft's location can arrive after its first save (a Note
+			// turned into a Check In, or a location that came back slower
+			// than the first autosave). Weather is fetched then, once:
+			// never again while the Mark keeps a location.
+			$first_location = '' === (string) get_post_meta( $post_id, '_daymark_location', true );
+
 			update_post_meta( $post_id, '_daymark_location', wp_json_encode( $location ) );
+
+			if ( $first_location && '' === (string) get_post_meta( $post_id, '_daymark_weather', true ) ) {
+				$weather = $this->fetch_weather( (float) $location['lat'], (float) $location['lng'] );
+
+				if ( null !== $weather ) {
+					update_post_meta( $post_id, '_daymark_weather', wp_json_encode( $weather ) );
+					$this->maybe_bridge_weather_to_simple_location( $post_id, $weather );
+				}
+			}
+
 			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
 		}
 
@@ -2380,14 +2424,14 @@ class Daymark_Publisher {
 	 * given), map, and display features apply to the Mark for free, with no
 	 * duplicate geocoding/mapping code inside Daymark itself.
 	 *
-	 * Deliberately not a live sync: this runs once, at publish time, the
-	 * same as fetch_weather() above — an edit to an existing Mark's
-	 * location (there is no UI for that today) would not update Simple
-	 * Location's own copy. Weather is bridged separately by
-	 * maybe_bridge_weather_to_simple_location() (same once-at-publish
-	 * posture); it was originally held back here pending this same schema
-	 * question, but that was resolved against the plugin's public source
-	 * (issue #397) and the bridge written.
+	 * Runs each time a Check In is saved with a location (publish() and
+	 * update()), so Simple Location's copy follows the Mark's own, and
+	 * clear_checkin_data() removes it if the Mark stops being a Check In.
+	 * Weather is bridged separately by
+	 * maybe_bridge_weather_to_simple_location(); it was originally held
+	 * back here pending this same schema question, but that was resolved
+	 * against the plugin's public source (issue #397) and the bridge
+	 * written.
 	 *
 	 * Never throws and never blocks the publish — wrapped in try/catch,
 	 * and a missing class (Simple Location inactive) short-circuits before
@@ -2472,10 +2516,11 @@ class Daymark_Publisher {
 	 * empty string. Since its 6.0.0 it keeps 0 (its `has_value()` check),
 	 * so an exact 0 °C reading is stored; earlier versions dropped it.
 	 *
-	 * Deliberately not a live sync: this runs once, at publish time, only
-	 * when fetch_weather() succeeded — an edit to an existing Mark never
-	 * re-fetches weather (see publish()'s other comment) and therefore
-	 * never re-bridges it either.
+	 * Deliberately not a live sync: this runs once per Mark, when
+	 * fetch_weather() succeeds, which is when a Check In's location is
+	 * first saved (by publish(), or by update() for a draft whose location
+	 * arrived later). Weather is never re-fetched after that, so it is
+	 * never re-bridged either.
 	 *
 	 * Never throws and never blocks the publish — wrapped in try/catch,
 	 * and a missing class (Simple Location inactive) short-circuits before
@@ -2534,6 +2579,66 @@ class Daymark_Publisher {
 			// A bridge write should never take down a publish — Simple
 			// Location's own storage is a bonus, not a requirement.
 			unset( $e );
+		}
+	}
+
+	/**
+	 * Removes what a Check In stored about where it was: Daymark's own place
+	 * name, location, and weather, plus the copies the two Simple Location
+	 * bridges above wrote (`geo_latitude`, `geo_longitude`, `geo_address`,
+	 * and `weather_temperature`, `weather_summary`, `weather_code`,
+	 * `weather_provider`), through that plugin's own `Geo_Data::delete_geodata()`
+	 * and `Sloc_Weather_Data::delete_object_weatherdata()` helpers. Called by
+	 * update() when a Check In becomes another kind of Mark, since Daymark
+	 * keeps a location only for Check Ins.
+	 *
+	 * Simple Location's copies are only removed when Daymark's own record
+	 * shows a bridge could have written them, so a location someone set in
+	 * Simple Location's own editor box on a Mark that never had one from
+	 * Daymark is left alone. Like the bridges, it never throws.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return void
+	 */
+	private function clear_checkin_data( int $post_id ): void {
+		$had_location = '' !== (string) get_post_meta( $post_id, '_daymark_location', true );
+		$had_weather  = '' !== (string) get_post_meta( $post_id, '_daymark_weather', true );
+
+		delete_post_meta( $post_id, '_daymark_place_name' );
+		delete_post_meta( $post_id, '_daymark_location' );
+		delete_post_meta( $post_id, '_daymark_weather' );
+
+		$removals = array();
+
+		if ( $had_location ) {
+			$removals[] = array( 'Geo_Data', 'delete_geodata', array( 'latitude', 'longitude', 'address' ) );
+		}
+
+		if ( $had_weather ) {
+			$removals[] = array( 'Sloc_Weather_Data', 'delete_object_weatherdata', array( 'temperature', 'summary', 'code', 'provider' ) );
+		}
+
+		foreach ( $removals as $removal ) {
+			list( $class, $method, $keys ) = $removal;
+
+			if ( ! Daymark_Plugin_Detector::matches(
+				array(
+					'slugs'   => array( 'simple-location' ),
+					'classes' => array( $class ),
+				)
+			) || ! is_callable( array( $class, $method ) ) ) {
+				continue;
+			}
+
+			try {
+				foreach ( $keys as $key ) {
+					call_user_func( array( $class, $method ), 'post', $post_id, $key );
+				}
+			} catch ( Throwable $e ) {
+				// Like the bridges: Simple Location's copy is a bonus, and a
+				// failure here must not stop the edit.
+				unset( $e );
+			}
 		}
 	}
 

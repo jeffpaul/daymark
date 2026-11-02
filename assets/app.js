@@ -816,7 +816,12 @@
 		// composer opens pre-set to the chosen type; cleared by
 		// resetComposer(). Only a fallback — picking files or resuming a
 		// draft still wins, exactly as effectiveType() already resolves.
+		// The composer's Place switch also sets it to 'checkin'.
 		pendingType: null,
+		// What the type was before the Place switch turned this Mark into a
+		// Check In, so turning Place off puts it back:
+		// { pendingType, editingType } | null. See CreateScreen.togglePlace().
+		placeOffTypes: null,
 		// { url, title } | null — restored from an existing draft's own
 		// in_reply_to (openDraft()); a fresh composing session never sets
 		// this directly anymore (issue #317 moved subscription-post
@@ -1801,9 +1806,6 @@
 		)}${renderOverflowToggle(item, markOverflowMenuItems(item))}</span>`;
 	}
 
-	// Pre-filters the composer's native file picker to match the launcher
-	// bubble that was tapped — 'note' has no entry since it skips the
-	// picker entirely (see CreateScreen.render()).
 	// Image formats AI vision providers can read, matching
 	// Daymark_Publisher::VISION_MIME_TYPES (#481). Alt text isn't suggested
 	// automatically for any other format, such as AVIF.
@@ -1816,11 +1818,17 @@
 		return /^image\/hei[cf]/.test(type) || /\.hei[cf]s?$/i.test((file && file.name) || '');
 	}
 
+	// The file types the camera-first picker offers for a typed launcher
+	// entry (Image, Video, Audio). A Note or a Check In has no such picker;
+	// the composer's "Add" bar (CreateScreen.attachBarMarkup()) covers them.
 	const ACCEPT_BY_TYPE = {
 		image: 'image/*',
 		video: 'video/*',
 		audio: 'audio/*',
 	};
+
+	// What the "Add" bar's "Photo or video" button offers.
+	const ATTACH_MEDIA_ACCEPT = 'image/*,video/*';
 
 	// Camera-first: "assume I'm standing somewhere and want to publish," not
 	// sitting at a desktop picking a file. For a typed launcher entry (image/
@@ -1853,30 +1861,33 @@
 	}
 
 	/**
-	 * Detect the Mark type from selected files (client-side mirror of the
-	 * server-side detection used for routing defaults).
+	 * The Mark type a list of media kinds ('image', 'video', 'audio', …)
+	 * makes, the client-side mirror of the server's own detection: no media
+	 * is a Note, one image an Image, several a Gallery, and different kinds
+	 * together a Mixed Mark.
 	 */
-	function detectType(files) {
-		if (!files.length) {
+	function typeForMedia(kinds) {
+		if (!kinds.length) {
 			return 'note';
 		}
-		const kinds = new Set(
-			files.map((entry) => (entry.file.type || '').split('/')[0] || 'other')
-		);
-		if (kinds.size > 1) {
+		if (new Set(kinds).size > 1) {
 			return 'mixed';
 		}
-		const kind = kinds.values().next().value;
-		if (kind === 'image') {
-			return files.length > 1 ? 'gallery' : 'image';
+		const kind = kinds[0];
+		if ('image' === kind) {
+			return kinds.length > 1 ? 'gallery' : 'image';
 		}
-		if (kind === 'video') {
-			return 'video';
-		}
-		if (kind === 'audio') {
-			return 'audio';
+		if ('video' === kind || 'audio' === kind) {
+			return kind;
 		}
 		return 'mixed';
+	}
+
+	/**
+	 * Detect the Mark type from selected files.
+	 */
+	function detectType(files) {
+		return typeForMedia(files.map((entry) => (entry.file.type || '').split('/')[0] || 'other'));
 	}
 
 	// Manual gallery reordering (issue #250): moves an image entry one slot
@@ -2031,6 +2042,7 @@
 		state.placeNameEdited = false;
 		state.primaryType = 'note';
 		state.pendingType = null;
+		state.placeOffTypes = null;
 		state.replyTo = null;
 		state.targets = [];
 		state.categories = [];
@@ -2046,30 +2058,18 @@
 		state.composerNotice = '';
 	}
 
-	// Quietly capture "when/where this Mark was actually created" the
-	// moment a fresh composing session begins — never for a resumed draft:
+	// Quietly capture "when this Mark was actually created" the moment a
+	// fresh composing session begins — never for a resumed draft:
 	// openDraft()/openPendingMark() both set state.editing BEFORE
 	// navigate('#create') runs, so the guard below skips both, and
-	// resetComposer() (called by both the launcher's typed-entry bubbles and
-	// "Create Another") always clears state.editing first, so a genuinely
-	// fresh session reliably has it unset. Idempotent per session — once
-	// state.capturedAt is set, this is a no-op until the next
-	// resetComposer(). Called from CreateScreen.bindEvents() so it covers
-	// every path into the composer for a new Mark (the launcher, "Create
-	// Another", a bookmarked/refreshed #create URL, the PWA manifest's
-	// #create shortcut, an empty-state "Start one" link) with one guard
-	// rather than needing a call at each entry point.
+	// resetComposer() always clears state.editing first. Idempotent per
+	// session. Called from CreateScreen.bindEvents() so it covers every path
+	// into the composer for a new Mark (the launcher, a bookmarked or
+	// refreshed #create URL, the PWA manifest's #create shortcut, an
+	// empty-state "Start one" link) with one guard.
 	//
-	// Location is asked for only when the new Mark is a Check In (its place
-	// is the point of it) and only when the site allows location capture
-	// (Settings -> Daymark -> Data & privacy, sent as config.capture). No
-	// other kind of Mark captures a location, and the server drops one sent
-	// for any other type.
-	//
-	// "Don't make users fill those in": no loading state, no error, no
-	// retry prompt — geolocation denial/timeout/absence just leaves
-	// state.location unset, and the author types or searches for the place
-	// instead.
+	// A new Check In also asks for the device's location here; see
+	// requestCheckinLocation().
 	function maybeBeginQuietCapture() {
 		if (state.editing) {
 			return;
@@ -2077,6 +2077,21 @@
 		if (!state.capturedAt) {
 			state.capturedAt = new Date().toISOString();
 		}
+		requestCheckinLocation();
+	}
+
+	// Ask once for the device's location, so the Place field can suggest
+	// where you are. Only for a Check In (its place is the point of it),
+	// and only when the site allows location capture (Settings -> Daymark ->
+	// Data & privacy, sent as config.capture). No other kind of Mark
+	// captures a location, and the server drops one sent for any other
+	// type. Called for a new Check In from maybeBeginQuietCapture(), and
+	// when the composer's Place switch turns a Mark into a Check In.
+	//
+	// No error and no retry prompt: denial, a timeout, or no geolocation
+	// just leaves state.location unset, and the author types or searches
+	// for the place instead.
+	function requestCheckinLocation() {
 		const locationAllowed = !!(config.capture && config.capture.location);
 		if (
 			'checkin' !== effectiveType() ||
@@ -2087,8 +2102,13 @@
 			return;
 		}
 		state.locationRequested = true;
+		const generation = composerGeneration;
 		navigator.geolocation.getCurrentPosition(
 			(position) => {
+				// The composer has moved on to another Mark.
+				if (generation !== composerGeneration) {
+					return;
+				}
 				state.location = {
 					lat: position.coords.latitude,
 					lng: position.coords.longitude,
@@ -2103,52 +2123,61 @@
 		);
 	}
 
-	// Reverse-geocode state.location into a short place name for the
-	// Checkin composer's own Place field (issue #143) — a real, on-demand
-	// action (unlike the rest of quiet capture), so unlike
-	// maybeBeginQuietCapture() this both runs more than once per session
-	// (called again from CreateScreen.bindEvents() in case the Checkin
-	// bubble was tapped after location already resolved from an earlier
-	// point in this same composing session) and shows its own loading/done
-	// state — but still never blocks or errors visibly: a failed lookup
-	// just leaves the field blank for the author to type by hand, exactly
-	// like every other quiet-capture signal degrades.
+	// Reverse-geocode state.location into a short place name for the Check
+	// In composer's Place field (issue #143). Shows "Detecting your
+	// location…" in the field while it looks, but never blocks or errors
+	// visibly: a failed lookup leaves the field blank for the author to type
+	// by hand. Runs again when the Place switch is turned on after a
+	// location was already captured in this session.
 	function maybeFetchPlaceName() {
 		if ('checkin' !== effectiveType() || state.placeNameEdited || 'idle' !== state.placeNameStatus || !state.location) {
 			return;
 		}
+		const generation = composerGeneration;
 		state.placeNameStatus = 'loading';
+		CreateScreen.refreshPlaceField();
+		const finish = (placeName) => {
+			// The composer has moved on to another Mark.
+			if (generation !== composerGeneration) {
+				return;
+			}
+			state.placeNameStatus = 'done';
+			if (placeName && !state.placeNameEdited) {
+				state.placeName = placeName;
+			}
+			CreateScreen.refreshPlaceField();
+		};
 		apiGet(
 			'location/reverse-geocode?lat=' +
 				encodeURIComponent(state.location.lat) +
 				'&lng=' +
 				encodeURIComponent(state.location.lng)
 		)
-			.then((result) => {
-				state.placeNameStatus = 'done';
-				if (!state.placeNameEdited && result && result.place_name) {
-					state.placeName = result.place_name;
-					CreateScreen.refreshPlaceField();
-				}
-			})
-			.catch(() => {
-				state.placeNameStatus = 'done';
-			});
+			.then((result) => finish(result && result.place_name ? result.place_name : ''))
+			.catch(() => finish(''));
 	}
 
 	// Whether the composer holds anything worth keeping as a draft: text, a
-	// file, a place the author typed or picked (a place filled in by the
-	// location lookup alone doesn't count), or a Mark already saved or
+	// file, a Check In's place the author typed or picked (a place filled in
+	// by the location lookup alone doesn't count, and neither does one kept
+	// after the Place switch was turned off), or a Mark already saved or
 	// queued for this session (a draft you opened, or a new Mark autosave
 	// has already saved).
 	function composerHasWork() {
 		return !!(
 			state.caption.trim() ||
 			state.files.length ||
-			(state.placeNameEdited && state.placeName.trim()) ||
+			hasTypedPlace() ||
 			state.editing ||
 			state.offlineQueueId
 		);
+	}
+
+	// A place the author typed or picked for a Check In. The Place field
+	// keeps its text while Place is off, but it's only part of the Mark
+	// while the Mark is a Check In.
+	function hasTypedPlace() {
+		return 'checkin' === effectiveType() && state.placeNameEdited && !!state.placeName.trim();
 	}
 
 	// Abandon the composer's in-progress work (leaving the composer,
@@ -4132,6 +4161,14 @@
 		state.location = payload.location || null;
 		state.locationRequested = true;
 		state.primaryType = payload.primaryType || 'note';
+		// A queued Check In the site hasn't saved yet has no state.editing to
+		// carry its type, so it opens as a Check In through pendingType.
+		if (!record.targetId && 'checkin' === payload.primaryType) {
+			state.pendingType = 'checkin';
+		}
+		state.placeName = payload.placeName || '';
+		state.placeNameStatus = state.placeName ? 'done' : 'idle';
+		state.placeNameEdited = false;
 		state.files = (payload.newFiles || []).map((f, index) => {
 			state.fileCounter += 1;
 			return {
@@ -4163,12 +4200,7 @@
 			autosaveState.pendingRetry = true;
 			return;
 		}
-		if (
-			!state.caption.trim() &&
-			!state.files.length &&
-			!state.editing &&
-			!(state.placeNameEdited && state.placeName.trim())
-		) {
+		if (!state.caption.trim() && !state.files.length && !state.editing && !hasTypedPlace()) {
 			return; // Nothing yet worth protecting.
 		}
 
@@ -4212,7 +4244,13 @@
 			state.offlineQueueId = null;
 			const response = result.response;
 			if (!state.editing) {
-				state.editing = { id: response.id, type: response.type || state.primaryType, media: [] };
+				// The Place switch may have changed the type while this save
+				// was on its way, so a Check In follows the composer as it is
+				// now, not the type the request carried.
+				const current = effectiveType();
+				const type =
+					'checkin' === current || 'checkin' === response.type ? current : response.type || current;
+				state.editing = { id: response.id, type, media: [] };
 			}
 			setAutosaveStatus('saved');
 		} catch (err) {
@@ -10292,80 +10330,17 @@
 						: ''
 				}
 				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
-				${
-					// The Home launcher's Note bubble jumps straight past the
-					// picker into a focused writing flow — attaching any file
-					// would flip the type away from 'note' anyway (detectType()
-					// only ever returns 'note' when nothing is attached), so
-					// hiding it here loses no real capability. Checkin (issue
-					// #143) used to bypass the picker the exact same way, but a
-					// Check In can now carry an optional photo/video of its own
-					// (issue #424 — see the dedicated branch below), so it no
-					// longer skips the picker at all, fresh session or resumed
-					// draft alike.
-					'note' === state.pendingType && !state.files.length && !editing
-						? ''
-						: 'checkin' === effectiveType()
-						? // Optional media for a Check In (issue #424): a place
-						  // is the whole point of a checkin — this is deliberately
-						  // the smallest, plainest affordance in the composer, on
-						  // purpose disproportionate to the Place field below it
-						  // (no icon, no dashed border box, no hint line — just a
-						  // small underlined text link, the same weight
-						  // "Choose from library instead" already carries for a
-						  // typed entry's own secondary action), never the
-						  // camera-first flow a typed Image/Video/Audio entry
-						  // gets. Image/video only (no audio — the ask this
-						  // covers is "show where you are," not a voice memo).
-						  `<div class="daymark-picker daymark-picker--minimal">
-					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*" multiple />
-					<label for="daymark-file-input" class="daymark-btn daymark-btn--text daymark-picker__zone">${esc(
-						__('+ Add a photo or video (optional)', 'daymark')
-					)}</label>
-				</div>`
-						: ACCEPT_BY_TYPE[state.pendingType]
-						? // A typed launcher entry (Image/Video/Audio): camera-first
-						  // — the primary action opens the device's camera/mic
-						  // directly, a secondary, lower-emphasis action still
-						  // reaches an already-taken file. Same single input both
-						  // ways; bindEvents() toggles its `capture` attribute per
-						  // button before opening it.
-						  `<div class="daymark-picker">
-					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="${esc(
-						ACCEPT_BY_TYPE[state.pendingType]
-					)}" multiple tabindex="-1" />
-					<button type="button" class="daymark-picker__zone daymark-picker__zone--button" data-picker-capture>
-						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-						<span>${esc(CAPTURE_LABEL_BY_TYPE[state.pendingType])}</span>
-						<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[state.pendingType])}</span>
-					</button>
-					<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>${esc(
-						__('Choose from library instead', 'daymark')
-					)}</button>
-				</div>`
-						: // Untyped entry (e.g. a Drafts/Explore empty-state link) —
-						  // the intended capture mode isn't known yet, so this stays
-						  // the original neutral, non-capture picker.
-						  `<div class="daymark-picker">
-					<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="image/*,video/*,audio/*" multiple />
-					<label for="daymark-file-input" class="daymark-picker__zone">
-						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-						<span>${esc(__('Tap to choose media', 'daymark'))}</span>
-						<span class="daymark-picker__hint">${esc(
-							__('Photos, videos, or audio from your device', 'daymark')
-						)}</span>
-					</label>
-				</div>`
-				}
+				<div data-picker-slot>${this.pickerMarkup()}</div>
 				<div class="daymark-preview" data-preview></div>
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
 					<textarea id="daymark-caption" class="daymark-textarea daymark-textarea--grow" rows="4" placeholder="${esc(
-						'checkin' === effectiveType() ? __('Any thoughts to add? (optional)', 'daymark') : __("What's happening?", 'daymark')
+						this.captionPlaceholder()
 					)}">${esc(state.caption)}</textarea>
 					<p class="daymark-notelength" id="daymark-note-length" data-note-length hidden></p>
 				</div>
+				${this.attachBarMarkup()}
 				<div data-title-slot></div>
 				<div data-transcript-slot></div>
 				${
@@ -10394,6 +10369,203 @@
 			</footer>`;
 		},
 
+		// Camera-first (see CAPTURE_BY_TYPE): a new Mark started from the
+		// launcher's Image, Video, or Audio bubble opens on a big "Take
+		// Photo" (or "Record Video", "Record Audio") button, with "Choose from
+		// library instead" under it. It goes away once a file is picked, and
+		// never shows for a draft or queued Mark you reopened. Everything else
+		// adds media through the "Add" bar (attachBarMarkup()).
+		pickerType() {
+			return !state.resumed && ACCEPT_BY_TYPE[state.pendingType] && !state.files.length
+				? state.pendingType
+				: '';
+		},
+
+		pickerMarkup() {
+			const type = this.pickerType();
+			if (!type) {
+				return '';
+			}
+			return `<div class="daymark-picker" data-picker-for="${esc(type)}">
+				<button type="button" class="daymark-picker__zone daymark-picker__zone--button" data-picker-capture>
+					<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+					<span>${esc(CAPTURE_LABEL_BY_TYPE[type])}</span>
+					<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[type])}</span>
+				</button>
+				<button type="button" class="daymark-btn daymark-btn--text daymark-picker__library" data-picker-library>${esc(
+					__('Choose from library instead', 'daymark')
+				)}</button>
+			</div>`;
+		},
+
+		// The "Add" bar under the caption, on every composer: add a photo or
+		// video, add audio, or turn Place on to make the Mark a Check In. A
+		// photo or audio picked for a Note makes it that kind of Mark, the
+		// same way picking a file always has. Place is a switch: turning it
+		// on makes the Mark a Check In, with its place leading the post, and
+		// turning it off puts the type back (togglePlace()). The bar also
+		// holds the composer's one file input, which every way of picking a
+		// file opens (openFilePicker()).
+		attachBarMarkup() {
+			const icon = (glyph) =>
+				`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+			const placeOn = 'checkin' === effectiveType();
+			return `<div class="daymark-attach" data-attach-bar role="group" aria-label="${esc(
+				__('Add to this Mark', 'daymark')
+			)}">
+				<input type="file" id="daymark-file-input" class="daymark-picker__input" accept="${esc(
+					ATTACH_MEDIA_ACCEPT
+				)}" multiple tabindex="-1" />
+				<button type="button" class="daymark-attach__btn" data-attach="media">${icon(TYPE_ICONS.image)}<span>${esc(
+					__('Photo or video', 'daymark')
+				)}</span></button>
+				<button type="button" class="daymark-attach__btn" data-attach="audio">${icon(TYPE_ICONS.audio)}<span>${esc(
+					__('Audio', 'daymark')
+				)}</span></button>
+				<button type="button" class="daymark-attach__btn" data-attach="place" aria-pressed="${
+					placeOn ? 'true' : 'false'
+				}">${icon(TYPE_ICONS.checkin)}<span>${esc(__('Place', 'daymark'))}</span>${WHERE_CHECK_ICON}</button>
+			</div>`;
+		},
+
+		captionPlaceholder() {
+			return 'checkin' === effectiveType()
+				? __('Any thoughts to add? (optional)', 'daymark')
+				: __("What's happening?", 'daymark');
+		},
+
+		placePlaceholder() {
+			return 'loading' === state.placeNameStatus
+				? __('Detecting your location…', 'daymark')
+				: __('Where are you?', 'daymark');
+		},
+
+		// Open the composer's file input. `capture` asks for the camera or
+		// microphone directly ('environment'), or for the usual chooser ('').
+		openFilePicker(accept, capture) {
+			const input = root.querySelector('#daymark-file-input');
+			if (!input) {
+				return;
+			}
+			input.setAttribute('accept', accept);
+			if (capture) {
+				input.setAttribute('capture', capture);
+			} else {
+				input.removeAttribute('capture');
+			}
+			input.click();
+		},
+
+		// Dropping files onto `el` attaches them (issue #260), the same way
+		// picking them does. Touch devices never fire drag events.
+		bindDropTarget(el) {
+			if (!el) {
+				return;
+			}
+			el.addEventListener('dragover', (event) => {
+				event.preventDefault();
+				el.classList.add('is-dragover');
+			});
+			el.addEventListener('dragleave', () => {
+				el.classList.remove('is-dragover');
+			});
+			el.addEventListener('drop', (event) => {
+				event.preventDefault();
+				el.classList.remove('is-dragover');
+				if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length) {
+					this.addPickedFiles(event.dataTransfer.files);
+				}
+			});
+		},
+
+		bindPicker() {
+			const zone = root.querySelector('[data-picker-for]');
+			if (!zone) {
+				return;
+			}
+			const type = zone.getAttribute('data-picker-for');
+			zone.querySelector('[data-picker-capture]').addEventListener('click', () => {
+				this.openFilePicker(ACCEPT_BY_TYPE[type], CAPTURE_BY_TYPE[type]);
+			});
+			zone.querySelector('[data-picker-library]').addEventListener('click', () => {
+				this.openFilePicker(ACCEPT_BY_TYPE[type], '');
+			});
+			this.bindDropTarget(zone);
+		},
+
+		// Show or remove the camera-first picker when what it depends on
+		// changes (a file picked or removed, Place turned on or off).
+		refreshPicker() {
+			const slot = root.querySelector('[data-picker-slot]');
+			if (!slot) {
+				return;
+			}
+			const type = this.pickerType();
+			const current = slot.querySelector('[data-picker-for]');
+			if ((current ? current.getAttribute('data-picker-for') : '') === type) {
+				return;
+			}
+			const hadFocus = slot.contains(document.activeElement);
+			slot.innerHTML = this.pickerMarkup();
+			this.bindPicker();
+			if (hadFocus) {
+				const media = root.querySelector('[data-attach="media"]');
+				if (media) {
+					media.focus();
+				}
+			}
+		},
+
+		// Place on: the Mark becomes a Check In, and the Place field appears
+		// above the caption. The first time, a short hint explains why the
+		// browser asks for your location, then the location is asked for
+		// (if the site captures one) and focus moves to the Place field.
+		// Place off: the type goes back to what it was, and the place stays
+		// in the field, unused, in case Place is turned on again.
+		togglePlace(button) {
+			if ('checkin' === effectiveType()) {
+				const saved = state.placeOffTypes || {};
+				state.placeOffTypes = null;
+				state.pendingType =
+					saved.pendingType && 'checkin' !== saved.pendingType ? saved.pendingType : null;
+				if (state.editing) {
+					state.editing.type =
+						saved.editingType && 'checkin' !== saved.editingType
+							? saved.editingType
+							: typeForMedia(state.editing.media.map((m) => m.kind));
+				}
+				this.hidePlaceSuggestions();
+				this.refreshMedia();
+				scheduleAutosave();
+				announce(__('Place removed. This Mark is no longer a Check In.', 'daymark'));
+				return;
+			}
+			state.placeOffTypes = {
+				pendingType: state.pendingType,
+				editingType: state.editing ? state.editing.type : null,
+			};
+			state.pendingType = 'checkin';
+			if (state.editing) {
+				state.editing.type = 'checkin';
+			}
+			this.refreshMedia();
+			scheduleAutosave();
+			announce(__('Place added. This Mark is now a Check In.', 'daymark'));
+			maybeShowInteractionHintThen('checkin', button, () => {
+				// Turning Place on asks for the location again, unless one
+				// was already captured in this session.
+				if (!state.location) {
+					state.locationRequested = false;
+				}
+				requestCheckinLocation();
+				maybeFetchPlaceName();
+				const field = root.querySelector('[data-checkin-place]');
+				if (field) {
+					field.focus();
+				}
+			});
+		},
+
 		// A Checkin Mark's own Place field (issue #143) — shown for a fresh
 		// Checkin composition and for a resumed Checkin draft alike (unlike
 		// the picker-bypass above, which only ever applies to a fresh
@@ -10407,25 +10579,34 @@
 			if ('checkin' !== effectiveType()) {
 				return '';
 			}
-			const loading = 'loading' === state.placeNameStatus;
 			return `<div class="daymark-field daymark-checkin-place">
 				<label class="daymark-field__label" for="daymark-checkin-place">${esc(__('Place', 'daymark'))}</label>
 				<input type="text" id="daymark-checkin-place" class="daymark-input" data-checkin-place value="${esc(
 					state.placeName
 				)}" placeholder="${esc(
-					loading ? __('Detecting your location…', 'daymark') : __('Where are you?', 'daymark')
+					this.placePlaceholder()
 				)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-checkin-place-suggest" />
 				<ul class="daymark-tags__suggest" id="daymark-checkin-place-suggest" data-checkin-place-suggest hidden></ul>
 			</div>`;
 		},
 
-		// Re-render placeFieldMarkup() into its own slot once a background
-		// reverse-geocode result arrives (see maybeFetchPlaceName()) —
-		// without touching the rest of the screen or stealing focus from
-		// whatever the author is doing elsewhere in the composer.
+		// Bring the Place field up to date: show or remove it when Place is
+		// turned on or off, and fill in the place and the "Detecting your
+		// location…" placeholder while the location lookup runs (see
+		// maybeFetchPlaceName()). A field already on screen is updated in
+		// place, so typing in it, or focus elsewhere in the composer, isn't
+		// disturbed.
 		refreshPlaceField() {
 			const slot = root.querySelector('[data-place-slot]');
 			if (!slot) {
+				return;
+			}
+			const field = slot.querySelector('[data-checkin-place]');
+			if (field && 'checkin' === effectiveType()) {
+				if (field.value !== state.placeName) {
+					field.value = state.placeName;
+				}
+				field.setAttribute('placeholder', this.placePlaceholder());
 				return;
 			}
 			slot.innerHTML = this.placeFieldMarkup();
@@ -10765,59 +10946,31 @@
 			}
 			this.bindPlaceFieldEvents();
 
-			// Absent only when the Note bubble skipped the picker entirely.
 			const input = root.querySelector('#daymark-file-input');
 			const caption = root.querySelector('#daymark-caption');
 
-			// Camera-first two-button picker (typed entries only — see
-			// render()): each tap sets or clears `capture` on the one shared
-			// input right before opening it, so the same change handler below
-			// runs either way.
-			const captureBtn = root.querySelector('[data-picker-capture]');
-			if (captureBtn && input) {
-				captureBtn.addEventListener('click', () => {
-					input.setAttribute('capture', CAPTURE_BY_TYPE[state.pendingType] || 'environment');
-					input.click();
-				});
-			}
-			const libraryBtn = root.querySelector('[data-picker-library]');
-			if (libraryBtn && input) {
-				libraryBtn.addEventListener('click', () => {
-					input.removeAttribute('capture');
-					input.click();
-				});
-			}
+			// Every way of picking a file opens this one input, so the same
+			// change handler runs for all of them.
+			input.addEventListener('change', () => {
+				this.addPickedFiles(input.files);
+				input.value = '';
+			});
 
-			if (input) {
-				input.addEventListener('change', () => {
-					this.addPickedFiles(input.files);
-					input.value = '';
-				});
-			}
-
-			// Drag-and-drop (issue #260): the picker zone already renders
-			// with a dashed border, so it already reads as a drop target —
-			// dragover/drop just wire up the actual behavior and a hover
-			// highlight to confirm it. Feeds the exact same addPickedFiles()
-			// path as the file input, so a dropped file is indistinguishable
-			// from a picked one downstream (dedup, alt-text pre-fill,
-			// autosave, all included). Inert on touch devices, which never
-			// fire drag events — no behavior change there.
-			const pickerZone = root.querySelector('.daymark-picker');
-			if (pickerZone) {
-				pickerZone.addEventListener('dragover', (event) => {
-					event.preventDefault();
-					pickerZone.classList.add('is-dragover');
-				});
-				pickerZone.addEventListener('dragleave', () => {
-					pickerZone.classList.remove('is-dragover');
-				});
-				pickerZone.addEventListener('drop', (event) => {
-					event.preventDefault();
-					pickerZone.classList.remove('is-dragover');
-					this.addPickedFiles(event.dataTransfer && event.dataTransfer.files);
-				});
-			}
+			// The camera-first picker for a new Image, Video, or Audio Mark,
+			// and the "Add" bar under the caption. Dropping files onto either
+			// attaches them too (issue #260).
+			this.bindPicker();
+			const bar = root.querySelector('[data-attach-bar]');
+			bar.querySelector('[data-attach="media"]').addEventListener('click', () => {
+				this.openFilePicker(ATTACH_MEDIA_ACCEPT, '');
+			});
+			bar.querySelector('[data-attach="audio"]').addEventListener('click', () => {
+				this.openFilePicker(ACCEPT_BY_TYPE.audio, '');
+			});
+			bar.querySelector('[data-attach="place"]').addEventListener('click', (event) => {
+				this.togglePlace(event.currentTarget);
+			});
+			this.bindDropTarget(bar);
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
@@ -11024,6 +11177,19 @@
 			this.refreshDraftsLink();
 			// Only a Note gets the length count, so it follows the type too.
 			refreshNoteLength();
+			// The Place switch, the Place field, and the caption's hint follow
+			// whether this is a Check In; the camera-first picker goes once a
+			// file is picked.
+			const placeToggle = root.querySelector('[data-attach="place"]');
+			if (placeToggle) {
+				placeToggle.setAttribute('aria-pressed', 'checkin' === state.primaryType ? 'true' : 'false');
+			}
+			const caption = root.querySelector('#daymark-caption');
+			if (caption) {
+				caption.setAttribute('placeholder', this.captionPlaceholder());
+			}
+			this.refreshPlaceField();
+			this.refreshPicker();
 			if (!state.files.length) {
 				preview.innerHTML = '';
 				return;
