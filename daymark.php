@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Daymark
  * Plugin URI:        https://github.com/jeffpaul/daymark
- * Description:       Personal Site Publisher Mode for WordPress: capture, caption, and publish Marks from your phone. Your site stays the source of truth.
+ * Description:       Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
  * Version:           0.21.0
  * Requires at least: 7.0
  * Requires PHP:      8.2
@@ -36,6 +36,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-publish-helpers.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-ai-assist.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-speech.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-federated-comments.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-plugin-copies.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-syndication-links.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-visibility.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-notes.php';
@@ -84,7 +85,10 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-poller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-oembed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-subscription-opengraph.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-remote-replies.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-comment-replies.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-like-delivery.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-engagement-status.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-webmention-receiver.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-post-export.php';
@@ -98,6 +102,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-activitypub-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bookmarklet.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-follow-link.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-bar.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-qr-code.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-welcome.php';

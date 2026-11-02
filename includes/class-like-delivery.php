@@ -317,12 +317,14 @@ class Daymark_Like_Delivery {
 
 	/**
 	 * Which routes a set of origin signals supports for the current user.
+	 * Public so Daymark_Engagement_Status can answer from signals it
+	 * already looked up.
 	 *
 	 * @param array<string, mixed> $signals     Daymark_Comment_Delivery origin signals.
 	 * @param bool                 $activitypub Whether the ActivityPub route resolved.
 	 * @return array{available: bool, method: string, jetpack: bool, activitypub: bool, webmention: bool, bridgy_fed: bool}
 	 */
-	private static function evaluate( array $signals, bool $activitypub ): array {
+	public static function evaluate( array $signals, bool $activitypub ): array {
 		$jetpack    = (int) ( $signals['jetpack_site_id'] ?? 0 ) > 0
 			&& (int) ( $signals['jetpack_post_id'] ?? 0 ) > 0
 			&& Daymark_Jetpack_Engagement::current_user_connected();

@@ -35,9 +35,17 @@ class Test_Plugin_Overlap extends WP_UnitTestCase {
 	// -----------------------------------------------------------------
 
 	public function test_is_known_true_for_every_documented_plugin_key() {
-		foreach ( array( 'post-kinds', 'microformats2', 'syndication-links', 'indieblocks' ) as $key ) {
+		foreach ( array( 'post-kinds', 'microformats2', 'indieblocks' ) as $key ) {
 			$this->assertTrue( $this->overlap->is_known( $key ), "{$key} should be a known overlap key" );
 		}
+	}
+
+	/**
+	 * Syndication Links no longer overlaps (issue #558): Daymark hands
+	 * that plugin a Mark's links instead of printing its own.
+	 */
+	public function test_syndication_links_is_no_longer_an_overlap() {
+		$this->assertFalse( $this->overlap->is_known( 'syndication-links' ) );
 	}
 
 	public function test_is_known_false_for_an_unrecognized_key() {
@@ -57,7 +65,7 @@ class Test_Plugin_Overlap extends WP_UnitTestCase {
 	// tests/class-plugin-overlap-fake.php.
 	// -----------------------------------------------------------------
 
-	/** With none of the four plugins' real signals present, nothing is reported active. */
+	/** With none of the plugins' real signals present, nothing is reported active. */
 	public function test_get_active_overlaps_is_empty_by_default() {
 		$this->assertSame( array(), $this->overlap->get_active_overlaps() );
 	}
@@ -72,7 +80,7 @@ class Test_Plugin_Overlap extends WP_UnitTestCase {
 		$constant = new ReflectionClassConstant( Daymark_Plugin_Overlap::class, 'OVERLAPS' );
 		$overlaps = $constant->getValue();
 
-		foreach ( array( 'post-kinds', 'microformats2', 'syndication-links', 'indieblocks' ) as $key ) {
+		foreach ( array( 'post-kinds', 'microformats2', 'indieblocks' ) as $key ) {
 			$this->assertArrayHasKey( $key, $overlaps );
 			$this->assertNotEmpty( $overlaps[ $key ]['label'] );
 			$this->assertNotEmpty( $overlaps[ $key ]['overlaps'] );

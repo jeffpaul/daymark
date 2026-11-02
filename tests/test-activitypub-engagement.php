@@ -172,6 +172,13 @@ class Test_ActivityPub_Engagement extends WP_UnitTestCase {
 		$this->assertCount( 2, Daymark_Test_ActivityPub_Stub::$fetches, 'A cached miss is not fetched again.' );
 	}
 
+	public function test_resolve_target_fetches_through_proxy_get() {
+		$this->enable_route();
+
+		Daymark_ActivityPub_Engagement::resolve_target( $this->permalink );
+		$this->assertSame( array( 'proxy' ), Daymark_Test_ActivityPub_Stub::$fetched_via, 'ActivityPub 9.4.0 deprecated Http::get_remote_object() for Proxy::get().' );
+	}
+
 	public function test_resolve_target_reads_attributed_to_from_a_list() {
 		Daymark_Test_ActivityPub_Stub::$remote_objects[ $this->permalink ] = array(
 			'id'           => $this->object_id,

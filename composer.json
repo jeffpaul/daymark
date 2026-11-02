@@ -1,6 +1,6 @@
 {
     "name": "jeffpaul/daymark",
-    "description": "Mark — mobile-first WordPress publishing prototype. Dev dependencies for testing only.",
+    "description": "Daymark, your own social app for WordPress. Dev dependencies for testing only.",
     "type": "wordpress-plugin",
     "license": "GPL-2.0-or-later",
     "require-dev": {

@@ -117,6 +117,44 @@ class Test_Blogroll extends WP_UnitTestCase {
 		$this->assertStringNotContainsString( 'daymark:', $opml );
 	}
 
+	/**
+	 * A feed whose address may carry a private token stays out of the
+	 * public OPML; WordPress's own `?feed=rss2` address is still listed.
+	 */
+	public function test_export_public_leaves_out_feeds_that_may_carry_a_token(): void {
+		foreach (
+			array(
+				'https://token.example/' => 'https://token.example/feed/?token=secret',
+				'https://login.example/' => 'https://user:pass@login.example/feed/',
+				'https://plain.example/' => 'https://plain.example/?feed=rss2',
+			) as $site => $feed
+		) {
+			$this->subscriptions->create(
+				array(
+					'site_url'    => $site,
+					'feed_url'    => $feed,
+					'site_title'  => $site,
+					'source_type' => 'feed',
+					'status'      => 'active',
+				)
+			);
+		}
+
+		$opml = ( new Daymark_Subscription_OPML() )->export_public( Daymark_Blogroll::sites(), 'Sites I follow' );
+
+		$this->assertStringNotContainsString( 'secret', $opml );
+		$this->assertStringNotContainsString( 'login.example', $opml );
+		$this->assertStringContainsString( 'xmlUrl="https://plain.example/?feed=rss2"', $opml );
+	}
+
+	public function test_is_public_feed_url(): void {
+		$this->assertTrue( Daymark_Subscription_OPML::is_public_feed_url( 'https://a.example/feed/' ) );
+		$this->assertTrue( Daymark_Subscription_OPML::is_public_feed_url( 'https://a.example/?feed=atom&cat=3' ) );
+		$this->assertFalse( Daymark_Subscription_OPML::is_public_feed_url( 'https://a.example/feed/?key=abc' ) );
+		$this->assertFalse( Daymark_Subscription_OPML::is_public_feed_url( 'https://u@a.example/feed/' ) );
+		$this->assertFalse( Daymark_Subscription_OPML::is_public_feed_url( 'not a url' ) );
+	}
+
 	/** The block lists each followed site as a link, with its icon unless turned off. */
 	public function test_block_renders_links(): void {
 		$id = $this->subscribe( 'https://alpha.example/', 'Alpha' );

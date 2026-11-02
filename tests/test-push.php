@@ -250,6 +250,40 @@ class Test_Push extends WP_UnitTestCase {
 		$this->assertCount( 1, $this->scheduled_pushes() );
 	}
 
+	public function test_a_reply_to_your_comment_on_a_followed_post_says_so() {
+		Daymark_Push::save_subscription( $this->user_id, $this->browser_subscription() );
+
+		$sub_id = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+				'post_title'  => 'An origin post',
+			)
+		);
+		update_post_meta( $sub_id, 'permalink', 'https://origin.example/post/' );
+
+		$followed = $this->mark( $this->user_id );
+		update_post_meta( $followed, '_daymark_in_reply_to', 'https://origin.example/post/' );
+		self::factory()->comment->create(
+			array(
+				'comment_post_ID' => $followed,
+				'comment_author'  => 'Ana',
+				'comment_content' => 'Thanks!',
+			)
+		);
+
+		$elsewhere = $this->mark( $this->user_id );
+		update_post_meta( $elsewhere, '_daymark_in_reply_to', 'https://www.elsewhere.example/a-post/' );
+		self::factory()->comment->create( array( 'comment_post_ID' => $elsewhere ) );
+
+		$titles = wp_list_pluck( wp_list_pluck( $this->scheduled_pushes(), 1 ), 'title' );
+
+		$this->assertSame(
+			array( 'New reply to your comment on An origin post', 'New reply to your comment on elsewhere.example' ),
+			$titles
+		);
+	}
+
 	public function test_a_held_reply_pushes_once_approved() {
 		Daymark_Push::save_subscription( $this->user_id, $this->browser_subscription() );
 		$post_id = $this->mark( $this->user_id );

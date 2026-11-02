@@ -1,0 +1,57 @@
+/*
+ * "Follow me with Daymark" block (daymark/follow-me). Colors and fonts come
+ * from the theme; this only lays the form out. Logical properties, so it
+ * reads correctly in right-to-left languages.
+ */
+
+.wp-block-daymark-follow-me [hidden] {
+	display: none !important;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__lead {
+	margin-block: 0 0.5em;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__label {
+	display: block;
+	font-weight: 600;
+	margin-block-end: 0.25em;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+	align-items: stretch;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__input {
+	flex: 1 1 12em;
+	min-inline-size: 0;
+	box-sizing: border-box;
+	padding-block: 0.5em;
+	padding-inline: 0.75em;
+	border: 1px solid currentColor;
+	border-color: color-mix(in srgb, currentColor 45%, transparent);
+	border-radius: 4px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__error {
+	margin-block: 0.5em 0;
+	padding-inline-start: 0.5em;
+	border-inline-start: 3px solid #d63638;
+	font-weight: 600;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__feed {
+	margin-block: 0;
+	font-size: 0.875em;
+	overflow-wrap: anywhere;
+}
+
+.wp-block-daymark-follow-me .daymark-follow-me__form:not([hidden]) + .daymark-follow-me__feed {
+	margin-block-start: 0.75em;
+}

@@ -13,7 +13,7 @@ use function func_get_arg;
 use function func_num_args;
 use function is_int;
 use function is_string;
-use function trigger_deprecation;
+use function daymark_vendor_trigger_deprecation as trigger_deprecation;
 
 final readonly class RSA15 extends RSA
 {

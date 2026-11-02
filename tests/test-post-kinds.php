@@ -184,4 +184,15 @@ class Test_Post_Kinds extends WP_UnitTestCase {
 		$this->assertSame( '', apply_filters( 'kind_response_display', $box, $mark ) );
 		$this->assertSame( $box, apply_filters( 'kind_response_display', $box, $other ) );
 	}
+
+	/** Post Kinds 4.0.1 is told not to build the content response box for a Mark. */
+	public function test_content_response_skipped_only_on_marks() {
+		$mark  = self::factory()->post->create_and_get();
+		$other = self::factory()->post->create_and_get();
+		update_post_meta( $mark->ID, '_daymark_is_mark', '1' );
+
+		$this->assertFalse( apply_filters( 'kind_content_response', true, $mark ) );
+		$this->assertTrue( apply_filters( 'kind_content_response', true, $other ) );
+		$this->assertTrue( apply_filters( 'kind_content_response', true, null ) );
+	}
 }

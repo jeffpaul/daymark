@@ -7,6 +7,7 @@ use Daymark\Vendor\Http\Discovery\Exception\DiscoveryFailedException;
 use Daymark\Vendor\Http\Discovery\Exception\NoCandidateFoundException;
 use Daymark\Vendor\Http\Discovery\Exception\StrategyUnavailableException;
 use Daymark\Vendor\Http\Discovery\Strategy\DiscoveryStrategy;
+
 /**
  * Registry that based find results on class existence.
  *
@@ -21,14 +22,24 @@ abstract class ClassDiscovery
      *
      * @var DiscoveryStrategy[]
      */
-    private static $strategies = [\Daymark\Vendor\Http\Discovery\Strategy\GeneratedDiscoveryStrategy::class, \Daymark\Vendor\Http\Discovery\Strategy\CommonClassesStrategy::class, \Daymark\Vendor\Http\Discovery\Strategy\CommonPsr17ClassesStrategy::class, \Daymark\Vendor\Http\Discovery\Strategy\PuliBetaStrategy::class];
-    private static $deprecatedStrategies = [\Daymark\Vendor\Http\Discovery\Strategy\PuliBetaStrategy::class => true];
+    private static $strategies = [
+        Strategy\GeneratedDiscoveryStrategy::class,
+        Strategy\CommonClassesStrategy::class,
+        Strategy\CommonPsr17ClassesStrategy::class,
+        Strategy\PuliBetaStrategy::class,
+    ];
+
+    private static $deprecatedStrategies = [
+        Strategy\PuliBetaStrategy::class => true,
+    ];
+
     /**
      * Discovery cache to make the second time we use discovery faster.
      *
      * @var array
      */
     private static $cache = [];
+
     /**
      * Finds a class.
      *
@@ -41,38 +52,48 @@ abstract class ClassDiscovery
     protected static function findOneByType($type)
     {
         // Look in the cache
-        if (null !== $class = self::getFromCache($type)) {
+        if (null !== ($class = self::getFromCache($type))) {
             return $class;
         }
+
         static $skipStrategy;
-        $skipStrategy ?? $skipStrategy = self::safeClassExists(\Daymark\Vendor\Http\Discovery\Strategy\GeneratedDiscoveryStrategy::class) ? false : \Daymark\Vendor\Http\Discovery\Strategy\GeneratedDiscoveryStrategy::class;
+        $skipStrategy ?? $skipStrategy = self::safeClassExists(Strategy\GeneratedDiscoveryStrategy::class) ? false : Strategy\GeneratedDiscoveryStrategy::class;
+
         $exceptions = [];
         foreach (self::$strategies as $strategy) {
             if ($skipStrategy === $strategy) {
                 continue;
             }
+
             try {
                 $candidates = $strategy::getCandidates($type);
             } catch (StrategyUnavailableException $e) {
                 if (!isset(self::$deprecatedStrategies[$strategy])) {
                     $exceptions[] = $e;
                 }
+
                 continue;
             }
+
             foreach ($candidates as $candidate) {
                 if (isset($candidate['condition'])) {
                     if (!self::evaluateCondition($candidate['condition'])) {
                         continue;
                     }
                 }
+
                 // save the result for later use
                 self::storeInCache($type, $candidate);
+
                 return $candidate['class'];
             }
+
             $exceptions[] = new NoCandidateFoundException($strategy, $candidates);
         }
+
         throw DiscoveryFailedException::create($exceptions);
     }
+
     /**
      * Get a value from cache.
      *
@@ -85,14 +106,17 @@ abstract class ClassDiscovery
         if (!isset(self::$cache[$type])) {
             return;
         }
+
         $candidate = self::$cache[$type];
         if (isset($candidate['condition'])) {
             if (!self::evaluateCondition($candidate['condition'])) {
                 return;
             }
         }
+
         return $candidate['class'];
     }
+
     /**
      * Store a value in cache.
      *
@@ -103,6 +127,7 @@ abstract class ClassDiscovery
     {
         self::$cache[$type] = $class;
     }
+
     /**
      * Set new strategies and clear the cache.
      *
@@ -113,6 +138,7 @@ abstract class ClassDiscovery
         self::$strategies = $strategies;
         self::clearCache();
     }
+
     /**
      * Returns the currently configured discovery strategies as fully qualified class names.
      *
@@ -122,6 +148,7 @@ abstract class ClassDiscovery
     {
         return self::$strategies;
     }
+
     /**
      * Append a strategy at the end of the strategy queue.
      *
@@ -132,6 +159,7 @@ abstract class ClassDiscovery
         self::$strategies[] = $strategy;
         self::clearCache();
     }
+
     /**
      * Prepend a strategy at the beginning of the strategy queue.
      *
@@ -142,10 +170,12 @@ abstract class ClassDiscovery
         array_unshift(self::$strategies, $strategy);
         self::clearCache();
     }
+
     public static function clearCache()
     {
         self::$cache = [];
     }
+
     /**
      * Evaluates conditions to boolean.
      *
@@ -170,10 +200,13 @@ abstract class ClassDiscovery
                     return false;
                 }
             }
+
             return true;
         }
+
         return false;
     }
+
     /**
      * Get an instance of the $class.
      *
@@ -189,14 +222,17 @@ abstract class ClassDiscovery
             if (is_string($class)) {
                 return new $class();
             }
+
             if (is_callable($class)) {
                 return $class();
             }
         } catch (\Exception $e) {
             throw new ClassInstantiationFailedException('Unexpected exception when instantiating class.', 0, $e);
         }
+
         throw new ClassInstantiationFailedException('Could not instantiate class because parameter is neither a callable nor a string');
     }
+
     /**
      * We need a "safe" version of PHP's "class_exists" because Magento has a bug
      * (or they call it a "feature"). Magento is throwing an exception if you do class_exists()

@@ -37,9 +37,9 @@ if ( ! class_exists( 'Daymark_Test_Fake_Plugin_Overlap' ) ) {
 		 */
 		public function get_active_overlaps(): array {
 			return array(
-				'syndication-links' => array(
-					'label'    => 'Syndication Links',
-					'overlaps' => 'may duplicate the syndication markup Daymark already renders for Bridgy backfeed',
+				'microformats2' => array(
+					'label'    => 'Microformats 2',
+					'overlaps' => 'may add its own h-entry/h-card markup alongside Daymark\'s own',
 				),
 			);
 		}

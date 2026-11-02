@@ -1,6 +1,7 @@
 <?php
 /**
- * Bookmarklet tests: Reblog and Like the page you're reading elsewhere.
+ * Bookmarklet tests: Reblog and Like the page you're reading elsewhere,
+ * and follow the site it's on.
  *
  * The request wrapper (Daymark_Bookmarklet::handle()) calls auth_redirect(),
  * wp_die(), and exit, so it's left to manual and E2E coverage, like
@@ -23,6 +24,13 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 	/** @var callable|null */
 	private $webmention_filter = null;
 
+	/**
+	 * URL => HTML served instead of the blocked network (see serve_pages()).
+	 *
+	 * @var array<string, string>
+	 */
+	private array $pages = array();
+
 	public function set_up(): void {
 		parent::set_up();
 
@@ -32,13 +40,19 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		wp_set_current_user( $this->author );
 
 		add_filter( 'daymark_subscription_url_guard_resolved_addresses', array( $this, 'public_address' ) );
-		// No real network in tests: any oEmbed or page fetch fails fast.
+		// No real network in tests: any oEmbed or page fetch fails fast,
+		// except the pages a test lists in $this->pages.
 		add_filter( 'pre_http_request', array( $this, 'block_http' ) );
+		add_filter( 'pre_http_request', array( $this, 'serve_pages' ), 20, 3 );
+
+		$this->pages = array();
+		Daymark_Subscription_Html_Cache::reset();
 	}
 
 	public function tear_down(): void {
 		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', array( $this, 'public_address' ) );
 		remove_filter( 'pre_http_request', array( $this, 'block_http' ) );
+		remove_filter( 'pre_http_request', array( $this, 'serve_pages' ), 20 );
 
 		if ( null !== $this->webmention_filter ) {
 			remove_filter( 'option_active_plugins', $this->webmention_filter );
@@ -68,6 +82,53 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 	 */
 	public function block_http() {
 		return new WP_Error( 'http_blocked', 'No network in tests.' );
+	}
+
+	/**
+	 * Serve a page listed in $this->pages; leave anything else blocked.
+	 *
+	 * @param mixed  $preempt The earlier filter's answer.
+	 * @param array  $args    Request args (unused).
+	 * @param string $url     Requested URL.
+	 * @return mixed
+	 */
+	public function serve_pages( $preempt, $args, $url ) {
+		if ( ! isset( $this->pages[ $url ] ) ) {
+			return $preempt;
+		}
+
+		return array(
+			'headers'  => array( 'content-type' => 'text/html; charset=UTF-8' ),
+			'body'     => $this->pages[ $url ],
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
+	}
+
+	/**
+	 * A page that advertises one RSS feed.
+	 *
+	 * @param string $title Page title.
+	 * @param string $feed  Feed URL.
+	 * @return string
+	 */
+	private function page_with_feed( string $title, string $feed ): string {
+		return '<html><head><title>' . $title . '</title>'
+			. '<link rel="alternate" type="application/rss+xml" href="' . $feed . '" />'
+			. '</head><body></body></html>';
+	}
+
+	/**
+	 * Sign in as a new administrator, who can follow sites.
+	 *
+	 * @return void
+	 */
+	private function sign_in_as_admin(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 	}
 
 	/**
@@ -312,6 +373,7 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 			array(
 				'target' => $target,
 				'state'  => '' !== $target['url'] ? Daymark_Bookmarklet::state( $target, false ) : null,
+				'follow' => Daymark_Bookmarklet::follow_state( $target ),
 				'done'   => '',
 				'mark'   => null,
 				'error'  => '',
@@ -392,7 +454,7 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$html = (string) ob_get_clean();
 		unset( $_GET['tab'] );
 
-		$this->assertStringContainsString( 'Reblog and Like from your browser', $html );
+		$this->assertStringContainsString( 'Reblog, Like, and Follow from your browser', $html );
 		$this->assertStringContainsString( 'href="javascript:', $html );
 	}
 
@@ -449,5 +511,210 @@ class Test_Bookmarklet extends WP_UnitTestCase {
 		$config = Daymark_Routes::build_app_config();
 
 		$this->assertSame( Daymark_Bookmarklet::popup_url(), $config['bookmarkletUrl'] );
+	}
+	// -----------------------------------------------------------------
+	// Follow this site (issue #560).
+	// -----------------------------------------------------------------
+
+	public function test_only_people_who_can_manage_subscriptions_can_follow() {
+		$this->assertFalse( Daymark_Bookmarklet::can_follow() );
+		$this->assertNull( Daymark_Bookmarklet::follow_state( $this->target() ) );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_bookmarklet_follow', $result->get_error_code() );
+		$this->assertStringNotContainsString( 'value="follow_find"', $this->render( $this->target() ) );
+	}
+
+	public function test_popup_offers_to_follow_the_site() {
+		$this->sign_in_as_admin();
+
+		$html = $this->render( $this->target() );
+
+		$this->assertStringContainsString( 'value="follow_find"', $html );
+		$this->assertStringContainsString( 'Follow example.com', $html );
+		// Nothing is looked up until the reader asks.
+		$this->assertStringNotContainsString( 'name="daymark_feed_index"', $html );
+	}
+
+	public function test_install_page_mentions_following_only_to_people_who_can() {
+		$this->assertStringNotContainsString( 'follow the site you’re reading', $this->render( Daymark_Bookmarklet::read_target( array() ) ) );
+
+		$this->sign_in_as_admin();
+
+		$this->assertStringContainsString( 'follow the site you’re reading', $this->render( Daymark_Bookmarklet::read_target( array() ) ) );
+	}
+
+	public function test_find_feeds_starts_at_the_site_root() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/'] = $this->page_with_feed( 'Example Site', '/feed/' );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'https://example.com/', $result['site_url'] );
+		$this->assertSame( 'Example Site', $result['site_title'] );
+		$this->assertContains( 'https://example.com/feed/', wp_list_pluck( $result['candidates'], 'url' ) );
+		// Kept for this page only.
+		$this->assertSame( $result, Daymark_Bookmarklet::follow_lookup( $this->url ) );
+		$this->assertNull( Daymark_Bookmarklet::follow_lookup( 'https://example.com/another-post/' ) );
+	}
+
+	public function test_find_feeds_tries_the_page_when_the_root_has_no_feed() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/'] = '<html><head><title>Host</title></head><body></body></html>';
+		$this->pages[ $this->url ]           = $this->page_with_feed( 'A Great Post', 'https://example.com/a-great-post/feed/' );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $this->url, $result['site_url'] );
+		$this->assertContains( 'https://example.com/a-great-post/feed/', wp_list_pluck( $result['candidates'], 'url' ) );
+	}
+
+	public function test_find_feeds_keeps_a_percent_encoded_page_address() {
+		$this->sign_in_as_admin();
+		$this->url                           = 'https://example.com/news/caf%C3%A9-au-lait/';
+		$this->pages['https://example.com/'] = '<html><head><title>Host</title></head><body></body></html>';
+		$this->pages[ $this->url ]           = $this->page_with_feed( 'Café au lait', 'https://example.com/news/caf%C3%A9-au-lait/feed/' );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( $this->url, $result['site_url'] );
+		$this->assertContains( 'https://example.com/news/caf%C3%A9-au-lait/feed/', wp_list_pluck( $result['candidates'], 'url' ) );
+	}
+
+	public function test_popup_shows_the_feed_picker_after_a_lookup() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/'] = $this->page_with_feed( 'Example Site', '/feed/' );
+		Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$html = $this->render( $this->target() );
+
+		$this->assertStringContainsString( 'name="daymark_feed_index"', $html );
+		$this->assertStringContainsString( 'https://example.com/feed/', $html );
+		$this->assertStringContainsString( 'name="daymark_site_title" class="daymark-input" value="Example Site"', $html );
+		$this->assertStringContainsString( 'name="daymark_follow_cancel"', $html );
+		$this->assertStringContainsString( esc_url( Daymark_Follow_Link::app_url( $this->url ) ), $html );
+		// The picker, not the Reblog field, takes the page's focus.
+		$this->assertDoesNotMatchRegularExpression( '#<textarea[^>]*autofocus#', $html );
+		$this->assertMatchesRegularExpression( '#<input type="radio"[^>]*autofocus#', $html );
+	}
+
+	public function test_follow_subscribes_to_the_chosen_feed_under_the_given_name() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/'] = $this->page_with_feed( 'Example Site', '/feed/' );
+
+		$lookup = Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+		$index  = array_search( 'https://example.com/feed/', wp_list_pluck( $lookup['candidates'], 'url' ), true );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow', $this->target(), (int) $index, 'My Friend' );
+
+		$this->assertIsArray( $result );
+		$this->assertSame( 'https://example.com/feed/', $result['feed_url'] );
+		$this->assertSame( 'My Friend', $result['site_title'] );
+		// The lookup is used up, and the popup now says the site is followed.
+		$this->assertNull( Daymark_Bookmarklet::follow_lookup( $this->url ) );
+		$this->assertStringContainsString( 'You follow My Friend.', $this->render( $this->target() ) );
+	}
+
+	public function test_follow_without_a_lookup_for_this_page_is_refused() {
+		$this->sign_in_as_admin();
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow', $this->target(), 0, '' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_follow_expired', $result->get_error_code() );
+	}
+
+	public function test_follow_refuses_a_lookup_the_app_replaced() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/']   = $this->page_with_feed( 'Example Site', '/feed/' );
+		$this->pages['https://other.example/'] = $this->page_with_feed( 'Other', '/feed/' );
+		Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		// The app's Follow a site sheet looks up another site since: each
+		// user keeps one lookup, so index 0 now means the other site's feed.
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/subscriptions/discover' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'site_url', 'https://other.example/' );
+		$this->assertSame( 200, rest_do_request( $request )->get_status() );
+
+		$result = Daymark_Bookmarklet::follow_action( 'follow', $this->target(), 0, '' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_follow_expired', $result->get_error_code() );
+		$this->assertNull( ( new Daymark_Subscriptions() )->get_by_feed_url( 'https://other.example/feed/' ) );
+	}
+
+	public function test_cancel_drops_the_lookup() {
+		$this->sign_in_as_admin();
+		$this->pages['https://example.com/'] = $this->page_with_feed( 'Example Site', '/feed/' );
+		Daymark_Bookmarklet::follow_action( 'follow_find', $this->target() );
+
+		$this->assertTrue( Daymark_Bookmarklet::follow_action( 'follow_cancel', $this->target() ) );
+		$this->assertNull( Daymark_Bookmarklet::follow_lookup( $this->url ) );
+	}
+
+	public function test_followed_subscription_matches_a_cached_post_by_its_subscription() {
+		$subscriptions   = new Daymark_Subscriptions();
+		$subscription_id = (int) $subscriptions->create(
+			array(
+				'site_url' => 'https://elsewhere.example/',
+				'feed_url' => 'https://elsewhere.example/feed/',
+			)
+		);
+		$sub_post        = (int) self::factory()->post->create(
+			array(
+				'post_type'   => Daymark_Subscription_Post_Type::POST_TYPE,
+				'post_status' => 'publish',
+			)
+		);
+		update_post_meta( $sub_post, 'subscription_id', $subscription_id );
+		update_post_meta( $sub_post, 'permalink', $this->url );
+
+		$this->assertSame( $subscription_id, (int) Daymark_Bookmarklet::followed_subscription( $this->url )['id'] );
+	}
+
+	public function test_followed_subscription_matches_by_site_address() {
+		$subscriptions = new Daymark_Subscriptions();
+		$root          = (int) $subscriptions->create(
+			array(
+				'site_url'   => 'http://www.example.com/',
+				'feed_url'   => 'https://example.com/feed/',
+				'site_title' => 'Example',
+			)
+		);
+		$blog          = (int) $subscriptions->create(
+			array(
+				'site_url' => 'https://example.com/blog/',
+				'feed_url' => 'https://example.com/blog/feed/',
+			)
+		);
+
+		// Scheme and a leading www. don't matter; the most specific site wins.
+		$this->assertSame( $root, (int) Daymark_Bookmarklet::followed_subscription( $this->url )['id'] );
+		$this->assertSame( $blog, (int) Daymark_Bookmarklet::followed_subscription( 'https://example.com/blog/a-post/' )['id'] );
+		// A path only matches whole segments of the site's own path.
+		$this->assertSame( $root, (int) Daymark_Bookmarklet::followed_subscription( 'https://example.com/blogroll/' )['id'] );
+		$this->assertNull( Daymark_Bookmarklet::followed_subscription( 'https://example.org/' ) );
+		$this->assertSame( 'Example', Daymark_Bookmarklet::subscription_name( Daymark_Bookmarklet::followed_subscription( $this->url ) ) );
+	}
+
+	public function test_popup_says_when_the_site_is_already_followed() {
+		$this->sign_in_as_admin();
+		( new Daymark_Subscriptions() )->create(
+			array(
+				'site_url' => 'https://example.com/',
+				'feed_url' => 'https://example.com/feed/',
+			)
+		);
+
+		$html = $this->render( $this->target() );
+
+		$this->assertStringContainsString( 'You follow example.com.', $html );
+		$this->assertStringNotContainsString( 'value="follow_find"', $html );
 	}
 }
