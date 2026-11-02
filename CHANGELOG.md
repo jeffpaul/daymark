@@ -46,7 +46,7 @@ can't act on them.
 
 ### Fixed
 
-- Push notifications keep arriving after the browser changes or rotates a device's push address, saving the new address right away through the service worker and re-syncing on app start. ([#536](https://github.com/jeffpaul/daymark/pull/536))
+- Push notifications keep arriving after the browser changes or rotates a device's push address, saving the new address right away through the service worker and re-syncing on app start. ([#536](https://github.com/jeffpaul/daymark/pull/536), [#567](https://github.com/jeffpaul/daymark/pull/567))
 - Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))
 - Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, also brings in feeds you follow that aren't WordPress sites, and subscribes to each site's feed directly, so a long list imports quickly. ([#541](https://github.com/jeffpaul/daymark/pull/541), [#553](https://github.com/jeffpaul/daymark/pull/553))
 - The public blogroll no longer lists a feed whose address might hold a private key, such as a paid podcast feed. Those feeds are still followed; they're just left out of the public list. ([#553](https://github.com/jeffpaul/daymark/pull/553))
