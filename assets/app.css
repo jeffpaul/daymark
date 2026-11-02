@@ -7,6 +7,9 @@
 
 /* --- Design tokens --- */
 :root {
+	/* 1 left-to-right, -1 right-to-left: multiply a horizontal offset by
+	   this to mirror it (the launcher fan) without a second set of rules. */
+	--daymark-dir: 1;
 	--daymark-bg: #ffffff;
 	--daymark-surface: #f8f8f8;
 	--daymark-border: #e0e0e0;
@@ -39,6 +42,10 @@
 	--daymark-spacing-lg: 24px;
 	--daymark-spacing-xl: 32px;
 	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+[dir="rtl"] {
+	--daymark-dir: -1;
 }
 
 /* The Bionic Reading font, when Settings -> Daymark turns it on (app.js
@@ -747,7 +754,9 @@ h2[tabindex='-1']:focus {
 	   the whole arc visibly left of the button instead of centered above it. */
 	position: absolute;
 	z-index: 2;
-	inset-inline-start: 50%;
+	/* Physical on purpose: left: 50% plus translate(-50%) centers the same
+	   way in both directions. The fan below mirrors through --daymark-dir. */
+	left: 50%; /* rtl:ignore */
 	bottom: 100%;
 	width: var(--daymark-tap-min);
 	height: var(--daymark-tap-min);
@@ -771,10 +780,6 @@ h2[tabindex='-1']:focus {
 	/* A back-out easing (overshoots past 1 then settles) reads as a bounce
 	   with pure CSS — the closest a transition gets to spring physics. */
 	transition: transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
-}
-
-[dir="rtl"] .daymark-launcher__bubble {
-	transform: translate(50%, 4px) scale(0.3);
 }
 
 .daymark-launcher__bubble .daymark-launcher__icon {
@@ -812,13 +817,13 @@ h2[tabindex='-1']:focus {
    same angles (so the same overlap fix above still holds) but grows that
    gap to ~15px, comfortable finger-error room on a touch screen. */
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(-50% - 104px), -87px) scale(1);
+	transform: translate(calc(-50% - var(--daymark-dir) * 104px), -87px) scale(1);
 	opacity: 1;
 	transition-delay: 0.02s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(-50% - 57px), -123px) scale(1);
+	transform: translate(calc(-50% - var(--daymark-dir) * 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.08s;
 }
@@ -830,35 +835,15 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(-50% + 57px), -123px) scale(1);
+	transform: translate(calc(-50% + var(--daymark-dir) * 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.2s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(-50% + 104px), -87px) scale(1);
+	transform: translate(calc(-50% + var(--daymark-dir) * 104px), -87px) scale(1);
 	opacity: 1;
 	transition-delay: 0.26s;
-}
-
-[dir="rtl"] .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(50% + 104px), -87px) scale(1);
-}
-
-[dir="rtl"] .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(50% + 57px), -123px) scale(1);
-}
-
-[dir="rtl"] .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="checkin"] {
-	transform: translate(50%, -136px) scale(1);
-}
-
-[dir="rtl"] .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(50% - 57px), -123px) scale(1);
-}
-
-[dir="rtl"] .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(50% - 104px), -87px) scale(1);
 }
 
 /* Each bubble's type name, under its circle while the launcher is open, so
@@ -868,7 +853,7 @@ h2[tabindex='-1']:focus {
 .daymark-launcher__label {
 	position: absolute;
 	top: calc(100% + 3px);
-	inset-inline-start: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	padding: 1px 6px;
 	border-radius: 999px;
@@ -879,10 +864,6 @@ h2[tabindex='-1']:focus {
 	line-height: 1.4;
 	white-space: nowrap;
 	pointer-events: none;
-}
-
-[dir="rtl"] .daymark-launcher__label {
-	transform: translateX(50%);
 }
 
 /* Closing is quicker and never staggered — snappy, not delightful. */
@@ -1387,7 +1368,7 @@ h2[tabindex='-1']:focus {
 	height: 14px;
 	margin-inline-start: -7px;
 	margin-top: -14px;
-	border-radius: 50% 50% 50% 0;
+	border-radius: 50% 50% 50% 0; /* rtl:ignore (the map tile is never mirrored) */
 	background: var(--daymark-accent);
 	box-shadow: 0 0 0 2px #fff;
 	transform: rotate(-45deg);
@@ -2061,7 +2042,7 @@ button.daymark-stat {
 .daymark-flash-bubble {
 	position: absolute;
 	bottom: calc(100% + 6px);
-	inset-inline-start: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	background: var(--daymark-text-primary);
 	color: var(--daymark-bg);
@@ -2072,10 +2053,6 @@ button.daymark-stat {
 	border-radius: var(--daymark-radius-sm);
 	pointer-events: none;
 	z-index: 5;
-}
-
-[dir="rtl"] .daymark-flash-bubble {
-	transform: translateX(50%);
 }
 
 /* .daymark-item-stats--minimal (renderSubscriptionPostCard()'s own stats
@@ -3096,7 +3073,8 @@ button.daymark-stat {
 	align-items: center;
 	gap: var(--daymark-spacing-xs);
 	min-height: 36px;
-	padding: 0 var(--daymark-spacing-xs) 0 var(--daymark-spacing-md);
+	padding-block: 0;
+	padding-inline: var(--daymark-spacing-md) var(--daymark-spacing-xs);
 	border-radius: 999px;
 	background: var(--daymark-surface);
 	border: 1px solid var(--daymark-border);
@@ -3313,7 +3291,7 @@ button.daymark-stat {
 }
 
 .daymark-toggle__input:checked + .daymark-toggle__track::after {
-	transform: translateX(18px);
+	transform: translateX(calc(var(--daymark-dir) * 18px));
 }
 
 .daymark-toggle__input:focus-visible + .daymark-toggle__track {
@@ -4950,7 +4928,7 @@ button.daymark-stat {
 .daymark-newposts {
 	position: fixed;
 	top: calc(var(--daymark-tap-min) + var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
-	inset-inline-start: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	z-index: 6;
 	display: inline-flex;
@@ -4966,10 +4944,6 @@ button.daymark-stat {
 	font-weight: 600;
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 	cursor: pointer;
-}
-
-[dir="rtl"] .daymark-newposts {
-	transform: translateX(50%);
 }
 
 .daymark-newposts[hidden] {

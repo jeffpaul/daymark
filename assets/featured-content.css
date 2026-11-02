@@ -183,17 +183,19 @@
 	height: 8px;
 	margin: 0 auto;
 	border: solid #1e1e1e;
-	border-width: 2px 2px 0 0;
+	border-width: 2px 2px 0 0; /* rtl:ignore (the whole button is mirrored below) */
 }
 
+/* The chevrons stay physical: in right-to-left the whole button is
+   mirrored, so a second, logical flip here would cancel it out. */
 .daymark-fc-gallery__nav--prev::before {
 	transform: rotate( -135deg );
-	margin-inline-start: 18px;
+	margin-left: 18px; /* rtl:ignore */
 }
 
 .daymark-fc-gallery__nav--next::before {
 	transform: rotate( 45deg );
-	margin-inline-end: 18px;
+	margin-right: 18px; /* rtl:ignore */
 }
 
 [dir="rtl"] .daymark-fc-gallery__nav {
