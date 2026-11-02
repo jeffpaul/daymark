@@ -3596,6 +3596,124 @@ test('a published Mark whose upload was interrupted by a reload resumes partway'
 	expect(rangesAfterReload.filter((range) => range.startsWith('bytes 0-'))).toHaveLength(0);
 });
 
+// A file the site refuses (its type or size). A PDF works for this: the
+// site refuses it as soon as the upload starts.
+const REFUSED_FILE = { name: 'menu.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%E2E\n') };
+const REFUSED_MESSAGE = 'Removed menu.pdf. File type not allowed.';
+
+// Holds the request that starts an upload until the returned function is
+// called, so a test can act while the upload is still waiting. Calling it
+// lets the request through, waits until it has gone, and stops holding.
+async function holdUploadStart(page) {
+	let open;
+	const gate = new Promise((resolve) => {
+		open = resolve;
+	});
+	let passed;
+	const continued = new Promise((resolve) => {
+		passed = resolve;
+	});
+	await page.route('**/daymark/v1/uploads', async (route) => {
+		await gate;
+		await route.continue();
+		passed();
+	});
+	return async () => {
+		open();
+		await continued;
+		await page.unroute('**/daymark/v1/uploads');
+	};
+}
+
+// A file the site refuses leaves the composer straight away, with the
+// reason. Leaving the composer afterwards saves the draft's text the usual
+// way, with no error card left behind.
+test('a file the site refuses is removed from the composer, and the draft keeps its text', async ({ page }) => {
+	const caption = `E2E refused file ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', REFUSED_FILE);
+
+	await expect(page.locator('[data-create-status]')).toHaveText(REFUSED_MESSAGE);
+	await expect(page.locator('[data-upload-status-for]')).toHaveCount(0);
+
+	// Leave the composer the way the app does: start a new Mark.
+	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	await openComposer(page, 'note');
+	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0);
+
+	await page.goto('/daymark/me');
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption }).first()).toBeVisible();
+});
+
+// The same, when the composer is left before the refusal arrives: the
+// unfinished draft goes to the queue with its file, the site refuses the
+// file, and the draft saves with its text instead of becoming an error card.
+test('a draft left before the site refuses its file still saves', async ({ page }) => {
+	const caption = `E2E refused later ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+	const release = await holdUploadStart(page);
+	await page.setInputFiles('#daymark-file-input', REFUSED_FILE);
+	await expect(page.locator('[data-upload-status-for]')).toContainText('Uploading');
+
+	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	await openComposer(page, 'note');
+	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	const pending = page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption });
+	await expect(pending).toBeVisible();
+
+	await release();
+	await expect(pending).toHaveCount(0, { timeout: 15000 });
+
+	await page.goto('/daymark/me');
+	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption }).first()).toBeVisible();
+});
+
+// A queued draft that fails says "Couldn't save draft", not "Couldn't
+// publish". Here Save as Draft is tapped while a refused file is still
+// uploading. Tapping the card reopens the draft, the composer takes the
+// file out with the reason, and the draft then saves.
+test("a queued draft that fails says Couldn't save draft, and reopening it drops the refused file", async ({
+	page,
+}) => {
+	const caption = `E2E draft error ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+	const release = await holdUploadStart(page);
+	await page.setInputFiles('#daymark-file-input', REFUSED_FILE);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="save-draft"]').click();
+	await expect(page.getByText('Saved as draft')).toBeVisible();
+	await release();
+
+	await page.locator('a.daymark-success__link[href="#home"]').click();
+	const card = page.locator('[data-resume-pending]').filter({ hasText: caption });
+	await expect(card).toContainText("Couldn't save draft", { timeout: 15000 });
+
+	await card.click();
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('[data-create-status]')).toHaveText(REFUSED_MESSAGE);
+
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="save-draft"]').click();
+	await expect(page.getByText('Saved as draft')).toBeVisible();
+	await page.locator('a.daymark-success__link[href="#home"]').click();
+	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0, {
+		timeout: 15000,
+	});
+});
+
 // Home IS the merged Timeline feed (Marks + subscribed posts) now — there's
 // no separate #timeline screen to navigate to. The header wordmark is just
 // a plain "go home" link, and the merged feed's heading already reads

@@ -629,6 +629,9 @@
 		// where its plugin would land on its own (see defaultHelpers()).
 		helpers: defaultHelpers(),
 		offlineQueueId: null, // IndexedDB id while this composition is queued offline (see submitOrQueue())
+		// A message for the composer's status line that arrived while the
+		// composer wasn't on screen (a refused file, see removeRefusedFile()).
+		composerNotice: '',
 	};
 
 	const TYPE_LABELS = {
@@ -1783,6 +1786,7 @@
 		state.defaultsAppliedFor = null;
 		state.helpers = defaultHelpers();
 		state.offlineQueueId = null;
+		state.composerNotice = '';
 	}
 
 	// Quietly capture "when/where this Mark was actually created" the
@@ -2233,8 +2237,10 @@
 	}
 
 	// Flags a pending record as failed for a real (non-connectivity) reason
-	// — renderPendingItem() surfaces this as "Couldn't publish" rather than
-	// silently leaving it looking identical to a plain offline-queued item.
+	// — renderPendingItem() surfaces this as "Couldn't publish" (or
+	// "Couldn't save draft" for a draft, see pendingErrorLabel()) rather
+	// than silently leaving it looking identical to a plain offline-queued
+	// item.
 	async function markPendingError(id, message) {
 		const db = await openOfflineDB();
 		const store = db.transaction(OFFLINE_STORE, 'readwrite').objectStore(OFFLINE_STORE);
@@ -2794,6 +2800,23 @@
 		return error;
 	}
 
+	// Upload errors that mean the site will never take this file: its type
+	// or size, or this person isn't allowed to upload at all. A dropped
+	// connection or a busy server is different, and runUploadJob() retries
+	// those on its own. Retrying a refused file only fails again, and the
+	// site has already discarded what it had of it.
+	const REFUSED_UPLOAD_CODES = [
+		'invalid_mime',
+		'daymark_upload_too_large',
+		'daymark_heic_unsupported',
+		'daymark_upload_invalid',
+		'rest_cannot_upload',
+	];
+
+	function isRefusedUpload(err) {
+		return !!err && REFUSED_UPLOAD_CODES.includes(err.code);
+	}
+
 	// Sends one part. POST, not PUT: some hosts' firewalls refuse a PUT
 	// body. Content-Range says where the bytes go.
 	async function sendUploadChunk(sessionId, chunk, start, total) {
@@ -2952,6 +2975,10 @@
 						delay = Math.min(delay * 2, UPLOAD_RETRY_MAX_MS);
 						continue;
 					}
+					if (isRefusedUpload(err)) {
+						// Nothing on the site to resume.
+						await deleteUploadProgress([job.key]);
+					}
 					throw err;
 				}
 			}
@@ -3031,10 +3058,19 @@
 	//   Blob the payload still carries.
 	// - daymark_media_in_use on a create: an earlier attempt created this
 	//   Mark and only its response was lost. That Mark is the result.
+	//
+	// And a draft saved on the way out of the composer (payload.autosave)
+	// keeps its text when the site refuses one of its files
+	// (isRefusedUpload()): the file is dropped from the payload and the
+	// draft saves without it. With nothing else in it, there's nothing to
+	// save, and this resolves with null. A Publish or Save as Draft tap
+	// still reports the refusal, so a Mark is never published without a
+	// file the person chose.
 	async function sendMarkPayload(path, payload, opts) {
 		opts = opts || {};
 		const files = Array.isArray(payload.newFiles) ? payload.newFiles : [];
 		if (opts.waitForUploads) {
+			const refused = [];
 			for (let i = 0; i < files.length; i++) {
 				const f = files[i];
 				if (!f.key) {
@@ -3042,10 +3078,25 @@
 					f.key = (opts.keyPrefix || 'legacy') + '-' + i;
 				}
 				if (!f.attachmentId && f.blob) {
-					f.attachmentId = await ensureUpload(
-						f,
-						opts.onProgress ? (received, size) => opts.onProgress(i, received, size) : null
-					);
+					try {
+						f.attachmentId = await ensureUpload(
+							f,
+							opts.onProgress ? (received, size) => opts.onProgress(i, received, size) : null
+						);
+					} catch (err) {
+						if (!payload.autosave || !isRefusedUpload(err)) {
+							throw err;
+						}
+						refused.push(f);
+					}
+				}
+			}
+			if (refused.length) {
+				// Changed in place, so a record stored again later (a
+				// dropped connection) no longer carries the refused files.
+				payload.newFiles = files.filter((f) => !refused.includes(f));
+				if (!payloadHasContent(payload, 'marks' !== path)) {
+					return null;
 				}
 			}
 		}
@@ -3510,10 +3561,56 @@
 				if ((err && err.cancelled) || entry.removed) {
 					return;
 				}
+				if (isRefusedUpload(err) && generation === composerGeneration) {
+					removeRefusedFile(entry, err.message);
+					return;
+				}
 				entry.uploadStatus = 'error';
 				entry.uploadError = (err && err.message) || '';
 				CreateScreen.refreshUploadStatus(entry);
 			});
+	}
+
+	// The site refused one of the composer's files (its type or size, see
+	// isRefusedUpload()): take it out of the Mark and say why. Left in, it
+	// would fail on every try, and leaving the composer would queue a
+	// draft that never saves. Files that failed for any other reason stay,
+	// since uploads retry those on their own.
+	function removeRefusedFile(entry, reason) {
+		entry.removed = true;
+		if (entry.url) {
+			URL.revokeObjectURL(entry.url);
+		}
+		state.files = state.files.filter((f) => f !== entry);
+		state.primaryType = effectiveType();
+		const message = sprintf(
+			/* translators: 1: file name, 2: the site's reason, a full sentence such as "File type not allowed." */
+			__('Removed %1$s. %2$s', 'daymark'),
+			entry.file ? entry.file.name : '',
+			reason || __('This site does not accept this file.', 'daymark')
+		);
+		let status = root.querySelector('[data-create-status]');
+		if (status) {
+			CreateScreen.refreshMedia();
+		} else if ('#publish' === window.location.hash) {
+			// The Mark's type can change with it (a photo Mark whose only
+			// photo is gone is a Note), so draw the screen again. With
+			// nothing left to publish, that lands back in the composer.
+			showScreen('#publish');
+			status = root.querySelector('[data-publish-status], [data-create-status]');
+			announce(message);
+		}
+		// Added to what the status line already says, since several files
+		// can be refused at once (and the HEIC note can already be there).
+		const join = (before) => (before ? before + ' ' + message : message);
+		if (status) {
+			status.textContent = join(status.textContent);
+		} else {
+			// Shown the next time the composer opens.
+			state.composerNotice = join(state.composerNotice);
+		}
+		// Save the Mark again without the file.
+		scheduleAutosave();
 	}
 
 	function scheduleAutosave() {
@@ -6775,6 +6872,17 @@
 		)}" aria-label="${esc(__('Upload progress', 'daymark'))}"></progress>`;
 	}
 
+	// What a queued Mark that failed to send says: "Couldn't publish" for
+	// one on its way to being published, "Couldn't save draft" for a draft
+	// (Save as Draft, a draft saved on the way out of the composer, or a
+	// Contributor's Mark going to an editor as a draft).
+	function pendingErrorLabel(record) {
+		const payload = record.payload || {};
+		return 'publish' === payload.status
+			? __("Couldn't publish", 'daymark')
+			: __("Couldn't save draft", 'daymark');
+	}
+
 	function renderPendingItem(record) {
 		const payload = record.payload || {};
 		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
@@ -6793,7 +6901,7 @@
 		const meta =
 			status === 'error'
 				? `<span class="daymark-chip daymark-chip--danger">${esc(
-						__("Couldn't publish", 'daymark')
+						pendingErrorLabel(record)
 				  )}</span> ${esc(__('Tap to review and retry', 'daymark'))}`
 				: status === 'uploading'
 				? `<span class="daymark-chip daymark-chip--muted">${esc(
@@ -6846,7 +6954,7 @@
 		let chip;
 		if ('error' === status) {
 			chip = `<span class="daymark-chip daymark-chip--danger">${esc(
-				__("Couldn't publish", 'daymark')
+				pendingErrorLabel(record)
 			)}</span> ${esc(__('Tap to review and retry', 'daymark'))}`;
 		} else if ('uploading' === status) {
 			chip = `<span class="daymark-spinner daymark-spinner--inline" aria-hidden="true"></span> ${pendingUploadingMarkup(
@@ -9641,6 +9749,14 @@
 			});
 
 			this.refreshMedia();
+
+			if (state.composerNotice) {
+				// The status line was just drawn, too late for its own
+				// live region to be read out, so announce it as well.
+				root.querySelector('[data-create-status]').textContent = state.composerNotice;
+				announce(state.composerNotice);
+				state.composerNotice = '';
+			}
 
 			// Close the title-field hint on an outside click or Escape,
 			// same convention as the item menu, launcher, search, and the
