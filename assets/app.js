@@ -4498,6 +4498,114 @@
 		);
 	}
 
+	// --- The caption box: it grows with its text, and counts a Note ---
+	//
+	// The composer's caption box grows as you type, up to half the screen
+	// (the max-height on .daymark-textarea--grow), instead of scrolling
+	// inside its first four lines. On a Note, a quiet line under it counts
+	// down from 300 characters, the length of one Bluesky post, and past
+	// that says the Note will go to Bluesky as a link. It's the block
+	// editor's Note length count: both use window.daymarkNoteMeasure
+	// (assets/note-length.js), so a Note counts the same in either place.
+	const noteLengthConfig = config.noteLength || {};
+	const NOTE_LENGTH_LIMIT = Math.max(1, parseInt(noteLengthConfig.limit, 10) || 300);
+	// How the Note measured last time ('short' or 'long'), so a screen
+	// reader hears about it only when it crosses the limit, not on each key.
+	let noteLengthForm = null;
+
+	/**
+	 * Sets the caption box's height to fit its text. The max-height in CSS
+	 * stops it at half the screen, where it scrolls again. Measuring first
+	 * shrinks the box, which can move the page, so the page's scroll
+	 * position is put back afterwards.
+	 *
+	 * @param {HTMLTextAreaElement|null} field The caption box.
+	 */
+	function fitCaptionField(field) {
+		if (!field || !field.isConnected) {
+			return;
+		}
+		const scrollX = window.scrollX;
+		const scrollY = window.scrollY;
+		field.style.height = 'auto';
+		const style = window.getComputedStyle(field);
+		const borders = (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+		field.style.height = field.scrollHeight + borders + 'px';
+		// Hidden while everything fits, so no scrollbar flickers in as the
+		// box grows; back to scrolling once it reaches its max-height.
+		field.style.overflowY = field.scrollHeight > field.clientHeight + 1 ? 'auto' : 'hidden';
+		if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+			window.scrollTo(scrollX, scrollY);
+		}
+	}
+
+	/**
+	 * What a screen reader hears when a Note crosses the limit. The same
+	 * sentences as the block editor's counter.
+	 *
+	 * @param {string} form 'short' or 'long'.
+	 * @return {string} The sentence.
+	 */
+	function noteShareText(form) {
+		if (noteLengthConfig.atmosphere) {
+			return 'short' === form
+				? __('Posts to Bluesky as a regular post, without a title.', 'daymark')
+				: __('Posts to Bluesky as a link card to this post, not its full text.', 'daymark');
+		}
+		return 'short' === form
+			? __('Short enough to share as one social post, without a title.', 'daymark')
+			: __('Too long for one Bluesky post. Sharing tools may share a link to it instead.', 'daymark');
+	}
+
+	/**
+	 * Shows or updates the Note length line under the caption box, and hides
+	 * it for any other kind of Mark. A Note has no images, so only its text
+	 * counts.
+	 */
+	function refreshNoteLength() {
+		const line = root.querySelector('[data-note-length]');
+		const field = root.querySelector('#daymark-caption');
+		if (!line || !field) {
+			return;
+		}
+		const measure = window.daymarkNoteMeasure;
+		if ('note' !== effectiveType() || !measure) {
+			line.hidden = true;
+			line.textContent = '';
+			field.removeAttribute('aria-describedby');
+			noteLengthForm = null;
+			return;
+		}
+		const result = measure.measureNote(state.caption, [], NOTE_LENGTH_LIMIT);
+		const over = result.remaining < 0;
+		const count = over
+			? sprintf(
+					/* translators: %d: number of characters over the limit. */
+					_n('%d character over', '%d characters over', -result.remaining, 'daymark'),
+					-result.remaining
+			  )
+			: sprintf(
+					/* translators: %d: number of characters left before the limit. */
+					_n('%d character left', '%d characters left', result.remaining, 'daymark'),
+					result.remaining
+			  );
+		const label = over
+			? noteLengthConfig.atmosphere
+				? __('Shared to Bluesky as a link', 'daymark')
+				: __('Too long for one Bluesky post', 'daymark')
+			: '';
+		line.classList.toggle('is-over', over);
+		line.innerHTML =
+			(label ? `<span class="daymark-notelength__label">${esc(label)}</span>` : '') +
+			`<span class="daymark-notelength__count">${esc(count)}</span>`;
+		line.hidden = false;
+		field.setAttribute('aria-describedby', line.id);
+		if (noteLengthForm && noteLengthForm !== result.form) {
+			announce(noteShareText(result.form));
+		}
+		noteLengthForm = result.form;
+	}
+
 	function skeletonRows(count) {
 		let out = '';
 		for (let i = 0; i < count; i++) {
@@ -10201,9 +10309,10 @@
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
-					<textarea id="daymark-caption" class="daymark-textarea" rows="4" placeholder="${esc(
+					<textarea id="daymark-caption" class="daymark-textarea daymark-textarea--grow" rows="4" placeholder="${esc(
 						'checkin' === effectiveType() ? __('Any thoughts to add? (optional)', 'daymark') : __("What's happening?", 'daymark')
 					)}">${esc(state.caption)}</textarea>
+					<p class="daymark-notelength" id="daymark-note-length" data-note-length hidden></p>
 				</div>
 				<div data-title-slot></div>
 				<div data-transcript-slot></div>
@@ -10650,6 +10759,8 @@
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
+				fitCaptionField(caption);
+				refreshNoteLength();
 				this.refreshDraftsLink();
 				scheduleAutosave();
 				scheduleQuietTagSuggestion();
@@ -10688,7 +10799,11 @@
 				navigate('#publish');
 			});
 
+			// A new composer screen: the first count below is where the Note
+			// starts, not a crossing to announce.
+			noteLengthForm = null;
 			this.refreshMedia();
+			fitCaptionField(caption);
 
 			if (state.composerNotice) {
 				// The status line was just drawn, too late for its own
@@ -10857,6 +10972,8 @@
 			// cleared files either way.
 			this.refreshTranscriptField();
 			this.refreshDraftsLink();
+			// Only a Note gets the length count, so it follows the type too.
+			refreshNoteLength();
 			if (!state.files.length) {
 				preview.innerHTML = '';
 				return;
@@ -11611,6 +11728,8 @@
 				const captionField = document.getElementById('daymark-caption');
 				if (captionField) {
 					captionField.value = state.caption;
+					fitCaptionField(captionField);
+					refreshNoteLength();
 				}
 				this.hide();
 				runAutosave();
@@ -16991,6 +17110,19 @@
 		window.visualViewport.addEventListener('resize', syncSheetsToVisualViewport);
 		window.visualViewport.addEventListener('scroll', syncSheetsToVisualViewport);
 	}
+
+	// The caption box's height depends on its width, so fit it again when
+	// the window changes size (a phone turned sideways, a resized window).
+	let captionFitFrame = 0;
+	window.addEventListener('resize', () => {
+		if (captionFitFrame) {
+			return;
+		}
+		captionFitFrame = window.requestAnimationFrame(() => {
+			captionFitFrame = 0;
+			fitCaptionField(document.getElementById('daymark-caption'));
+		});
+	});
 
 	// A broken `data-img-fallback`-carrying <img> (see imgWithFallback()
 	// above) degrades to a glyph span in its place instead of the browser's

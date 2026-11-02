@@ -2704,6 +2704,46 @@ button.daymark-stat {
 	min-height: 112px;
 }
 
+/* The composer's caption box grows with its text (fitCaptionField(),
+   app.js) up to half the screen, then scrolls. Its height follows the
+   text, so it has no resize handle. */
+.daymark-textarea--grow {
+	resize: none;
+	max-height: max(112px, 50vh);
+}
+
+/* The Note length line under a Note's caption (refreshNoteLength(),
+   app.js): a quiet count of the characters left, and past the limit how
+   the Note will be shared. */
+.daymark-notelength {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 0 var(--daymark-spacing-sm);
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-notelength[hidden] {
+	display: none;
+}
+
+.daymark-notelength__label {
+	color: var(--daymark-text-secondary);
+	font-weight: 600;
+}
+
+.daymark-notelength__count {
+	margin-inline-start: auto;
+	font-variant-numeric: tabular-nums;
+}
+
+.daymark-notelength.is-over .daymark-notelength__count {
+	color: var(--daymark-error);
+	font-weight: 600;
+}
+
 /* "Follow a site" sheet (FollowSiteSheet, app.js). */
 .daymark-follow__heading {
 	display: flex;

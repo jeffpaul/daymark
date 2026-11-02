@@ -503,10 +503,10 @@ class Daymark_Routes {
 	 * plugin's cached assets do.
 	 *
 	 * The worker only re-installs (and so only re-downloads app.js, app.css,
-	 * offline-boot.js, and the Featured Content slider's two files into a
-	 * fresh cache) when the bytes of /daymark/sw.js
-	 * change, and it serves those files cache-first, ignoring their
-	 * `?ver=` query. A fixed cache name therefore meant an installed Daymark
+	 * offline-boot.js, the Featured Content slider's two files, and the Note
+	 * length count's note-length.js into a fresh cache) when the bytes of
+	 * /daymark/sw.js change, and it serves those files cache-first, ignoring
+	 * their `?ver=` query. A fixed cache name therefore meant an installed Daymark
 	 * kept the JavaScript it had on install day through every later release,
 	 * including any that fixed a client-side bug. The plugin version covers a
 	 * normal release; the assets' modification times also cover a development
@@ -517,7 +517,7 @@ class Daymark_Routes {
 	public static function service_worker_cache_version(): string {
 		$signature = '';
 
-		foreach ( array( 'app.js', 'app.css', 'offline-boot.js', 'featured-content.js', 'featured-content.css' ) as $file ) {
+		foreach ( array( 'app.js', 'app.css', 'offline-boot.js', 'featured-content.js', 'featured-content.css', 'note-length.js' ) as $file ) {
 			$path       = DAYMARK_PLUGIN_DIR . 'assets/' . $file;
 			$signature .= '|' . ( is_readable( $path ) ? (int) filemtime( $path ) : 0 );
 		}
@@ -755,6 +755,9 @@ class Daymark_Routes {
 			// Whether the server can convert a HEIC/HEIF photo to JPEG
 			// (#481); the composer refuses one at pick time when it can't.
 			'heicUploads'            => Daymark_Publisher::accepts_heic(),
+			// The Note length count under a Note's caption: the same limit
+			// and Bluesky wording as the block editor's counter.
+			'noteLength'             => Daymark_Note_Length::app_config(),
 			'ai'                     => array(
 				'available'     => $ai->is_available(),
 				'providerLabel' => $ai->get_provider_label(),

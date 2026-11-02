@@ -204,6 +204,26 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		$this->assertStringContainsString( "ASSETS_BASE_URL + 'featured-content.css'", $script );
 	}
 
+	/**
+	 * The offline shell loads the Note length count before app.js is
+	 * injected, and the worker precaches and serves it, so a Note written
+	 * offline still shows its count.
+	 */
+	public function test_offline_shell_loads_and_worker_caches_the_note_length_count() {
+		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );
+		ob_start();
+		include DAYMARK_PLUGIN_DIR . 'templates/offline-shell.php';
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'assets/note-length.js', $html );
+		$this->assertLessThan( strpos( $html, 'offline-boot.js' ), strpos( $html, 'note-length.js' ), 'The count loads before app.js is injected' );
+
+		$script = Daymark_Routes::build_service_worker_script();
+
+		$this->assertStringContainsString( "ASSETS_BASE_URL + 'note-length.js'", $script );
+		$this->assertStringContainsString( "'note-length.js',", $script, 'Served from the cache like the other static assets' );
+	}
+
 	/** The offline shell's own body/container markup matches the real app shell's, so app.js renders into the same structure either way. */
 	public function test_offline_shell_matches_real_shell_container_markup() {
 		unset( $GLOBALS['wp_scripts'], $GLOBALS['wp_styles'] );

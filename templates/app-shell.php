@@ -139,13 +139,16 @@ wp_register_script(
 		'strategy'  => 'defer',
 	)
 );
+// The Note length count under a Note's caption, shared with the block
+// editor's counter.
+Daymark_Note_Length::register_shared_script();
 wp_register_script(
 	'daymark-app',
 	DAYMARK_PLUGIN_URL . 'assets/app.js',
 	// 'wp-i18n' is a WordPress core script (no new dependency). Every
 	// visible string in assets/app.js goes through wp.i18n (issues #252,
 	// #253), and wp_set_script_translations() below loads them.
-	array( 'wp-i18n' ),
+	array( 'wp-i18n', Daymark_Note_Length::SHARED_HANDLE ),
 	DAYMARK_VERSION,
 	array(
 		'in_footer' => true,
