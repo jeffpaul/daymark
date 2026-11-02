@@ -418,7 +418,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 		$this->assertMatchesRegularExpression( '/value="1"\s+checked="checked"\s+disabled=\'disabled\'/', $output, 'An already-subscribed site is shown but cannot be selected again.' );
 		$this->assertStringContainsString( 'already subscribed', $output );
 		$this->assertStringNotContainsString( '<b>Site</b>', $output );
-		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-left:24px;">https://site1.example</code>', $output, 'The site address is shown, since there is no feed URL.' );
+		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-inline-start:24px;">https://site1.example</code>', $output, 'The site address is shown, since there is no feed URL.' );
 		$this->assertStringNotContainsString( 'Only the first', $output );
 		$this->assertStringNotContainsString( 'Load my Reader follows', $output );
 	}
@@ -564,7 +564,7 @@ class Test_Reader_Import extends WP_UnitTestCase {
 
 		$output = $this->render_import_export_tab();
 
-		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-left:24px;">https://site1.example</code>', $output );
+		$this->assertStringContainsString( '<code class="daymark-candidate-url" style="margin-inline-start:24px;">https://site1.example</code>', $output );
 		$this->assertStringNotContainsString( 'secret', $output, 'A feed URL can carry a private token, so it is not shown.' );
 	}
 }
