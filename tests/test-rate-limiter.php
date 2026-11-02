@@ -226,4 +226,33 @@ class Test_Rate_Limiter extends WP_UnitTestCase {
 		$this->assertSame( 4, $limiter->remaining( 'autosave', $this->user_id ), 'The update consumed the autosave budget' );
 		$this->assertSame( 4, $limiter->remaining( 'publish', $this->user_id ), 'The publish budget is untouched by the autosave update' );
 	}
+
+	/** IP-keyed rate limiter tracks budgets per client IP without requiring a logged-in user. */
+	public function test_ip_rate_limiting() {
+		$this->set_limits( 'push_replace', 2, 5 * MINUTE_IN_SECONDS );
+		$limiter = new Daymark_Rate_Limiter();
+		$ip1     = '192.0.2.1';
+		$ip2     = '192.0.2.2';
+
+		$limiter->reset_ip( 'push_replace', $ip1 );
+		$limiter->reset_ip( 'push_replace', $ip2 );
+
+		$this->assertTrue( $limiter->attempt_ip( 'push_replace', $ip1 ) );
+		$this->assertSame( 1, $limiter->remaining_ip( 'push_replace', $ip1 ) );
+		$this->assertTrue( $limiter->attempt_ip( 'push_replace', $ip1 ) );
+		$this->assertSame( 0, $limiter->remaining_ip( 'push_replace', $ip1 ) );
+
+		$result = $limiter->attempt_ip( 'push_replace', $ip1 );
+		$this->assertWPError( $result );
+		$this->assertSame( 429, $result->get_error_data()['status'] );
+
+		// A different IP has its own separate budget.
+		$this->assertTrue( $limiter->attempt_ip( 'push_replace', $ip2 ) );
+		$this->assertSame( 1, $limiter->remaining_ip( 'push_replace', $ip2 ) );
+
+		// Reset clears the bucket.
+		$limiter->reset_ip( 'push_replace', $ip1 );
+		$this->assertSame( 2, $limiter->remaining_ip( 'push_replace', $ip1 ) );
+		$this->assertTrue( $limiter->attempt_ip( 'push_replace', $ip1 ) );
+	}
 }

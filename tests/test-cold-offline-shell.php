@@ -100,13 +100,14 @@ class Test_Cold_Offline_Shell extends WP_UnitTestCase {
 		set_query_var( Daymark_Routes::QUERY_VAR, '' );
 	}
 
-	/** Both placeholders in the served worker are filled, so no literal token reaches a browser. */
+	/** All placeholders in the served worker are filled, so no literal token reaches a browser. */
 	public function test_served_service_worker_has_no_unfilled_placeholders() {
 		$script = Daymark_Routes::build_service_worker_script();
 
 		$this->assertNotSame( '', $script );
 		$this->assertStringNotContainsString( '__DAYMARK_', $script );
 		$this->assertStringContainsString( DAYMARK_PLUGIN_URL . 'assets/', $script );
+		$this->assertStringContainsString( esc_url_raw( rest_url( 'daymark/v1/' ) ), $script );
 	}
 
 	/**
