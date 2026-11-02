@@ -1479,17 +1479,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * @return true|WP_Error
 	 */
 	private function rate_limit_ip( string $action ) {
-		$attempt = Daymark_Plugin::instance()->rate_limiter->attempt_ip( $action );
-
-		if ( is_wp_error( $attempt ) ) {
-			return new WP_Error(
-				$attempt->get_error_code(),
-				$attempt->get_error_message(),
-				$attempt->get_error_data()
-			);
-		}
-
-		return true;
+		return Daymark_Plugin::instance()->rate_limiter->attempt_ip( $action );
 	}
 
 	/**

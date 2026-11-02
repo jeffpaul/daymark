@@ -254,6 +254,25 @@
 		}
 	}
 
+	// Save a push subscription to the site, sending this device's token when
+	// it was issued for the same address so the site keeps it (issue #530).
+	// Stores whatever token the site returns and picks up the saved prefs.
+	async function savePushSubscription(sub) {
+		const stored = await getStoredPushToken();
+		const payload = { subscription: sub.toJSON() };
+		if (stored && stored.token && stored.endpoint === sub.endpoint) {
+			payload.token = stored.token;
+		}
+		const saved = await apiPost('push/subscriptions', payload);
+		if (saved && saved.token) {
+			await storePushToken(sub.endpoint, saved.token);
+		}
+		if (saved && saved.prefs) {
+			config.push.prefs = saved.prefs;
+		}
+		return saved;
+	}
+
 	let syncPushPromise = null;
 
 	async function syncPushSubscription() {
@@ -273,19 +292,7 @@
 				return;
 			}
 			try {
-				const stored = await getStoredPushToken();
-				const payload = { subscription: existing.toJSON() };
-				if (stored && stored.token && stored.endpoint === existing.endpoint) {
-					payload.token = stored.token;
-				}
-				const saved = await apiPost('push/subscriptions', payload);
-				if (saved && saved.token) {
-					await storePushToken(existing.endpoint, saved.token);
-				}
-				if (saved && saved.prefs) {
-					config.push.prefs = saved.prefs;
-				}
-				return saved;
+				return await savePushSubscription(existing);
 			} catch (e) {
 				/* Best effort sync. */
 			}
@@ -406,18 +413,7 @@
 							userVisibleOnly: true,
 							applicationServerKey: vapidKeyBytes(config.push.publicKey),
 						}));
-					const stored = await getStoredPushToken();
-					const payload = { subscription: sub.toJSON() };
-					if (stored && stored.token && stored.endpoint === sub.endpoint) {
-						payload.token = stored.token;
-					}
-					const saved = await apiPost('push/subscriptions', payload);
-					if (saved && saved.prefs) {
-						config.push.prefs = saved.prefs;
-					}
-					if (saved && saved.token) {
-						await storePushToken(sub.endpoint, saved.token);
-					}
+					await savePushSubscription(sub);
 					show(true);
 					say(__('Notifications are on for this device.', 'daymark'));
 				} else {

@@ -292,14 +292,8 @@ class Daymark_Push {
 
 		$plain_token = '';
 
-		if ( ! $force_rotate && '' !== $token && '' !== $existing_token_hash ) {
-			$matches = ( 64 === strlen( $existing_token_hash ) )
-				? hash_equals( $existing_token_hash, hash( 'sha256', $token ) )
-				: hash_equals( $existing_token_hash, $token );
-
-			if ( $matches ) {
-				$plain_token = $token;
-			}
+		if ( ! $force_rotate && self::token_matches( $existing_token_hash, $token ) ) {
+			$plain_token = $token;
 		}
 
 		if ( '' === $plain_token ) {
@@ -370,12 +364,7 @@ class Daymark_Push {
 				$data = is_string( $row ) ? json_decode( $row, true ) : null;
 
 				if ( is_array( $data ) && (string) ( $data['endpoint'] ?? '' ) === $old_endpoint ) {
-					$stored_token = (string) ( $data['token'] ?? '' );
-					$matches      = ( 64 === strlen( $stored_token ) )
-						? hash_equals( $stored_token, hash( 'sha256', $token ) )
-						: hash_equals( $stored_token, $token );
-
-					if ( '' !== $stored_token && $matches ) {
+					if ( self::token_matches( (string) ( $data['token'] ?? '' ), $token ) ) {
 						$matched_user_id = $uid;
 						break 2;
 					}
@@ -394,6 +383,26 @@ class Daymark_Push {
 		self::delete_endpoint_everywhere( $old_endpoint );
 
 		return self::save_subscription( $matched_user_id, $new_raw, '', true );
+	}
+
+	/**
+	 * Whether a capability token matches the SHA-256 hash stored for a device.
+	 *
+	 * Stored tokens are always hashes, so a row without one, or a value that
+	 * isn't a SHA-256 hex digest, never matches.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $stored_hash Hash from the subscription row.
+	 * @param string $token       Plaintext token from the browser.
+	 * @return bool
+	 */
+	private static function token_matches( string $stored_hash, string $token ): bool {
+		if ( '' === $token || 64 !== strlen( $stored_hash ) ) {
+			return false;
+		}
+
+		return hash_equals( $stored_hash, hash( 'sha256', $token ) );
 	}
 
 	/**

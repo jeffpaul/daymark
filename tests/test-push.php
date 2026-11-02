@@ -549,6 +549,32 @@ class Test_Push extends WP_UnitTestCase {
 		$this->assertSame( 403, $result->get_error_data()['status'] );
 	}
 
+	public function test_replace_subscription_rejects_a_token_stored_unhashed() {
+		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/plaintext-device' );
+		$token   = wp_generate_password( 32, false, false );
+
+		// A row holding the token itself, not its hash, must never match.
+		$record          = $old_sub;
+		$record['token'] = $token;
+		add_user_meta( $this->user_id, Daymark_Push::SUBSCRIPTION_META, wp_json_encode( $record ) );
+
+		$new_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/plaintext-device-new' );
+		$result  = Daymark_Push::replace_subscription( $old_sub['endpoint'], $new_sub, $token );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_push_invalid_token', $result->get_error_code() );
+	}
+
+	public function test_save_subscription_rotates_token_when_client_sends_the_wrong_one() {
+		$sub   = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/wrong-token-resave' );
+		$saved = Daymark_Push::save_subscription( $this->user_id, $sub );
+
+		$resaved = Daymark_Push::save_subscription( $this->user_id, $sub, str_repeat( 'z', 32 ) );
+
+		$this->assertNotSame( $saved['token'], $resaved['token'] );
+		$this->assertNotSame( str_repeat( 'z', 32 ), $resaved['token'] );
+	}
+
 	public function test_replace_subscription_rejects_disallowed_host() {
 		$old_sub = $this->browser_subscription( 'https://fcm.googleapis.com/fcm/send/host-test' );
 		$saved   = Daymark_Push::save_subscription( $this->user_id, $old_sub );

@@ -297,8 +297,92 @@ class Daymark_Rate_Limiter {
 			);
 		}
 
+		return $this->attempt_key( $action, $this->user_key( $action, $user_id ) );
+	}
+
+	/**
+	 * Remaining attempts in the current window (for tests / diagnostics).
+	 *
+	 * @param string   $action  Action key.
+	 * @param int|null $user_id User ID; defaults to the current user.
+	 * @return int
+	 */
+	public function remaining( string $action, ?int $user_id = null ): int {
+		$user_id = null === $user_id ? get_current_user_id() : absint( $user_id );
+
+		return $this->remaining_key( $action, $this->user_key( $action, $user_id ) );
+	}
+
+	/**
+	 * Reset rate limit bucket for a user (primarily for tests).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string   $action  Action key.
+	 * @param int|null $user_id User ID; defaults to current user.
+	 * @return void
+	 */
+	public function reset( string $action, ?int $user_id = null ): void {
+		$user_id = null === $user_id ? get_current_user_id() : absint( $user_id );
+
+		delete_transient( $this->user_key( $action, $user_id ) );
+	}
+
+	/**
+	 * Attempt an action for the client IP address (unauthenticated rate limiting).
+	 *
+	 * Increments the counter when under the limit. Returns true on success,
+	 * or a WP_Error with status 429 and a `retry_after` data field when the
+	 * limit has been reached.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string      $action One of the ACTION_* constants.
+	 * @param string|null $ip     IP address; defaults to $_SERVER['REMOTE_ADDR'] or '127.0.0.1'.
+	 * @return true|WP_Error
+	 */
+	public function attempt_ip( string $action, ?string $ip = null ) {
+		return $this->attempt_key( $action, $this->ip_key( $action, $ip ) );
+	}
+
+	/**
+	 * Remaining attempts in the current window for an IP (for tests / diagnostics).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string      $action Action key.
+	 * @param string|null $ip     IP address; defaults to $_SERVER['REMOTE_ADDR'] or '127.0.0.1'.
+	 * @return int
+	 */
+	public function remaining_ip( string $action, ?string $ip = null ): int {
+		return $this->remaining_key( $action, $this->ip_key( $action, $ip ) );
+	}
+
+	/**
+	 * Reset rate limit bucket for an IP (primarily for tests).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string      $action Action key.
+	 * @param string|null $ip     IP address.
+	 * @return void
+	 */
+	public function reset_ip( string $action, ?string $ip = null ): void {
+		delete_transient( $this->ip_key( $action, $ip ) );
+	}
+
+	/**
+	 * Count one attempt against the bucket stored under a transient key.
+	 *
+	 * Shared by the per-user and per-IP entry points so both apply the
+	 * same window logic.
+	 *
+	 * @param string $action One of the ACTION_* constants.
+	 * @param string $key    Transient key for the bucket.
+	 * @return true|WP_Error
+	 */
+	private function attempt_key( string $action, string $key ) {
 		$limits = $this->limits_for( $action );
-		$key    = self::TRANSIENT_PREFIX . $action . '_' . $user_id;
 		$now    = time();
 		$bucket = get_transient( $key );
 
@@ -338,17 +422,15 @@ class Daymark_Rate_Limiter {
 	}
 
 	/**
-	 * Remaining attempts in the current window (for tests / diagnostics).
+	 * Remaining attempts in the current window for the bucket under a key.
 	 *
-	 * @param string   $action  Action key.
-	 * @param int|null $user_id User ID; defaults to the current user.
+	 * @param string $action Action key.
+	 * @param string $key    Transient key for the bucket.
 	 * @return int
 	 */
-	public function remaining( string $action, ?int $user_id = null ): int {
-		$user_id = null === $user_id ? get_current_user_id() : absint( $user_id );
-		$limits  = $this->limits_for( $action );
-		$key     = self::TRANSIENT_PREFIX . $action . '_' . $user_id;
-		$bucket  = get_transient( $key );
+	private function remaining_key( string $action, string $key ): int {
+		$limits = $this->limits_for( $action );
+		$bucket = get_transient( $key );
 
 		if ( ! is_array( $bucket ) || ! isset( $bucket['count'], $bucket['start'] ) ) {
 			return $limits['limit'];
@@ -362,114 +444,26 @@ class Daymark_Rate_Limiter {
 	}
 
 	/**
-	 * Reset rate limit bucket for a user (primarily for tests).
+	 * Transient key for a user's bucket.
 	 *
-	 * @since 0.22.0
-	 *
-	 * @param string   $action  Action key.
-	 * @param int|null $user_id User ID; defaults to current user.
-	 * @return void
+	 * @param string $action  Action key.
+	 * @param int    $user_id User ID.
+	 * @return string
 	 */
-	public function reset( string $action, ?int $user_id = null ): void {
-		$user_id = null === $user_id ? get_current_user_id() : absint( $user_id );
-		$key     = self::TRANSIENT_PREFIX . $action . '_' . $user_id;
-		delete_transient( $key );
+	private function user_key( string $action, int $user_id ): string {
+		return self::TRANSIENT_PREFIX . $action . '_' . $user_id;
 	}
 
 	/**
-	 * Attempt an action for the client IP address (unauthenticated rate limiting).
-	 *
-	 * Increments the counter when under the limit. Returns true on success,
-	 * or a WP_Error with status 429 and a `retry_after` data field when the
-	 * limit has been reached.
-	 *
-	 * @since 0.22.0
-	 *
-	 * @param string      $action One of the ACTION_* constants.
-	 * @param string|null $ip     IP address; defaults to $_SERVER['REMOTE_ADDR'] or '127.0.0.1'.
-	 * @return true|WP_Error
-	 */
-	public function attempt_ip( string $action, ?string $ip = null ) {
-		$ip_address = $this->resolve_ip( $ip );
-		$limits     = $this->limits_for( $action );
-		$key        = self::TRANSIENT_PREFIX . $action . '_ip_' . substr( hash( 'sha256', $ip_address ), 0, 32 );
-		$now        = time();
-		$bucket     = get_transient( $key );
-
-		if ( ! is_array( $bucket ) || ! isset( $bucket['count'], $bucket['start'] ) ) {
-			$bucket = array(
-				'count' => 0,
-				'start' => $now,
-			);
-		}
-
-		// Window expired: start a fresh bucket.
-		if ( ( $now - (int) $bucket['start'] ) >= $limits['window'] ) {
-			$bucket = array(
-				'count' => 0,
-				'start' => $now,
-			);
-		}
-
-		if ( (int) $bucket['count'] >= $limits['limit'] ) {
-			$retry_after = max( 1, $limits['window'] - ( $now - (int) $bucket['start'] ) );
-
-			return new WP_Error(
-				'daymark_rate_limit_exceeded',
-				__( 'Too many requests. Please try again shortly.', 'daymark' ),
-				array(
-					'status'      => 429,
-					'retry_after' => $retry_after,
-				)
-			);
-		}
-
-		++$bucket['count'];
-		$ttl = max( 1, $limits['window'] - ( $now - (int) $bucket['start'] ) );
-		set_transient( $key, $bucket, $ttl );
-
-		return true;
-	}
-
-	/**
-	 * Remaining attempts in the current window for an IP (for tests / diagnostics).
-	 *
-	 * @since 0.22.0
+	 * Transient key for an IP address's bucket. The address is hashed so
+	 * it is never stored as-is.
 	 *
 	 * @param string      $action Action key.
-	 * @param string|null $ip     IP address; defaults to $_SERVER['REMOTE_ADDR'] or '127.0.0.1'.
-	 * @return int
+	 * @param string|null $ip     IP address; defaults to the request's.
+	 * @return string
 	 */
-	public function remaining_ip( string $action, ?string $ip = null ): int {
-		$ip_address = $this->resolve_ip( $ip );
-		$limits     = $this->limits_for( $action );
-		$key        = self::TRANSIENT_PREFIX . $action . '_ip_' . substr( hash( 'sha256', $ip_address ), 0, 32 );
-		$bucket     = get_transient( $key );
-
-		if ( ! is_array( $bucket ) || ! isset( $bucket['count'], $bucket['start'] ) ) {
-			return $limits['limit'];
-		}
-
-		if ( ( time() - (int) $bucket['start'] ) >= $limits['window'] ) {
-			return $limits['limit'];
-		}
-
-		return max( 0, $limits['limit'] - (int) $bucket['count'] );
-	}
-
-	/**
-	 * Reset rate limit bucket for an IP (primarily for tests).
-	 *
-	 * @since 0.22.0
-	 *
-	 * @param string      $action Action key.
-	 * @param string|null $ip     IP address.
-	 * @return void
-	 */
-	public function reset_ip( string $action, ?string $ip = null ): void {
-		$ip_address = $this->resolve_ip( $ip );
-		$key        = self::TRANSIENT_PREFIX . $action . '_ip_' . substr( hash( 'sha256', $ip_address ), 0, 32 );
-		delete_transient( $key );
+	private function ip_key( string $action, ?string $ip ): string {
+		return self::TRANSIENT_PREFIX . $action . '_ip_' . substr( hash( 'sha256', $this->resolve_ip( $ip ) ), 0, 32 );
 	}
 
 	/**

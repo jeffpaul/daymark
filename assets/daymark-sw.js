@@ -368,8 +368,8 @@ async function storePushToken(endpoint, token) {
 
 // Browsers fire pushsubscriptionchange when a push subscription is renewed
 // or replaced (key rotation, reset push service, etc. — issue #530).
-// Resubscribe if needed, notify any open app windows so they can re-sync,
-// and send the new subscription to the site using the stored capability token.
+// Resubscribe if needed, send the new subscription to the site using the
+// stored capability token, then notify any open app windows so they re-sync.
 self.addEventListener('pushsubscriptionchange', (event) => {
 	event.waitUntil(
 		(async () => {
@@ -397,20 +397,11 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 
 			const subData = newSub.toJSON ? newSub.toJSON() : newSub;
 
-			// 1. Tell any open app windows to re-sync with their authenticated session.
-			try {
-				const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-				for (const client of windows) {
-					client.postMessage({
-						type: 'daymark-push-subscription-change',
-						subscription: subData,
-					});
-				}
-			} catch (e) {
-				/* Best effort window notification. */
-			}
-
-			// 2. Also send directly to the site using the per-subscription capability token.
+			// 1. Send the new address to the site with the per-device token,
+			// and store the token the site returns. This runs before any
+			// window is told to re-sync: a window re-sync then finds a token
+			// filed under the new address and sends it, so the site keeps it
+			// instead of issuing a second one that races this one into the cache.
 			const stored = await getStoredPushToken();
 			const oldEndpoint = (event.oldSubscription && event.oldSubscription.endpoint) || (stored && stored.endpoint);
 			const restBase = REST_BASE_URL.startsWith('__') ? '' : REST_BASE_URL;
@@ -436,8 +427,21 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 						}
 					}
 				} catch (e) {
-					/* Best effort background update; app-start re-sync serves as fallback. */
+					/* Best effort background update; the window re-sync below and app-start re-sync are the fallback. */
 				}
+			}
+
+			// 2. Tell any open app windows to re-sync with their logged-in session.
+			try {
+				const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+				for (const client of windows) {
+					client.postMessage({
+						type: 'daymark-push-subscription-change',
+						subscription: subData,
+					});
+				}
+			} catch (e) {
+				/* Best effort window notification. */
 			}
 		})()
 	);
