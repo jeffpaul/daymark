@@ -31,10 +31,11 @@ const RUN_ID = `${Date.now()}`.slice(-6);
 // as it did when the state lived only in localStorage. The cross-device
 // hint test below opens a second context without it on purpose.
 //
-// The launcher and Check In hints are marked seen, because they appear
-// before the launcher opens and before the Check In composer asks for
-// location, which would block every test that creates a Mark. Their own
-// test below adds showAllHints() to see them.
+// The launcher, Check In, and microphone hints are marked seen, because
+// they appear before the launcher opens, before the Check In composer asks
+// for location, and before the recorder asks for the microphone, which
+// would block every test that creates a Mark. Their own tests below add
+// showAllHints() to see them.
 //
 // The Timeline reading position is blanked for the same reason: a test
 // that scrolls down Home would otherwise make the next test's Home open
@@ -46,7 +47,7 @@ function hideServerSeenHints() {
 		get: () => stored,
 		set: (value) => {
 			if (value && typeof value === 'object') {
-				value.interactionHintsSeen = ['launcher', 'checkin'];
+				value.interactionHintsSeen = ['launcher', 'checkin', 'microphone'];
 				value.timelinePosition = null;
 			}
 			stored = value;
@@ -1131,7 +1132,7 @@ test('a follow link opens Follow a site, and closing it returns focus to the scr
 			get: () => stored,
 			set: (value) => {
 				if (value && typeof value === 'object') {
-					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.interactionHintsSeen = ['launcher', 'checkin', 'microphone'];
 					value.timelinePosition = null;
 					value.canManageSubscriptions = false;
 				}
@@ -1792,7 +1793,8 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 
 // Every composer has an "Add" bar under the caption. A Note has no
 // camera-first picker, so the bar is how it adds media: "Photo or video"
-// opens the chooser for those two kinds, "Audio" for audio, and a photo
+// opens the chooser for those two kinds, "Audio" opens the recorder, whose
+// "Choose a file instead" opens the chooser for sound files, and a photo
 // picked for a Note makes it a photo Mark, the same way picking a file
 // always has.
 test('the Add bar adds a photo to a Note, making it a photo Mark', async ({ page }) => {
@@ -1809,11 +1811,22 @@ test('the Add bar adds a photo to a Note, making it a photo Mark', async ({ page
 	await expect(bar).toBeVisible();
 	await expect(page.locator('[data-picker-for]')).toHaveCount(0);
 
-	// Audio asks only for audio. Picking nothing changes nothing.
-	const audioChooser = page.waitForEvent('filechooser');
+	// Audio opens the recorder, which doesn't record until asked. Its
+	// "Choose a file instead" asks only for sound, naming .m4a so an
+	// iPhone's Files picker offers a Voice Memo. Picking nothing changes
+	// nothing.
 	await bar.locator('[data-attach="audio"]').click();
+	const recorder = page.getByRole('dialog', { name: 'Record Audio' });
+	await expect(recorder).toBeVisible();
+	await expect(recorder.locator('[data-recorder-record]')).toBeVisible();
+	await expect(recorder.locator('[data-recorder-stop]')).toHaveCount(0);
+	const audioChooser = page.waitForEvent('filechooser');
+	await recorder.locator('[data-recorder-file]').click();
 	await (await audioChooser).setFiles([]);
-	await expect(input).toHaveAttribute('accept', 'audio/*');
+	await expect(recorder).toBeHidden();
+	const audioAccept = (await input.getAttribute('accept')).split(',');
+	expect(audioAccept[0]).toBe('audio/*');
+	expect(audioAccept).toEqual(expect.arrayContaining(['.m4a', '.mp3', '.wav']));
 	await expect(badge).toHaveText('Note');
 
 	const mediaChooser = page.waitForEvent('filechooser');
@@ -2601,7 +2614,7 @@ test('Home opens at the saved reading position and taps return to the top', asyn
 			get: () => stored,
 			set: (value) => {
 				if (value && typeof value === 'object') {
-					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.interactionHintsSeen = ['launcher', 'checkin', 'microphone'];
 					value.timelinePosition = { id: 990025, item_type: 'subscription_post' };
 					value.timelineLastSeen = { id: 990010, item_type: 'subscription_post' };
 				}
@@ -4171,10 +4184,12 @@ test('a published Mark whose upload was interrupted by a reload resumes partway'
 	expect(rangesAfterReload.filter((range) => range.startsWith('bytes 0-'))).toHaveLength(0);
 });
 
-// A file the site refuses (its type or size). A PDF works for this: the
-// site refuses it as soon as the upload starts.
-const REFUSED_FILE = { name: 'menu.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%E2E\n') };
-const REFUSED_MESSAGE = 'Removed menu.pdf. File type not allowed.';
+// A file the site refuses once it has it (its type or size). A PDF named
+// .mp3 works for this: the composer takes the name, and the site refuses
+// the content after its first part arrives. (A file named .pdf never
+// leaves the composer; see the test for files refused when picked.)
+const REFUSED_FILE = { name: 'menu.mp3', mimeType: 'audio/mpeg', buffer: Buffer.from('%PDF-1.4\n%E2E\n') };
+const REFUSED_MESSAGE = 'Removed menu.mp3. File type not allowed.';
 
 // Holds the request that starts an upload until the returned function is
 // called, so a test can act while the upload is still waiting. Calling it
@@ -4278,6 +4293,179 @@ test("a queued draft that fails says Couldn't save draft, and reopening it drops
 	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0, {
 		timeout: 15000,
 	});
+	await expect.poll(() => draftTitles(page)).toContain(caption);
+});
+
+// A file the composer knows the site never takes is refused when it's
+// picked, with the formats the site does take, and never starts uploading.
+test('a file the site never takes is refused when picked, before it uploads', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+
+	const uploads = [];
+	page.on('request', (request) => {
+		if (/daymark(\/|%2F)v1(\/|%2F)uploads/i.test(request.url())) {
+			uploads.push(request.url());
+		}
+	});
+	await page.setInputFiles('#daymark-file-input', {
+		name: 'song.flac',
+		mimeType: 'audio/flac',
+		buffer: Buffer.from('fLaC E2E'),
+	});
+
+	await expect(page.locator('[data-create-status]')).toHaveText(
+		/^Couldn't add song\.flac\. This site takes audio in .*MP3.*M4A.* format\.$/
+	);
+	await expect(page.locator('[data-media-open]')).toHaveCount(0);
+	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
+	// Long enough for an upload to have started, had one been going to.
+	await page.waitForTimeout(1000);
+	expect(uploads).toHaveLength(0);
+});
+
+// A Voice Memo (an .m4a file: AAC sound in an MP4 file) picked for a Note
+// makes it an Audio Mark, and the site stores it as sound, not video.
+test('an .m4a Voice Memo picked for a Note publishes as an Audio Mark', async ({ page }) => {
+	const caption = `E2E voice memo ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+
+	await page.locator('[data-attach="audio"]').click();
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('dialog', { name: 'Record Audio' }).locator('[data-recorder-file]').click();
+	await (await chooser).setFiles('tests/e2e/fixtures/test-audio.m4a');
+
+	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
+	await expect(page.locator('[data-upload-status-for]')).toHaveText('Uploaded', { timeout: 30000 });
+
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page, { timeout: 15000 });
+
+	const mark = await findMarkByCaption(page, caption);
+	expect(mark).not.toBeNull();
+	expect(mark.type).toBe('audio');
+	expect(mark.media.map((item) => item.kind)).toEqual(['audio']);
+	expect(mark.media[0].filename).toMatch(/\.m4a$/);
+
+	await page.goto(mark.permalink);
+	await expect(page.locator('audio').first()).toHaveAttribute('src', /\.m4a(\?|$)/);
+});
+
+// Record Audio records with the microphone (Chromium's fake one here; see
+// playwright.config.js). The first time, a hint says what happens before
+// the browser asks for the microphone. The recording can be listened to,
+// then joins the Mark like a picked file, uploads, and publishes as an
+// Audio Mark that plays in its post.
+test('Record Audio records with the microphone and publishes an Audio Mark that plays', async ({ page }) => {
+	const caption = `E2E recording ${RUN_ID}`;
+
+	// Every hint seen but the microphone's.
+	await page.addInitScript(() => {
+		let stored;
+		Object.defineProperty(window, 'daymarkApp', {
+			configurable: true,
+			get: () => stored,
+			set: (value) => {
+				if (value && typeof value === 'object') {
+					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.timelinePosition = null;
+				}
+				stored = value;
+			},
+		});
+	});
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+
+	const capture = page.locator('[data-picker-capture]');
+	await expect(capture).toContainText('Record Audio');
+	await capture.click();
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	await expect(hint).toBeVisible();
+	await expect(hint.locator('.daymark-hint-title')).toHaveText('Record Audio');
+	await hint.locator('[data-hint-dismiss]').click();
+	await expect(hint).toBeHidden();
+
+	// Recording starts straight away, with Stop focused and the timer
+	// running.
+	const recorder = page.getByRole('dialog', { name: 'Record Audio' });
+	const stop = recorder.locator('[data-recorder-stop]');
+	await expect(stop).toBeFocused();
+	await expect(recorder.locator('[data-recorder-time]')).toHaveText(/^0:0[2-9]$/, { timeout: 10000 });
+	await stop.click();
+
+	// It can be listened to before it's added.
+	const add = recorder.locator('[data-recorder-use]');
+	await expect(add).toBeFocused();
+	await expect(recorder.locator('audio')).toHaveAttribute('src', /^blob:/);
+	await expect(recorder.locator('.daymark-recorder__length')).toHaveText(/^Length: 0:0[2-9]$/);
+	await add.click();
+
+	await expect(recorder).toBeHidden();
+	const tile = page.locator('[data-media-open]');
+	await expect(tile).toHaveCount(1);
+	await expect(tile).toBeFocused();
+	await expect(page.locator('[data-type-badge]')).toHaveText(/audio/i);
+	await expect(page.locator('[data-upload-status-for]')).toHaveText('Uploaded', { timeout: 30000 });
+
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page, { timeout: 15000 });
+
+	const mark = await findMarkByCaption(page, caption);
+	expect(mark).not.toBeNull();
+	expect(mark.type).toBe('audio');
+	expect(mark.media.map((item) => item.kind)).toEqual(['audio']);
+	expect(mark.media[0].filename).toMatch(/\.(webm|m4a)$/);
+
+	// The post plays it.
+	await page.goto(mark.permalink);
+	const audio = page.locator('audio').first();
+	await expect(audio).toHaveAttribute('src', /\.(webm|m4a)(\?|$)/);
+	const playedTo = await audio.evaluate(async (el) => {
+		el.muted = true;
+		await el.play();
+		await new Promise((resolve) => setTimeout(resolve, 1000));
+		return el.currentTime;
+	});
+	expect(playedTo).toBeGreaterThan(0);
+});
+
+// Leaving the composer (the phone's Back here) while a finished recording
+// waits to be added puts it in the Mark first, so the draft that leaving
+// saves keeps it.
+test('a finished recording is kept in the draft when the composer is left', async ({ page }) => {
+	const caption = `E2E recording kept ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'audio');
+	await page.fill('#daymark-caption', caption);
+
+	await page.locator('[data-picker-capture]').click();
+	const recorder = page.getByRole('dialog', { name: 'Record Audio' });
+	await expect(recorder.locator('[data-recorder-time]')).toHaveText(/^0:0[1-9]$/, { timeout: 10000 });
+	await recorder.locator('[data-recorder-stop]').click();
+	await expect(recorder.locator('[data-recorder-use]')).toBeFocused();
+
+	await page.goBack();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(recorder).toBeHidden();
+	await expect
+		.poll(
+			async () => {
+				const mark = await findMarkByCaption(page, caption);
+				return mark && Array.isArray(mark.media) ? mark.media.map((item) => item.kind) : [];
+			},
+			{ timeout: 30000 }
+		)
+		.toEqual(['audio']);
 	await expect.poll(() => draftTitles(page)).toContain(caption);
 });
 
@@ -4630,7 +4818,7 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 			get: () => stored,
 			set: (value) => {
 				if (value && typeof value === 'object') {
-					value.interactionHintsSeen = ['launcher', 'checkin'];
+					value.interactionHintsSeen = ['launcher', 'checkin', 'microphone'];
 					value.timelinePosition = null;
 					value.reach = [{ label: 'E2E Network', helper: 'daymark-e2e-network' }];
 				}

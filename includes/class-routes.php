@@ -755,6 +755,9 @@ class Daymark_Routes {
 			// Whether the server can convert a HEIC/HEIF photo to JPEG
 			// (#481); the composer refuses one at pick time when it can't.
 			'heicUploads'            => Daymark_Publisher::accepts_heic(),
+			// The file name extensions an upload can start with; the
+			// composer refuses any other file when it's picked.
+			'uploadExtensions'       => Daymark_Uploads::accepted_extensions(),
 			// The Note length count under a Note's caption: the same limit
 			// and Bluesky wording as the block editor's counter.
 			'noteLength'             => Daymark_Note_Length::app_config(),

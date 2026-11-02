@@ -55,6 +55,14 @@ class Test_Interaction_Hints extends WP_UnitTestCase {
 		$this->assertSame( array( 'launcher', 'checkin' ), Daymark_Interaction_Hints::get_seen( $this->user_id ) );
 	}
 
+	/** The recorder's microphone hint is a known key, saved through the REST route like the others. */
+	public function test_microphone_hint_is_known() {
+		$response = rest_do_request( $this->request( 'microphone' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'microphone' ), Daymark_Interaction_Hints::get_seen( $this->user_id ) );
+	}
+
 	/** Seen keys come back in the fixed KEYS order, whatever order they were seen in. */
 	public function test_seen_keys_follow_known_key_order() {
 		Daymark_Interaction_Hints::mark_seen( $this->user_id, 'share' );

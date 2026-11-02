@@ -3174,6 +3174,79 @@ button.daymark-stat {
 	transform: scaleX(-1);
 }
 
+/* Recording sound in the composer (RecorderSheet, app.js): a pulsing dot
+   and a timer while recording, then a player to listen to the recording
+   before adding it. */
+.daymark-recorder__intro,
+.daymark-recorder__status,
+.daymark-recorder__length,
+.daymark-recorder__note,
+.daymark-recorder__error {
+	margin: 0;
+	line-height: 1.5;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-recorder__error {
+	color: var(--daymark-error);
+}
+
+.daymark-recorder__meter {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--daymark-spacing-xs);
+	padding-block: var(--daymark-spacing-md);
+}
+
+.daymark-recorder__state {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	margin: 0;
+	font-weight: 600;
+}
+
+.daymark-recorder__dot {
+	flex-shrink: 0;
+	inline-size: 12px;
+	block-size: 12px;
+	border-radius: 50%;
+	background: var(--daymark-danger-bg);
+	animation: daymark-pulse 1.2s ease-in-out infinite;
+}
+
+/* Finishing: the dot stops, and the timer stays at the recording's
+   length. */
+.daymark-recorder__meter.is-stopping .daymark-recorder__dot {
+	animation: none;
+	opacity: 0.35;
+}
+
+.daymark-recorder__time {
+	margin: 0;
+	font-size: 32px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-recorder__audio {
+	display: block;
+	inline-size: 100%;
+}
+
+/* "Choose a file instead", and Discard under a finished recording. */
+.daymark-recorder__alt {
+	align-self: flex-start;
+	padding: 0;
+}
+
+.daymark-recorder [aria-disabled='true'] {
+	opacity: 0.6;
+	cursor: default;
+}
+
 .daymark-notice {
 	padding: var(--daymark-spacing-sm) var(--daymark-spacing-md);
 	border-radius: var(--daymark-radius-sm);
@@ -5088,7 +5161,8 @@ button.daymark-stat {
 	.daymark-sheet__panel,
 	.daymark-spinner,
 	.daymark-skeleton,
-	.daymark-strip__alt--loading {
+	.daymark-strip__alt--loading,
+	.daymark-recorder__dot {
 		animation: none;
 	}
 

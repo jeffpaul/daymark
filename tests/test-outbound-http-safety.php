@@ -754,6 +754,10 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 	 * - class-admin-subscriptions.php, class-rest-controller.php:
 	 *   file_get_contents() of an uploaded OPML file's PHP temp path
 	 *   (`$_FILES[…]['tmp_name']`), never a URL.
+	 * - class-media-container.php: fopen() of a file sniff_mime() is
+	 *   checking (an upload's PHP temp path or an upload session's part
+	 *   file), to read an MP4 or WebM track list; it refuses a stream
+	 *   wrapper path.
 	 *
 	 * Adding a call means adding it here, with the reason.
 	 *
@@ -767,6 +771,7 @@ class Test_Outbound_Http_Safety extends WP_UnitTestCase {
 		'class-routes.php'              => array( 'file_get_contents' => 1 ),
 		'class-admin-subscriptions.php' => array( 'file_get_contents' => 1 ),
 		'class-rest-controller.php'     => array( 'file_get_contents' => 1 ),
+		'class-media-container.php'     => array( 'fopen' => 1 ),
 	);
 
 	/**

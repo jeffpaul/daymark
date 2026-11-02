@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- You can now record sound right in the composer: Record Audio, or Audio under the caption, records with your microphone, and you can listen back before adding it to your Mark. Daymark also takes M4A files, such as an iPhone's Voice Memos, plus AAC, Ogg, and WebM, and turns down a file it can't take as soon as you pick it, naming the formats it does take. ([#577](https://github.com/jeffpaul/daymark/pull/577))
 - Writing a Note in the app now shows how many of the 300 characters that fit in one Bluesky post are left, and says when a longer Note will be shared as a link instead, like the block editor's Note count. The caption box also grows as you type instead of scrolling inside itself. ([#573](https://github.com/jeffpaul/daymark/pull/573))
 - Leaving the composer with something written now says "Saved to Drafts," with Discard if you'd rather throw it away. A new, empty composer also links to your drafts. ([#571](https://github.com/jeffpaul/daymark/pull/571))
 - You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))

@@ -107,6 +107,12 @@ class Daymark_Publisher {
 	 * accepted where the server can convert it to JPEG (see accepts_heic()),
 	 * so this list is what Daymark knows, not what every site takes.
 	 *
+	 * M4A, AAC, Ogg, and WebM sound came with recording in the composer.
+	 * A browser records sound in an MP4 or WebM file, which finfo calls
+	 * video; sniff_mime() reads the file's tracks and calls it audio/mp4 or
+	 * audio/webm when it has sound and no picture. A WebM video is still
+	 * refused.
+	 *
 	 * @var string[]
 	 */
 	public const ALLOWED_MIME_TYPES = array(
@@ -121,6 +127,34 @@ class Daymark_Publisher {
 		'video/quicktime',
 		'audio/mpeg',
 		'audio/wav',
+		'audio/mp4',
+		'audio/aac',
+		'audio/ogg',
+		'audio/webm',
+	);
+
+	/**
+	 * Containers a browser records sound in, mapped to the audio type a
+	 * file with sound and no picture is stored as.
+	 *
+	 * @var array<string, string>
+	 */
+	private const AUDIO_CONTAINERS = array(
+		'video/mp4'  => 'audio/mp4',
+		'video/webm' => 'audio/webm',
+	);
+
+	/**
+	 * File name extensions a sound-only MP4 or WebM file may keep. WordPress
+	 * calls an .m4a file audio/mpeg and an .mp4 or .webm file video, and
+	 * refuses an .m4a whose content looks like video, so the type is set
+	 * here for these extensions only.
+	 *
+	 * @var array<string, string[]>
+	 */
+	private const AUDIO_CONTAINER_EXTENSIONS = array(
+		'audio/mp4'  => array( 'm4a', 'mp4' ),
+		'audio/webm' => array( 'webm' ),
 	);
 
 	/**
@@ -356,10 +390,14 @@ class Daymark_Publisher {
 	 * @var array<string, string>
 	 */
 	private const MIME_ALIASES = array(
-		'audio/x-wav' => 'audio/wav',
-		'audio/wave'  => 'audio/wav',
-		'audio/mp3'   => 'audio/mpeg',
-		'video/x-m4v' => 'video/mp4',
+		'audio/x-wav'         => 'audio/wav',
+		'audio/wave'          => 'audio/wav',
+		'audio/mp3'           => 'audio/mpeg',
+		'video/x-m4v'         => 'video/mp4',
+		'audio/x-m4a'         => 'audio/mp4',
+		'audio/m4a'           => 'audio/mp4',
+		'audio/x-aac'         => 'audio/aac',
+		'audio/x-hx-aac-adts' => 'audio/aac',
 	);
 
 	/**
@@ -407,7 +445,9 @@ class Daymark_Publisher {
 	 * The MIME type of a file, read from its content.
 	 *
 	 * Uses finfo, then core's own byte check for image formats an older
-	 * libmagic may not know (AVIF, HEIC). The file name is never used.
+	 * libmagic may not know (AVIF, HEIC). An MP4 or WebM file with sound and
+	 * no picture (what a browser's recorder makes) is audio/mp4 or
+	 * audio/webm, not video. The file name is never used.
 	 *
 	 * @since 0.20.0
 	 *
@@ -422,12 +462,86 @@ class Daymark_Publisher {
 		$finfo        = new finfo( FILEINFO_MIME_TYPE );
 		$content_mime = self::canonical_mime( (string) $finfo->file( $path ) );
 
+		if ( isset( self::AUDIO_CONTAINERS[ $content_mime ] ) && Daymark_Media_Container::is_audio_only( $path, $content_mime ) ) {
+			return self::AUDIO_CONTAINERS[ $content_mime ];
+		}
+
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
 			$image_mime   = (string) wp_get_image_mime( $path );
 			$content_mime = '' !== $image_mime ? self::canonical_mime( $image_mime ) : $content_mime;
 		}
 
 		return $content_mime;
+	}
+
+	/**
+	 * The error for a file type Daymark doesn't take.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $content_mime The file's content type, when known.
+	 * @return WP_Error Code invalid_mime, status 400.
+	 */
+	public static function type_not_allowed( string $content_mime = '' ): WP_Error {
+		// A .webm file passes the name check because it may be a sound
+		// recording; say why one with a picture is refused.
+		$message = 'video/webm' === $content_mime
+			? __( "Daymark can't publish WebM video. Please use MP4 or MOV.", 'daymark' )
+			: __( 'File type not allowed.', 'daymark' );
+
+		return new WP_Error( 'invalid_mime', $message, array( 'status' => 400 ) );
+	}
+
+	/**
+	 * Run a WordPress file type check with a sound-only MP4 or WebM file
+	 * reported as audio.
+	 *
+	 * WordPress names a file's type from its extension and calls an .mp4 or
+	 * .webm file video, and refuses an .m4a file whose content looks like
+	 * video (a browser recording does). While the callback runs, its
+	 * wp_check_filetype_and_ext() result for this one file is set to
+	 * audio/mp4 or audio/webm, and only when the content was found to be
+	 * sound-only, WordPress didn't already call it audio, and the extension
+	 * is one this site allows and one that file can carry.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string   $path         The file being checked.
+	 * @param string   $content_mime Its type from sniff_mime().
+	 * @param callable $callback     Runs the check (or the sideload that runs it).
+	 * @return mixed What the callback returns.
+	 */
+	private static function with_audio_file_type( string $path, string $content_mime, callable $callback ) {
+		if ( '' === $path || ! isset( self::AUDIO_CONTAINER_EXTENSIONS[ $content_mime ] ) ) {
+			return $callback();
+		}
+
+		$filter = static function ( $data, $file, $filename, $mimes ) use ( $path, $content_mime ) {
+			if ( $file !== $path || ! is_array( $data ) || str_starts_with( (string) ( $data['type'] ?? '' ), 'audio/' ) ) {
+				return $data;
+			}
+
+			$check = wp_check_filetype( (string) $filename, is_array( $mimes ) ? $mimes : null );
+			$ext   = strtolower( (string) ( $check['ext'] ?? '' ) );
+
+			if ( '' === $ext || ! in_array( $ext, self::AUDIO_CONTAINER_EXTENSIONS[ $content_mime ], true ) ) {
+				return $data;
+			}
+
+			return array(
+				'ext'             => $ext,
+				'type'            => $content_mime,
+				'proper_filename' => false,
+			);
+		};
+
+		add_filter( 'wp_check_filetype_and_ext', $filter, 10, 4 );
+
+		try {
+			return $callback();
+		} finally {
+			remove_filter( 'wp_check_filetype_and_ext', $filter, 10 );
+		}
 	}
 
 	/**
@@ -1438,24 +1552,21 @@ class Daymark_Publisher {
 		}
 
 		if ( ! in_array( $content_mime, self::ALLOWED_MIME_TYPES, true ) ) {
-			return new WP_Error(
-				'invalid_mime',
-				__( 'File type not allowed.', 'daymark' ),
-				array( 'status' => 400 )
-			);
+			return self::type_not_allowed( $content_mime );
 		}
 
-		// 2) WordPress filename/extension cross-check.
-		$check      = wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] );
+		// 2) WordPress filename/extension cross-check, with a sound-only
+		// MP4 or WebM file reported as audio (see with_audio_file_type()).
+		$check      = self::with_audio_file_type(
+			$file['tmp_name'],
+			$content_mime,
+			static fn() => wp_check_filetype_and_ext( $file['tmp_name'], $file['name'] )
+		);
 		$check_mime = (string) ( $check['type'] ?? '' );
 		$check_mime = self::canonical_mime( $check_mime );
 
 		if ( '' === $check_mime || ! in_array( $check_mime, self::ALLOWED_MIME_TYPES, true ) ) {
-			return new WP_Error(
-				'invalid_mime',
-				__( 'File type not allowed.', 'daymark' ),
-				array( 'status' => 400 )
-			);
+			return self::type_not_allowed();
 		}
 
 		return true;
@@ -1506,6 +1617,65 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * Add one validated file to the Media Library, unattached.
+	 *
+	 * A sound-only MP4 or WebM file is stored as audio/mp4 or audio/webm
+	 * (see with_audio_file_type()). While WordPress reads a sound or video
+	 * file's details, an unlimited PHP memory limit is capped, because the
+	 * library it uses only checks its reads against a set limit: with none,
+	 * a browser's WebM recording (which leaves its sizes open while it
+	 * records) makes it try to read the whole file into memory at once.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param array<string, mixed> $file    A $_FILES-style entry, already validated.
+	 * @param int                  $post_id Post to attach to; 0 for none.
+	 * @return int|WP_Error Attachment ID.
+	 */
+	public static function sideload_file( array $file, int $post_id = 0 ) {
+		require_once ABSPATH . 'wp-admin/includes/file.php';
+		require_once ABSPATH . 'wp-admin/includes/media.php';
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$path         = (string) ( $file['tmp_name'] ?? '' );
+		$content_mime = self::sniff_mime( $path );
+		$family       = strtok( $content_mime, '/' );
+		$memory_limit = in_array( $family, array( 'audio', 'video' ), true ) ? self::cap_unlimited_memory() : null;
+
+		try {
+			return self::with_audio_file_type( $path, $content_mime, static fn() => media_handle_sideload( $file, $post_id ) );
+		} finally {
+			if ( null !== $memory_limit ) {
+				ini_set( 'memory_limit', $memory_limit ); // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- Restores the limit cap_unlimited_memory() replaced.
+			}
+		}
+	}
+
+	/**
+	 * Replace an unlimited PHP memory limit with a finite one.
+	 *
+	 * Leaves a set limit alone. The new limit is 512 MB, or 256 MB above
+	 * what the request already uses when that's higher.
+	 *
+	 * @return string|null The limit to restore afterward, or null when nothing changed.
+	 */
+	private static function cap_unlimited_memory(): ?string {
+		$current = (string) ini_get( 'memory_limit' );
+
+		if ( -1 !== wp_convert_hr_to_bytes( $current ) || ! wp_is_ini_value_changeable( 'memory_limit' ) ) {
+			return null;
+		}
+
+		$megabytes = max( 512, (int) ceil( ( memory_get_usage( true ) + 256 * MB_IN_BYTES ) / MB_IN_BYTES ) );
+
+		if ( false === ini_set( 'memory_limit', $megabytes . 'M' ) ) { // phpcs:ignore WordPress.PHP.IniSet.memory_limit_Disallowed -- wp_raise_memory_limit() never lowers an unlimited limit; see sideload_file().
+			return null;
+		}
+
+		return $current;
+	}
+
+	/**
 	 * Sideload validated files into the Media Library.
 	 *
 	 * Attachments are created unattached; attach_media() re-parents them
@@ -1519,14 +1689,10 @@ class Daymark_Publisher {
 			return array();
 		}
 
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-		require_once ABSPATH . 'wp-admin/includes/media.php';
-		require_once ABSPATH . 'wp-admin/includes/image.php';
-
 		$media_ids = array();
 
 		foreach ( $file_list as $file ) {
-			$attachment_id = media_handle_sideload( $file, 0 );
+			$attachment_id = self::sideload_file( $file );
 
 			if ( is_wp_error( $attachment_id ) ) {
 				// Roll back anything already sideloaded.
@@ -1557,11 +1723,16 @@ class Daymark_Publisher {
 	 * @return string One of PRIMARY_TYPES.
 	 */
 	private function detect_primary_type( array $media_ids, string $requested_type = '' ): string {
-		if ( '' !== $requested_type && in_array( $requested_type, self::PRIMARY_TYPES, true ) ) {
-			return $requested_type;
-		}
-
 		$groups = $this->group_media_ids( $media_ids );
+
+		if ( '' !== $requested_type && in_array( $requested_type, self::PRIMARY_TYPES, true ) ) {
+			// A sound recording in a video container is stored as audio
+			// (see sniff_mime()), but a composer that went by the file's
+			// name may have called it video. Sound alone is an Audio Mark.
+			$only_audio = ! empty( $groups['audio'] ) && empty( $groups['image'] ) && empty( $groups['video'] );
+
+			return $only_audio && in_array( $requested_type, array( 'video', 'mixed' ), true ) ? 'audio' : $requested_type;
+		}
 
 		$has_image = ! empty( $groups['image'] );
 		$has_video = ! empty( $groups['video'] );

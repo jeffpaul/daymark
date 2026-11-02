@@ -32,11 +32,13 @@ class Daymark_Interaction_Hints {
 	/**
 	 * Every hint key the app shell knows. Must match the keys of
 	 * INTERACTION_HINTS in assets/app.js. `launcher` and `checkin` (0.20.0)
-	 * introduce the + New Mark launcher and the Check In composer.
+	 * introduce the + New Mark launcher and the Check In composer;
+	 * `microphone` (0.22.0) explains recording before the browser asks for
+	 * the microphone.
 	 *
 	 * @var string[]
 	 */
-	public const KEYS = array( 'like', 'comment', 'repost', 'bookmark', 'external', 'share', 'launcher', 'checkin' );
+	public const KEYS = array( 'like', 'comment', 'repost', 'bookmark', 'external', 'share', 'launcher', 'checkin', 'microphone' );
 
 	/**
 	 * Whether a hint key is one the app shell knows.
