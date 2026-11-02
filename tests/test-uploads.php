@@ -398,6 +398,271 @@ class Test_Uploads extends WP_UnitTestCase {
 		$this->assertSame( $post_id, (int) get_post_field( 'post_parent', $second ) );
 	}
 
+	/**
+	 * The media IDs a Mark holds, in order.
+	 *
+	 * @param int $post_id Mark post ID.
+	 * @return int[]
+	 */
+	private function mark_media( int $post_id ): array {
+		return json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
+	}
+
+	/** A file named in media_remove leaves the Mark and its content, and stays in the Media Library. */
+	public function test_update_removes_media_named_in_media_remove(): void {
+		$fixture   = $this->fixture();
+		$first     = $this->upload( 'one.png', $fixture );
+		$second    = $this->upload( 'two.png', $fixture );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $first, $second ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+
+		$request = $this->request( 'PUT', '/daymark/v1/marks/' . $post_id );
+		$request->set_body_params(
+			array(
+				'caption'      => 'Draft',
+				'status'       => 'draft',
+				'media_ids'    => array( $first ),
+				'media_remove' => array( $second ),
+			)
+		);
+
+		$response = rest_get_server()->dispatch( $request );
+		$this->assertSame( 200, $response->get_status(), wp_json_encode( $response->get_data() ) );
+
+		$this->assertSame( array( $first ), $this->mark_media( $post_id ) );
+		$this->assertSame( 'image', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+
+		$content = get_post_field( 'post_content', $post_id );
+		$this->assertStringContainsString( '"id":' . $first, $content );
+		$this->assertStringNotContainsString( '"id":' . $second, $content );
+
+		// Detached, not deleted.
+		$this->assertSame( 'attachment', get_post_type( $second ) );
+		$this->assertSame( 0, (int) get_post_field( 'post_parent', $second ) );
+		$this->assertSame( $post_id, (int) get_post_field( 'post_parent', $first ) );
+	}
+
+	/** media_remove only ever takes files off the Mark being saved. */
+	public function test_media_remove_ignores_files_the_mark_does_not_have(): void {
+		$fixture   = $this->fixture();
+		$own       = $this->upload( 'one.png', $fixture );
+		$elsewhere = $this->upload( 'two.png', $fixture );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $own ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+
+		$other_mark = $publisher->publish(
+			array(
+				'caption'   => 'Another',
+				'status'    => 'draft',
+				'media_ids' => array( $elsewhere ),
+			)
+		);
+		$this->assertIsInt( $other_mark );
+
+		$result = $publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Draft',
+				'status'       => 'draft',
+				'media_ids'    => array( $own ),
+				'media_remove' => array( $elsewhere, 999999, 'not-an-id' ),
+			)
+		);
+		$this->assertSame( $post_id, $result );
+
+		$this->assertSame( array( $own ), $this->mark_media( $post_id ) );
+		$this->assertSame( array( $elsewhere ), $this->mark_media( $other_mark ) );
+		$this->assertSame( $other_mark, (int) get_post_field( 'post_parent', $elsewhere ) );
+	}
+
+	/** Removing a draft's only file, with no words, would leave it empty, so nothing changes. */
+	public function test_removing_the_only_file_of_an_empty_draft_is_refused(): void {
+		$image     = $this->upload( 'one.png', $this->fixture() );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'status'    => 'draft',
+				'media_ids' => array( $image ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+
+		$result = $publisher->update(
+			$post_id,
+			array(
+				'status'       => 'draft',
+				'media_remove' => array( $image ),
+			)
+		);
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_empty', $result->get_error_code() );
+		$this->assertSame( array( $image ), $this->mark_media( $post_id ) );
+		$this->assertSame( $post_id, (int) get_post_field( 'post_parent', $image ) );
+	}
+
+	/** Alt text sent by position still lines up when a removed file is also named. */
+	public function test_alt_text_stays_aligned_when_a_removed_file_is_named(): void {
+		$fixture   = $this->fixture();
+		$first     = $this->upload( 'one.png', $fixture );
+		$second    = $this->upload( 'two.png', $fixture );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $first, $second ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+
+		$third = $this->upload( 'three.png', $fixture );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Draft',
+				'status'       => 'draft',
+				'media_ids'    => array( $first, $second, $third ),
+				'alt'          => array( 'First', 'Second', 'Third' ),
+				'media_remove' => array( $second ),
+			)
+		);
+
+		$this->assertSame( array( $first, $third ), $this->mark_media( $post_id ) );
+		$this->assertSame( 'First', get_post_meta( $first, '_wp_attachment_image_alt', true ) );
+		$this->assertSame( 'Third', get_post_meta( $third, '_wp_attachment_image_alt', true ) );
+		$this->assertSame( '', get_post_meta( $second, '_wp_attachment_image_alt', true ) );
+	}
+
+	/**
+	 * The featured image follows the first photo when a later save adds a
+	 * photo (an autosave attaches each file as it finishes), when photos
+	 * are reordered, and when one is removed.
+	 */
+	public function test_featured_image_follows_the_first_photo_across_saves(): void {
+		$fixture   = $this->fixture();
+		$first     = $this->upload( 'one.png', $fixture );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $first ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+		$this->assertSame( $first, (int) get_post_thumbnail_id( $post_id ) );
+
+		// A second photo attached by a later save.
+		$second = $this->upload( 'two.png', $fixture );
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $first, $second ),
+			)
+		);
+		$this->assertSame( array( $first, $second ), $this->mark_media( $post_id ) );
+		$this->assertSame( $first, (int) get_post_thumbnail_id( $post_id ) );
+
+		// Reordered.
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'     => 'Draft',
+				'status'      => 'draft',
+				'media_ids'   => array( $first, $second ),
+				'media_order' => array( $second, $first ),
+			)
+		);
+		$this->assertSame( $second, (int) get_post_thumbnail_id( $post_id ) );
+
+		// The first photo removed.
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Draft',
+				'status'       => 'draft',
+				'media_ids'    => array( $first ),
+				'media_remove' => array( $second ),
+			)
+		);
+		$this->assertSame( $first, (int) get_post_thumbnail_id( $post_id ) );
+	}
+
+	/** Removing a Mark's last photo clears the featured image it was. */
+	public function test_featured_image_cleared_when_its_photo_is_removed(): void {
+		$image     = $this->upload( 'one.png', $this->fixture() );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Words too',
+				'status'    => 'draft',
+				'media_ids' => array( $image ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+		$this->assertSame( $image, (int) get_post_thumbnail_id( $post_id ) );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'      => 'Words too',
+				'status'       => 'draft',
+				'media_remove' => array( $image ),
+			)
+		);
+
+		$this->assertSame( array(), $this->mark_media( $post_id ) );
+		$this->assertSame( 'note', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertFalse( has_post_thumbnail( $post_id ) );
+	}
+
+	/** A save that doesn't change the photos leaves a chosen featured image alone. */
+	public function test_unchanged_media_keeps_a_chosen_featured_image(): void {
+		$fixture   = $this->fixture();
+		$first     = $this->upload( 'one.png', $fixture );
+		$second    = $this->upload( 'two.png', $fixture );
+		$publisher = Daymark_Plugin::instance()->publisher;
+		$post_id   = $publisher->publish(
+			array(
+				'caption'   => 'Draft',
+				'status'    => 'draft',
+				'media_ids' => array( $first, $second ),
+			)
+		);
+		$this->assertIsInt( $post_id );
+
+		set_post_thumbnail( $post_id, $second );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'caption'   => 'Draft, edited',
+				'status'    => 'draft',
+				'media_ids' => array( $first, $second ),
+			)
+		);
+
+		$this->assertSame( $second, (int) get_post_thumbnail_id( $post_id ) );
+	}
+
 	/** Cancelling a finished, unused upload deletes its attachment. */
 	public function test_cancel_deletes_an_unused_upload(): void {
 		$bytes = $this->wav_bytes( 1024 );

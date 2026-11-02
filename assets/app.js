@@ -788,7 +788,7 @@
 
 	// --- App state ---
 	const state = {
-		files: [], // { id, file, url, kind, alt, altStatus, altEdited }
+		files: [], // { id, key, file, url, kind, alt, altStatus, altEdited, uploadStatus, uploadedId, … }
 		caption: '',
 		title: '', // optional Title field value (audio/video by policy)
 		titleStatus: 'idle', // idle | loading | done — AI prefill lifecycle
@@ -836,7 +836,18 @@
 		aiAssistUsed: false,
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
-		editing: null, // { id, type, media: [{id, kind, thumbnail, filename}] } while editing a draft
+		// While editing a draft: { id, type, media: [{id, kind, thumbnail,
+		// filename, alt}], mediaRemoved, partialMedia }. mediaRemoved is set
+		// once a file was taken off this Mark, so its type follows its media
+		// again; partialMedia marks a Mark reopened from the queue without its
+		// list of attached media. See effectiveType().
+		editing: null,
+		// Attachment IDs taken off the Mark being edited (the × on a photo),
+		// sent as media_remove with every later save of this composer. The
+		// site ignores IDs the Mark no longer has, so sending them again is
+		// harmless, and it catches a file an autosave already in flight
+		// attached just before it was removed.
+		removedMediaIds: [],
 		// True when the composer holds a saved draft or queued Mark someone
 		// reopened. Not set by autosave: an autosave turns a new Mark into a
 		// draft (state.editing) mid-session, but it's still a new Mark.
@@ -2056,6 +2067,7 @@
 		state.helpers = defaultHelpers();
 		state.offlineQueueId = null;
 		state.composerNotice = '';
+		state.removedMediaIds = [];
 	}
 
 	// Quietly capture "when this Mark was actually created" the moment a
@@ -2180,6 +2192,29 @@
 		return 'checkin' === effectiveType() && state.placeNameEdited && !!state.placeName.trim();
 	}
 
+	// A Mark that was saved or queued, with everything taken out of it
+	// since (the text cleared, every file removed). The site won't keep an
+	// empty Mark, so there's nothing to save: autosave waits, and leaving
+	// removes a new Mark's draft or leaves a reopened draft as it last
+	// saved (see discardEmptiedComposer()).
+	function composerEmptied() {
+		return !!(state.editing || state.offlineQueueId) && !hasComposerContent();
+	}
+
+	// Records a file taken off the Mark (the × on a photo, or a file the
+	// site refused), so every later save of this composer asks the site to
+	// remove it (media_remove), and the Mark's type follows its media again
+	// (see effectiveType()). No-op for a file the site never had.
+	function noteMediaRemoved(id) {
+		const attachmentId = Number(id);
+		if (attachmentId > 0 && !state.removedMediaIds.includes(attachmentId)) {
+			state.removedMediaIds.push(attachmentId);
+		}
+		if (state.editing) {
+			state.editing.mediaRemoved = true;
+		}
+	}
+
 	// Abandon the composer's in-progress work (leaving the composer,
 	// starting a new Mark, or opening a different draft) without losing
 	// it. The payload is built synchronously from the current `state`
@@ -2205,6 +2240,9 @@
 		if (composerPublishing || !composerHasWork()) {
 			resetComposer();
 			return Promise.resolve(null);
+		}
+		if (composerEmptied()) {
+			return discardEmptiedComposer();
 		}
 		clearTimeout(autosaveState.timer);
 		autosaveState.timer = null;
@@ -2265,6 +2303,42 @@
 			});
 	}
 
+	// The emptied case of abandonComposer() (see composerEmptied()). A new
+	// Mark's draft is removed — the one an autosave made, or its queue
+	// record — since all that was in it was taken out again. A draft or
+	// queued Mark you reopened stays as it last saved. Resolves to
+	// { emptied: true, kept } or { emptied: true, discarded }.
+	function discardEmptiedComposer() {
+		clearTimeout(autosaveState.timer);
+		autosaveState.timer = null;
+		const generation = composerGeneration;
+		const fresh = !state.resumed;
+		const editingId = state.editing ? state.editing.id : null;
+		const queueId = state.offlineQueueId;
+		resetComposer();
+		if (!fresh) {
+			return Promise.resolve({ emptied: true, kept: true });
+		}
+		return (async () => {
+			// An autosave still running may be making this draft.
+			await waitForPendingAutosave();
+			const last = autosaveState.lastResult;
+			const own = last && last.generation === generation ? last : null;
+			const discarded = await discardSavedDraft({
+				id: editingId || (own && own.id) || null,
+				queueId: queueId || (own && own.queueId) || null,
+			});
+			return { emptied: true, discarded };
+		})()
+			.catch(() => ({ emptied: true, discarded: false }))
+			.then((result) => {
+				refreshPendingSection();
+				HomeScreen.refreshDraftsRow();
+				MeScreen.refreshDrafts();
+				return result;
+			});
+	}
+
 	// Set while Publish or Save as draft is running, so leaving the
 	// composer during it (Back, before the queue write finishes) doesn't
 	// also save the Mark as a draft: Publish finishes what you tapped.
@@ -2289,6 +2363,29 @@
 		const wasOnline = navigator.onLine;
 		leaveCounter += 1;
 		const key = 'leave-' + leaveCounter;
+		// Everything was taken out of a saved Mark (see composerEmptied()).
+		// A new Mark's draft goes quietly; a draft you reopened keeps what it
+		// last saved, and the message says so.
+		if (composerEmptied()) {
+			const emptied = abandonComposer();
+			if (!fresh) {
+				showMessage({
+					key,
+					text: __("A draft can't be empty, so it keeps what was last saved.", 'daymark'),
+				});
+				return;
+			}
+			emptied.then((result) => {
+				if (result && false === result.discarded) {
+					showMessage({
+						key,
+						text: __("Couldn't discard the draft. You'll find it in Drafts.", 'daymark'),
+						error: true,
+					});
+				}
+			});
+			return;
+		}
 		let discarded = false;
 		const saving = abandonComposer();
 
@@ -3132,8 +3229,8 @@
 		opts = opts || {};
 		const existingAlt = {};
 		// The author's chosen order for already-attached media (issue #250)
-		// — state.editing.media's own array order, which moveExistingMedia()
-		// mutates in place. Newly uploaded files follow, in the composer's
+		// — state.editing.media's own array order, which the media sheet's
+		// Move earlier/Move later (CreateScreen.moveMedia()) changes in place. Newly uploaded files follow, in the composer's
 		// own order (see payloadToFormData()).
 		const existingMediaIds = [];
 		if (state.editing && Array.isArray(state.editing.media)) {
@@ -3187,6 +3284,23 @@
 			newFiles,
 			existingAlt,
 			existingMediaIds,
+			// The attached media themselves, so a Mark reopened from the queue
+			// shows them (see openPendingMark()). null when the composer doesn't
+			// have the list either (editing.partialMedia), so a Mark queued
+			// again still says so.
+			existingMedia: !state.editing
+				? []
+				: state.editing.partialMedia || !Array.isArray(state.editing.media)
+				? null
+				: state.editing.media.map((m) => ({
+						id: m.id,
+						kind: m.kind,
+						thumbnail: m.thumbnail || '',
+						filename: m.filename || '',
+						alt: m.alt || '',
+				  })),
+			// Files taken off the Mark (see state.removedMediaIds).
+			removedMediaIds: state.removedMediaIds.slice(),
 		};
 	}
 
@@ -3238,6 +3352,9 @@
 		if (mediaOrder.length) {
 			formData.append('media_order', JSON.stringify(mediaOrder));
 		}
+		// Files taken off the Mark. Only an update uses this; the site
+		// ignores any the Mark no longer has.
+		(payload.removedMediaIds || []).forEach((id) => formData.append('media_remove[]', String(id)));
 		payload.tags.forEach((tag) => formData.append('tags[]', tag));
 		// Says the tag list is complete, so an update replaces the Mark's
 		// tags (an empty list clears them) instead of only adding.
@@ -4130,8 +4247,18 @@
 		state.resumed = true;
 		const payload = record.payload;
 		if (record.targetId) {
-			state.editing = { id: record.targetId, type: payload.primaryType, media: [] };
+			// The media the Mark already has, as the queued payload recorded
+			// them. A Mark queued before that list was stored only has their
+			// IDs, so the composer can't show them (see effectiveType()).
+			const hasMediaList = Array.isArray(payload.existingMedia);
+			state.editing = {
+				id: record.targetId,
+				type: payload.primaryType,
+				media: hasMediaList ? payload.existingMedia.map((m) => Object.assign({}, m)) : [],
+				partialMedia: !hasMediaList && (payload.existingMediaIds || payload.mediaOrder || []).length > 0,
+			};
 		}
+		state.removedMediaIds = (payload.removedMediaIds || []).map(Number).filter(Boolean);
 		state.offlineQueueId = record.id;
 		state.caption = payload.caption || '';
 		state.title = payload.title || '';
@@ -4183,6 +4310,10 @@
 				altStatus: 'idle',
 				altEdited: true, // Already-typed alt: never overwrite with a fresh AI suggestion.
 				uploadedId: null,
+				// The file's attachment when the queue had already uploaded it.
+				// An earlier save may have attached it to the Mark, so removing
+				// it before its upload resumes still takes it off.
+				queuedAttachmentId: f.attachmentId || null,
 			};
 		});
 		state.files.forEach((entry) => startComposerUpload(entry));
@@ -4202,6 +4333,12 @@
 		}
 		if (!state.caption.trim() && !state.files.length && !state.editing && !hasTypedPlace()) {
 			return; // Nothing yet worth protecting.
+		}
+		if (composerEmptied()) {
+			// The site won't keep an empty Mark; what it last saved stays
+			// until something is added again (see composerEmptied()).
+			setAutosaveStatus('');
+			return;
 		}
 
 		const generation = composerGeneration;
@@ -4267,11 +4404,11 @@
 		}
 	}
 
-	// Starts (or resumes) one composer file's upload, and keeps its row in
-	// the file list up to date. When it finishes, the draft is saved again
-	// so the file is attached to it straight away — but only if the
-	// composer is still on the same Mark; a Mark already handed to the
-	// queue (Publish, or leaving the composer) attaches it itself.
+	// Starts (or resumes) one composer file's upload, and keeps its
+	// thumbnail's upload line up to date. When it finishes, the draft is
+	// saved again so the file is attached to it straight away — but only
+	// if the composer is still on the same Mark; a Mark already handed to
+	// the queue (Publish, or leaving the composer) attaches it itself.
 	function startComposerUpload(entry) {
 		const generation = composerGeneration;
 		entry.uploadStatus = 'uploading';
@@ -4435,10 +4572,18 @@
 		}
 	}
 
-	// Effective Mark type: new files win; otherwise an edited draft's
-	// stored type; otherwise the Home launcher's chosen type (if any);
-	// otherwise the caption-only default. The server recomputes
-	// authoritatively on save.
+	// Effective Mark type: what the Mark's media make it (typeForMedia(),
+	// the same rule the server's detect_primary_type() follows), counting
+	// a saved draft's attached media and the new picks together; with no
+	// media, the Home launcher's chosen type (if any), else a Note. The
+	// server recomputes authoritatively on save.
+	//
+	// A reopened draft keeps its stored type until its media change, since
+	// the stored type may come from a launcher choice the media alone
+	// can't show (an Image Mark saved with only a caption). A Mark reopened
+	// from the queue without its list of attached media (one queued before
+	// the list was stored, editing.partialMedia) keeps its stored type
+	// until a file is picked, and then counts only what it can see.
 	//
 	// Checkin is the one deliberate exception (issue #424): once declared —
 	// via a fresh Checkin launcher entry or a resumed Checkin draft — it
@@ -4451,20 +4596,21 @@
 	// must agree throughout the session rather than silently flipping to
 	// Image/Video/Gallery the instant a file is picked.
 	function effectiveType() {
-		const declaredType = state.editing ? state.editing.type : state.pendingType;
+		const editing = state.editing;
+		const declaredType = editing ? editing.type : state.pendingType;
 		if ('checkin' === declaredType) {
 			return 'checkin';
 		}
-		if (state.files.length && state.editing && state.editing.media.length) {
-			return 'mixed';
+		if (!editing) {
+			return state.files.length ? detectType(state.files) : state.pendingType || 'note';
 		}
-		if (state.files.length) {
-			return detectType(state.files);
+		if (!state.files.length && (!editing.mediaRemoved || editing.partialMedia)) {
+			return editing.type;
 		}
-		if (state.editing) {
-			return state.editing.type;
-		}
-		return state.pendingType || detectType(state.files);
+		const kinds = (Array.isArray(editing.media) ? editing.media : [])
+			.map((item) => item.kind)
+			.concat(state.files.map((entry) => (entry.file.type || '').split('/')[0] || 'other'));
+		return kinds.length ? typeForMedia(kinds) : state.pendingType || 'note';
 	}
 
 	// Per-type Title-field policy from the server ('optional' | 'hidden').
@@ -4573,6 +4719,9 @@
 			Boolean(state.caption.trim()) ||
 			state.files.length > 0 ||
 			Boolean(state.editing && state.editing.media && state.editing.media.length) ||
+			// Reopened from the queue without its list of media, which the
+			// Mark may still have on the site (see openPendingMark()).
+			Boolean(state.editing && state.editing.partialMedia) ||
 			('checkin' === effectiveType() && Boolean(state.placeName.trim()))
 		);
 	}
@@ -5038,6 +5187,7 @@
 
 		AIAssistSheet.hide(false);
 		DestinationsSheet.hide(false);
+		MediaSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
 		// below — clear it unconditionally so it never keeps firing against
@@ -10314,7 +10464,7 @@
 						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">' +
 						  esc(__('Draft', 'daymark')) +
 						  '</span> ' +
-						  esc(__('Changes save to this Mark — new media is added alongside what’s attached.', 'daymark')) +
+						  esc(__('Changes save to this draft.', 'daymark')) +
 						  '</p>'
 						: ''
 				}
@@ -10329,9 +10479,7 @@
 						  )}</p>`
 						: ''
 				}
-				<div data-existing-media-slot>${this.existingMediaMarkup()}</div>
 				<div data-picker-slot>${this.pickerMarkup()}</div>
-				<div class="daymark-preview" data-preview></div>
 				<div data-place-slot>${this.placeFieldMarkup()}</div>
 				<div class="daymark-field">
 					<label class="daymark-field__label" for="daymark-caption">${esc(__('Caption', 'daymark'))}</label>
@@ -10340,6 +10488,7 @@
 					)}">${esc(state.caption)}</textarea>
 					<p class="daymark-notelength" id="daymark-note-length" data-note-length hidden></p>
 				</div>
+				<div data-media-strip>${this.stripMarkup()}</div>
 				${this.attachBarMarkup()}
 				<div data-title-slot></div>
 				<div data-transcript-slot></div>
@@ -10783,140 +10932,378 @@
 			}
 		},
 
-		// Media already attached to a draft (state.editing.media) — its own
-		// re-renderable slot, separate from refreshMedia()'s new-picks grid,
-		// since the two are unrelated arrays with unrelated layouts (see
-		// buildMarkPayload()'s existingAlt/mediaOrder split). Re-run after a
-		// reorder via refreshExistingMedia(); render() calls this once for
-		// the initial paint.
-		existingMediaMarkup() {
-			const editing = state.editing;
-			if (!editing || !editing.media.length) {
+		// --- The media strip ---
+		//
+		// Every file on the Mark sits in one row of thumbnails under the
+		// caption: what a reopened draft already has (state.editing.media)
+		// first, then new picks (state.files), the order the site keeps them
+		// in (see payloadToFormData()'s media_order). A photo's thumbnail
+		// carries an ALT badge, filled once it has alt text, and every file
+		// an × that takes it off the Mark. Tapping a thumbnail opens
+		// MediaSheet: the alt text, "Suggest with AI", and Move earlier/later.
+		// One click listener on [data-media-strip] (bindEvents()) handles
+		// every thumbnail, so redrawing the strip needs no new listeners.
+
+		// The strip's items, in order, as { key, scope, id, kind, thumb,
+		// name, ref }: scope 'existing' (ref is the state.editing.media item)
+		// or 'file' (ref is the state.files entry).
+		mediaItems() {
+			const existing = state.editing && Array.isArray(state.editing.media) ? state.editing.media : [];
+			return existing
+				.map((m) => ({
+					key: 'existing:' + m.id,
+					scope: 'existing',
+					id: String(m.id),
+					kind: m.kind || 'file',
+					thumb: m.thumbnail || '',
+					name: m.filename || '',
+					ref: m,
+				}))
+				.concat(
+					state.files.map((entry) => ({
+						key: 'file:' + entry.id,
+						scope: 'file',
+						id: entry.id,
+						kind: entry.kind,
+						thumb: entry.url || '',
+						name: entry.file ? entry.file.name : '',
+						ref: entry,
+					}))
+				);
+		},
+
+		// One strip item by key, with its place in the strip (from 1).
+		findMedia(key) {
+			const items = this.mediaItems();
+			const index = items.findIndex((item) => item.key === key);
+			return -1 === index ? null : { item: items[index], position: index + 1, total: items.length };
+		},
+
+		// The photos a photo can move among: those already on a reopened
+		// draft, or those picked since. The site adds new picks after what
+		// a Mark already has, so the two groups don't mix.
+		imageGroup(item) {
+			const list = 'existing' === item.scope ? (state.editing && state.editing.media) || [] : state.files;
+			return list.filter((x) => 'image' === x.kind).map((x) => String(x.id));
+		},
+
+		// Whether a photo has alt text: 'set', 'loading' (an AI suggestion
+		// is on its way), or 'none'.
+		altState(item) {
+			if ('file' === item.scope && 'loading' === item.ref.altStatus) {
+				return 'loading';
+			}
+			return String(item.ref.alt || '').trim() ? 'set' : 'none';
+		},
+
+		// The sheet's title: what the file is and where it sits.
+		mediaTitle(found) {
+			const { item, position, total } = found;
+			if ('image' === item.kind) {
+				return sprintf(
+					/* translators: 1: the photo's place in the row of media, 2: how many files the Mark has */
+					__('Photo %1$d of %2$d', 'daymark'),
+					position,
+					total
+				);
+			}
+			if ('video' === item.kind) {
+				return sprintf(
+					/* translators: 1: the video's place in the row of media, 2: how many files the Mark has */
+					__('Video %1$d of %2$d', 'daymark'),
+					position,
+					total
+				);
+			}
+			if ('audio' === item.kind) {
+				return sprintf(
+					/* translators: 1: the audio file's place in the row of media, 2: how many files the Mark has */
+					__('Audio %1$d of %2$d', 'daymark'),
+					position,
+					total
+				);
+			}
+			return sprintf(
+				/* translators: 1: the file's place in the row of media, 2: how many files the Mark has */
+				__('File %1$d of %2$d', 'daymark'),
+				position,
+				total
+			);
+		},
+
+		// A thumbnail's name for a screen reader: the sheet's title, and for
+		// a photo whether it has alt text.
+		mediaLabel(found) {
+			const { item, position, total } = found;
+			if ('image' !== item.kind) {
+				return this.mediaTitle(found);
+			}
+			const alt = this.altState(item);
+			if ('set' === alt) {
+				return sprintf(
+					/* translators: 1: the photo's place in the row of media, 2: how many files the Mark has */
+					__('Photo %1$d of %2$d, with alt text', 'daymark'),
+					position,
+					total
+				);
+			}
+			if ('loading' === alt) {
+				return sprintf(
+					/* translators: 1: the photo's place in the row of media, 2: how many files the Mark has */
+					__('Photo %1$d of %2$d, alt text being suggested', 'daymark'),
+					position,
+					total
+				);
+			}
+			return sprintf(
+				/* translators: 1: the photo's place in the row of media, 2: how many files the Mark has */
+				__('Photo %1$d of %2$d, no alt text yet', 'daymark'),
+				position,
+				total
+			);
+		},
+
+		// The × button's name.
+		removeLabel(found) {
+			const { item, position } = found;
+			if ('image' === item.kind) {
+				return sprintf(
+					/* translators: %d: the photo's place in the row of media */
+					__('Remove photo %d', 'daymark'),
+					position
+				);
+			}
+			if ('video' === item.kind) {
+				return sprintf(
+					/* translators: %d: the video's place in the row of media */
+					__('Remove video %d', 'daymark'),
+					position
+				);
+			}
+			if ('audio' === item.kind) {
+				return sprintf(
+					/* translators: %d: the audio file's place in the row of media */
+					__('Remove audio %d', 'daymark'),
+					position
+				);
+			}
+			return sprintf(
+				/* translators: %d: the file's place in the row of media */
+				__('Remove file %d', 'daymark'),
+				position
+			);
+		},
+
+		altBadgeClass(altState) {
+			return 'daymark-strip__alt daymark-strip__alt--' + altState;
+		},
+
+		// "+ ALT" until a photo has alt text, then "✓ ALT".
+		altBadgeInner(altState) {
+			const glyph =
+				'set' === altState
+					? '<polyline points="20 6 9 17 4 12"></polyline>'
+					: 'none' === altState
+					? PLUS_GLYPH
+					: '';
+			const icon = glyph
+				? `<svg class="daymark-strip__alticon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`
+				: '';
+			return icon + esc(_x('ALT', 'short label for alt text on a photo thumbnail', 'daymark'));
+		},
+
+		uploadPercent(entry) {
+			const size = entry.uploadSize || (entry.file && entry.file.size) || 0;
+			return size ? Math.min(100, Math.floor(((entry.uploadReceived || 0) / size) * 100)) : 0;
+		},
+
+		// The line under a thumbnail is always there for a screen reader,
+		// but shows only when there's something to act on: a failed upload,
+		// or one waiting for a connection. The bar on the thumbnail shows
+		// progress.
+		uploadStatusClass(entry) {
+			const failed = 'error' === entry.uploadStatus;
+			const waiting = 'uploading' === entry.uploadStatus && !navigator.onLine;
+			return (
+				'daymark-strip__status' +
+				(failed || waiting ? ' daymark-strip__status--shown' : '') +
+				(failed ? ' daymark-strip__status--error' : '')
+			);
+		},
+
+		stripMarkup() {
+			const items = this.mediaItems();
+			if (!items.length) {
 				return '';
 			}
-			return `<ul class="daymark-editmedia" aria-label="${esc(
-				__('Media already attached to this draft', 'daymark')
-			)}">${editing.media
-				.map(
-					(m) => `
-					<li class="daymark-editmedia__item">
-						${
-							m.thumbnail
-								? `<img class="daymark-editmedia__thumb" src="${esc(m.thumbnail)}" alt="${esc(
-										sprintf(
-											/* translators: %s: filename or media kind */
-											__('Attached %s', 'daymark'),
-											m.filename || m.kind
-										)
-								  )}" />`
-								: `<span class="daymark-editmedia__glyph">${esc(m.kind)}</span>`
-						}
-						${
-							m.kind === 'image'
-								? `<span class="daymark-alt daymark-alt--edit">
-										<label class="daymark-alt__label" for="daymark-existing-alt-${esc(m.id)}">${esc(
-										__('Alt text', 'daymark')
-								  )}</label>
-										<input type="text" class="daymark-input daymark-alt__input" id="daymark-existing-alt-${esc(
-											m.id
-										)}" data-existing-alt="${esc(m.id)}" value="${esc(
-										m.alt || ''
-								  )}" placeholder="${esc(__('Describe this image', 'daymark'))}" />
-									</span>`
-								: `<span class="daymark-editmedia__name">${esc(m.filename || m.kind)}</span>`
-						}
-						${m.kind === 'image' ? this.reorderControlMarkup('existing', editing.media, m.id) : ''}
-					</li>`
-				)
+			const total = items.length;
+			return `<ul class="daymark-strip" aria-label="${esc(__('Media on this Mark', 'daymark'))}">${items
+				.map((item, index) => this.stripItemMarkup({ item, position: index + 1, total }))
 				.join('')}</ul>`;
 		},
 
-		// Move/reorder controls for one image entry (issue #250) — shared by
-		// both the new-picks file list (refreshMedia()) and the
-		// already-attached media list (existingMediaMarkup()) above. Up/down
-		// buttons rather than drag-and-drop: drag alone has no keyboard
-		// equivalent and is fussy on touch inside a scrolling list, while a
-		// button meets --daymark-tap-min and works identically by tap,
-		// mouse, or keyboard. Only rendered when the list has 2+ images —
-		// reordering a lone image has nothing to reorder against.
-		reorderControlMarkup(scope, list, id) {
-			const imageIds = list.filter((item) => item.kind === 'image').map((item) => item.id);
-			if (imageIds.length < 2) {
-				return '';
-			}
-			const pos = imageIds.findIndex((itemId) => String(itemId) === String(id));
-			if (pos === -1) {
-				return '';
-			}
-			const action = 'existing' === scope ? 'data-move-existing' : 'data-move-file';
-			const idAttr = 'existing' === scope ? 'data-move-existing-id' : 'data-move-file-id';
-			const disableUp = pos <= 0;
-			const disableDown = pos >= imageIds.length - 1;
-			return `<div class="daymark-reorder" role="group" aria-label="${esc(
-				__('Reorder this image in the gallery', 'daymark')
-			)}">
-				<button type="button" class="daymark-reorder__btn" ${action}="up" ${idAttr}="${esc(
-				id
-			)}" aria-label="${esc(__('Move image up', 'daymark'))}" title="${esc(
-				__('Move up', 'daymark')
-			)}"${disableUp ? ' disabled' : ''}><span aria-hidden="true">&uarr;</span></button>
-				<button type="button" class="daymark-reorder__btn" ${action}="down" ${idAttr}="${esc(
-				id
-			)}" aria-label="${esc(__('Move image down', 'daymark'))}" title="${esc(
-				__('Move down', 'daymark')
-			)}"${disableDown ? ' disabled' : ''}><span aria-hidden="true">&darr;</span></button>
-			</div>`;
+		stripItemMarkup(found) {
+			const { item } = found;
+			const visual = item.thumb
+				? `<img class="daymark-strip__thumb" src="${esc(item.thumb)}" alt="" />`
+				: `<span class="daymark-strip__file"><svg class="daymark-strip__fileicon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
+						TYPE_ICONS[item.kind] || TYPE_ICONS.note
+				  }</svg><span class="daymark-strip__name" aria-hidden="true">${esc(item.name)}</span></span>`;
+			const altState = 'image' === item.kind ? this.altState(item) : '';
+			const badge = altState
+				? `<span class="${this.altBadgeClass(altState)}" data-alt-badge aria-hidden="true">${this.altBadgeInner(
+						altState
+				  )}</span>`
+				: '';
+			const entry = 'file' === item.scope ? item.ref : null;
+			const bar = entry
+				? `<progress class="daymark-progress daymark-strip__progress" max="100" value="${this.uploadPercent(
+						entry
+				  )}" data-upload-bar-for="${esc(entry.id)}" aria-hidden="true"${
+						'uploading' === entry.uploadStatus ? '' : ' hidden'
+				  }></progress>`
+				: '';
+			const status = entry
+				? `<p class="${this.uploadStatusClass(entry)}" data-upload-status-for="${esc(
+						entry.id
+				  )}" aria-live="polite">${esc(this.uploadStatusText(entry))}</p>`
+				: '';
+			return `<li class="daymark-strip__item" data-media-item="${esc(item.key)}">
+				<div class="daymark-strip__tile">
+					<button type="button" class="daymark-strip__open" data-media-open="${esc(
+						item.key
+					)}" aria-haspopup="dialog" aria-label="${esc(this.mediaLabel(found))}">${visual}${badge}</button>
+					${bar}
+					<button type="button" class="daymark-strip__remove" data-media-remove="${esc(item.key)}" aria-label="${esc(
+				this.removeLabel(found)
+			)}"><span class="daymark-strip__removedot" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></span></button>
+				</div>
+				${status}
+			</li>`;
 		},
 
-		// Reorder a not-yet-uploaded (or already-uploaded-this-session) pick.
-		moveFile(id, direction) {
-			if (moveImageInList(state.files, id, direction)) {
-				scheduleAutosave();
-				this.refreshMedia();
-			}
-		},
-
-		// Reorder media already attached to a draft being edited.
-		moveExistingMedia(id, direction) {
-			if (state.editing && moveImageInList(state.editing.media, id, direction)) {
-				scheduleAutosave();
-				this.refreshExistingMedia();
-			}
-		},
-
-		// Re-render existingMediaMarkup() into its own slot (see render())
-		// without touching the rest of the screen, and rebind the listeners
-		// that live inside it.
-		refreshExistingMedia() {
-			const slot = root.querySelector('[data-existing-media-slot]');
+		// Redraws the strip, keeping its scroll position and the focused
+		// button, and brings an open MediaSheet up to date.
+		refreshStrip() {
+			const slot = root.querySelector('[data-media-strip]');
 			if (!slot) {
 				return;
 			}
-			slot.innerHTML = this.existingMediaMarkup();
-			this.bindExistingMediaEvents();
+			const active = document.activeElement;
+			let focus = null;
+			if (active && slot.contains(active)) {
+				const attr = active.hasAttribute('data-media-remove') ? 'data-media-remove' : 'data-media-open';
+				focus = { attr, key: active.getAttribute(attr) };
+			}
+			const list = slot.querySelector('.daymark-strip');
+			const scroll = list ? list.scrollLeft : 0;
+			slot.innerHTML = this.stripMarkup();
+			const newList = slot.querySelector('.daymark-strip');
+			if (newList) {
+				newList.scrollLeft = scroll;
+			}
+			if (focus && focus.key) {
+				const target = slot.querySelector('[' + focus.attr + '="' + focus.key + '"]');
+				if (target) {
+					target.focus();
+				}
+			}
+			MediaSheet.refresh();
 		},
 
-		// Alt-text input and reorder-button listeners for the already-attached
-		// media list — factored out so both the initial bindEvents() call and
-		// every refreshExistingMedia() re-render wire the same handlers.
-		bindExistingMediaEvents() {
-			root.querySelectorAll('[data-existing-alt]').forEach((field) => {
-				field.addEventListener('input', () => {
-					const id = field.getAttribute('data-existing-alt');
-					const media = (state.editing && state.editing.media) || [];
-					const item = media.find((m) => String(m.id) === String(id));
-					if (item) {
-						item.alt = field.value;
-						scheduleAutosave();
-					}
-				});
-			});
-			root.querySelectorAll('[data-move-existing]').forEach((button) => {
-				button.addEventListener('click', () => {
-					const id = button.getAttribute('data-move-existing-id');
-					const direction = 'up' === button.getAttribute('data-move-existing') ? -1 : 1;
-					this.moveExistingMedia(id, direction);
-				});
+		// Brings one thumbnail's ALT badge and name up to date in place,
+		// without redrawing the strip.
+		patchTile(key) {
+			const found = this.findMedia(key);
+			const item = found && root.querySelector('[data-media-item="' + key + '"]');
+			if (!item) {
+				return;
+			}
+			const open = item.querySelector('[data-media-open]');
+			if (open) {
+				open.setAttribute('aria-label', this.mediaLabel(found));
+			}
+			const badge = item.querySelector('[data-alt-badge]');
+			if (badge) {
+				const altState = this.altState(found.item);
+				badge.className = this.altBadgeClass(altState);
+				badge.innerHTML = this.altBadgeInner(altState);
+			}
+		},
+
+		// The × on a thumbnail: takes the file off the Mark. A new pick
+		// stops uploading and the site discards it; a file a save already
+		// attached is taken off by the next save (state.removedMediaIds).
+		// Focus moves to the thumbnail that took its place, else the one
+		// before it, else the Add bar.
+		removeMedia(key) {
+			const found = this.findMedia(key);
+			if (!found) {
+				return;
+			}
+			const { item, position } = found;
+			if (MediaSheet.isFor(key)) {
+				MediaSheet.hide(false);
+			}
+			if ('existing' === item.scope) {
+				state.editing.media = state.editing.media.filter((m) => m !== item.ref);
+				noteMediaRemoved(item.ref.id);
+			} else {
+				const entry = item.ref;
+				entry.removed = true;
+				if (entry.url) {
+					URL.revokeObjectURL(entry.url);
+				}
+				cancelUpload(entry.key);
+				noteMediaRemoved(entry.uploadedId);
+				noteMediaRemoved(entry.queuedAttachmentId);
+				state.files = state.files.filter((f) => f !== entry);
+			}
+			this.refreshMedia();
+			scheduleAutosave();
+			const items = this.mediaItems();
+			const next = items[position - 1] || items[position - 2];
+			const target = next
+				? root.querySelector('[data-media-open="' + next.key + '"]')
+				: root.querySelector('[data-attach="media"]');
+			if (target) {
+				target.focus();
+			}
+			announce(__('Removed from this Mark.', 'daymark'));
+		},
+
+		// Moves a photo one place among the photos of its group (see
+		// imageGroup()). Returns whether it moved.
+		moveMedia(key, direction) {
+			const found = this.findMedia(key);
+			if (!found || 'image' !== found.item.kind) {
+				return false;
+			}
+			const list = 'existing' === found.item.scope ? state.editing && state.editing.media : state.files;
+			if (!list || !moveImageInList(list, found.item.ref.id, direction)) {
+				return false;
+			}
+			scheduleAutosave();
+			this.refreshMedia();
+			return true;
+		},
+
+		// Clicks anywhere in the strip.
+		bindStrip() {
+			const slot = root.querySelector('[data-media-strip]');
+			if (!slot) {
+				return;
+			}
+			slot.addEventListener('click', (event) => {
+				const remove = event.target.closest('[data-media-remove]');
+				if (remove) {
+					this.removeMedia(remove.getAttribute('data-media-remove'));
+					return;
+				}
+				const open = event.target.closest('[data-media-open]');
+				if (open) {
+					MediaSheet.show(open.getAttribute('data-media-open'), open);
+				}
 			});
 		},
 
@@ -10981,8 +11368,8 @@
 				scheduleQuietTagSuggestion();
 			});
 
-			// Alt edits and reorder taps on media already attached to a draft.
-			this.bindExistingMediaEvents();
+			// Taps on the media strip's thumbnails and × buttons.
+			this.bindStrip();
 
 			const aiButton = root.querySelector('[data-action="ai-assist"]');
 			if (aiButton) {
@@ -11111,7 +11498,7 @@
 			scheduleQuietTagSuggestion();
 		},
 
-		// The short status beside a file in the composer's file list.
+		// The short upload status under a file's thumbnail, and in its sheet.
 		uploadStatusText(entry) {
 			if ('done' === entry.uploadStatus) {
 				return __('Uploaded', 'daymark');
@@ -11131,29 +11518,33 @@
 			if (!navigator.onLine) {
 				return __('Waiting for a connection', 'daymark');
 			}
-			const size = entry.uploadSize || (entry.file && entry.file.size) || 0;
-			const percent = size ? Math.min(100, Math.floor(((entry.uploadReceived || 0) / size) * 100)) : 0;
 			return sprintf(
 				/* translators: %d: upload progress, 0-100 */
 				__('Uploading… %d%%', 'daymark'),
-				percent
+				this.uploadPercent(entry)
 			);
 		},
 
-		// Updates one file's status in place, without re-rendering the
-		// list (which would interrupt typing in an alt-text field).
+		// Updates one file's upload state in place (the line under its
+		// thumbnail, its progress bar, and its sheet if open), without
+		// redrawing the strip.
 		refreshUploadStatus(entry) {
 			const el = root.querySelector('[data-upload-status-for="' + entry.id + '"]');
 			if (el) {
 				el.textContent = this.uploadStatusText(entry);
-				el.classList.toggle('daymark-filelist__upload--error', 'error' === entry.uploadStatus);
+				el.className = this.uploadStatusClass(entry);
 			}
+			const bar = root.querySelector('[data-upload-bar-for="' + entry.id + '"]');
+			if (bar) {
+				bar.value = this.uploadPercent(entry);
+				bar.hidden = 'uploading' !== entry.uploadStatus;
+			}
+			MediaSheet.refreshUpload('file:' + entry.id);
 		},
 
 		refreshMedia() {
-			const preview = root.querySelector('[data-preview]');
 			const badge = root.querySelector('[data-type-badge]');
-			if (!preview) {
+			if (!root.querySelector('[data-media-strip]')) {
 				return;
 			}
 			const previousType = state.primaryType;
@@ -11190,189 +11581,22 @@
 			}
 			this.refreshPlaceField();
 			this.refreshPicker();
-			if (!state.files.length) {
-				preview.innerHTML = '';
-				return;
-			}
-
-			const shown = state.files.slice(0, 4);
-			const extra = state.files.length - 4;
-			const tiles = shown
-				.map((entry, index) => {
-					const media = entry.url
-						? `<img class="daymark-preview__img" src="${esc(entry.url)}" alt="${esc(
-								sprintf(
-									/* translators: %s: filename */
-									__('Preview of %s', 'daymark'),
-									entry.file.name
-								)
-						  )}" />`
-						: `<span class="daymark-preview__glyph">${esc(entry.kind)}</span>`;
-					const more =
-						index === 3 && extra > 0
-							? `<span class="daymark-preview__more" aria-hidden="true">+${extra}</span>`
-							: '';
-					return `<li class="daymark-preview__tile">${media}${more}</li>`;
-				})
-				.join('');
-
-			const fileRows = state.files
-				.map(
-					(entry) => `
-				<li class="daymark-filelist__item">
-					<div class="daymark-filelist__row">
-						<span class="daymark-filelist__name">${esc(entry.file.name)}</span>
-						<span class="daymark-filelist__upload${
-							'error' === entry.uploadStatus ? ' daymark-filelist__upload--error' : ''
-						}" data-upload-status-for="${esc(entry.id)}" aria-live="polite">${esc(
-						this.uploadStatusText(entry)
-					)}</span>
-						<button type="button" class="daymark-filelist__clear" data-clear-file="${esc(
-							entry.id
-						)}" aria-label="${esc(
-						sprintf(
-							/* translators: %s: filename */
-							__('Clear %s', 'daymark'),
-							entry.file.name
-						)
-					)}">${esc(__('Clear', 'daymark'))}</button>
-					</div>
-					${entry.kind === 'image' ? this.altFieldMarkup(entry) : ''}
-					${entry.kind === 'image' ? this.reorderControlMarkup('file', state.files, entry.id) : ''}
-				</li>`
-				)
-				.join('');
-
-			const extraLabel =
-				extra > 0
-					? sprintf(
-							/* translators: %d: number of additional media items */
-							__(', plus %d more', 'daymark'),
-							extra
-					  )
-					: '';
-			preview.innerHTML = `
-				<ul class="daymark-preview__grid" aria-label="${esc(
-					__('Selected media previews', 'daymark')
-				)}${esc(extraLabel)}">${tiles}</ul>
-				<ul class="daymark-filelist">${fileRows}</ul>`;
-
-			preview.querySelectorAll('[data-clear-file]').forEach((button) => {
-				button.addEventListener('click', () => {
-					const id = button.getAttribute('data-clear-file');
-					const entry = state.files.find((f) => f.id === id);
-					if (entry && entry.url) {
-						URL.revokeObjectURL(entry.url);
-					}
-					if (entry) {
-						// Stop its upload and have the site discard it,
-						// unless an earlier save already attached it.
-						entry.removed = true;
-						cancelUpload(entry.key);
-					}
-					state.files = state.files.filter((f) => f.id !== id);
-					this.refreshMedia();
-				});
-			});
-
-			preview.querySelectorAll('[data-alt-for]').forEach((field) => {
-				field.addEventListener('input', () => {
-					const entry = state.files.find((f) => f.id === field.getAttribute('data-alt-for'));
-					if (entry) {
-						entry.alt = field.value;
-						entry.altEdited = true; // Stop a late AI result from overwriting.
-						scheduleAutosave();
-					}
-				});
-			});
-
-			// "Improve with AI"/"Suggest with AI" — a manual re-run that, unlike
-			// the automatic first-pick pass, always applies its result (even
-			// over a hand-typed value) since the author explicitly asked for
-			// it, and sends the current text so the provider refines it rather
-			// than describing the image from scratch.
-			preview.querySelectorAll('[data-alt-improve]').forEach((button) => {
-				button.addEventListener('click', () => {
-					const entry = state.files.find((f) => f.id === button.getAttribute('data-alt-improve'));
-					if (!entry || entry.altStatus === 'loading') {
-						return;
-					}
-					const field = root.querySelector('[data-alt-for="' + entry.id + '"]');
-					if (field) {
-						entry.alt = field.value;
-					}
-					this.generateAltFor(entry, { force: true, existingAlt: entry.alt });
-				});
-			});
-
-			preview.querySelectorAll('[data-move-file]').forEach((button) => {
-				button.addEventListener('click', () => {
-					const id = button.getAttribute('data-move-file-id');
-					const direction = 'up' === button.getAttribute('data-move-file') ? -1 : 1;
-					this.moveFile(id, direction);
-				});
-			});
+			this.refreshStrip();
 		},
 
-		// Alt-text field for one image entry, with a hint reflecting AI state
-		// and a manual "Improve with AI"/"Suggest with AI" re-run button.
-		altFieldMarkup(entry) {
-			const hint =
-				entry.altStatus === 'loading'
-					? '<span class="daymark-alt__hint">' + esc(__('Generating alt text…', 'daymark')) + '</span>'
-					: entry.altStatus === 'done'
-					? '<span class="daymark-alt__hint">' +
-					  esc(__('AI-suggested — edit as needed', 'daymark')) +
-					  '</span>'
-					: '';
-			const canImprove =
-				config.ai &&
-				config.ai.available &&
-				entry.altStatus !== 'loading' &&
-				VISION_IMAGE_TYPES.includes(entry.file ? entry.file.type : '');
-			const improveButton = canImprove
-				? `<button type="button" class="daymark-btn daymark-btn--text daymark-alt__improve" data-alt-improve="${esc(
-						entry.id
-				  )}">${esc(entry.alt ? __('Improve with AI', 'daymark') : __('Suggest with AI', 'daymark'))}</button>`
-				: '';
-			return `
-				<div class="daymark-alt">
-					<label class="daymark-alt__label" for="daymark-alt-${esc(entry.id)}">${esc(
-				__('Alt text', 'daymark')
-			)}</label>
-					<input type="text" class="daymark-input daymark-alt__input" id="daymark-alt-${esc(
-						entry.id
-					)}" data-alt-for="${esc(entry.id)}" value="${esc(entry.alt)}" placeholder="${esc(
-				__('Describe this image', 'daymark')
-			)}" ${entry.altStatus === 'loading' ? 'aria-busy="true"' : ''} />
-					${hint}
-					${improveButton}
-				</div>`;
-		},
-
-		// Ask the provider to describe (or, with opts.existingAlt, improve) one
-		// image, then drop the result into its alt field. Patches just this
-		// entry's field in place so a late result never disrupts text the
-		// author is typing into another image's field. On the automatic
-		// first-pick pass (no opts), a result never overwrites text the author
-		// already typed; opts.force (the manual "Improve with AI" button)
-		// always applies its result, since that's an explicit request.
+		// Asks the provider to describe (or, with opts.existingAlt, improve)
+		// one picked photo. On the automatic pass right after picking (no
+		// opts), a result never replaces text the author already typed;
+		// opts.force ("Suggest with AI" or "Improve with AI" in the photo's
+		// sheet) always applies, since it was asked for. Only that photo's
+		// badge and sheet are updated, so a late result never disturbs
+		// typing anywhere else.
 		async generateAltFor(entry, opts) {
 			opts = opts || {};
+			const key = 'file:' + entry.id;
 			entry.altStatus = 'loading';
-			// Reflect "loading" immediately for a manual re-run (the field
-			// already exists in the DOM); on the automatic first-pick call
-			// there's nothing to patch yet — the entry's initial altStatus
-			// already renders as loading once the caller's own refreshMedia()
-			// runs.
-			const startField = root.querySelector('[data-alt-for="' + entry.id + '"]');
-			if (startField) {
-				startField.setAttribute('aria-busy', 'true');
-			}
-			const startButton = root.querySelector('[data-alt-improve="' + entry.id + '"]');
-			if (startButton) {
-				startButton.disabled = true;
-			}
+			this.patchTile(key);
+			MediaSheet.refreshAlt(key);
 			try {
 				const formData = new FormData();
 				formData.append('image', entry.file, entry.file.name);
@@ -11391,25 +11615,10 @@
 			}
 
 			if (!state.files.includes(entry)) {
-				return; // Image was cleared before the suggestion arrived.
+				return; // The photo was removed before the suggestion arrived.
 			}
-			const field = root.querySelector('[data-alt-for="' + entry.id + '"]');
-			if (!field) {
-				return;
-			}
-			if (!entry.altEdited) {
-				field.value = entry.alt;
-			}
-			field.removeAttribute('aria-busy');
-			const hint = field.parentElement.querySelector('.daymark-alt__hint');
-			if (hint) {
-				hint.textContent = entry.altStatus === 'done' ? __('AI-suggested — edit as needed', 'daymark') : '';
-			}
-			const improveButton = field.parentElement.querySelector('.daymark-alt__improve');
-			if (improveButton) {
-				improveButton.disabled = false;
-				improveButton.textContent = entry.alt ? __('Improve with AI', 'daymark') : __('Suggest with AI', 'daymark');
-			}
+			this.patchTile(key);
+			MediaSheet.refreshAlt(key, { applyValue: !entry.altEdited });
 		},
 
 		// Markup for the optional Title field, or '' when the current type's
@@ -16119,6 +16328,445 @@
 					target.focus();
 				}
 			}
+			this.opener = null;
+		},
+	};
+
+	// --- Overlay: a file's sheet in the composer ---
+	//
+	// Opens from a thumbnail in the composer's media strip
+	// (CreateScreen.stripItemMarkup()). For a photo: its alt text, "Suggest
+	// with AI" (a photo picked in this visit, when the site's AI provider
+	// can read it), and Move earlier/Move later, which reorder photos
+	// without dragging. For a video or audio file: its name and how its
+	// upload is going. The composer's autosave keeps every change. Like the
+	// other sheets it lives on document.body. While it's open its parts
+	// are updated in place, never redrawn, so an upload finishing or an AI
+	// suggestion arriving never interrupts typing in the alt text box.
+	const MediaSheet = {
+		el: null,
+		key: null,
+		opener: null,
+		onKeydown: null,
+
+		isOpen() {
+			return !!(this.el && !this.el.hidden);
+		},
+
+		isFor(key) {
+			return this.isOpen() && this.key === key;
+		},
+
+		show(key, opener) {
+			const found = CreateScreen.findMedia(key);
+			if (!found) {
+				return;
+			}
+			this.hide(false);
+			this.key = key;
+			this.opener = opener || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			syncSheetsToVisualViewport();
+			this.el.innerHTML = this.markup(found);
+			this.bind();
+			this.onKeydown = (event) => {
+				if ('Escape' === event.key) {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			this.el.querySelector('#daymark-media-title').focus();
+		},
+
+		markup(found) {
+			const { item } = found;
+			const preview = item.thumb
+				? `<img class="daymark-mediasheet__preview" src="${esc(item.thumb)}" alt="" />`
+				: `<div class="daymark-mediasheet__file"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
+						TYPE_ICONS[item.kind] || TYPE_ICONS.note
+				  }</svg><span class="daymark-mediasheet__name">${esc(item.name)}</span></div>`;
+			const upload =
+				'file' === item.scope
+					? `<p class="${this.uploadClass(item.ref)}" data-sheet-upload>${esc(this.uploadText(item.ref))}</p>`
+					: '';
+			return `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Close', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel daymark-sheet__panel--media" role="dialog" aria-modal="true" aria-labelledby="daymark-media-title">
+				<h2 class="daymark-sheet__title" id="daymark-media-title" tabindex="-1">${esc(
+					CreateScreen.mediaTitle(found)
+				)}</h2>
+				<div class="daymark-sheet__body">
+					${preview}
+					${upload}
+					${'image' === item.kind ? this.altMarkup(item) : ''}
+					<div class="daymark-mediasheet__orderslot" data-sheet-order>${this.orderMarkup(found)}</div>
+					<p class="daymark-visually-hidden" data-sheet-live aria-live="polite"></p>
+					<div class="daymark-sheet__actions">
+						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
+							__('Done', 'daymark')
+						)}</button>
+					</div>
+				</div>
+			</div>`;
+		},
+
+		// The upload line under the preview: progress or a failure, and
+		// nothing once the file is up.
+		uploadText(entry) {
+			return 'done' === entry.uploadStatus ? '' : CreateScreen.uploadStatusText(entry);
+		},
+
+		uploadClass(entry) {
+			return (
+				'daymark-mediasheet__upload' +
+				('error' === entry.uploadStatus ? ' daymark-mediasheet__upload--error' : '')
+			);
+		},
+
+		// The alt text box. Its data attribute says whose alt text it is:
+		// data-alt-for for a photo picked in this visit, data-existing-alt
+		// for one a reopened draft already has.
+		altMarkup(item) {
+			const owner =
+				'file' === item.scope
+					? `data-alt-for="${esc(item.ref.id)}"`
+					: `data-existing-alt="${esc(item.ref.id)}"`;
+			const ai =
+				'file' === item.scope
+					? `<p class="daymark-mediasheet__aihint" data-sheet-ai-hint aria-live="polite">${esc(
+							this.aiHintText(item.ref)
+					  )}</p>${this.aiButtonMarkup(item)}`
+					: '';
+			return `
+					<div class="daymark-field">
+						<label class="daymark-field__label" for="daymark-media-alt">${esc(__('Alt text', 'daymark'))}</label>
+						<p class="daymark-field__help" id="daymark-media-alt-help">${esc(
+							__("Describe the photo for people who can't see it.", 'daymark')
+						)}</p>
+						<textarea class="daymark-textarea daymark-mediasheet__alttext" id="daymark-media-alt" rows="3" ${owner} placeholder="${esc(
+							__('Describe this image', 'daymark')
+						)}" aria-describedby="daymark-media-alt-help"${
+							'file' === item.scope && 'loading' === item.ref.altStatus ? ' aria-busy="true"' : ''
+						}>${esc(item.ref.alt || '')}</textarea>
+						${ai}
+					</div>`;
+		},
+
+		// "Suggest with AI" needs the photo itself, so it's offered only for
+		// one picked in this visit, in a format the site's AI provider can
+		// read.
+		aiButtonMarkup(item) {
+			if (
+				!(config.ai && config.ai.available) ||
+				!VISION_IMAGE_TYPES.includes(item.ref.file ? item.ref.file.type : '')
+			) {
+				return '';
+			}
+			const loading = 'loading' === item.ref.altStatus;
+			return `<button type="button" class="daymark-btn daymark-btn--text daymark-mediasheet__ai" data-alt-improve="${esc(
+				item.ref.id
+			)}"${loading ? ' aria-disabled="true"' : ''}>${esc(this.aiButtonLabel(item.ref))}</button>`;
+		},
+
+		aiButtonLabel(entry) {
+			return String(entry.alt || '').trim()
+				? __('Improve with AI', 'daymark')
+				: __('Suggest with AI', 'daymark');
+		},
+
+		aiHintText(entry) {
+			if ('loading' === entry.altStatus) {
+				return __('Generating alt text…', 'daymark');
+			}
+			// Once you edit a suggestion it's yours.
+			if ('done' === entry.altStatus && !entry.altEdited && String(entry.alt || '').trim()) {
+				return __('AI-suggested — edit as needed', 'daymark');
+			}
+			return '';
+		},
+
+		// Where a photo sits among the photos it can move among
+		// (CreateScreen.imageGroup()): null when it can't move, else
+		// whether it's first or last.
+		orderState(found) {
+			if ('image' !== found.item.kind) {
+				return null;
+			}
+			const group = CreateScreen.imageGroup(found.item);
+			if (group.length < 2) {
+				return null;
+			}
+			const index = group.indexOf(String(found.item.ref.id));
+			return { first: index <= 0, last: index >= group.length - 1 };
+		},
+
+		orderMarkup(found) {
+			const order = this.orderState(found);
+			if (!order) {
+				return '';
+			}
+			const button = (direction, label, points, disabled) =>
+				`<button type="button" class="daymark-btn daymark-btn--secondary daymark-mediasheet__move" data-media-move="${direction}"${
+					disabled ? ' disabled' : ''
+				}><svg class="daymark-mediasheet__chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="${points}"></polyline></svg><span>${esc(
+					label
+				)}</span></button>`;
+			return `<div class="daymark-mediasheet__order" role="group" aria-labelledby="daymark-media-order-label">
+						<p class="daymark-field__label" id="daymark-media-order-label">${esc(__('Photo order', 'daymark'))}</p>
+						<div class="daymark-mediasheet__orderbuttons">
+							${button(-1, __('Move earlier', 'daymark'), '15 18 9 12 15 6', order.first)}
+							${button(1, __('Move later', 'daymark'), '9 18 15 12 9 6', order.last)}
+						</div>
+					</div>`;
+		},
+
+		bind() {
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+			this.el.querySelector('[data-sheet-done]').addEventListener('click', () => this.hide());
+			const text = this.el.querySelector('#daymark-media-alt');
+			if (text) {
+				text.addEventListener('input', () => this.altChanged(text.value));
+			}
+			this.el.querySelector('.daymark-sheet__panel').addEventListener('click', (event) => {
+				const move = event.target.closest('[data-media-move]');
+				if (move) {
+					if (!move.disabled) {
+						this.move(Number(move.getAttribute('data-media-move')));
+					}
+					return;
+				}
+				if (event.target.closest('[data-alt-improve]')) {
+					this.suggest();
+				}
+			});
+		},
+
+		altChanged(value) {
+			const found = CreateScreen.findMedia(this.key);
+			if (!found) {
+				return;
+			}
+			found.item.ref.alt = value;
+			if ('file' === found.item.scope) {
+				// A late AI suggestion won't replace what you typed.
+				found.item.ref.altEdited = true;
+			}
+			CreateScreen.patchTile(this.key);
+			this.refreshAiControls(found);
+			scheduleAutosave();
+		},
+
+		// "Suggest with AI" / "Improve with AI": sends the photo, and any
+		// alt text it already has to improve on. The result replaces the
+		// box's text, since it was asked for.
+		suggest() {
+			const found = CreateScreen.findMedia(this.key);
+			if (!found || 'file' !== found.item.scope) {
+				return;
+			}
+			const entry = found.item.ref;
+			if ('loading' === entry.altStatus) {
+				return;
+			}
+			const text = this.el.querySelector('#daymark-media-alt');
+			if (text) {
+				entry.alt = text.value;
+			}
+			CreateScreen.generateAltFor(entry, { force: true, existingAlt: entry.alt });
+		},
+
+		move(direction) {
+			const key = this.key;
+			// moveMedia() redraws the strip, which brings this sheet up to
+			// date (refresh()).
+			if (!CreateScreen.moveMedia(key, direction)) {
+				return;
+			}
+			const found = CreateScreen.findMedia(key);
+			if (found) {
+				this.say(
+					sprintf(
+						/* translators: 1: the photo's new place in the row of media, 2: how many files the Mark has */
+						__('Moved to %1$d of %2$d.', 'daymark'),
+						found.position,
+						found.total
+					)
+				);
+			}
+		},
+
+		// The sheet's own live region: a screen reader may not read the app's
+		// shared one while a dialog is open.
+		say(text) {
+			const live = this.el && this.el.querySelector('[data-sheet-live]');
+			if (!live) {
+				return;
+			}
+			live.textContent = '';
+			setTimeout(() => {
+				if (live.isConnected) {
+					live.textContent = text;
+				}
+			}, 100);
+		},
+
+		// Brings the open sheet up to date after the strip changed: its
+		// title (the file's place), the order buttons, the upload line, and
+		// the AI hint. Closes it if its file left the Mark (the site refused
+		// it).
+		refresh() {
+			if (!this.isOpen()) {
+				return;
+			}
+			const found = CreateScreen.findMedia(this.key);
+			if (!found) {
+				this.hide(false);
+				const add = root.querySelector('[data-attach="media"]');
+				if (add) {
+					add.focus();
+				}
+				return;
+			}
+			const title = this.el.querySelector('#daymark-media-title');
+			if (title) {
+				title.textContent = CreateScreen.mediaTitle(found);
+			}
+			this.refreshOrder(found);
+			this.refreshUpload(this.key);
+			this.refreshAiControls(found);
+		},
+
+		// Patches the order buttons in place, so a focused button keeps
+		// focus; one that just became disabled (the photo reached an end)
+		// hands focus to the other.
+		refreshOrder(found) {
+			const slot = this.el.querySelector('[data-sheet-order]');
+			if (!slot) {
+				return;
+			}
+			const order = this.orderState(found);
+			const buttons = slot.querySelectorAll('[data-media-move]');
+			const focused = document.activeElement && slot.contains(document.activeElement)
+				? document.activeElement.getAttribute('data-media-move')
+				: null;
+			if (!order) {
+				slot.innerHTML = '';
+			} else if (!buttons.length) {
+				slot.innerHTML = this.orderMarkup(found);
+			} else {
+				buttons.forEach((button) => {
+					button.disabled = '-1' === button.getAttribute('data-media-move') ? order.first : order.last;
+				});
+			}
+			if (null === focused) {
+				return;
+			}
+			const same = slot.querySelector('[data-media-move="' + focused + '"]');
+			if (same && !same.disabled) {
+				same.focus();
+				return;
+			}
+			const other = slot.querySelector('[data-media-move]:not(:disabled)');
+			const fallback = other || this.el.querySelector('#daymark-media-title');
+			if (fallback) {
+				fallback.focus();
+			}
+		},
+
+		refreshUpload(key) {
+			if (!this.isFor(key)) {
+				return;
+			}
+			const found = CreateScreen.findMedia(key);
+			const line = this.el.querySelector('[data-sheet-upload]');
+			if (!found || !line || 'file' !== found.item.scope) {
+				return;
+			}
+			line.textContent = this.uploadText(found.item.ref);
+			line.className = this.uploadClass(found.item.ref);
+		},
+
+		// After an AI suggestion started or finished. opts.applyValue puts
+		// the photo's alt text in the box (the suggestion was used).
+		refreshAlt(key, opts) {
+			if (!this.isFor(key)) {
+				return;
+			}
+			const found = CreateScreen.findMedia(key);
+			if (!found) {
+				return;
+			}
+			const text = this.el.querySelector('#daymark-media-alt');
+			if (text && opts && opts.applyValue) {
+				text.value = found.item.ref.alt || '';
+			}
+			this.refreshAiControls(found);
+		},
+
+		refreshAiControls(found) {
+			if ('file' !== found.item.scope) {
+				return;
+			}
+			const entry = found.item.ref;
+			const loading = 'loading' === entry.altStatus;
+			const text = this.el.querySelector('#daymark-media-alt');
+			if (text) {
+				if (loading) {
+					text.setAttribute('aria-busy', 'true');
+				} else {
+					text.removeAttribute('aria-busy');
+				}
+			}
+			const hint = this.el.querySelector('[data-sheet-ai-hint]');
+			const hintText = this.aiHintText(entry);
+			if (hint && hint.textContent !== hintText) {
+				hint.textContent = hintText;
+			}
+			// aria-disabled rather than disabled while a suggestion is on its
+			// way, so the button keeps focus after it's pressed.
+			const button = this.el.querySelector('[data-alt-improve]');
+			if (button) {
+				if (loading) {
+					button.setAttribute('aria-disabled', 'true');
+				} else {
+					button.removeAttribute('aria-disabled');
+				}
+				const label = this.aiButtonLabel(entry);
+				if (button.textContent !== label) {
+					button.textContent = label;
+				}
+			}
+		},
+
+		hide(restoreFocus = true) {
+			if (!this.isOpen()) {
+				return;
+			}
+			const key = this.key;
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (restoreFocus) {
+				// The strip may have been redrawn while the sheet was open,
+				// so the thumbnail is looked up again.
+				const target =
+					(key && root.querySelector('[data-media-open="' + key + '"]')) ||
+					(this.opener && this.opener.isConnected ? this.opener : null);
+				if (target) {
+					target.focus();
+				}
+			}
+			this.key = null;
 			this.opener = null;
 		},
 	};

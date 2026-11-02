@@ -213,6 +213,61 @@ async function openWhere(page) {
 	await expect(page.locator('#daymark-where-title')).toBeFocused();
 }
 
+// Picked media shows as a row of thumbnails under the caption. Tapping one
+// opens its sheet, where a photo's alt text is written; Done closes it.
+async function openMediaSheet(page, index = 0) {
+	await page.locator('[data-media-open]').nth(index).click();
+	await expect(page.locator('#daymark-media-title')).toBeFocused();
+}
+
+async function describePhoto(page, alt, index = 0) {
+	await openMediaSheet(page, index);
+	await page.locator('#daymark-media-alt').fill(alt);
+	await page.locator('[data-sheet-done]').click();
+	await expect(page.locator('#daymark-media-title')).toHaveCount(0);
+	await expect(page.locator('[data-alt-badge]').nth(index)).toHaveClass(/daymark-strip__alt--set/);
+}
+
+// A draft Mark with these PNG photos, made through the REST API the way
+// another app would. Returns its ID.
+async function createPhotoDraft(page, caption, filePaths) {
+	const files = filePaths.map((filePath) => ({
+		name: filePath.split('/').pop(),
+		base64: readFileSync(filePath).toString('base64'),
+	}));
+	return page.evaluate(
+		async ({ cap, list }) => {
+			const config = window.daymarkApp;
+			const form = new FormData();
+			form.append('caption', cap);
+			form.append('status', 'draft');
+			list.forEach((item) => {
+				const binary = atob(item.base64);
+				const bytes = new Uint8Array(binary.length);
+				for (let i = 0; i < binary.length; i++) {
+					bytes[i] = binary.charCodeAt(i);
+				}
+				form.append('files[]', new File([bytes], item.name, { type: 'image/png' }), item.name);
+			});
+			const res = await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+				body: form,
+			});
+			const mark = await res.json();
+			return mark.id;
+		},
+		{ cap: caption, list: files }
+	);
+}
+
+// The IDs of a Mark's media, in order, as the site has them.
+async function savedMediaIds(page, caption) {
+	const mark = await findMarkByCaption(page, caption);
+	return mark && Array.isArray(mark.media) ? mark.media.map((item) => item.id) : [];
+}
+
 // Titles of the signed-in user's drafts on the site, read through the REST
 // API without leaving the page (so the message bar stays up).
 function draftTitles(page) {
@@ -1769,7 +1824,8 @@ test('the Add bar adds a photo to a Note, making it a photo Mark', async ({ page
 	await chooser.setFiles('tests/e2e/fixtures/test-image.png');
 
 	await expect(badge).toHaveText('Image');
-	await expect(page.locator('[data-alt-for]').first()).toBeVisible();
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	await expect(page.locator('[data-alt-badge]')).toBeVisible();
 
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="publish"]').click();
@@ -2018,8 +2074,9 @@ test('tags: the composer Tags section adds a tag to the Mark', async ({ page }) 
 	await expect(row).toContainText(tag);
 });
 
-// Image Mark via the file picker: per-image alt field, published straight
-// from the composer (no Next), and it lands in the images view.
+// Image Mark via the file picker: per-image alt text in the photo's sheet,
+// published straight from the composer (no Next), and it lands in the
+// images view.
 test('image Mark: alt field, publishes from the composer, findable via Search', async ({ page }) => {
 	const caption = `E2E image ${RUN_ID}`;
 
@@ -2030,10 +2087,9 @@ test('image Mark: alt field, publishes from the composer, findable via Search', 
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
 	await expect(page.locator('[data-type-badge]')).toHaveText(/image/i);
 
-	// Every image offers a per-image alt field; describe it before publish.
-	const altField = page.locator('[data-alt-for]').first();
-	await expect(altField).toBeVisible();
-	await altField.fill(`E2E alt ${RUN_ID}`);
+	// Every image has its own alt text, written in its sheet; describe it
+	// before publish.
+	await describePhoto(page, `E2E alt ${RUN_ID}`);
 
 	await page.fill('#daymark-caption', caption);
 
@@ -2069,9 +2125,7 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 
 	await openComposer(page, 'image');
 	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
-	const altField = page.locator('[data-alt-for]').first();
-	await expect(altField).toBeVisible();
-	await altField.fill(`E2E alt ${RUN_ID}`);
+	await describePhoto(page, `E2E alt ${RUN_ID}`);
 	await page.fill('#daymark-caption', imageCaption);
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
@@ -2134,8 +2188,8 @@ test('camera-first: the Image picker offers capture first, with a library fallba
 });
 
 // Drag-and-drop (issue #260): dropping a file onto the picker zone attaches
-// it the same way picking it via the file input would — same alt-text
-// field, same type badge, same publish flow.
+// it the same way picking it via the file input would — same alt text
+// sheet, same type badge, same publish flow.
 test('drag-and-drop: dropping an image onto the picker attaches it', async ({ page }) => {
 	const caption = `E2E drop ${RUN_ID}`;
 
@@ -2146,13 +2200,104 @@ test('drag-and-drop: dropping an image onto the picker attaches it', async ({ pa
 	await dropFile(page, '.daymark-picker', 'tests/e2e/fixtures/test-image.png', 'test-image.png', 'image/png');
 
 	await expect(page.locator('[data-type-badge]')).toHaveText(/image/i);
-	const altField = page.locator('[data-alt-for]').first();
-	await expect(altField).toBeVisible();
-	await altField.fill(`E2E alt ${RUN_ID}`);
+	await describePhoto(page, `E2E alt ${RUN_ID}`);
 
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
+});
+
+// The photo strip: picked photos show as thumbnails under the caption, each
+// with an ALT badge. A photo's sheet holds its alt text and Move earlier /
+// Move later, and both reach the saved draft.
+test('photo strip: alt text and order set in a photo sheet reach the saved draft', async ({ page }) => {
+	const caption = `E2E strip order ${RUN_ID}`;
+	const alt = `E2E strip alt ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', [
+		'tests/e2e/fixtures/test-image.png',
+		'tests/e2e/fixtures/test-image-2.png',
+	]);
+
+	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+	await expect(page.locator('[data-alt-badge].daymark-strip__alt--none')).toHaveCount(2);
+
+	// Wait until the draft holds both photos, so the order checked below
+	// is the one the sheet sets.
+	await expect.poll(async () => (await savedMediaIds(page, caption)).length, { timeout: 20000 }).toBe(2);
+	const before = await savedMediaIds(page, caption);
+
+	// Describe the second photo, then move it first.
+	await describePhoto(page, alt, 1);
+	await openMediaSheet(page, 1);
+	const earlier = page.locator('[data-media-move="-1"]');
+	await earlier.click();
+	await expect(page.locator('#daymark-media-title')).toHaveText('Photo 1 of 2');
+	await expect(page.locator('[data-sheet-live]')).toHaveText('Moved to 1 of 2.');
+	// The first photo can't move earlier, so focus goes to Move later.
+	await expect(earlier).toBeDisabled();
+	await expect(page.locator('[data-media-move="1"]')).toBeFocused();
+	await page.locator('[data-sheet-done]').click();
+
+	// Back on the strip, focus is on the photo that moved, now first.
+	await expect(page.locator('[data-media-open]').first()).toBeFocused();
+	await expect(page.locator('[data-alt-badge]').first()).toHaveClass(/daymark-strip__alt--set/);
+	await expect(page.locator('[data-alt-badge]').nth(1)).toHaveClass(/daymark-strip__alt--none/);
+
+	await expect
+		.poll(() => savedMediaIds(page, caption), { timeout: 15000 })
+		.toEqual([before[1], before[0]]);
+	const mark = await findMarkByCaption(page, caption);
+	expect(mark.media[0].alt).toBe(alt);
+	expect(mark.media[1].alt).toBe('');
+});
+
+// The same strip on a reopened draft: its photos can be moved and removed
+// (the × takes a photo off the saved draft), and adding a photo to a
+// one-photo draft makes it a gallery.
+test('photo strip on a reopened draft: move, remove, and add a photo', async ({ page }) => {
+	const caption = `E2E strip draft ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	const id = await createPhotoDraft(page, caption, [
+		'tests/e2e/fixtures/test-image.png',
+		'tests/e2e/fixtures/test-image-2.png',
+	]);
+	const before = await savedMediaIds(page, caption);
+	expect(before).toHaveLength(2);
+
+	await page.goto(`/daymark?daymark_draft=${id}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('.daymark-strip__thumb')).toHaveCount(2);
+	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
+
+	// Move the second photo first, through its sheet.
+	await openMediaSheet(page, 1);
+	await page.locator('[data-media-move="-1"]').click();
+	await page.locator('[data-sheet-done]').click();
+	await expect
+		.poll(() => savedMediaIds(page, caption), { timeout: 15000 })
+		.toEqual([before[1], before[0]]);
+
+	// The × takes a photo off the draft. One photo left is an Image Mark.
+	await page.locator('[data-media-remove]').nth(1).click();
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	await expect(page.locator('[data-media-open]').first()).toBeFocused();
+	await expect(page.locator('[data-type-badge]')).toHaveText('Image');
+	await expect.poll(() => savedMediaIds(page, caption), { timeout: 15000 }).toEqual([before[1]]);
+
+	// Adding a photo makes it a gallery again.
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image-2.png');
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
+	await expect.poll(async () => (await savedMediaIds(page, caption)).length, { timeout: 20000 }).toBe(2);
+	expect((await savedMediaIds(page, caption))[0]).toBe(before[1]);
 });
 
 // Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
@@ -2194,7 +2339,7 @@ test('share target: sharing a photo creates a draft that opens straight into the
 	// with an attachment already on it.
 	await page.goto(location);
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
-	await expect(page.locator('.daymark-editmedia__thumb')).toBeVisible();
+	await expect(page.locator('.daymark-strip__thumb')).toBeVisible();
 
 	// It's a draft — findable via Drafts on the Me screen, not
 	// published/syndicated.

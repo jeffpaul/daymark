@@ -32,6 +32,8 @@ can't act on them.
 
 ### Changed
 
+- Photos and files on a Mark now show as a row of thumbnails under the caption, instead of a large block each that pushed the caption off the screen. Each photo has an ALT badge that fills in once it's described; tap a thumbnail to write its alt text or move it, and tap its × to remove it, now also from a draft you reopened. ([#576](https://github.com/jeffpaul/daymark/pull/576))
+
 - Every Mark you write now has a small "Add" bar under the caption: Photo or video, Audio, and Place. A Note can take a photo or a place without starting over. Turning Place on makes the Mark a Check In, and turning it off again removes the place and location it saved. ([#575](https://github.com/jeffpaul/daymark/pull/575))
 
 - Publish now sits on the composer itself, so a Mark no longer needs a second "Where should this go?" screen. A "Where this goes" row shows your site and each destination as a switch you tap on or off, with the full list one tap away, and categories and tags are folded under the caption. ([#574](https://github.com/jeffpaul/daymark/pull/574))
@@ -56,6 +58,9 @@ can't act on them.
 
 ### Fixed
 
+- A photo you remove from a Mark that has already saved now comes off the saved draft too. A photo Mark's featured image is now always its first photo; before, a photo that finished uploading later could take its place. ([#576](https://github.com/jeffpaul/daymark/pull/576))
+- Emptying a Mark that has already saved no longer shows "Not saved yet — will retry" or leaves a "Couldn't save draft" card. A new Mark you empty is discarded when you leave, and a draft you reopened keeps what it last saved. ([#576](https://github.com/jeffpaul/daymark/pull/576))
+- Adding a photo to a photo draft you reopened now makes it a gallery, not a mixed-media Mark. ([#576](https://github.com/jeffpaul/daymark/pull/576))
 - A Check In saved on this device while offline now reopens as a Check In with its place, instead of as a Note. A Check In whose location arrives after it was first saved now gets its weather too. ([#575](https://github.com/jeffpaul/daymark/pull/575))
 - A file the site won't take (the wrong type, or too large) now leaves the composer right away, with the reason. Before, leaving the composer with that file in it turned your unsent draft into a "Couldn't publish" card; now the draft saves its text. A draft that fails to save now says "Couldn't save draft" instead of "Couldn't publish". ([#570](https://github.com/jeffpaul/daymark/pull/570))
 - Unticking every destination or category on the Publish screen is now kept. Before, the site treated an empty choice as no choice and used your usual destinations and categories anyway. And the next Mark of the same type now starts from the choice you just saved, instead of the one from when you opened the app. ([#569](https://github.com/jeffpaul/daymark/pull/569))
