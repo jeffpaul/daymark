@@ -4075,3 +4075,71 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	await expect.poll(async () => (await counts()).click).toBe(1);
 	await expect.poll(async () => (await counts()).keydown).toBe(1);
 });
+
+// Right-to-left layout (issue #524). The site language isn't switched here
+// (that would need a translation installed); setting dir="rtl" on <html>
+// is what language_attributes() prints for a right-to-left language, and
+// every right-to-left rule keys off it.
+test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation', async ({ page }) => {
+	const setRtl = () =>
+		page.evaluate(() => {
+			document.documentElement.setAttribute('dir', 'rtl');
+		});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+	await setRtl();
+	await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+	// A switched-on toggle's knob moves toward the start edge, which is the
+	// left in right-to-left (moving it right would push it out of the track).
+	const knobShift = await page.evaluate(() => {
+		const label = document.createElement('label');
+		label.className = 'daymark-toggle';
+		label.innerHTML =
+			'<input type="checkbox" class="daymark-toggle__input" checked><span class="daymark-toggle__track"></span>';
+		document.body.appendChild(label);
+		const transform = window.getComputedStyle(label.querySelector('.daymark-toggle__track'), '::after').transform;
+		label.remove();
+		return new DOMMatrix(transform).m41;
+	});
+	expect(knobShift).toBe(-18);
+
+	// The ⋯ menu opens toward the inside of the card, not past the screen's
+	// left edge, where its trigger sits in right-to-left.
+	const subCard = await findSubscriptionCard(page);
+	const id = await subCard.getAttribute('data-subpost');
+	await page.locator(`[data-overflow-toggle="${id}"]`).click();
+	const panel = page.locator(`[data-overflow-panel="${id}"]`);
+	await expect(panel).toBeVisible();
+	const box = await panel.boundingBox();
+	const viewport = page.viewportSize();
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+	await page.locator(`[data-overflow-toggle="${id}"]`).click();
+
+	// Notifications' back arrow is mirrored to point right.
+	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
+	const backLink = page.locator('.daymark-backlink');
+	await expect(backLink).toBeVisible();
+	const arrowTransform = await page.evaluate(() => {
+		const arrow = document.querySelector('.daymark-backlink span[aria-hidden="true"]');
+		return arrow ? window.getComputedStyle(arrow).transform : '';
+	});
+	expect(arrowTransform).toContain('matrix(-1');
+
+	// Tab navigation follows reading direction: ArrowLeft moves to the next tab.
+	const tabs = page.locator('.daymark-notif-tabs__tab');
+	await tabs.first().focus();
+	await expect(tabs.first()).toBeFocused();
+	await page.keyboard.press('ArrowLeft');
+	await expect(tabs.nth(1)).toBeFocused();
+	await page.keyboard.press('ArrowRight');
+	await expect(tabs.first()).toBeFocused();
+
+	await backLink.click();
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+});

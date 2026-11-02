@@ -295,6 +295,19 @@ stubbed AT Protocol API — see the setup notes at the top of
   once published there — never add a bundled `languages/` folder, `.pot`/
   `.mo`/`.json` file, or a `Domain Path` header. See CLAUDE.md's "i18n
   readiness" decision row.
+- **Write CSS that mirrors for right-to-left languages.** Arabic, Hebrew,
+  and other right-to-left languages flip the whole layout, so use logical
+  properties: `margin-inline-start` instead of `margin-left`,
+  `inset-inline-end` instead of `right`, `padding-inline`/`padding-block`
+  instead of a four-value `padding` with different sides, `text-align:
+  start`, and so on. A horizontal `translateX()` offset should be multiplied
+  by `var(--daymark-dir)` (1 left-to-right, -1 right-to-left). Centering with
+  `left: 50%` and `translateX(-50%)` already works both ways, so keep it
+  physical and mark the line `/* rtl:ignore */` with the reason. JS that
+  reads arrow keys, swipes, or sets `style.left`/`style.right` must check
+  the direction too. `bin/check-rtl-css.sh` checks every stylesheet in
+  `assets/`, and CI runs it. See CLAUDE.md's "Right-to-left layout"
+  decision row.
 
 ## Hook documentation
 

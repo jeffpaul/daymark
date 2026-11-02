@@ -132,9 +132,8 @@
  */
 .daymark-fc-actions {
 	position: absolute;
-	right: 0;
+	inset-inline: 0;
 	bottom: 0;
-	left: 0;
 	display: flex;
 	gap: 8px;
 	padding: 8px;
@@ -351,7 +350,7 @@
 .daymark-fc-preview-wrap .daymark-featured-quote {
 	margin: 0 0 4px;
 	padding: 8px 12px;
-	border-left: 4px solid #ffd9a8;
+	border-inline-start: 4px solid #ffd9a8;
 	background: rgba(201, 58, 6, 0.06);
 }
 

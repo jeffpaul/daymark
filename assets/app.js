@@ -6164,7 +6164,7 @@
 	}
 
 	// Positions the ⋯ overflow menu's floating panel (issue #326) just below
-	// and flush-right of its own trigger icon — the same simple-dropdown
+	// and lined up with the end edge of its own trigger icon — the same simple-dropdown
 	// placement the Draft ⋯ menu's .daymark-menu gets from plain CSS
 	// (top/right relative to its own absolutely-positioned button). The
 	// overflow trigger isn't pinned to a fixed spot the way that button is —
@@ -6176,7 +6176,7 @@
 	// way .daymark-menu anchors to .daymark-recent__menubtn. Measuring both
 	// rects against the panel's nearest position:relative ancestor
 	// (.daymark-recent__item-wrap on a Timeline card, .daymark-postview-footer
-	// on the full-screen post view) and writing plain top/right inline
+	// on the full-screen post view) and writing plain top and left/right inline
 	// styles gets the same visual result with no new markup.
 	// The post view's floating footer sits at the bottom of the screen, so
 	// its menu opens upward, above the trigger, instead of below it.
@@ -6193,7 +6193,17 @@
 		} else {
 			panel.style.top = triggerRect.bottom - anchorRect.top + 6 + 'px';
 		}
-		panel.style.right = Math.max(0, anchorRect.right - triggerRect.right) + 'px';
+		// Line the panel up with the trigger's end edge: its right edge in
+		// left-to-right, its left edge in right-to-left, where the trigger
+		// sits at the row's left end and a right-anchored panel would open
+		// past the edge of the screen.
+		if ('rtl' === window.getComputedStyle(anchor).direction) {
+			panel.style.right = 'auto';
+			panel.style.left = Math.max(0, triggerRect.left - anchorRect.left) + 'px';
+		} else {
+			panel.style.left = 'auto';
+			panel.style.right = Math.max(0, anchorRect.right - triggerRect.right) + 'px';
+		}
 	}
 
 	// Opens/closes the ⋯ overflow menu (issue #326) — same id-match lookup
@@ -13619,7 +13629,7 @@
 
 			return `
 			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#create">&larr; ${esc(__('Back', 'daymark'))}</a>
+				<a class="daymark-backlink" href="#create"><span aria-hidden="true">&larr;</span> ${esc(__('Back', 'daymark'))}</a>
 				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
 					__('Where should this go?', 'daymark')
 				)}</h1>
@@ -14527,11 +14537,14 @@
 				if (index < 0) {
 					return;
 				}
+				const isRtl =
+					'rtl' === (document.documentElement.getAttribute('dir') || '').toLowerCase() ||
+					(typeof window.getComputedStyle === 'function' && 'rtl' === window.getComputedStyle(tablist).direction);
 				let next = null;
 				if ('ArrowRight' === event.key) {
-					next = tabs[(index + 1) % tabs.length];
+					next = tabs[isRtl ? (index - 1 + tabs.length) % tabs.length : (index + 1) % tabs.length];
 				} else if ('ArrowLeft' === event.key) {
-					next = tabs[(index - 1 + tabs.length) % tabs.length];
+					next = tabs[isRtl ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length];
 				} else if ('Home' === event.key) {
 					next = tabs[0];
 				} else if ('End' === event.key) {

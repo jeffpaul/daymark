@@ -7,6 +7,9 @@
 
 /* --- Design tokens --- */
 :root {
+	/* 1 left-to-right, -1 right-to-left: multiply a horizontal offset by
+	   this to mirror it (the launcher fan) without a second set of rules. */
+	--daymark-dir: 1;
 	--daymark-bg: #ffffff;
 	--daymark-surface: #f8f8f8;
 	--daymark-border: #e0e0e0;
@@ -39,6 +42,10 @@
 	--daymark-spacing-lg: 24px;
 	--daymark-spacing-xl: 32px;
 	--daymark-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+[dir="rtl"] {
+	--daymark-dir: -1;
 }
 
 /* The Bionic Reading font, when Settings -> Daymark turns it on (app.js
@@ -326,11 +333,20 @@ h2[tabindex='-1']:focus {
 	align-items: center;
 	min-height: var(--daymark-tap-min);
 	min-width: var(--daymark-tap-min);
-	padding: 0 var(--daymark-spacing-sm) 0 0;
+	padding: 0;
+	padding-inline-end: var(--daymark-spacing-sm);
 	font-size: 16px;
 	font-weight: 500;
 	color: var(--daymark-text-secondary);
 	text-decoration: none;
+}
+
+.daymark-backlink span[aria-hidden="true"] {
+	display: inline-block;
+}
+
+[dir="rtl"] .daymark-backlink span[aria-hidden="true"] {
+	transform: scaleX(-1);
 }
 
 /* Notifications' own back link: same arrow, but the Daymark icon stands in
@@ -386,7 +402,7 @@ h2[tabindex='-1']:focus {
 	border: none;
 	background: none;
 	justify-content: flex-end;
-	margin-left: calc(22px - var(--daymark-tap-min));
+	margin-inline-start: calc(22px - var(--daymark-tap-min));
 }
 
 /* --- Screen layout --- */
@@ -738,7 +754,9 @@ h2[tabindex='-1']:focus {
 	   the whole arc visibly left of the button instead of centered above it. */
 	position: absolute;
 	z-index: 2;
-	left: 50%;
+	/* Physical on purpose: left: 50% plus translate(-50%) centers the same
+	   way in both directions. The fan below mirrors through --daymark-dir. */
+	left: 50%; /* rtl:ignore */
 	bottom: 100%;
 	width: var(--daymark-tap-min);
 	height: var(--daymark-tap-min);
@@ -799,13 +817,13 @@ h2[tabindex='-1']:focus {
    same angles (so the same overlap fix above still holds) but grows that
    gap to ~15px, comfortable finger-error room on a touch screen. */
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="image"] {
-	transform: translate(calc(-50% - 104px), -87px) scale(1);
+	transform: translate(calc(-50% - var(--daymark-dir) * 104px), -87px) scale(1);
 	opacity: 1;
 	transition-delay: 0.02s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="video"] {
-	transform: translate(calc(-50% - 57px), -123px) scale(1);
+	transform: translate(calc(-50% - var(--daymark-dir) * 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.08s;
 }
@@ -817,13 +835,13 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="audio"] {
-	transform: translate(calc(-50% + 57px), -123px) scale(1);
+	transform: translate(calc(-50% + var(--daymark-dir) * 57px), -123px) scale(1);
 	opacity: 1;
 	transition-delay: 0.2s;
 }
 
 .daymark-launcher.is-open .daymark-launcher__bubble[data-launcher-type="note"] {
-	transform: translate(calc(-50% + 104px), -87px) scale(1);
+	transform: translate(calc(-50% + var(--daymark-dir) * 104px), -87px) scale(1);
 	opacity: 1;
 	transition-delay: 0.26s;
 }
@@ -835,7 +853,7 @@ h2[tabindex='-1']:focus {
 .daymark-launcher__label {
 	position: absolute;
 	top: calc(100% + 3px);
-	left: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	padding: 1px 6px;
 	border-radius: 999px;
@@ -886,7 +904,7 @@ h2[tabindex='-1']:focus {
 .daymark-iconbtn__dot {
 	position: absolute;
 	top: 9px;
-	right: 9px;
+	inset-inline-end: 9px;
 	width: 9px;
 	height: 9px;
 	border-radius: 50%;
@@ -1034,9 +1052,14 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-draftsrow__chevron {
+	display: inline-block;
 	font-size: 22px;
 	line-height: 1;
 	color: var(--daymark-text-secondary);
+}
+
+[dir="rtl"] .daymark-draftsrow__chevron {
+	transform: scaleX(-1);
 }
 
 .daymark-draftsrow:focus-visible {
@@ -1159,9 +1182,9 @@ h2[tabindex='-1']:focus {
 	width: 100%;
 	padding: var(--daymark-spacing-md);
 	background: var(--daymark-accent-wash);
-	border-left: 4px solid var(--daymark-accent);
+	border-inline-start: 4px solid var(--daymark-accent);
 	box-sizing: border-box;
-	text-align: left;
+	text-align: start;
 }
 
 .daymark-recent__quotetext {
@@ -1192,7 +1215,7 @@ h2[tabindex='-1']:focus {
 	width: 100%;
 	background: var(--daymark-surface);
 	border-bottom: 1px solid var(--daymark-border);
-	text-align: left;
+	text-align: start;
 }
 
 .daymark-recent__linkimage {
@@ -1315,6 +1338,7 @@ h2[tabindex='-1']:focus {
    verbatim. Square for the same registration reason as the Timeline
    card's own .daymark-recent__thumbwrap--checkin above. */
 .daymark-checkin-map {
+	direction: ltr;
 	position: relative;
 	display: block;
 	width: 100%;
@@ -1342,9 +1366,9 @@ h2[tabindex='-1']:focus {
 	position: absolute;
 	width: 14px;
 	height: 14px;
-	margin-left: -7px;
+	margin-inline-start: -7px;
 	margin-top: -14px;
-	border-radius: 50% 50% 50% 0;
+	border-radius: 50% 50% 50% 0; /* rtl:ignore (the map tile is never mirrored) */
 	background: var(--daymark-accent);
 	box-shadow: 0 0 0 2px #fff;
 	transform: rotate(-45deg);
@@ -1406,7 +1430,7 @@ h2[tabindex='-1']:focus {
 
 .daymark-recent__thumbbadge {
 	position: absolute;
-	right: -4px;
+	inset-inline-end: -4px;
 	bottom: -4px;
 	display: inline-flex;
 	align-items: center;
@@ -1425,8 +1449,9 @@ h2[tabindex='-1']:focus {
 .daymark-recent__thumbplay {
 	position: absolute;
 	top: 50%;
-	left: 50%;
-	transform: translate(-50%, -50%);
+	inset-inline: 0;
+	margin-inline: auto;
+	transform: translateY(-50%);
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -1594,7 +1619,7 @@ h2[tabindex='-1']:focus {
 	min-width: 0;
 	font-size: 13px;
 	color: var(--daymark-text-muted);
-	text-align: left;
+	text-align: start;
 	overflow-wrap: anywhere;
 }
 
@@ -1658,7 +1683,7 @@ h2[tabindex='-1']:focus {
    caller (a Draft's card) that renders no site name at all — an auto
    margin on a lone flex child still pushes itself to the container's end. */
 .daymark-recent__timestamprow time {
-	margin-left: auto;
+	margin-inline-start: auto;
 	flex-shrink: 0;
 }
 
@@ -1727,7 +1752,7 @@ button.daymark-stat {
 	display: inline-flex;
 	flex-wrap: wrap;
 	align-items: center;
-	margin-right: auto;
+	margin-inline-end: auto;
 	min-width: 0;
 	font-size: 13px;
 	color: var(--daymark-text-secondary);
@@ -2017,7 +2042,7 @@ button.daymark-stat {
 .daymark-flash-bubble {
 	position: absolute;
 	bottom: calc(100% + 6px);
-	left: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	background: var(--daymark-text-primary);
 	color: var(--daymark-bg);
@@ -2197,7 +2222,7 @@ button.daymark-stat {
 	color: var(--daymark-text-primary);
 	font-size: 15px;
 	font-family: inherit;
-	text-align: left;
+	text-align: start;
 	text-decoration: none;
 	cursor: pointer;
 }
@@ -2231,7 +2256,7 @@ button.daymark-stat {
 /* A row that opens a WordPress screen: its icon sits right after the text. */
 .daymark-melink__external {
 	flex-shrink: 0;
-	margin-left: 6px;
+	margin-inline-start: 6px;
 	color: var(--daymark-text-muted);
 }
 
@@ -3048,7 +3073,8 @@ button.daymark-stat {
 	align-items: center;
 	gap: var(--daymark-spacing-xs);
 	min-height: 36px;
-	padding: 0 var(--daymark-spacing-xs) 0 var(--daymark-spacing-md);
+	padding-block: 0;
+	padding-inline: var(--daymark-spacing-md) var(--daymark-spacing-xs);
 	border-radius: 999px;
 	background: var(--daymark-surface);
 	border: 1px solid var(--daymark-border);
@@ -3114,7 +3140,7 @@ button.daymark-stat {
 	background: none;
 	color: var(--daymark-text-primary);
 	font-size: 14px;
-	text-align: left;
+	text-align: start;
 	cursor: pointer;
 }
 
@@ -3265,7 +3291,7 @@ button.daymark-stat {
 }
 
 .daymark-toggle__input:checked + .daymark-toggle__track::after {
-	transform: translateX(18px);
+	transform: translateX(calc(var(--daymark-dir) * 18px));
 }
 
 .daymark-toggle__input:focus-visible + .daymark-toggle__track {
@@ -3322,7 +3348,7 @@ button.daymark-stat {
 	display: flex;
 	flex-direction: column;
 	gap: var(--daymark-spacing-sm);
-	text-align: left;
+	text-align: start;
 }
 
 .daymark-syndication__item {
@@ -3441,7 +3467,7 @@ button.daymark-stat {
 
 .daymark-notif-toolbar__markall {
 	flex-shrink: 0;
-	margin-left: auto;
+	margin-inline-start: auto;
 	width: auto;
 	padding: 0;
 }
@@ -3519,7 +3545,7 @@ button.daymark-stat {
 .daymark-notif__figure--stack .daymark-notif__avatar {
 	position: absolute;
 	top: 0;
-	left: 0;
+	inset-inline-start: 0;
 	width: 28px;
 	height: 28px;
 	border: 2px solid var(--daymark-bg);
@@ -3527,7 +3553,7 @@ button.daymark-stat {
 
 .daymark-notif__figure--stack .daymark-notif__avatar:nth-child(2) {
 	top: 12px;
-	left: 12px;
+	inset-inline-start: 12px;
 }
 
 .daymark-notif__who {
@@ -3535,7 +3561,9 @@ button.daymark-stat {
 	flex-direction: column;
 	gap: var(--daymark-spacing-xs);
 	margin: 0;
-	padding: 0 0 var(--daymark-spacing-xs) calc(8px + 40px + 2 * var(--daymark-spacing-sm));
+	padding: 0;
+	padding-bottom: var(--daymark-spacing-xs);
+	padding-inline-start: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
 	list-style: none;
 }
 
@@ -3567,7 +3595,7 @@ button.daymark-stat {
 
 .daymark-notif__badge {
 	position: absolute;
-	right: -4px;
+	inset-inline-end: -4px;
 	bottom: -4px;
 	display: flex;
 	align-items: center;
@@ -3619,7 +3647,7 @@ button.daymark-stat {
    sit at the far end of the row. */
 .daymark-notif .daymark-note-card__links {
 	align-items: center;
-	padding-left: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
+	padding-inline-start: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
 	column-gap: var(--daymark-spacing-md);
 	row-gap: 0;
 }
@@ -3627,7 +3655,10 @@ button.daymark-stat {
 .daymark-notif__actions {
 	display: inline-flex;
 	flex-shrink: 0;
-	margin: calc(-1 * var(--daymark-spacing-xs)) calc(-1 * var(--daymark-spacing-xs)) 0 0;
+	margin-block-start: calc(-1 * var(--daymark-spacing-xs));
+	margin-inline-end: calc(-1 * var(--daymark-spacing-xs));
+	margin-block-end: 0;
+	margin-inline-start: 0;
 }
 
 .daymark-notif__action {
@@ -3656,15 +3687,14 @@ button.daymark-stat {
 }
 
 .daymark-notif .daymark-reply {
-	padding-left: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
+	padding-inline-start: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
 }
 
 /* The Undo bar after archiving sits above the bottom edge of the screen. */
 .daymark-notif-undo {
 	position: fixed;
-	right: var(--daymark-spacing-md);
+	inset-inline: var(--daymark-spacing-md);
 	bottom: calc(env(safe-area-inset-bottom, 0px) + var(--daymark-spacing-md));
-	left: var(--daymark-spacing-md);
 	z-index: 40;
 	display: flex;
 	align-items: center;
@@ -3672,7 +3702,9 @@ button.daymark-stat {
 	gap: var(--daymark-spacing-sm);
 	max-width: 560px;
 	margin: 0 auto;
-	padding: 0 var(--daymark-spacing-sm) 0 var(--daymark-spacing-md);
+	padding-block: 0;
+	padding-inline-start: var(--daymark-spacing-md);
+	padding-inline-end: var(--daymark-spacing-sm);
 	border-radius: var(--daymark-radius);
 	background: var(--daymark-text-primary);
 	color: var(--daymark-bg);
@@ -3897,7 +3929,7 @@ button.daymark-stat {
    the space anyway would leave a pointless empty gap down the card's own
    right edge. */
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item {
-	padding-right: 56px;
+	padding-inline-end: 56px;
 }
 
 /* A media-dominant card (see .daymark-recent__item--image and friends,
@@ -3913,7 +3945,7 @@ button.daymark-stat {
 .daymark-recent__item-wrap .daymark-recent__item--gallery,
 .daymark-recent__item-wrap .daymark-recent__item--video,
 .daymark-recent__item-wrap .daymark-recent__item--mixed {
-	padding-right: 0;
+	padding-inline-end: 0;
 }
 
 /* The leading column: the site icon stacked directly above its row's type
@@ -3997,7 +4029,7 @@ button.daymark-stat {
 	   every column in the list, site icon present or not (see
 	   .daymark-recent__leadcol's own fixed width, above, which is what lets
 	   a single offset work for every row regardless). */
-	left: calc(var(--daymark-tap-min) / 2);
+	inset-inline-start: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 	z-index: -1;
@@ -4024,7 +4056,7 @@ button.daymark-stat {
 .daymark-recent__groupheader {
 	position: relative;
 	margin: var(--daymark-spacing-md) 0 0;
-	padding-left: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
+	padding-inline-start: calc(var(--daymark-tap-min) + var(--daymark-spacing-sm));
 	background: var(--daymark-bg);
 }
 
@@ -4037,7 +4069,7 @@ button.daymark-stat {
 	   headers only ever render on Home's own Timeline (renderFeedItemsWithGroups()),
 	   which always has a leading site icon (see the flourish's own comment
 	   below), so this never needs the Drafts-style no-site-icon offset. */
-	left: calc(var(--daymark-tap-min) / 2);
+	inset-inline-start: calc(var(--daymark-tap-min) / 2);
 	width: 1px;
 	background: var(--daymark-border);
 }
@@ -4064,7 +4096,7 @@ button.daymark-stat {
 /* 28px-wide SVG, centered on the rail at half the leading column's width. */
 .daymark-timeline-flourish {
 	display: none;
-	padding-left: calc(var(--daymark-tap-min) / 2 - 14px);
+	padding-inline-start: calc(var(--daymark-tap-min) / 2 - 14px);
 }
 
 .daymark-recent:has([data-recent-list] .daymark-recent__typeicon) .daymark-timeline-flourish--end,
@@ -4117,13 +4149,13 @@ button.daymark-stat {
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--gallery .daymark-recent__footer,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--video .daymark-recent__footer,
 .daymark-recent__item-wrap:has(.daymark-recent__actions) .daymark-recent__item--mixed .daymark-recent__footer {
-	padding-right: 56px;
+	padding-inline-end: 56px;
 }
 
 .daymark-recent__actions {
 	position: absolute;
 	top: 50%;
-	right: var(--daymark-spacing-sm);
+	inset-inline-end: var(--daymark-spacing-sm);
 	transform: translateY(-50%);
 }
 
@@ -4149,7 +4181,7 @@ button.daymark-stat {
 .daymark-menu {
 	position: absolute;
 	top: calc(50% + 22px);
-	right: 0;
+	inset-inline-end: 0;
 	z-index: 20;
 	min-width: 200px;
 	padding: var(--daymark-spacing-xs);
@@ -4176,7 +4208,7 @@ button.daymark-stat {
 	color: var(--daymark-text-primary);
 	font-size: 15px;
 	font-weight: 500;
-	text-align: left;
+	text-align: start;
 	cursor: pointer;
 }
 
@@ -4295,7 +4327,7 @@ button.daymark-stat {
 	width: 100%;
 	appearance: none;
 	-webkit-appearance: none;
-	text-align: left;
+	text-align: start;
 	font: inherit;
 	cursor: pointer;
 }
@@ -4469,7 +4501,7 @@ button.daymark-stat {
 }
 
 .daymark-postview-footer .daymark-engagement {
-	padding-left: var(--daymark-spacing-xs);
+	padding-inline-start: var(--daymark-spacing-xs);
 }
 
 .daymark-postview-footer .daymark-recent__overflowmenu {
@@ -4658,8 +4690,8 @@ button.daymark-stat {
    resolves. */
 .daymark-reply-context {
 	margin-bottom: var(--daymark-spacing-md);
-	padding-left: var(--daymark-spacing-sm);
-	border-left: 3px solid var(--daymark-border);
+	padding-inline-start: var(--daymark-spacing-sm);
+	border-inline-start: 3px solid var(--daymark-border);
 }
 
 .daymark-reply-context__label {
@@ -4742,7 +4774,7 @@ button.daymark-stat {
 	width: auto !important;
 	height: auto !important;
 	top: auto !important;
-	left: auto !important;
+	inset-inline-start: auto !important;
 	margin: var(--daymark-spacing-sm) 0 !important;
 }
 
@@ -4896,7 +4928,7 @@ button.daymark-stat {
 .daymark-newposts {
 	position: fixed;
 	top: calc(var(--daymark-tap-min) + var(--daymark-spacing-md) + env(safe-area-inset-top, 0px));
-	left: 50%;
+	left: 50%; /* rtl:ignore (centering) */
 	transform: translateX(-50%);
 	z-index: 6;
 	display: inline-flex;
@@ -4938,7 +4970,7 @@ button.daymark-stat {
 }
 
 .daymark-bookmarklet__close {
-	margin-left: auto;
+	margin-inline-start: auto;
 }
 
 .daymark-bookmarklet__close[hidden] {
