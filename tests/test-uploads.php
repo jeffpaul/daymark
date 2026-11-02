@@ -431,6 +431,53 @@ class Test_Uploads extends WP_UnitTestCase {
 		$this->assertFileDoesNotExist( $json );
 	}
 
+	/** Cleanup keeps going past one batch of unused uploads. */
+	public function test_cleanup_deletes_more_than_one_batch(): void {
+		$ids = array();
+
+		for ( $i = 0; $i < Daymark_Uploads::CLEANUP_BATCH + 5; $i++ ) {
+			$id = self::factory()->attachment->create(
+				array(
+					'post_parent'    => 0,
+					'post_mime_type' => 'image/png',
+				)
+			);
+			update_post_meta( $id, Daymark_Uploads::STAGED_AT_META, time() - 8 * DAY_IN_SECONDS );
+			$ids[] = $id;
+		}
+
+		Daymark_Plugin::instance()->uploads->cleanup();
+
+		foreach ( $ids as $id ) {
+			$this->assertNull( get_post( $id ) );
+		}
+	}
+
+	/** Cleanup removes old part and lock files left without a session record. */
+	public function test_cleanup_removes_orphan_part_and_lock_files(): void {
+		$this->start_upload( 'clip.wav', 1024 ); // Creates the folder.
+
+		$uploads = wp_upload_dir( null, false );
+		$dir     = trailingslashit( $uploads['basedir'] ) . 'daymark-uploads/';
+		$old     = str_repeat( 'a', 32 );
+		$recent  = str_repeat( 'b', 32 );
+
+		foreach ( array( $dir . $old . '.part', $dir . $old . '.lock', $dir . $recent . '.part' ) as $path ) {
+			file_put_contents( $path, 'x' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Local test file.
+		}
+
+		touch( $dir . $old . '.part', time() - 2 * DAY_IN_SECONDS ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Backdating a local test file.
+		touch( $dir . $old . '.lock', time() - 2 * DAY_IN_SECONDS ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_touch -- Backdating a local test file.
+
+		Daymark_Plugin::instance()->uploads->cleanup();
+
+		$this->assertFileDoesNotExist( $dir . $old . '.part' );
+		$this->assertFileDoesNotExist( $dir . $old . '.lock' );
+		$this->assertFileExists( $dir . $recent . '.part' );
+
+		wp_delete_file( $dir . $recent . '.part' );
+	}
+
 	/** The parts folder refuses direct web requests where the server honors .htaccess. */
 	public function test_parts_folder_is_guarded(): void {
 		$this->start_upload( 'clip.wav', 1024 );

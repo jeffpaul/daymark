@@ -20,7 +20,8 @@ if ( ! class_exists( 'Activitypub\\Http' ) ) {
 		 * @return array|\WP_Error
 		 */
 		public static function get_remote_object( $url ) {
-			\Daymark_Test_ActivityPub_Stub::$fetches[] = (string) $url;
+			\Daymark_Test_ActivityPub_Stub::$fetches[]     = (string) $url;
+			\Daymark_Test_ActivityPub_Stub::$fetched_via[] = 'http';
 
 			return \Daymark_Test_ActivityPub_Stub::$remote_objects[ $url ]
 				?? new \WP_Error( 'activitypub_no_valid_object', 'Not an ActivityPub object.' );

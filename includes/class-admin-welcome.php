@@ -172,7 +172,7 @@ class Daymark_Admin_Welcome {
 					<?php
 					printf(
 						/* translators: %s: the draggable Daymark bookmarklet button */
-						esc_html__( 'On your computer, drag %s to your bookmarks bar. Click it on any post you\'re reading to Reblog or Like it.', 'daymark' ),
+						esc_html__( 'On your computer, drag %s to your bookmarks bar. Click it on any post you\'re reading to Reblog it, Like it, or follow its site.', 'daymark' ),
 						Daymark_Bookmarklet::button_html( 'button-small' ) // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html().
 					);
 					?>

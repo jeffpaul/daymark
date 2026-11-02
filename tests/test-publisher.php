@@ -2112,14 +2112,40 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
-	 * When Simple Location is active (modelled by a stub `Sloc_Weather_Data`
-	 * class), a successful weather capture bridges the temperature and
-	 * condition text into that plugin's own meta — and only those two
-	 * fields: `unit` (a display concern, not a weather property) and `code`
-	 * (Open-Meteo's WMO vocabulary, which Simple Location's
-	 * OpenWeatherMap-derived helpers cannot map) are deliberately excluded.
+	 * Define a stand-in for Simple Location 6.1.0's Open-Meteo provider
+	 * (once per process), whose `code_map()` matches the plugin's own table
+	 * for the WMO codes these tests use.
+	 *
+	 * @return void
+	 */
+	private function define_sloc_openmeteo_stub(): void {
+		if ( ! class_exists( 'Weather_Provider_OpenMeteo' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only stub class; no user input.
+			eval(
+				'class Weather_Provider_OpenMeteo {
+					public static function code_map( $code ) {
+						$codes = array( 0 => 800, 1 => 801, 2 => 802, 3 => 804 );
+						return $codes[ $code ] ?? \'\';
+					}
+				}'
+			);
+		}
+	}
+
+	/**
+	 * When Simple Location is active but older than 6.1.0 (a stub
+	 * `Sloc_Weather_Data` class and no Open-Meteo provider), a successful
+	 * weather capture bridges the temperature and condition text only:
+	 * `unit` is a display concern, and Open-Meteo's WMO `code` can't be
+	 * read by that version's OpenWeatherMap-style helpers.
+	 *
+	 * Skips once the Open-Meteo stub exists in this process (a class can't
+	 * be undefined), as the absent-plugin test above does.
 	 */
 	public function test_simple_location_weather_bridge_writes_temperature_and_summary_only() {
+		if ( class_exists( 'Weather_Provider_OpenMeteo' ) ) {
+			$this->markTestSkipped( 'A Weather_Provider_OpenMeteo stub was already defined earlier in this process.' );
+		}
 		$this->define_sloc_weather_stub();
 
 		$post_id = $this->publish_located_note( 1 );
@@ -2144,6 +2170,9 @@ class Test_Publisher extends WP_UnitTestCase {
 	 * the summary unset, so the bridge sends temperature only.
 	 */
 	public function test_simple_location_weather_bridge_skips_unlabeled_condition() {
+		if ( class_exists( 'Weather_Provider_OpenMeteo' ) ) {
+			$this->markTestSkipped( 'A Weather_Provider_OpenMeteo stub was already defined earlier in this process.' );
+		}
 		$this->define_sloc_weather_stub();
 
 		$this->publish_located_note( 6 );
@@ -2151,6 +2180,51 @@ class Test_Publisher extends WP_UnitTestCase {
 		$this->assertCount( 1, Sloc_Weather_Data::$calls );
 		$this->assertSame(
 			array( 'temperature' => 21.5 ),
+			Sloc_Weather_Data::$calls[0][3]
+		);
+	}
+
+	/**
+	 * On Simple Location 6.1.0 or later (its Open-Meteo provider is loaded),
+	 * the bridge also sends the weather code, translated from Open-Meteo's
+	 * WMO code by that provider's own `code_map()`, and names Open-Meteo as
+	 * the provider so Simple Location shows its weather icon and credit.
+	 */
+	public function test_simple_location_weather_bridge_sends_mapped_code_on_6_1() {
+		$this->define_sloc_weather_stub();
+		$this->define_sloc_openmeteo_stub();
+
+		$this->publish_located_note( 1 );
+
+		$this->assertCount( 1, Sloc_Weather_Data::$calls );
+		$this->assertSame(
+			array(
+				'temperature' => 21.5,
+				'summary'     => 'Mostly clear',
+				'provider'    => 'openmeteo',
+				'code'        => 801,
+			),
+			Sloc_Weather_Data::$calls[0][3]
+		);
+	}
+
+	/**
+	 * A WMO code Simple Location's map doesn't know is left out rather than
+	 * sent as an empty or unmapped code, which would show a blank icon; the
+	 * provider is still named so the credit shows.
+	 */
+	public function test_simple_location_weather_bridge_omits_unmapped_code_on_6_1() {
+		$this->define_sloc_weather_stub();
+		$this->define_sloc_openmeteo_stub();
+
+		$this->publish_located_note( 6 );
+
+		$this->assertCount( 1, Sloc_Weather_Data::$calls );
+		$this->assertSame(
+			array(
+				'temperature' => 21.5,
+				'provider'    => 'openmeteo',
+			),
 			Sloc_Weather_Data::$calls[0][3]
 		);
 	}

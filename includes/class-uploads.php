@@ -84,6 +84,21 @@ class Daymark_Uploads {
 	private const DIR_NAME = 'daymark-uploads';
 
 	/**
+	 * Unused uploads deleted per query in the daily cleanup.
+	 *
+	 * @var int
+	 */
+	public const CLEANUP_BATCH = 100;
+
+	/**
+	 * Seconds one cleanup run may spend deleting unused uploads (filter
+	 * `daymark_upload_cleanup_time_budget`).
+	 *
+	 * @var int
+	 */
+	public const CLEANUP_TIME_BUDGET = 20;
+
+	/**
 	 * Session IDs are 32 lowercase hex characters, and nothing else ever
 	 * becomes part of a path.
 	 *
@@ -451,6 +466,24 @@ class Daymark_Uploads {
 					$this->delete_session_files( $id );
 				}
 			}
+
+			// A part or lock file whose session record is gone (a request
+			// that died between writes) is never listed above.
+			foreach ( array( 'part', 'lock' ) as $ext ) {
+				$orphans = glob( trailingslashit( $dir ) . '*.' . $ext );
+
+				foreach ( is_array( $orphans ) ? $orphans : array() as $file ) {
+					$id = (string) pathinfo( $file, PATHINFO_FILENAME );
+
+					if ( ! preg_match( self::ID_PATTERN, $id ) || is_file( $this->path( $id, 'json' ) ) ) {
+						continue;
+					}
+
+					if ( $this->last_activity( $id ) < $cutoff ) {
+						$this->delete_session_files( $id );
+					}
+				}
+			}
 		}
 
 		/**
@@ -463,29 +496,50 @@ class Daymark_Uploads {
 		 */
 		$staged_ttl = max( DAY_IN_SECONDS, (int) apply_filters( 'daymark_staged_upload_ttl', 7 * DAY_IN_SECONDS ) );
 
-		$stale = get_posts(
-			array(
-				'post_type'      => 'attachment',
-				'post_status'    => 'inherit',
-				'post_parent'    => 0,
-				'fields'         => 'ids',
-				'posts_per_page' => 100,
-				'no_found_rows'  => true,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Daily cron, bounded to 100 rows.
-				'meta_query'     => array(
-					array(
-						'key'     => self::STAGED_AT_META,
-						'value'   => time() - $staged_ttl,
-						'compare' => '<',
-						'type'    => 'NUMERIC',
-					),
-				),
-			)
-		);
+		/**
+		 * Filters how long one cleanup run may spend deleting unused
+		 * uploads, in seconds. Whatever is left waits for the next run.
+		 *
+		 * @since 0.20.0
+		 *
+		 * @param int $seconds Defaults to CLEANUP_TIME_BUDGET.
+		 */
+		$deadline = microtime( true ) + max( 1, (int) apply_filters( 'daymark_upload_cleanup_time_budget', self::CLEANUP_TIME_BUDGET ) );
+		$before   = time() - $staged_ttl;
 
-		foreach ( $stale as $attachment_id ) {
-			wp_delete_attachment( (int) $attachment_id, true );
-		}
+		do {
+			$stale = get_posts(
+				array(
+					'post_type'      => 'attachment',
+					'post_status'    => 'inherit',
+					'post_parent'    => 0,
+					'fields'         => 'ids',
+					'posts_per_page' => self::CLEANUP_BATCH,
+					'no_found_rows'  => true,
+					// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- Daily cron, in batches under a time budget.
+					'meta_query'     => array(
+						array(
+							'key'     => self::STAGED_AT_META,
+							'value'   => $before,
+							'compare' => '<',
+							'type'    => 'NUMERIC',
+						),
+					),
+				)
+			);
+
+			$found   = count( $stale );
+			$deleted = 0;
+
+			foreach ( $stale as $attachment_id ) {
+				if ( wp_delete_attachment( (int) $attachment_id, true ) ) {
+					++$deleted;
+				}
+			}
+
+			// Stop on a short batch, or when nothing could be deleted (so a
+			// stuck row can't keep the loop going until the deadline).
+		} while ( $found >= self::CLEANUP_BATCH && $deleted > 0 && microtime( true ) < $deadline );
 	}
 
 	/**

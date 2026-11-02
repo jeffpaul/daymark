@@ -55,7 +55,7 @@ use UnexpectedValueException;
 
 /**
  * Base class for all ASN.1 type elements.
- * @see \Daymark\Vendor\SpomkyLabs\Pki\Test\ASN1\ElementTest
+ * @see \SpomkyLabs\Pki\Test\ASN1\ElementTest
  */
 abstract class Element implements ElementBase
 {

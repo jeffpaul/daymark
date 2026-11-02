@@ -116,7 +116,7 @@ class Daymark_Admin_Subscriptions {
 	private const SEARCH_QUERY_VAR = 's';
 
 	/**
-	 * Query var for the subscriptions table's view: '' (all) or 'failing'.
+	 * Query var for the subscriptions table's view: '' (all), 'favorites', or 'failing'.
 	 *
 	 * @var string
 	 */
@@ -172,6 +172,7 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_subscription_refresh', array( $this, 'handle_refresh' ) );
 		add_action( 'admin_post_daymark_subscription_refresh_icon', array( $this, 'handle_refresh_icon' ) );
 		add_action( 'admin_post_daymark_subscription_edit_title', array( $this, 'handle_edit_title' ) );
+		add_action( 'admin_post_daymark_subscription_favorite', array( $this, 'handle_favorite' ) );
 		add_action( 'admin_post_daymark_subscription_unsubscribe', array( $this, 'handle_unsubscribe' ) );
 		add_action( 'admin_post_daymark_subscription_discover_sources', array( $this, 'handle_discover_sources' ) );
 		add_action( 'admin_post_daymark_subscription_discover_sources_dismiss', array( $this, 'handle_discover_sources_dismiss' ) );
@@ -322,6 +323,14 @@ class Daymark_Admin_Subscriptions {
 			. '.daymark-candidate-url { display: inline-block; margin-top: 2px; padding: 2px 6px; background: #f0f0f1; border-radius: 3px; }'
 		);
 
+		wp_add_inline_style(
+			'common',
+			'.daymark-subscription-favorite-trigger { color: #8c8f94; text-decoration: none; cursor: pointer; padding: 0; vertical-align: text-bottom; background: none; border: none; }'
+			. '.daymark-subscription-favorite-trigger:hover, .daymark-subscription-favorite-trigger.is-favorite { color: #f0b849; }'
+			. '.daymark-subscription-favorite-trigger.is-favorite:hover { color: #d69e2e; }'
+			. '.daymark-subscription-favorite-trigger .dashicons { font-size: 18px; width: 18px; height: 18px; line-height: 1; vertical-align: middle; }'
+		);
+
 		wp_localize_script(
 			'daymark-admin-subscriptions',
 			'daymarkAdminSubscriptions',
@@ -344,6 +353,11 @@ class Daymark_Admin_Subscriptions {
 					// translation can reorder around the inserted reason.
 					/* translators: %s: the most recent fetch failure's reason. */
 					'recentFetchIssue'       => __( 'Recent fetch issue: %s', 'daymark' ),
+					'starFavorite'           => __( 'Star as favorite', 'daymark' ),
+					'unstarFavorite'         => __( 'Remove from favorites', 'daymark' ),
+					/* translators: %d: number of favorite subscriptions */
+					'favoritesView'          => __( 'Favorites (%d)', 'daymark' ),
+					'noFavorites'            => __( 'No favorite sites yet.', 'daymark' ),
 				),
 			)
 		);
@@ -367,6 +381,20 @@ class Daymark_Admin_Subscriptions {
 	 */
 	public static function tab_url( string $tab ): string {
 		return add_query_arg( 'tab', $tab, self::page_url() );
+	}
+
+	/**
+	 * The Connectors tab, scrolled to one connector's card (issue #561:
+	 * the post view links here when installing or turning on something
+	 * would let Daymark like or comment on a post).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $key A recommended_connectors() key, such as 'activitypub'.
+	 * @return string
+	 */
+	public static function connector_url( string $key ): string {
+		return self::tab_url( 'connectors' ) . '#daymark-connector-' . sanitize_key( $key );
 	}
 
 	/**
@@ -476,15 +504,22 @@ class Daymark_Admin_Subscriptions {
 	 * @return void
 	 */
 	private function render_subscriptions_tab(): void {
-		$all           = Daymark_Plugin::instance()->subscriptions->get_all();
-		$total_count   = count( $all );
-		$failing_count = count( array_filter( $all, array( __CLASS__, 'is_failing' ) ) );
-		$view          = $this->resolve_view_request();
-		$search        = $this->resolve_search_request();
-		$subscriptions = 'failing' === $view ? array_values( array_filter( $all, array( __CLASS__, 'is_failing' ) ) ) : $all;
+		$all             = Daymark_Plugin::instance()->subscriptions->get_all();
+		$total_count     = count( $all );
+		$failing_count   = count( array_filter( $all, array( __CLASS__, 'is_failing' ) ) );
+		$favorites_count = count( array_filter( $all, array( 'Daymark_Subscriptions', 'is_favorite' ) ) );
+		$view            = $this->resolve_view_request();
+		$search          = $this->resolve_search_request();
+		if ( 'failing' === $view ) {
+			$subscriptions = array_values( array_filter( $all, array( __CLASS__, 'is_failing' ) ) );
+		} elseif ( 'favorites' === $view ) {
+			$subscriptions = array_values( array_filter( $all, array( 'Daymark_Subscriptions', 'is_favorite' ) ) );
+		} else {
+			$subscriptions = $all;
+		}
 		$subscriptions = $this->filter_subscriptions( $subscriptions, $search );
 		$sort          = $this->resolve_sort_request();
-		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'] );
+		$subscriptions = $this->sort_subscriptions( $subscriptions, $sort['orderby'], $sort['order'], ! $sort['explicit'] );
 		$matching      = count( $subscriptions );
 		$pages         = max( 1, (int) ceil( $matching / self::PER_PAGE ) );
 		$page          = min( $pages, $this->resolve_page_request() );
@@ -494,11 +529,11 @@ class Daymark_Admin_Subscriptions {
 
 		<?php $this->render_subscribe_form(); ?>
 		<?php if ( $total_count > 0 ) : ?>
-			<?php $this->render_view_links( $view, $total_count, $failing_count ); ?>
-			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'] ); ?>
+			<?php $this->render_view_links( $view, $total_count, $favorites_count, $failing_count ); ?>
+			<?php $this->render_search_form( $search, $sort['orderby'], $sort['order'], $sort['explicit'] ); ?>
 			<?php $this->render_bulk_form(); ?>
 		<?php endif; ?>
-		<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count ); ?>
+		<?php $this->render_subscriptions_table( $subscriptions, $sort['orderby'], $sort['order'], $search, $total_count, $view ); ?>
 		<?php $this->render_pagination( $page, $pages, $matching ); ?>
 		<?php
 	}
@@ -515,7 +550,7 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * The table's view from `?view=`: 'failing' or '' (all).
+	 * The table's view from `?view=`: 'failing', 'favorites', or '' (all).
 	 *
 	 * @return string
 	 */
@@ -523,7 +558,7 @@ class Daymark_Admin_Subscriptions {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only filter, not a state-changing action.
 		$view = isset( $_GET[ self::VIEW_QUERY_VAR ] ) ? sanitize_key( wp_unslash( $_GET[ self::VIEW_QUERY_VAR ] ) ) : '';
 
-		return 'failing' === $view ? 'failing' : '';
+		return in_array( $view, array( 'failing', 'favorites' ), true ) ? $view : '';
 	}
 
 	/**
@@ -547,28 +582,33 @@ class Daymark_Admin_Subscriptions {
 		$sort = $this->resolve_sort_request();
 
 		if ( '' !== $this->resolve_view_request() ) {
-			$args[ self::VIEW_QUERY_VAR ] = 'failing';
+			$args[ self::VIEW_QUERY_VAR ] = $this->resolve_view_request();
 		}
 
 		if ( '' !== $this->resolve_search_request() ) {
 			$args[ self::SEARCH_QUERY_VAR ] = $this->resolve_search_request();
 		}
 
-		$args['orderby'] = $sort['orderby'];
-		$args['order']   = $sort['order'];
+		// Only an explicitly chosen sort is carried forward, so paging through
+		// the default order keeps it the default (favorites first).
+		if ( $sort['explicit'] ) {
+			$args['orderby'] = $sort['orderby'];
+			$args['order']   = $sort['order'];
+		}
 
 		return $args;
 	}
 
 	/**
-	 * "All (N) | Failing (M)" view links, in core's list-table style.
+	 * "All (N) | Favorites (K) | Failing (M)" view links, in core's list-table style.
 	 *
-	 * @param string $view          Active view: '' or 'failing'.
-	 * @param int    $total_count   All subscriptions.
-	 * @param int    $failing_count Subscriptions having trouble.
+	 * @param string $view            Active view: '', 'favorites', or 'failing'.
+	 * @param int    $total_count     All subscriptions.
+	 * @param int    $favorites_count Favorite subscriptions.
+	 * @param int    $failing_count   Subscriptions having trouble.
 	 * @return void
 	 */
-	private function render_view_links( string $view, int $total_count, int $failing_count ): void {
+	private function render_view_links( string $view, int $total_count, int $favorites_count, int $failing_count ): void {
 		$base = self::tab_url( 'subscriptions' );
 		?>
 		<ul class="subsubsub">
@@ -577,6 +617,14 @@ class Daymark_Admin_Subscriptions {
 					<?php
 					/* translators: %d: number of subscriptions */
 					printf( esc_html__( 'All (%d)', 'daymark' ), (int) $total_count );
+					?>
+				</a> |
+			</li>
+			<li>
+				<a href="<?php echo esc_url( add_query_arg( self::VIEW_QUERY_VAR, 'favorites', $base ) ); ?>" data-daymark-favorites-count="<?php echo esc_attr( (string) $favorites_count ); ?>"<?php echo 'favorites' === $view ? ' class="current" aria-current="page"' : ''; ?>>
+					<?php
+					/* translators: %d: number of favorite subscriptions */
+					printf( esc_html__( 'Favorites (%d)', 'daymark' ), (int) $favorites_count );
 					?>
 				</a> |
 			</li>
@@ -609,6 +657,8 @@ class Daymark_Admin_Subscriptions {
 				<select name="daymark_bulk_action" id="daymark-bulk-action">
 					<option value=""><?php esc_html_e( 'Bulk actions', 'daymark' ); ?></option>
 					<option value="refresh"><?php esc_html_e( 'Refresh', 'daymark' ); ?></option>
+					<option value="star"><?php esc_html_e( 'Star as favorite', 'daymark' ); ?></option>
+					<option value="unstar"><?php esc_html_e( 'Remove from favorites', 'daymark' ); ?></option>
 					<option value="unsubscribe"><?php esc_html_e( 'Unsubscribe', 'daymark' ); ?></option>
 				</select>
 				<?php submit_button( __( 'Apply', 'daymark' ), 'action', 'daymark-bulk-apply', false ); ?>
@@ -713,16 +763,18 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
-	 * "Reblog and Like from your browser": the draggable bookmarklet, for
-	 * the desktop. The same button is on the bookmarklet's own install page,
-	 * which the app's Me screen links to.
+	 * "Reblog, Like, and Follow from your browser": the draggable
+	 * bookmarklet, for the desktop. The same button is on the bookmarklet's
+	 * own install page, which the app's Me screen links to. Follow is only
+	 * offered to people who can manage subscriptions, which everyone who
+	 * sees this screen can.
 	 *
 	 * @return void
 	 */
 	private function render_bookmarklet(): void {
 		?>
-		<h2><?php esc_html_e( 'Reblog and Like from your browser', 'daymark' ); ?></h2>
-		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site or Like it.', 'daymark' ); ?></p>
+		<h2><?php esc_html_e( 'Reblog, Like, and Follow from your browser', 'daymark' ); ?></h2>
+		<p><?php esc_html_e( 'Drag this button to your browser\'s bookmarks bar. On any post you\'re reading, click it to Reblog the post to your site, Like it, or follow the site it\'s on.', 'daymark' ); ?></p>
 		<p><?php echo Daymark_Bookmarklet::button_html( 'button-primary' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in button_html(). ?></p>
 		<p class="description"><?php esc_html_e( 'Show the bookmarks bar first if it\'s hidden. Everyone who can write Marks on this site can use it, signed in as themselves.', 'daymark' ); ?></p>
 		<?php
@@ -1218,11 +1270,45 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
+		if ( 'bulk_starred' === $notice ) {
+			$count = $this->resolve_notice_count();
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %d: number of sites starred as favorite */
+						_n( 'Starred %d site as favorite.', 'Starred %d sites as favorites.', $count, 'daymark' ),
+						$count
+					)
+				)
+			);
+
+			return;
+		}
+
+		if ( 'bulk_unstarred' === $notice ) {
+			$count = $this->resolve_notice_count();
+			printf(
+				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %d: number of sites removed from favorites */
+						_n( 'Removed %d site from favorites.', 'Removed %d sites from favorites.', $count, 'daymark' ),
+						$count
+					)
+				)
+			);
+
+			return;
+		}
+
 		$success_messages = array(
 			'unsubscribed'              => __( 'Unsubscribed.', 'daymark' ),
 			'refreshed'                 => __( 'Refresh requested.', 'daymark' ),
 			'icon_refreshed'            => __( 'Site icon refreshed.', 'daymark' ),
 			'title_updated'             => __( 'Site name updated.', 'daymark' ),
+			'favorited'                 => __( 'Starred as favorite.', 'daymark' ),
+			'unfavorited'               => __( 'Removed from favorites.', 'daymark' ),
 			'privacy_saved'             => __( 'Data & privacy settings saved.', 'daymark' ),
 			'blogroll_saved'            => __( 'Blogroll setting saved.', 'daymark' ),
 			'notes_saved'               => __( 'Notes setting saved.', 'daymark' ),
@@ -1981,18 +2067,23 @@ class Daymark_Admin_Subscriptions {
 	 * @param string $orderby The active sort column — always one of
 	 *                        SORTABLE_COLUMNS (see DEFAULT_ORDERBY).
 	 * @param string $order   'asc' or 'desc'.
+	 * @param bool   $explicit_sort Whether the sort was chosen in the URL. The
+	 *                              default sort isn't carried, so a search from
+	 *                              it keeps favorites first.
 	 * @return void
 	 */
-	private function render_search_form( string $search, string $orderby, string $order ): void {
+	private function render_search_form( string $search, string $orderby, string $order, bool $explicit_sort = true ): void {
 		?>
 		<form method="get" action="<?php echo esc_url( admin_url( 'options-general.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>" />
 			<input type="hidden" name="tab" value="subscriptions" />
 			<?php if ( '' !== $this->resolve_view_request() ) : ?>
-				<input type="hidden" name="<?php echo esc_attr( self::VIEW_QUERY_VAR ); ?>" value="failing" />
+				<input type="hidden" name="<?php echo esc_attr( self::VIEW_QUERY_VAR ); ?>" value="<?php echo esc_attr( $this->resolve_view_request() ); ?>" />
 			<?php endif; ?>
-			<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
-			<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
+			<?php if ( $explicit_sort ) : ?>
+				<input type="hidden" name="orderby" value="<?php echo esc_attr( $orderby ); ?>" />
+				<input type="hidden" name="order" value="<?php echo esc_attr( $order ); ?>" />
+			<?php endif; ?>
 			<p class="search-box">
 				<label class="screen-reader-text" for="daymark-subscription-search-input"><?php esc_html_e( 'Search Subscriptions', 'daymark' ); ?></label>
 				<input
@@ -2025,9 +2116,10 @@ class Daymark_Admin_Subscriptions {
 	 *                                                         search" in the empty state.
 	 * @param int                              $total_count   Total subscription count before
 	 *                                                         filtering, for the same distinction.
+	 * @param string                           $view          Active view: '', 'favorites', or 'failing'.
 	 * @return void
 	 */
-	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order, string $search, int $total_count ): void {
+	private function render_subscriptions_table( array $subscriptions, string $orderby, string $order, string $search, int $total_count, string $view = '' ): void {
 		if ( empty( $subscriptions ) ) {
 			if ( '' !== $search && $total_count > 0 ) {
 				printf(
@@ -2040,6 +2132,8 @@ class Daymark_Admin_Subscriptions {
 						)
 					)
 				);
+			} elseif ( 'favorites' === $view ) {
+				echo '<p>' . esc_html__( 'No favorite sites yet.', 'daymark' ) . '</p>';
 			} else {
 				echo '<p>' . esc_html__( 'No subscriptions yet.', 'daymark' ) . '</p>';
 			}
@@ -2101,7 +2195,7 @@ class Daymark_Admin_Subscriptions {
 		}
 
 		if ( '' !== $this->resolve_view_request() ) {
-			$args[ self::VIEW_QUERY_VAR ] = 'failing';
+			$args[ self::VIEW_QUERY_VAR ] = $this->resolve_view_request();
 		}
 
 		$url       = add_query_arg( $args, self::tab_url( 'subscriptions' ) );
@@ -2180,10 +2274,11 @@ class Daymark_Admin_Subscriptions {
 	 * state-changing action — so, like render_notice()'s query-string read
 	 * above, no nonce applies here.
 	 *
-	 * @return array{orderby: string, order: string} `orderby` is always one
-	 *         of SORTABLE_COLUMNS — DEFAULT_ORDERBY when `?orderby=` is
-	 *         absent or invalid, never ''; `order` is always 'asc' or
-	 *         'desc'.
+	 * @return array{orderby: string, order: string, explicit: bool} `orderby`
+	 *         is always one of SORTABLE_COLUMNS — DEFAULT_ORDERBY when
+	 *         `?orderby=` is absent or invalid, never ''; `order` is always
+	 *         'asc' or 'desc'; `explicit` is true only when `?orderby=` named
+	 *         a real column (the default sort puts favorites first).
 	 */
 	private function resolve_sort_request(): array {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
@@ -2191,13 +2286,16 @@ class Daymark_Admin_Subscriptions {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only sort of this screen's own table; not a state-changing action.
 		$order = isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '';
 
-		if ( ! in_array( $orderby, self::SORTABLE_COLUMNS, true ) ) {
+		$explicit = in_array( $orderby, self::SORTABLE_COLUMNS, true );
+
+		if ( ! $explicit ) {
 			$orderby = self::DEFAULT_ORDERBY;
 		}
 
 		return array(
-			'orderby' => $orderby,
-			'order'   => 'desc' === $order ? 'desc' : 'asc',
+			'orderby'  => $orderby,
+			'order'    => 'desc' === $order ? 'desc' : 'asc',
+			'explicit' => $explicit,
 		);
 	}
 
@@ -2210,30 +2308,45 @@ class Daymark_Admin_Subscriptions {
 	 * @param array<int, array<string, mixed>> $subscriptions Rows to sort.
 	 * @param string                           $orderby       One of SORTABLE_COLUMNS.
 	 * @param string                           $order         'asc' or 'desc'.
+	 * @param bool                             $favorites_first Put favorites above the rest. Only
+	 *                                                          the default sort does (issue #531);
+	 *                                                          an explicit column sort orders purely
+	 *                                                          by that column.
 	 * @return array<int, array<string, mixed>>
 	 */
-	private function sort_subscriptions( array $subscriptions, string $orderby, string $order ): array {
+	private function sort_subscriptions( array $subscriptions, string $orderby, string $order, bool $favorites_first = false ): array {
 		usort(
 			$subscriptions,
-			static function ( array $a, array $b ) use ( $orderby ) {
+			static function ( array $a, array $b ) use ( $orderby, $order, $favorites_first ) {
+				if ( $favorites_first ) {
+					$fav_a = Daymark_Subscriptions::is_favorite( $a ) ? 1 : 0;
+					$fav_b = Daymark_Subscriptions::is_favorite( $b ) ? 1 : 0;
+
+					if ( $fav_a !== $fav_b ) {
+						return $fav_b <=> $fav_a;
+					}
+				}
+
 				if ( 'status' === $orderby ) {
-					return strcasecmp( (string) ( $a['status'] ?? '' ), (string) ( $b['status'] ?? '' ) );
+					$cmp = strcasecmp( (string) ( $a['status'] ?? '' ), (string) ( $b['status'] ?? '' ) );
+
+					return 'desc' === $order ? -$cmp : $cmp;
 				}
 
 				if ( 'last_checked' === $orderby ) {
 					$a_time = strtotime( (string) ( $a['last_checked_at'] ?? '' ) . ' +00:00' );
 					$b_time = strtotime( (string) ( $b['last_checked_at'] ?? '' ) . ' +00:00' );
 
-					return ( false !== $a_time ? $a_time : 0 ) <=> ( false !== $b_time ? $b_time : 0 );
+					$cmp = ( false !== $a_time ? $a_time : 0 ) <=> ( false !== $b_time ? $b_time : 0 );
+
+					return 'desc' === $order ? -$cmp : $cmp;
 				}
 
-				return strcasecmp( self::subscription_label( $a ), self::subscription_label( $b ) );
+				$cmp = strcasecmp( self::subscription_label( $a ), self::subscription_label( $b ) );
+
+				return 'desc' === $order ? -$cmp : $cmp;
 			}
 		);
-
-		if ( 'desc' === $order ) {
-			$subscriptions = array_reverse( $subscriptions );
-		}
 
 		return $subscriptions;
 	}
@@ -2311,6 +2424,7 @@ class Daymark_Admin_Subscriptions {
 				<?php endif; ?>
 				<strong data-daymark-title-text><?php echo esc_html( $row_label ); ?></strong>
 				<?php $this->render_edit_title_form( $id, $site_title, $site_url ); ?>
+				<?php $this->render_favorite_form( $id, Daymark_Subscriptions::is_favorite( $subscription ) ); ?>
 				<?php if ( '' !== $site_url ) : ?>
 					<br />
 					<a href="<?php echo esc_url( $site_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $site_url ); ?></a>
@@ -2471,6 +2585,44 @@ class Daymark_Admin_Subscriptions {
 				<span class="description daymark-subscription-title-error" role="alert" hidden></span>
 			</form>
 		</details>
+		<?php
+	}
+
+	/**
+	 * Render one subscription's star/unstar favorite toggle form (issue #531).
+	 *
+	 * A button-link displaying a star dashicon (`dashicons-star-filled` when
+	 * starred, `dashicons-star-empty` when not). Its accessible name stays
+	 * "Favorite" and `aria-pressed` carries the state; the tooltip names the
+	 * action a click takes. Submits via a plain
+	 * admin-post form (`daymark_subscription_favorite`) as the no-JS fallback,
+	 * progressively enhanced in assets/admin-subscriptions.js via the REST
+	 * favorite endpoint (`POST`/`DELETE /subscriptions/{id}/favorite`) to update
+	 * in place without page reload.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param int  $id          Subscription ID.
+	 * @param bool $is_favorite Whether this subscription is currently favorited.
+	 * @return void
+	 */
+	private function render_favorite_form( int $id, bool $is_favorite ): void {
+		$next_favorite = ! $is_favorite;
+		$tooltip       = $is_favorite
+			? __( 'Remove from favorites', 'daymark' )
+			: __( 'Star as favorite', 'daymark' );
+		$icon_class    = $is_favorite ? 'dashicons-star-filled' : 'dashicons-star-empty';
+		?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="daymark-subscription-favorite-form" data-daymark-subscription-id="<?php echo esc_attr( (string) $id ); ?>" style="display:inline-block;vertical-align:middle;margin-inline-start:4px;">
+			<input type="hidden" name="action" value="daymark_subscription_favorite" />
+			<input type="hidden" name="daymark_subscription_id" value="<?php echo esc_attr( (string) $id ); ?>" />
+			<input type="hidden" name="daymark_favorite" value="<?php echo $next_favorite ? '1' : '0'; ?>" />
+			<?php wp_nonce_field( 'daymark_subscription_favorite_' . $id, 'daymark_subscription_favorite_nonce' ); ?>
+			<button type="submit" class="button-link daymark-subscription-favorite-trigger<?php echo $is_favorite ? ' is-favorite' : ''; ?>" aria-label="<?php esc_attr_e( 'Favorite', 'daymark' ); ?>" aria-pressed="<?php echo $is_favorite ? 'true' : 'false'; ?>" title="<?php echo esc_attr( $tooltip ); ?>" data-daymark-favorited="<?php echo $is_favorite ? '1' : '0'; ?>">
+				<span class="dashicons <?php echo esc_attr( $icon_class ); ?>" aria-hidden="true"></span>
+			</button>
+			<span class="description daymark-subscription-favorite-error" role="alert" hidden></span>
+		</form>
 		<?php
 	}
 
@@ -2797,7 +2949,9 @@ class Daymark_Admin_Subscriptions {
 		$subscribed = array();
 
 		foreach ( Daymark_Plugin::instance()->subscriptions->get_all() as $subscription ) {
-			$subscribed[ strtolower( untrailingslashit( (string) ( $subscription['feed_url'] ?? '' ) ) ) ] = true;
+			foreach ( array( 'feed_url', 'site_url' ) as $field ) {
+				$subscribed[ strtolower( untrailingslashit( (string) ( $subscription[ $field ] ?? '' ) ) ) ] = true;
+			}
 		}
 		?>
 		<p>
@@ -2837,9 +2991,12 @@ class Daymark_Admin_Subscriptions {
 			<div style="max-height:400px;overflow:auto;border:1px solid #dcdcde;background:#fff;padding:4px 12px;max-width:600px;">
 				<?php foreach ( $entries as $index => $entry ) : ?>
 					<?php
-					$xml_url = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
-					$label   = isset( $entry['label'] ) ? (string) $entry['label'] : $xml_url;
-					$already = isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] );
+					$xml_url  = isset( $entry['xml_url'] ) ? (string) $entry['xml_url'] : '';
+					$html_url = isset( $entry['html_url'] ) ? (string) $entry['html_url'] : '';
+					$shown    = '' !== $html_url ? $html_url : $xml_url;
+					$label    = isset( $entry['label'] ) ? (string) $entry['label'] : $shown;
+					$already  = ( '' !== $xml_url && isset( $subscribed[ strtolower( untrailingslashit( $xml_url ) ) ] ) )
+						|| ( '' !== $html_url && isset( $subscribed[ strtolower( untrailingslashit( $html_url ) ) ] ) );
 					?>
 					<label style="display:block;margin:6px 0;">
 						<input
@@ -2855,7 +3012,7 @@ class Daymark_Admin_Subscriptions {
 							<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
 						<?php endif; ?>
 						<br />
-						<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $xml_url ); ?></code>
+						<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $shown ); ?></code>
 					</label>
 				<?php endforeach; ?>
 			</div>
@@ -2999,6 +3156,18 @@ class Daymark_Admin_Subscriptions {
 				'summary' => __( 'A free hosted bridge to the fediverse and Bluesky, instead of the ActivityPub plugin.', 'daymark' ),
 				'details' => __( 'Bridgy Fed is a service, not a plugin. It uses the Webmention plugin to give your site a fediverse and Bluesky presence under a handle on its own domain, where the ActivityPub plugin gives your site a handle on your own domain. Use one or the other, not both.', 'daymark' ),
 			),
+			// Backfeed for copies other plugins made (issue #558): Daymark
+			// prints a Mark's copies as u-syndication links, which is what
+			// Bridgy reads to match a copy's replies to the Mark. Networks
+			// are the ones Bridgy's own sign-up page offers.
+			'bridgy'          => array(
+				'label'   => 'Bridgy',
+				'group'   => 'optional',
+				'type'    => 'service',
+				'url'     => 'https://brid.gy/',
+				'summary' => __( 'Brings replies and likes back from your posts on Mastodon, Bluesky, Flickr, GitHub, and Reddit.', 'daymark' ),
+				'details' => __( 'Bridgy is a free service, not a plugin, and separate from Bridgy Fed: it works with accounts you already have. When a plugin such as Jetpack Social or Share on Mastodon shares a Mark, Daymark adds a link to that copy on the Mark\'s page. Bridgy uses those links to match each copy to your Mark, then sends the copy\'s replies, likes, and reposts to your site as Webmentions, which appear in Notifications. Skip any network whose replies already come back another way, such as through the ActivityPub or ATmosphere plugin, or they arrive twice.', 'daymark' ),
+			),
 			'simple_location' => array(
 				'label'       => 'Simple Location',
 				'group'       => 'optional',
@@ -3140,7 +3309,7 @@ class Daymark_Admin_Subscriptions {
 		$groups     = array(
 			'start'    => array(
 				'heading' => __( 'Start here', 'daymark' ),
-				'intro'   => __( 'These two make Likes, comments, and replies work with other sites.', 'daymark' ),
+				'intro'   => __( 'Daymark already exchanges Likes, comments, and replies with other Daymark and Webmention sites. Add this to do the same with Mastodon and the rest of the fediverse.', 'daymark' ),
 			),
 			'optional' => array(
 				'heading' => __( 'Optional', 'daymark' ),
@@ -3153,12 +3322,12 @@ class Daymark_Admin_Subscriptions {
 			<h2><?php echo esc_html( $text['heading'] ); ?></h2>
 			<p><?php echo esc_html( $text['intro'] ); ?></p>
 			<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:1em;max-width:900px;">
-				<?php foreach ( $connectors as $connector ) : ?>
+				<?php foreach ( $connectors as $key => $connector ) : ?>
 					<?php
 					if ( ( $connector['group'] ?? 'optional' ) !== $group ) {
 						continue;
 					}
-					$this->render_connector_card( $connector );
+					$this->render_connector_card( $connector, $key );
 					?>
 				<?php endforeach; ?>
 			</div>
@@ -3171,9 +3340,10 @@ class Daymark_Admin_Subscriptions {
 	 * install action, and the longer details behind a "More" disclosure.
 	 *
 	 * @param array<string, mixed> $connector One recommended_connectors() entry.
+	 * @param string               $key       Its recommended_connectors() key, for the card's id (connector_url()).
 	 * @return void
 	 */
-	private function render_connector_card( array $connector ): void {
+	private function render_connector_card( array $connector, string $key = '' ): void {
 		$is_service = 'service' === ( $connector['type'] ?? 'plugin' );
 		$on_wporg   = ! $is_service && ! empty( $connector['wporg_slug'] );
 		if ( $is_service ) {
@@ -3184,7 +3354,7 @@ class Daymark_Admin_Subscriptions {
 			$link = $connector['source_url'] ?? '';
 		}
 		?>
-		<div class="card" style="max-width:none;margin:0;">
+		<div class="card"<?php echo '' !== $key ? ' id="daymark-connector-' . esc_attr( sanitize_key( $key ) ) . '"' : ''; ?> style="max-width:none;margin:0;scroll-margin-block-start:48px;">
 			<h3>
 				<a href="<?php echo esc_url( $link ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $connector['label'] ); ?></a>
 			</h3>
@@ -4558,6 +4728,38 @@ class Daymark_Admin_Subscriptions {
 	}
 
 	/**
+	 * Handle the Star / Unstar favorite form (admin_post_daymark_subscription_favorite, issue #531).
+	 *
+	 * A local DB write (Daymark_Subscriptions::set_favorite()) — no outbound
+	 * request, so unlike Refresh/Refresh icon this needs no rate limit.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @return void
+	 */
+	public function handle_favorite(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$id = isset( $_POST['daymark_subscription_id'] ) ? absint( wp_unslash( $_POST['daymark_subscription_id'] ) ) : 0;
+
+		check_admin_referer( 'daymark_subscription_favorite_' . $id, 'daymark_subscription_favorite_nonce' );
+
+		$favorite = isset( $_POST['daymark_favorite'] ) && '1' === sanitize_key( wp_unslash( $_POST['daymark_favorite'] ) );
+
+		$result = Daymark_Plugin::instance()->subscriptions->set_favorite( $id, $favorite );
+
+		if ( ! $result ) {
+			$this->redirect_with_error( __( 'Could not update favorite status.', 'daymark' ) );
+
+			return;
+		}
+
+		$this->redirect( array( self::NOTICE_QUERY_VAR => $favorite ? 'favorited' : 'unfavorited' ) );
+	}
+
+	/**
 	 * Handle the Unsubscribe form (admin_post_daymark_subscription_unsubscribe).
 	 *
 	 * Delegates to Daymark_Subscriptions::unsubscribe() — the same method
@@ -5080,13 +5282,33 @@ class Daymark_Admin_Subscriptions {
 		$action = isset( $_POST['daymark_bulk_action'] ) ? sanitize_key( wp_unslash( $_POST['daymark_bulk_action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 		$ids    = isset( $_POST['daymark_subscription_ids'] ) ? array_unique( array_filter( array_map( 'absint', (array) wp_unslash( $_POST['daymark_subscription_ids'] ) ) ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing -- Verified above via check_admin_referer().
 
-		if ( ! in_array( $action, array( 'refresh', 'unsubscribe' ), true ) || empty( $ids ) ) {
+		if ( ! in_array( $action, array( 'refresh', 'unsubscribe', 'star', 'unstar' ), true ) || empty( $ids ) ) {
 			$this->redirect_with_error( __( 'Choose a bulk action and at least one site.', 'daymark' ) );
 
 			return;
 		}
 
 		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+
+		if ( 'star' === $action || 'unstar' === $action ) {
+			$favorite = 'star' === $action;
+			$updated  = 0;
+
+			foreach ( $ids as $id ) {
+				if ( null !== $subscriptions->get( $id ) && $subscriptions->set_favorite( $id, $favorite ) ) {
+					++$updated;
+				}
+			}
+
+			$this->redirect(
+				array(
+					self::NOTICE_QUERY_VAR => $favorite ? 'bulk_starred' : 'bulk_unstarred',
+					self::COUNT_QUERY_VAR  => (string) $updated,
+				)
+			);
+
+			return;
+		}
 
 		if ( 'unsubscribe' === $action ) {
 			$removed = 0;

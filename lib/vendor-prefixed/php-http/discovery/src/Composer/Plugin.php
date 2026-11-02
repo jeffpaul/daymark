@@ -2,23 +2,23 @@
 
 namespace Daymark\Vendor\Http\Discovery\Composer;
 
-use Composer\Composer;
-use Composer\DependencyResolver\Pool;
-use Composer\EventDispatcher\EventSubscriberInterface;
-use Composer\Factory;
-use Composer\Installer;
-use Composer\IO\IOInterface;
-use Composer\Json\JsonFile;
-use Composer\Json\JsonManipulator;
-use Composer\Package\Locker;
-use Composer\Package\Version\VersionParser;
-use Composer\Package\Version\VersionSelector;
-use Composer\Plugin\PluginInterface;
-use Composer\Repository\InstalledRepositoryInterface;
-use Composer\Repository\RepositorySet;
-use Composer\Script\Event;
-use Composer\Script\ScriptEvents;
-use Composer\Util\Filesystem;
+use Daymark\Vendor\Composer\Composer;
+use Daymark\Vendor\Composer\DependencyResolver\Pool;
+use Daymark\Vendor\Composer\EventDispatcher\EventSubscriberInterface;
+use Daymark\Vendor\Composer\Factory;
+use Daymark\Vendor\Composer\Installer;
+use Daymark\Vendor\Composer\IO\IOInterface;
+use Daymark\Vendor\Composer\Json\JsonFile;
+use Daymark\Vendor\Composer\Json\JsonManipulator;
+use Daymark\Vendor\Composer\Package\Locker;
+use Daymark\Vendor\Composer\Package\Version\VersionParser;
+use Daymark\Vendor\Composer\Package\Version\VersionSelector;
+use Daymark\Vendor\Composer\Plugin\PluginInterface;
+use Daymark\Vendor\Composer\Repository\InstalledRepositoryInterface;
+use Daymark\Vendor\Composer\Repository\RepositorySet;
+use Daymark\Vendor\Composer\Script\Event;
+use Daymark\Vendor\Composer\Script\ScriptEvents;
+use Daymark\Vendor\Composer\Util\Filesystem;
 use Daymark\Vendor\Http\Discovery\ClassDiscovery;
 
 /**
@@ -104,21 +104,21 @@ class Plugin implements PluginInterface, EventSubscriberInterface
 
     private const INTERFACE_MAP = [
         'php-http/async-client-implementation' => [
-            'Daymark\Vendor\Http\Client\HttpAsyncClient',
+            'Http\Client\HttpAsyncClient',
         ],
         'php-http/client-implementation' => [
-            'Daymark\Vendor\Http\Client\HttpClient',
+            'Http\Client\HttpClient',
         ],
         'psr/http-client-implementation' => [
-            'Daymark\Vendor\Psr\Http\Client\ClientInterface',
+            'Psr\Http\Client\ClientInterface',
         ],
         'psr/http-factory-implementation' => [
-            'Daymark\Vendor\Psr\Http\Message\RequestFactoryInterface',
-            'Daymark\Vendor\Psr\Http\Message\ResponseFactoryInterface',
-            'Daymark\Vendor\Psr\Http\Message\ServerRequestFactoryInterface',
-            'Daymark\Vendor\Psr\Http\Message\StreamFactoryInterface',
-            'Daymark\Vendor\Psr\Http\Message\UploadedFileFactoryInterface',
-            'Daymark\Vendor\Psr\Http\Message\UriFactoryInterface',
+            'Psr\Http\Message\RequestFactoryInterface',
+            'Psr\Http\Message\ResponseFactoryInterface',
+            'Psr\Http\Message\ServerRequestFactoryInterface',
+            'Psr\Http\Message\StreamFactoryInterface',
+            'Psr\Http\Message\UploadedFileFactoryInterface',
+            'Psr\Http\Message\UriFactoryInterface',
         ],
     ];
 
@@ -404,7 +404,7 @@ class Plugin implements PluginInterface, EventSubscriberInterface
         $code = <<<EOPHP
 <?php
 
-namespace Daymark\Vendor\Http\Discovery\Strategy;
+namespace Http\Discovery\Strategy;
 
 class GeneratedDiscoveryStrategy implements DiscoveryStrategy
 {

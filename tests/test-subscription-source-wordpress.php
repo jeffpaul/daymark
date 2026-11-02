@@ -581,4 +581,77 @@ class Test_Subscription_Source_WordPress extends WP_UnitTestCase {
 		$this->assertSame( 'note', $normalized['post_format'] );
 		$this->assertArrayNotHasKey( 'interaction', $normalized );
 	}
+
+	/**
+	 * A raw `wp/v2/posts` item from a site running Post Kinds.
+	 *
+	 * @param mixed  $kind    The `kind` field.
+	 * @param string $content Rendered content.
+	 * @param string $format  WordPress post format.
+	 * @return array<string, mixed>
+	 */
+	private function post_kinds_item( $kind, string $content = '<p>Some words about it.</p>', string $format = 'standard' ): array {
+		return array(
+			'title'    => array( 'rendered' => 'A post' ),
+			'excerpt'  => array( 'rendered' => '<p>Some words about it.</p>' ),
+			'content'  => array( 'rendered' => $content ),
+			'link'     => 'https://friend.example/a-post/',
+			'date_gmt' => '2026-10-01T10:00:00',
+			'format'   => $format,
+			'kind'     => $kind,
+		);
+	}
+
+	/** A Post Kinds repost keeps its target from Post Kinds' response markup. */
+	public function test_normalize_reads_a_post_kinds_repost_and_its_target() {
+		$content    = '<section class="h-cite response u-repost-of"><header><a href="https://third.example/post/" class="p-name u-url">Their post</a></header></section><p>Worth a read.</p>';
+		$normalized = $this->source->normalize( $this->post_kinds_item( 'repost', $content ) );
+
+		$this->assertSame( 'repost', $normalized['interaction'] );
+		$this->assertSame( 'https://third.example/post/', $normalized['interaction_url'] );
+	}
+
+	/** A favorite is a like, and a kind with no target markup still counts. */
+	public function test_normalize_reads_a_post_kinds_favorite_without_a_target() {
+		$normalized = $this->source->normalize( $this->post_kinds_item( 'favorite' ) );
+
+		$this->assertSame( 'like', $normalized['interaction'] );
+		$this->assertSame( '', $normalized['interaction_url'] );
+	}
+
+	/** A Post Kinds check-in (its `status` format) is a Check In, not a Note. */
+	public function test_normalize_reads_a_post_kinds_checkin() {
+		$normalized = $this->source->normalize( $this->post_kinds_item( 'checkin', '<p>Here.</p>', 'status' ) );
+
+		$this->assertSame( 'checkin', $normalized['post_format'] );
+	}
+
+	/** Kinds with no interaction, `false`, or junk change nothing. */
+	public function test_normalize_ignores_other_post_kinds_values() {
+		foreach ( array( 'note', 'article', false, array( 'reply' ), 'not-a-kind' ) as $kind ) {
+			$normalized = $this->source->normalize( $this->post_kinds_item( $kind ) );
+
+			$this->assertArrayNotHasKey( 'interaction', $normalized );
+			$this->assertSame( 'standard', $normalized['post_format'] );
+		}
+	}
+
+	/** A Daymark site's own `daymark` field wins over its Post Kinds kind. */
+	public function test_daymark_field_wins_over_post_kinds_kind() {
+		$item         = $this->daymark_item(
+			array(
+				'type'        => 'note',
+				'interaction' => array(
+					'type' => 'repost',
+					'url'  => 'https://third.example/post/',
+				),
+			)
+		);
+		$item['kind'] = 'reply';
+
+		$normalized = $this->source->normalize( $item );
+
+		$this->assertSame( 'repost', $normalized['interaction'] );
+		$this->assertSame( 'https://third.example/post/', $normalized['interaction_url'] );
+	}
 }

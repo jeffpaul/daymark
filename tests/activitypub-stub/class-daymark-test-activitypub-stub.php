@@ -26,18 +26,26 @@ if ( ! class_exists( 'Daymark_Test_ActivityPub_Stub' ) ) {
 		public static $enabled_users = array();
 
 		/**
-		 * URL => ActivityStreams object array (or WP_Error) for get_remote_object().
+		 * URL => ActivityStreams object array (or WP_Error) for Proxy::get()
+		 * and Http::get_remote_object().
 		 *
 		 * @var array<string, mixed>
 		 */
 		public static $remote_objects = array();
 
 		/**
-		 * Every get_remote_object() URL asked for, in order.
+		 * Every URL asked for, in order, through either fetch.
 		 *
 		 * @var string[]
 		 */
 		public static $fetches = array();
+
+		/**
+		 * Which fetch each entry in $fetches went through: 'proxy' or 'http'.
+		 *
+		 * @var string[]
+		 */
+		public static $fetched_via = array();
 
 		/**
 		 * Every add_to_outbox() call: {activity, user_id, visibility, outbox_id}.
@@ -69,6 +77,7 @@ if ( ! class_exists( 'Daymark_Test_ActivityPub_Stub' ) ) {
 			self::$enabled_users  = array();
 			self::$remote_objects = array();
 			self::$fetches        = array();
+			self::$fetched_via    = array();
 			self::$queued         = array();
 			self::$undone         = array();
 			self::$fail_queue     = false;

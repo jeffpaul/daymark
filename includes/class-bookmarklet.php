@@ -29,6 +29,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   rule as in the app; see Daymark_Like_Delivery). When the page is a post
  *   from a site the reader follows, the subscription-post Like route runs
  *   (including the Jetpack route); otherwise Daymark_Like_Delivery::publish_like().
+ * - **Follow this site** (issue #560), for people who can manage
+ *   subscriptions: the app's own two steps, through the same REST routes
+ *   (POST /subscriptions/discover, then /subscriptions/follow). Discovery
+ *   starts at the site's root, where a site's name and feeds live, and
+ *   falls back to the page itself when the root offers no feed (a site in
+ *   a subdirectory, a profile on a shared host).
  *
  * The popup sends `frame-ancestors 'none'`, so another site can't load it
  * in a frame and trick a click on Reblog or Like.
@@ -302,6 +308,258 @@ class Daymark_Bookmarklet {
 	}
 
 	/**
+	 * Whether the reader can follow sites: the same capability as Settings
+	 * -> Daymark and the app's Follow a site sheet.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @return bool
+	 */
+	public static function can_follow(): bool {
+		return current_user_can( Daymark_Admin_Subscriptions::CAPABILITY );
+	}
+
+	/**
+	 * The subscription that already follows the site a page is on, if any.
+	 *
+	 * A post Daymark has cached from a followed site names its subscription
+	 * directly. Otherwise a subscription matches when the page's address
+	 * starts with the subscription's site address (scheme and a leading
+	 * `www.` ignored), so a site in a subdirectory only matches its own
+	 * pages; the most specific match wins.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $url Page URL.
+	 * @return array<string, mixed>|null Subscription row.
+	 */
+	public static function followed_subscription( string $url ): ?array {
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$subscriptions = Daymark_Plugin::instance()->subscriptions;
+		$sub_post_id   = self::subscription_post_id( $url );
+
+		if ( $sub_post_id > 0 ) {
+			$row = $subscriptions->get( absint( get_post_meta( $sub_post_id, 'subscription_id', true ) ) );
+
+			if ( is_array( $row ) ) {
+				return $row;
+			}
+		}
+
+		$page = self::comparable_url( $url );
+
+		if ( '' === $page ) {
+			return null;
+		}
+
+		$best        = null;
+		$best_length = 0;
+
+		foreach ( $subscriptions->get_all() as $row ) {
+			$site = self::comparable_url( (string) ( $row['site_url'] ?? '' ) );
+
+			if ( '' === $site || ! str_starts_with( $page, $site ) || strlen( $site ) <= $best_length ) {
+				continue;
+			}
+
+			$best        = $row;
+			$best_length = strlen( $site );
+		}
+
+		return $best;
+	}
+
+	/**
+	 * A followed subscription's name: its site title, else its host.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param array<string, mixed> $subscription Subscription row.
+	 * @return string
+	 */
+	public static function subscription_name( array $subscription ): string {
+		$title = sanitize_text_field( (string) ( $subscription['site_title'] ?? '' ) );
+
+		if ( '' !== $title ) {
+			return $title;
+		}
+
+		return (string) wp_parse_url( (string) ( $subscription['site_url'] ?? '' ), PHP_URL_HOST );
+	}
+
+	/**
+	 * The feeds found for a page, when the reader looked them up from this
+	 * page in the last 15 minutes (see find_feeds()).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string $url Page URL.
+	 * @return array<string, mixed>|null The discover route's response.
+	 */
+	public static function follow_lookup( string $url ): ?array {
+		$stash = get_transient( self::follow_key() );
+
+		if ( ! is_array( $stash ) || '' === $url || ( $stash['page'] ?? '' ) !== $url || ! is_array( $stash['result'] ?? null ) ) {
+			return null;
+		}
+
+		return $stash['result'];
+	}
+
+	/**
+	 * Look up the feeds of the site a page is on, through the app's own
+	 * discover route (same rate limit, same answer), and keep the answer
+	 * for the popup to show.
+	 *
+	 * Starts at the site's root, which is where a site's name lives, so the
+	 * subscription gets the site's name rather than the post's. When the
+	 * root offers no feed, tries the page itself.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param array{url: string} $target A read_target() result.
+	 * @return array<string, mixed>|WP_Error The discover route's response.
+	 */
+	public static function find_feeds( array $target ) {
+		if ( '' === $target['url'] ) {
+			return new WP_Error( 'daymark_bookmarklet_no_url', __( 'Daymark could not read the address of this page.', 'daymark' ), array( 'status' => 400 ) );
+		}
+
+		$root   = Daymark_Followers::site_root( $target['url'] );
+		$start  = '' !== $root ? $root : $target['url'];
+		$result = self::dispatch( 'POST', '/daymark/v1/subscriptions/discover', array( 'site_url' => $start ) );
+
+		if (
+			is_wp_error( $result )
+			&& 'daymark_subscription_no_feed_found' === $result->get_error_code()
+			&& untrailingslashit( $start ) !== untrailingslashit( $target['url'] )
+		) {
+			$result = self::dispatch( 'POST', '/daymark/v1/subscriptions/discover', array( 'site_url' => $target['url'] ) );
+		}
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		set_transient(
+			self::follow_key(),
+			array(
+				'page'   => $target['url'],
+				'result' => $result,
+			),
+			15 * MINUTE_IN_SECONDS
+		);
+
+		return $result;
+	}
+
+	/**
+	 * Follow one of the feeds find_feeds() found for the page, through the
+	 * app's own follow route. The route only follows a feed from this
+	 * reader's latest lookup, and only when that lookup is still for this
+	 * site (a lookup in the app since would have replaced it).
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param array{url: string} $target     A read_target() result.
+	 * @param int                $index      The chosen feed's index.
+	 * @param string             $site_title The name to follow it under; '' keeps the site's own.
+	 * @return array<string, mixed>|WP_Error The follow route's response: the new subscription.
+	 */
+	public static function follow( array $target, int $index, string $site_title ) {
+		$lookup = self::follow_lookup( $target['url'] );
+
+		if ( null === $lookup ) {
+			return new WP_Error( 'daymark_follow_expired', __( 'That search has expired. Look up the site again.', 'daymark' ), array( 'status' => 410 ) );
+		}
+
+		if ( $index < 0 ) {
+			return new WP_Error( 'daymark_follow_invalid_feed', __( 'Choose one of the feeds found for this site.', 'daymark' ), array( 'status' => 400 ) );
+		}
+
+		$result = self::dispatch(
+			'POST',
+			'/daymark/v1/subscriptions/follow',
+			array(
+				'index'      => $index,
+				'site_title' => $site_title,
+				'site_url'   => (string) ( $lookup['site_url'] ?? '' ),
+			)
+		);
+
+		// Followed, or the lookup behind it is gone: either way the popup
+		// shouldn't offer these feeds again.
+		if ( ! is_wp_error( $result ) || 'daymark_follow_expired' === $result->get_error_code() ) {
+			delete_transient( self::follow_key() );
+		}
+
+		return $result;
+	}
+
+	/**
+	 * What the popup's Follow section shows for a page: nothing (null) for
+	 * someone who can't follow sites; otherwise the site they already
+	 * follow, or the feeds they looked up for this page. A local read:
+	 * nothing is fetched until they ask.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param array{url: string, host: string} $target A read_target() result.
+	 * @return array{site: string, following: string, lookup: array<string, mixed>|null}|null
+	 */
+	public static function follow_state( array $target ): ?array {
+		if ( '' === $target['url'] || ! self::can_follow() ) {
+			return null;
+		}
+
+		$followed = self::followed_subscription( $target['url'] );
+
+		return array(
+			'site'      => $target['host'],
+			'following' => null !== $followed ? self::subscription_name( $followed ) : '',
+			'lookup'    => null === $followed ? self::follow_lookup( $target['url'] ) : null,
+		);
+	}
+
+	/**
+	 * Run one of the popup's Follow actions: look up the site's feeds
+	 * (`follow_find`), follow one (`follow`), or drop the lookup
+	 * (`follow_cancel`). Refused for anyone who can't follow sites.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @param string             $action     follow_find, follow, or follow_cancel.
+	 * @param array{url: string} $target     A read_target() result.
+	 * @param int                $index      The chosen feed's index, for `follow`; -1 for none.
+	 * @param string             $site_title The name to follow it under, for `follow`.
+	 * @return mixed The route's response, true for a cancel, or a WP_Error.
+	 */
+	public static function follow_action( string $action, array $target, int $index = -1, string $site_title = '' ) {
+		if ( ! self::can_follow() ) {
+			return new WP_Error( 'daymark_bookmarklet_follow', __( 'Only this site’s administrators can follow sites.', 'daymark' ), array( 'status' => 403 ) );
+		}
+
+		if ( 'follow_find' === $action ) {
+			return self::find_feeds( $target );
+		}
+
+		if ( 'follow' === $action ) {
+			return self::follow( $target, $index, $site_title );
+		}
+
+		if ( 'follow_cancel' === $action ) {
+			delete_transient( self::follow_key() );
+
+			return true;
+		}
+
+		return new WP_Error( 'daymark_bookmarklet_action', __( 'Invalid request.', 'daymark' ) );
+	}
+
+	/**
 	 * Handle a request to the popup route. Always exits.
 	 *
 	 * @return void
@@ -364,6 +622,7 @@ class Daymark_Bookmarklet {
 		$daymark_bookmarklet = array(
 			'target' => $target,
 			'state'  => $state,
+			'follow' => self::follow_state( $target ),
 			'done'   => $done,
 			'mark'   => $mark,
 			'error'  => $error,
@@ -375,8 +634,8 @@ class Daymark_Bookmarklet {
 	}
 
 	/**
-	 * Handle a Reblog, Like, or Unlike form post, then redirect back to the
-	 * popup (POST-redirect-GET). Always exits.
+	 * Handle a Reblog, Like, Unlike, or Follow form post, then redirect back
+	 * to the popup (POST-redirect-GET). Always exits.
 	 *
 	 * @return void
 	 */
@@ -396,6 +655,11 @@ class Daymark_Bookmarklet {
 			),
 			self::popup_url()
 		);
+
+		// The feed picker's Cancel button shares the Follow form.
+		if ( 'follow' === $action && ! empty( $_POST['daymark_follow_cancel'] ) ) {
+			$action = 'follow_cancel';
+		}
 
 		if ( 'reblog' === $action ) {
 			$result = ( new Daymark_Rate_Limiter() )->attempt( Daymark_Rate_Limiter::ACTION_PUBLISH );
@@ -419,6 +683,15 @@ class Daymark_Bookmarklet {
 
 			$done = 'like' === $action ? 'liked' : 'unliked';
 			$mark = 0;
+		} elseif ( in_array( $action, array( 'follow_find', 'follow', 'follow_cancel' ), true ) ) {
+			$result = self::follow_action(
+				$action,
+				$target,
+				isset( $_POST['daymark_feed_index'] ) ? absint( $_POST['daymark_feed_index'] ) : -1,
+				sanitize_text_field( wp_unslash( $_POST['daymark_site_title'] ?? '' ) )
+			);
+			$done   = 'follow' === $action ? 'followed' : '';
+			$mark   = 0;
 		} else {
 			$result = new WP_Error( 'daymark_bookmarklet_action', __( 'Invalid request.', 'daymark' ) );
 			$done   = '';
@@ -467,15 +740,21 @@ class Daymark_Bookmarklet {
 
 	/**
 	 * Run a Daymark REST route as the current user, for the subscription
-	 * post Like routes, so the bookmarklet and the Timeline share one path.
+	 * post Like routes and the follow routes, so the bookmarklet and the
+	 * app share one path (permission checks and rate limits included).
 	 *
-	 * @param string $method HTTP method.
-	 * @param string $route  REST route.
+	 * @param string               $method HTTP method.
+	 * @param string               $route  REST route.
+	 * @param array<string, mixed> $params Body parameters.
 	 * @return array<string, mixed>|WP_Error
 	 */
-	private static function dispatch( string $method, string $route ) {
+	private static function dispatch( string $method, string $route, array $params = array() ) {
 		$request = new WP_REST_Request( $method, $route );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		if ( ! empty( $params ) ) {
+			$request->set_body_params( $params );
+		}
 
 		$response = rest_do_request( $request );
 
@@ -487,6 +766,27 @@ class Daymark_Bookmarklet {
 	}
 
 	/**
+	 * A URL reduced for matching a page against a followed site: host
+	 * (lowercase, without a leading `www.`), port, and path with a trailing
+	 * slash. The scheme, query, and fragment are left out.
+	 *
+	 * @param string $url URL.
+	 * @return string Empty when the URL has no host.
+	 */
+	private static function comparable_url( string $url ): string {
+		$parts = wp_parse_url( $url );
+
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+			return '';
+		}
+
+		$host = (string) preg_replace( '/^www\./', '', strtolower( (string) $parts['host'] ) );
+		$path = trim( (string) ( $parts['path'] ?? '' ), '/' );
+
+		return $host . ( isset( $parts['port'] ) ? ':' . (int) $parts['port'] : '' ) . '/' . ( '' !== $path ? $path . '/' : '' );
+	}
+
+	/**
 	 * Per-user transient key carrying an error message across the
 	 * redirect, so the message text never rides in the URL.
 	 *
@@ -494,5 +794,15 @@ class Daymark_Bookmarklet {
 	 */
 	private static function error_key(): string {
 		return 'daymark_bookmarklet_error_' . get_current_user_id();
+	}
+
+	/**
+	 * Per-user transient key holding the feeds the reader looked up from
+	 * the popup, with the page they looked them up from.
+	 *
+	 * @return string
+	 */
+	private static function follow_key(): string {
+		return 'daymark_bookmarklet_follow_' . get_current_user_id();
 	}
 }

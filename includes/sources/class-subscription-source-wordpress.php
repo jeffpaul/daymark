@@ -354,7 +354,36 @@ class Daymark_Subscription_Source_WordPress implements Daymark_Subscription_Sour
 			'quote_credit'       => $quote['credit'],
 		);
 
-		return self::apply_daymark_field( $normalized, $raw_item['daymark'] ?? null );
+		$normalized = self::apply_daymark_field( $normalized, $raw_item['daymark'] ?? null );
+
+		return self::apply_post_kind_field( $normalized, $raw_item['kind'] ?? null, (string) ( $raw_item['content']['rendered'] ?? '' ), $permalink );
+	}
+
+	/**
+	 * Use the `kind` field the Post Kinds plugin adds to `wp/v2/posts`
+	 * (Daymark_Post_Kinds::interaction_from_rest()) for what a followed
+	 * post does to another post, and to show a Check-in as one. A Daymark
+	 * site's own `daymark` field says the same things more exactly, so it
+	 * wins whenever it gave an interaction.
+	 *
+	 * @param array<string, mixed> $normalized   normalize()'s result so far.
+	 * @param mixed                $kind         The post's raw `kind` field.
+	 * @param string               $content_html The post's rendered content.
+	 * @param string               $permalink    The post's permalink.
+	 * @return array<string, mixed>
+	 */
+	private static function apply_post_kind_field( array $normalized, $kind, string $content_html, string $permalink ): array {
+		if ( Daymark_Post_Kinds::is_checkin( $kind ) && in_array( $normalized['post_format'], array( 'standard', 'note' ), true ) ) {
+			$normalized['post_format'] = 'checkin';
+		}
+
+		if ( '' !== (string) ( $normalized['interaction'] ?? '' ) ) {
+			return $normalized;
+		}
+
+		$interaction = Daymark_Post_Kinds::interaction_from_rest( $kind, $content_html, $permalink );
+
+		return null === $interaction ? $normalized : array_merge( $normalized, $interaction );
 	}
 
 	/**

@@ -825,6 +825,7 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_post_format( $post_id, $type );
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		$daymark_data = array(
 			'post_id'              => $post_id,
@@ -1043,8 +1044,13 @@ class Daymark_Publisher {
 			Daymark_Uploads::release_staged( $requested['new'] );
 		}
 
-		$tags = array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) );
-		if ( $tags ) {
+		// With tags_set the request carries the Mark's complete tag list,
+		// so it replaces what's stored (and an empty list clears it).
+		// Without it, tags are only added, as before.
+		$tags = array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $data['tags'] ?? array() ) ) ) );
+		if ( ! empty( $data['tags_set'] ) ) {
+			wp_set_post_tags( $post_id, $tags, false );
+		} elseif ( $tags ) {
 			wp_set_post_tags( $post_id, $tags, true );
 		}
 
@@ -1172,6 +1178,9 @@ class Daymark_Publisher {
 		}
 
 		$this->apply_reading_time( $post_id, $caption, $transcript );
+
+		// After the reply/reblog meta above, which decides the kind.
+		Daymark_Post_Kinds::set_mark_kind( $post_id, $type );
 
 		return $post_id;
 	}
@@ -2440,25 +2449,28 @@ class Daymark_Publisher {
 	 *    itself (its own `temp_unit()`/`metric_to_imperial()` honor the
 	 *    site's `sloc_measurements` setting), so the numeric field passes
 	 *    through directly as what it already is.
-	 *  - `condition`    → `weather_summary`. Simple Location's summary is a
-	 *    plain string and its own `weather_condition_codes()`/`_icons()`
-	 *    helpers expect OpenWeatherMap-derived 3-digit `code` values
-	 *    (confirmed against includes/trait-weather-info.php) — Daymark's
-	 *    `code` is Open-Meteo's WMO vocabulary (0-99), which does not map
-	 *    onto that table and would render as a blank/fallback condition
-	 *    icon (worse than not providing a code at all). So the human
-	 *    readable label is bridged instead of the machine code.
+	 *  - `condition`    → `weather_summary`. A plain string, so it works
+	 *    with every Simple Location version.
+	 *  - `code`         → `weather_code`, only on Simple Location 6.1.0 or
+	 *    later. Simple Location's `weather_condition_codes()`/`_icons()`
+	 *    helpers expect OpenWeatherMap-style 3-digit codes, while Daymark's
+	 *    `code` is Open-Meteo's WMO code (0-99). 6.1.0 added an Open-Meteo
+	 *    provider whose public `Weather_Provider_OpenMeteo::code_map()`
+	 *    translates one into the other, so the code is passed through that
+	 *    and Simple Location shows its own weather icon and condition text.
+	 *    A WMO code that map doesn't know (it returns '') is left out, and
+	 *    on older versions no code is sent, since an unmapped code would
+	 *    show a blank icon.
+	 *  - `provider`     → `weather_provider` = `openmeteo`, on the same
+	 *    versions, so Simple Location shows its Open-Meteo credit next to
+	 *    the weather, as Open-Meteo's licence asks.
 	 *
-	 * `unit` and `code` are therefore deliberately not bridged: `unit` is
-	 * Simple Location's own display concern (metric default) rather than a
-	 * weather property, and `code`'s vocabularies do not overlap (see
-	 * above). Simple Location's `weather_summary` then drives its own
-	 * human-readable condition while `weather_temperature` feeds any
-	 * measurement-configured display.
+	 * `unit` is not bridged: it is Simple Location's own display concern
+	 * (metric default) rather than a weather property.
 	 *
-	 * Simple Location's helper deletes any property whose value is empty,
-	 * so an exact 0 °C reading is not stored on its side (it also reads as
-	 * absent there); there is no clean way around that from this end.
+	 * Simple Location deletes a property whose value is missing or an
+	 * empty string. Since its 6.0.0 it keeps 0 (its `has_value()` check),
+	 * so an exact 0 °C reading is stored; earlier versions dropped it.
 	 *
 	 * Deliberately not a live sync: this runs once, at publish time, only
 	 * when fetch_weather() succeeded — an edit to an existing Mark never
@@ -2501,6 +2513,19 @@ class Daymark_Publisher {
 		}
 
 		try {
+			// Simple Location 6.1.0+ can read Open-Meteo's WMO codes through
+			// its own Open-Meteo provider; older versions can't, so they get
+			// neither a code nor a provider to credit.
+			if ( class_exists( 'Weather_Provider_OpenMeteo' ) && is_callable( array( 'Weather_Provider_OpenMeteo', 'code_map' ) ) ) {
+				$bridge['provider'] = 'openmeteo';
+				if ( isset( $weather['code'] ) && is_numeric( $weather['code'] ) ) {
+					$code = Weather_Provider_OpenMeteo::code_map( (int) $weather['code'] );
+					if ( is_numeric( $code ) ) {
+						$bridge['code'] = (int) $code;
+					}
+				}
+			}
+
 			// `$key = ''` tells the helper to spread across Simple Location's
 			// `$properties` whitelist (weather_temperature, weather_summary,
 			// ...) rather than nest under one key.

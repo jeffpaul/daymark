@@ -4,7 +4,7 @@
     'name' => 'jeffpaul/daymark-bundled-libraries',
     'pretty_version' => 'dev-main',
     'version' => 'dev-main',
-    'reference' => 'c87cf244cdab5bdf3d2980d0b9892e78c185a4e1',
+    'reference' => '531954dcdb0714f96aa7e5746ed00ed8c3169108',
     'type' => 'library',
     'install_path' => __DIR__ . '/../',
     'aliases' => 

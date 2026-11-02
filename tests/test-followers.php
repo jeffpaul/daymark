@@ -39,11 +39,23 @@ class Test_Followers extends WP_UnitTestCase {
 		// tests/bootstrap.php turns the built-in Webmention support off.
 		add_filter( 'daymark_builtin_webmention', '__return_true', 20 );
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
+		// Test hostnames don't resolve; give them a public address (IP literals keep their own).
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', array( $this, 'public_address' ), 10, 2 );
+	}
+
+	/**
+	 * @param mixed  $addresses Filtered addresses.
+	 * @param string $host      Host.
+	 * @return mixed
+	 */
+	public function public_address( $addresses, $host ) {
+		return false !== filter_var( $host, FILTER_VALIDATE_IP ) ? $addresses : array( '93.184.216.34' );
 	}
 
 	public function tear_down(): void {
 		remove_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10 );
 		remove_filter( 'daymark_builtin_webmention', '__return_true', 20 );
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', array( $this, 'public_address' ), 10 );
 		remove_all_filters( 'daymark_announce_follows' );
 		parent::tear_down();
 	}
@@ -181,6 +193,101 @@ class Test_Followers extends WP_UnitTestCase {
 
 		$this->assertSame( 202, $response->get_status() );
 		$this->assertSame( array( array( 'https://bo.example/?daymark_follow=abc' ) ), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+	}
+
+	private function plugin_endpoint_request( string $source, string $target ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/webmention/1.0/endpoint' );
+		$request->set_param( 'source', $source );
+		$request->set_param( 'target', $target );
+
+		return $request;
+	}
+
+	public function test_a_follow_sent_to_the_webmention_plugin_endpoint_is_queued_and_answered() {
+		$source  = 'https://bo.example/?daymark_follow=abc';
+		$request = $this->plugin_endpoint_request( $source, home_url( '/' ) );
+
+		$response = apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $request );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame( 202, $response->get_status() );
+		$this->assertSame( array( array( $source ) ), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+	}
+
+	public function test_with_a_home_mentions_page_the_webmention_plugin_still_handles_it() {
+		update_option( 'webmention_home_mentions', (int) self::factory()->post->create() );
+		$source  = 'https://bo.example/?daymark_follow=abc';
+		$request = $this->plugin_endpoint_request( $source, home_url( '/' ) );
+
+		try {
+			$this->assertNull( apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $request ) );
+			$this->assertSame( array( array( $source ) ), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+		} finally {
+			delete_option( 'webmention_home_mentions' );
+		}
+	}
+
+	public function test_the_webmention_plugin_endpoint_is_left_alone_for_a_post_target() {
+		$post_id = (int) self::factory()->post->create();
+		$request = $this->plugin_endpoint_request( 'https://bo.example/reply', get_permalink( $post_id ) );
+
+		$this->assertNull( apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $request ) );
+		$this->assertSame( array(), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+
+		// Other routes are never touched either.
+		$other = new WP_REST_Request( 'POST', '/daymark/v1/somewhere' );
+		$other->set_param( 'source', 'https://bo.example/?daymark_follow=abc' );
+		$other->set_param( 'target', home_url( '/' ) );
+		$this->assertNull( apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $other ) );
+	}
+
+	public function test_follows_through_the_webmention_plugin_can_be_turned_off() {
+		add_filter( 'daymark_receive_follows_with_webmention_plugin', '__return_false' );
+		$request = $this->plugin_endpoint_request( 'https://bo.example/?daymark_follow=abc', home_url( '/' ) );
+
+		try {
+			$this->assertNull( apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $request ) );
+			$this->assertSame( array(), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+		} finally {
+			remove_filter( 'daymark_receive_follows_with_webmention_plugin', '__return_false' );
+		}
+	}
+
+	public function test_an_unsafe_source_sent_to_the_webmention_plugin_endpoint_is_refused() {
+		$request = $this->plugin_endpoint_request( 'http://127.0.0.1/?daymark_follow=abc', home_url( '/' ) );
+
+		$response = apply_filters( 'rest_pre_dispatch', null, rest_get_server(), $request );
+
+		$this->assertWPError( $response );
+		$this->assertSame( 'daymark_webmention_invalid_source', $response->get_error_code() );
+		$this->assertSame( array(), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+	}
+
+	public function test_a_follow_from_an_unresolvable_host_is_refused() {
+		remove_filter( 'daymark_subscription_url_guard_resolved_addresses', array( $this, 'public_address' ), 10 );
+		add_filter( 'daymark_subscription_url_guard_resolved_addresses', '__return_empty_array' );
+		add_filter( 'daymark_subscription_url_guard_skip_dns_resolution', '__return_false' );
+
+		try {
+			$result = Daymark_Followers::accept_follow( 'http://made-up-host.invalid/?daymark_follow=abc' );
+		} finally {
+			remove_filter( 'daymark_subscription_url_guard_resolved_addresses', '__return_empty_array' );
+			remove_filter( 'daymark_subscription_url_guard_skip_dns_resolution', '__return_false' );
+		}
+
+		$this->assertWPError( $result );
+		$this->assertSame( 'daymark_webmention_invalid_source', $result->get_error_code() );
+		$this->assertSame( array(), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
+	}
+
+	public function test_follows_count_against_the_global_limit() {
+		set_transient( Daymark_Webmention_Receiver::GLOBAL_LIMIT_KEY, 200, HOUR_IN_SECONDS );
+
+		$result = Daymark_Followers::accept_follow( 'https://bo.example/?daymark_follow=abc' );
+
+		$this->assertWPError( $result );
+		$this->assertSame( 429, $result->get_error_data()['status'] );
+		$this->assertSame( array(), $this->scheduled( Daymark_Followers::CRON_VERIFY ) );
 	}
 
 	public function test_a_verified_follow_records_the_follower_and_pushes() {

@@ -11,7 +11,7 @@ use Throwable;
 
 /**
  * Class to wrap an integer of arbirtary length.
- * @see \Daymark\Vendor\SpomkyLabs\Pki\Test\ASN1\Util\BigIntTest
+ * @see \SpomkyLabs\Pki\Test\ASN1\Util\BigIntTest
  */
 final class BigInt implements Stringable
 {

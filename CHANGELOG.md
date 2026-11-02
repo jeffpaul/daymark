@@ -22,6 +22,46 @@ can't act on them.
 
 ### Added
 
+- You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
+- A Mark's "Where this went" view now lists the copies your publishing plugins made (Jetpack Social, Share on Mastodon, XPoster, Autopost for X, ATmosphere, Autoblue, and ActivityPub), and the Mark's page links to them, so Bridgy can bring replies from those copies back to your site. Bridgy is now on the Connectors tab. ([#562](https://github.com/jeffpaul/daymark/pull/562))
+- On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers (not yet for comments sent through WordPress.com). ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+- Follow a site from wherever you find it. The bookmarklet can now follow the site of the post you're reading, and the new "Follow me with Daymark" block lets visitors type their own site's address to open their Daymark ready to follow yours. The block also shows your feed's address for any other feed reader. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+- When Like is missing or Comment opens the post on its own site, the full post view now says why under the post, such as "This is a Bluesky post. Daymark can like it once your site is connected to Bridgy Fed." When something on your site would fix it, an administrator also gets a link to it. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+
+### Changed
+
+- Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.
+
+- With Simple Location 6.1.0 or later, a Check In's weather now shows Simple Location's weather icon and Open-Meteo credit, not just the temperature and a text summary. Simple Location 6.1.0 can read the weather codes from Open-Meteo, the service Daymark uses, so Daymark now passes them along. ([#552](https://github.com/jeffpaul/daymark/pull/552))
+
+- The Publish screen now shows categories and tags as two folded sections. Folded, each shows the current choice (your usual categories, or the tags AI suggested); tap to change it. Before, tags could only be changed inside AI Assist, so suggested tags were added with nowhere to see or remove them, and a tag removed from a draft came back.
+
+- On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
+
+- With Post Kinds 4.0.1 or later, Daymark tells Post Kinds not to build its reply/repost box for Marks at all, instead of building it and then hiding it, so Mark pages do a little less work. Nothing on the page looks different. ([#563](https://github.com/jeffpaul/daymark/pull/563))
+
+- With ActivityPub 9.4.0 or later, Daymark looks up fediverse posts for Likes and Reblogs the way the plugin now asks, so sites with debugging turned on no longer log a deprecation notice each time. Likes and Reblogs work the same as before. ([#564](https://github.com/jeffpaul/daymark/pull/564))
+
+- With the Syndication Links plugin active, a Mark's links to its copies on other sites now appear in that plugin's own list, following its display settings, instead of in a separate "Also on" line from Daymark. Notifications no longer suggests turning Syndication Links off. ([#562](https://github.com/jeffpaul/daymark/pull/562))
+
+### Fixed
+
+- Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))
+- Importing your WordPress.com Reader follows now works. Daymark asked WordPress.com for the list in a way it doesn't answer for Jetpack sites, so the import found no sites. It now uses the request Jetpack's own Blogroll block uses, also brings in feeds you follow that aren't WordPress sites, and subscribes to each site's feed directly, so a long list imports quickly. ([#541](https://github.com/jeffpaul/daymark/pull/541), [#553](https://github.com/jeffpaul/daymark/pull/553))
+- The public blogroll no longer lists a feed whose address might hold a private key, such as a paid podcast feed. Those feeds are still followed; they're just left out of the public list. ([#553](https://github.com/jeffpaul/daymark/pull/553))
+- A site using the Webmention plugin now hears when another Daymark site follows it. That plugin refused a follow, because a follow points at your home page rather than at a post, so you never got the new-follower notification. Daymark now picks up follows sent to the plugin's endpoint too. ([#539](https://github.com/jeffpaul/daymark/pull/539))
+
+### Security
+
+- Comments that other sites send to yours by Webmention can no longer carry hidden code. Daymark undid a site's disguised markup after its safety check instead of before, so a crafted reply could run code when you opened your comments screen. ([#545](https://github.com/jeffpaul/daymark/pull/545))
+- Anyone on the internet could flood a site's Webmention endpoint with made-up web addresses, piling up background jobs that slow every page. Daymark now refuses senders whose address doesn't exist and caps how many Webmentions all senders together can queue each hour. ([#549](https://github.com/jeffpaul/daymark/pull/549))
+- Password-protected posts no longer give away what they protect. Someone signed in who couldn't open such a post could still see its excerpt, photos, and featured content on the Timeline, and could find words from it by searching; they now see only its title and date. ([#546](https://github.com/jeffpaul/daymark/pull/546))
+- Logging out of the app on a shared browser now turns off that browser's push notifications, so the next person to sign in no longer gets the previous person's reply notifications. A logout from the WordPress login screen can't do this, so turn push off in Me first if you use that. ([#544](https://github.com/jeffpaul/daymark/pull/544))
+- A preview of a followed site's post can no longer show a page from your own site inside the app, which would have let that page run with your login. Daymark's outbound-request test now covers more ways of making a request, and the daily cleanup now removes every old unused upload rather than 100 a day. ([#548](https://github.com/jeffpaul/daymark/pull/548))
+
+### Developer
+
+- CI now pins its third-party actions and tools to exact versions, Dependabot watches the libraries shipped in `lib/`, and a new check fails when `lib/vendor-prefixed/` doesn't match `lib/composer.lock`. ([#547](https://github.com/jeffpaul/daymark/pull/547))
 - Right-to-left (RTL) layout support for Arabic, Hebrew, Persian, Urdu, and other right-to-left languages. Daymark's layout, menus, arrows, Timeline spine, and gallery sliders now mirror to match reading direction when WordPress uses an RTL language. Keys and swipe gestures in the gallery slider and tab list follow reading direction, and CI enforces logical CSS properties. ([#537](https://github.com/jeffpaul/daymark/pull/537))
 
 ## [0.21.0] - 2026-10-13

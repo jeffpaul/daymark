@@ -67,6 +67,13 @@ final class Daymark_Plugin {
 	public Daymark_Notes $notes;
 
 	/**
+	 * Post Kinds integration: files Marks under the matching kind.
+	 *
+	 * @var Daymark_Post_Kinds
+	 */
+	public Daymark_Post_Kinds $post_kinds;
+
+	/**
 	 * Block editor counter for a Note's length.
 	 *
 	 * @var Daymark_Note_Length
@@ -239,6 +246,13 @@ final class Daymark_Plugin {
 	public Daymark_Followers $followers;
 
 	/**
+	 * Follow links and the "Follow me with Daymark" block.
+	 *
+	 * @var Daymark_Follow_Link
+	 */
+	public Daymark_Follow_Link $follow_link;
+
+	/**
 	 * Subscription source registry (inbound mirror of the syndication
 	 * registry).
 	 *
@@ -400,6 +414,7 @@ final class Daymark_Plugin {
 		$this->syndication_links            = new Daymark_Syndication_Links();
 		$this->like_visibility              = new Daymark_Like_Visibility();
 		$this->notes                        = new Daymark_Notes();
+		$this->post_kinds                   = new Daymark_Post_Kinds();
 		$this->note_length                  = new Daymark_Note_Length();
 		$this->microformats                 = new Daymark_Microformats();
 		$this->backflow_sync                = new Daymark_Backflow_Sync();
@@ -428,6 +443,7 @@ final class Daymark_Plugin {
 		$this->webmention_receiver          = new Daymark_Webmention_Receiver();
 		$this->push                         = new Daymark_Push();
 		$this->followers                    = new Daymark_Followers();
+		$this->follow_link                  = new Daymark_Follow_Link();
 
 		add_action( 'plugins_loaded', array( $this, 'on_plugins_loaded' ) );
 		// Early, at priority 5: routes read daymark_legacy_content_pages (and
@@ -506,6 +522,7 @@ final class Daymark_Plugin {
 		$this->syndication_links->register();
 		$this->like_visibility->register();
 		$this->notes->register();
+		$this->post_kinds->register();
 		$this->note_length->register();
 		$this->microformats->register();
 		$this->backflow_sync->register();
@@ -534,6 +551,10 @@ final class Daymark_Plugin {
 		$this->webmention_receiver->register();
 		$this->push->register();
 		$this->followers->register();
+		$this->follow_link->register();
+		// Check the original sites for replies to comments sent from
+		// Daymark (issue #559), alongside the hourly backflow sync.
+		Daymark_Comment_Replies::register();
 		// Bridge active third-party publishing plugins' control filters to
 		// per-Mark selection (Share on Mastodon, Autoshare for Twitter).
 		Daymark_Publish_Helpers::register_adapters();

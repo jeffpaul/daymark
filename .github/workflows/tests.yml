@@ -173,7 +173,7 @@ jobs:
 
       - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
           extensions: mysqli, gd
@@ -214,7 +214,7 @@ jobs:
 
       - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.4'
           extensions: mysqli, gd
@@ -231,7 +231,18 @@ jobs:
 
       - name: Get Parse This 2.0.0
         if: needs.changes.outputs.code == 'true'
-        run: git clone --quiet --depth 1 --branch 2.0.0 https://github.com/dshanske/parse-this.git /tmp/parse-this
+        # A tag can be moved, so check out the exact commit 2.0.0 pointed to
+        # when this was pinned, and stop if the tag no longer matches it.
+        env:
+          PARSE_THIS_SHA: c3b7a45c34b988514613f8170a3612bcd001843c
+        run: |
+          git clone --quiet --depth 1 --branch 2.0.0 https://github.com/dshanske/parse-this.git /tmp/parse-this
+          actual="$(git -C /tmp/parse-this rev-parse HEAD)"
+          if [ "$actual" != "$PARSE_THIS_SHA" ]; then
+            echo "::error::Parse This tag 2.0.0 points to $actual, expected $PARSE_THIS_SHA"
+            exit 1
+          fi
+          git -C /tmp/parse-this checkout --quiet "$PARSE_THIS_SHA"
 
       - name: Run PHPUnit with Parse This
         if: needs.changes.outputs.code == 'true'
@@ -264,7 +275,7 @@ jobs:
 
       - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           extensions: mysqli, gd
@@ -324,7 +335,7 @@ jobs:
 
       - name: Set up PHP
         if: needs.changes.outputs.code == 'true'
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.2'
           extensions: mysqli, gd

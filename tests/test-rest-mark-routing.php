@@ -166,6 +166,68 @@ class Test_Rest_Mark_Routing extends WP_UnitTestCase {
 		$this->assertSame( '', $data['external_posts']['bluesky']['backflow_last_synced_at'] );
 	}
 
+	/**
+	 * Copies a publishing plugin made (issue #558) come back as `copies`,
+	 * minus any a Daymark connector already reported at the same address.
+	 */
+	public function test_copies_lists_plugin_copies_without_repeating_external_posts() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'             => 'Plugin copies REST test',
+				'primary_type'        => 'note',
+				'syndication_targets' => array( 'bluesky' ),
+			)
+		);
+
+		$external = json_decode( (string) get_post_meta( $post_id, '_daymark_external_posts', true ), true );
+		update_post_meta( $post_id, '_share_on_mastodon_url', 'https://mastodon.social/@demo/1' );
+		// The same copy the mock Bluesky connector already reported.
+		add_post_meta(
+			$post_id,
+			'_publicize_shares',
+			array(
+				array(
+					'status'  => 'success',
+					'message' => $external['bluesky']['external_url'],
+					'service' => 'bluesky',
+				),
+			)
+		);
+
+		$data = rest_do_request( $this->request_for( $post_id ) )->get_data();
+
+		$this->assertSame( array( 'https://mastodon.social/@demo/1' ), wp_list_pluck( $data['copies'], 'url' ) );
+		$this->assertSame( 'Share on Mastodon', $data['copies'][0]['plugin_label'] );
+	}
+
+	/**
+	 * A Timeline item says whether a plugin shared the Mark, so its card
+	 * offers the routing view even with no Daymark destination selected.
+	 */
+	public function test_summary_has_copies() {
+		$publisher = new Daymark_Publisher();
+		$post_id   = (int) $publisher->publish(
+			array(
+				'caption'      => 'Has copies summary test',
+				'primary_type' => 'note',
+			)
+		);
+
+		$summary = new ReflectionMethod( Daymark_REST_Controller::class, 'prepare_mark_summary' );
+		$rest    = new Daymark_REST_Controller();
+
+		$this->assertFalse( $summary->invoke( $rest, $post_id )['has_copies'] );
+
+		update_post_meta( $post_id, 'activitypub_status', 'federated' );
+		$this->assertTrue( $summary->invoke( $rest, $post_id )['has_copies'] );
+
+		// Someone who can't open the routing view (GET /marks/{id} needs
+		// edit_post) isn't offered it.
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'contributor' ) ) );
+		$this->assertFalse( $summary->invoke( $rest, $post_id )['has_copies'] );
+	}
+
 	/** A Mark with no syndication targets reports none — nothing to route. */
 	public function test_external_posts_empty_when_no_targets() {
 		$publisher = new Daymark_Publisher();

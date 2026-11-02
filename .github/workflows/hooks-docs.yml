@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Set up PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: '8.3'
           coverage: none
@@ -52,7 +52,7 @@ jobs:
         # config enables future.v4 (rspack bundler) without shipping
         # @docusaurus/faster — the markdown + site project still generate,
         # so install the bundler and build explicitly below.
-        run: npx --yes @10up/wp-hooks-documentor@latest generate || true
+        run: npx --yes @10up/wp-hooks-documentor@1.0.1 generate || true
 
       - name: Apply Daymark brand palette
         # Appended after the generator's defaults so the later rules win;
@@ -79,7 +79,9 @@ jobs:
         run: |
           test -d wp-hooks-docs/docs/hooks || { echo "::error::hook docs were not generated"; exit 1; }
           cd wp-hooks-docs
-          npm install --no-fund --no-audit @docusaurus/faster
+          # Pin @docusaurus/faster to the exact @docusaurus/core version the
+          # generator installed: Docusaurus packages must share one version.
+          npm install --no-fund --no-audit "@docusaurus/faster@$(node -p "require('@docusaurus/core/package.json').version")"
           npm run build
           test -f build/index.html
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://playground.wordpress.net/blueprint-schema.json",
   "meta": {
-    "title": "Mark — Personal Site Publisher Mode",
+    "title": "Daymark — your own social app",
     "description": "Try Daymark in a throwaway WordPress. Lands in the /daymark app shell, logged in as admin.",
     "author": "jeffpaul",
     "categories": ["publishing", "mobile"]

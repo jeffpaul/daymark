@@ -51,13 +51,18 @@ class Daymark_Subscription_Url_Guard {
 	 * `wp_http_validate_url()` either skips (userinfo, port) or only partly
 	 * covers (IPv4-only address-range blocking).
 	 *
-	 * @param string $url Already scheme-validated http(s) URL.
+	 * @param string $url          Already scheme-validated http(s) URL.
+	 * @param bool   $resolve_host Whether to look the host up and refuse a
+	 *                             private or internal address. False checks
+	 *                             only the URL's shape (host, login
+	 *                             details, port), for a caller that looks
+	 *                             the host up itself.
 	 * @return true|WP_Error True when safe to fetch; WP_Error with a
 	 *                       specific, human-readable rejection reason
 	 *                       otherwise (suitable both for a user-facing
 	 *                       message and for a `last_error` value).
 	 */
-	public static function check( string $url ) {
+	public static function check( string $url, bool $resolve_host = true ) {
 		$parsed = wp_parse_url( $url );
 
 		if ( ! is_array( $parsed ) || empty( $parsed['host'] ) ) {
@@ -84,6 +89,10 @@ class Daymark_Subscription_Url_Guard {
 			);
 		}
 
+		if ( ! $resolve_host ) {
+			return true;
+		}
+
 		// PHP's (and wp_parse_url()'s) host component keeps a literal IPv6
 		// address's enclosing brackets, e.g. "[::1]" — strip them before
 		// treating it as a candidate address or hostname, or a bracketed
@@ -103,6 +112,35 @@ class Daymark_Subscription_Url_Guard {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Whether a URL's host resolves to at least one address.
+	 *
+	 * The check() method deliberately treats an unresolvable host as safe; this is for
+	 * callers that queue work for a URL someone else supplied (the public
+	 * Webmention endpoint) and must not let made-up hostnames each count as
+	 * a new sender. Where DNS can't be trusted (WordPress Playground, see
+	 * should_skip_dns_resolution()) every host counts as resolvable.
+	 *
+	 * @param string $url URL.
+	 * @return bool
+	 */
+	public static function host_resolves( string $url ): bool {
+		$host = trim( (string) wp_parse_url( $url, PHP_URL_HOST ), '[]' );
+
+		if ( '' === $host ) {
+			return false;
+		}
+
+		if ( array() !== self::resolve_addresses( $host ) ) {
+			return true;
+		}
+
+		// No filtered answer and DNS skipped: nothing to go on, so accept.
+		/** This filter is documented in resolve_addresses() below. */
+		return null === apply_filters( 'daymark_subscription_url_guard_resolved_addresses', null, $host )
+			&& self::should_skip_dns_resolution();
 	}
 
 	/**

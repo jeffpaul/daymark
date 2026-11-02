@@ -1,6 +1,6 @@
 {
-    "packages": {
-        "2": {
+    "packages": [
+        {
             "name": "brick/math",
             "version": "1.0.0",
             "version_normalized": "1.0.0.0",
@@ -25,7 +25,7 @@
             },
             "time": "2026-09-12T10:28:18+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Brick\\Math\\": "src/"
@@ -63,7 +63,7 @@
             ],
             "install-path": "../brick/math"
         },
-        "20": {
+        {
             "name": "minishlink/web-push",
             "version": "v11.0.0",
             "version_normalized": "11.0.0.0",
@@ -113,7 +113,7 @@
             },
             "time": "2026-07-23T16:10:05+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Minishlink\\WebPush\\": "src"
@@ -145,7 +145,7 @@
             },
             "install-path": "../minishlink/web-push"
         },
-        "24": {
+        {
             "name": "nyholm/psr7",
             "version": "1.8.2",
             "version_normalized": "1.8.2.0",
@@ -184,7 +184,7 @@
                     "dev-master": "1.8-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Nyholm\\Psr7\\": "src/"
@@ -226,7 +226,7 @@
             ],
             "install-path": "../nyholm/psr7"
         },
-        "25": {
+        {
             "name": "php-http/discovery",
             "version": "1.20.0",
             "version_normalized": "1.20.0.0",
@@ -271,7 +271,7 @@
                 "class": "Http\\Discovery\\Composer\\Plugin",
                 "plugin-optional": true
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Http\\Discovery\\": "src/"
@@ -308,7 +308,7 @@
             },
             "install-path": "../php-http/discovery"
         },
-        "26": {
+        {
             "name": "php-http/httplug",
             "version": "2.4.1",
             "version_normalized": "2.4.1.0",
@@ -335,7 +335,7 @@
             },
             "time": "2024-09-23T11:39:58+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Http\\Client\\": "src/"
@@ -368,7 +368,7 @@
             },
             "install-path": "../php-http/httplug"
         },
-        "27": {
+        {
             "name": "php-http/promise",
             "version": "1.3.1",
             "version_normalized": "1.3.1.0",
@@ -392,7 +392,7 @@
             },
             "time": "2024-03-15T13:55:21+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Http\\Promise\\": "src/"
@@ -423,7 +423,7 @@
             },
             "install-path": "../php-http/promise"
         },
-        "33": {
+        {
             "name": "psr/clock",
             "version": "1.0.0",
             "version_normalized": "1.0.0.0",
@@ -443,7 +443,7 @@
             },
             "time": "2022-11-25T14:36:26+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Psr\\Clock\\": "src/"
@@ -474,7 +474,7 @@
             },
             "install-path": "../psr/clock"
         },
-        "35": {
+        {
             "name": "psr/http-client",
             "version": "1.0.3",
             "version_normalized": "1.0.3.0",
@@ -500,7 +500,7 @@
                     "dev-master": "1.0.x-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Psr\\Http\\Client\\": "src/"
@@ -529,7 +529,7 @@
             },
             "install-path": "../psr/http-client"
         },
-        "36": {
+        {
             "name": "psr/http-factory",
             "version": "1.1.0",
             "version_normalized": "1.1.0.0",
@@ -555,7 +555,7 @@
                     "dev-master": "1.0.x-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Psr\\Http\\Message\\": "src/"
@@ -587,7 +587,7 @@
             },
             "install-path": "../psr/http-factory"
         },
-        "37": {
+        {
             "name": "psr/http-message",
             "version": "2.0",
             "version_normalized": "2.0.0.0",
@@ -612,7 +612,7 @@
                     "dev-master": "2.0.x-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Psr\\Http\\Message\\": "src/"
@@ -643,7 +643,7 @@
             },
             "install-path": "../psr/http-message"
         },
-        "38": {
+        {
             "name": "psr/log",
             "version": "3.0.2",
             "version_normalized": "3.0.2.0",
@@ -668,7 +668,7 @@
                     "dev-master": "3.x-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Psr\\Log\\": "src"
@@ -696,7 +696,7 @@
             },
             "install-path": "../psr/log"
         },
-        "44": {
+        {
             "name": "spomky-labs/base64url",
             "version": "v2.0.4",
             "version_normalized": "2.0.4.0",
@@ -724,7 +724,7 @@
             },
             "time": "2020-11-03T09:10:25+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Base64Url\\": "src/"
@@ -764,7 +764,7 @@
             ],
             "install-path": "../spomky-labs/base64url"
         },
-        "45": {
+        {
             "name": "spomky-labs/pki-framework",
             "version": "1.6.3",
             "version_normalized": "1.6.3.0",
@@ -810,7 +810,7 @@
             },
             "time": "2026-09-12T19:02:49+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\SpomkyLabs\\Pki\\": "src/"
@@ -877,7 +877,7 @@
             ],
             "install-path": "../spomky-labs/pki-framework"
         },
-        "49": {
+        {
             "name": "symfony/deprecation-contracts",
             "version": "v3.7.1",
             "version_normalized": "3.7.1.0",
@@ -906,7 +906,7 @@
                     "dev-main": "3.7-dev"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "files": [
                     "function.php"
@@ -951,7 +951,7 @@
             ],
             "install-path": "../symfony/deprecation-contracts"
         },
-        "59": {
+        {
             "name": "symfony/polyfill-php83",
             "version": "v1.43.0",
             "version_normalized": "1.43.0.0",
@@ -977,7 +977,7 @@
                     "name": "symfony/polyfill"
                 }
             },
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "files": [
                     "bootstrap.php"
@@ -1034,7 +1034,7 @@
             ],
             "install-path": "../symfony/polyfill-php83"
         },
-        "66": {
+        {
             "name": "web-token/jwt-library",
             "version": "4.2.3",
             "version_normalized": "4.2.3.0",
@@ -1071,7 +1071,7 @@
             },
             "time": "2026-09-12T18:50:35+00:00",
             "type": "library",
-            "installation-source": "dist",
+            "installation-source": "source",
             "autoload": {
                 "psr-4": {
                     "Daymark\\Vendor\\Jose\\Component\\": ""
@@ -1127,7 +1127,7 @@
             ],
             "install-path": "../web-token/jwt-library"
         }
-    },
+    ],
     "dev": false,
     "dev-package-names": []
 }

@@ -17,7 +17,7 @@ use function sprintf;
 
 /**
  * Class to represent BER/DER identifier octets.
- * @see \Daymark\Vendor\SpomkyLabs\Pki\Test\ASN1\Component\IdentifierTest
+ * @see \SpomkyLabs\Pki\Test\ASN1\Component\IdentifierTest
  */
 final class Identifier implements Encodable
 {
