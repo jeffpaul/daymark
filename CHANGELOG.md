@@ -31,6 +31,8 @@ can't act on them.
 
 ### Changed
 
+- Reblogs no longer wait for the connection: Publish takes you straight back to where you were, and a reblog made offline waits on this device and publishes once you're back online. The title, which most people leave as it is, is now folded under "Title". ([#572](https://github.com/jeffpaul/daymark/pull/572))
+
 - Publish and Save as draft now take you straight back to where you started, usually the Timeline with your new Mark on top, and a short message says "Published" (with View) or "Saved as draft." This replaces the separate Success screen; where a Mark went is still on its card's "Where this went" menu. ([#571](https://github.com/jeffpaul/daymark/pull/571))
 
 - Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.

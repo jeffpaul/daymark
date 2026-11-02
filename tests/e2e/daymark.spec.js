@@ -588,15 +588,15 @@ test('full-screen post view keeps the site name, date, and interaction icons', a
 	await expect(subActions.locator('[data-menu-unsubscribe]')).toBeVisible();
 });
 
-// The Reblog preview screen (issue #393): tapping Repost on a subscription
-// post no longer publishes straight away — it opens a dedicated screen
-// showing the quoted post and an editable title before anything is
-// created. Covers the full round trip: open the screen, confirm its
-// content, publish, and land back on Home with the toggle now active.
 // Undo a reblog shown as active on a card's Reblog toggle. Undoing is
-// instant (no preview screen); the first-time explainer may follow it.
+// instant (no preview screen) and the toggle turns off before the site
+// has removed the reblog, so this waits for that request to finish:
+// otherwise the next test can start while the reblog still exists, and a
+// tap during the request is ignored. The first-time explainer may follow.
 async function undoReblog(page, toggle) {
 	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+	await expect(toggle).not.toHaveAttribute('data-repost-busy', 'true', { timeout: 15000 });
 	const hint = page.locator('.daymark-sheet__panel--hint');
 	if (await hint.isVisible().catch(() => false)) {
 		await page.locator('[data-sheet-dismiss]').click();
@@ -604,6 +604,12 @@ async function undoReblog(page, toggle) {
 	await expect(toggle).toHaveAttribute('aria-pressed', 'false');
 }
 
+// The Reblog preview screen (issue #393): tapping Reblog on a followed
+// post opens a screen showing the post and a field for your thoughts
+// before anything is created; the title is folded away under "Title".
+// Publish goes through the background queue like any other Mark: the
+// screen closes at once, back to the Timeline, and the toggle shows as
+// reblogged once the site has saved it.
 test('Reblog preview screen shows the quoted post and publishes on confirm', async ({ page }) => {
 	// Searches the Timeline for the followed post twice, which can be slow
 	// on a busy CI runner.
@@ -636,8 +642,16 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 
 	await expect(page).toHaveURL(/#reblog$/);
 
+	// The title is folded: its row shows it, and tapping the row shows
+	// the field to change it.
+	const titlePattern = new RegExp(`^Reblog: ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+	const titleFold = page.locator('[data-fold="reblog-title"]');
+	await expect(titleFold.locator('[data-fold-value="reblog-title"]')).toHaveText(titlePattern);
 	const titleInput = page.locator('[data-reblog-title]');
-	await expect(titleInput).toHaveValue(new RegExp(`^Reblog: ${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+	await expect(titleInput).toBeHidden();
+	await titleFold.locator('summary').click();
+	await expect(titleInput).toBeVisible();
+	await expect(titleInput).toHaveValue(titlePattern);
 
 	const embed = page.locator('.daymark-reblog-embed');
 	await expect(embed.locator('.daymark-reblog-embed__title')).toHaveText(title);
@@ -645,12 +659,70 @@ test('Reblog preview screen shows the quoted post and publishes on confirm', asy
 	await page.locator('[data-reblog-comment]').fill(`E2E reblog thoughts ${RUN_ID}`);
 	await page.locator('[data-action="reblog-publish"]').click();
 
+	// Back on the Timeline at once; the toggle turns on once the site has
+	// saved the reblog.
 	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expectPublished(page, { timeout: 15000 });
 	const reblogged = (await findSubscriptionCard(page)).locator('[data-repost-toggle]');
-	await expect(reblogged).toHaveAttribute('aria-pressed', 'true');
+	await expect(reblogged).toHaveAttribute('aria-pressed', 'true', { timeout: 15000 });
 
 	// Undo it, so the next run (or a retry) starts from the same state.
 	await undoReblog(page, reblogged);
+});
+
+// A reblog made offline waits on this device, shows at the top of the
+// Timeline, can be reopened from the post's Reblog button, and publishes
+// by itself once the connection is back.
+test('a reblog made offline waits on this device and publishes when back online', async ({ page, context }) => {
+	test.setTimeout(90000);
+
+	await loginAs(page);
+	await ensureSubscription(page);
+	await page.goto('/daymark');
+
+	const card = await findSubscriptionCard(page);
+	const repostToggle = card.locator('[data-repost-toggle]');
+	if ('true' === (await repostToggle.getAttribute('aria-pressed'))) {
+		await undoReblog(page, repostToggle);
+	}
+	await expect(repostToggle).toHaveAttribute('aria-pressed', 'false');
+	await repostToggle.click();
+	const hint = page.locator('.daymark-sheet__panel--hint');
+	if (await hint.isVisible().catch(() => false)) {
+		await page.locator('[data-sheet-dismiss]').click();
+	}
+	await expect(page).toHaveURL(/#reblog$/);
+
+	const comment = `E2E offline reblog ${RUN_ID}`;
+	await page.locator('[data-reblog-comment]').fill(comment);
+	await context.setOffline(true);
+	await page.locator('[data-action="reblog-publish"]').click();
+
+	// Back on the Timeline, waiting on this device.
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect(messageBar(page)).toContainText("Saved on this device. It publishes when you're back online.");
+	const pending = page.locator('[data-pending-timeline] .daymark-recent__item-wrap--pending');
+	await expect(pending).toHaveCount(1);
+	await expect(pending).toContainText('Reblog: ');
+	await expect(repostToggle).toHaveAttribute('aria-pressed', 'false');
+
+	// The post's Reblog button reopens the waiting reblog rather than
+	// starting a second one.
+	await repostToggle.click();
+	await expect(page).toHaveURL(/#reblog$/);
+	await expect(page.locator('[data-reblog-comment]')).toHaveValue(comment);
+	await expect(page.locator('[data-action="reblog-discard"]')).toBeVisible();
+	await page.locator('.daymark-topbar .daymark-backlink').click();
+	await expect(page).toHaveURL(/\/daymark\/(#home)?$/);
+	await expect(pending).toHaveCount(1);
+
+	// Back online: it publishes by itself.
+	await context.setOffline(false);
+	await expect(repostToggle).toHaveAttribute('aria-pressed', 'true', { timeout: 20000 });
+	await expect(pending).toHaveCount(0);
+	await expectPublished(page);
+
+	await undoReblog(page, repostToggle);
 });
 
 // The ⋯ overflow menu (issue #326): Open original/Share/Routing/Refresh
@@ -3582,11 +3654,12 @@ test('publish is optimistic: back on the Timeline at once, the real card once th
 	await expect(page).toHaveURL(/#home$/, { timeout: 800 });
 	await expect(messageBar(page)).toContainText('Publishing…', { timeout: 800 });
 
-	// The Timeline shows the in-flight upload at the top, distinctly from a
-	// genuine offline queue.
+	// The Timeline shows the Mark being sent at the top, distinctly from a
+	// genuine offline queue. A post with no files says "Publishing…"
+	// ("Uploading…" is for one with photos or video).
 	const pending = page.locator('[data-pending-timeline]');
 	await expect(pending).toBeVisible();
-	await expect(pending.getByText('Uploading…')).toBeVisible();
+	await expect(pending.getByText('Publishing…')).toBeVisible();
 	await expect(pending).toContainText(`E2E optimistic ${RUN_ID}`);
 
 	// Once the delayed request resolves, the pending card is replaced by
