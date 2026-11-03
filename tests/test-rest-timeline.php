@@ -860,6 +860,96 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Five items published in the same second, Marks and subscription posts
+	 * created alternately: mark, sub, mark, sub, mark.
+	 *
+	 * @return int[] Their IDs in the order they were created.
+	 */
+	private function create_same_time_items(): array {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$date            = '2024-01-05 12:00:00';
+
+		return array(
+			$this->create_mark( $date, 'Mark one' ),
+			$this->create_subscription_post( $subscription_id, $date, 'Sub post one' ),
+			$this->create_mark( $date, 'Mark two' ),
+			$this->create_subscription_post( $subscription_id, $date, 'Sub post two' ),
+			$this->create_mark( $date, 'Mark three' ),
+		);
+	}
+
+	/**
+	 * Items published in the same second are listed newest-created first,
+	 * whichever source they come from, so the Timeline has one fixed order.
+	 */
+	public function test_same_time_items_list_the_most_recently_created_first() {
+		wp_set_current_user( $this->author_a );
+
+		$created = $this->create_same_time_items();
+
+		$ids = array_column( rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data(), 'id' );
+
+		$this->assertSame( array_reverse( $created ), $ids );
+	}
+
+	/**
+	 * Paging through items published in the same second lists each of them
+	 * once, in the same order one big page does.
+	 */
+	public function test_paging_through_same_time_items_lists_each_once_in_order() {
+		wp_set_current_user( $this->author_a );
+
+		$created = $this->create_same_time_items();
+
+		$paged = array();
+		for ( $page = 1; $page <= 3; $page++ ) {
+			$request = $this->request( 'GET', '/daymark/v1/timeline' );
+			$request->set_param( 'per_page', 2 );
+			$request->set_param( 'page', $page );
+			$paged = array_merge( $paged, array_column( rest_do_request( $request )->get_data(), 'id' ) );
+		}
+
+		$this->assertSame( array_reverse( $created ), $paged );
+	}
+
+	/**
+	 * Every source query breaks a same-second tie by post ID. MySQL may
+	 * order tied rows differently for a different LIMIT, so without this
+	 * the same post can show on two pages while another is skipped, and the
+	 * newest post for `per_page=1` can differ from the first post of a full
+	 * page. A test database won't reproduce that on demand, so this checks
+	 * the ORDER BY each query sends.
+	 */
+	public function test_every_source_query_breaks_same_time_ties_by_id() {
+		global $wpdb;
+
+		wp_set_current_user( $this->author_a );
+
+		// Stands in for Shortnotes, so the external-notes query runs too.
+		register_post_type( 'shortnote', array( 'public' => true ) );
+
+		// The Timeline is empty, so these three queries are the only ones
+		// the request runs (no item summaries to build).
+		$order_by = array();
+		$capture  = static function ( $clause, $query ) use ( &$order_by ) {
+			$order_by[ implode( ',', (array) $query->get( 'post_type' ) ) ] = $clause;
+
+			return $clause;
+		};
+		add_filter( 'posts_orderby', $capture, 10, 2 );
+
+		rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) );
+
+		remove_filter( 'posts_orderby', $capture, 10 );
+		unregister_post_type( 'shortnote' );
+
+		foreach ( array( 'post', 'shortnote', Daymark_Subscription_Post_Type::POST_TYPE ) as $post_type ) {
+			$this->assertArrayHasKey( $post_type, $order_by, "The {$post_type} query ran" );
+			$this->assertStringEndsWith( "{$wpdb->posts}.ID DESC", $order_by[ $post_type ], "The {$post_type} query breaks ties by ID" );
+		}
+	}
+
+	/**
 	 * An arbitrarily deep `page` value must not size either source query
 	 * unbounded (`page * per_page` is capped at MAX_TIMELINE_QUERY_ITEMS) —
 	 * it responds cleanly with an empty result past that depth rather than

@@ -1858,6 +1858,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * scan). A cursor-based approach is a possible future optimization if
 	 * deep Timeline pagination ever proves too slow in practice.
 	 *
+	 * Items published in the same second are ordered by post ID (highest
+	 * first), in each query and in the merge. MySQL may order tied rows
+	 * differently for a different LIMIT, so without that a post could show
+	 * on two pages while another was skipped.
+	 *
 	 * Only published items are considered from both sources: subscription
 	 * posts are always ingested as 'publish' (there is no subscription
 	 * post draft state), and the Marks side is restricted to 'publish'
@@ -2011,8 +2016,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'post_status'    => 'publish',
 				'posts_per_page' => $limit,
 				'paged'          => 1,
-				'orderby'        => 'date',
-				'order'          => 'DESC',
+				// Same-second posts in ID order, so every page agrees.
+				'orderby'        => array(
+					'date' => 'DESC',
+					'ID'   => 'DESC',
+				),
 				'no_found_rows'  => ! $want_total,
 			);
 
@@ -2099,6 +2107,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// docblock for why the discriminator isn't named `type`.
 				$items[] = array(
 					'date' => (string) $post->post_date_gmt,
+					'id'   => $post->ID,
 					'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
 				);
 			}
@@ -2117,8 +2126,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'post_status'    => 'publish',
 					'posts_per_page' => $limit,
 					'paged'          => 1,
-					'orderby'        => 'date',
-					'order'          => 'DESC',
+					'orderby'        => array(
+						'date' => 'DESC',
+						'ID'   => 'DESC',
+					),
 					'no_found_rows'  => ! $want_total,
 				);
 
@@ -2141,6 +2152,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				foreach ( $notes_query->posts as $post ) {
 					$items[] = array(
 						'date' => (string) $post->post_date_gmt,
+						'id'   => $post->ID,
 						'item' => array( 'item_type' => 'mark' ) + $this->prepare_mark_summary( $post->ID ),
 					);
 				}
@@ -2154,14 +2166,16 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'posts_per_page' => $limit,
 				'paged'          => 1,
 				'no_found_rows'  => ! $want_total,
-				'orderby'        => 'meta_value',
 				// Sorts on the source's own published_at, not this site's
 				// ingestion time — matches Daymark_Subscription_Poller's
 				// pruning query, which orders the same way for the same
 				// reason. Y-m-d H:i:s (always GMT) sorts correctly as a
-				// plain string.
+				// plain string. Same-second posts in ID order, as above.
+				'orderby'        => array(
+					'meta_value' => 'DESC',
+					'ID'         => 'DESC',
+				),
 				'meta_key'       => 'published_at', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Timeline merge.
-				'order'          => 'DESC',
 			);
 
 			// Optional scoping to one subscription and/or one content type.
@@ -2253,15 +2267,18 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			foreach ( $subscription_posts_query->posts as $post ) {
 				$items[] = array(
 					'date' => sanitize_text_field( (string) get_post_meta( $post->ID, 'published_at', true ) ),
+					'id'   => $post->ID,
 					'item' => $this->prepare_subscription_post_summary( $post->ID ),
 				);
 			}
 		}
 
+		// Newest first; same-second items by ID, matching each query above,
+		// so items from different sources keep one fixed order.
 		usort(
 			$items,
 			static function ( array $a, array $b ): int {
-				return strcmp( $b['date'], $a['date'] );
+				return strcmp( $b['date'], $a['date'] ) ?: $b['id'] <=> $a['id'];
 			}
 		);
 
