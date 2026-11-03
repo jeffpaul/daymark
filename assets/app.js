@@ -118,6 +118,225 @@
 		}, 100);
 	}
 
+	// --- Message bar ---
+	//
+	// One small bar near the bottom of the screen for a short result that
+	// doesn't need a screen of its own: "Published. View" once Publish has
+	// closed the composer, "Saved to Drafts. Discard" when you leave the
+	// composer with unsent work. It sits just above the bottom nav (or the
+	// post view's action bar), lives outside the app root so changing
+	// screens doesn't remove it, and is read to screen readers through
+	// announce(). The bar itself is not a live region, or each message
+	// would be read twice.
+	//
+	// Messages have a key. Showing a message with the key of the one on
+	// screen updates it in place ("Publishing…" becomes "Published."), and
+	// hideMessage()/isMessageShowing() with a key only touch that message,
+	// never a newer one that replaced it.
+	const MESSAGE_DURATION_MS = 5000;
+	const MESSAGE_ACTION_DURATION_MS = 8000;
+	const MESSAGE_ERROR_DURATION_MS = 10000;
+	const MESSAGE_BAR_ANCHORS = '.daymark-homefooter, .daymark-bottomnav, .daymark-actionbar, .daymark-postview-footer';
+	let messageBar = null;
+	let messageState = null;
+	let messageTimer = null;
+	let messageHover = false;
+	let messageFocus = false;
+	let messagePositionFrame = 0;
+	let messagePositionTimer = null;
+
+	function ensureMessageBar() {
+		if (messageBar) {
+			return messageBar;
+		}
+		messageBar = document.createElement('div');
+		messageBar.className = 'daymark-msgbar';
+		messageBar.hidden = true;
+		messageBar.innerHTML =
+			'<span class="daymark-msgbar__text" data-msgbar-text></span>' +
+			'<button type="button" class="daymark-btn daymark-btn--text daymark-msgbar__action" data-msgbar-action hidden></button>';
+		document.body.appendChild(messageBar);
+
+		messageBar.querySelector('[data-msgbar-action]').addEventListener('click', () => {
+			const current = messageState;
+			if (!current || !current.action) {
+				return;
+			}
+			hideMessage(current.key);
+			current.action.run();
+		});
+
+		// Hovering over or focusing the bar holds it on screen, so a
+		// message with a button doesn't go away while someone reaches for it.
+		messageBar.addEventListener('mouseenter', () => {
+			messageHover = true;
+			restartMessageTimer();
+		});
+		messageBar.addEventListener('mouseleave', () => {
+			messageHover = false;
+			restartMessageTimer();
+		});
+		messageBar.addEventListener('focusin', () => {
+			messageFocus = true;
+			restartMessageTimer();
+		});
+		messageBar.addEventListener('focusout', (event) => {
+			if (!messageBar.contains(event.relatedTarget)) {
+				messageFocus = false;
+				restartMessageTimer();
+			}
+		});
+
+		// The bottom nav and action bars are sticky, so where they sit can
+		// change as the page scrolls or the window resizes.
+		window.addEventListener('scroll', scheduleMessageBarPosition, { passive: true });
+		window.addEventListener('resize', scheduleMessageBarPosition);
+		return messageBar;
+	}
+
+	/**
+	 * Shows a message in the bar, replacing whatever it showed.
+	 *
+	 * @param {Object}  message
+	 * @param {string}  message.key    Identifies the message for updates and hideMessage().
+	 * @param {string}  message.text   What the bar says.
+	 * @param {?Object} message.action Optional button: { label, run }.
+	 * @param {boolean} message.error  Shows it as a problem, and longer.
+	 */
+	function showMessage({ key, text, action = null, error = false }) {
+		const bar = ensureMessageBar();
+		const button = bar.querySelector('[data-msgbar-action]');
+		const buttonHadFocus = document.activeElement === button;
+
+		const label = action ? action.label : '';
+		if (
+			messageState &&
+			!bar.hidden &&
+			messageState.key === key &&
+			messageState.text === text &&
+			messageState.label === label &&
+			messageState.error === !!error
+		) {
+			// Already saying exactly this: keep it as it is (no second
+			// announcement), with the latest button handler.
+			messageState.action = action;
+			return;
+		}
+
+		messageState = { key, text, label, action, error: !!error };
+		bar.querySelector('[data-msgbar-text]').textContent = text;
+		if (action) {
+			button.textContent = action.label;
+			button.hidden = false;
+		} else {
+			button.hidden = true;
+			if (buttonHadFocus) {
+				focusScreenHeading();
+			}
+		}
+		bar.classList.toggle('is-error', !!error);
+		bar.hidden = false;
+		positionMessageBar();
+		// Once more after the screen settles: a screen that just rendered
+		// may still be laying out its bottom nav.
+		clearTimeout(messagePositionTimer);
+		messagePositionTimer = setTimeout(positionMessageBar, 260);
+
+		announce(
+			action
+				? text +
+						' ' +
+						sprintf(
+							/* translators: %s: the name of a button, such as "View" or "Discard" */
+							__('%s is available.', 'daymark'),
+							action.label
+						)
+				: text
+		);
+		restartMessageTimer();
+	}
+
+	/**
+	 * Hides the bar. With a key, only when that message is the one showing.
+	 *
+	 * @param {string} [key] The message to hide.
+	 */
+	function hideMessage(key) {
+		if (!messageBar || !messageState || (key && messageState.key !== key)) {
+			return;
+		}
+		clearTimeout(messageTimer);
+		messageTimer = null;
+		const hadFocus = messageBar.contains(document.activeElement);
+		messageState = null;
+		messageHover = false;
+		messageFocus = false;
+		messageBar.hidden = true;
+		if (hadFocus) {
+			focusScreenHeading();
+		}
+	}
+
+	function isMessageShowing(key) {
+		return !!(messageBar && !messageBar.hidden && messageState && messageState.key === key);
+	}
+
+	function restartMessageTimer() {
+		clearTimeout(messageTimer);
+		messageTimer = null;
+		if (!messageState || messageHover || messageFocus) {
+			return;
+		}
+		let duration = MESSAGE_DURATION_MS;
+		if (messageState.error) {
+			duration = MESSAGE_ERROR_DURATION_MS;
+		} else if (messageState.action) {
+			duration = MESSAGE_ACTION_DURATION_MS;
+		}
+		const key = messageState.key;
+		messageTimer = setTimeout(() => hideMessage(key), duration);
+	}
+
+	// Keeps the bar just above whichever bottom bar the screen shows
+	// (sticky, so it can sit mid-screen on a short page or at the bottom
+	// edge on a long one), or at the bottom edge when there's none.
+	function positionMessageBar() {
+		if (!messageBar || messageBar.hidden) {
+			return;
+		}
+		let offset = 0;
+		document.querySelectorAll(MESSAGE_BAR_ANCHORS).forEach((anchor) => {
+			const rect = anchor.getBoundingClientRect();
+			if (!rect.height || rect.top >= window.innerHeight || rect.bottom <= 0) {
+				return;
+			}
+			offset = Math.max(offset, window.innerHeight - rect.top);
+		});
+		messageBar.style.setProperty('--daymark-msgbar-offset', Math.round(offset) + 'px');
+	}
+
+	function scheduleMessageBarPosition() {
+		if (!messageBar || messageBar.hidden) {
+			return;
+		}
+		if (!messagePositionFrame) {
+			messagePositionFrame = requestAnimationFrame(() => {
+				messagePositionFrame = 0;
+				positionMessageBar();
+			});
+		}
+		// And after scrolling stops, in case a bar finished sliding.
+		clearTimeout(messagePositionTimer);
+		messagePositionTimer = setTimeout(positionMessageBar, 260);
+	}
+
+	function focusScreenHeading() {
+		const heading = root.querySelector('[data-daymark-focus]');
+		if (heading) {
+			heading.focus({ preventScroll: true });
+		}
+	}
+
 	// --- Install ---
 	//
 	// Chromium browsers (Android, desktop Chrome and Edge) fire
@@ -1879,24 +2098,46 @@
 			});
 	}
 
-	// Abandon the composer's in-progress work (starting a new Mark, or
-	// opening a different draft) without losing it: fire a best-effort
-	// autosave first — its payload is built synchronously from the current
-	// `state` before this function returns, so the save (online or queued
-	// offline) captures the final state even though resetComposer() below
-	// wipes it immediately after. See runAutosave()'s composerGeneration
-	// check for why the (possibly slow) response can never corrupt
-	// whatever the composer does next.
+	// Whether the composer holds anything worth keeping as a draft: text, a
+	// file, a place the author typed or picked (a place filled in by the
+	// location lookup alone doesn't count), or a Mark already saved or
+	// queued for this session (a draft you opened, or a new Mark autosave
+	// has already saved).
+	function composerHasWork() {
+		return !!(
+			state.caption.trim() ||
+			state.files.length ||
+			(state.placeNameEdited && state.placeName.trim()) ||
+			state.editing ||
+			state.offlineQueueId
+		);
+	}
+
+	// Abandon the composer's in-progress work (leaving the composer,
+	// starting a new Mark, or opening a different draft) without losing
+	// it. The payload is built synchronously from the current `state`
+	// before this returns, so the save captures the final state even
+	// though resetComposer() wipes it immediately after; see runAutosave()'s
+	// composerGeneration check for why a slow autosave response can never
+	// corrupt whatever the composer does next.
 	//
-	// With a file still uploading, a plain autosave would save the draft
+	// With a file still uploading, a plain save would keep the draft
 	// without it (and nothing would attach it later), so the draft goes to
 	// the offline queue instead, the way Publish does: the queue waits for
 	// the upload and then saves the draft with the file.
+	//
+	// Returns a promise that never rejects, resolving to null when there
+	// was nothing to keep, or to { id, queueId, queued, uploading, error }:
+	// the Mark on the site (if one exists yet), the local queue record (if
+	// the draft is waiting there), whether it waits for the connection, and
+	// any error. leaveComposer() uses it to report the draft and to find
+	// what Discard should remove.
 	function abandonComposer() {
-		if (!state.files.some((entry) => !entry.uploadedId)) {
-			runAutosave().catch(() => {});
+		// Publish is already sending this Mark (see composerPublishing):
+		// don't save a second copy.
+		if (composerPublishing || !composerHasWork()) {
 			resetComposer();
-			return;
+			return Promise.resolve(null);
 		}
 		clearTimeout(autosaveState.timer);
 		autosaveState.timer = null;
@@ -1904,18 +2145,244 @@
 		const payload = buildMarkPayload('draft', { autosave: true });
 		const editingId = state.editing ? state.editing.id : null;
 		const queueId = state.offlineQueueId;
+		const uploading = state.files.some((entry) => !entry.uploadedId);
 		resetComposer();
-		(async () => {
+		return (async () => {
 			// An autosave already running may be creating this draft, or
 			// queuing it; use what it made rather than make a second.
 			await waitForPendingAutosave();
 			const last = autosaveState.lastResult;
 			const own = last && last.generation === generation ? last : null;
 			const targetId = editingId || (own && own.id) || null;
+			const existingQueueId = queueId || (own && own.queueId) || null;
 			const path = targetId ? 'marks/' + targetId : 'marks';
-			await publishInBackground(path, targetId, payload, queueId || (own && own.queueId) || null);
-			refreshPendingSection();
-		})().catch(() => {});
+			if (uploading) {
+				try {
+					const pendingId = await publishInBackground(path, targetId, payload, existingQueueId);
+					return { id: targetId, queueId: pendingId, queued: !navigator.onLine, uploading: true };
+				} catch (err) {
+					// No IndexedDB to queue in: wait for the upload and save
+					// directly instead.
+					const response = await sendMarkPayload(path, payload, { waitForUploads: true });
+					forgetUploads(payload);
+					onMarkSaved(response);
+					// Null when the site refused its only file and nothing
+					// else was left to save (see sendMarkPayload()).
+					return { id: (response && Number(response.id)) || targetId, queueId: null };
+				}
+			}
+			try {
+				const result = await submitOrQueue(path, targetId, payload, existingQueueId);
+				if (result.queued) {
+					return { id: targetId, queueId: result.id, queued: true };
+				}
+				onMarkSaved(result.response);
+				return { id: Number(result.response.id) || targetId, queueId: null };
+			} catch (err) {
+				// The site refused it (not the connection): keep it on this
+				// device, flagged, so nothing is lost and it can be retried
+				// from the Pending list.
+				try {
+					const id = await queueOrUpdatePending(existingQueueId, targetId, payload, 'error');
+					await markPendingError(id, err.message);
+					return { id: targetId, queueId: id, error: err };
+				} catch (err2) {
+					return { id: targetId, queueId: null, error: err };
+				}
+			}
+		})()
+			.catch((err) => ({ id: null, queueId: null, error: err }))
+			.then((result) => {
+				refreshPendingSection();
+				return result;
+			});
+	}
+
+	// Set while Publish or Save as draft is running, so leaving the
+	// composer during it (Back, before the queue write finishes) doesn't
+	// also save the Mark as a draft: Publish finishes what you tapped.
+	let composerPublishing = false;
+	let leaveCounter = 0;
+
+	// Leaving the composer any way but Publish (Back, the Timeline link, a
+	// bottom-nav tab): keep what was written as a draft and say so in the
+	// message bar. A new Mark gets Discard; a draft you opened stays a
+	// draft whatever you do here (delete it from its ⋯ menu instead).
+	// Called by showScreen() before the next screen renders.
+	function leaveComposer() {
+		if (composerPublishing) {
+			return;
+		}
+		if (!composerHasWork()) {
+			resetComposer();
+			return;
+		}
+		const fresh = !state.resumed;
+		const uploading = state.files.some((entry) => !entry.uploadedId);
+		const wasOnline = navigator.onLine;
+		leaveCounter += 1;
+		const key = 'leave-' + leaveCounter;
+		let discarded = false;
+		const saving = abandonComposer();
+
+		const offlineText = __("Saved on this device. It moves to Drafts when you're back online.", 'daymark');
+		let text = __('Saved to Drafts.', 'daymark');
+		if (!wasOnline) {
+			text = offlineText;
+		} else if (uploading) {
+			text = __('Saved. It moves to Drafts when the upload finishes.', 'daymark');
+		}
+		const discard = fresh
+			? {
+					label: __('Discard', 'daymark'),
+					run: () => {
+						discarded = true;
+						discardLeftDraft(saving);
+					},
+			  }
+			: null;
+		showMessage({ key, text, action: discard });
+
+		saving.then((result) => {
+			if (!result || discarded) {
+				return;
+			}
+			if (result.error) {
+				// Always shown, even over a newer message: the draft needs
+				// looking at.
+				showMessage(
+					result.queueId
+						? {
+								key,
+								text: __("Couldn't save the draft. It's kept on this device.", 'daymark'),
+								action: { label: __('Review', 'daymark'), run: () => openPendingMark(result.queueId) },
+								error: true,
+						  }
+						: { key, text: __("Couldn't save the draft.", 'daymark'), error: true }
+				);
+				return;
+			}
+			if (result.queued && wasOnline && isMessageShowing(key)) {
+				// The connection dropped while saving.
+				showMessage({ key, text: offlineText, action: discard });
+			}
+		});
+	}
+
+	// Discard on the "Saved to Drafts" message: says so at once, then
+	// removes the draft once the save that made it has settled.
+	function discardLeftDraft(saving) {
+		const key = 'discard-' + leaveCounter;
+		showMessage({ key, text: __('Draft discarded.', 'daymark') });
+		saving
+			.then((result) => discardSavedDraft(result))
+			.then((ok) => {
+				if (!ok) {
+					showMessage({
+						key,
+						text: __("Couldn't discard the draft. You'll find it in Drafts.", 'daymark'),
+						error: true,
+					});
+				}
+				refreshPendingSection();
+				HomeScreen.refreshDraftsRow();
+				MeScreen.refreshDrafts();
+			});
+	}
+
+	// Removes a draft that leaving the composer saved: its local queue
+	// record and uploads, and the Mark on the site if one was made (by an
+	// autosave, the save on leaving, or the queue sending it since). A sync
+	// still running for the record throws away what it makes; see
+	// discardedPendingIds. Resolves false when the site wouldn't remove it.
+	async function discardSavedDraft(result) {
+		if (!result) {
+			return true;
+		}
+		const markIds = new Set();
+		if (result.id) {
+			markIds.add(Number(result.id));
+		}
+		if (result.queueId) {
+			discardedPendingIds.add(result.queueId);
+			try {
+				const record = await getPendingMark(result.queueId);
+				if (record) {
+					if (record.targetId) {
+						markIds.add(Number(record.targetId));
+					}
+					((record.payload && record.payload.newFiles) || []).forEach((file) => {
+						if (file.key) {
+							cancelUpload(file.key).catch(() => {});
+						}
+					});
+					await deletePendingMark(result.queueId);
+				}
+			} catch (err) {
+				// Nothing stored on this device to remove.
+			}
+			if (syncedPendingMarkIds.has(result.queueId)) {
+				markIds.add(syncedPendingMarkIds.get(result.queueId));
+			}
+		}
+		let ok = true;
+		for (const id of markIds) {
+			try {
+				await apiDelete('marks/' + id);
+			} catch (err) {
+				if (404 !== err.status) {
+					ok = false;
+				}
+			}
+		}
+		return ok;
+	}
+
+	// After Publish or Save as draft: close the composer and go back to
+	// the screen it was opened from (usually the Timeline) by stepping
+	// back through history as far as it took to get here, so Back from
+	// there leaves the app as it did before you wrote anything. When the
+	// composer was opened some other way (a share, an admin bar link, a
+	// reload), its history entry is replaced by the last bottom-nav screen
+	// you used, or the Timeline. `startAtTop` opens the Timeline at the
+	// top, where the new Mark is.
+	function leaveComposerAfterPublish(startAtTop) {
+		if (!COMPOSER_SCREENS.includes(currentScreen)) {
+			composerOrigin = null;
+			return; // Already left while it was queuing.
+		}
+		const origin = composerOrigin;
+		const dest = origin ? origin.hash : lastMainScreen || '#home';
+		if (startAtTop && '#home' === dest) {
+			homeStartAtTop = true;
+		}
+		const steps = origin ? origin.position - historyPosition : 0;
+		if (origin && steps < 0 && steps >= -20) {
+			const shown = screensShown;
+			window.history.go(steps);
+			// A browser that didn't go back: go there directly. Only when
+			// no screen changed at all, so a composer opened again within
+			// the second isn't closed.
+			setTimeout(() => {
+				if (screensShown === shown && COMPOSER_SCREENS.includes(currentScreen)) {
+					navigate(dest);
+				}
+			}, 1000);
+			return;
+		}
+		stampHistoryEntry(historyPosition, dest);
+		showScreen(dest);
+	}
+
+	// Before loading a different Mark into the composer: keep what's there.
+	// On a composer screen this says so ("Saved to Drafts"); anywhere else
+	// the composer is already empty.
+	function setAsideComposer() {
+		if (COMPOSER_SCREENS.includes(currentScreen)) {
+			leaveComposer();
+		} else {
+			abandonComposer();
+		}
 	}
 
 	// --- Autosave ---
@@ -3138,6 +3605,13 @@
 	// Records a sync is working on right now, so the 'online' flush and a
 	// Publish's own background sync never send the same Mark twice.
 	const syncingPendingIds = new Set();
+	// Records Discard removed (see discardSavedDraft()). A sync already
+	// sending one deletes the Mark it made instead of keeping it, and
+	// never puts the record back.
+	const discardedPendingIds = new Set();
+	// Record id => the Mark the site made for it, for records sent in this
+	// visit, so Discard can still remove a draft whose record is gone.
+	const syncedPendingMarkIds = new Map();
 
 	function pendingProgressTracker(recordId, payload) {
 		const files = (payload && payload.newFiles) || [];
@@ -3215,7 +3689,7 @@
 	// in the background." — queue-first, unlike submitOrQueue() above:
 	// the deliberate Publish/Save-as-Draft tap queues the Mark locally
 	// (fast — local IndexedDB, not a network round trip) and returns
-	// immediately, so PublishScreen.publish() can navigate to Success
+	// immediately, so PublishScreen.publish() can close the composer
 	// without ever waiting on the real request, no matter how large the
 	// media or how slow the connection turns out to be. The real request
 	// then runs via syncPendingMark(), fired here but deliberately not
@@ -3238,6 +3712,7 @@
 		}
 		// Publishing a draft, or saving a new one, changes the count.
 		HomeScreen.refreshDraftsRow();
+		MeScreen.refreshDrafts();
 		if ('publish' !== response.status) {
 			return;
 		}
@@ -3249,22 +3724,151 @@
 		HomeScreen.insertPublished(response);
 	}
 
+	// --- Publish results in the message bar ---
+	//
+	// Publish and Save as draft close the composer at once (the Mark is
+	// queued on this device and sent in the background; see
+	// publishInBackground()), so the result shows in the message bar
+	// rather than on a screen of its own: "Publishing…" while it's sent,
+	// then "Published." with View, or "Saved as draft." Each queued
+	// record keeps its message here until the site answers. In memory
+	// only: after a reload, a Mark the queue sends later is still saved,
+	// just without a message.
+	const publishNotices = new Map();
+	let publishNoticeCounter = 0;
+
+	function publishQueuedText(notice, offline) {
+		if (offline) {
+			return notice.wasDraft
+				? __("Saved on this device. It moves to Drafts when you're back online.", 'daymark')
+				: __("Saved on this device. It publishes when you're back online.", 'daymark');
+		}
+		if (notice.needsReview) {
+			return __('Saved as a draft for an editor to publish.', 'daymark');
+		}
+		return notice.wasDraft ? __('Saved as draft.', 'daymark') : __('Publishing…', 'daymark');
+	}
+
+	// Called by PublishScreen.publish() once the Mark is queued.
+	function notePublishQueued(pendingId, { wasDraft, needsReview }) {
+		publishNoticeCounter += 1;
+		const notice = { key: 'publish-' + publishNoticeCounter, wasDraft, needsReview };
+		publishNotices.set(pendingId, notice);
+		showMessage({ key: notice.key, text: publishQueuedText(notice, !navigator.onLine) });
+	}
+
+	// The site saved the Mark. "Published." comes with View, and shows even
+	// if the first message has gone; but not over a Mark you've started
+	// writing since, unless the first message is still up.
+	function notePublishSaved(pendingId, response) {
+		const notice = publishNotices.get(pendingId);
+		publishNotices.delete(pendingId);
+		if (!notice || !response) {
+			return;
+		}
+		const composing = COMPOSER_SCREENS.includes(currentScreen);
+		if ('publish' === response.status) {
+			if (composing && !isMessageShowing(notice.key)) {
+				return;
+			}
+			showMessage({
+				key: notice.key,
+				text: __('Published.', 'daymark'),
+				action: { label: __('View', 'daymark'), run: () => viewPublishedMark(response) },
+			});
+			return;
+		}
+		if (!notice.wasDraft) {
+			// You tapped Publish, but the site kept it as a draft: always
+			// say so.
+			showMessage({ key: notice.key, text: __('Saved as a draft for an editor to publish.', 'daymark') });
+			return;
+		}
+		if (isMessageShowing(notice.key)) {
+			showMessage({ key: notice.key, text: publishQueuedText(notice, false) });
+		}
+	}
+
+	// The site refused the Mark (not the connection). It stays on this
+	// device, flagged in the Pending list; Review opens it to try again.
+	function notePublishFailed(pendingId) {
+		const notice = publishNotices.get(pendingId);
+		publishNotices.delete(pendingId);
+		if (!notice) {
+			return;
+		}
+		showMessage({
+			key: notice.key,
+			text: notice.wasDraft ? __("Couldn't save the draft.", 'daymark') : __("Couldn't publish.", 'daymark'),
+			// Not while writing another Mark: opening this one would set
+			// that one aside.
+			action: COMPOSER_SCREENS.includes(currentScreen)
+				? null
+				: { label: __('Review', 'daymark'), run: () => openPendingMark(pendingId) },
+			error: true,
+		});
+	}
+
+	// The connection dropped while sending: the Mark waits on this device.
+	function notePublishOffline(pendingId) {
+		const notice = publishNotices.get(pendingId);
+		if (notice && isMessageShowing(notice.key)) {
+			showMessage({ key: notice.key, text: publishQueuedText(notice, true) });
+		}
+	}
+
+	// View on "Published.": the Mark's card on the Timeline when it's
+	// there (so Back returns to it and Previous/Next work), else the post
+	// view on its own.
+	function viewPublishedMark(response) {
+		const id = Number(response.id);
+		if ('#home' === currentScreen) {
+			const open = root.querySelector(
+				'[data-recent-list] [data-expand-post="' + id + '"] .daymark-recent__open'
+			);
+			if (open) {
+				open.click();
+				return;
+			}
+		}
+		openPostView('mark', Object.assign({ item_type: 'mark' }, response));
+	}
+
+	// The site saved a queued record: forget it locally and report it. A
+	// record Discard removed meanwhile has its new Mark deleted instead.
+	// Returns false for a discarded record.
+	async function settleSyncedRecord(recordId, payload, response) {
+		await deletePendingMark(recordId);
+		forgetUploads(payload);
+		if (response && response.id) {
+			syncedPendingMarkIds.set(recordId, Number(response.id));
+		}
+		if (discardedPendingIds.has(recordId)) {
+			if (response && response.id) {
+				apiDelete('marks/' + Number(response.id)).catch(() => {});
+			}
+			return false;
+		}
+		notePublishSaved(recordId, response);
+		onMarkSaved(response);
+		return true;
+	}
+
 	// The background half of publishInBackground(): attempts the real
 	// request for an already-queued record. A connectivity-shaped failure
 	// just downgrades it to 'queued' — the 'online' listener/
 	// flushOfflineQueue() below will retry it same as any other offline
 	// save. A real failure is flagged so the Pending section can surface it
 	// rather than retrying forever in silence. Success removes the local
-	// record and, if the user is still looking at the Success screen this
-	// exact publish produced, upgrades it in place with the real server
-	// data (permalink, syndication status) it couldn't have shown yet.
+	// record and reports the result in the message bar (see
+	// notePublishSaved()).
 	//
 	// Uploading the Mark's files is part of this: sendMarkPayload() waits
 	// for each (resuming any upload already running for it), so a large
 	// video can take minutes here without blocking anything else.
 	async function syncPendingMark(pendingId, path, targetId, payload) {
-		if (!navigator.onLine || syncingPendingIds.has(pendingId)) {
-			return; // Left 'queued', or already being sent.
+		if (!navigator.onLine || syncingPendingIds.has(pendingId) || discardedPendingIds.has(pendingId)) {
+			return; // Left 'queued', already being sent, or discarded.
 		}
 		syncingPendingIds.add(pendingId);
 		try {
@@ -3273,15 +3877,16 @@
 				keyPrefix: 'pending-' + pendingId,
 				onProgress: pendingProgressTracker(pendingId, payload),
 			});
-			await deletePendingMark(pendingId);
-			forgetUploads(payload);
-			SuccessScreen.upgrade(pendingId, response);
-			onMarkSaved(response);
+			await settleSyncedRecord(pendingId, payload, response);
 		} catch (err) {
-			if (err instanceof TypeError) {
+			if (discardedPendingIds.has(pendingId)) {
+				// Gone on purpose: don't put it back.
+			} else if (err instanceof TypeError) {
 				await updatePendingMark(pendingId, targetId, payload, 'queued');
+				notePublishOffline(pendingId);
 			} else {
 				await markPendingError(pendingId, err.message).catch(() => {});
+				notePublishFailed(pendingId);
 			}
 		} finally {
 			syncingPendingIds.delete(pendingId);
@@ -3311,7 +3916,11 @@
 				// next debounce/tap now that navigator.onLine is true)
 				// rather than racing a background flush against in-memory
 				// edits newer than what was last written to IndexedDB.
-				if (record.id === state.offlineQueueId || syncingPendingIds.has(record.id)) {
+				if (
+					record.id === state.offlineQueueId ||
+					syncingPendingIds.has(record.id) ||
+					discardedPendingIds.has(record.id)
+				) {
 					continue;
 				}
 				syncingPendingIds.add(record.id);
@@ -3323,11 +3932,13 @@
 						keyPrefix: 'pending-' + record.id,
 						onProgress: pendingProgressTracker(record.id, record.payload),
 					});
-					await deletePendingMark(record.id);
-					forgetUploads(record.payload);
-					onMarkSaved(response);
+					await settleSyncedRecord(record.id, record.payload, response);
 				} catch (err) {
+					if (discardedPendingIds.has(record.id)) {
+						continue; // Gone on purpose; the finally below still runs.
+					}
 					if (err instanceof TypeError || !navigator.onLine) {
+						notePublishOffline(record.id);
 						break; // Still offline (or just dropped) — retry next trigger.
 					}
 					// A real server error on this one item: flag it (so the
@@ -3335,6 +3946,7 @@
 					// connectivity) and keep going so it doesn't block the
 					// rest.
 					await markPendingError(record.id, err.message).catch(() => {});
+					notePublishFailed(record.id);
 				} finally {
 					syncingPendingIds.delete(record.id);
 					pendingUploadProgress.delete(record.id);
@@ -3406,7 +4018,7 @@
 		if (!record) {
 			return;
 		}
-		abandonComposer();
+		setAsideComposer();
 		state.resumed = true;
 		const payload = record.payload;
 		if (record.targetId) {
@@ -3471,7 +4083,12 @@
 			autosaveState.pendingRetry = true;
 			return;
 		}
-		if (!state.caption.trim() && !state.files.length && !state.editing) {
+		if (
+			!state.caption.trim() &&
+			!state.files.length &&
+			!state.editing &&
+			!(state.placeNameEdited && state.placeName.trim())
+		) {
 			return; // Nothing yet worth protecting.
 		}
 
@@ -3779,7 +4396,7 @@
 	// populate state differently.
 	async function loadDraftIntoState(id) {
 		const mark = await apiGet('marks/' + id);
-		abandonComposer();
+		setAsideComposer();
 		state.resumed = true;
 		state.editing = {
 			id: mark.id,
@@ -4094,6 +4711,51 @@
 
 	let SCREENS = {};
 
+	// Where each screen sits in the browser's history. The router stamps
+	// every history entry it shows with a position, one more than the
+	// screen before it; an entry keeps its stamp, so Back and Forward
+	// restore it. That lets Publish close the composer by stepping back
+	// exactly as far as it took to get there (usually one or two steps),
+	// instead of adding the Timeline as a new entry on top: Back from the
+	// Timeline then leaves the app as it did before you wrote anything.
+	// `composerOrigin` is the screen and position the composer was opened
+	// from; `lastMainScreen` is the last of the four bottom-nav screens
+	// shown, used when the composer was opened some other way (a share,
+	// an admin bar link, a reload).
+	const MAIN_SCREENS = ['#home', '#explore', '#search', '#me'];
+	const RETURN_SCREENS = MAIN_SCREENS.concat(['#notifications']);
+	const COMPOSER_SCREENS = ['#create', '#publish'];
+	let historyPosition = -1;
+	let currentScreen = null;
+	let lastMainScreen = null;
+	// Counts screens shown. A timer set before stepping back through
+	// history compares it to see whether any screen changed since: a
+	// history position alone can repeat (back, then forward again).
+	let screensShown = 0;
+	let composerOrigin = null;
+	// Set when Publish returns to Home, so the Timeline opens at the top,
+	// where the new Mark is, instead of at the saved reading position.
+	let homeStartAtTop = false;
+
+	function stampHistoryEntry(position, hash) {
+		const current = window.history.state;
+		const next = Object.assign({}, current && 'object' === typeof current ? current : {}, {
+			daymarkPos: position,
+		});
+		if (hash) {
+			window.history.replaceState(next, '', hash);
+		} else {
+			window.history.replaceState(next, '');
+		}
+	}
+
+	function stampedHistoryPosition() {
+		const current = window.history.state;
+		return current && 'object' === typeof current && Number.isFinite(current.daymarkPos)
+			? current.daymarkPos
+			: null;
+	}
+
 	// The one `bindDismissible()` listener pair currently attached to
 	// `document`, or `null`/`null` when nothing is. Shared across every
 	// screen (not stashed per-controller) precisely because only one
@@ -4128,8 +4790,19 @@
 			target = '#home';
 		}
 
+		const previous = currentScreen;
+		const previousPosition = historyPosition;
+
 		if (feedSnapshot && target !== '#post' && target !== '#reblog' && target !== feedSnapshot.hash) {
 			feedSnapshot = null;
+		}
+
+		// Leaving the composer any way but Publish (Back, a tab, the
+		// Timeline link) keeps what you wrote as a draft and says so; see
+		// leaveComposer(). Before the next screen renders, so a Home that
+		// lists drafts already counts this one.
+		if (COMPOSER_SCREENS.includes(previous) && !COMPOSER_SCREENS.includes(target)) {
+			leaveComposer();
 		}
 
 		AIAssistSheet.hide(false);
@@ -4151,9 +4824,28 @@
 
 		document.body.className = 'daymark-app daymark-app--' + target.slice(1);
 
-		if (window.location.hash !== target) {
-			window.history.replaceState(null, '', target);
+		// An entry Back or Forward returned to (or the current one, shown
+		// again) keeps its stamp; a new one sits one step past the screen
+		// before it.
+		const stamped = stampedHistoryPosition();
+		const position = null !== stamped ? stamped : previousPosition + 1;
+		stampHistoryEntry(position, window.location.hash !== target ? target : '');
+
+		if (COMPOSER_SCREENS.includes(target)) {
+			if (!COMPOSER_SCREENS.includes(previous)) {
+				composerOrigin = RETURN_SCREENS.includes(previous)
+					? { hash: previous, position: previousPosition }
+					: null;
+			}
+		} else {
+			composerOrigin = null;
 		}
+		if (MAIN_SCREENS.includes(target)) {
+			lastMainScreen = target;
+		}
+		currentScreen = target;
+		screensShown++;
+		historyPosition = position;
 
 		// Focus management: move focus to the screen heading.
 		const heading = root.querySelector('[data-daymark-focus]');
@@ -4161,6 +4853,7 @@
 			heading.focus();
 		}
 
+		positionMessageBar();
 		checkUnreadNotifications();
 	}
 
@@ -6481,9 +7174,9 @@
 	// Builds the popover's content from GET /marks/{id}'s response — reuses
 	// the exact daymark-syndication/daymark-chip classes the Success
 	// screen's own per-connector status list already established (see
-	// SuccessScreen.renderDetail()), so a Mark's routing reads consistently
-	// whether you're looking right after publishing or later from the
-	// Timeline. "Your site" is always first and always "Published" — the
+	// SuccessScreen.renderDetail(), now shown only when this device can't
+	// queue a publish), so a Mark's routing reads the same in both places.
+	// "Your site" is always first and always "Published" — the
 	// canonical destination is never itself a syndication target.
 	function routingPanelMarkup(mark) {
 		const targets = Array.isArray(mark.targets) ? mark.targets : [];
@@ -7409,7 +8102,7 @@
 					<h2 id="daymark-recent-heading" class="daymark-visually-hidden">${esc(__('Timeline', 'daymark'))}</h2>
 					<p class="daymark-status" data-recent-refresh-status aria-live="polite"></p>
 					<div class="daymark-recent__list" data-pending-timeline hidden></div>
-					<div class="daymark-recent__list" data-recent-list>
+					<div class="daymark-recent__list" data-recent-list aria-busy="true">
 						${skeletonRows(3)}
 						<span class="daymark-visually-hidden">${esc(__('Loading your timeline', 'daymark'))}</span>
 					</div>
@@ -7507,6 +8200,10 @@
 			// been placed; until then the top of the screen says nothing
 			// about where the reader is.
 			this._positionReady = false;
+			// Back from Publish: open at the top, where the new Mark is,
+			// rather than at the saved reading position.
+			const startAtTop = homeStartAtTop;
+			homeStartAtTop = false;
 			this.teardownSeenObserver();
 			this.watchForUserScroll();
 			this._searchSeq = 0;
@@ -7547,8 +8244,15 @@
 				this._positionReady = true;
 				return;
 			}
-			await this.loadRecent({ anchor: true });
+			await this.loadRecent({ anchor: !startAtTop });
+			if (startAtTop && !this._userScrolled) {
+				window.scrollTo(0, 0);
+			}
 			this._positionReady = true;
+			if (startAtTop) {
+				// The top of the Timeline is where you are now.
+				this.notePosition();
+			}
 		},
 
 		// Drafts are counted separately so they stay reachable no matter
@@ -7581,11 +8285,17 @@
 		// either way.
 		insertPublished(item) {
 			const list = root.querySelector('[data-recent-list]');
-			if (!list || !list.isConnected || !Array.isArray(this._items)) {
+			if (!list || !list.isConnected) {
 				return;
 			}
 			const entry = Object.assign({ item_type: 'mark' }, item);
-			if (timelineItemIndex(this._items, entry) >= 0) {
+			// Publishing returns you to Home at once, so Home's own load is
+			// often still on its way when the save lands, and its answer
+			// can predate the Mark. loadRecent() puts it back on top.
+			if (this._firstPageLoad) {
+				this._publishedDuringLoad = (this._publishedDuringLoad || []).concat(entry);
+			}
+			if (!Array.isArray(this._items) || timelineItemIndex(this._items, entry) >= 0) {
 				return;
 			}
 			this._items.unshift(entry);
@@ -7615,6 +8325,10 @@
 			}
 			observeFeaturedImages(this, list);
 			this.observeSeen();
+			// Reading from the top: the new Mark is where you are.
+			if (window.scrollY < 4) {
+				this.notePosition();
+			}
 		},
 
 		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
@@ -7632,6 +8346,7 @@
 			this._items = snapshot.items.slice();
 			this._items.forEach((item) => rememberItem(this, item));
 			list.innerHTML = renderFeedItemsWithGroups(this, this._items);
+			list.removeAttribute('aria-busy');
 			observeRehydrateCandidates(this, list);
 			observeOembedPreviewCandidates(this, list);
 			observeLikeAvailability(this, list);
@@ -7674,6 +8389,11 @@
 			this.recentDone = false;
 			this.recentLoading = false;
 			const seq = ++this._searchSeq;
+			// Marks this load as the one in flight (see insertPublished()).
+			// An object rather than seq, which init() resets to 0.
+			const load = {};
+			this._firstPageLoad = load;
+			list.setAttribute('aria-busy', 'true');
 			if (more) {
 				more.hidden = true;
 			}
@@ -7735,6 +8455,17 @@
 					}
 				}
 				this.recentPage = loaded / RECENT_PER_PAGE;
+				// How many items the site sent, before adding any Mark saved
+				// while this load was on its way (see insertPublished()).
+				const fetched = arr.length;
+				const missed = (this._publishedDuringLoad || []).filter((entry) => timelineItemIndex(arr, entry) < 0);
+				this._publishedDuringLoad = [];
+				if (missed.length) {
+					arr = missed.reverse().concat(arr);
+					if (anchorIndex >= 0) {
+						anchorIndex += missed.length;
+					}
+				}
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
@@ -7768,7 +8499,7 @@
 				}
 				this.observeSeen();
 
-				if (arr.length < loaded) {
+				if (fetched < loaded) {
 					// A short first page means there is nothing more to load.
 					this.recentDone = true;
 					if (sentinel) {
@@ -7798,6 +8529,7 @@
 				if (seq !== this._searchSeq || !list.isConnected) {
 					return;
 				}
+				this._publishedDuringLoad = [];
 				list.innerHTML = isAuthExpiredError(err)
 					? authExpiredErrorHtml()
 					: '<p class="daymark-error" role="alert">' +
@@ -7807,6 +8539,11 @@
 							esc(err.message)
 					  ) +
 					  '</p>';
+			} finally {
+				if (load === this._firstPageLoad) {
+					this._firstPageLoad = null;
+					list.removeAttribute('aria-busy');
+				}
 			}
 		},
 
@@ -7825,9 +8562,15 @@
 			const nextPage = this.recentPage + 1;
 			try {
 				const items = await apiGet('timeline?per_page=' + RECENT_PER_PAGE + '&page=' + nextPage);
-				const arr = Array.isArray(items) ? items : [];
-				if (arr.length && list.isConnected) {
+				const fetched = Array.isArray(items) ? items : [];
+				// A post added at the top since the last page (a Mark you
+				// just published, say) moves everything down one, so this
+				// page can start with a post already shown. Skip those.
+				const arr = fetched.filter((item) => timelineItemIndex(this._items || [], item) < 0);
+				if (fetched.length && list.isConnected) {
 					this.recentPage = nextPage;
+				}
+				if (arr.length && list.isConnected) {
 					this._items = (this._items || []).concat(arr);
 					arr.forEach((item) => rememberItem(this, item));
 					// Deliberately not resetting this._lastGroupKey first —
@@ -7848,7 +8591,7 @@
 					observeFeaturedImages(this, list);
 					this.observeSeen();
 				}
-				if (arr.length < RECENT_PER_PAGE) {
+				if (fetched.length < RECENT_PER_PAGE) {
 					this.recentDone = true;
 					this.teardownObserver();
 					if (sentinel) {
@@ -9168,16 +9911,30 @@
 		async init() {
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
+			this._draftsSeq = 0;
 			const showDrafts = meShowDrafts;
 			meShowDrafts = false;
+			await this.loadDrafts(showDrafts);
+		},
+
+		// Reload the Drafts list when Me is on screen: a draft saved (or
+		// discarded) in the background since Me rendered.
+		refreshDrafts() {
+			if ('#me' === currentScreen) {
+				this.loadDrafts(false);
+			}
+		},
+
+		async loadDrafts(showDrafts) {
 			const list = root.querySelector('[data-me-drafts]');
 			if (!list) {
 				return;
 			}
+			const seq = ++this._draftsSeq;
 			try {
 				const drafts = await apiGet('marks?status=draft&per_page=50');
 				const draftItems = Array.isArray(drafts) ? drafts : [];
-				if (!list.isConnected) {
+				if (seq !== this._draftsSeq || !list.isConnected) {
 					return;
 				}
 				if (!draftItems.length) {
@@ -9197,7 +9954,7 @@
 					});
 				}
 			} catch (err) {
-				if (list.isConnected) {
+				if (seq === this._draftsSeq && list.isConnected) {
 					list.innerHTML =
 						'<p class="daymark-error" role="alert">' +
 						sprintf(
@@ -9227,6 +9984,7 @@
 				)}</span>
 			</header>
 			<section class="daymark-screen">
+				${this.draftsLinkMarkup()}
 				<p class="daymark-autosave-status" data-autosave-status aria-live="polite"></p>
 				${
 					editing
@@ -9378,6 +10136,61 @@
 			this.bindPlaceFieldEvents();
 		},
 
+		// A way back to your drafts from a new composer you haven't started
+		// yet, worded like Home's drafts row and opening the same list on
+		// the Me screen. Only on a new Mark (not a draft you reopened, and
+		// not a reply), hidden until init() has counted the drafts, and
+		// hidden again while the composer holds anything; see
+		// refreshDraftsLink(). Leaving an empty composer saves nothing, so
+		// the tap costs nothing.
+		draftsLinkMarkup() {
+			if (state.editing || state.resumed || state.replyTo) {
+				return '';
+			}
+			return `<a class="daymark-draftsrow" href="#me" data-composer-drafts hidden>
+				<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+				<span class="daymark-draftsrow__label" data-composer-drafts-label></span>
+				<span class="daymark-draftsrow__chevron" aria-hidden="true">&rsaquo;</span>
+			</a>`;
+		},
+
+		async init() {
+			this._draftsCount = 0;
+			const link = root.querySelector('[data-composer-drafts]');
+			if (!link) {
+				return;
+			}
+			link.addEventListener('click', () => {
+				meShowDrafts = true;
+			});
+			const seq = (this._draftsSeq = (this._draftsSeq || 0) + 1);
+			let count = 0;
+			try {
+				const drafts = await apiGet('marks?status=draft&per_page=' + DRAFTS_ROW_PROBE);
+				count = Array.isArray(drafts) ? drafts.length : 0;
+			} catch (err) {
+				// Offline or a failed request: the link just stays hidden.
+			}
+			if (seq !== this._draftsSeq || !link.isConnected) {
+				return;
+			}
+			this._draftsCount = count;
+			this.refreshDraftsLink();
+		},
+
+		refreshDraftsLink() {
+			const link = root.querySelector('[data-composer-drafts]');
+			if (!link) {
+				return;
+			}
+			const count = this._draftsCount || 0;
+			const label = link.querySelector('[data-composer-drafts-label]');
+			if (label) {
+				label.textContent = count ? draftsRowLabel(count) : '';
+			}
+			link.hidden = !count || composerHasWork();
+		},
+
 		bindPlaceFieldEvents() {
 			const place = root.querySelector('[data-checkin-place]');
 			if (!place) {
@@ -9407,6 +10220,7 @@
 			place.addEventListener('input', () => {
 				state.placeName = place.value;
 				state.placeNameEdited = true;
+				this.refreshDraftsLink();
 				scheduleAutosave();
 				runPlaceSearch(place.value.trim());
 			});
@@ -9711,6 +10525,7 @@
 
 			caption.addEventListener('input', () => {
 				state.caption = caption.value;
+				this.refreshDraftsLink();
 				scheduleAutosave();
 				scheduleQuietTagSuggestion();
 			});
@@ -9916,6 +10731,7 @@
 			// "Generate transcript" button needs to reflect newly picked or
 			// cleared files either way.
 			this.refreshTranscriptField();
+			this.refreshDraftsLink();
 			if (!state.files.length) {
 				preview.innerHTML = '';
 				return;
@@ -14165,11 +14981,24 @@
 		},
 
 		async publish(postStatus) {
+			if (composerPublishing) {
+				return;
+			}
+			composerPublishing = true;
+			try {
+				await this.sendPublish(postStatus);
+			} finally {
+				composerPublishing = false;
+			}
+		},
+
+		async sendPublish(postStatus) {
 			const isDraft = 'draft' === postStatus;
 			// Someone who can't publish on this site (a Contributor) gets a
 			// draft from the server whatever they tap, so send a draft and
 			// say so, instead of claiming it was published.
 			const needsReview = !isDraft && false === config.canPublish;
+			const wasDraft = isDraft || needsReview;
 			const button = root.querySelector(
 				isDraft ? '[data-action="save-draft"]' : '[data-action="publish"]'
 			);
@@ -14197,12 +15026,18 @@
 			// queue after the tap.
 			clearTimeout(autosaveState.timer);
 			autosaveState.timer = null;
+			const generation = composerGeneration;
 			await waitForPendingAutosave();
+			if (generation !== composerGeneration) {
+				return; // The composer was cleared meanwhile; nothing left to send.
+			}
 
 			const payload = buildMarkPayload(needsReview ? 'draft' : postStatus);
 			// Editing a draft updates it in place; otherwise create.
 			const path = state.editing ? 'marks/' + state.editing.id : 'marks';
 			const targetId = state.editing ? state.editing.id : null;
+			const targets = state.targets.slice();
+			const type = state.primaryType;
 
 			try {
 				// Queue-first: this resolves as soon as the Mark is safely on
@@ -14212,41 +15047,50 @@
 				// publishInBackground()'s own comment for why.
 				const pendingId = await publishInBackground(path, targetId, payload, state.offlineQueueId);
 				rememberSelectionLocally(payload);
-				state.lastPublish = {
-					pendingId,
-					wasDraft: isDraft || needsReview,
-					needsReview,
-					targets: state.targets.slice(),
-					type: state.primaryType,
-					response: null,
-				};
+				state.lastPublish = null;
+				notePublishQueued(pendingId, { wasDraft, needsReview });
 				resetComposer();
-				navigate('#success');
+				// Back to where you started, with the new Mark at the top of
+				// the Timeline (its pending card until the site answers).
+				leaveComposerAfterPublish(!wasDraft);
 			} catch (err) {
 				// Queuing itself failed (IndexedDB unavailable — old Safari
 				// private mode, storage disabled, …). Fall back to waiting on
-				// the real request directly rather than risk losing the Mark.
+				// the real request directly rather than risk losing the Mark,
+				// and show the result on the Success screen.
 				try {
 					const response = await sendMarkPayload(path, payload, { waitForUploads: true });
 					forgetUploads(payload);
 					onMarkSaved(response);
 					rememberSelectionLocally(payload);
-					state.lastPublish = applyServerStatus({
-						response,
-						wasDraft: isDraft || needsReview,
-						needsReview,
-						targets: state.targets.slice(),
-						type: state.primaryType,
-					});
-					resetComposer();
-					navigate('#success');
-				} catch (err2) {
-					button.disabled = false;
-					if (otherButton) {
-						otherButton.disabled = false;
+					const publish = applyServerStatus({ response, wasDraft, needsReview, targets, type });
+					// Still the composer you tapped Publish in (not left, or
+					// left and a new Mark started since).
+					const stillHere = generation === composerGeneration && COMPOSER_SCREENS.includes(currentScreen);
+					if (generation === composerGeneration) {
+						resetComposer();
 					}
-					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
-					status.textContent = sprintf(
+					if (stillHere) {
+						state.lastPublish = publish;
+						navigate('#success');
+					} else {
+						// Left while it was sending: say how it went here.
+						showMessage({
+							key: 'publish-direct',
+							text: publish.wasDraft ? __('Saved as draft.', 'daymark') : __('Published.', 'daymark'),
+							action: publish.wasDraft
+								? null
+								: { label: __('View', 'daymark'), run: () => viewPublishedMark(response) },
+						});
+					}
+				} catch (err2) {
+					if (generation === composerGeneration && !COMPOSER_SCREENS.includes(currentScreen)) {
+						// Left while it was sending: keep it as a draft.
+						composerPublishing = false;
+						leaveComposer();
+						return;
+					}
+					const message = sprintf(
 						isDraft
 							? /* translators: %s: error message */
 								__('Save failed: %s', 'daymark')
@@ -14254,6 +15098,18 @@
 								__('Publish failed: %s', 'daymark'),
 						err2.message
 					);
+					if (!button.isConnected) {
+						// Not on the Publish screen any more: the message bar
+						// says it instead.
+						showMessage({ key: 'publish-direct', text: message, error: true });
+						return;
+					}
+					button.disabled = false;
+					if (otherButton) {
+						otherButton.disabled = false;
+					}
+					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
+					status.textContent = message;
 				}
 			}
 		},
@@ -14311,15 +15167,12 @@
 		return publish;
 	}
 
-	// "Tap Publish. Immediately appears in your timeline. Uploads continue
-	// in the background." This screen renders from whatever's known right
-	// now: state.lastPublish.response is null the moment PublishScreen
-	// navigates here (the real request is still running via
-	// syncPendingMark()) unless the IndexedDB fallback above had to wait
-	// for it directly. If the background request resolves while the user
-	// is still looking at this exact screen, upgrade() patches the detail
-	// in place with the real permalink/syndication status instead of
-	// making the user wait for it before ever seeing a success screen.
+	// Only for a device that can't keep a Mark in its local queue
+	// (IndexedDB unavailable): Publish then waits for the site, and this
+	// screen reports what it answered. Everywhere else, Publish goes back
+	// to where you started and says so in the message bar; see
+	// PublishScreen.sendPublish() and notePublishSaved(). Where the Mark
+	// went is also on its card's "Where this went" view.
 	const SuccessScreen = {
 		render() {
 			const publish = state.lastPublish || { targets: [], type: 'note', wasDraft: false, response: null };
@@ -14355,22 +15208,7 @@
 				  )}</p>`
 				: '';
 
-			if (!response) {
-				return `
-				<h2 class="daymark-screen__heading">${esc(
-					publish.wasDraft ? __('Saved as draft', 'daymark') : __('Published', 'daymark')
-				)}</h2>
-				${
-					reviewNote ||
-					`<p class="daymark-note-card__meta">${esc(
-						publish.wasDraft
-							? __("Saving in the background. You'll find it under Drafts on the Me tab.", 'daymark')
-							: __("It's already at the top of your Timeline. The upload finishes in the background.", 'daymark')
-					)}</p>`
-				}`;
-			}
-
-			const permalink = response.permalink;
+			const permalink = response && response.permalink;
 			const rows = publish.targets
 				.map((id) => {
 					const status = this.externalStatus(response, id);
@@ -14415,29 +15253,6 @@
 					? '<p class="daymark-note-card__meta">' + esc(__('No social destinations selected.', 'daymark')) + '</p>'
 					: ''
 			}`;
-		},
-
-		// Called by syncPendingMark() once the background request for this
-		// exact publish resolves. A no-op if the user has since navigated
-		// away or started another publish (pendingId no longer matches) —
-		// state.lastPublish itself is still updated either way.
-		upgrade(pendingId, response) {
-			if (!state.lastPublish || state.lastPublish.pendingId !== pendingId) {
-				return;
-			}
-			state.lastPublish.response = response;
-			applyServerStatus(state.lastPublish);
-			if (window.location.hash !== '#success') {
-				return;
-			}
-			const slot = root.querySelector('[data-success-detail]');
-			if (slot) {
-				slot.innerHTML = this.renderDetail(state.lastPublish);
-			}
-			const heading = root.querySelector('.daymark-success [data-daymark-focus], .daymark-topbar [data-daymark-focus]');
-			if (heading) {
-				heading.textContent = state.lastPublish.wasDraft ? __('Draft saved', 'daymark') : __('Published', 'daymark');
-			}
 		},
 
 		externalStatus(response, connectorId) {
@@ -15834,7 +16649,7 @@
 			showReplies = '1' === clean.searchParams.get('daymark_replies');
 			clean.searchParams.delete('daymark_post');
 			clean.searchParams.delete('daymark_replies');
-			window.history.replaceState(null, '', clean.pathname + clean.search);
+			window.history.replaceState(window.history.state, '', clean.pathname + clean.search);
 		} catch (err) {
 			// Leave the address as it is.
 		}
@@ -15862,7 +16677,7 @@
 		try {
 			const clean = new URL(window.location.href);
 			clean.searchParams.delete('daymark_follow_site');
-			window.history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
+			window.history.replaceState(window.history.state, '', clean.pathname + clean.search + clean.hash);
 		} catch (err) {
 			// Leave the address as it is.
 		}

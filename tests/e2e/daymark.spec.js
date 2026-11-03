@@ -194,6 +194,32 @@ async function dropFile(page, selector, filePath, fileName, mimeType) {
 	await page.dispatchEvent(selector, 'drop', { dataTransfer });
 }
 
+// Publish and Save as draft close the composer and go back to the screen it
+// was opened from; the message bar near the bottom reports the result.
+// "Published." appears once the site has the Mark ("Publishing…" until
+// then), so waiting for it is waiting for the publish to finish.
+function messageBar(page) {
+	return page.locator('.daymark-msgbar');
+}
+
+async function expectPublished(page, options) {
+	await expect(messageBar(page)).toContainText('Published.', options);
+}
+
+// Titles of the signed-in user's drafts on the site, read through the REST
+// API without leaving the page (so the message bar stays up).
+function draftTitles(page) {
+	return page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}marks?status=draft&per_page=50`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const marks = await res.json();
+		return Array.isArray(marks) ? marks.map((mark) => mark.title || '') : [];
+	});
+}
+
 // --- Subscriptions & Timeline (issue #78) helpers ---
 //
 // Subscribing and refreshing a feed hits a real external site
@@ -1492,7 +1518,7 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.locator('.daymark-dest__name', { hasText: 'Your Site' })).toBeVisible();
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// The Notes section page is gone; the same per-type filtering now lives
 	// in Search.
@@ -1522,7 +1548,7 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await page.locator('[data-action="next"]').click();
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="checkin"]').click();
@@ -1556,7 +1582,7 @@ test('Checkin Mark keeps its type and Place field once a photo is attached', asy
 
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="checkin"]').click();
@@ -1637,7 +1663,7 @@ test('Timeline shows a start and end flourish once it has content', async ({ pag
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark');
 	await expect(page.locator('.daymark-timeline-flourish--start')).toBeVisible();
@@ -1660,7 +1686,7 @@ test('Timeline groups same-day cards under a single "Today" header', async ({ pa
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark');
 	await expect(page.locator('.daymark-recent__groupheader', { hasText: 'Today' })).toHaveCount(1);
@@ -1698,7 +1724,7 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await expect(page.locator('[data-fold-value="categories"]')).toContainText('E2E Photos');
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// wp-admin confirms the post is filed under the chosen category.
 	await page.goto('/wp-admin/edit.php');
@@ -1756,10 +1782,10 @@ test('categories: unticking every category sticks, and the next Mark starts from
 	await page.locator('[data-fold="categories"] summary').click();
 	await setCategories(page, ['E2E Travel']);
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// No reload: the next Note starts from the choice the last one saved.
-	await page.locator('[data-action="create-another"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', noneCaption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-fold="categories"] summary').click();
@@ -1772,13 +1798,21 @@ test('categories: unticking every category sticks, and the next Mark starts from
 	await setCategories(page, []);
 	await expect(page.locator('[data-fold-value="categories"]')).toHaveText('Uncategorized');
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
 	const defaultCategory = await page.evaluate(() => window.daymarkApp.defaultCategory);
-	const mark = await findMarkByCaption(page, noneCaption);
-	expect(mark.categories).toEqual([defaultCategory]);
+	// The message bar can still show the last Mark's "Published.", so wait
+	// for this one to be published on the site.
+	await expect
+		.poll(
+			async () => {
+				const mark = (await findMarkByCaption(page, noneCaption)) || {};
+				return { status: mark.status, categories: mark.categories };
+			},
+			{ timeout: 15000 }
+		)
+		.toEqual({ status: 'publish', categories: [defaultCategory] });
 
 	// "None" is what the next Note starts from, now and after a reload.
-	await page.locator('[data-action="create-another"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E category none again ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	await expect(checkedCategories).toHaveCount(0);
@@ -1811,7 +1845,7 @@ test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }
 	await expect(page.locator('[data-fold-value="tags"]')).toContainText(tag);
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/wp-admin/edit.php');
 	const row = page.locator('tr').filter({ hasText: caption }).first();
@@ -1842,7 +1876,7 @@ test('image Mark: alt field, correct article, findable via Search', async ({ pag
 	await expect(page.locator('.daymark-typebadge')).toContainText('Publishing an Image Mark');
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// Standard post visible in wp-admin, and findable via Search — the
 	// Images section page is gone; the same per-type filtering now lives
@@ -1877,7 +1911,7 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 	await page.fill('#daymark-caption', imageCaption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.evaluate(async (cap) => {
 		const config = window.daymarkApp;
@@ -1956,7 +1990,7 @@ test('drag-and-drop: dropping an image onto the picker attaches it', async ({ pa
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 });
 
 // Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
@@ -2088,7 +2122,7 @@ test('notifications show replies to a Mark', async ({ page }) => {
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// Add a comment to it via the core REST API (same nonce/session).
 	await page.evaluate(async (replyText) => {
@@ -2939,7 +2973,7 @@ test('notifications: reply icon expands an inline box and submits', async ({ pag
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// A comment arrives on it (same storage path as an imported reply).
 	await page.evaluate(async (replyText) => {
@@ -3027,7 +3061,10 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
-	await expect(page.getByText('Saved as draft')).toBeVisible();
+	await expect(messageBar(page)).toContainText('Saved as draft.');
+	// The draft is queued on this device and sent in the background; wait
+	// for the site to have it before leaving the page.
+	await expect.poll(() => draftTitles(page)).toContain(caption);
 
 	// Home shows a one-line drafts count that leads to the Me screen,
 	// where the draft itself is findable by its edit-draft attribute.
@@ -3048,7 +3085,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.fill('#daymark-caption', finished);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// Draft row entry is gone; the published Mark is findable via Search.
 	await page.goto('/daymark/me');
@@ -3071,7 +3108,10 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
-	await expect(page.getByText('Saved as draft')).toBeVisible();
+	await expect(messageBar(page)).toContainText('Saved as draft.');
+	// The draft is queued on this device and sent in the background; wait
+	// for the site to have it before leaving the page.
+	await expect.poll(() => draftTitles(page)).toContain(caption);
 
 	await page.goto('/daymark/me');
 	const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption }).first();
@@ -3084,10 +3124,153 @@ test('draft → publish continuation: Publish from the ⋯ menu skips the compos
 	await expect(page).toHaveURL(/#publish$/);
 	await expect(page.getByText('Edit Draft')).toHaveCount(0);
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
+});
+
+// Publish closes the composer and goes back to the screen it was opened
+// from (here Search, not the Timeline), instead of a separate Success
+// screen. The message bar reports the result, and its View button opens the
+// new Mark.
+test('publish goes back to where the composer was opened, and View opens the new Mark', async ({ page }) => {
+	const caption = `E2E return ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark/search');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-action="publish"]').click();
+
+	await expect(page).toHaveURL(/#search$/);
+	await expect(page.locator('.daymark-success')).toHaveCount(0);
+	await expectPublished(page);
+
+	await messageBar(page).getByRole('button', { name: 'View' }).click();
+	await expect(page).toHaveURL(/#post$/);
+	await expect(page.locator('h1.daymark-topbar__title')).toHaveText(caption);
+});
+
+// Leaving the composer any way but Publish keeps what was written as a
+// draft and says so, with Discard for a new Mark. Discard removes the draft
+// from the site again.
+test('leaving the composer saves a draft, and Discard removes it', async ({ page }) => {
+	const caption = `E2E leave ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('a.daymark-backlink--icon').click();
+
+	await expect(page).toHaveURL(/#home$/);
+	const bar = messageBar(page);
+	await expect(bar).toContainText('Saved to Drafts.');
+	const discard = bar.getByRole('button', { name: 'Discard' });
+	// Focus holds the message on screen while the draft is checked.
+	await discard.focus();
+	await expect.poll(() => draftTitles(page)).toContain(caption);
+
+	await discard.click();
+	await expect(bar).toContainText('Draft discarded.');
+	await expect.poll(() => draftTitles(page)).not.toContain(caption);
+});
+
+// A new composer you haven't started yet links to your drafts, worded like
+// Home's drafts row. The link goes away once you start writing.
+test('an empty composer links to your drafts', async ({ page }) => {
+	const caption = `E2E drafts link ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	const draftId = await page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption: cap, primary_type: 'note', status: 'draft' }),
+		});
+		return (await res.json()).id;
+	}, caption);
+
+	try {
+		await openComposer(page);
+		const link = page.locator('[data-composer-drafts]');
+		await expect(link).toBeVisible();
+		await expect(link).toContainText(/\d+\+? drafts?/);
+
+		await page.fill('#daymark-caption', 'x');
+		await expect(link).toBeHidden();
+		await page.fill('#daymark-caption', '');
+		await expect(link).toBeVisible();
+
+		await link.click();
+		await expect(page).toHaveURL(/#me$/);
+		await expect(page.locator('[data-edit-draft]').filter({ hasText: caption }).first()).toBeVisible();
+	} finally {
+		await page.evaluate(async (id) => {
+			const config = window.daymarkApp;
+			await fetch(`${config.restUrl}marks/${id}`, {
+				method: 'DELETE',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+			});
+		}, draftId);
+	}
+});
+
+// Publishing returns to Home at once, so Home's own Timeline request is
+// often answered before the save lands. That answer predates the Mark,
+// and drawing it used to drop the card you had just published. Here the
+// save is held until Home's request has been answered, and Home only gets
+// that answer after the save: the Mark must still be on top.
+test('a Mark published while Home is loading stays on top of the Timeline', async ({ page }) => {
+	const caption = `E2E home race ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="next"]').click();
+
+	let markTimelineFetched;
+	const timelineFetched = new Promise((resolve) => {
+		markTimelineFetched = resolve;
+	});
+	let releaseTimeline;
+	const timelineReleased = new Promise((resolve) => {
+		releaseTimeline = resolve;
+	});
+	await page.route('**/daymark/v1/marks', async (route) => {
+		if ('POST' !== route.request().method()) {
+			await route.fallback();
+			return;
+		}
+		await timelineFetched;
+		await route.continue();
+	});
+	await page.route(/\/daymark\/v1\/timeline\?per_page=20&page=1$/, async (route) => {
+		const response = await route.fetch();
+		markTimelineFetched();
+		await timelineReleased;
+		await route.fulfill({ response });
+	});
+
+	try {
+		await page.locator('[data-action="publish"]').click();
+		await expectPublished(page);
+		releaseTimeline();
+		const list = page.locator('[data-recent-list]');
+		await expect(list).not.toHaveAttribute('aria-busy', 'true');
+		await expect(list.locator('.daymark-recent__item-wrap').first()).toContainText(caption);
+	} finally {
+		releaseTimeline();
+		markTimelineFetched();
+		await page.unrouteAll({ behavior: 'ignoreErrors' });
+	}
 });
 
 // Autosave: "nothing gets lost" even without tapping Save as Draft.
@@ -3119,7 +3302,7 @@ test('autosave: an abandoned composition survives without Save as Draft', async 
 	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 });
 
 // Offline-first creation (issue #121): composing and saving while offline
@@ -3145,12 +3328,15 @@ test('offline: composing while offline queues locally and syncs when back online
 	try {
 		await page.locator('[data-action="next"]').click();
 		await page.locator('[data-action="save-draft"]').click();
-		await expect(page.getByText('Saved as draft')).toBeVisible();
+		await expect(messageBar(page)).toContainText(
+			"Saved on this device. It moves to Drafts when you're back online."
+		);
 
-		// Queued locally, not yet a real draft — reachable via the in-app
-		// link (client-side hash navigation; a real page load would fail
-		// while offline, per the documented scope above).
-		await page.locator('a.daymark-success__link[href="#home"]').click();
+		// Queued locally, not yet a real draft. Save as draft went back to
+		// the Timeline it was opened from (client-side hash navigation; a
+		// real page load would fail while offline, per the documented scope
+		// above), where the Pending list shows it.
+		await expect(page).toHaveURL(/#home$/);
 		const pendingRow = page.locator('[data-resume-pending]').filter({ hasText: caption });
 		await expect(pendingRow).toBeVisible();
 		await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
@@ -3282,12 +3468,15 @@ test('cold-offline load: a fresh /daymark navigation with zero connectivity stil
 		await page.fill('#daymark-caption', caption);
 		await page.locator('[data-action="next"]').click();
 		await page.locator('[data-action="save-draft"]').click();
-		await expect(page.getByText('Saved as draft')).toBeVisible();
+		await expect(messageBar(page)).toContainText(
+			"Saved on this device. It moves to Drafts when you're back online."
+		);
 
 		// Queued locally (IndexedDB) exactly like the already-open-session
 		// offline case — no config.json nonce was ever available to
-		// actually reach the server while offline either way.
-		await page.locator('a.daymark-success__link[href="#home"]').click();
+		// actually reach the server while offline either way. Save as draft
+		// went back to the Timeline, where the Pending list shows it.
+		await expect(page).toHaveURL(/#home$/);
 		await expect(page.locator('[data-resume-pending]').filter({ hasText: caption })).toBeVisible();
 	} finally {
 		await context.setOffline(false);
@@ -3318,7 +3507,7 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// Comment dates are second-resolution and the "seen" baseline was set
 	// marks ago; guarantee the reply lands in a later second so
@@ -3362,13 +3551,14 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 
 // Optimistic publishing: "Tap Publish. Immediately appears in your
 // timeline. Uploads continue in the background." Publish never waits on
-// the network — it queues the Mark locally and moves on to Success right
-// away, well before an artificially slow create request resolves. While
-// that request is still in flight, the Timeline shows it at the top as
-// actively uploading (not the generic "Offline" wording used for a
-// genuine connectivity failure); once the request confirms, its pending
-// card is replaced in place by the real card.
-test('publish is optimistic: Success shows immediately and upgrades once the upload confirms', async ({
+// the network — it queues the Mark locally and goes straight back to the
+// Timeline, well before an artificially slow create request resolves.
+// While that request is still in flight, the Timeline shows it at the top
+// as actively uploading (not the generic "Offline" wording used for a
+// genuine connectivity failure) and the message bar says "Publishing…";
+// once the request confirms, its pending card is replaced in place by the
+// real card and the message turns into "Published." with View.
+test('publish is optimistic: back on the Timeline at once, the real card once the upload confirms', async ({
 	page,
 }) => {
 	await loginAs(page);
@@ -3387,14 +3577,13 @@ test('publish is optimistic: Success shows immediately and upgrades once the upl
 
 	await page.locator('[data-action="publish"]').click();
 
-	// Success shows immediately, from client-known data only — well before
-	// the delayed request could have resolved.
-	await expect(page.getByText('already at the top of your Timeline')).toBeVisible({ timeout: 800 });
-	await expect(page.getByText('Published to your site')).toHaveCount(0);
+	// Back on the Timeline immediately — well before the delayed request
+	// could have resolved.
+	await expect(page).toHaveURL(/#home$/, { timeout: 800 });
+	await expect(messageBar(page)).toContainText('Publishing…', { timeout: 800 });
 
 	// The Timeline shows the in-flight upload at the top, distinctly from a
 	// genuine offline queue.
-	await page.locator('a.daymark-success__link[href="#home"]').click();
 	const pending = page.locator('[data-pending-timeline]');
 	await expect(pending).toBeVisible();
 	await expect(pending.getByText('Uploading…')).toBeVisible();
@@ -3406,6 +3595,8 @@ test('publish is optimistic: Success shows immediately and upgrades once the upl
 	await expect(
 		page.locator('[data-recent-list] .daymark-recent__item-wrap').first()
 	).toContainText(`E2E optimistic ${RUN_ID}`);
+	await expectPublished(page);
+	await expect(messageBar(page).getByRole('button', { name: 'View' })).toBeVisible();
 	await expect(page.locator('[data-new-posts]')).toBeHidden();
 });
 
@@ -3445,7 +3636,7 @@ test('publish does not re-upload a file whose autosave is still in flight', asyn
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
 
-	await expect(page.getByText('Published to your site')).toBeVisible({ timeout: 10000 });
+	await expectPublished(page, { timeout: 10000 });
 	// Both file2's own autosave upload and Publish's request route through
 	// this same endpoint; seeing more than one confirms the race was
 	// actually exercised rather than the autosave finishing first on its own.
@@ -3561,7 +3752,7 @@ test('an upload carries on after the connection drops, without starting the file
 	await page.unroute('**/daymark/v1/uploads/*');
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible({ timeout: 15000 });
+	await expectPublished(page, { timeout: 15000 });
 
 	const mark = await findMarkByCaption(page, caption);
 	expect(mark).not.toBeNull();
@@ -3611,7 +3802,7 @@ test('a published Mark whose upload was interrupted by a reload resumes partway'
 
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('already at the top of your Timeline')).toBeVisible();
+	await expect(messageBar(page)).toContainText('Publishing…');
 	// Give the progress record a moment to be written.
 	await page.waitForTimeout(500);
 
@@ -3667,8 +3858,8 @@ async function holdUploadStart(page) {
 }
 
 // A file the site refuses leaves the composer straight away, with the
-// reason. Leaving the composer afterwards saves the draft's text the usual
-// way, with no error card left behind.
+// reason. Leaving the composer afterwards saves the draft's text, with no
+// error card left behind.
 test('a file the site refuses is removed from the composer, and the draft keeps its text', async ({ page }) => {
 	const caption = `E2E refused file ${RUN_ID}`;
 
@@ -3681,14 +3872,11 @@ test('a file the site refuses is removed from the composer, and the draft keeps 
 	await expect(page.locator('[data-create-status]')).toHaveText(REFUSED_MESSAGE);
 	await expect(page.locator('[data-upload-status-for]')).toHaveCount(0);
 
-	// Leave the composer the way the app does: start a new Mark.
+	// Leaving the composer saves the draft.
 	await page.getByRole('link', { name: 'Back to Timeline' }).click();
-	await openComposer(page, 'note');
-	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	await expect(messageBar(page)).toContainText('Saved to Drafts.');
+	await expect.poll(() => draftTitles(page)).toContain(caption);
 	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0);
-
-	await page.goto('/daymark/me');
-	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption }).first()).toBeVisible();
 });
 
 // The same, when the composer is left before the refusal arrives: the
@@ -3706,16 +3894,13 @@ test('a draft left before the site refuses its file still saves', async ({ page 
 	await expect(page.locator('[data-upload-status-for]')).toContainText('Uploading');
 
 	await page.getByRole('link', { name: 'Back to Timeline' }).click();
-	await openComposer(page, 'note');
-	await page.getByRole('link', { name: 'Back to Timeline' }).click();
+	await expect(messageBar(page)).toContainText('Saved. It moves to Drafts when the upload finishes.');
 	const pending = page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption });
 	await expect(pending).toBeVisible();
 
 	await release();
 	await expect(pending).toHaveCount(0, { timeout: 15000 });
-
-	await page.goto('/daymark/me');
-	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption }).first()).toBeVisible();
+	await expect.poll(() => draftTitles(page)).toContain(caption);
 });
 
 // A queued draft that fails says "Couldn't save draft", not "Couldn't
@@ -3735,10 +3920,10 @@ test("a queued draft that fails says Couldn't save draft, and reopening it drops
 	await page.setInputFiles('#daymark-file-input', REFUSED_FILE);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
-	await expect(page.getByText('Saved as draft')).toBeVisible();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(messageBar(page)).toContainText('Saved as draft.');
 	await release();
 
-	await page.locator('a.daymark-success__link[href="#home"]').click();
 	const card = page.locator('[data-resume-pending]').filter({ hasText: caption });
 	await expect(card).toContainText("Couldn't save draft", { timeout: 15000 });
 
@@ -3748,11 +3933,11 @@ test("a queued draft that fails says Couldn't save draft, and reopening it drops
 
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="save-draft"]').click();
-	await expect(page.getByText('Saved as draft')).toBeVisible();
-	await page.locator('a.daymark-success__link[href="#home"]').click();
+	await expect(page).toHaveURL(/#home$/);
 	await expect(page.locator('[data-pending-section] .daymark-recent__item').filter({ hasText: caption })).toHaveCount(0, {
 		timeout: 15000,
 	});
+	await expect.poll(() => draftTitles(page)).toContain(caption);
 });
 
 // Home IS the merged Timeline feed (Marks + subscribed posts) now — there's
@@ -4079,7 +4264,7 @@ test('controllable helper: per-Mark toggle appears and is sent on publish', asyn
 	});
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 	expect(sentBody).toContain('publish_helpers');
 	expect(sentBody).toContain('daymark-e2e-helper');
 });
@@ -4139,7 +4324,7 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	});
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 	expect(sentBody).toContain('daymark-e2e-network');
 });
 
@@ -4174,9 +4359,17 @@ test('connected connector: destination toggle publishes and is remembered per ty
 	await expect(toggle).toBeChecked();
 
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
-	// The success screen lists the chosen syndication destination.
-	await expect(page.getByText('E2E Network')).toBeVisible();
+	await expectPublished(page);
+	// Where it went is on the new card's ⋯ menu, under "Where this went".
+	// Home's own load can still be landing just after "Published." shows,
+	// and redrawing the list would close the menu, so wait for it first.
+	await expect(page).toHaveURL(/#home$/);
+	await expect(page.locator('[data-recent-list]')).not.toHaveAttribute('aria-busy', 'true');
+	const card = page.locator('[data-recent-list] [data-expand-post]').filter({ hasText: caption }).first();
+	const id = await card.getAttribute('data-expand-post');
+	await page.locator(`[data-overflow-toggle="${id}"]`).click();
+	await page.locator(`[data-routing-toggle="${id}"]`).click();
+	await expect(page.locator(`[data-routing-panel="${id}"]`)).toContainText('E2E Network');
 
 	// Per-type memory: the next note Mark preselects the connector.
 	await page.goto('/daymark');
@@ -4208,25 +4401,32 @@ test('connected connector: unticking every destination publishes to your site on
 	}
 	await expect(toggle).toBeChecked();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	// No reload: the next Note starts with the destination ticked. Untick it.
-	await page.locator('[data-action="create-another"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', offCaption);
 	await page.locator('[data-action="next"]').click();
 	await expect(toggle).toBeChecked();
 	await toggle.click({ force: true });
 	await expect(toggle).not.toBeChecked();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
-	await expect(page.getByText('No social destinations selected.')).toBeVisible();
 
 	// The site kept the empty list: the first Mark has the destination,
-	// the second has none.
+	// the second has none. The message bar can still show the first Mark's
+	// "Published.", so wait for the second to be published on the site.
 	expect((await findMarkByCaption(page, onCaption)).targets).toEqual(['e2e-net']);
-	expect((await findMarkByCaption(page, offCaption)).targets).toEqual([]);
+	await expect
+		.poll(
+			async () => {
+				const mark = (await findMarkByCaption(page, offCaption)) || {};
+				return { status: mark.status, targets: mark.targets };
+			},
+			{ timeout: 15000 }
+		)
+		.toEqual({ status: 'publish', targets: [] });
 
-	await page.locator('[data-action="create-another"]').click();
+	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E connector off again ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	await expect(toggle).not.toBeChecked();
@@ -4277,7 +4477,7 @@ test('your own Mark shows engagement as text and is labelled You', async ({ page
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.goto('/daymark');
 	const row = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
@@ -4355,7 +4555,7 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="next"]').click();
 	await page.locator('[data-action="publish"]').click();
-	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expectPublished(page);
 
 	await page.evaluate(async (replyText) => {
 		const config = window.daymarkApp;
@@ -4464,7 +4664,12 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 	expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
 	await page.locator(`[data-overflow-toggle="${id}"]`).click();
 
-	// Notifications' back arrow is mirrored to point right.
+	// Notifications' back arrow is mirrored to point right. Back to the top
+	// first: tapping the ⋯ menu can scroll the page up, and scrolling up
+	// far down the Timeline hides the header, so the Notifications button
+	// would sit above the screen until the page climbs back near the top.
+	await page.evaluate(() => window.scrollTo(0, 0));
+	await expect(page.locator('.daymark-topbar')).not.toHaveClass(/is-header-hidden/);
 	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
 	const backLink = page.locator('.daymark-backlink');
 	await expect(backLink).toBeVisible();

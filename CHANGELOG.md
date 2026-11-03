@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- Leaving the composer with something written now says "Saved to Drafts," with Discard if you'd rather throw it away. A new, empty composer also links to your drafts. ([#571](https://github.com/jeffpaul/daymark/pull/571))
 - You can now star and unstar favorite sites directly from the Settings -> Daymark Subscriptions table, including bulk actions and a Favorites filter view. ([#556](https://github.com/jeffpaul/daymark/pull/556))
 - A Mark's "Where this went" view now lists the copies your publishing plugins made (Jetpack Social, Share on Mastodon, XPoster, Autopost for X, ATmosphere, Autoblue, and ActivityPub), and the Mark's page links to them, so Bridgy can bring replies from those copies back to your site. Bridgy is now on the Connectors tab. ([#562](https://github.com/jeffpaul/daymark/pull/562))
 - On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers (not yet for comments sent through WordPress.com). ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
@@ -29,6 +30,8 @@ can't act on them.
 - When Like is missing or Comment opens the post on its own site, the full post view now says why under the post, such as "This is a Bluesky post. Daymark can like it once your site is connected to Bridgy Fed." When something on your site would fix it, an administrator also gets a link to it. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
 
 ### Changed
+
+- Publish and Save as draft now take you straight back to where you started, usually the Timeline with your new Mark on top, and a short message says "Published" (with View) or "Saved as draft." This replaces the separate Success screen; where a Mark went is still on its card's "Where this went" menu. ([#571](https://github.com/jeffpaul/daymark/pull/571))
 
 - Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.
 
