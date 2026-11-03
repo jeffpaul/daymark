@@ -696,7 +696,8 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-where__site,
-.daymark-where__chip {
+.daymark-where__chip,
+.daymark-attach__btn {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--daymark-spacing-xs);
@@ -719,11 +720,13 @@ h2[tabindex='-1']:focus {
 }
 
 .daymark-where__site svg,
-.daymark-where__chip svg {
+.daymark-where__chip svg,
+.daymark-attach__btn svg {
 	flex-shrink: 0;
 }
 
-.daymark-where__chip[aria-pressed="true"] {
+.daymark-where__chip[aria-pressed="true"],
+.daymark-attach__btn[aria-pressed="true"] {
 	background: var(--daymark-accent-wash);
 	border-color: var(--daymark-accent-light);
 	color: var(--daymark-accent-deep);
@@ -733,8 +736,33 @@ h2[tabindex='-1']:focus {
 	display: none;
 }
 
-.daymark-where__chip[aria-pressed="true"] .daymark-where__check {
+.daymark-where__chip[aria-pressed="true"] .daymark-where__check,
+.daymark-attach__btn[aria-pressed="true"] .daymark-where__check {
 	display: block;
+}
+
+/* The composer's "Add" bar under the caption (CreateScreen.attachBarMarkup()):
+   Photo or video, Audio, and the Place switch, styled like the "Where this
+   goes" chips. It holds the composer's hidden file input, and takes dropped
+   files too. */
+.daymark-attach {
+	position: relative;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
+	border-radius: var(--daymark-radius);
+}
+
+/* A little tighter than the destination chips, so all three fit on one
+   row on most phones. */
+.daymark-attach__btn {
+	padding-inline: calc(var(--daymark-spacing-sm) + var(--daymark-spacing-xs));
+}
+
+.daymark-attach.is-dragover {
+	outline: 2px dashed var(--daymark-accent);
+	outline-offset: 4px;
 }
 
 /* The composer's slots for fields a type doesn't use (Title, Transcript,
@@ -2395,11 +2423,6 @@ button.daymark-stat {
 	cursor: pointer;
 }
 
-.daymark-picker__input:focus-visible + .daymark-picker__zone {
-	outline: 2px solid var(--daymark-accent);
-	outline-offset: 2px;
-}
-
 /* A drag hovering the picker (issue #260, desktop only — drag events never
    fire from touch) — the zone's own dashed border already reads as a drop
    target; this just confirms it. */
@@ -2415,33 +2438,9 @@ button.daymark-stat {
 	color: var(--daymark-text-muted);
 }
 
-/* A Check In's own optional photo/video zone (issue #424) — deliberately
-   the smallest, plainest control in the composer: a small underlined text
-   link (the same weight already given to "Choose from library instead"
-   below, via the shared .daymark-btn--text class this element also
-   carries), not a bordered dashed box at all, so it reads as genuinely
-   secondary — almost incidental — next to the Place field's own more
-   substantial bordered-input treatment. Overrides every box-like property
-   the shared .daymark-picker__zone rule otherwise sets. */
-.daymark-picker--minimal .daymark-picker__zone {
-	display: inline-flex;
-	min-height: var(--daymark-tap-min);
-	padding: 0;
-	border: none;
-	border-radius: 0;
-	background: none;
-	font-size: 13px;
-	font-weight: 500;
-}
-
-.daymark-picker--minimal.is-dragover .daymark-picker__zone {
-	color: var(--daymark-accent);
-}
-
-/* Camera-first: the primary picker action is a <button> (opens the device
-   camera/mic directly via `capture`), not the <label> the neutral,
-   untyped picker still uses — reset button chrome while keeping the same
-   .daymark-picker__zone box look either way. */
+/* Camera-first: the primary picker action is a <button> that opens the
+   device camera or microphone directly via `capture`. Reset the button
+   chrome and keep the .daymark-picker__zone box look. */
 .daymark-picker__zone--button {
 	width: 100%;
 	appearance: none;

@@ -1627,9 +1627,11 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await openComposer(page, 'checkin');
 
 	const composer = page.locator('.daymark-screen').first();
-	// The picker is present (see the next test) but never blocks publishing
-	// on its own — skipping it entirely still succeeds.
+	// The "Add" bar offers a photo (see the next test) but never blocks
+	// publishing on its own — skipping it entirely still succeeds. Place is
+	// already on, since this Mark started as a Check In.
 	await expect(composer.locator('#daymark-file-input')).toHaveCount(1);
+	await expect(composer.locator('[data-attach="place"]')).toHaveAttribute('aria-pressed', 'true');
 	await composer.locator('[data-checkin-place]').fill(place);
 
 	await page.locator('[data-action="publish"]').click();
@@ -1731,6 +1733,95 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 	// The field itself gets only the short place name, not the address.
 	await expect(place).toHaveValue('Blue Bottle Coffee');
 	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
+});
+
+// Every composer has an "Add" bar under the caption. A Note has no
+// camera-first picker, so the bar is how it adds media: "Photo or video"
+// opens the chooser for those two kinds, "Audio" for audio, and a photo
+// picked for a Note makes it a photo Mark, the same way picking a file
+// always has.
+test('the Add bar adds a photo to a Note, making it a photo Mark', async ({ page }) => {
+	const caption = `E2E note photo ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+
+	const badge = page.locator('[data-type-badge]');
+	const bar = page.locator('[data-attach-bar]');
+	const input = page.locator('#daymark-file-input');
+	await expect(badge).toHaveText('Note');
+	await expect(bar).toBeVisible();
+	await expect(page.locator('[data-picker-for]')).toHaveCount(0);
+
+	// Audio asks only for audio. Picking nothing changes nothing.
+	const audioChooser = page.waitForEvent('filechooser');
+	await bar.locator('[data-attach="audio"]').click();
+	await (await audioChooser).setFiles([]);
+	await expect(input).toHaveAttribute('accept', 'audio/*');
+	await expect(badge).toHaveText('Note');
+
+	const mediaChooser = page.waitForEvent('filechooser');
+	await bar.locator('[data-attach="media"]').click();
+	const chooser = await mediaChooser;
+	await expect(input).toHaveAttribute('accept', 'image/*,video/*');
+	await expect(input).not.toHaveAttribute('capture');
+	await chooser.setFiles('tests/e2e/fixtures/test-image.png');
+
+	await expect(badge).toHaveText('Image');
+	await expect(page.locator('[data-alt-for]').first()).toBeVisible();
+
+	await page.fill('#daymark-caption', caption);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="image"]').click();
+	await expect(page.getByText(caption)).toBeVisible();
+});
+
+// "Place" on the Add bar is a switch. Turning it on makes the Mark a Check
+// In: the badge changes, the Place field appears above the caption, and
+// focus moves into it. Turning it off puts the Note back. A Note that
+// publishes with Place on is a Check In titled from its place, keeping its
+// caption as the thought that goes with it.
+test('Place on the Add bar turns a Note into a Check In, and back again', async ({ page }) => {
+	const place = `E2E Note Place ${RUN_ID}`;
+	const caption = `E2E note place thought ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+
+	const badge = page.locator('[data-type-badge]');
+	const placeSwitch = page.locator('[data-attach="place"]');
+	const placeField = page.locator('[data-checkin-place]');
+	await expect(badge).toHaveText('Note');
+	await expect(placeSwitch).toHaveAttribute('aria-pressed', 'false');
+	await expect(placeField).toHaveCount(0);
+
+	await page.fill('#daymark-caption', caption);
+
+	await placeSwitch.click();
+	await expect(placeSwitch).toHaveAttribute('aria-pressed', 'true');
+	await expect(badge).toHaveText('Check In');
+	await expect(placeField).toBeFocused();
+
+	await placeSwitch.click();
+	await expect(placeSwitch).toHaveAttribute('aria-pressed', 'false');
+	await expect(badge).toHaveText('Note');
+	await expect(placeField).toHaveCount(0);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+
+	await placeSwitch.click();
+	await expect(badge).toHaveText('Check In');
+	await placeField.fill(place);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+
+	await page.goto('/daymark/search');
+	await page.locator('[data-filter="checkin"]').click();
+	await expect(page.getByText(`Checked in at ${place}`)).toBeVisible();
 });
 
 // A small decorative touch bookending Home's own vertical rail: a
