@@ -2463,261 +2463,227 @@ button.daymark-stat {
 	text-align: center;
 }
 
-/* --- Create: preview grid --- */
-.daymark-preview {
-	display: flex;
-	flex-direction: column;
-	gap: var(--daymark-spacing-sm);
-}
+/* --- Create: media strip ---
+   Every file on the Mark sits in one row of thumbnails under the caption
+   (CreateScreen.stripMarkup(), app.js). A photo's ALT badge fills in once
+   it has alt text, and the × takes a file off the Mark. Tapping a
+   thumbnail opens its sheet (.daymark-mediasheet below). The × keeps a
+   44px tap area that reaches past the tile's corner, so the strip has
+   room above and at its end for it. */
 
-/* Same reasoning as [data-existing-media-slot]:empty above: before any file
-   is picked, this is a plain empty <div> — still its own flex item in
-   .daymark-screen's column, costing a full gap on both sides (a picker's
-   own bottom gap, then a second gap before whatever field follows it) for
-   no visible content. Most noticeable next to the Check In composer's own
-   small, plain-text media picker (issue #424), where the reserved space
-   reads as disproportionate next to how little the picker itself is. */
-.daymark-preview:empty {
-	display: none;
-}
-
-.daymark-preview__grid {
-	display: grid;
-	grid-template-columns: repeat(4, 1fr);
-	gap: var(--daymark-spacing-sm);
-	list-style: none;
-	margin: 0;
-	padding: 0;
-}
-
-.daymark-preview__tile {
-	position: relative;
-	aspect-ratio: 1 / 1;
-	border-radius: var(--daymark-radius-sm);
-	overflow: hidden;
-	background: var(--daymark-surface);
-	border: 1px solid var(--daymark-border);
-}
-
-.daymark-preview__img {
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-	display: block;
-}
-
-.daymark-preview__glyph {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 100%;
-	height: 100%;
-	font-size: 12px;
-	font-weight: 600;
-	color: var(--daymark-text-secondary);
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-}
-
-.daymark-preview__more {
-	position: absolute;
-	inset: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: rgba(83, 0, 190, 0.65);
-	color: #ffffff;
-	font-size: 16px;
-	font-weight: 700;
-}
-
-.daymark-filelist {
-	list-style: none;
-	margin: 0;
-	padding: 0;
-	display: flex;
-	flex-direction: column;
-	gap: var(--daymark-spacing-xs);
-}
-
-.daymark-filelist__item {
-	display: flex;
-	flex-direction: column;
-	gap: var(--daymark-spacing-xs);
-	padding: var(--daymark-spacing-xs) var(--daymark-spacing-sm);
-	border-radius: var(--daymark-radius-sm);
-	background: var(--daymark-surface);
-	font-size: 14px;
-}
-
-.daymark-filelist__row {
-	display: flex;
-	align-items: center;
-	gap: var(--daymark-spacing-sm);
-	min-height: var(--daymark-tap-min);
-}
-
-.daymark-filelist__name {
-	flex: 1;
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	color: var(--daymark-text-secondary);
-}
-
-/* Upload state beside a picked file (issue #483). */
-.daymark-filelist__upload {
-	flex-shrink: 0;
-	color: var(--daymark-text-secondary);
-	font-size: 13px;
-	white-space: nowrap;
-}
-
-.daymark-filelist__upload--error {
-	color: var(--daymark-error);
-	white-space: normal;
-}
-
-.daymark-filelist__clear {
-	min-height: var(--daymark-tap-min);
-	min-width: var(--daymark-tap-min);
-	border: none;
-	background: none;
-	color: var(--daymark-text-secondary);
-	font-size: 14px;
-	font-weight: 600;
-	text-decoration: underline;
-	cursor: pointer;
-}
-
-/* Per-image alt text field (composer + draft edit). */
-.daymark-alt {
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
-}
-
-.daymark-alt__label {
-	font-size: 12px;
-	font-weight: 600;
-	color: var(--daymark-text-secondary);
-}
-
-.daymark-alt__input[aria-busy='true'] {
-	opacity: 0.7;
-}
-
-.daymark-alt__hint {
-	font-size: 12px;
-	color: var(--daymark-text-secondary);
-}
-
-/* "Improve with AI"/"Suggest with AI": a compact text-style action, not a
-   full-width button — .daymark-btn--text already gives it the shared
-   44px tap-min height. */
-.daymark-alt__improve {
-	align-self: flex-start;
-	padding: 0;
-}
-
-/* The composer's existing-media slot renders nothing (its own
-   existingMediaMarkup() returns '') for a fresh session or a draft with no
-   media attached yet — but as a plain <div>, an empty one still counted as
-   its own flex item in .daymark-screen's column, costing a full gap above
-   the picker below it for no visible content. Matches the same :empty
-   precedent .daymark-autosave-status already established. The Place
-   slot is the same: empty on every composer but a Check In. */
-[data-existing-media-slot]:empty,
+/* Empty slots (no media yet, or no Place on anything but a Check In)
+   would still cost a full gap in .daymark-screen's column. */
+[data-media-strip]:empty,
 [data-place-slot]:empty {
 	display: none;
 }
 
-/* Editable media list when reopening a draft: thumbnail + alt field. */
-.daymark-editmedia {
+.daymark-strip {
+	display: flex;
+	gap: 12px;
+	margin: 0;
+	padding-block: 6px var(--daymark-spacing-xs);
+	padding-inline: 0 6px;
 	list-style: none;
-	margin: 0 0 var(--daymark-spacing-md);
-	padding: 0;
+	overflow-x: auto;
+	overscroll-behavior-inline: contain;
+	scroll-snap-type: inline proximity;
+	scroll-padding-inline: 0 6px;
+	scrollbar-width: thin;
+}
+
+.daymark-strip__item {
+	flex: 0 0 auto;
+	width: 96px;
 	display: flex;
 	flex-direction: column;
-	gap: var(--daymark-spacing-sm);
-}
-
-.daymark-editmedia__item {
-	display: flex;
-	align-items: flex-start;
-	gap: var(--daymark-spacing-sm);
-	padding: var(--daymark-spacing-sm);
-	border-radius: var(--daymark-radius-sm);
-	background: var(--daymark-surface);
-}
-
-.daymark-editmedia__thumb {
-	width: 56px;
-	height: 56px;
-	object-fit: cover;
-	border-radius: var(--daymark-radius-sm);
-	flex-shrink: 0;
-}
-
-.daymark-editmedia__glyph {
-	width: 56px;
-	height: 56px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: var(--daymark-radius-sm);
-	background: var(--daymark-accent-wash);
-	font-size: 12px;
-	text-transform: uppercase;
-	color: var(--daymark-accent-deep);
-	flex-shrink: 0;
-}
-
-.daymark-editmedia__name {
-	align-self: center;
-	color: var(--daymark-text-secondary);
-}
-
-.daymark-alt--edit {
-	flex: 1;
-	min-width: 0;
-}
-
-/* Manual gallery reordering (issue #250) — move-up/move-down buttons shared
-   by the new-picks file list (.daymark-filelist__item) and the
-   already-attached media list (.daymark-editmedia__item) above. Buttons
-   rather than drag-and-drop: identical by tap, mouse, or keyboard, and
-   meet --daymark-tap-min without a custom touch-drag implementation.
-   flex-shrink: 0 + align-self: center keep this compact and vertically
-   centered as a third child in .daymark-editmedia__item's row (thumb +
-   flex:1 alt field + this), and it simply stacks as its own row at the
-   end of .daymark-filelist__item's column layout. */
-.daymark-reorder {
-	display: flex;
 	gap: var(--daymark-spacing-xs);
-	align-self: center;
-	flex-shrink: 0;
+	scroll-snap-align: start;
 }
 
-.daymark-reorder__btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	min-width: var(--daymark-tap-min);
-	min-height: var(--daymark-tap-min);
+.daymark-strip__tile {
+	position: relative;
+	width: 96px;
+	height: 96px;
+}
+
+.daymark-strip__open {
+	display: block;
+	width: 100%;
+	height: 100%;
+	padding: 0;
 	border: 1px solid var(--daymark-border);
 	border-radius: var(--daymark-radius-sm);
-	background: var(--daymark-bg);
+	background: var(--daymark-surface);
 	color: var(--daymark-text-secondary);
-	font-size: 16px;
-	line-height: 1;
+	font: inherit;
+	overflow: hidden;
 	cursor: pointer;
 }
 
-.daymark-reorder__btn:disabled {
-	opacity: 0.35;
-	cursor: default;
+.daymark-strip__open:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+.daymark-strip__thumb {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.daymark-strip__file {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--daymark-spacing-xs);
+	width: 100%;
+	height: 100%;
+	padding: var(--daymark-spacing-sm);
+}
+
+.daymark-strip__name {
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
+	max-width: 100%;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+	font-size: 11px;
+	line-height: 1.3;
+	text-align: center;
+}
+
+/* "+ ALT" until a photo has alt text, then "✓ ALT" in the accent color.
+   It sits clear of the upload bar along the tile's bottom edge. */
+.daymark-strip__alt {
+	position: absolute;
+	inset-block-end: 8px;
+	inset-inline-start: 6px;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px 6px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.72);
+	color: #ffffff;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 1.3;
+	letter-spacing: 0.02em;
+	pointer-events: none;
+}
+
+.daymark-strip__alt--set {
+	background: var(--daymark-accent);
+	color: var(--daymark-accent-fg);
+}
+
+/* An AI suggestion is on its way. */
+.daymark-strip__alt--loading {
+	animation: daymark-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes daymark-pulse {
+	50% {
+		opacity: 0.45;
+	}
+}
+
+.daymark-strip__alticon {
+	flex-shrink: 0;
+}
+
+/* The ×: a small dot near the tile's corner, inside a full tap area. */
+.daymark-strip__remove {
+	position: absolute;
+	inset-block-start: -6px;
+	inset-inline-end: -6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
+	padding: 0;
+	border: 0;
+	background: none;
+	cursor: pointer;
+}
+
+.daymark-strip__removedot {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.72);
+	color: #ffffff;
+}
+
+.daymark-strip__remove:hover .daymark-strip__removedot {
+	background: rgba(0, 0, 0, 0.88);
+}
+
+.daymark-strip__remove:focus-visible {
+	outline: none;
+}
+
+.daymark-strip__remove:focus-visible .daymark-strip__removedot {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+/* Upload progress along the tile's bottom edge. */
+.daymark-strip__progress {
+	position: absolute;
+	inset-inline: 0;
+	inset-block-end: 0;
+	width: auto;
+	height: 4px;
+	border-radius: 0 0 var(--daymark-radius-sm) var(--daymark-radius-sm);
+	pointer-events: none;
+}
+
+.daymark-strip__progress[hidden] {
+	display: none;
+}
+
+/* The line under a thumbnail: always there for a screen reader, shown
+   only for a failed upload or one waiting for a connection
+   (CreateScreen.uploadStatusClass()). */
+.daymark-strip__status {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.daymark-strip__status--shown {
+	position: static;
+	display: -webkit-box;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 3;
+	width: auto;
+	height: auto;
+	margin: 0;
+	clip: auto;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	font-size: 12px;
+	line-height: 1.3;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-strip__status--error {
+	color: var(--daymark-error);
 }
 
 /* --- Forms --- */
@@ -3101,6 +3067,111 @@ button.daymark-stat {
 
 .daymark-sheet__panel--hint .daymark-sheet__actions {
 	width: 100%;
+}
+
+/* A file's sheet in the composer (MediaSheet, app.js): a preview, the
+   upload line, a photo's alt text with "Suggest with AI", and Move
+   earlier/Move later for photos. */
+.daymark-mediasheet__preview {
+	display: block;
+	max-width: 100%;
+	max-height: min(28vh, 240px);
+	margin: 0 auto;
+	border-radius: var(--daymark-radius-sm);
+	object-fit: contain;
+	background: var(--daymark-surface);
+}
+
+.daymark-mediasheet__file {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-md);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-surface);
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-mediasheet__file svg {
+	flex-shrink: 0;
+}
+
+.daymark-mediasheet__name {
+	min-width: 0;
+	overflow-wrap: anywhere;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-mediasheet__upload {
+	margin: 0;
+	font-size: 14px;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-mediasheet__upload:empty {
+	display: none;
+}
+
+.daymark-mediasheet__upload--error {
+	color: var(--daymark-error);
+}
+
+.daymark-mediasheet__alttext {
+	min-height: 88px;
+}
+
+.daymark-mediasheet__alttext[aria-busy='true'] {
+	opacity: 0.7;
+}
+
+.daymark-mediasheet__aihint {
+	margin: 0;
+	font-size: 13px;
+	color: var(--daymark-text-secondary);
+}
+
+/* "Suggest with AI" / "Improve with AI": a compact text-style action;
+   .daymark-btn--text gives it the 44px tap height. */
+.daymark-mediasheet__ai {
+	align-self: flex-start;
+	padding: 0;
+}
+
+.daymark-mediasheet__ai[aria-disabled='true'] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.daymark-mediasheet__orderslot:empty {
+	display: none;
+}
+
+.daymark-mediasheet__order {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-xs);
+}
+
+.daymark-mediasheet__order .daymark-field__label {
+	margin: 0;
+}
+
+.daymark-mediasheet__orderbuttons {
+	display: flex;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mediasheet__move {
+	flex: 1;
+	width: auto;
+	min-width: 0;
+	padding-inline: var(--daymark-spacing-sm);
+	font-size: 15px;
+}
+
+/* Earlier is to the right in a right-to-left language. */
+[dir='rtl'] .daymark-mediasheet__chevron {
+	transform: scaleX(-1);
 }
 
 .daymark-notice {
@@ -5016,7 +5087,8 @@ button.daymark-stat {
 @media (prefers-reduced-motion: reduce) {
 	.daymark-sheet__panel,
 	.daymark-spinner,
-	.daymark-skeleton {
+	.daymark-skeleton,
+	.daymark-strip__alt--loading {
 		animation: none;
 	}
 

@@ -907,13 +907,13 @@ class Daymark_Publisher {
 	}
 
 	/**
-	 * Update an existing Mark: caption, media (additive), targets,
-	 * and status.
+	 * Update an existing Mark: caption, media, targets, and status.
 	 *
 	 * Meta is written before the post update so a draft→publish here
 	 * fires syndicate_on_publish() against the fresh targets. Existing
-	 * media is kept (reordered first if a valid media_order was given —
-	 * see apply_media_order()); new files are appended after it.
+	 * media is kept unless media_remove names it (see
+	 * resolve_removed_media()), reordered first if a valid media_order was
+	 * given (see apply_media_order()); new files are appended after it.
 	 *
 	 * @param int                                 $post_id The Mark post ID.
 	 * @param array<string, mixed>                $data    Sanitized input: caption, title,
@@ -922,7 +922,8 @@ class Daymark_Publisher {
 	 *                                                     location_lat, location_lng,
 	 *                                                     location_accuracy, media_order,
 	 *                                                     media_ids (files already uploaded
-	 *                                                     through Daymark_Uploads).
+	 *                                                     through Daymark_Uploads),
+	 *                                                     media_remove (media to take off).
 	 * @param array<string, array<string, mixed>> $files   $_FILES-style array of new media.
 	 * @return int|WP_Error Post ID on success.
 	 */
@@ -957,6 +958,7 @@ class Daymark_Publisher {
 
 		$existing_media = json_decode( (string) get_post_meta( $post_id, '_daymark_media_ids', true ), true );
 		$existing_media = is_array( $existing_media ) ? array_values( array_map( 'intval', $existing_media ) ) : array();
+		$stored_media   = $existing_media;
 
 		// Files the composer already uploaded through Daymark_Uploads
 		// (issue #483): either staged uploads to attach now, or files an
@@ -968,9 +970,18 @@ class Daymark_Publisher {
 			return $requested;
 		}
 
+		// Media the composer took off this Mark (the × on a photo). It
+		// leaves the Mark's list here, and is detached below; the file
+		// itself stays in the Media Library.
+		$removed = $this->resolve_removed_media( $data['media_remove'] ?? null, $existing_media );
+
+		if ( $removed ) {
+			$existing_media = array_values( array_diff( $existing_media, $removed ) );
+		}
+
 		$file_list = $this->normalize_files( $files );
 
-		if ( '' === $caption && empty( $existing_media ) && empty( $requested['ids'] ) && empty( $file_list ) && null === $place_name ) {
+		if ( '' === $caption && empty( $existing_media ) && empty( array_diff( $requested['ids'], $removed ) ) && empty( $file_list ) && null === $place_name ) {
 			return new WP_Error(
 				'daymark_empty',
 				__( 'A Mark needs media or text.', 'daymark' ),
@@ -1012,8 +1023,12 @@ class Daymark_Publisher {
 		// media to detect from (a caption-only edit must not silently
 		// become a 'note', which would muddle per-type memory for
 		// destinations and categories), and always for a Check In, which
-		// its photo would otherwise turn into a photo Mark.
-		if ( '' === $requested_type && ( empty( $media_ids ) || 'checkin' === $stored_type ) ) {
+		// its photo would otherwise turn into a photo Mark. The exception
+		// is an edit that took the last of the Mark's media off: a photo
+		// Mark with no photos left is worked out again, as a Note.
+		$emptied = ! empty( $removed ) && empty( $media_ids );
+
+		if ( '' === $requested_type && ( 'checkin' === $stored_type || ( empty( $media_ids ) && ! $emptied ) ) ) {
 			$requested_type = $stored_type;
 		}
 
@@ -1062,8 +1077,19 @@ class Daymark_Publisher {
 		}
 
 		if ( ! empty( $new_ids ) ) {
-			$this->attach_media( $post_id, $new_ids, $type );
+			$this->attach_media( $post_id, $new_ids, $type, false );
 			Daymark_Uploads::release_staged( $requested['new'] );
+		}
+
+		if ( $removed ) {
+			$this->detach_media( $post_id, $removed );
+		}
+
+		// Photos added by a later save, reordered, or removed: the featured
+		// image follows the Mark's first photo again. A Mark whose photos
+		// didn't change keeps whatever featured image it has.
+		if ( $media_ids !== $stored_media ) {
+			$this->sync_featured_image( $post_id, $media_ids, $type, $removed );
 		}
 
 		// With tags_set the request carries the Mark's complete tag list,
@@ -1082,7 +1108,16 @@ class Daymark_Publisher {
 		// place). Both are scoped to this Mark's own media or the user's own
 		// staged uploads, so an edit can never overwrite alt text on an
 		// attachment that belongs elsewhere.
-		$this->apply_positional_alt( array_merge( $requested['ids'], array_map( 'intval', $sideloaded ) ), $data['alt'] ?? null );
+		// A removed file keeps its place in the list (as 0, which is
+		// skipped), so the alt text after it still lines up.
+		$alt_ids = array_map(
+			static function ( $id ) use ( $removed ) {
+				return in_array( (int) $id, $removed, true ) ? 0 : (int) $id;
+			},
+			$requested['ids']
+		);
+
+		$this->apply_positional_alt( array_merge( $alt_ids, array_map( 'intval', $sideloaded ) ), $data['alt'] ?? null );
 		$this->apply_alt_map( $data['existing_alt'] ?? null, $media_ids );
 
 		$alt_text = sanitize_text_field( (string) ( $data['alt_text'] ?? '' ) );
@@ -1898,12 +1933,17 @@ class Daymark_Publisher {
 	/**
 	 * Attach media to the Mark post and set the featured image.
 	 *
-	 * @param int    $post_id   Mark post ID.
-	 * @param int[]  $media_ids Attachment IDs.
-	 * @param string $type      Primary Mark type.
+	 * @param int    $post_id       Mark post ID.
+	 * @param int[]  $media_ids     Attachment IDs.
+	 * @param string $type          Primary Mark type.
+	 * @param bool   $set_thumbnail Whether to make the first photo the
+	 *                              featured image. update() passes false
+	 *                              and uses sync_featured_image(), since the
+	 *                              files it attaches may follow photos the
+	 *                              Mark already has.
 	 * @return void
 	 */
-	private function attach_media( int $post_id, array $media_ids, string $type ): void {
+	private function attach_media( int $post_id, array $media_ids, string $type, bool $set_thumbnail = true ): void {
 		foreach ( $media_ids as $attachment_id ) {
 			wp_update_post(
 				array(
@@ -1913,7 +1953,7 @@ class Daymark_Publisher {
 			);
 		}
 
-		if ( ! in_array( $type, array( 'image', 'gallery' ), true ) ) {
+		if ( ! $set_thumbnail || ! in_array( $type, array( 'image', 'gallery' ), true ) ) {
 			return;
 		}
 
@@ -1921,6 +1961,91 @@ class Daymark_Publisher {
 
 		if ( ! empty( $groups['image'] ) ) {
 			set_post_thumbnail( $post_id, $groups['image'][0] );
+		}
+	}
+
+	/**
+	 * The media an update takes off a Mark (`media_remove`): only IDs the
+	 * Mark has. Anything else is ignored rather than refused, because the
+	 * composer sends its removals again with every later save, by which
+	 * time they no longer apply.
+	 *
+	 * @param mixed $raw            IDs as an array, or a JSON array string.
+	 * @param int[] $existing_media The Mark's current media.
+	 * @return int[] IDs to remove, in the Mark's own order.
+	 */
+	private function resolve_removed_media( $raw, array $existing_media ): array {
+		if ( is_string( $raw ) ) {
+			$decoded = json_decode( $raw, true );
+			$raw     = is_array( $decoded ) ? $decoded : array( $raw );
+		}
+
+		if ( ! is_array( $raw ) || empty( $existing_media ) ) {
+			return array();
+		}
+
+		$ids = array_filter( array_map( 'absint', $raw ) );
+
+		return array_values( array_intersect( $existing_media, $ids ) );
+	}
+
+	/**
+	 * Detach media an update took off a Mark. The files stay in the Media
+	 * Library: something else may use them, and the person only removed
+	 * them from this Mark. Only attachments still parented to this Mark are
+	 * touched.
+	 *
+	 * @param int   $post_id        Mark post ID.
+	 * @param int[] $attachment_ids Attachment IDs.
+	 * @return void
+	 */
+	private function detach_media( int $post_id, array $attachment_ids ): void {
+		foreach ( $attachment_ids as $attachment_id ) {
+			$attachment = get_post( (int) $attachment_id );
+
+			if ( $attachment instanceof WP_Post && 'attachment' === $attachment->post_type && (int) $attachment->post_parent === $post_id ) {
+				wp_update_post(
+					array(
+						'ID'          => (int) $attachment_id,
+						'post_parent' => 0,
+					)
+				);
+			}
+		}
+	}
+
+	/**
+	 * Point a photo Mark's featured image at its first photo after its
+	 * media changed in an update: photos added by a later save (an
+	 * autosave attaches each file as it finishes uploading), reordered, or
+	 * removed. Only a photo Mark (image or gallery) gets one set, as in
+	 * attach_media(). On any type, a featured image that was one of the
+	 * removed files is cleared, so a Mark never shows a photo it no longer
+	 * has.
+	 *
+	 * @param int    $post_id   Mark post ID.
+	 * @param int[]  $media_ids The Mark's media, in order.
+	 * @param string $type      Primary Mark type.
+	 * @param int[]  $removed   Media removed in this update.
+	 * @return void
+	 */
+	private function sync_featured_image( int $post_id, array $media_ids, string $type, array $removed ): void {
+		$current = (int) get_post_thumbnail_id( $post_id );
+
+		if ( in_array( $type, array( 'image', 'gallery' ), true ) ) {
+			$groups = $this->group_media_ids( $media_ids );
+
+			if ( ! empty( $groups['image'] ) ) {
+				if ( (int) $groups['image'][0] !== $current ) {
+					set_post_thumbnail( $post_id, (int) $groups['image'][0] );
+				}
+
+				return;
+			}
+		}
+
+		if ( $current > 0 && in_array( $current, array_map( 'intval', $removed ), true ) ) {
+			delete_post_thumbnail( $post_id );
 		}
 	}
 

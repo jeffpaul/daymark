@@ -4003,6 +4003,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'media_order'         => $request->get_param( 'media_order' ),
 			// Files already uploaded through Daymark_Uploads (issue #483).
 			'media_ids'           => $media_ids,
+			// Media the composer took off this Mark. Only the Mark's own
+			// media counts; see Daymark_Publisher::resolve_removed_media().
+			'media_remove'        => $request->get_param( 'media_remove' ),
 			'tags'                => $request->get_param( 'tags' ),
 			// The client sends its whole tag list on every save, so an
 			// update replaces the Mark's tags rather than adding to them.
