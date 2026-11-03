@@ -25,8 +25,9 @@
   wp-admin screen shipped, and a blanket "no offline PWA" narrowed the same
   way after offline-first creation shipped; see "Not planned" below and
   CLAUDE.md's non-goals for the current, precise wording of each.)
-- **When a bucket changes, update CLAUDE.md.** The architectural-decisions
-  table there is the authoritative record; this file is the plan.
+- **When a bucket changes, record the decision.** The architectural-decisions
+  table in [architecture-decisions.md](architecture-decisions.md) is the
+  authoritative record; this file is the plan.
 
 ---
 
