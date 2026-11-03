@@ -2628,6 +2628,47 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	await expect(list.getByText(caption).first()).toBeVisible();
 });
 
+// A dropdown is as wide as its longest choice, so following a site with a
+// long name pushed the Source filter past the edge of the screen. The whole
+// page then scrolled sideways, and Chrome on a phone laid the page out
+// larger than the screen, so the bottom bar sat below what was visible. The
+// site list is faked here so the test doesn't depend on any real site's name.
+test('search: a long site name keeps the Source filter inside the screen', async ({ page }) => {
+	const longName = 'A followed site with a very long name that runs well past the edge of a phone screen';
+
+	await page.route(
+		(url) => url.pathname.endsWith('/daymark/v1/subscriptions'),
+		async (route) => {
+			if ('GET' !== route.request().method()) {
+				await route.fallback();
+				return;
+			}
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify([
+					{ id: 999201, site_title: longName, site_url: 'https://long-name.example/', status: 'active' },
+				]),
+			});
+		}
+	);
+
+	await loginAs(page);
+	await page.goto('/daymark/search');
+
+	const sourceFilter = page.locator('[data-source-filter]');
+	await expect(sourceFilter.locator('option[value="999201"]')).toHaveCount(1);
+
+	const sideways = await page.evaluate(
+		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+	);
+	expect(sideways).toBe(0);
+
+	const box = await sourceFilter.boundingBox();
+	expect(box.x).toBeGreaterThanOrEqual(0);
+	expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize().width);
+});
+
 // Site icon: tapping a Timeline item's site icon is a single click that
 // filters Timeline down to just that source — no popover, no "visit the
 // site" action. (A live product review of the earlier two-action popover
