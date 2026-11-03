@@ -456,9 +456,10 @@ h2[tabindex='-1']:focus {
 	font-weight: 600;
 }
 
-/* Categories and Tags on the Publish screen: folded sections below the
-   destinations (PublishScreen.foldMarkup()). Folded, the summary row
-   shows the current selection; tapping it opens the picker. */
+/* Folded sections (foldSectionMarkup()): Categories and Tags on the
+   Publish screen, below the destinations, and the Reblog screen's Title.
+   Folded, the summary row shows the current value; tapping it opens the
+   picker or field. */
 .daymark-publish-fold {
 	margin-block-start: var(--daymark-spacing-md);
 	border: 1px solid var(--daymark-border);

@@ -2356,22 +2356,35 @@
 		if (startAtTop && '#home' === dest) {
 			homeStartAtTop = true;
 		}
-		const steps = origin ? origin.position - historyPosition : 0;
-		if (origin && steps < 0 && steps >= -20) {
-			const shown = screensShown;
-			window.history.go(steps);
-			// A browser that didn't go back: go there directly. Only when
-			// no screen changed at all, so a composer opened again within
-			// the second isn't closed.
-			setTimeout(() => {
-				if (screensShown === shown && COMPOSER_SCREENS.includes(currentScreen)) {
-					navigate(dest);
-				}
-			}, 1000);
+		if (returnToOrigin(origin, dest, () => COMPOSER_SCREENS.includes(currentScreen))) {
 			return;
 		}
 		stampHistoryEntry(historyPosition, dest);
 		showScreen(dest);
+	}
+
+	// Step back through history to `origin` ({ hash, position }, the
+	// history entry a screen was opened from), as the browser's Back would,
+	// so Back from there doesn't return to the screen being closed. Returns
+	// false when that's not possible (no origin, not behind us, or too far
+	// back), so the caller goes to `dest` directly. `stillHere()` says
+	// whether the screen being closed is still showing: if the browser
+	// didn't go back within a second, and no screen changed at all (so a
+	// screen opened again within that second isn't closed), it goes to
+	// `dest` directly.
+	function returnToOrigin(origin, dest, stillHere) {
+		const steps = origin ? origin.position - historyPosition : 0;
+		if (!origin || steps >= 0 || steps < -20) {
+			return false;
+		}
+		const shown = screensShown;
+		window.history.go(steps);
+		setTimeout(() => {
+			if (screensShown === shown && stillHere()) {
+				navigate(dest);
+			}
+		}, 1000);
+		return true;
 	}
 
 	// Before loading a different Mark into the composer: keep what's there.
@@ -3172,6 +3185,14 @@
 		if (payload.inReplyTo) {
 			formData.append('in_reply_to', payload.inReplyTo);
 		}
+		// A reblog (see buildReblogPayload()): the post it reblogs, and its
+		// author for the embed's "Reblogged from" credit.
+		if (payload.repostOf) {
+			formData.append('repost_of', payload.repostOf);
+			if (payload.reblogAuthor) {
+				formData.append('reblog_author', payload.reblogAuthor);
+			}
+		}
 		if (payload.autosave) {
 			formData.append('autosave', '1');
 		}
@@ -3749,10 +3770,11 @@
 		return notice.wasDraft ? __('Saved as draft.', 'daymark') : __('Publishing…', 'daymark');
 	}
 
-	// Called by PublishScreen.publish() once the Mark is queued.
-	function notePublishQueued(pendingId, { wasDraft, needsReview }) {
+	// Called by PublishScreen.publish() and ReblogScreen.submit() once the
+	// Mark is queued. `reblog` words a failure as a reblog's.
+	function notePublishQueued(pendingId, { wasDraft, needsReview, reblog }) {
 		publishNoticeCounter += 1;
-		const notice = { key: 'publish-' + publishNoticeCounter, wasDraft, needsReview };
+		const notice = { key: 'publish-' + publishNoticeCounter, wasDraft, needsReview, reblog: !!reblog };
 		publishNotices.set(pendingId, notice);
 		showMessage({ key: notice.key, text: publishQueuedText(notice, !navigator.onLine) });
 	}
@@ -3797,9 +3819,13 @@
 		if (!notice) {
 			return;
 		}
+		let text = notice.wasDraft ? __("Couldn't save the draft.", 'daymark') : __("Couldn't publish.", 'daymark');
+		if (notice.reblog && !notice.wasDraft) {
+			text = __("Couldn't publish this reblog.", 'daymark');
+		}
 		showMessage({
 			key: notice.key,
-			text: notice.wasDraft ? __("Couldn't save the draft.", 'daymark') : __("Couldn't publish.", 'daymark'),
+			text,
 			// Not while writing another Mark: opening this one would set
 			// that one aside.
 			action: COMPOSER_SCREENS.includes(currentScreen)
@@ -3847,10 +3873,12 @@
 			if (response && response.id) {
 				apiDelete('marks/' + Number(response.id)).catch(() => {});
 			}
+			pendingReblogItems.delete(recordId);
 			return false;
 		}
 		notePublishSaved(recordId, response);
 		onMarkSaved(response);
+		markReblogSaved(recordId, payload, response);
 		return true;
 	}
 
@@ -3916,8 +3944,10 @@
 				// next debounce/tap now that navigator.onLine is true)
 				// rather than racing a background flush against in-memory
 				// edits newer than what was last written to IndexedDB.
+				// Likewise a reblog reopened on the Reblog screen.
 				if (
 					record.id === state.offlineQueueId ||
+					('#reblog' === currentScreen && record.id === ReblogScreen.queueId) ||
 					syncingPendingIds.has(record.id) ||
 					discardedPendingIds.has(record.id)
 				) {
@@ -4016,6 +4046,11 @@
 	async function openPendingMark(id) {
 		const record = await getPendingMark(Number(id));
 		if (!record) {
+			return;
+		}
+		// A queued reblog opens on the Reblog screen, not the composer.
+		if (record.payload && record.payload.repostOf) {
+			openPendingReblog(record);
 			return;
 		}
 		setAsideComposer();
@@ -4803,6 +4838,13 @@
 		// lists drafts already counts this one.
 		if (COMPOSER_SCREENS.includes(previous) && !COMPOSER_SCREENS.includes(target)) {
 			leaveComposer();
+		}
+
+		// Leaving a reblog reopened from the queue without publishing it:
+		// the queue skipped it while it was open (see flushOfflineQueue()),
+		// so send it now if the connection is back.
+		if ('#reblog' === previous && '#reblog' !== target && ReblogScreen.queueId && navigator.onLine) {
+			setTimeout(() => flushOfflineQueue().catch(() => {}), 0);
 		}
 
 		AIAssistSheet.hide(false);
@@ -6801,12 +6843,13 @@
 	// optimistic as toggleLike() above — there's nothing to preview when
 	// removing one. Creating one (issue #393) opens the dedicated Reblog
 	// preview screen (see ReblogScreen below) instead of publishing
-	// straight away — the reader sees the quoted post, an editable title,
-	// and a field for their own thoughts before anything is actually
-	// created. No optimistic UI flip on this path at all (unlike the undo
-	// branch, and unlike the old TextPromptSheet-based flow this replaces):
-	// nothing has happened yet, so there's nothing to flip until the
-	// preview screen's own Publish tap actually succeeds.
+	// straight away — the reader sees the quoted post and a field for
+	// their own thoughts before anything is actually created. No
+	// optimistic UI flip on this path: the button shows as reblogged once
+	// the site has saved the reblog (markReblogged()), which can be after
+	// the Reblog screen has closed, or later still when it was made
+	// offline. A reblog of this post still waiting in the queue reopens on
+	// the Reblog screen instead of starting a second one.
 	async function toggleRepost(screen, trigger) {
 		// Same duplicate-tap guard as toggleLike() above for the undo path;
 		// the create path navigates to a whole new screen, which already
@@ -6835,7 +6878,18 @@
 			}
 			return;
 		}
-		maybeShowInteractionHintThen('repost', trigger, () => openReblogScreen(screen, item));
+		// The first-time explainer shows straight from the tap; the queue
+		// is checked after it.
+		maybeShowInteractionHintThen('repost', trigger, async () => {
+			trigger.setAttribute('data-repost-busy', 'true');
+			const queued = await findPendingReblog(item.permalink);
+			trigger.removeAttribute('data-repost-busy');
+			if (queued) {
+				openPendingReblog(queued, screen, trigger, item);
+				return;
+			}
+			openReblogScreen(screen, item, trigger);
+		});
 	}
 
 	// The Comment toggle (issue #317; pre-check added as a #351 follow-up).
@@ -7576,9 +7630,20 @@
 			: __("Couldn't save draft", 'daymark');
 	}
 
+	// A queued Mark's title on its pending card: a reblog's own title
+	// ("Reblog: …"), since its caption is only the reader's comment;
+	// otherwise the caption.
+	function pendingTitle(payload) {
+		return (
+			(payload.repostOf ? (payload.title || '').trim() : '') ||
+			(payload.caption || '').trim() ||
+			__('Untitled Mark', 'daymark')
+		);
+	}
+
 	function renderPendingItem(record) {
 		const payload = record.payload || {};
-		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
+		const title = pendingTitle(payload);
 		const firstFile = Array.isArray(payload.newFiles) ? payload.newFiles[0] : null;
 		let thumb = '';
 		if (firstFile && firstFile.kind === 'image') {
@@ -7628,7 +7693,7 @@
 
 	function renderPendingTimelineItem(record) {
 		const payload = record.payload || {};
-		const title = (payload.caption || '').trim() || __('Untitled Mark', 'daymark');
+		const title = pendingTitle(payload);
 		const firstFile = Array.isArray(payload.newFiles) ? payload.newFiles[0] : null;
 		const kind = payload.primaryType || 'note';
 		let media = '';
@@ -7650,9 +7715,10 @@
 				pendingErrorLabel(record)
 			)}</span> ${esc(__('Tap to review and retry', 'daymark'))}`;
 		} else if ('uploading' === status) {
+			// Nothing to upload (a text post, a reblog): it's just being sent.
 			chip = `<span class="daymark-spinner daymark-spinner--inline" aria-hidden="true"></span> ${pendingUploadingMarkup(
 				record,
-				esc(__('Uploading…', 'daymark'))
+				esc(firstFile ? __('Uploading…', 'daymark') : __('Publishing…', 'daymark'))
 			)}`;
 		} else {
 			chip = `<span class="daymark-chip daymark-chip--draft">${esc(__('Offline', 'daymark'))}</span> ${esc(
@@ -7700,6 +7766,43 @@
 		});
 	}
 
+	// Change something above a Timeline reader (a card added at the top,
+	// a pending card swapped for the real one, the drafts row appearing)
+	// without moving what they're reading: the first card showing below
+	// the header stays where it was. Chrome and Firefox already do this
+	// (CSS scroll anchoring); Safari doesn't, and without it a card added
+	// above pushes the reader's place down the screen. At the top of the
+	// page nothing is held, so a new card there is what you see.
+	function holdScrollPlace(change) {
+		const list = root.querySelector('[data-recent-list]');
+		if (!list || !list.isConnected || window.scrollY < 4) {
+			change();
+			return;
+		}
+		const header = root.querySelector('.daymark-topbar');
+		const top = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+		let anchor = null;
+		for (const wrap of list.querySelectorAll('.daymark-recent__item-wrap')) {
+			if (wrap.getBoundingClientRect().bottom > top + 24) {
+				anchor = wrap;
+				break;
+			}
+		}
+		if (!anchor) {
+			change();
+			return;
+		}
+		const before = anchor.getBoundingClientRect().top;
+		change();
+		if (!anchor.isConnected) {
+			return;
+		}
+		const delta = anchor.getBoundingClientRect().top - before;
+		if (Math.abs(delta) >= 1) {
+			window.scrollBy(0, delta);
+		}
+	}
+
 	// (Re)loads Home's Pending section from the local offline queue. Called
 	// on Home init, and after anything that changes the queue (a fresh
 	// offline save, or flushOfflineQueue() syncing items back out) — a no-op
@@ -7729,13 +7832,17 @@
 
 			pendingObjectUrls.forEach((url) => URL.revokeObjectURL(url));
 			pendingObjectUrls = [];
+			holdScrollPlace(() => {
+				if (timeline) {
+					timeline.innerHTML = publishes.map((record) => renderPendingTimelineItem(record)).join('');
+					timeline.hidden = !publishes.length;
+				}
+				list.innerHTML = others.map((record) => renderPendingItem(record)).join('');
+				section.hidden = !others.length;
+			});
 			if (timeline) {
-				timeline.innerHTML = publishes.map((record) => renderPendingTimelineItem(record)).join('');
-				timeline.hidden = !publishes.length;
 				bindPendingTaps(timeline);
 			}
-			list.innerHTML = others.map((record) => renderPendingItem(record)).join('');
-			section.hidden = !others.length;
 			bindPendingTaps(list);
 		} catch (err) {
 			// IndexedDB unavailable (old browser, private-mode restrictions, …):
@@ -8269,26 +8376,38 @@
 				if (!draftsRow.isConnected) {
 					return;
 				}
-				const label = draftsRow.querySelector('[data-drafts-row-label]');
-				if (label) {
-					label.textContent = count ? draftsRowLabel(count) : '';
-				}
-				draftsRow.hidden = !count;
+				holdScrollPlace(() => {
+					const label = draftsRow.querySelector('[data-drafts-row-label]');
+					if (label) {
+						label.textContent = count ? draftsRowLabel(count) : '';
+					}
+					draftsRow.hidden = !count;
+				});
 			} catch (err) {
 				// Leave the row as it was.
 			}
 		},
 
 		// Put a Mark you just published at the top of the Timeline, in place
-		// of its pending card (see onMarkSaved()). A no-op when Home isn't
-		// on screen or the card is already there; the next load shows it
-		// either way.
+		// of its pending card (see onMarkSaved()). When Home isn't on screen
+		// but a saved Timeline is waiting to be restored (you're on the
+		// post view or the Reblog screen it was opened from), it goes on top
+		// of that instead. A no-op when the card is already there, or when
+		// neither applies; the next load shows it either way.
 		insertPublished(item) {
 			const list = root.querySelector('[data-recent-list]');
+			const entry = Object.assign({ item_type: 'mark' }, item);
 			if (!list || !list.isConnected) {
+				if (
+					feedSnapshot &&
+					'#home' === feedSnapshot.hash &&
+					Array.isArray(feedSnapshot.items) &&
+					timelineItemIndex(feedSnapshot.items, entry) < 0
+				) {
+					feedSnapshot.items.unshift(entry);
+				}
 				return;
 			}
-			const entry = Object.assign({ item_type: 'mark' }, item);
 			// Publishing returns you to Home at once, so Home's own load is
 			// often still on its way when the save lands, and its answer
 			// can predate the Mark. loadRecent() puts it back on top.
@@ -8305,24 +8424,30 @@
 				this._newestSeenIndex += 1;
 			}
 			this.hideNewPosts();
-			if (!list.querySelector('.daymark-recent__item-wrap')) {
-				list.innerHTML = '';
-			}
 			const date = entry.date ? parseDate(entry.date) : null;
 			const period = timelinePeriod(date || new Date());
-			const first = list.firstElementChild;
 			const cardHtml = renderFeedItem(entry);
-			if (first && first.classList.contains('daymark-recent__groupheader') && first.textContent === period.label) {
-				first.insertAdjacentHTML('afterend', cardHtml);
-			} else {
-				list.insertAdjacentHTML(
-					'afterbegin',
-					`<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(period.label)}</h3>${cardHtml}`
-				);
-				if (null === this._lastGroupKey) {
-					this._lastGroupKey = period.key;
+			holdScrollPlace(() => {
+				if (!list.querySelector('.daymark-recent__item-wrap')) {
+					list.innerHTML = '';
 				}
-			}
+				const first = list.firstElementChild;
+				if (
+					first &&
+					first.classList.contains('daymark-recent__groupheader') &&
+					first.textContent === period.label
+				) {
+					first.insertAdjacentHTML('afterend', cardHtml);
+				} else {
+					list.insertAdjacentHTML(
+						'afterbegin',
+						`<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(period.label)}</h3>${cardHtml}`
+					);
+					if (null === this._lastGroupKey) {
+						this._lastGroupKey = period.key;
+					}
+				}
+			});
 			observeFeaturedImages(this, list);
 			this.observeSeen();
 			// Reading from the top: the new Mark is where you are.
@@ -13360,8 +13485,11 @@
 	// Drop the saved snapshot after an action that changes what the list
 	// should show: unsubscribing from a site (its posts must leave the
 	// list), or publishing or removing one of your own Marks from the post
-	// view (a reblog, a Webmention comment, undoing a reblog). The screen
-	// then reloads on Back, as it did before snapshots existed.
+	// view (a Webmention comment, undoing a reblog). The screen then
+	// reloads on Back, as it did before snapshots existed. A reblog keeps
+	// the snapshot: once the site saves it, it's added to the top of a
+	// saved Timeline (HomeScreen.insertPublished()), so Back still lands
+	// on the card you reblogged.
 	function discardFeedSnapshot() {
 		feedSnapshot = null;
 	}
@@ -14332,40 +14460,221 @@
 		},
 	};
 
+	// --- Shared: folded sections ---
+	//
+	// A setting that's usually fine as it is. Folded, it shows only its
+	// current value, so the common path stays one tap; unfolding lets the
+	// person change it. The Publish screen's Categories and Tags and the
+	// Reblog screen's Title use it. `value` is HTML: escape it first.
+	function foldSectionMarkup(kind, label, value, body) {
+		return `
+				<details class="daymark-publish-fold" data-fold="${kind}">
+					<summary class="daymark-publish-fold__summary">
+						<span class="daymark-publish-fold__label">${esc(label)}</span>
+						<span class="daymark-publish-fold__value" data-fold-value="${kind}">${value}</span>
+					</summary>
+					<div class="daymark-publish-fold__body">${body}</div>
+				</details>`;
+	}
+
 	// --- Screen: Reblog preview (issue #393) ---
 	//
 	// Replaces the old TextPromptSheet-based instant-publish flow
 	// (toggleRepost()'s create branch used to open a small sheet and
 	// publish immediately on Submit/Skip) with a real preview: the
-	// reblogged post previewed as the embed card it will publish as, an editable
-	// "Reblog: {title}" title, and a field for the reader's own thoughts —
-	// all visible before the Mark actually exists. A client-side-only
-	// screen (like #create/#post — no PHP route; see
-	// Daymark_Routes::SCREENS), seeded via the one-shot pendingReblog
-	// hand-off below. Nothing is created until Publish is tapped; the
-	// Cancel link (and showScreen()'s own missing-state guard) simply
-	// leaves no trace, since no request has been made yet.
+	// reblogged post previewed as the embed card it will publish as, a
+	// field for the reader's own thoughts, and the title folded away
+	// ("Reblog: {title}" unless the reader changes it), all before the
+	// Mark exists. A client-side-only screen (like #create/#post — no PHP
+	// route; see Daymark_Routes::SCREENS), seeded via the one-shot
+	// pendingReblog hand-off below. Publish goes through the same
+	// background queue as every other Mark (publishInBackground()): the
+	// screen closes at once, back to where it was opened, and a reblog
+	// made offline waits on this device until the connection returns.
+	// The post shows as reblogged once the site answers (markReblogged()).
+	// Cancel leaves no trace, since nothing is saved before Publish.
 
 	let pendingReblog = null;
 
+	// Queued reblog record id → the item it reblogs, as the screen that
+	// opened it had it, so its card can show as reblogged once the site
+	// answers. In memory only: after a reload, the payload's own copy of
+	// the item (reblogItem) is used instead.
+	const pendingReblogItems = new Map();
+
+	// The item fields a queued reblog keeps: plain text and numbers, enough
+	// to show its preview again and to find its cards later.
+	const REBLOG_ITEM_FIELDS = [
+		'id',
+		'item_type',
+		'title',
+		'permalink',
+		'author',
+		'excerpt',
+		'featured_image_url',
+		'site_title',
+		'site_url',
+	];
+
+	function reblogItemSnapshot(item) {
+		const copy = {};
+		REBLOG_ITEM_FIELDS.forEach((field) => {
+			const value = item ? item[field] : undefined;
+			if ('string' === typeof value || 'number' === typeof value) {
+				copy[field] = value;
+			}
+		});
+		return copy;
+	}
+
+	// The title a reblog gets unless the reader changes it.
+	function reblogDefaultTitle(item) {
+		return sprintf(
+			/* translators: %s: title of the reblogged post */
+			__('Reblog: %s', 'daymark'),
+			(item && (item.title || item.permalink)) || ''
+		);
+	}
+
+	// What a reblog sends, in buildMarkPayload()'s shape, so the queue
+	// stores, sends, and retries it like any other Mark. It names no
+	// destinations or categories, so the site uses its usual ones for a
+	// Note, as before.
+	function buildReblogPayload(item, comment, title, status) {
+		return {
+			status,
+			autosave: false,
+			caption: comment,
+			primaryType: 'note',
+			title,
+			transcript: null,
+			aiAssistUsed: false,
+			targets: [],
+			categories: [],
+			tags: [],
+			helpers: null,
+			capturedAt: null,
+			location: null,
+			placeName: null,
+			inReplyTo: '',
+			newFiles: [],
+			existingAlt: {},
+			existingMediaIds: [],
+			repostOf: item.permalink,
+			reblogAuthor: item.author || '',
+			reblogItem: reblogItemSnapshot(item),
+		};
+	}
+
+	// Show a post as reblogged everywhere it's on screen or kept in
+	// memory, once the site has saved the reblog: the item the Reblog
+	// screen was opened with, the same post in each list, a saved list
+	// snapshot, the post view's hand-off, and every Reblog button for it.
+	function markReblogged(permalink, item, markId, subId) {
+		if (!permalink || !markId) {
+			return;
+		}
+		const ids = new Set(subId ? [String(subId)] : []);
+		const mark = (candidate) => {
+			if (
+				candidate &&
+				'subscription_post' === candidate.item_type &&
+				candidate.permalink === permalink
+			) {
+				candidate.reposted_mark_id = markId;
+				if (candidate.id) {
+					ids.add(String(candidate.id));
+				}
+			}
+		};
+		mark(item);
+		[HomeScreen, SearchScreen, ExploreScreen, MeScreen, PostScreen].forEach((screen) => {
+			if (screen._bySubId instanceof Map) {
+				screen._bySubId.forEach(mark);
+			}
+		});
+		if (feedSnapshot && Array.isArray(feedSnapshot.items)) {
+			feedSnapshot.items.forEach(mark);
+		}
+		if (pendingPostView) {
+			mark(pendingPostView.item);
+		}
+		ids.forEach((id) => {
+			root.querySelectorAll('[data-repost-toggle="' + CSS.escape(id) + '"]').forEach((trigger) => {
+				setEngagementToggleState(trigger, 'repost', true, markId, null);
+			});
+		});
+	}
+
+	// Called once the site saves a queued record (settleSyncedRecord()).
+	function markReblogSaved(recordId, payload, response) {
+		const item = pendingReblogItems.get(recordId);
+		pendingReblogItems.delete(recordId);
+		if (!payload || !payload.repostOf || !response || !response.id) {
+			return;
+		}
+		const saved = payload.reblogItem || {};
+		markReblogged(payload.repostOf, item || saved, Number(response.id), saved.id);
+	}
+
+	// A reblog of this post still waiting in the queue, or null.
+	async function findPendingReblog(permalink) {
+		if (!permalink) {
+			return null;
+		}
+		try {
+			const pending = await getAllPendingMarks();
+			return pending.find((record) => record.payload && record.payload.repostOf === permalink) || null;
+		} catch (err) {
+			return null;
+		}
+	}
+
+	// Reopen a reblog that is still waiting in the queue on the Reblog
+	// screen, to change it, publish it again, or discard it. One the
+	// queue is sending right now can't be changed.
+	function openPendingReblog(record, screen, trigger, item) {
+		if (syncingPendingIds.has(record.id)) {
+			if (trigger) {
+				showFlashBubble(trigger, __('Your reblog of this is on its way.', 'daymark'));
+			} else {
+				showMessage({ key: 'reblog-sending', text: __('Your reblog is on its way.', 'daymark') });
+			}
+			return;
+		}
+		const payload = record.payload || {};
+		const reblogged =
+			item ||
+			pendingReblogItems.get(record.id) ||
+			Object.assign({}, payload.reblogItem, { permalink: payload.repostOf });
+		openReblogScreen(screen || null, reblogged, trigger || null, {
+			queueId: record.id,
+			comment: payload.caption || '',
+			title: payload.title || '',
+		});
+	}
+
 	// Mirrors openPostView()'s own pendingPostView hand-off. `screen` is
-	// whichever controller currently owns the tapped trigger (Home, Search,
-	// or PostScreen) — when it's PostScreen, its own one-shot view
-	// (`screen.view`) is re-armed as `pendingPostView` immediately, not just
-	// on the way back out: PostScreen.init() has already consumed and
-	// nulled the original hand-off by the time a Repost tap can fire, so
-	// without this, returning to '#post' (via ReblogScreen's plain Cancel
-	// link, or after a successful Publish) would find pendingPostView empty
-	// and bounce to Home via showScreen()'s existing guard. Re-arming it
-	// here means both exits work with no special-casing at ReblogScreen's
-	// own end — and since it's the exact same `item` reference this screen
-	// goes on to mutate (see ReblogScreen.submit()), PostScreen's next
-	// render already reflects the new repost state for free.
-	function openReblogScreen(screen, item) {
+	// whichever controller owns the tapped trigger (Home, Search, Explore,
+	// or PostScreen). From PostScreen, its own one-shot view
+	// (`screen.view`) is re-armed as `pendingPostView` straight away:
+	// PostScreen.init() has already consumed the original hand-off, so
+	// without this, going back to '#post' would find it empty and bounce
+	// to Home through showScreen()'s guard. From a list, the list is saved
+	// (saveFeedSnapshot()), so going back lands on the card you reblogged
+	// rather than at the top. `resume` reopens a reblog still waiting in
+	// the queue: its record id, comment, and title.
+	function openReblogScreen(screen, item, trigger, resume) {
 		if (screen && screen.view) {
 			pendingPostView = screen.view;
 		}
-		pendingReblog = { item, returnTo: window.location.hash || '#home' };
+		if (trigger && (screen === HomeScreen || screen === SearchScreen || screen === ExploreScreen)) {
+			const card = trigger.closest('[data-subpost], [data-expand-post]');
+			if (card) {
+				saveFeedSnapshot(screen, card);
+			}
+		}
+		pendingReblog = Object.assign({ item, returnTo: window.location.hash || '#home' }, resume || {});
 		navigate('#reblog');
 	}
 
@@ -14374,11 +14683,8 @@
 			const hand = pendingReblog;
 			const item = hand && hand.item ? hand.item : {};
 			const linkText = item.title || item.permalink || '';
-			const defaultTitle = sprintf(
-				/* translators: %s: title of the reblogged post */
-				__('Reblog: %s', 'daymark'),
-				linkText
-			);
+			const title = (hand && hand.title) || reblogDefaultTitle(item);
+			const comment = (hand && hand.comment) || '';
 			// Credit the author as well as the site, as the published embed's
 			// caption does.
 			const source = [item.author, subscriptionSiteLabel(item)].filter(Boolean).join(', ');
@@ -14386,6 +14692,13 @@
 			// as the original's own embed card. This card previews it from
 			// what the Timeline already has, with no extra request.
 			const image = item.featured_image_url || '';
+			// Reopening a reblog that's waiting in the queue offers Discard.
+			const discard =
+				hand && hand.queueId
+					? `<button type="button" class="daymark-btn daymark-btn--text" data-action="reblog-discard">${esc(
+							__('Discard reblog', 'daymark')
+					  )}</button>`
+					: '';
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon(hand ? hand.returnTo : '#home', __('Cancel', 'daymark'))}
@@ -14415,20 +14728,24 @@
 					)}</p>
 					<textarea id="daymark-reblog-comment" class="daymark-textarea" rows="4" placeholder="${esc(
 						__('What do you think of it?', 'daymark')
-					)}" aria-describedby="daymark-reblog-comment-help" data-reblog-comment data-daymark-focus></textarea>
+					)}" aria-describedby="daymark-reblog-comment-help" data-reblog-comment data-daymark-focus>${esc(
+						comment
+					)}</textarea>
 				</div>
-				<div class="daymark-field">
-					<label class="daymark-field__label" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
-					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(
-						defaultTitle
-					)}" />
-				</div>
+				${foldSectionMarkup(
+					'reblog-title',
+					__('Title', 'daymark'),
+					esc(title),
+					`<label class="daymark-visually-hidden" for="daymark-reblog-title">${esc(__('Title', 'daymark'))}</label>
+					<input type="text" class="daymark-input" id="daymark-reblog-title" data-reblog-title value="${esc(title)}" />`
+				)}
 			</section>
 			<footer class="daymark-actionbar">
 				<p class="daymark-status" data-reblog-status aria-live="polite"></p>
 				<button type="button" class="daymark-btn daymark-btn--primary" data-action="reblog-publish">${esc(
 					__('Publish', 'daymark')
 				)}</button>
+				${discard}
 			</footer>`;
 		},
 
@@ -14437,6 +14754,25 @@
 			// Typing anything takes the screen back out of the "no thoughts
 			// yet" second-tap state (see submit()).
 			root.querySelector('[data-reblog-comment]').addEventListener('input', () => this.resetNudge());
+			// The folded Title row shows the title as it's typed.
+			const titleField = root.querySelector('[data-reblog-title]');
+			const titleValue = root.querySelector('[data-fold-value="reblog-title"]');
+			titleField.addEventListener('input', () => {
+				titleValue.textContent = titleField.value.trim() || this.defaultTitle;
+			});
+			const discard = root.querySelector('[data-action="reblog-discard"]');
+			if (discard) {
+				discard.addEventListener('click', () => this.discard());
+			}
+			// Cancel steps back to where you came from, as the browser's
+			// Back would, instead of adding that screen again on top.
+			const cancel = root.querySelector('.daymark-topbar .daymark-backlink');
+			if (cancel) {
+				cancel.addEventListener('click', (event) => {
+					event.preventDefault();
+					this.leave();
+				});
+			}
 		},
 
 		// Back to the ordinary Publish button after the nudge was shown.
@@ -14456,16 +14792,25 @@
 			const hand = pendingReblog;
 			this.item = hand ? hand.item : {};
 			this.returnTo = hand ? hand.returnTo : '#home';
+			this.queueId = hand && hand.queueId ? hand.queueId : null;
+			this.defaultTitle = reblogDefaultTitle(this.item);
 			this.nudged = false;
+			this.sending = false;
+			// showScreen() runs init() before it records the new screen, so
+			// these still name the screen this was opened from.
+			this.origin = currentScreen ? { hash: currentScreen, position: historyPosition } : null;
 			pendingReblog = null;
 		},
 
 		async submit() {
+			if (this.sending) {
+				return;
+			}
 			const button = root.querySelector('[data-action="reblog-publish"]');
 			const status = root.querySelector('[data-reblog-status]');
-			const title = root.querySelector('[data-reblog-title]').value.trim();
 			const commentField = root.querySelector('[data-reblog-comment]');
 			const comment = commentField.value.trim();
+			const title = root.querySelector('[data-reblog-title]').value.trim() || this.defaultTitle;
 
 			// Encouraged, not required: with nothing written, the first tap
 			// asks once and the second tap reblogs anyway.
@@ -14480,35 +14825,101 @@
 				return;
 			}
 
+			this.sending = true;
 			button.disabled = true;
 			button.textContent = __('Publishing…', 'daymark');
 			status.textContent = '';
-
-			const formData = new FormData();
-			formData.append('title', title);
-			formData.append('caption', comment);
-			if (this.item.author) {
-				formData.append('reblog_author', this.item.author);
+			const discard = root.querySelector('[data-action="reblog-discard"]');
+			if (discard) {
+				discard.disabled = true;
 			}
-			formData.append('primary_type', 'note');
-			formData.append('status', 'publish');
-			formData.append('ai_assist_used', '0');
-			formData.append('repost_of', this.item.permalink);
 
+			// Someone who can't publish on this site (a Contributor) gets a
+			// draft, as from the Publish screen.
+			const needsReview = false === config.canPublish;
+			const payload = buildReblogPayload(this.item, comment, title, needsReview ? 'draft' : 'publish');
+			let pendingId;
 			try {
-				const mark = await apiUpload('marks', formData);
-				this.item.reposted_mark_id = mark.id;
-				discardFeedSnapshot();
-				// Your reblog is your own new post: move the last-seen marker
-				// to it so Home doesn't count it as new.
-				onMarkSaved(mark);
-				navigate(this.returnTo);
+				pendingId = await publishInBackground('marks', null, payload, this.queueId);
 			} catch (err) {
-				status.textContent = err.message || __("Couldn't publish this reblog.", 'daymark');
+				// This device can't queue (no IndexedDB): wait for the site.
+				await this.publishDirect(payload, needsReview);
+				return;
+			}
+			pendingReblogItems.set(pendingId, this.item);
+			notePublishQueued(pendingId, { wasDraft: needsReview, needsReview, reblog: true });
+			this.leave();
+		},
+
+		// Publishing on a device that can't queue: send it and wait, as
+		// every reblog did before the queue.
+		async publishDirect(payload, needsReview) {
+			const button = root.querySelector('[data-action="reblog-publish"]');
+			const status = root.querySelector('[data-reblog-status]');
+			try {
+				const mark = await sendMarkPayload('marks', payload, { waitForUploads: true });
+				markReblogged(payload.repostOf, this.item, Number(mark.id), payload.reblogItem.id);
+				onMarkSaved(mark);
+				const published = 'publish' === mark.status;
+				showMessage({
+					key: 'reblog-direct',
+					text:
+						published || !needsReview
+							? __('Published.', 'daymark')
+							: __('Saved as a draft for an editor to publish.', 'daymark'),
+					action: published ? { label: __('View', 'daymark'), run: () => viewPublishedMark(mark) } : null,
+				});
+				if ('#reblog' === currentScreen) {
+					this.leave();
+				}
+			} catch (err) {
+				this.sending = false;
+				const message = err.message || __("Couldn't publish this reblog.", 'daymark');
+				if (!button.isConnected) {
+					showMessage({ key: 'reblog-direct', text: message, error: true });
+					return;
+				}
+				status.textContent = message;
 				button.disabled = false;
 				button.textContent = __('Publish', 'daymark');
 				this.nudged = false;
 			}
+		},
+
+		// "Discard reblog", on a reblog still waiting in the queue.
+		async discard() {
+			if (this.sending || !this.queueId) {
+				return;
+			}
+			this.sending = true;
+			const queueId = this.queueId;
+			publishNotices.delete(queueId);
+			const ok = await discardSavedDraft({ queueId });
+			pendingReblogItems.delete(queueId);
+			refreshPendingSection();
+			showMessage(
+				ok
+					? { key: 'reblog-discard', text: __('Reblog discarded.', 'daymark') }
+					: { key: 'reblog-discard', text: __("Couldn't discard the reblog.", 'daymark'), error: true }
+			);
+			this.leave();
+		},
+
+		// Back to the screen the reblog was started from, stepping back
+		// through history (see returnToOrigin()) so Back from there doesn't
+		// return here. A saved list snapshot is kept, so a list opens on
+		// the card you reblogged.
+		leave() {
+			const origin = this.origin;
+			if (
+				origin &&
+				origin.hash === this.returnTo &&
+				returnToOrigin(origin, this.returnTo, () => '#reblog' === currentScreen)
+			) {
+				return;
+			}
+			stampHistoryEntry(historyPosition, this.returnTo);
+			showScreen(this.returnTo);
 		},
 	};
 
@@ -14703,22 +15114,6 @@
 			</footer>`;
 		},
 
-		// Categories and Tags sit below the destinations as two folded
-		// sections. Folded, each shows only its current selection (the
-		// remembered or default categories, the AI-suggested or typed
-		// tags), so the common path stays one tap; unfolding lets the
-		// person change it.
-		foldMarkup(kind, label, value, body) {
-			return `
-				<details class="daymark-publish-fold" data-fold="${kind}">
-					<summary class="daymark-publish-fold__summary">
-						<span class="daymark-publish-fold__label">${esc(label)}</span>
-						<span class="daymark-publish-fold__value" data-fold-value="${kind}">${value}</span>
-					</summary>
-					<div class="daymark-publish-fold__body">${body}</div>
-				</details>`;
-		},
-
 		// The categories this Mark will be filed under, by name. With none
 		// picked, WordPress files it under the site's default category.
 		categorySummary() {
@@ -14776,7 +15171,7 @@
 				)
 				.join('');
 			const typeLabel = esc(TYPE_LABELS[state.primaryType] || __('these', 'daymark'));
-			return this.foldMarkup(
+			return foldSectionMarkup(
 				'categories',
 				__('Categories', 'daymark'),
 				this.categorySummary(),
@@ -14790,7 +15185,7 @@
 		},
 
 		renderTagsFold() {
-			return this.foldMarkup(
+			return foldSectionMarkup(
 				'tags',
 				__('Tags', 'daymark'),
 				this.tagSummary(),
