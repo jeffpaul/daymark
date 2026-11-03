@@ -4,8 +4,9 @@
  * Screen routing is hash-based within /daymark. The server-rendered
  * screen (home | notifications) arrives via window.daymarkApp.screen.
  *
- * Screens: #home, #create, #publish, #success, #notifications.
- * The AI Assist sheet and the subscription-post detail sheet are
+ * Screens: #home, #create, #success, #notifications, and more (see
+ * SCREENS). A Mark is published from #create itself; an old #publish
+ * link opens #create. The AI Assist and "Where this goes" sheets are
  * overlays, not routed screens.
  */
 (function () {
@@ -836,14 +837,18 @@
 		// draft (state.editing) mid-session, but it's still a new Mark.
 		resumed: false,
 		// True when the destination and category lists came from a saved
-		// draft or a Mark queued from the Publish screen, so they're the
-		// Mark's real choice rather than empty placeholders. See
-		// selectionIsSet().
+		// draft or a queued Mark that recorded its choice, so they're the
+		// Mark's real choice. See selectionIsSet().
 		selectionLoaded: false,
-		// The type whose default destinations and categories were applied
-		// this session, so going Back and Next again keeps changes unless
-		// the type itself changed.
+		// The type whose default destinations and categories the composer
+		// shows (see applyTypeDefaults()). A new Mark's untouched lists
+		// follow its type: picking a photo for a Note switches them to the
+		// Image defaults.
 		defaultsAppliedFor: null,
+		// Set once you change the destinations or the categories yourself,
+		// so they stay as you left them when the type changes.
+		targetsTouched: false,
+		categoriesTouched: false,
 		// Enabled controllable third-party publishing helper ids. Each starts
 		// where its plugin would land on its own (see defaultHelpers()).
 		helpers: defaultHelpers(),
@@ -1916,12 +1921,43 @@
 	}
 
 	// Whether the destination and category lists are the Mark's real
-	// choice, so a save sends them even when empty: an empty list then
-	// means "none" rather than "use the defaults". A new Mark's lists are
-	// empty placeholders until Next applies the type's defaults, and an
-	// autosave before that must leave the server to apply them.
+	// choice, so every save sends them even when empty: an empty list then
+	// means "none" rather than "use the defaults". A new Mark shows its
+	// type's defaults from the start, but until you change one of them an
+	// autosave sends no lists, so the site applies those same defaults
+	// without remembering them as your choice. Publish and Save as draft
+	// always send them (buildMarkPayload()'s `explicit`).
 	function selectionIsSet() {
-		return state.selectionLoaded || state.defaultsAppliedFor === state.primaryType;
+		return state.selectionLoaded || state.targetsTouched || state.categoriesTouched;
+	}
+
+	// Show the current type's default destinations and categories, for a
+	// new Mark whose lists you haven't changed: when the composer opens,
+	// and again whenever the type changes. A list you changed stays as you
+	// left it. Returns true when it changed anything.
+	function applyTypeDefaults() {
+		const type = state.primaryType;
+		if (state.selectionLoaded || state.defaultsAppliedFor === type) {
+			return false;
+		}
+		if (!state.targetsTouched) {
+			state.targets = defaultTargetsFor(type);
+		}
+		if (!state.categoriesTouched) {
+			state.categories = defaultCategoriesFor(type);
+		}
+		state.defaultsAppliedFor = type;
+		return true;
+	}
+
+	// The chosen destinations that can take this type. A destination you
+	// turned on stays chosen when the type changes to one it can't take
+	// (it's just not sent), so changing back brings it back.
+	function supportedTargets(type) {
+		return state.targets.filter((id) => {
+			const connector = connectors.find((c) => c.id === id);
+			return !connector || connectorSupportsType(connector, type);
+		});
 	}
 
 	// The site remembers a Mark's destinations and categories as the
@@ -2003,6 +2039,8 @@
 		state.resumed = false;
 		state.selectionLoaded = false;
 		state.defaultsAppliedFor = null;
+		state.targetsTouched = false;
+		state.categoriesTouched = false;
 		state.helpers = defaultHelpers();
 		state.offlineQueueId = null;
 		state.composerNotice = '';
@@ -3085,6 +3123,11 @@
 			alt: entry.kind === 'image' ? entry.alt || '' : '',
 			attachmentId: entry.uploadedId || null,
 		}));
+		// Publish and Save as draft pass `explicit`: what the composer
+		// shows is what the Mark gets. Otherwise (an autosave, leaving the
+		// composer) the lists go only once you've made them your own; see
+		// selectionIsSet().
+		const selectionSet = !!opts.explicit || selectionIsSet();
 		return {
 			status,
 			autosave: !!opts.autosave,
@@ -3093,12 +3136,12 @@
 			title: titleFieldShown() ? state.title || '' : null,
 			transcript: transcriptFieldShown() ? state.transcript || '' : null,
 			aiAssistUsed: !!state.aiAssistUsed,
-			targets: state.targets.slice(),
-			categories: state.categories.slice(),
-			// Whether the two lists above are the Mark's real choice (see
-			// selectionIsSet()). Stored with a queued Mark, so a replay and
-			// a reopened Mark both know.
-			selectionSet: selectionIsSet(),
+			targets: selectionSet ? supportedTargets(state.primaryType) : [],
+			categories: selectionSet ? state.categories.slice() : [],
+			// Whether the two lists above are the Mark's real choice.
+			// Stored with a queued Mark, so a replay and a reopened Mark
+			// both know.
+			selectionSet,
 			tags: state.tags.slice(),
 			helpers:
 				Array.isArray(config.controllableHelpers) && config.controllableHelpers.length
@@ -3139,8 +3182,9 @@
 		payload.categories.forEach((id) => formData.append('categories[]', id));
 		// A form post can't carry an empty list, so say when these lists
 		// are complete: an empty one then means "none" rather than "use the
-		// defaults". Without the flags (an autosave before Next, or a Mark
-		// queued by an older version of the app), the site decides as before.
+		// defaults". Without the flags (an autosave of lists you haven't
+		// changed, or a Mark queued by an older version of the app), the
+		// site decides as before.
 		if (payload.selectionSet) {
 			formData.append('targets_set', '1');
 			formData.append('categories_set', '1');
@@ -3710,7 +3754,7 @@
 	// in the background." — queue-first, unlike submitOrQueue() above:
 	// the deliberate Publish/Save-as-Draft tap queues the Mark locally
 	// (fast — local IndexedDB, not a network round trip) and returns
-	// immediately, so PublishScreen.publish() can close the composer
+	// immediately, so PublishControls.publish() can close the composer
 	// without ever waiting on the real request, no matter how large the
 	// media or how slow the connection turns out to be. The real request
 	// then runs via syncPendingMark(), fired here but deliberately not
@@ -3770,7 +3814,7 @@
 		return notice.wasDraft ? __('Saved as draft.', 'daymark') : __('Publishing…', 'daymark');
 	}
 
-	// Called by PublishScreen.publish() and ReblogScreen.submit() once the
+	// Called by PublishControls.publish() and ReblogScreen.submit() once the
 	// Mark is queued. `reblog` words a failure as a reblog's.
 	function notePublishQueued(pendingId, { wasDraft, needsReview, reblog }) {
 		publishNoticeCounter += 1;
@@ -4069,10 +4113,11 @@
 		state.transcriptEdited = false;
 		state.targets = Array.isArray(payload.targets) ? payload.targets.slice() : [];
 		state.categories = Array.isArray(payload.categories) ? payload.categories.slice() : [];
-		// A Mark queued from the Publish screen carries its real lists. One
-		// an autosave queued before Next carries placeholders, so it gets
-		// the type's defaults at Next like a new Mark. A Mark queued before
-		// selectionSet existed counts as chosen when it has any selection.
+		// A Mark queued by Publish or Save as draft, or after you changed
+		// its lists, carries its real lists. One an autosave queued before
+		// that carries none, so the composer shows the type's defaults like
+		// a new Mark. A Mark queued before selectionSet existed counts as
+		// chosen when it has any selection.
 		state.selectionLoaded =
 			typeof payload.selectionSet === 'boolean'
 				? payload.selectionSet
@@ -4241,16 +4286,11 @@
 			entry.file ? entry.file.name : '',
 			reason || __('This site does not accept this file.', 'daymark')
 		);
-		let status = root.querySelector('[data-create-status]');
+		const status = root.querySelector('[data-create-status]');
 		if (status) {
-			CreateScreen.refreshMedia();
-		} else if ('#publish' === window.location.hash) {
 			// The Mark's type can change with it (a photo Mark whose only
-			// photo is gone is a Note), so draw the screen again. With
-			// nothing left to publish, that lands back in the composer.
-			showScreen('#publish');
-			status = root.querySelector('[data-publish-status], [data-create-status]');
-			announce(message);
+			// photo is gone is a Note), and its destinations with the type.
+			CreateScreen.refreshMedia();
 		}
 		// Added to what the status line already says, since several files
 		// can be refused at once (and the HEIC note can already be there).
@@ -4333,8 +4373,8 @@
 				AIAssistSheet.tags = tags.slice();
 				AIAssistSheet.renderTags();
 			}
-			// Same for the Publish screen's Tags section.
-			PublishScreen.refreshTags();
+			// Same for the composer's Tags section.
+			PublishControls.refreshTags();
 		} catch (err) {
 			// Best-effort and invisible — never surface an error here.
 		} finally {
@@ -4426,9 +4466,9 @@
 	}
 
 	// Fetches a draft and populates the composer's state for it — shared by
-	// openDraft() (continues into #create) and openDraftAndPublish() (issue
-	// #265, skips straight to #publish), so the two entry points can never
-	// populate state differently.
+	// openDraft() and openDraftAndPublish() (issue #265, which opens the
+	// composer with its Publish button focused), so the two entry points
+	// can never populate state differently.
 	async function loadDraftIntoState(id) {
 		const mark = await apiGet('marks/' + id);
 		setAsideComposer();
@@ -4473,22 +4513,23 @@
 		navigate('#create');
 	}
 
-	// One-tap "Publish" from the Drafts list (issue #265): populates the
-	// composer's state exactly like openDraft() does, but skips #create
-	// entirely for a draft that's already ready — the same readiness bar
-	// showScreen()'s own #publish guard already enforces (hasComposerContent()).
-	// A draft with neither a caption nor any media (existing or newly picked)
-	// falls back to #create instead, same as tapping the row/Edit would.
+	// "Publish" from a draft's ⋯ menu (issue #265): opens the draft in the
+	// composer like openDraft() does, with focus on its Publish button
+	// instead of the heading, so one more tap publishes it. A draft with
+	// nothing to publish yet (no caption, no media) opens as usual.
+	let composerFocusPublish = false;
+
 	async function openDraftAndPublish(id) {
 		await loadDraftIntoState(id);
-		navigate(hasComposerContent() ? '#publish' : '#create');
+		composerFocusPublish = hasComposerContent();
+		navigate('#create');
 	}
 
 	// Whether the composer currently has enough to publish: a caption, a
 	// newly picked file, or (a draft resumed via loadDraftIntoState())
 	// already-attached media — the last of these was missing from this
 	// check for a long time (issue #265), so a media-only draft with no
-	// caption could silently bounce from #publish back to #create.
+	// caption couldn't be published.
 	function hasComposerContent() {
 		return (
 			Boolean(state.caption.trim()) ||
@@ -4867,7 +4908,7 @@
 	// an admin bar link, a reload).
 	const MAIN_SCREENS = ['#home', '#explore', '#search', '#me'];
 	const RETURN_SCREENS = MAIN_SCREENS.concat(['#notifications']);
-	const COMPOSER_SCREENS = ['#create', '#publish'];
+	const COMPOSER_SCREENS = ['#create'];
 	let historyPosition = -1;
 	let currentScreen = null;
 	let lastMainScreen = null;
@@ -4917,12 +4958,14 @@
 	}
 
 	function showScreen(hash) {
+		// Publishing used to be a second screen; an old link to it (a
+		// bookmark, a reload) opens the composer, where Publish is now.
+		if ('#publish' === hash) {
+			hash = '#create';
+		}
 		let target = SCREENS[hash] ? hash : '#home';
 
 		// Guards: never land on screens whose state is missing.
-		if (target === '#publish' && !hasComposerContent()) {
-			target = '#create';
-		}
 		if (target === '#success' && !state.lastPublish) {
 			target = '#home';
 		}
@@ -4956,6 +4999,7 @@
 		}
 
 		AIAssistSheet.hide(false);
+		DestinationsSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
 		// below — clear it unconditionally so it never keeps firing against
@@ -10206,10 +10250,18 @@
 	const CreateScreen = {
 		render() {
 			const editing = state.editing;
+			// The ⋯ menu's Publish opens a ready draft here with focus on
+			// Publish (openDraftAndPublish()). showScreen() focuses the
+			// first [data-daymark-focus], so only one of the heading and the
+			// button carries it.
+			const focusPublish = composerFocusPublish;
+			composerFocusPublish = false;
+			state.primaryType = effectiveType();
+			applyTypeDefaults();
 			return `
 			<header class="daymark-topbar">
 				${backLinkWithIcon('#home', __('Back to Timeline', 'daymark'))}
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
+				<h1 class="daymark-topbar__title" tabindex="-1"${focusPublish ? '' : ' data-daymark-focus'}>${esc(
 					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
 				)}</h1>
 				<span class="daymark-chip daymark-topbar__typechip" data-type-badge>${esc(
@@ -10323,12 +10375,22 @@
 						  '</button>'
 						: '' /* No AI provider configured — no AI options offered. */
 				}
+				<div class="daymark-composer-folds" data-composer-folds>
+					${PublishControls.categoriesFoldMarkup()}
+					${PublishControls.tagsFoldMarkup()}
+				</div>
 			</section>
-			<footer class="daymark-actionbar">
+			<footer class="daymark-actionbar daymark-actionbar--compose">
 				<p class="daymark-status" data-create-status aria-live="polite"></p>
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="next">${esc(
-					__('Next: Publish →', 'daymark')
-				)}</button>
+				<div class="daymark-where" data-where-bar>${PublishControls.whereBarMarkup()}</div>
+				<div class="daymark-actionbar__buttons">
+					<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">${esc(
+						__('Save as draft', 'daymark')
+					)}</button>
+					<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish"${
+						focusPublish ? ' data-daymark-focus' : ''
+					}>${esc(__('Publish', 'daymark'))}</button>
+				</div>
 			</footer>`;
 		},
 
@@ -10777,27 +10839,8 @@
 				});
 			}
 
-			root.querySelector('[data-action="next"]').addEventListener('click', () => {
-				state.caption = caption.value;
-				const status = root.querySelector('[data-create-status]');
-				if (!hasComposerContent()) {
-					status.textContent = __('Add media or write a caption to continue.', 'daymark');
-					return;
-				}
-				status.textContent = '';
-				state.primaryType = effectiveType();
-				// A reopened draft keeps its stored destination and category
-				// selections; a new Mark starts from the per-type defaults,
-				// once per type. Checked with state.selectionLoaded rather than
-				// state.editing, since an autosave makes a new Mark a draft
-				// before Next.
-				if (!state.selectionLoaded && state.defaultsAppliedFor !== state.primaryType) {
-					state.targets = defaultTargetsFor(state.primaryType);
-					state.categories = defaultCategoriesFor(state.primaryType);
-					state.defaultsAppliedFor = state.primaryType;
-				}
-				navigate('#publish');
-			});
+			// "Where this goes", Categories, Tags, Save as draft, and Publish.
+			PublishControls.bind();
 
 			// A new composer screen: the first count below is where the Note
 			// starts, not a crossing to announce.
@@ -10960,9 +11003,16 @@
 			if (!preview) {
 				return;
 			}
+			const previousType = state.primaryType;
 			state.primaryType = effectiveType();
 			if (badge) {
 				badge.textContent = TYPE_LABELS[state.primaryType];
+			}
+			// A new Mark's untouched destinations and categories follow its
+			// type, and a destination that can't take the new type drops
+			// out of the "Where this goes" row.
+			if (applyTypeDefaults() || previousType !== state.primaryType) {
+				PublishControls.refreshSelection();
 			}
 			// The Title field's visibility tracks the effective type, so
 			// re-render its slot whenever the media (and thus the type) shifts.
@@ -11440,7 +11490,7 @@
 		});
 	}
 
-	// --- Shared tag editor (AI Assist sheet and Publish screen) ---
+	// --- Shared tag editor (AI Assist sheet and the composer's Tags) ---
 
 	// Chips with a remove button, an "Add a tag" field, and autocomplete
 	// from the site's existing tags. The markup and the behavior are shared
@@ -11731,6 +11781,8 @@
 					fitCaptionField(captionField);
 					refreshNoteLength();
 				}
+				// The composer's Tags section shows what was just accepted.
+				PublishControls.refreshTags();
 				this.hide();
 				runAutosave();
 			});
@@ -13758,12 +13810,12 @@
 
 	// --- Screen: full-screen post view ---
 	//
-	// A client-side-only screen (like #create/#publish/#success — no PHP
+	// A client-side-only screen (like #create/#success — no PHP
 	// route; see Daymark_Routes::SCREENS) since the post being shown is
 	// handed off in memory via pendingPostView, not encoded in the URL —
 	// there's nothing to deep-link to on a cold load. showScreen()'s own
 	// guard sends a direct/refreshed #post with no pending hand-off back to
-	// Home, matching #publish/#success's existing missing-state guards.
+	// Home, matching #success's existing missing-state guard.
 	const PostScreen = {
 		render() {
 			const view = pendingPostView;
@@ -13958,7 +14010,7 @@
 
 		// showScreen()'s own guard already redirects a direct/refreshed
 		// #post with no pending hand-off back to Home before this ever
-		// runs — same trust its #publish/#success guards get from their
+		// runs — same trust its #success guard gets from its
 		// own render()/init(). _byMarkId/_bySubId (the same pair every
 		// feed-list screen keeps — see rememberItem()) hold just this one
 		// item, so the meta row's toggles (toggleLike()/toggleRepost()/
@@ -14583,7 +14635,7 @@
 	//
 	// A setting that's usually fine as it is. Folded, it shows only its
 	// current value, so the common path stays one tap; unfolding lets the
-	// person change it. The Publish screen's Categories and Tags and the
+	// person change it. The composer's Categories and Tags and the
 	// Reblog screen's Title use it. `value` is HTML: escape it first.
 	function foldSectionMarkup(kind, label, value, body) {
 		return `
@@ -14906,7 +14958,7 @@
 
 		// showScreen()'s own guard already redirects a direct/refreshed
 		// #reblog with no pending hand-off back to Home before this ever
-		// runs — same trust #post/#publish/#success's own guards get.
+		// runs — same trust #post/#success's own guards get.
 		init() {
 			const hand = pendingReblog;
 			this.item = hand ? hand.item : {};
@@ -14954,7 +15006,7 @@
 			}
 
 			// Someone who can't publish on this site (a Contributor) gets a
-			// draft, as from the Publish screen.
+			// draft, as from the composer's Publish.
 			const needsReview = false === config.canPublish;
 			const payload = buildReblogPayload(this.item, comment, title, needsReview ? 'draft' : 'publish');
 			let pendingId;
@@ -15042,7 +15094,16 @@
 		},
 	};
 
-	// --- Screen: Publish ---
+	// --- Composer: where a Mark goes, and Publish ---
+	//
+	// A Mark is published from the composer itself: there's no second
+	// screen. The composer's bottom bar holds a "Where this goes" row, then
+	// Save as draft and Publish. The row starts with Your site, which is
+	// always included and opens the full list in a sheet
+	// (DestinationsSheet), followed by one chip for each destination and
+	// publishing plugin that can take this Mark, tapped on or off, the way
+	// Path showed each network on its post screen. Categories and Tags are
+	// folds under the caption.
 
 	// Why a connector can't take the current Mark type, phrased by what
 	// it does accept ("Needs video" for YouTube/TikTok, "Needs an image"
@@ -15063,33 +15124,207 @@
 		return !Array.isArray(connector.supports) || connector.supports.includes(type);
 	}
 
-	const PublishScreen = {
-		render() {
-			// Never carry an impossible target into a publish (e.g. after
-			// going back and swapping a photo for plain text).
-			state.targets = state.targets.filter((id) => {
-				const connector = connectors.find((c) => c.id === id);
-				return !connector || connectorSupportsType(connector, state.primaryType);
-			});
+	// The publishing plugins with a per-Mark switch (see defaultHelpers()).
+	function controllableHelperList() {
+		return Array.isArray(config.controllableHelpers) ? config.controllableHelpers : [];
+	}
 
-			const rows = connectors.length
-				? '' // populated below
-				: `<li class="daymark-dest daymark-dest--locked">
-					<span class="daymark-dest__row"><span class="daymark-dest__info">
-						<span class="daymark-recent__meta" data-reach-note>${noDestinationsNote()}</span>
-					</span></span>
+	const WHERE_LOCK_ICON =
+		'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>';
+	const WHERE_MORE_ICON =
+		'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+	const WHERE_CHECK_ICON =
+		'<svg class="daymark-where__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+	const PublishControls = {
+		tagEditor: null,
+
+		// The destinations and plugins this Mark is going to, by name,
+		// starting with your site.
+		whereNames() {
+			const type = state.primaryType;
+			const names = [__('Your site', 'daymark')];
+			connectors.forEach((connector) => {
+				if (connectorSupportsType(connector, type) && state.targets.includes(connector.id)) {
+					names.push(connector.label);
+				}
+			});
+			controllableHelperList().forEach((helper) => {
+				if (state.helpers.includes(helper.id)) {
+					names.push(helper.label);
+				}
+			});
+			return names;
+		},
+
+		whereOpenLabel() {
+			return sprintf(
+				/* translators: %s: a list such as "Your site, Bluesky via ATmosphere" */
+				__('Where this goes: %s', 'daymark'),
+				this.whereNames().join(', ')
+			);
+		},
+
+		// The "Where this goes" row. Only destinations that can take this
+		// type get a chip; the sheet lists the rest, with the reason.
+		whereBarMarkup() {
+			const type = state.primaryType;
+			const chip = (attr, text, on, label, title) =>
+				`<button type="button" class="daymark-where__chip" ${attr} aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(
+					label
+				)}"${title ? ` title="${esc(title)}"` : ''}>${WHERE_CHECK_ICON}<span>${esc(text)}</span></button>`;
+			const connectorChips = connectors
+				.filter((connector) => connectorSupportsType(connector, type))
+				.map((connector) =>
+					chip(
+						`data-where-target="${esc(connector.id)}"`,
+						connector.label,
+						state.targets.includes(connector.id),
+						sprintf(
+							/* translators: %s: connector name */
+							__('Publish to %s', 'daymark'),
+							connector.label
+						),
+						''
+					)
+				)
+				.join('');
+			const helperChips = controllableHelperList()
+				.map((helper) =>
+					chip(
+						`data-where-helper="${esc(helper.id)}"`,
+						helper.network || helper.label,
+						state.helpers.includes(helper.id),
+						helper.network
+							? sprintf(
+									/* translators: %s: a destination such as "Bluesky via ATmosphere" */
+									__('Share to %s', 'daymark'),
+									helper.label
+							  )
+							: sprintf(
+									/* translators: %s: helper plugin name */
+									__('Also publish through %s', 'daymark'),
+									helper.label
+							  ),
+						helper.network ? helper.label : ''
+					)
+				)
+				.join('');
+			return `
+				<button type="button" class="daymark-where__site" data-where-open aria-haspopup="dialog" aria-label="${esc(
+					this.whereOpenLabel()
+				)}">${WHERE_LOCK_ICON}<span>${esc(__('Your site', 'daymark'))}</span>${WHERE_MORE_ICON}</button>
+				${connectorChips}
+				${helperChips}`;
+		},
+
+		// Redraws the row. A full redraw (the type changed, so the chips
+		// may differ) keeps focus on the same chip; otherwise each chip's
+		// state is updated in place.
+		refreshWhereBar(rebuild) {
+			const bar = root.querySelector('[data-where-bar]');
+			if (!bar) {
+				return;
+			}
+			if (rebuild) {
+				const active = document.activeElement;
+				let attr = null;
+				let value = null;
+				if (active && bar.contains(active)) {
+					attr = ['data-where-open', 'data-where-target', 'data-where-helper'].find((name) =>
+						active.hasAttribute(name)
+					);
+					value = attr ? active.getAttribute(attr) : null;
+				}
+				bar.innerHTML = this.whereBarMarkup();
+				if (attr) {
+					const next =
+						Array.from(bar.querySelectorAll('[' + attr + ']')).find(
+							(el) => el.getAttribute(attr) === value
+						) || bar.querySelector('[data-where-open]');
+					if (next) {
+						next.focus();
+					}
+				}
+				return;
+			}
+			bar.querySelectorAll('[data-where-target]').forEach((button) => {
+				const on = state.targets.includes(button.getAttribute('data-where-target'));
+				button.setAttribute('aria-pressed', on ? 'true' : 'false');
+			});
+			bar.querySelectorAll('[data-where-helper]').forEach((button) => {
+				const on = state.helpers.includes(button.getAttribute('data-where-helper'));
+				button.setAttribute('aria-pressed', on ? 'true' : 'false');
+			});
+			const open = bar.querySelector('[data-where-open]');
+			if (open) {
+				open.setAttribute('aria-label', this.whereOpenLabel());
+			}
+		},
+
+		// Turns a destination on or off, from its chip or from the sheet.
+		setTarget(id, on) {
+			if (on) {
+				if (!state.targets.includes(id)) {
+					state.targets.push(id);
+				}
+			} else {
+				state.targets = state.targets.filter((t) => t !== id);
+			}
+			// Your choice now: it stays when the type changes, and saves
+			// send it even when it's empty.
+			state.targetsTouched = true;
+			this.refreshWhereBar();
+			DestinationsSheet.syncInputs();
+			this.refreshRememberedNote('targets');
+			scheduleAutosave();
+		},
+
+		setHelper(id, on) {
+			if (on) {
+				if (!state.helpers.includes(id)) {
+					state.helpers.push(id);
+				}
+			} else {
+				state.helpers = state.helpers.filter((h) => h !== id);
+			}
+			this.refreshWhereBar();
+			DestinationsSheet.syncInputs();
+			scheduleAutosave();
+		},
+
+		// The sheet's full list: Your site (always on), every destination
+		// (one that can't take this type is shown off, with the reason),
+		// and every publishing plugin with a switch.
+		destinationRowsMarkup() {
+			const type = state.primaryType;
+			const siteRow = `
+				<li class="daymark-dest daymark-dest--locked">
+					<span class="daymark-dest__row">
+						<span class="daymark-dest__info">
+							<span class="daymark-dest__name">${WHERE_LOCK_ICON} ${esc(__('Your site', 'daymark'))}</span>
+							<span class="daymark-chip daymark-chip--success">${esc(__('Required', 'daymark'))}</span>
+						</span>
+						<span class="daymark-toggle">
+							<input type="checkbox" class="daymark-toggle__input" checked disabled aria-label="${esc(
+								__('Your site (always included)', 'daymark')
+							)}" />
+							<span class="daymark-toggle__track" aria-hidden="true"></span>
+						</span>
+					</span>
 				</li>`;
 
-			const connectorRows = connectors
-				.map((connector) => {
-					const supported = connectorSupportsType(connector, state.primaryType);
-					const checked = supported && state.targets.includes(connector.id) ? ' checked' : '';
-					const chip = supported
-						? `<span class="daymark-chip ${connector.connected ? 'daymark-chip--success' : 'daymark-chip--muted'}">${esc(
-								connector.status_label || __('Mocked · Not connected', 'daymark')
-							)}</span>`
-						: `<span class="daymark-chip daymark-chip--muted">${esc(unsupportedReason(connector))}</span>`;
-					return `
+			const connectorRows = connectors.length
+				? connectors
+						.map((connector) => {
+							const supported = connectorSupportsType(connector, type);
+							const checked = supported && state.targets.includes(connector.id) ? ' checked' : '';
+							const chip = supported
+								? `<span class="daymark-chip ${
+										connector.connected ? 'daymark-chip--success' : 'daymark-chip--muted'
+								  }">${esc(connector.status_label || __('Mocked · Not connected', 'daymark'))}</span>`
+								: `<span class="daymark-chip daymark-chip--muted">${esc(unsupportedReason(connector))}</span>`;
+							return `
 				<li class="daymark-dest${supported ? '' : ' daymark-dest--unsupported'}">
 					<label class="daymark-dest__row" for="daymark-dest-${esc(connector.id)}">
 						<span class="daymark-dest__info">
@@ -15110,25 +15345,27 @@
 											/* translators: 1: connector name, 2: Mark type label */
 											__('%1$s does not support %2$s Marks', 'daymark'),
 											connector.label,
-											TYPE_LABELS[state.primaryType] || state.primaryType
+											TYPE_LABELS[type] || type
 									  )
 							)}" />
 							<span class="daymark-toggle__track" aria-hidden="true"></span>
 						</span>
 					</label>
 				</li>`;
-				})
-				.join('');
+						})
+						.join('')
+				: `
+				<li class="daymark-dest daymark-dest--locked">
+					<span class="daymark-dest__row"><span class="daymark-dest__info">
+						<span class="daymark-recent__meta" data-reach-note>${noDestinationsNote()}</span>
+					</span></span>
+				</li>`;
 
-			// Controllable third-party helpers: the plugin shares this Mark
-			// through its own flow while the toggle is on. Each starts where
-			// the plugin would land on its own (see defaultHelpers()), and
-			// reads as a destination ("Bluesky via ATmosphere") when the
-			// plugin names the network it shares to.
-			const controllable = Array.isArray(config.controllableHelpers)
-				? config.controllableHelpers
-				: [];
-			const helperRows = controllable
+			// A publishing plugin shares this Mark through its own flow while
+			// its switch is on. Each starts where the plugin would land on
+			// its own (see defaultHelpers()), and reads as a destination
+			// ("Bluesky via ATmosphere") when the plugin names the network.
+			const helperRows = controllableHelperList()
 				.map(
 					(helper) => `
 				<li class="daymark-dest">
@@ -15144,9 +15381,7 @@
 						<span class="daymark-toggle">
 							<input type="checkbox" class="daymark-toggle__input" id="daymark-helper-${esc(
 								helper.id
-							)}" data-helper="${esc(helper.id)}"${
-						state.helpers.includes(helper.id) ? ' checked' : ''
-					} aria-label="${esc(
+							)}" data-helper="${esc(helper.id)}"${state.helpers.includes(helper.id) ? ' checked' : ''} aria-label="${esc(
 						helper.network
 							? sprintf(
 									/* translators: %s: a destination such as "Bluesky via ATmosphere" */
@@ -15166,101 +15401,43 @@
 				)
 				.join('');
 
-			return `
-			<header class="daymark-topbar">
-				<a class="daymark-backlink" href="#create"><span aria-hidden="true">&larr;</span> ${esc(__('Back', 'daymark'))}</a>
-				<h1 class="daymark-topbar__title" tabindex="-1" data-daymark-focus>${esc(
-					__('Where should this go?', 'daymark')
-				)}</h1>
-			</header>
-			<section class="daymark-screen">
-				<p class="daymark-typebadge">${sprintf(
-					/* translators: 1: "a"/"an" article, 2: Mark type chip markup */
-					esc(__('Publishing %1$s %2$s Mark', 'daymark')),
-					/^[aeiou]/i.test(TYPE_LABELS[state.primaryType] || '') ? esc(__('an', 'daymark')) : esc(__('a', 'daymark')),
-					`<span class="daymark-chip">${esc(TYPE_LABELS[state.primaryType])}</span>`
-				)}</p>
-				<p class="daymark-publish-subnote" data-remembered-note hidden></p>
-				<ul class="daymark-destlist">
-					<li class="daymark-dest daymark-dest--locked">
-						<span class="daymark-dest__row">
-							<span class="daymark-dest__info">
-								<span class="daymark-dest__name">
-									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-									${esc(__('Your Site', 'daymark'))}
-								</span>
-								<span class="daymark-chip daymark-chip--success">${esc(__('Required', 'daymark'))}</span>
-							</span>
-							<span class="daymark-toggle">
-								<input type="checkbox" class="daymark-toggle__input" checked disabled aria-label="${esc(
-									__('Your Site (always included)', 'daymark')
-								)}" />
-								<span class="daymark-toggle__track" aria-hidden="true"></span>
-							</span>
-						</span>
-					</li>
-					${connectors.length ? connectorRows : rows}
-					${helperRows}
-				</ul>
-				${(() => {
-					const helpers = config.publishHelpers || [];
-					if (!Array.isArray(helpers) || !helpers.length) {
-						return '';
-					}
-					const names = helpers.map((h) => esc(h.label)).join(', ');
-					return `<p class="daymark-helpers-note">${sprintf(
-						esc(
-							/* translators: %s: list of publishing helper plugin names */
-							__(
-								'Your site’s publishing tools will also share this Mark, per their own settings: %s.',
-								'daymark'
-							)
-						),
-						`<strong>${names}</strong>`
-					)}</p>`;
-				})()}
-				${this.renderCategories()}
-				${this.renderTagsFold()}
-			</section>
-			<footer class="daymark-actionbar">
-				<p class="daymark-status" data-publish-status aria-live="polite"></p>
-				<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish">${esc(
-					__('Publish Now', 'daymark')
-				)}</button>
-				<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">${esc(
-					__('Save as Draft', 'daymark')
-				)}</button>
-			</footer>`;
+			return siteRow + connectorRows + helperRows;
 		},
 
-		// The categories this Mark will be filed under, by name. With none
-		// picked, WordPress files it under the site's default category.
-		categorySummary() {
-			const names = siteCategories.filter((c) => state.categories.includes(c.id)).map((c) => c.name);
-			if (names.length) {
-				return esc(names.join(', '));
+		// Plugins that share every Mark on their own, with no per-Mark
+		// switch (Jetpack Social, say).
+		helpersNoteMarkup() {
+			const helpers = config.publishHelpers || [];
+			if (!Array.isArray(helpers) || !helpers.length) {
+				return '';
 			}
-			const fallback = siteCategories.find((c) => c.id === config.defaultCategory);
-			return fallback ? esc(fallback.name) : esc(__('None', 'daymark'));
+			const names = helpers.map((h) => esc(h.label)).join(', ');
+			return `<p class="daymark-helpers-note">${sprintf(
+				esc(
+					/* translators: %s: list of publishing helper plugin names */
+					__('Your site’s publishing tools will also share this Mark, per their own settings: %s.', 'daymark')
+				),
+				`<strong>${names}</strong>`
+			)}</p>`;
 		},
 
-		tagSummary() {
-			if (!state.tags.length) {
-				return esc(__('None', 'daymark'));
-			}
-			const list = esc(state.tags.join(', '));
-			return state.tagsAutoSuggested
-				? `${list} <span class="daymark-publish-fold__note">${esc(__('Suggested by AI', 'daymark'))}</span>`
-				: list;
+		// Whether the Categories fold is shown at all: only when the site
+		// offers a real choice beyond its single default category (a lone
+		// "Uncategorized" is just the fallback and needs no switch).
+		categoriesShown() {
+			return siteCategories.some((c) => c.id !== config.defaultCategory);
 		},
 
-		// Category picker — the site-filing counterpart to destinations.
-		// Only shown when the site offers a real choice beyond its single
-		// default category (a lone "Uncategorized" is just the fallback and
-		// needs no toggle).
-		renderCategories() {
-			const meaningful = siteCategories.filter((c) => c.id !== config.defaultCategory);
-			if (!meaningful.length) {
+		categorySubnote() {
+			return sprintf(
+				/* translators: %s: Mark type label (e.g. "Image") */
+				esc(__('Saved as the default for %s Marks — change it any time.', 'daymark')),
+				esc(TYPE_LABELS[state.primaryType] || __('these', 'daymark'))
+			);
+		},
+
+		categoriesFoldMarkup() {
+			if (!this.categoriesShown()) {
 				return '';
 			}
 			const items = siteCategories
@@ -15272,11 +15449,9 @@
 							<span class="daymark-dest__name">${esc(cat.name)}</span>
 						</span>
 						<span class="daymark-toggle">
-							<input type="checkbox" class="daymark-toggle__input" id="daymark-cat-${esc(
-								cat.id
-							)}" data-category="${esc(cat.id)}"${
-						state.categories.includes(cat.id) ? ' checked' : ''
-					} aria-label="${esc(
+							<input type="checkbox" class="daymark-toggle__input" id="daymark-cat-${esc(cat.id)}" data-category="${esc(
+						cat.id
+					)}"${state.categories.includes(cat.id) ? ' checked' : ''} aria-label="${esc(
 						sprintf(
 							/* translators: %s: category name */
 							__('File under %s', 'daymark'),
@@ -15289,27 +15464,49 @@
 				</li>`
 				)
 				.join('');
-			const typeLabel = esc(TYPE_LABELS[state.primaryType] || __('these', 'daymark'));
 			return foldSectionMarkup(
 				'categories',
 				__('Categories', 'daymark'),
 				this.categorySummary(),
-				`<p class="daymark-publish-subnote">${sprintf(
-					/* translators: %s: Mark type label (e.g. "Image") */
-					esc(__('Saved as the default for %s Marks — change it any time.', 'daymark')),
-					typeLabel
-				)}</p>
+				`<p class="daymark-publish-subnote" data-category-subnote>${this.categorySubnote()}</p>
+				<p class="daymark-publish-subnote" data-remembered-note="categories" hidden></p>
 				<ul class="daymark-destlist">${items}</ul>`
 			);
 		},
 
-		renderTagsFold() {
+		tagsFoldMarkup() {
 			return foldSectionMarkup(
 				'tags',
 				__('Tags', 'daymark'),
 				this.tagSummary(),
 				tagEditorMarkup('daymark-publish', __('Tags', 'daymark'), true)
 			);
+		},
+
+		// The categories this Mark will be filed under, by name. With none
+		// picked, WordPress files it under the site's default category.
+		categorySummary() {
+			const names = siteCategories.filter((c) => state.categories.includes(c.id)).map((c) => c.name);
+			let summary;
+			if (names.length) {
+				summary = esc(names.join(', '));
+			} else {
+				const fallback = siteCategories.find((c) => c.id === config.defaultCategory);
+				summary = fallback ? esc(fallback.name) : esc(__('None', 'daymark'));
+			}
+			return this.rememberedChoices().categories
+				? `${summary} <span class="daymark-publish-fold__note">${esc(__('Your last choice', 'daymark'))}</span>`
+				: summary;
+		},
+
+		tagSummary() {
+			if (!state.tags.length) {
+				return esc(__('None', 'daymark'));
+			}
+			const list = esc(state.tags.join(', '));
+			return state.tagsAutoSuggested
+				? `${list} <span class="daymark-publish-fold__note">${esc(__('Suggested by AI', 'daymark'))}</span>`
+				: list;
 		},
 
 		refreshFoldValue(kind) {
@@ -15320,7 +15517,7 @@
 		},
 
 		// Redraw the Tags section after the tags change somewhere else (a
-		// quiet AI suggestion landing while this screen is open).
+		// quiet AI suggestion landing, or AI Assist's Accept All).
 		refreshTags() {
 			if (this.tagEditor && root.querySelector('[data-fold="tags"]')) {
 				this.tagEditor.render();
@@ -15328,10 +15525,28 @@
 			}
 		},
 
+		// The type changed, or its defaults were just applied: redraw
+		// everything that depends on it.
+		refreshSelection() {
+			this.refreshWhereBar(true);
+			root.querySelectorAll('[data-category]').forEach((input) => {
+				input.checked = state.categories.includes(Number(input.getAttribute('data-category')));
+			});
+			const subnote = root.querySelector('[data-category-subnote]');
+			if (subnote) {
+				subnote.innerHTML = this.categorySubnote();
+			}
+			this.refreshFoldValue('categories');
+			this.refreshRememberedNote('categories');
+			if (DestinationsSheet.isOpen()) {
+				DestinationsSheet.refresh();
+			}
+		},
+
 		// Which of the current choices are a remembered choice that differs
 		// from the site's defaults. Only for a new Mark: a reopened draft
 		// keeps its own saved choices. A choice the person has since changed
-		// on this screen no longer counts, since it isn't the remembered one.
+		// no longer counts, since it isn't the remembered one.
 		rememberedChoices() {
 			if (state.selectionLoaded) {
 				return { targets: false, categories: false };
@@ -15348,90 +15563,99 @@
 				connectors.length > 0 &&
 				!sameIdSet(remembered, site) &&
 				sameIdSet(supported(state.targets), remembered);
-			const pickerShown = siteCategories.some((c) => c.id !== config.defaultCategory);
 			const rememberedCats = defaultCategoriesFor(type);
 			const categories =
-				pickerShown &&
+				this.categoriesShown() &&
 				!sameIdSet(rememberedCats, siteCategoriesFor(type)) &&
 				sameIdSet(state.categories, rememberedCats);
 			return { targets, categories };
 		},
 
-		// "Starting from your last choices for Image Marks. Use site
+		// "Starting from your last destinations for Image Marks. Use site
 		// defaults" — shown while a remembered choice is in use and differs
 		// from the site's defaults, so a one-off change never silently
-		// sticks.
-		refreshRememberedNote() {
-			const note = root.querySelector('[data-remembered-note]');
+		// sticks. The destinations note is in the sheet, the categories
+		// note in the Categories fold.
+		refreshRememberedNote(kind) {
+			const scope = 'targets' === kind ? DestinationsSheet.isOpen() && DestinationsSheet.el : root;
+			const note = scope ? scope.querySelector(`[data-remembered-note="${kind}"]`) : null;
 			if (!note) {
 				return;
 			}
-			const remembered = this.rememberedChoices();
-			if (!remembered.targets && !remembered.categories) {
+			if (!this.rememberedChoices()[kind]) {
 				note.hidden = true;
 				note.textContent = '';
 				return;
 			}
 			const label = TYPE_LABELS[state.primaryType] || state.primaryType;
-			let text;
-			if (remembered.targets && remembered.categories) {
-				/* translators: %s: Mark type label, e.g. "Image" */
-				text = __('Starting from your last destinations and categories for %s Marks.', 'daymark');
-			} else if (remembered.targets) {
-				/* translators: %s: Mark type label, e.g. "Image" */
-				text = __('Starting from your last destinations for %s Marks.', 'daymark');
-			} else {
-				/* translators: %s: Mark type label, e.g. "Image" */
-				text = __('Starting from your last categories for %s Marks.', 'daymark');
-			}
+			const text =
+				'targets' === kind
+					? /* translators: %s: Mark type label, e.g. "Image" */
+					  __('Starting from your last destinations for %s Marks.', 'daymark')
+					: /* translators: %s: Mark type label, e.g. "Image" */
+					  __('Starting from your last categories for %s Marks.', 'daymark');
 			note.innerHTML = `${esc(sprintf(text, label))} <button type="button" class="daymark-btn--text" data-use-site-defaults>${esc(
 				__('Use site defaults', 'daymark')
 			)}</button>`;
 			note.hidden = false;
-			note.querySelector('[data-use-site-defaults]').addEventListener('click', () => this.useSiteDefaults());
+			note.querySelector('[data-use-site-defaults]').addEventListener('click', () => this.useSiteDefaults(kind));
 		},
 
-		// Switch this Mark to the site's defaults. Publishing then remembers
-		// them for the type, the same as any other choice.
-		useSiteDefaults() {
-			const remembered = this.rememberedChoices();
-			if (remembered.targets) {
+		// Switch this Mark's destinations or categories to the site's
+		// defaults. Saving then remembers them for the type, the same as
+		// any other choice.
+		useSiteDefaults(kind) {
+			if ('targets' === kind) {
 				state.targets = siteTargetsFor(state.primaryType);
-				root.querySelectorAll('[data-connector]').forEach((input) => {
-					input.checked = !input.disabled && state.targets.includes(input.getAttribute('data-connector'));
-				});
-			}
-			if (remembered.categories) {
+				state.targetsTouched = true;
+				this.refreshWhereBar();
+				DestinationsSheet.syncInputs();
+			} else {
 				state.categories = siteCategoriesFor(state.primaryType);
+				state.categoriesTouched = true;
 				root.querySelectorAll('[data-category]').forEach((input) => {
 					input.checked = state.categories.includes(Number(input.getAttribute('data-category')));
 				});
 				this.refreshFoldValue('categories');
 			}
-			this.refreshRememberedNote();
+			this.refreshRememberedNote(kind);
 			announce(__('Switched to the site defaults.', 'daymark'));
-			const heading = root.querySelector('[data-daymark-focus]');
-			if (heading) {
-				heading.focus();
+			// The button just went away with its note: keep focus nearby.
+			const anchor =
+				'targets' === kind
+					? DestinationsSheet.isOpen() && DestinationsSheet.el.querySelector('#daymark-where-title')
+					: root.querySelector('[data-fold="categories"] summary');
+			if (anchor) {
+				anchor.focus();
 			}
 			scheduleAutosave();
 		},
 
-		bindEvents() {
-			root.querySelectorAll('[data-connector]').forEach((input) => {
-				input.addEventListener('change', () => {
-					const id = input.getAttribute('data-connector');
-					if (input.checked) {
-						if (!state.targets.includes(id)) {
-							state.targets.push(id);
-						}
-					} else {
-						state.targets = state.targets.filter((t) => t !== id);
+		// Wires up the row, the folds, and the two buttons. Called from
+		// CreateScreen.bindEvents().
+		bind() {
+			const bar = root.querySelector('[data-where-bar]');
+			if (bar) {
+				bar.addEventListener('click', (event) => {
+					const button = event.target.closest('button');
+					if (!button || !bar.contains(button)) {
+						return;
 					}
-					this.refreshRememberedNote();
-					scheduleAutosave();
+					if (button.hasAttribute('data-where-open')) {
+						DestinationsSheet.show(button);
+					} else if (button.hasAttribute('data-where-target')) {
+						this.setTarget(
+							button.getAttribute('data-where-target'),
+							'true' !== button.getAttribute('aria-pressed')
+						);
+					} else if (button.hasAttribute('data-where-helper')) {
+						this.setHelper(
+							button.getAttribute('data-where-helper'),
+							'true' !== button.getAttribute('aria-pressed')
+						);
+					}
 				});
-			});
+			}
 
 			root.querySelectorAll('[data-category]').forEach((input) => {
 				input.addEventListener('change', () => {
@@ -15443,8 +15667,9 @@
 					} else {
 						state.categories = state.categories.filter((c) => c !== id);
 					}
+					state.categoriesTouched = true;
 					this.refreshFoldValue('categories');
-					this.refreshRememberedNote();
+					this.refreshRememberedNote('categories');
 					scheduleAutosave();
 				});
 			});
@@ -15465,37 +15690,25 @@
 				  })
 				: null;
 
-			this.refreshRememberedNote();
+			this.refreshRememberedNote('categories');
 
-			root.querySelectorAll('[data-helper]').forEach((input) => {
-				input.addEventListener('change', () => {
-					const id = input.getAttribute('data-helper');
-					if (input.checked) {
-						if (!state.helpers.includes(id)) {
-							state.helpers.push(id);
-						}
-					} else {
-						state.helpers = state.helpers.filter((h) => h !== id);
-					}
-					// "It also reaches Bluesky" follows the Bluesky toggle.
-					const reachNote = root.querySelector('[data-reach-note]');
-					if (reachNote) {
-						reachNote.innerHTML = noDestinationsNote();
-					}
-					scheduleAutosave();
-				});
-			});
-
-			root
-				.querySelector('[data-action="publish"]')
-				.addEventListener('click', () => this.publish('publish'));
-			root
-				.querySelector('[data-action="save-draft"]')
-				.addEventListener('click', () => this.publish('draft'));
+			root.querySelector('[data-action="publish"]').addEventListener('click', () => this.publish('publish'));
+			root.querySelector('[data-action="save-draft"]').addEventListener('click', () => this.publish('draft'));
 		},
 
 		async publish(postStatus) {
 			if (composerPublishing) {
+				return;
+			}
+			const caption = root.querySelector('#daymark-caption');
+			if (caption) {
+				state.caption = caption.value;
+			}
+			const status = root.querySelector('[data-create-status]');
+			if (!hasComposerContent()) {
+				if (status) {
+					status.textContent = __('Add media or write a caption first.', 'daymark');
+				}
 				return;
 			}
 			composerPublishing = true;
@@ -15513,13 +15726,9 @@
 			// say so, instead of claiming it was published.
 			const needsReview = !isDraft && false === config.canPublish;
 			const wasDraft = isDraft || needsReview;
-			const button = root.querySelector(
-				isDraft ? '[data-action="save-draft"]' : '[data-action="publish"]'
-			);
-			const otherButton = root.querySelector(
-				isDraft ? '[data-action="publish"]' : '[data-action="save-draft"]'
-			);
-			const status = root.querySelector('[data-publish-status]');
+			const button = root.querySelector(isDraft ? '[data-action="save-draft"]' : '[data-action="publish"]');
+			const otherButton = root.querySelector(isDraft ? '[data-action="publish"]' : '[data-action="save-draft"]');
+			const status = root.querySelector('[data-create-status]');
 			// Disable both actions and show the loading state on the button
 			// itself — no separate "Publishing…" message (redundant). The
 			// status line is reserved for errors below.
@@ -15530,7 +15739,7 @@
 			button.textContent = isDraft ? __('Saving…', 'daymark') : __('Publishing…', 'daymark');
 			status.textContent = '';
 
-			// A real Publish/Save as Draft supersedes any pending autosave —
+			// A real Publish/Save as draft supersedes any pending autosave —
 			// cancel it so it can't fire mid-request against the same draft.
 			// If an autosave is already in flight, wait for it first (see
 			// waitForPendingAutosave()), so a first autosave that is
@@ -15546,11 +15755,14 @@
 				return; // The composer was cleared meanwhile; nothing left to send.
 			}
 
-			const payload = buildMarkPayload(needsReview ? 'draft' : postStatus);
+			state.primaryType = effectiveType();
+			// What the composer shows is what the Mark gets: send the lists
+			// as they stand, even when one is empty (see selectionIsSet()).
+			const payload = buildMarkPayload(needsReview ? 'draft' : postStatus, { explicit: true });
 			// Editing a draft updates it in place; otherwise create.
 			const path = state.editing ? 'marks/' + state.editing.id : 'marks';
 			const targetId = state.editing ? state.editing.id : null;
-			const targets = state.targets.slice();
+			const targets = payload.targets.slice();
 			const type = state.primaryType;
 
 			try {
@@ -15613,8 +15825,8 @@
 						err2.message
 					);
 					if (!button.isConnected) {
-						// Not on the Publish screen any more: the message bar
-						// says it instead.
+						// Not in the composer any more: the message bar says
+						// it instead.
 						showMessage({ key: 'publish-direct', text: message, error: true });
 						return;
 					}
@@ -15622,14 +15834,131 @@
 					if (otherButton) {
 						otherButton.disabled = false;
 					}
-					button.textContent = isDraft ? __('Save as Draft', 'daymark') : __('Publish Now', 'daymark');
+					button.textContent = isDraft ? __('Save as draft', 'daymark') : __('Publish', 'daymark');
 					status.textContent = message;
 				}
 			}
 		},
 	};
 
-	// The Publish screen's note when no destination connector is installed.
+	// --- Overlay: "Where this goes" sheet ---
+	//
+	// Opened from Your site in the composer's "Where this goes" row: every
+	// destination and publishing plugin, with its status, the reason one
+	// can't take this type, and where else the Mark reaches. Each switch
+	// changes the same choice as the row's chips.
+	const DestinationsSheet = {
+		el: null,
+		opener: null,
+		onKeydown: null,
+
+		isOpen() {
+			return !!(this.el && !this.el.hidden);
+		},
+
+		show(opener) {
+			this.opener = opener || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			syncSheetsToVisualViewport();
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Close Where this goes', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="daymark-where-title">
+				<h2 class="daymark-sheet__title" id="daymark-where-title" tabindex="-1">${esc(
+					__('Where this goes', 'daymark')
+				)}</h2>
+				<div class="daymark-sheet__body">
+					<p class="daymark-publish-subnote" data-remembered-note="targets" hidden></p>
+					<ul class="daymark-destlist" data-where-list>${PublishControls.destinationRowsMarkup()}</ul>
+					${PublishControls.helpersNoteMarkup()}
+					<div class="daymark-sheet__actions">
+						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
+							__('Done', 'daymark')
+						)}</button>
+					</div>
+				</div>
+			</div>`;
+
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
+			this.el.querySelector('[data-sheet-done]').addEventListener('click', () => this.hide());
+			this.el.querySelector('[data-where-list]').addEventListener('change', (event) => {
+				const input = event.target;
+				if (input.hasAttribute('data-connector')) {
+					PublishControls.setTarget(input.getAttribute('data-connector'), input.checked);
+				} else if (input.hasAttribute('data-helper')) {
+					PublishControls.setHelper(input.getAttribute('data-helper'), input.checked);
+				}
+			});
+			this.onKeydown = (event) => {
+				if (event.key === 'Escape') {
+					this.hide();
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			PublishControls.refreshRememberedNote('targets');
+			this.el.querySelector('#daymark-where-title').focus();
+		},
+
+		// Redraws the list, after the type changed while it was open.
+		refresh() {
+			if (!this.isOpen()) {
+				return;
+			}
+			const list = this.el.querySelector('[data-where-list]');
+			if (list) {
+				list.innerHTML = PublishControls.destinationRowsMarkup();
+			}
+			PublishControls.refreshRememberedNote('targets');
+		},
+
+		// Brings the switches in line with the current choice, after a
+		// change made elsewhere (Use site defaults).
+		syncInputs() {
+			if (!this.isOpen()) {
+				return;
+			}
+			this.el.querySelectorAll('[data-connector]').forEach((input) => {
+				input.checked = !input.disabled && state.targets.includes(input.getAttribute('data-connector'));
+			});
+			this.el.querySelectorAll('[data-helper]').forEach((input) => {
+				input.checked = state.helpers.includes(input.getAttribute('data-helper'));
+			});
+			// "It also reaches Bluesky" follows the Bluesky switch.
+			const reachNote = this.el.querySelector('[data-reach-note]');
+			if (reachNote) {
+				reachNote.innerHTML = noDestinationsNote();
+			}
+		},
+
+		hide(restoreFocus = true) {
+			if (!this.isOpen()) {
+				return;
+			}
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (restoreFocus) {
+				const target =
+					this.opener && this.opener.isConnected ? this.opener : root.querySelector('[data-where-open]');
+				if (target) {
+					target.focus();
+				}
+			}
+			this.opener = null;
+		},
+	};
+
+	// The "Where this goes" sheet's note when no destination connector is
+	// installed.
 	// Your site is the destination; this says where a Mark also goes
 	// through an active federation plugin (config.reach), and, for someone
 	// who can set one up, links to the Connectors tab. An entry tied to a
@@ -15685,7 +16014,7 @@
 	// (IndexedDB unavailable): Publish then waits for the site, and this
 	// screen reports what it answered. Everywhere else, Publish goes back
 	// to where you started and says so in the message bar; see
-	// PublishScreen.sendPublish() and notePublishSaved(). Where the Mark
+	// PublishControls.sendPublish() and notePublishSaved(). Where the Mark
 	// went is also on its card's "Where this went" view.
 	const SuccessScreen = {
 		render() {
@@ -17048,7 +17377,6 @@
 	SCREENS = {
 		'#home': HomeScreen,
 		'#create': CreateScreen,
-		'#publish': PublishScreen,
 		'#success': SuccessScreen,
 		'#post': PostScreen,
 		'#reblog': ReblogScreen,

@@ -904,7 +904,7 @@ class Daymark_Admin_Subscriptions {
 		}
 		?>
 		<p class="description" style="max-width:56em;">
-			<?php esc_html_e( 'Each new Mark starts with these choices for its type. When you change them while publishing, Daymark remembers your choice for that type and starts there next time. The Publish screen shows when that happens and can switch back to these defaults.', 'daymark' ); ?>
+			<?php esc_html_e( 'Each new Mark starts with these choices for its type. When you change them while publishing, Daymark remembers your choice for that type and starts there next time. It says so while you write a Mark and can switch back to these defaults.', 'daymark' ); ?>
 			<?php if ( ! empty( $categories ) ) : ?>
 				<?php esc_html_e( 'A type with no category ticked is filed under your site\'s default category.', 'daymark' ); ?>
 			<?php endif; ?>
@@ -3136,8 +3136,8 @@ class Daymark_Admin_Subscriptions {
 				'classes'     => array( 'Atmosphere\\Publisher' ),
 				'constants'   => array( 'ATMOSPHERE_VERSION' ),
 				'summary'     => __( 'Connects your site to Bluesky.', 'daymark' ),
-				/* translators: "Reply from Bluesky" matches the label Daymark shows in Notifications for this source. */
-				'details'     => __( 'The Publish screen gets a per-Mark Bluesky switch, and replies from Bluesky appear in Notifications as "Reply from Bluesky".', 'daymark' ),
+				/* translators: "Where this goes" matches the composer row with each Mark's destinations; "Reply from Bluesky" matches the label Daymark shows in Notifications for this source. */
+				'details'     => __( 'Each Mark gets a Bluesky switch under "Where this goes", and replies from Bluesky appear in Notifications as "Reply from Bluesky".', 'daymark' ),
 			),
 			'jetpack'         => array(
 				'label'       => 'Jetpack',
