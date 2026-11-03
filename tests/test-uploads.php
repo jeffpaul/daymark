@@ -232,6 +232,37 @@ class Test_Uploads extends WP_UnitTestCase {
 		$this->assertSame( 404, $status->get_status() );
 	}
 
+	/** A browser's sound recording in a .webm file is stored as audio. */
+	public function test_a_webm_recording_uploads_as_audio(): void {
+		$bytes = (string) file_get_contents( __DIR__ . '/e2e/fixtures/test-recording-streamed.webm' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$data  = $this->start_upload( 'Recording.webm', strlen( $bytes ) )->get_data();
+
+		$response = $this->send_part( $data['id'], $bytes, 0, strlen( $bytes ) );
+
+		$this->assertSame( 200, $response->get_status(), wp_json_encode( $response->get_data() ) );
+		$this->assertSame( 'audio/webm', $response->get_data()['mime'] );
+		$this->assertSame( 'audio/webm', get_post_mime_type( (int) $response->get_data()['attachment_id'] ) );
+
+		// The status route reports it too, for a client resuming after a reload.
+		$status = rest_get_server()->dispatch( $this->request( 'GET', '/daymark/v1/uploads/' . $data['id'] ) );
+		$this->assertSame( 'audio/webm', $status->get_data()['mime'] );
+	}
+
+	/** A .webm file may start uploading as a recording, but a WebM video is refused after its first part. */
+	public function test_a_webm_video_is_refused_after_the_first_part(): void {
+		$bytes   = (string) file_get_contents( __DIR__ . '/e2e/fixtures/test-video.webm' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$session = $this->start_upload( 'clip.webm', strlen( $bytes ) );
+
+		$this->assertSame( 201, $session->get_status() );
+		$this->assertNull( $session->get_data()['mime'], 'Nothing is stored yet.' );
+
+		$response = $this->send_part( $session->get_data()['id'], $bytes, 0, strlen( $bytes ) );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( 'invalid_mime', $response->get_data()['code'] );
+		$this->assertSame( "Daymark can't publish WebM video. Please use MP4 or MOV.", $response->get_data()['message'] );
+	}
+
 	/** Size caps are per type: video and audio may be far larger than images. */
 	public function test_declared_size_cap_depends_on_type(): void {
 		$image = $this->start_upload( 'photo.jpg', Daymark_Publisher::MAX_FILE_BYTES + 1 );

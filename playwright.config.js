@@ -19,6 +19,15 @@ export default defineConfig( {
 				// though the descriptor defaults iPhones to webkit.
 				...devices[ 'iPhone 13' ],
 				browserName: 'chromium',
+				// A fake microphone, already allowed, for the composer's
+				// recorder: Chromium plays a beep into it.
+				launchOptions: {
+					args: [
+						'--use-fake-device-for-media-stream',
+						'--use-fake-ui-for-media-stream',
+					],
+				},
+				permissions: [ 'microphone' ],
 			},
 		},
 	],

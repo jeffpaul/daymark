@@ -1829,6 +1829,153 @@
 		return /^image\/hei[cf]/.test(type) || /\.hei[cf]s?$/i.test((file && file.name) || '');
 	}
 
+	// A file name's extension, lowercase, or '' when it has none.
+	function fileExtension(file) {
+		const match = /\.([a-z0-9-]+)$/i.exec((file && file.name) || '');
+		return match ? match[1].toLowerCase() : '';
+	}
+
+	// The file formats Daymark knows by extension, with the kind of media
+	// each holds and the name the composer gives it in a message. A .webm
+	// file counts as sound: Daymark takes a WebM sound recording, not a
+	// WebM video.
+	const UPLOAD_FORMATS = {
+		jpg: ['image', 'JPEG'],
+		jpeg: ['image', 'JPEG'],
+		jpe: ['image', 'JPEG'],
+		png: ['image', 'PNG'],
+		gif: ['image', 'GIF'],
+		webp: ['image', 'WebP'],
+		avif: ['image', 'AVIF'],
+		heic: ['image', 'HEIC'],
+		heif: ['image', 'HEIF'],
+		mp4: ['video', 'MP4'],
+		m4v: ['video', 'MP4'],
+		mov: ['video', 'MOV'],
+		qt: ['video', 'MOV'],
+		mp3: ['audio', 'MP3'],
+		m4a: ['audio', 'M4A'],
+		m4b: ['audio', 'M4A'],
+		wav: ['audio', 'WAV'],
+		'x-wav': ['audio', 'WAV'],
+		aac: ['audio', 'AAC'],
+		ogg: ['audio', 'Ogg'],
+		oga: ['audio', 'Ogg'],
+		webm: ['audio', 'WebM'],
+	};
+
+	// What kind of media a file is ('image', 'video', 'audio', or 'other'):
+	// the first part of its type, or its extension when the browser gives
+	// no type (some do for an .m4a or a .heic file). A .webm file the
+	// browser calls video may turn out to be sound; the site says so once
+	// it has the file (see startComposerUpload()).
+	function fileKind(file) {
+		const major = ((file && file.type) || '').split('/')[0];
+		if ('image' === major || 'video' === major || 'audio' === major) {
+			return major;
+		}
+		const format = UPLOAD_FORMATS[fileExtension(file)];
+		return format ? format[0] : 'other';
+	}
+
+	// The kind of media a stored file's MIME type says it is, or ''.
+	function mimeKind(mime) {
+		const major = String(mime || '').split('/')[0];
+		return 'image' === major || 'video' === major || 'audio' === major ? major : '';
+	}
+
+	// The file name extensions this site takes (Daymark_Uploads::
+	// accepted_extensions()), or null when the site didn't say. The site
+	// still checks a file's content once it arrives.
+	function uploadExtensions() {
+		return Array.isArray(config.uploadExtensions) ? config.uploadExtensions.map(String) : null;
+	}
+
+	// Whether the site takes a file with this name. A file it would refuse
+	// is refused when it's picked, so it never starts uploading.
+	function acceptsFileName(file) {
+		const accepted = uploadExtensions();
+		if (!accepted) {
+			return true;
+		}
+		const ext = fileExtension(file);
+		return '' !== ext && accepted.includes(ext);
+	}
+
+	// Joins names into one list in the site's language: "a, b, and c", or
+	// with type 'disjunction', "a, b, or c".
+	function formatList(items, type) {
+		if (items.length < 2) {
+			return items.join('');
+		}
+		try {
+			return new Intl.ListFormat(SITE_LANG, { style: 'long', type: type || 'conjunction' }).format(items);
+		} catch (err) {
+			return items.join(', ');
+		}
+	}
+
+	// The format names this site takes for one kind of media, such as
+	// ['MP3', 'M4A', 'WAV'], from the extensions it accepts.
+	function acceptedFormatNames(kind) {
+		const accepted = uploadExtensions() || Object.keys(UPLOAD_FORMATS);
+		const names = [];
+		Object.keys(UPLOAD_FORMATS).forEach((ext) => {
+			const [formatKind, name] = UPLOAD_FORMATS[ext];
+			if (formatKind === kind && accepted.includes(ext) && !names.includes(name)) {
+				names.push(name);
+			}
+		});
+		return names;
+	}
+
+	// Why the composer won't add these files: the formats the site takes
+	// for their kind of media, or, for a mix of kinds (or a kind it
+	// doesn't take at all), that it doesn't take them.
+	function refusedFilesMessage(files) {
+		const names = formatList(
+			files.map((file) => file.name),
+			'conjunction'
+		);
+		const kinds = Array.from(new Set(files.map(fileKind)));
+		const formats = 1 === kinds.length ? acceptedFormatNames(kinds[0]) : [];
+		const formatNames = formatList(formats, 'disjunction');
+		if (formats.length && 'audio' === kinds[0]) {
+			return sprintf(
+				/* translators: 1: one or more file names, 2: a list of formats, such as "MP3, M4A, or WAV" */
+				__("Couldn't add %1$s. This site takes audio in %2$s format.", 'daymark'),
+				names,
+				formatNames
+			);
+		}
+		if (formats.length && 'video' === kinds[0]) {
+			return sprintf(
+				/* translators: 1: one or more file names, 2: a list of formats, such as "MP4 or MOV" */
+				__("Couldn't add %1$s. This site takes video in %2$s format.", 'daymark'),
+				names,
+				formatNames
+			);
+		}
+		if (formats.length && 'image' === kinds[0]) {
+			return sprintf(
+				/* translators: 1: one or more file names, 2: a list of formats, such as "JPEG, PNG, or GIF" */
+				__("Couldn't add %1$s. This site takes photos in %2$s format.", 'daymark'),
+				names,
+				formatNames
+			);
+		}
+		return sprintf(
+			/* translators: %s: one or more file names */
+			_n(
+				"Couldn't add %s. This site doesn't take that kind of file.",
+				"Couldn't add %s. This site doesn't take those kinds of files.",
+				files.length,
+				'daymark'
+			),
+			names
+		);
+	}
+
 	// The file types the camera-first picker offers for a typed launcher
 	// entry (Image, Video, Audio). A Note or a Check In has no such picker;
 	// the composer's "Add" bar (CreateScreen.attachBarMarkup()) covers them.
@@ -1837,6 +1984,19 @@
 		video: 'video/*',
 		audio: 'audio/*',
 	};
+
+	// What choosing a file (rather than taking one with the camera or the
+	// microphone) offers. For sound it also names the extensions: Safari on
+	// an iPhone treats accept="audio/*" like video (WebKit bug 242110), so
+	// its Files picker greys out a Voice Memo unless .m4a is named.
+	function libraryAccept(type) {
+		if ('audio' !== type) {
+			return ACCEPT_BY_TYPE[type] || '';
+		}
+		const accepted = uploadExtensions() || ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'oga', 'webm'];
+		const extensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'oga', 'webm'].filter((ext) => accepted.includes(ext));
+		return [ACCEPT_BY_TYPE.audio].concat(extensions.map((ext) => '.' + ext)).join(',');
+	}
 
 	// What the "Add" bar's "Photo or video" button offers.
 	const ATTACH_MEDIA_ACCEPT = 'image/*,video/*';
@@ -1866,6 +2026,120 @@
 		video: __('Opens your camera', 'daymark'),
 		audio: __('Opens your microphone', 'daymark'),
 	};
+
+	// A microphone, for recording sound.
+	const MIC_GLYPH =
+		'<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>';
+
+	// The camera-first button's icon: a camera for a photo, a video camera
+	// for a video, a microphone for sound.
+	const CAPTURE_ICON_BY_TYPE = {
+		image: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle>',
+		video: TYPE_ICONS.video,
+		audio: MIC_GLYPH,
+	};
+
+	// What the composer records sound as (RecorderSheet), best first: AAC
+	// in MP4 plays in every browser and is what Safari records; Chrome and
+	// Firefox record Opus in WebM. The plain types cover a browser that
+	// records but doesn't say which codecs.
+	const RECORDER_TYPES = ['audio/mp4;codecs=mp4a.40.2', 'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'];
+
+	// The longest recording, after which the recorder stops on its own.
+	const RECORDING_MAX_MS = 60 * 60 * 1000;
+
+	// The file name extension for a recording of this type, or ''.
+	function recordingExtension(type) {
+		const base = String(type || '')
+			.split(';')[0]
+			.trim()
+			.toLowerCase();
+		if ('audio/mp4' === base) {
+			return 'm4a';
+		}
+		if ('audio/webm' === base) {
+			return 'webm';
+		}
+		if ('audio/ogg' === base) {
+			return 'ogg';
+		}
+		return '';
+	}
+
+	let recorderFormatFound = null;
+
+	// The type the composer records sound as, or '' when it can't record:
+	// no microphone access (a page not served over https), no
+	// MediaRecorder, or no type this browser records that the site takes.
+	function recorderFormat() {
+		if (null !== recorderFormatFound) {
+			return recorderFormatFound;
+		}
+		recorderFormatFound = '';
+		if (
+			!window.isSecureContext ||
+			!navigator.mediaDevices ||
+			'function' !== typeof navigator.mediaDevices.getUserMedia ||
+			'function' !== typeof window.MediaRecorder ||
+			'function' !== typeof window.MediaRecorder.isTypeSupported
+		) {
+			return recorderFormatFound;
+		}
+		const accepted = uploadExtensions();
+		recorderFormatFound =
+			RECORDER_TYPES.find((type) => {
+				const ext = recordingExtension(type);
+				if (!ext || (accepted && !accepted.includes(ext))) {
+					return false;
+				}
+				try {
+					return window.MediaRecorder.isTypeSupported(type);
+				} catch (err) {
+					return false;
+				}
+			}) || '';
+		return recorderFormatFound;
+	}
+
+	// Whether the composer can record sound itself. When it can't, Record
+	// Audio and the Add bar's Audio button open the file picker instead.
+	function canRecordAudio() {
+		return '' !== recorderFormat();
+	}
+
+	// A recording's length as 0:05, or 1:02:03 from an hour on.
+	function formatRecordingTime(ms) {
+		const total = Math.max(0, Math.floor(ms / 1000));
+		const hours = Math.floor(total / 3600);
+		const minutes = Math.floor((total % 3600) / 60);
+		const seconds = String(total % 60).padStart(2, '0');
+		return hours ? hours + ':' + String(minutes).padStart(2, '0') + ':' + seconds : minutes + ':' + seconds;
+	}
+
+	// A recording's file name, from when it was made: "Recording 2026-11-02
+	// 143005.m4a".
+	function recordingFileName(ext, date) {
+		const pad = (value) => String(value).padStart(2, '0');
+		const stamp =
+			date.getFullYear() +
+			'-' +
+			pad(date.getMonth() + 1) +
+			'-' +
+			pad(date.getDate()) +
+			' ' +
+			pad(date.getHours()) +
+			pad(date.getMinutes()) +
+			pad(date.getSeconds());
+		return (
+			sprintf(
+				/* translators: %s: the date and time a sound was recorded, such as 2026-11-02 143005 */
+				_x('Recording %s', 'file name of a sound recorded in the app', 'daymark'),
+				stamp
+			) +
+			'.' +
+			ext
+		);
+	}
 
 	function launcherIcon(glyph) {
 		return `<svg class="daymark-launcher__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph}</svg>`;
@@ -1898,7 +2172,7 @@
 	 * Detect the Mark type from selected files.
 	 */
 	function detectType(files) {
-		return typeForMedia(files.map((entry) => (entry.file.type || '').split('/')[0] || 'other'));
+		return typeForMedia(files.map((entry) => entry.kind || fileKind(entry.file)));
 	}
 
 	// Manual gallery reordering (issue #250): moves an image entry one slot
@@ -3531,15 +3805,34 @@
 			received: job.received,
 			size: job.size,
 			attachmentId: job.attachmentId || null,
+			mime: job.mime || null,
 		});
+	}
+
+	// The type each finished upload was stored as, by upload key. It can
+	// differ from what the file's name suggests: the site stores a sound
+	// recording in a .webm or .mp4 file as audio. See uploadedMime().
+	const uploadedMimes = new Map();
+
+	// The type the site stored this upload as, once it has finished, or ''.
+	function uploadedMime(key) {
+		return uploadedMimes.get(key) || '';
+	}
+
+	function noteUploadedMime(job) {
+		if (job.mime) {
+			uploadedMimes.set(job.key, job.mime);
+		}
 	}
 
 	async function runUploadJob(job) {
 		const saved = await getUploadProgress(job.key);
 		if (saved && saved.attachmentId) {
 			job.attachmentId = Number(saved.attachmentId);
+			job.mime = saved.mime || '';
 			job.received = job.size;
 			notifyUploadProgress(job);
+			noteUploadedMime(job);
 			return job.attachmentId;
 		}
 		if (saved && saved.sessionId) {
@@ -3577,6 +3870,7 @@
 						notifyUploadProgress(job);
 						if (session.attachment_id) {
 							job.attachmentId = Number(session.attachment_id);
+							job.mime = session.mime || '';
 							break;
 						}
 					}
@@ -3599,6 +3893,7 @@
 						notifyUploadProgress(job);
 						if (session.attachment_id) {
 							finishedId = Number(session.attachment_id);
+							job.mime = session.mime || '';
 							break;
 						}
 						saveUploadProgress(job);
@@ -3666,6 +3961,7 @@
 
 		job.received = job.size;
 		notifyUploadProgress(job);
+		noteUploadedMime(job);
 		await saveUploadProgress(job);
 		return job.attachmentId;
 	}
@@ -3684,6 +3980,7 @@
 				received: 0,
 				sessionId: null,
 				attachmentId: null,
+				mime: '',
 				cancelled: false,
 				listeners: new Set(),
 			};
@@ -4424,6 +4721,16 @@
 				}
 				entry.uploadedId = attachmentId;
 				entry.uploadStatus = 'done';
+				// The site read the file and may have stored it as another
+				// kind than its name suggested: a sound recording in a .webm
+				// or .mp4 file is audio. The Mark's type follows.
+				const kind = mimeKind(uploadedMime(entry.key));
+				if (kind && kind !== entry.kind) {
+					entry.kind = kind;
+					if (generation === composerGeneration) {
+						CreateScreen.refreshMediaKeepingFocus();
+					}
+				}
 				CreateScreen.refreshUploadStatus(entry);
 				if (generation === composerGeneration) {
 					runAutosave();
@@ -4609,7 +4916,7 @@
 		}
 		const kinds = (Array.isArray(editing.media) ? editing.media : [])
 			.map((item) => item.kind)
-			.concat(state.files.map((entry) => (entry.file.type || '').split('/')[0] || 'other'));
+			.concat(state.files.map((entry) => entry.kind || fileKind(entry.file)));
 		return kinds.length ? typeForMedia(kinds) : state.pendingType || 'note';
 	}
 
@@ -5174,6 +5481,11 @@
 		// Timeline link) keeps what you wrote as a draft and says so; see
 		// leaveComposer(). Before the next screen renders, so a Home that
 		// lists drafts already counts this one.
+		// A recording waiting to be added goes into the Mark first (see
+		// RecorderSheet.keepForLeave()).
+		if (COMPOSER_SCREENS.includes(previous)) {
+			RecorderSheet.keepForLeave();
+		}
 		if (COMPOSER_SCREENS.includes(previous) && !COMPOSER_SCREENS.includes(target)) {
 			leaveComposer();
 		}
@@ -5188,6 +5500,7 @@
 		AIAssistSheet.hide(false);
 		DestinationsSheet.hide(false);
 		MediaSheet.hide(false);
+		RecorderSheet.hide(false);
 		// The outgoing screen's `bindDismissible()` pair (if it registered
 		// one at all) targets DOM that's about to be replaced wholesale
 		// below — clear it unconditionally so it never keeps firing against
@@ -10537,7 +10850,9 @@
 			}
 			return `<div class="daymark-picker" data-picker-for="${esc(type)}">
 				<button type="button" class="daymark-picker__zone daymark-picker__zone--button" data-picker-capture>
-					<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+					<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
+						CAPTURE_ICON_BY_TYPE[type]
+					}</svg>
 					<span>${esc(CAPTURE_LABEL_BY_TYPE[type])}</span>
 					<span class="daymark-picker__hint">${esc(CAPTURE_HINT_BY_TYPE[type])}</span>
 				</button>
@@ -10568,7 +10883,7 @@
 				<button type="button" class="daymark-attach__btn" data-attach="media">${icon(TYPE_ICONS.image)}<span>${esc(
 					__('Photo or video', 'daymark')
 				)}</span></button>
-				<button type="button" class="daymark-attach__btn" data-attach="audio">${icon(TYPE_ICONS.audio)}<span>${esc(
+				<button type="button" class="daymark-attach__btn" data-attach="audio">${icon(MIC_GLYPH)}<span>${esc(
 					__('Audio', 'daymark')
 				)}</span></button>
 				<button type="button" class="daymark-attach__btn" data-attach="place" aria-pressed="${
@@ -10633,11 +10948,19 @@
 				return;
 			}
 			const type = zone.getAttribute('data-picker-for');
-			zone.querySelector('[data-picker-capture]').addEventListener('click', () => {
+			const capture = zone.querySelector('[data-picker-capture]');
+			capture.addEventListener('click', () => {
+				// Sound is recorded in the app where the browser can
+				// (RecorderSheet): a phone's file picker often can't
+				// record sound at all.
+				if ('audio' === type && canRecordAudio()) {
+					maybeShowInteractionHintThen('microphone', capture, () => RecorderSheet.show(capture, { start: true }));
+					return;
+				}
 				this.openFilePicker(ACCEPT_BY_TYPE[type], CAPTURE_BY_TYPE[type]);
 			});
 			zone.querySelector('[data-picker-library]').addEventListener('click', () => {
-				this.openFilePicker(ACCEPT_BY_TYPE[type], '');
+				this.openFilePicker(libraryAccept(type), '');
 			});
 			this.bindDropTarget(zone);
 		},
@@ -11351,8 +11674,15 @@
 			bar.querySelector('[data-attach="media"]').addEventListener('click', () => {
 				this.openFilePicker(ATTACH_MEDIA_ACCEPT, '');
 			});
-			bar.querySelector('[data-attach="audio"]').addEventListener('click', () => {
-				this.openFilePicker(ACCEPT_BY_TYPE.audio, '');
+			bar.querySelector('[data-attach="audio"]').addEventListener('click', (event) => {
+				const button = event.currentTarget;
+				// Record in the app where the browser can; the recorder
+				// also offers "Choose a file instead".
+				if (canRecordAudio()) {
+					maybeShowInteractionHintThen('microphone', button, () => RecorderSheet.show(button));
+					return;
+				}
+				this.openFilePicker(libraryAccept('audio'), '');
 			});
 			bar.querySelector('[data-attach="place"]').addEventListener('click', (event) => {
 				this.togglePlace(event.currentTarget);
@@ -11445,6 +11775,20 @@
 					return;
 				}
 			}
+			// A file whose type this site doesn't take would be refused as
+			// soon as it started uploading. Refuse it now, and say which
+			// formats the site takes.
+			const unaccepted = picked.filter((file) => !acceptsFileName(file));
+			if (unaccepted.length) {
+				const message = refusedFilesMessage(unaccepted);
+				if (status) {
+					status.textContent = status.textContent ? status.textContent + ' ' + message : message;
+				}
+				picked.splice(0, picked.length, ...picked.filter((file) => acceptsFileName(file)));
+				if (!picked.length) {
+					return;
+				}
+			}
 			picked.forEach((file) => {
 				const duplicate = state.files.some(
 					(entry) =>
@@ -11464,7 +11808,7 @@
 					key: newUploadKey(),
 					file,
 					url: isImage ? URL.createObjectURL(file) : '',
-					kind: (file.type || '').split('/')[0] || 'file',
+					kind: fileKind(file),
 					alt: '',
 					// Only formats AI vision providers can read (#481), and
 					// only when the site lets the composer ask on its own
@@ -11582,6 +11926,39 @@
 			this.refreshPlaceField();
 			this.refreshPicker();
 			this.refreshStrip();
+		},
+
+		// refreshMedia(), keeping focus and the caret where they were. For
+		// a change the author didn't make (a finished upload turning out to
+		// be sound), which can come while they type in a field refreshMedia()
+		// redraws, such as the title.
+		refreshMediaKeepingFocus() {
+			const active = document.activeElement;
+			const id = active && active.id && root.contains(active) ? active.id : '';
+			let selection = null;
+			try {
+				if (id && typeof active.selectionStart === 'number') {
+					selection = [active.selectionStart, active.selectionEnd, active.selectionDirection];
+				}
+			} catch (err) {
+				// Some inputs have no caret.
+			}
+			this.refreshMedia();
+			if (!id) {
+				return;
+			}
+			const next = document.getElementById(id);
+			if (!next || next === document.activeElement || !root.contains(next)) {
+				return;
+			}
+			next.focus();
+			if (selection && typeof next.setSelectionRange === 'function') {
+				try {
+					next.setSelectionRange(selection[0], selection[1], selection[2] || 'none');
+				} catch (err) {
+					// The field changed shape; the caret stays at its default.
+				}
+			}
 		},
 
 		// Asks the provider to describe (or, with opts.existingAlt, improve)
@@ -12710,6 +13087,16 @@
 							'Say where you are. Your browser asks to share your location, so Daymark can suggest the place. Only Check Ins use your location. You can also search for a place or type its name, and a photo is optional.',
 							'daymark'
 					  ),
+		},
+		// Shown the first time sound is recorded in the app, before the
+		// browser asks for the microphone.
+		microphone: {
+			glyph: MIC_GLYPH,
+			title: __('Record Audio', 'daymark'),
+			body: __(
+				'Record sound right here. Your browser asks to use your microphone first. You can listen to the recording before you add it to your Mark.',
+				'daymark'
+			),
 		},
 	};
 
@@ -16767,6 +17154,559 @@
 				}
 			}
 			this.key = null;
+			this.opener = null;
+		},
+	};
+
+	// --- Overlay: recording sound in the composer ---
+	//
+	// Opens from Record Audio on a new Audio Mark's picker, which starts
+	// recording at once, and from the Add bar's Audio button, which offers
+	// Record and "Choose a file instead". Records with the browser's
+	// microphone (MediaRecorder) in the type recorderFormat() picks: AAC in
+	// MP4 on Safari, Opus in WebM on Chrome and Firefox. While recording it
+	// shows a timer and Stop; then you can listen before "Add recording"
+	// hands the file to addPickedFiles(), the path a picked file takes, so
+	// it uploads and autosaves like one. Nothing leaves the device before
+	// that. Like the other sheets it lives on document.body.
+	const RecorderSheet = {
+		el: null,
+		opener: null,
+		onKeydown: null,
+		// idle, starting (waiting for the microphone), recording, stopping,
+		// review, or error.
+		phase: 'idle',
+		// Bumped by every start() and close, so a microphone or recorder
+		// answering late for an earlier attempt is ignored.
+		attempt: 0,
+		stream: null,
+		recorder: null,
+		startedAt: 0,
+		elapsed: 0,
+		timer: null,
+		limitTimer: null,
+		wakeLock: null,
+		// The finished recording waiting to be listened to:
+		// { file, url, duration }.
+		clip: null,
+		error: '',
+		hitLimit: false,
+
+		isOpen() {
+			return !!(this.el && !this.el.hidden);
+		},
+
+		// opts.start starts recording at once (the button said Record
+		// Audio); otherwise the sheet opens on its Record button.
+		show(opener, opts) {
+			this.hide(false);
+			this.opener = opener || null;
+			if (!this.el) {
+				this.el = document.createElement('div');
+				this.el.className = 'daymark-sheet';
+				document.body.appendChild(this.el);
+			}
+			this.el.hidden = false;
+			syncSheetsToVisualViewport();
+			this.el.innerHTML = `
+			<button type="button" class="daymark-sheet__backdrop" data-sheet-dismiss aria-label="${esc(
+				__('Close', 'daymark')
+			)}"></button>
+			<div class="daymark-sheet__panel daymark-sheet__panel--recorder" role="dialog" aria-modal="true" aria-labelledby="daymark-recorder-title">
+				<h2 class="daymark-sheet__title" id="daymark-recorder-title" tabindex="-1">${esc(
+					__('Record Audio', 'daymark')
+				)}</h2>
+				<div class="daymark-sheet__body daymark-recorder" data-recorder-body></div>
+				<p class="daymark-visually-hidden" data-recorder-live aria-live="polite"></p>
+			</div>`;
+			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.dismiss(false));
+			this.el.querySelector('[data-recorder-body]').addEventListener('click', (event) => this.onClick(event));
+			this.onKeydown = (event) => {
+				if ('Escape' === event.key) {
+					this.dismiss(true);
+				}
+			};
+			document.addEventListener('keydown', this.onKeydown);
+			this.el.querySelector('#daymark-recorder-title').focus();
+			if (opts && opts.start) {
+				this.start();
+			} else {
+				this.render('idle');
+			}
+		},
+
+		// Escape or a tap outside the panel. Neither can lose a recording:
+		// while recording, Escape stops it so it can be listened to, and a
+		// finished one waits for Add recording or Discard.
+		dismiss(fromEscape) {
+			if ('recording' === this.phase) {
+				if (fromEscape) {
+					this.stop();
+				}
+				return;
+			}
+			if ('stopping' === this.phase || 'review' === this.phase) {
+				return;
+			}
+			this.hide();
+		},
+
+		onClick(event) {
+			const button = event.target.closest('button');
+			if (!button || button.disabled) {
+				return;
+			}
+			if (button.hasAttribute('data-recorder-record')) {
+				this.start();
+			} else if (button.hasAttribute('data-recorder-stop')) {
+				this.stop();
+			} else if (button.hasAttribute('data-recorder-use')) {
+				this.use();
+			} else if (button.hasAttribute('data-recorder-file')) {
+				this.chooseFile();
+			} else if (button.hasAttribute('data-recorder-cancel')) {
+				this.hide();
+			}
+		},
+
+		bodyMarkup(phase) {
+			const icon = (glyph) =>
+				`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+			const button = (attr, label, variant, glyph) =>
+				`<button type="button" class="daymark-btn daymark-btn--${variant}" ${attr}>${
+					glyph ? icon(glyph) : ''
+				}<span>${esc(label)}</span></button>`;
+			const actions = (...buttons) => `<div class="daymark-sheet__actions">${buttons.join('')}</div>`;
+			const fileLink = `<button type="button" class="daymark-btn daymark-btn--text daymark-recorder__alt" data-recorder-file>${esc(
+				__('Choose a file instead', 'daymark')
+			)}</button>`;
+			const stopGlyph = '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"></rect>';
+
+			if ('starting' === phase) {
+				return `<p class="daymark-recorder__status">${esc(__('Waiting for the microphone…', 'daymark'))}</p>
+					${actions(button('data-recorder-cancel', __('Cancel', 'daymark'), 'text'))}`;
+			}
+			if ('recording' === phase || 'stopping' === phase) {
+				const stopping = 'stopping' === phase;
+				return `<div class="daymark-recorder__meter${stopping ? ' is-stopping' : ''}" data-recorder-meter>
+						<p class="daymark-recorder__state"><span class="daymark-recorder__dot" aria-hidden="true"></span><span>${esc(
+							__('Recording', 'daymark')
+						)}</span></p>
+						<p class="daymark-recorder__time" role="timer" data-recorder-time>${esc(
+							formatRecordingTime(stopping ? this.elapsed : performance.now() - this.startedAt)
+						)}</p>
+					</div>
+					${actions(
+						button(
+							'data-recorder-stop' + (stopping ? ' aria-disabled="true"' : ''),
+							stopping ? __('Finishing…', 'daymark') : __('Stop', 'daymark'),
+							'primary',
+							stopGlyph
+						),
+						button('data-recorder-cancel', __('Discard', 'daymark'), 'text')
+					)}`;
+			}
+			if ('review' === phase && this.clip) {
+				const minutes = Math.round(RECORDING_MAX_MS / 60000);
+				const limit = this.hitLimit
+					? `<p class="daymark-recorder__note">${esc(
+							sprintf(
+								/* translators: %d: the longest a recording can be, in minutes */
+								_n(
+									'Recording stopped at %d minute, the longest a recording can be.',
+									'Recording stopped at %d minutes, the longest a recording can be.',
+									minutes,
+									'daymark'
+								),
+								minutes
+							)
+					  )}</p>`
+					: '';
+				return `<audio class="daymark-recorder__audio" controls preload="metadata" src="${esc(
+					this.clip.url
+				)}" aria-label="${esc(__('Your recording', 'daymark'))}"></audio>
+					<p class="daymark-recorder__length">${esc(
+						sprintf(
+							/* translators: %s: how long a recording is, such as 0:12 */
+							__('Length: %s', 'daymark'),
+							formatRecordingTime(this.clip.duration)
+						)
+					)}</p>
+					${limit}
+					${actions(
+						button('data-recorder-use', __('Add recording', 'daymark'), 'primary'),
+						button('data-recorder-record', __('Record again', 'daymark'), 'text')
+					)}
+					<button type="button" class="daymark-btn daymark-btn--text daymark-recorder__alt" data-recorder-cancel>${esc(
+						__('Discard', 'daymark')
+					)}</button>`;
+			}
+			if ('error' === phase) {
+				return `<p class="daymark-recorder__error">${esc(this.error)}</p>
+					${actions(
+						button('data-recorder-record', __('Try again', 'daymark'), 'primary'),
+						button('data-recorder-cancel', __('Cancel', 'daymark'), 'text')
+					)}
+					${fileLink}`;
+			}
+			return `<p class="daymark-recorder__intro">${esc(
+				__('Record with your microphone. You can listen before you add it.', 'daymark')
+			)}</p>
+				${actions(
+					button('data-recorder-record', __('Record', 'daymark'), 'primary', MIC_GLYPH),
+					button('data-recorder-cancel', __('Cancel', 'daymark'), 'text')
+				)}
+				${fileLink}`;
+		},
+
+		// Draws the sheet's body for this phase. Focus goes to the phase's
+		// main button where it has one, else stays put, or moves to the
+		// title when the button that had it was redrawn away.
+		render(phase) {
+			this.phase = phase;
+			const body = this.el && this.el.querySelector('[data-recorder-body]');
+			if (!body) {
+				return;
+			}
+			body.innerHTML = this.bodyMarkup(phase);
+			const main = {
+				recording: '[data-recorder-stop]',
+				review: '[data-recorder-use]',
+				error: '[data-recorder-record]',
+			}[phase];
+			const active = document.activeElement;
+			const target =
+				(main && body.querySelector(main)) ||
+				(!active || !this.el.contains(active) ? this.el.querySelector('#daymark-recorder-title') : null);
+			if (target) {
+				target.focus();
+			}
+		},
+
+		async start() {
+			if (!this.isOpen()) {
+				return;
+			}
+			this.attempt += 1;
+			const attempt = this.attempt;
+			this.release();
+			this.discardClip();
+			this.hitLimit = false;
+			this.error = '';
+			this.render('starting');
+			let stream;
+			try {
+				stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			} catch (err) {
+				if (attempt === this.attempt) {
+					this.fail(err);
+				}
+				return;
+			}
+			if (attempt !== this.attempt) {
+				stream.getTracks().forEach((track) => track.stop());
+				return;
+			}
+			this.begin(attempt, stream);
+		},
+
+		begin(attempt, stream) {
+			this.stream = stream;
+			let recorder;
+			try {
+				recorder = new window.MediaRecorder(stream, { mimeType: recorderFormat() });
+			} catch (err) {
+				this.fail(err);
+				return;
+			}
+			this.recorder = recorder;
+			const chunks = [];
+			recorder.addEventListener('dataavailable', (event) => {
+				if (event.data && event.data.size) {
+					chunks.push(event.data);
+				}
+			});
+			recorder.addEventListener('stop', () => this.finish(attempt, recorder, chunks));
+			// After an error the recorder stops itself; keep what it has.
+			recorder.addEventListener('error', () => {
+				if (attempt === this.attempt) {
+					this.stop();
+				}
+			});
+			// The microphone went away (unplugged, or taken by a phone call).
+			stream.getTracks().forEach((track) => {
+				track.addEventListener('ended', () => {
+					if (attempt === this.attempt) {
+						this.stop();
+					}
+				});
+			});
+			try {
+				// No timeslice: the recorder hands over one finished file
+				// when it stops.
+				recorder.start();
+			} catch (err) {
+				this.fail(err);
+				return;
+			}
+			this.startedAt = performance.now();
+			this.elapsed = 0;
+			this.render('recording');
+			this.timer = setInterval(() => this.tick(), 250);
+			this.limitTimer = setTimeout(() => {
+				this.hitLimit = true;
+				this.stop();
+			}, RECORDING_MAX_MS);
+			this.keepScreenOn(attempt);
+			this.say(__('Recording.', 'daymark'));
+		},
+
+		tick() {
+			const time = this.el && this.el.querySelector('[data-recorder-time]');
+			if (!time) {
+				return;
+			}
+			const text = formatRecordingTime(performance.now() - this.startedAt);
+			if (time.textContent !== text) {
+				time.textContent = text;
+			}
+		},
+
+		// Stop: the timer freezes and the button says Finishing… until the
+		// recorder hands over the file (finish()). Patched in place, so the
+		// focused button keeps focus.
+		stop() {
+			if ('recording' !== this.phase) {
+				return;
+			}
+			this.phase = 'stopping';
+			this.elapsed = performance.now() - this.startedAt;
+			this.clearTimers();
+			const meter = this.el.querySelector('[data-recorder-meter]');
+			if (meter) {
+				meter.classList.add('is-stopping');
+			}
+			const time = this.el.querySelector('[data-recorder-time]');
+			if (time) {
+				time.textContent = formatRecordingTime(this.elapsed);
+			}
+			const button = this.el.querySelector('[data-recorder-stop]');
+			if (button) {
+				button.setAttribute('aria-disabled', 'true');
+				button.querySelector('span').textContent = __('Finishing…', 'daymark');
+			}
+			const recorder = this.recorder;
+			if (recorder && 'inactive' !== recorder.state) {
+				try {
+					recorder.stop();
+				} catch (err) {
+					// Already stopped; its stop event still comes.
+				}
+			}
+		},
+
+		finish(attempt, recorder, chunks) {
+			if (attempt !== this.attempt) {
+				return;
+			}
+			if ('recording' === this.phase) {
+				// The recorder stopped on its own.
+				this.elapsed = performance.now() - this.startedAt;
+			}
+			this.release();
+			const base = (value) =>
+				String(value || '')
+					.split(';')[0]
+					.trim()
+					.toLowerCase();
+			const type = recordingExtension(recorder.mimeType) ? base(recorder.mimeType) : base(recorderFormat());
+			const ext = recordingExtension(type);
+			const blob = new Blob(chunks, { type });
+			if (!blob.size || !ext) {
+				this.fail({ name: 'EmptyRecording' });
+				return;
+			}
+			const file = new File([blob], recordingFileName(ext, new Date()), { type, lastModified: Date.now() });
+			this.clip = { file, url: URL.createObjectURL(file), duration: this.elapsed };
+			this.render('review');
+			this.say(
+				sprintf(
+					/* translators: %s: how long a recording is, such as 0:12 */
+					__('Recording stopped. Length: %s.', 'daymark'),
+					formatRecordingTime(this.elapsed)
+				)
+			);
+		},
+
+		fail(err) {
+			this.attempt += 1;
+			this.release();
+			this.discardClip();
+			const name = err && err.name ? err.name : '';
+			let message;
+			if ('NotAllowedError' === name || 'SecurityError' === name) {
+				message = __(
+					"Daymark can't use your microphone. Allow microphone access for this site in your browser's settings, then try again.",
+					'daymark'
+				);
+			} else if ('NotFoundError' === name || 'OverconstrainedError' === name) {
+				message = __('No microphone was found.', 'daymark');
+			} else if ('NotReadableError' === name || 'AbortError' === name) {
+				message = __("The microphone is in use by another app, or couldn't start.", 'daymark');
+			} else if ('EmptyRecording' === name) {
+				message = __('Nothing was recorded. Please try again.', 'daymark');
+			} else {
+				message = __("Recording couldn't start.", 'daymark');
+			}
+			this.error = message;
+			this.render('error');
+			this.say(message);
+		},
+
+		// Add recording: the file joins the Mark like a picked file, and
+		// focus goes to its thumbnail.
+		use() {
+			const clip = this.clip;
+			if (!clip) {
+				return;
+			}
+			const opener = this.opener;
+			this.clip = null;
+			this.hide(false);
+			URL.revokeObjectURL(clip.url);
+			CreateScreen.addPickedFiles([clip.file]);
+			const entry = state.files.find((item) => item.file === clip.file);
+			const tile = entry && root.querySelector('[data-media-open="file:' + entry.id + '"]');
+			const target = tile || (opener && opener.isConnected ? opener : root.querySelector('[data-attach="audio"]'));
+			if (target) {
+				target.focus();
+			}
+			if (entry) {
+				announce(__('Recording added.', 'daymark'));
+			}
+		},
+
+		// Same tap, so the browser still lets the file picker open.
+		chooseFile() {
+			const opener = this.opener;
+			this.hide(false);
+			if (opener && opener.isConnected) {
+				opener.focus();
+			}
+			CreateScreen.openFilePicker(libraryAccept('audio'), '');
+		},
+
+		// Leaving the composer closes the recorder (showScreen()). A finished
+		// recording goes into the Mark first, so the draft that leaving saves
+		// keeps it; one still being recorded is discarded.
+		keepForLeave() {
+			if (!this.isOpen()) {
+				return;
+			}
+			const clip = 'review' === this.phase ? this.clip : null;
+			this.clip = null;
+			this.hide(false);
+			if (clip) {
+				URL.revokeObjectURL(clip.url);
+				CreateScreen.addPickedFiles([clip.file]);
+			}
+		},
+
+		// The screen stays on while recording, where the browser allows it:
+		// a phone that locks can stop the microphone.
+		keepScreenOn(attempt) {
+			if (!navigator.wakeLock || 'function' !== typeof navigator.wakeLock.request) {
+				return;
+			}
+			navigator.wakeLock
+				.request('screen')
+				.then((lock) => {
+					if (attempt === this.attempt && 'recording' === this.phase) {
+						this.wakeLock = lock;
+					} else {
+						lock.release().catch(() => {});
+					}
+				})
+				.catch(() => {});
+		},
+
+		clearTimers() {
+			if (this.timer) {
+				clearInterval(this.timer);
+				this.timer = null;
+			}
+			if (this.limitTimer) {
+				clearTimeout(this.limitTimer);
+				this.limitTimer = null;
+			}
+		},
+
+		// Stops the recorder and the microphone, and lets the screen sleep.
+		release() {
+			this.clearTimers();
+			const recorder = this.recorder;
+			this.recorder = null;
+			if (recorder && 'inactive' !== recorder.state) {
+				try {
+					recorder.stop();
+				} catch (err) {
+					// Already stopped.
+				}
+			}
+			if (this.stream) {
+				this.stream.getTracks().forEach((track) => track.stop());
+				this.stream = null;
+			}
+			if (this.wakeLock) {
+				this.wakeLock.release().catch(() => {});
+				this.wakeLock = null;
+			}
+		},
+
+		discardClip() {
+			if (this.clip) {
+				URL.revokeObjectURL(this.clip.url);
+				this.clip = null;
+			}
+		},
+
+		// The sheet's own live region, as in MediaSheet.say().
+		say(text) {
+			const live = this.el && this.el.querySelector('[data-recorder-live]');
+			if (!live) {
+				return;
+			}
+			live.textContent = '';
+			setTimeout(() => {
+				if (live.isConnected) {
+					live.textContent = text;
+				}
+			}, 100);
+		},
+
+		hide(restoreFocus = true) {
+			if (!this.isOpen()) {
+				return;
+			}
+			this.attempt += 1;
+			this.release();
+			this.discardClip();
+			this.phase = 'idle';
+			this.error = '';
+			this.hitLimit = false;
+			this.el.hidden = true;
+			this.el.innerHTML = '';
+			if (this.onKeydown) {
+				document.removeEventListener('keydown', this.onKeydown);
+				this.onKeydown = null;
+			}
+			if (restoreFocus) {
+				const target =
+					this.opener && this.opener.isConnected ? this.opener : root.querySelector('[data-attach="audio"]');
+				if (target) {
+					target.focus();
+				}
+			}
 			this.opener = null;
 		},
 	};

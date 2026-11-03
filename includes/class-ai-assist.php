@@ -257,14 +257,16 @@ class Daymark_AI_Assist {
 	 *
 	 * @param string $image_path Absolute path to a readable image file.
 	 * @param array  $context    Optional context: text, type, existing_alt.
+	 * @param string $mime       The image's type, read from its content
+	 *                           (since 0.22.0). Read here when empty.
 	 * @return array{alt_text: string, is_mocked: bool, provider_label: string}
 	 */
-	public function get_image_alt_suggestion( string $image_path, array $context = array() ): array {
+	public function get_image_alt_suggestion( string $image_path, array $context = array(), string $mime = '' ): array {
 		$existing_alt = $this->truncate( sanitize_text_field( (string) ( $context['existing_alt'] ?? '' ) ), self::MAX_ALT_TEXT_CHARS );
 		$context      = $this->normalize_context( $context );
 
 		if ( $this->is_available() && '' !== $image_path && is_readable( $image_path ) ) {
-			$alt = $this->generate_vision_alt( $image_path, $existing_alt );
+			$alt = $this->generate_vision_alt( $image_path, $existing_alt, $mime );
 
 			if ( null !== $alt ) {
 				return array(
@@ -291,9 +293,10 @@ class Daymark_AI_Assist {
 	 * @param string $image_path   Absolute path to a readable image file.
 	 * @param string $existing_alt Current alt text to improve, or '' to
 	 *                             describe the image from scratch.
+	 * @param string $mime         The image's type; read here when empty.
 	 * @return string|null Trimmed alt text, or null on any failure.
 	 */
-	private function generate_vision_alt( string $image_path, string $existing_alt = '' ): ?string {
+	private function generate_vision_alt( string $image_path, string $existing_alt = '', string $mime = '' ): ?string {
 		$file_class = '\WordPress\AiClient\Files\DTO\File';
 		$part_class = '\WordPress\AiClient\Messages\DTO\MessagePart';
 
@@ -302,7 +305,7 @@ class Daymark_AI_Assist {
 		}
 
 		try {
-			$file = new $file_class( $image_path );
+			$file = new $file_class( $image_path, $this->file_mime( $image_path, $mime ) );
 			$part = new $part_class( $file );
 
 			if ( '' !== $existing_alt ) {
@@ -338,6 +341,23 @@ class Daymark_AI_Assist {
 	}
 
 	/**
+	 * The type to give the AI Client for a local file.
+	 *
+	 * The client names a file's type from its extension when none is given,
+	 * and an uploaded file's temporary path has none, so it would refuse
+	 * the file. The type read from the file's content is passed instead.
+	 *
+	 * @param string $path Absolute path to a readable file.
+	 * @param string $mime The type the caller already read, or ''.
+	 * @return string|null The type, or null to let the client decide.
+	 */
+	private function file_mime( string $path, string $mime ): ?string {
+		$mime = '' !== $mime ? $mime : Daymark_Publisher::sniff_mime( $path );
+
+		return '' !== $mime ? $mime : null;
+	}
+
+	/**
 	 * Suggest a transcript for an audio or video Mark, from its actual audio
 	 * track — same File/MessagePart pattern as get_image_alt_suggestion(),
 	 * pointed at audio instead of an image. A manual, author-triggered action
@@ -353,13 +373,15 @@ class Daymark_AI_Assist {
 	 *
 	 * @param string $media_path Absolute path to a readable audio/video file.
 	 * @param array  $context    Optional context: type.
+	 * @param string $mime       The file's type, read from its content
+	 *                           (since 0.22.0). Read here when empty.
 	 * @return array{transcript: string, is_mocked: bool, provider_label: string}
 	 */
-	public function get_transcript_suggestion( string $media_path, array $context = array() ): array {
+	public function get_transcript_suggestion( string $media_path, array $context = array(), string $mime = '' ): array {
 		$context = $this->normalize_context( $context );
 
 		if ( $this->is_available() && '' !== $media_path && is_readable( $media_path ) ) {
-			$transcript = $this->generate_transcript( $media_path );
+			$transcript = $this->generate_transcript( $media_path, $mime );
 
 			if ( null !== $transcript ) {
 				return array(
@@ -388,9 +410,10 @@ class Daymark_AI_Assist {
 	 * @since 0.8.0
 	 *
 	 * @param string $media_path Absolute path to a readable audio/video file.
+	 * @param string $mime       The file's type; read here when empty.
 	 * @return string|null Trimmed transcript, or null on any failure.
 	 */
-	private function generate_transcript( string $media_path ): ?string {
+	private function generate_transcript( string $media_path, string $mime = '' ): ?string {
 		$file_class = '\WordPress\AiClient\Files\DTO\File';
 		$part_class = '\WordPress\AiClient\Messages\DTO\MessagePart';
 
@@ -399,7 +422,7 @@ class Daymark_AI_Assist {
 		}
 
 		try {
-			$file = new $file_class( $media_path );
+			$file = new $file_class( $media_path, $this->file_mime( $media_path, $mime ) );
 			$part = new $part_class( $file );
 
 			$instruction = 'Transcribe the spoken words in the attached audio verbatim, as plain-text paragraphs. '

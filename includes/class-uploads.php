@@ -166,6 +166,66 @@ class Daymark_Uploads {
 	}
 
 	/**
+	 * The type a file's name says it is, as create_session() checks it.
+	 *
+	 * @param string $name File name.
+	 * @return string A canonical MIME type, or '' when this site doesn't
+	 *                know the extension.
+	 */
+	private static function type_from_name( string $name ): string {
+		$check = wp_check_filetype( $name );
+		$mime  = Daymark_Publisher::canonical_mime( (string) ( $check['type'] ?? '' ) );
+
+		// WordPress calls any .webm file video. It may be a sound recording,
+		// which Daymark takes; the check after the first part decides.
+		return 'video/webm' === $mime ? 'audio/webm' : $mime;
+	}
+
+	/**
+	 * The file name extensions an upload can start with, lowercase.
+	 *
+	 * The extensions this site allows whose type Daymark takes (HEIC only
+	 * where the site can convert it), judged as create_session() judges a
+	 * name. The composer refuses any other file when it's picked, so a file
+	 * the site would refuse never starts uploading. The content is still
+	 * checked once the file arrives.
+	 *
+	 * @since 0.22.0
+	 *
+	 * @return string[]
+	 */
+	public static function accepted_extensions(): array {
+		$extensions = array();
+		$heic       = null;
+
+		foreach ( array_keys( get_allowed_mime_types() ) as $pattern ) {
+			foreach ( explode( '|', strtolower( (string) $pattern ) ) as $ext ) {
+				if ( '' === $ext || isset( $extensions[ $ext ] ) ) {
+					continue;
+				}
+
+				$mime = self::type_from_name( 'file.' . $ext );
+
+				if ( ! in_array( $mime, Daymark_Publisher::ALLOWED_MIME_TYPES, true ) ) {
+					continue;
+				}
+
+				if ( in_array( $mime, Daymark_Publisher::HEIC_MIME_TYPES, true ) ) {
+					$heic = $heic ?? Daymark_Publisher::accepts_heic();
+
+					if ( ! $heic ) {
+						continue;
+					}
+				}
+
+				$extensions[ $ext ] = true;
+			}
+		}
+
+		return array_keys( $extensions );
+	}
+
+	/**
 	 * Start an upload session for one file.
 	 *
 	 * The file name's extension decides the expected type, and the declared
@@ -189,8 +249,7 @@ class Daymark_Uploads {
 			);
 		}
 
-		$check = wp_check_filetype( $name );
-		$mime  = Daymark_Publisher::canonical_mime( (string) ( $check['type'] ?? '' ) );
+		$mime = self::type_from_name( $name );
 
 		if ( in_array( $mime, Daymark_Publisher::HEIC_MIME_TYPES, true ) && ! Daymark_Publisher::accepts_heic() ) {
 			return new WP_Error(
@@ -201,11 +260,7 @@ class Daymark_Uploads {
 		}
 
 		if ( '' === $mime || ! in_array( $mime, Daymark_Publisher::ALLOWED_MIME_TYPES, true ) ) {
-			return new WP_Error(
-				'invalid_mime',
-				__( 'File type not allowed.', 'daymark' ),
-				array( 'status' => 400 )
-			);
+			return Daymark_Publisher::type_not_allowed();
 		}
 
 		$size_error = $this->check_size( $name, $size, $mime );
@@ -632,11 +687,7 @@ class Daymark_Uploads {
 			if ( '' === $content_mime || ! in_array( $content_mime, Daymark_Publisher::ALLOWED_MIME_TYPES, true ) ) {
 				$this->delete_session_files( $id );
 
-				return new WP_Error(
-					'invalid_mime',
-					__( 'File type not allowed.', 'daymark' ),
-					array( 'status' => 400 )
-				);
+				return Daymark_Publisher::type_not_allowed( $content_mime );
 			}
 
 			$size_error = $this->check_size( (string) $session['name'], $size, $content_mime );
@@ -682,12 +733,8 @@ class Daymark_Uploads {
 			return $valid;
 		}
 
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-		require_once ABSPATH . 'wp-admin/includes/media.php';
-		require_once ABSPATH . 'wp-admin/includes/image.php';
-
 		// Moves the part into the uploads folder (copy, then unlink).
-		$attachment_id = media_handle_sideload( $file, 0 );
+		$attachment_id = Daymark_Publisher::sideload_file( $file );
 
 		if ( is_wp_error( $attachment_id ) ) {
 			$this->delete_session_files( $id );
@@ -823,6 +870,9 @@ class Daymark_Uploads {
 			'received'      => $attachment_id > 0 ? $size : $this->received_bytes( (string) $session['id'] ),
 			'chunk_size'    => self::chunk_size(),
 			'attachment_id' => $attachment_id > 0 ? $attachment_id : null,
+			// The type the file was stored as, which can differ from what
+			// its name suggests (a sound recording in a .webm file is audio).
+			'mime'          => $attachment_id > 0 ? (string) get_post_mime_type( $attachment_id ) : null,
 		);
 	}
 
