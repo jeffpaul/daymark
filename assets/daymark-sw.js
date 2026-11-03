@@ -10,9 +10,12 @@
  * directory of its own script URL — serving it AT /daymark/sw.js means that
  * directory already IS /daymark/, for free.
  *
- * Caches exactly four things, all safe to persist indefinitely:
+ * Caches only these, all safe to persist indefinitely:
  * - app.css / app.js (this plugin's own static assets — unchanged from the
  *   original, narrower-scoped version of this file)
+ * - the other plugin files the app's pages load: featured-content.css/.js
+ *   (the Featured Content gallery slider) and note-length.js (the Note
+ *   length count under a Note's caption), plus core's wp-hooks and wp-i18n
  * - offline-boot.js — the offline shell's own bootstrap script (see
  *   templates/offline-shell.php). It has to be precached the same way
  *   app.css/app.js are: nothing else caches or intercepts it, so a request
@@ -80,6 +83,7 @@ self.addEventListener('install', (event) => {
 					ASSETS_BASE_URL + 'offline-boot.js',
 					ASSETS_BASE_URL + 'featured-content.css',
 					ASSETS_BASE_URL + 'featured-content.js',
+					ASSETS_BASE_URL + 'note-length.js',
 					scopePath + 'offline.html',
 					...CORE_SCRIPTS,
 				])
@@ -201,13 +205,15 @@ self.addEventListener('fetch', (event) => {
 	// answer: offline, or the precached copy, which is stored without ?ver=.
 	// featured-content.css/.js (a Featured Content gallery's slider) are
 	// cached the same way, so a bookmarked gallery is a slider offline too,
-	// and so are core's wp-hooks/wp-i18n (CORE_SCRIPTS, above).
+	// as are note-length.js (the Note length count under a Note's caption)
+	// and core's wp-hooks/wp-i18n (CORE_SCRIPTS, above).
 	const isStaticAsset = [
 		'app.css',
 		'app.js',
 		'offline-boot.js',
 		'featured-content.css',
 		'featured-content.js',
+		'note-length.js',
 	].some((file) => url.pathname === ASSETS_BASE_PATH + file) || CORE_SCRIPT_PATHS.includes(url.pathname);
 	if (isStaticAsset) {
 		event.respondWith(

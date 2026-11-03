@@ -36,6 +36,14 @@ class Test_App_Shell extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'assets/featured-content.css', $html );
 	}
 
+	/** The app shell loads the shared Note length count before app.js, which shows it under a Note's caption. */
+	public function test_app_shell_loads_the_note_length_count() {
+		$html = $this->render_shell();
+
+		$this->assertStringContainsString( 'assets/note-length.js', $html );
+		$this->assertLessThan( strpos( $html, 'assets/app.js' ), strpos( $html, 'assets/note-length.js' ), 'The count loads before the app' );
+	}
+
 	/** Assets are emitted by the enqueue API, deferred, with inline config. */
 	public function test_assets_are_enqueued_via_api() {
 		$html = $this->render_shell();

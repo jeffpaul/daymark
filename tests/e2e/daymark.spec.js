@@ -2178,6 +2178,55 @@ test('note Mark does not show the Title field', async ({ page }) => {
 	await expect(composer.locator('[data-title-slot] .daymark-titlefield')).toHaveCount(0);
 });
 
+// The caption box grows with its text instead of scrolling inside its first
+// four lines, and a Note counts down from 300 characters (one Bluesky post),
+// like the block editor's Note length counter, then says how a longer Note
+// is shared. Other kinds of Mark don't get the count.
+test('note caption grows and counts down from 300 characters', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page, 'image');
+	await expect(page.locator('#daymark-caption')).toBeVisible();
+	await expect(page.locator('[data-note-length]')).toBeHidden();
+
+	await page.goto('/daymark');
+	await openComposer(page);
+
+	const caption = page.locator('#daymark-caption');
+	const count = page.locator('[data-note-length]');
+	await expect(count).toHaveText('300 characters left');
+	await expect(caption).toHaveAttribute('aria-describedby', 'daymark-note-length');
+
+	const height = () => caption.evaluate((el) => el.getBoundingClientRect().height);
+	const startHeight = await height();
+	const lines = Array.from({ length: 10 }, (_, i) => `Line ${i + 1}`);
+	await caption.fill(lines.join('\n'));
+	// Line breaks count as one space each, as in the block editor.
+	const typed = lines.join(' ').length;
+	await expect(count).toHaveText(`${300 - typed} characters left`);
+	expect(await height()).toBeGreaterThan(startHeight + 60);
+	// Grown to fit, so there's nothing hidden inside it to scroll to.
+	expect(await caption.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+
+	// 301 characters: one over, and the line says how it's shared.
+	await caption.fill(`${'word '.repeat(60)}x`);
+	const atmosphere = await page.evaluate(() => Boolean(window.daymarkApp.noteLength && window.daymarkApp.noteLength.atmosphere));
+	await expect(count).toHaveClass(/is-over/);
+	await expect(count).toContainText('1 character over');
+	await expect(count).toContainText(atmosphere ? 'Shared to Bluesky as a link' : 'Too long for one Bluesky post');
+	await expect(page.locator('body > .daymark-visually-hidden[aria-live="polite"]')).toHaveText(
+		atmosphere
+			? 'Posts to Bluesky as a link card to this post, not its full text.'
+			: 'Too long for one Bluesky post. Sharing tools may share a link to it instead.'
+	);
+
+	// Back under the limit: the label goes and the count returns.
+	await caption.fill('Short again');
+	await expect(count).not.toHaveClass(/is-over/);
+	await expect(count).toHaveText('289 characters left');
+});
+
 // Scenario 7: real (stubbed) backflow replies appear in notifications.
 // Replies to a Mark surface in notifications. Without a social connector
 // we exercise this with an on-site comment on the Mark post — imported

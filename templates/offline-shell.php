@@ -46,6 +46,9 @@ wp_register_style( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/feat
 // No dependencies and no inline script, so it prints as one plain external
 // <script>, which this page's nonce-free script-src 'self' allows.
 wp_register_script( 'daymark-featured-content', DAYMARK_PLUGIN_URL . 'assets/featured-content.js', array(), DAYMARK_VERSION, false );
+// The Note length count under a Note's caption: the same kind of plain
+// script (the service worker precaches it too).
+Daymark_Note_Length::register_shared_script();
 wp_enqueue_style( 'daymark-app' );
 ?>
 <!DOCTYPE html>
@@ -85,7 +88,7 @@ wp_enqueue_style( 'daymark-app' );
 	 * it was first generated.
 	 */
 	?>
-	<?php wp_print_scripts( array( 'daymark-featured-content' ) ); ?>
+	<?php wp_print_scripts( array( 'daymark-featured-content', Daymark_Note_Length::SHARED_HANDLE ) ); ?>
 	<?php
 	/*
 	 * Core's wp-hooks and wp-i18n as plain <script src> tags, not through

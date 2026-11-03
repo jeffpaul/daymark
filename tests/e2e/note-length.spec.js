@@ -1,31 +1,23 @@
-// The block editor's Note length counter: how it counts a Note's text and
-// decides between a short note and a long note.
+// The Note length count, in the block editor and the app's composer: how it
+// counts a Note's text and decides between a short note and a long note.
 //
-// This does not need WordPress. It extracts the counting code from
-// assets/note-length-editor.js (the region between the ">>> note-length" and
-// "<<< note-length" markers) and runs it in a real browser on a blank page,
-// so it uses the browser's own HTML parsing and Intl.Segmenter.
+// This does not need WordPress. It loads assets/note-length.js, the counting
+// script both counters share, into a blank page in a real browser, so it uses
+// the browser's own HTML parsing and Intl.Segmenter.
 //
 //   npx playwright test tests/e2e/note-length.spec.js
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const source = fs.readFileSync( path.resolve( __dirname, '../../assets/note-length-editor.js' ), 'utf8' );
-const start = source.indexOf( '// >>> note-length' );
-const end = source.indexOf( '// <<< note-length' );
-
-if ( start === -1 || end === -1 || end < start ) {
-	throw new Error( 'The note-length markers in assets/note-length-editor.js are missing.' );
-}
-
-const region = source.slice( start, end );
+const source = fs.readFileSync( path.resolve( __dirname, '../../assets/note-length.js' ), 'utf8' );
 
 test.beforeEach( async ( { page } ) => {
 	await page.setContent( '<!doctype html><title>note length</title>' );
-	await page.evaluate( ( code ) => {
-		window.__noteLength = new Function( code + '\nreturn { counterKind, notePlainText, graphemeCount, measureNote };' )();
-	}, region );
+	await page.addScriptTag( { content: source } );
+	await page.evaluate( () => {
+		window.__noteLength = window.daymarkNoteMeasure;
+	} );
 } );
 
 test( 'shows for an Aside post or an untitled Standard post only', async ( { page } ) => {
