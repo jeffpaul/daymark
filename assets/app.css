@@ -3862,7 +3862,9 @@ button.daymark-stat {
    the type-filter chip row, not merged into it — its own control, same
    row. .daymark-filterchips is given room to wrap onto its own line(s)
    first (flex: 1 1 auto) while the select stays a fixed, un-shrinking
-   pill alongside it. */
+   pill alongside it. A select is as wide as its longest choice, so
+   max-width keeps a followed site with a long name from pushing it past
+   the screen edge, which made the whole page wider than the phone. */
 .daymark-searchfilters {
 	display: flex;
 	align-items: center;
@@ -3876,6 +3878,7 @@ button.daymark-stat {
 
 .daymark-sourcefilter {
 	flex-shrink: 0;
+	max-width: 100%;
 	min-height: var(--daymark-tap-min);
 	padding: 0 var(--daymark-spacing-md);
 	border-radius: 999px;
