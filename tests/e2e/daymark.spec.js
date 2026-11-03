@@ -1717,6 +1717,79 @@ test('categories: File under picker files the Mark and remembers the choice per 
 	await expect(rememberedPhotos).toBeChecked();
 });
 
+// Ticks exactly the named categories in the Publish screen's open
+// Categories fold and unticks the rest. The rows sit under the sticky
+// action bar, so each is scrolled clear and toggled through its visible
+// label, as in the test above.
+async function setCategories(page, names) {
+	const rows = page.locator('[data-fold="categories"] .daymark-dest');
+	const count = await rows.count();
+	for (let i = 0; i < count; i++) {
+		const row = rows.nth(i);
+		const input = row.locator('[data-category]');
+		const label = row.locator('.daymark-dest__name');
+		const wanted = names.includes((await label.textContent()).trim());
+		if ((await input.isChecked()) !== wanted) {
+			await row.scrollIntoViewIfNeeded();
+			await label.click();
+		}
+		await expect(input).toBeChecked({ checked: wanted });
+	}
+}
+
+// Category changes stick. With every category unticked, the Mark is filed
+// under the site's default category instead of the remembered one, and
+// "none" is remembered. The next Mark of the type starts from the choice
+// the last one saved, without a reload.
+test('categories: unticking every category sticks, and the next Mark starts from the last choice', async ({
+	page,
+}) => {
+	const travelCaption = `E2E category travel ${RUN_ID}`;
+	const noneCaption = `E2E category none ${RUN_ID}`;
+	const checkedCategories = page.locator('[data-fold="categories"] [data-category]:checked');
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', travelCaption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-fold="categories"] summary').click();
+	await setCategories(page, ['E2E Travel']);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	// No reload: the next Note starts from the choice the last one saved.
+	await page.locator('[data-action="create-another"]').click();
+	await page.fill('#daymark-caption', noneCaption);
+	await page.locator('[data-action="next"]').click();
+	await page.locator('[data-fold="categories"] summary').click();
+	await expect(
+		page.locator('[data-fold="categories"] .daymark-dest').filter({ hasText: 'E2E Travel' }).locator('[data-category]')
+	).toBeChecked();
+
+	// Untick it. With nothing picked, the Mark goes under the site's
+	// default category, and the site keeps that rather than the defaults.
+	await setCategories(page, []);
+	await expect(page.locator('[data-fold-value="categories"]')).toHaveText('Uncategorized');
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+	const defaultCategory = await page.evaluate(() => window.daymarkApp.defaultCategory);
+	const mark = await findMarkByCaption(page, noneCaption);
+	expect(mark.categories).toEqual([defaultCategory]);
+
+	// "None" is what the next Note starts from, now and after a reload.
+	await page.locator('[data-action="create-another"]').click();
+	await page.fill('#daymark-caption', `E2E category none again ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	await expect(checkedCategories).toHaveCount(0);
+
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E category none remembered ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	await expect(checkedCategories).toHaveCount(0);
+});
+
 // Tags: the Publish screen's folded Tags section shows the current tags
 // and lets the person add one, which the published Mark keeps.
 test('tags: Publish screen Tags section adds a tag to the Mark', async ({ page }) => {
@@ -3993,6 +4066,58 @@ test('connected connector: destination toggle publishes and is remembered per ty
 	await page.fill('#daymark-caption', `E2E connector memory ${RUN_ID}`);
 	await page.locator('[data-action="next"]').click();
 	await expect(page.locator('[data-connector="e2e-net"]')).toBeChecked();
+});
+
+// Unticking every destination sends the Mark to your site only. The app
+// says its empty list is complete, so the site no longer swaps in the
+// remembered destination. The next Note starts from that empty choice,
+// without a reload and after one.
+test('connected connector: unticking every destination publishes to your site only', async ({ page }) => {
+	const onCaption = `E2E connector on ${RUN_ID}`;
+	const offCaption = `E2E connector off ${RUN_ID}`;
+	const toggle = page.locator('[data-connector="e2e-net"]');
+
+	await loginAs(page);
+	await page
+		.context()
+		.addCookies([{ name: 'daymark_e2e_connector', value: '1', url: new URL(page.url()).origin }]);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', onCaption);
+	await page.locator('[data-action="next"]').click();
+	if (!(await toggle.isChecked())) {
+		await toggle.click({ force: true });
+	}
+	await expect(toggle).toBeChecked();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+
+	// No reload: the next Note starts with the destination ticked. Untick it.
+	await page.locator('[data-action="create-another"]').click();
+	await page.fill('#daymark-caption', offCaption);
+	await page.locator('[data-action="next"]').click();
+	await expect(toggle).toBeChecked();
+	await toggle.click({ force: true });
+	await expect(toggle).not.toBeChecked();
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.getByText('Published to your site')).toBeVisible();
+	await expect(page.getByText('No social destinations selected.')).toBeVisible();
+
+	// The site kept the empty list: the first Mark has the destination,
+	// the second has none.
+	expect((await findMarkByCaption(page, onCaption)).targets).toEqual(['e2e-net']);
+	expect((await findMarkByCaption(page, offCaption)).targets).toEqual([]);
+
+	await page.locator('[data-action="create-another"]').click();
+	await page.fill('#daymark-caption', `E2E connector off again ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	await expect(toggle).not.toBeChecked();
+
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E connector off remembered ${RUN_ID}`);
+	await page.locator('[data-action="next"]').click();
+	await expect(toggle).not.toBeChecked();
 });
 
 // Section pages render inside the theme with no Daymark-controlled chrome

@@ -1700,6 +1700,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'syndication_targets'  => $targets,
 			'default_destinations' => $request->get_param( 'default_destinations' ),
 			'categories'           => $request->get_param( 'categories' ),
+			// Say the destination or category list is complete, so an empty
+			// one means "none" rather than "use the defaults" (a form post
+			// can't send an empty list). See Daymark_Publisher::list_provided().
+			'targets_set'          => rest_sanitize_boolean( $request->get_param( 'targets_set' ) ),
+			'categories_set'       => rest_sanitize_boolean( $request->get_param( 'categories_set' ) ),
 			'ai_assist_used'       => rest_sanitize_boolean( $request->get_param( 'ai_assist_used' ) ),
 			'alt_text'             => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			// Per-image alt: positional array aligned to media_ids[] and
@@ -3983,6 +3988,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'primary_type'        => sanitize_key( (string) $request->get_param( 'primary_type' ) ),
 			'syndication_targets' => $targets,
 			'categories'          => $request->get_param( 'categories' ),
+			// See create_mark()'s matching comment.
+			'targets_set'         => rest_sanitize_boolean( $request->get_param( 'targets_set' ) ),
+			'categories_set'      => rest_sanitize_boolean( $request->get_param( 'categories_set' ) ),
 			'alt_text'            => sanitize_text_field( (string) $request->get_param( 'alt_text' ) ),
 			// Per-image alt: positional array for newly added files, plus a
 			// map keyed by attachment ID for media already on the Mark.
