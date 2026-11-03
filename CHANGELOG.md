@@ -46,6 +46,7 @@ can't act on them.
 
 ### Fixed
 
+- The Publish screen now shows a "Bluesky via ATmosphere" switch wherever ATmosphere shares your posts, and it starts on, so a Mark goes to Bluesky unless you turn it off for that Mark. Before, the switch was missing when ATmosphere came from wordpress.org, and where it did show, it started off and kept that Mark off Bluesky. ([#568](https://github.com/jeffpaul/daymark/pull/568))
 - Posts published in the same second now always appear in the same order on the Timeline and in Search. Before, scrolling could show one of them twice and skip another, and the new-posts count could include one you had already seen. ([#578](https://github.com/jeffpaul/daymark/pull/578))
 - Push notifications keep arriving after the browser changes or rotates a device's push address, saving the new address right away through the service worker and re-syncing on app start. ([#536](https://github.com/jeffpaul/daymark/pull/536), [#567](https://github.com/jeffpaul/daymark/pull/567))
 - Adding Daymark to your phone's home screen now shows the Daymark icon instead of a blank square. The icon had see-through corners, which iPhones won't use for a home-screen icon; Daymark now gives iPhones a solid square icon and gives Android an icon it can shape like other apps. ([#554](https://github.com/jeffpaul/daymark/pull/554))

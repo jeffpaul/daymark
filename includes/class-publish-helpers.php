@@ -39,7 +39,9 @@ class Daymark_Publish_Helpers {
 		),
 		'atmosphere'            => array(
 			'label'     => 'ATmosphere',
-			'slugs'     => array( 'wordpress-atmosphere' ),
+			// `atmosphere` is the wordpress.org folder; `wordpress-atmosphere`
+			// is the GitHub one. The class and constant cover any other.
+			'slugs'     => array( 'atmosphere', 'wordpress-atmosphere' ),
 			'classes'   => array( 'Atmosphere\\Publisher' ),
 			'constants' => array( 'ATMOSPHERE_VERSION' ),
 		),
@@ -57,7 +59,7 @@ class Daymark_Publish_Helpers {
 			'functions' => array( 'wpt_post_to_service' ),
 		),
 		'autoshare-for-twitter' => array(
-			'label' => 'Autoshare for Twitter',
+			'label' => 'Autopost for X',
 			'slugs' => array( 'autoshare-for-twitter' ),
 		),
 		'blog2social'           => array(
@@ -89,13 +91,26 @@ class Daymark_Publish_Helpers {
 	 * that defers to Daymark's per-post selection for Mark posts and
 	 * leaves every other post's decision untouched.
 	 *
+	 * An adapter is detected with the same signals as its entry in
+	 * PLUGINS (folder, class, function, constant), so the toggle and the
+	 * awareness note can't disagree about whether the plugin is there. An
+	 * adapter registered through the filter may bring its own signals.
+	 *
+	 * `network` names where the plugin shares to, so the toggle reads as a
+	 * destination ("Bluesky via ATmosphere"). `default` is where the toggle
+	 * starts for a new Mark: where the plugin would land on its own.
+	 *
 	 * @return array<string, array<string, mixed>>
 	 */
 	private static function adapters(): array {
 		$adapters = array(
 			'atmosphere'            => array(
 				'label'     => 'ATmosphere',
-				'slugs'     => array( 'wordpress-atmosphere' ),
+				'network'   => 'Bluesky',
+				// ATmosphere shares every post unless the post is switched
+				// off (its `atmosphere_disabled` opt-out), so the toggle
+				// starts on.
+				'default'   => true,
 				// Only a meaningful toggle when ATmosphere is connected AND
 				// actually auto-publishing; in connection-only mode it posts
 				// nothing, so there is nothing to gate per Mark.
@@ -138,10 +153,15 @@ class Daymark_Publish_Helpers {
 					);
 				},
 			),
+			// Share on Mastodon and Autopost for X start off. Both wait for
+			// the block editor's own save step (`rest_after_insert_post`)
+			// before sharing a post saved over the REST API, and Daymark's
+			// own REST route doesn't fire it, so neither shares a Mark
+			// published from the app on its own today.
 			'share-on-mastodon'     => array(
-				'label' => 'Share on Mastodon',
-				'slugs' => array( 'share-on-mastodon' ),
-				'bind'  => static function () {
+				'label'   => 'Share on Mastodon',
+				'network' => 'Mastodon',
+				'bind'    => static function () {
 					add_filter(
 						'share_on_mastodon_enabled',
 						static function ( $enabled, $post_id ) {
@@ -153,9 +173,9 @@ class Daymark_Publish_Helpers {
 				},
 			),
 			'autoshare-for-twitter' => array(
-				'label' => 'Autoshare for Twitter',
-				'slugs' => array( 'autoshare-for-twitter' ),
-				'bind'  => static function () {
+				'label'   => 'Autopost for X',
+				'network' => 'X',
+				'bind'    => static function () {
 					add_filter(
 						'autoshare_for_twitter_enabled_default',
 						static function ( $enabled_default, $post_type, $post_id ) {
@@ -170,9 +190,13 @@ class Daymark_Publish_Helpers {
 
 		/**
 		 * Filter the controllable publishing-helper adapters. Each entry is
-		 * keyed by id and carries `label`, `slugs`, and `bind`, where
-		 * `bind` is a callable that registers the plugin's own public
-		 * per-post control filter.
+		 * keyed by id and carries `label` and `bind`, where `bind` is a
+		 * callable that registers the plugin's own public per-post control
+		 * filter. Optional keys: `slugs`, `classes`, `functions`, and
+		 * `constants` to detect the plugin (otherwise the matching PLUGINS
+		 * entry's are used), `available` (a callable gate), `network` (the
+		 * service the plugin shares to), and `default` (bool, whether the
+		 * toggle starts on for a new Mark; off when omitted).
 		 *
 		 * @param array<string, array<string, mixed>> $adapters Adapter map.
 		 */
@@ -182,30 +206,83 @@ class Daymark_Publish_Helpers {
 	}
 
 	/**
-	 * Active controllable helpers as [{id, label}], for the publish-screen
-	 * toggles.
+	 * Active controllable helpers, for the publish-screen toggles. Each is
+	 * [{id, label, plugin, network, default}]: `label` is the toggle's text
+	 * ("Bluesky via ATmosphere", or just the plugin's name when it names no
+	 * network), `plugin` the plugin's name, and `default` whether the toggle
+	 * starts on.
 	 *
-	 * @return array<int, array<string, string>>
+	 * @return array<int, array<string, mixed>>
 	 */
 	public static function controllable(): array {
 		$active = self::active_plugin_slugs();
 		$found  = array();
 
 		foreach ( self::adapters() as $id => $def ) {
-			if ( is_array( $def ) && self::slug_active( $def, $active ) && self::adapter_available( $def ) ) {
-				$found[] = array(
-					'id'    => sanitize_key( (string) $id ),
-					'label' => sanitize_text_field( (string) ( $def['label'] ?? $id ) ),
-				);
+			if ( ! self::adapter_active( (string) $id, $def, $active ) ) {
+				continue;
 			}
+
+			$plugin  = sanitize_text_field( (string) ( $def['label'] ?? $id ) );
+			$network = sanitize_text_field( (string) ( $def['network'] ?? '' ) );
+
+			$found[] = array(
+				'id'      => sanitize_key( (string) $id ),
+				'label'   => '' !== $network
+					? sprintf(
+						/* translators: 1: a social network, such as Bluesky, 2: the plugin that shares to it, such as ATmosphere */
+						__( '%1$s via %2$s', 'daymark' ),
+						$network,
+						$plugin
+					)
+					: $plugin,
+				'plugin'  => $plugin,
+				'network' => $network,
+				'default' => ! empty( $def['default'] ),
+			);
 		}
 
 		return $found;
 	}
 
 	/**
+	 * Whether an adapter's plugin is active and its optional `available`
+	 * gate passes.
+	 *
+	 * @param string   $id     Adapter id.
+	 * @param mixed    $def    Adapter definition.
+	 * @param string[] $active Active plugin folder slugs.
+	 * @return bool
+	 */
+	private static function adapter_active( string $id, $def, array $active ): bool {
+		return is_array( $def )
+			&& self::matches( self::adapter_signals( $id, $def ), $active )
+			&& self::adapter_available( $def );
+	}
+
+	/**
+	 * The detection signals for an adapter: its own, when it declares any,
+	 * otherwise its PLUGINS entry's.
+	 *
+	 * @param string               $id  Adapter id.
+	 * @param array<string, mixed> $def Adapter definition.
+	 * @return array<string, mixed>
+	 */
+	private static function adapter_signals( string $id, array $def ): array {
+		foreach ( array( 'slugs', 'classes', 'functions', 'constants' ) as $key ) {
+			if ( ! empty( $def[ $key ] ) ) {
+				return $def;
+			}
+		}
+
+		$defs = self::definitions();
+
+		return isset( $defs[ $id ] ) && is_array( $defs[ $id ] ) ? $defs[ $id ] : array();
+	}
+
+	/**
 	 * Whether an adapter's optional `available` gate passes (adapters with
-	 * no gate are always available when their plugin slug is active).
+	 * no gate are always available when their plugin is active).
 	 *
 	 * @param array<string, mixed> $def Adapter definition.
 	 * @return bool
@@ -237,8 +314,8 @@ class Daymark_Publish_Helpers {
 	public static function register_adapters(): void {
 		$active = self::active_plugin_slugs();
 
-		foreach ( self::adapters() as $def ) {
-			if ( is_array( $def ) && self::slug_active( $def, $active ) && self::adapter_available( $def ) && isset( $def['bind'] ) && is_callable( $def['bind'] ) ) {
+		foreach ( self::adapters() as $id => $def ) {
+			if ( self::adapter_active( (string) $id, $def, $active ) && isset( $def['bind'] ) && is_callable( $def['bind'] ) ) {
 				( $def['bind'] )();
 			}
 		}
@@ -267,23 +344,6 @@ class Daymark_Publish_Helpers {
 		}
 
 		return in_array( $id, $selection, true );
-	}
-
-	/**
-	 * Whether any of a definition's slugs is active.
-	 *
-	 * @param array<string, mixed> $def          Definition.
-	 * @param string[]             $active_slugs Active plugin folder slugs.
-	 * @return bool
-	 */
-	private static function slug_active( array $def, array $active_slugs ): bool {
-		foreach ( (array) ( $def['slugs'] ?? array() ) as $slug ) {
-			if ( in_array( $slug, $active_slugs, true ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

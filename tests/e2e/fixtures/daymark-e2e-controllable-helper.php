@@ -8,12 +8,20 @@
  */
 
 // Make the fake helper's slug appear active so it is offered as controllable.
+// The second, network helper is opted in per request by a cookie, so every
+// other test keeps the one default-off helper.
 add_filter(
 	'option_active_plugins',
 	static function ( $plugins ) {
 		$plugins = is_array( $plugins ) ? $plugins : array();
-		if ( ! in_array( 'daymark-e2e-helper/daymark-e2e-helper.php', $plugins, true ) ) {
-			$plugins[] = 'daymark-e2e-helper/daymark-e2e-helper.php';
+		$fakes   = array( 'daymark-e2e-helper/daymark-e2e-helper.php' );
+		if ( ! empty( $_COOKIE['daymark_e2e_network_helper'] ) ) {
+			$fakes[] = 'daymark-e2e-network/daymark-e2e-network.php';
+		}
+		foreach ( $fakes as $fake ) {
+			if ( ! in_array( $fake, $plugins, true ) ) {
+				$plugins[] = $fake;
+			}
 		}
 
 		return $plugins;
@@ -49,6 +57,18 @@ add_filter(
 				);
 			},
 		);
+
+		// A helper whose plugin shares every post unless told not to, like
+		// ATmosphere: it names the network it shares to and starts on.
+		if ( ! empty( $_COOKIE['daymark_e2e_network_helper'] ) ) {
+			$adapters['daymark-e2e-network'] = array(
+				'label'   => 'E2E Plugin',
+				'network' => 'E2E Network',
+				'default' => true,
+				'slugs'   => array( 'daymark-e2e-network' ),
+				'bind'    => '__return_null',
+			);
+		}
 
 		return $adapters;
 	}

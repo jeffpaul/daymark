@@ -116,6 +116,92 @@ class Test_Publish_Helpers extends WP_UnitTestCase {
 		$this->assertNotContains( 'autoshare-for-twitter', $ids, 'Inactive adapters are not controllable' );
 	}
 
+	/** Share on Mastodon's toggle reads as a Mastodon destination and starts off. */
+	public function test_share_on_mastodon_reads_as_destination_and_starts_off() {
+		$this->activate_slug( 'share-on-mastodon' );
+
+		$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+
+		$this->assertSame( 'Mastodon via Share on Mastodon', $helpers['share-on-mastodon']['label'] );
+		$this->assertSame( 'Mastodon', $helpers['share-on-mastodon']['network'] );
+		$this->assertFalse( $helpers['share-on-mastodon']['default'] );
+	}
+
+	/** An adapter is found by its plugin's class, like the awareness note finds it, not only by folder. */
+	public function test_adapter_detected_by_its_plugins_class() {
+		$filter = static function ( $plugins ) {
+			$plugins['share-on-mastodon']['classes'] = array( 'Daymark_Test_Fake_Connector_Class' );
+
+			return $plugins;
+		};
+		add_filter( 'daymark_publish_helper_plugins', $filter );
+
+		$this->assertContains( 'share-on-mastodon', Daymark_Publish_Helpers::controllable_ids() );
+
+		remove_filter( 'daymark_publish_helper_plugins', $filter );
+		$this->assertNotContains( 'share-on-mastodon', Daymark_Publish_Helpers::controllable_ids() );
+	}
+
+	/** An adapter added through the filter can bring its own signals, network, and default. */
+	public function test_filtered_adapter_brings_its_own_signals() {
+		$filter = static function ( $adapters ) {
+			$adapters['custom'] = array(
+				'label'   => 'Custom Poster',
+				'network' => 'Example',
+				'default' => true,
+				'classes' => array( 'Daymark_Test_Fake_Connector_Class' ),
+				'bind'    => '__return_null',
+			);
+
+			return $adapters;
+		};
+		add_filter( 'daymark_publish_helper_adapters', $filter );
+
+		$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+
+		$this->assertSame( 'Example via Custom Poster', $helpers['custom']['label'] );
+		$this->assertSame( 'Custom Poster', $helpers['custom']['plugin'] );
+		$this->assertTrue( $helpers['custom']['default'] );
+
+		remove_filter( 'daymark_publish_helper_adapters', $filter );
+	}
+
+	/** A Mark that never recorded a choice reports null helpers, so the composer starts each toggle at its default. */
+	public function test_mark_detail_reports_null_helpers_without_a_choice() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$publisher = new Daymark_Publisher();
+		$none      = (int) $publisher->publish(
+			array(
+				'caption' => 'No choice yet',
+				'status'  => 'draft',
+			)
+		);
+		$chosen    = (int) $publisher->publish(
+			array(
+				'caption'         => 'Everything off',
+				'status'          => 'draft',
+				'publish_helpers' => array(),
+			)
+		);
+
+		$this->assertNull( $this->mark_detail( $none )['helpers'] );
+		$this->assertSame( array(), $this->mark_detail( $chosen )['helpers'] );
+	}
+
+	/**
+	 * GET /daymark/v1/marks/{id} as the current user.
+	 *
+	 * @param int $post_id Mark ID.
+	 * @return array<string, mixed>
+	 */
+	private function mark_detail( int $post_id ): array {
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/marks/' . $post_id );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		return (array) rest_do_request( $request )->get_data();
+	}
+
 	/** The adapter's control filter governs only Mark posts that recorded a selection. */
 	public function test_adapter_filter_governs_by_selection() {
 		$this->activate_slug( 'share-on-mastodon' );

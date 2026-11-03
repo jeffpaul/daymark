@@ -839,10 +839,17 @@ class Daymark_Routes {
 	}
 
 	/**
-	 * Short labels for where a published Mark also goes through an active
-	 * federation plugin (ActivityPub, ATmosphere), in display order.
+	 * Where a published Mark also goes through an active federation plugin
+	 * (ActivityPub, ATmosphere), in display order, for the Publish screen's
+	 * "Your site is the destination" note. Each entry is [label, helper]:
+	 * `helper` is the id of the per-Mark toggle the entry depends on, or ''
+	 * when nothing in the app turns it off, so the note can follow the
+	 * toggle.
 	 *
-	 * @return string[]
+	 * ATmosphere counts only while it would actually share: connected and
+	 * auto-publishing, the same check that offers its toggle.
+	 *
+	 * @return array<int, array{label: string, helper: string}>
 	 */
 	private static function federation_reach(): array {
 		$reach = array();
@@ -853,17 +860,17 @@ class Daymark_Routes {
 				'constants' => array( 'ACTIVITYPUB_PLUGIN_VERSION' ),
 			)
 		) ) {
-			$reach[] = __( 'your fediverse followers', 'daymark' );
+			$reach[] = array(
+				'label'  => __( 'your fediverse followers', 'daymark' ),
+				'helper' => '',
+			);
 		}
 
-		if ( Daymark_Plugin_Detector::matches(
-			array(
-				'slugs'     => array( 'wordpress-atmosphere' ),
-				'classes'   => array( 'Atmosphere\\Publisher' ),
-				'constants' => array( 'ATMOSPHERE_VERSION' ),
-			)
-		) ) {
-			$reach[] = __( 'Bluesky', 'daymark' );
+		if ( in_array( 'atmosphere', Daymark_Publish_Helpers::controllable_ids(), true ) ) {
+			$reach[] = array(
+				'label'  => __( 'Bluesky', 'daymark' ),
+				'helper' => 'atmosphere',
+			);
 		}
 
 		return $reach;
