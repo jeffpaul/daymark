@@ -107,6 +107,38 @@ class Test_Timeline_Position extends WP_UnitTestCase {
 		$this->assertSame( $newer, $marker['id'] );
 	}
 
+	public function test_older_item_added_later_never_moves_the_marker_back() {
+		$newer = $this->create_post( '2026-09-02 10:00:00' );
+		// A feed catching up: an older post, saved after (so a higher ID).
+		$older = $this->create_subscription_post( '2026-09-01 10:00:00' );
+
+		Daymark_Timeline_Position::mark_seen( $this->user_id, $newer );
+		$marker = Daymark_Timeline_Position::mark_seen( $this->user_id, $older );
+
+		$this->assertSame( $newer, $marker['id'] );
+	}
+
+	public function test_same_time_item_listed_above_the_marker_moves_it_forward() {
+		// Same second: the one created later is listed above on the Timeline.
+		$listed_below = $this->create_post( '2026-09-01 10:00:00' );
+		$listed_above = $this->create_subscription_post( '2026-09-01 10:00:00' );
+
+		Daymark_Timeline_Position::mark_seen( $this->user_id, $listed_below );
+		$marker = Daymark_Timeline_Position::mark_seen( $this->user_id, $listed_above );
+
+		$this->assertSame( $listed_above, $marker['id'] );
+	}
+
+	public function test_same_time_item_listed_below_the_marker_never_moves_it_back() {
+		$listed_below = $this->create_subscription_post( '2026-09-01 10:00:00' );
+		$listed_above = $this->create_post( '2026-09-01 10:00:00' );
+
+		Daymark_Timeline_Position::mark_seen( $this->user_id, $listed_above );
+		$marker = Daymark_Timeline_Position::mark_seen( $this->user_id, $listed_below );
+
+		$this->assertSame( $listed_above, $marker['id'] );
+	}
+
 	public function test_marker_is_dropped_once_its_item_leaves_the_timeline() {
 		$post_id = $this->create_post( '2026-09-02 10:00:00' );
 		Daymark_Timeline_Position::mark_seen( $this->user_id, $post_id );

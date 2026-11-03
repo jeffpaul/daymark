@@ -62,8 +62,9 @@ class Daymark_Timeline_Position {
 
 	/**
 	 * Record that a user has seen a Timeline item. Moves the marker only
-	 * when the item sorts newer than the current one, or when the current
-	 * one is gone from the Timeline.
+	 * when the item is listed above the current one on the Timeline (a
+	 * later date, or the same date and a higher ID, as GET /timeline
+	 * orders them), or when the current one is gone from the Timeline.
 	 *
 	 * @param int $user_id User ID.
 	 * @param int $post_id A published Mark/post or subscription post.
@@ -88,7 +89,11 @@ class Daymark_Timeline_Position {
 		// it: an edited post date is what the Timeline actually sorts by.
 		$stored_key = null !== $stored ? self::sort_key( $stored['id'] ) : null;
 
-		if ( null === $stored_key || strcmp( $sort_key, $stored_key ) > 0 ) {
+		$listed_above = null === $stored_key
+			|| strcmp( $sort_key, $stored_key ) > 0
+			|| ( $sort_key === $stored_key && $post_id > $stored['id'] );
+
+		if ( $listed_above ) {
 			update_user_meta(
 				$user_id,
 				self::META_KEY,
@@ -178,8 +183,9 @@ class Daymark_Timeline_Position {
 
 	/**
 	 * The key GET /timeline sorts an item by — a post's own post_date_gmt,
-	 * or a subscription post's published_at meta (see get_timeline()) — or
-	 * null when the ID isn't a published Timeline item.
+	 * or a subscription post's published_at meta (see get_timeline()), with
+	 * same-second items then ordered by ID — or null when the ID isn't a
+	 * published Timeline item.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return string|null
