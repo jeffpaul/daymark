@@ -4664,7 +4664,12 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 	expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
 	await page.locator(`[data-overflow-toggle="${id}"]`).click();
 
-	// Notifications' back arrow is mirrored to point right.
+	// Notifications' back arrow is mirrored to point right. Back to the top
+	// first: tapping the ⋯ menu can scroll the page up, and scrolling up
+	// far down the Timeline hides the header, so the Notifications button
+	// would sit above the screen until the page climbs back near the top.
+	await page.evaluate(() => window.scrollTo(0, 0));
+	await expect(page.locator('.daymark-topbar')).not.toHaveClass(/is-header-hidden/);
 	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
 	const backLink = page.locator('.daymark-backlink');
 	await expect(backLink).toBeVisible();
