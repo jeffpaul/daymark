@@ -61,6 +61,7 @@ can't act on them.
 
 ### Fixed
 
+- Times in the app are now right wherever your phone is: a post from a site you follow could read "Just now" for hours on a phone outside UTC, and your own Marks and "Replies last checked" were off when your phone and site were in different time zones. Search's date filters, like Today, also no longer miss or add hours of Marks on a site outside UTC. ([#584](https://github.com/jeffpaul/daymark/pull/584))
 - A Mark dated before your newest posts, by its photo or by when you started its draft, now appears where that date puts it on your Timeline right after you publish it, instead of on top until the Timeline reloads. ([#582](https://github.com/jeffpaul/daymark/pull/582))
 - Share on Mastodon and Autopost for X now share a Mark you publish from the app when its Mastodon or X switch is on, including a Mark dated by an older photo. Before, both waited for a step only the block editor takes, so neither shared Marks from the app. ([#581](https://github.com/jeffpaul/daymark/pull/581))
 - A photo you remove from a Mark that has already saved now comes off the saved draft too. A photo Mark's featured image is now always its first photo; before, a photo that finished uploading later could take its place. ([#576](https://github.com/jeffpaul/daymark/pull/576))

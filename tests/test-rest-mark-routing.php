@@ -99,14 +99,17 @@ class Test_Rest_Mark_Routing extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A `backflow_supported` target's sync recency (issue #258) appears
-	 * once a check has actually run for it.
+	 * Publish a Mark sent to Bluesky by a real connector, whose replies are
+	 * checked from a live source.
+	 *
+	 * @param string $caption Caption.
+	 * @return int
 	 */
-	public function test_external_posts_includes_sync_recency_for_backflow_supported_target() {
+	private function publish_backflow_supported_mark( string $caption ): int {
 		$publisher = new Daymark_Publisher();
 		$post_id   = (int) $publisher->publish(
 			array(
-				'caption'             => 'Sync recency REST test',
+				'caption'             => $caption,
 				'primary_type'        => 'note',
 				'syndication_targets' => array( 'bluesky' ),
 			)
@@ -130,18 +133,55 @@ class Test_Rest_Mark_Routing extends WP_UnitTestCase {
 			)
 		);
 
-		$before_sync = rest_do_request( $this->request_for( $post_id ) )->get_data();
-		$this->assertSame( '', $before_sync['external_posts']['bluesky']['backflow_last_synced_at'], 'Not checked yet' );
+		return $post_id;
+	}
 
+	/**
+	 * Check a Mark's Bluesky replies, as a real connector would.
+	 *
+	 * @param int $post_id Mark post ID.
+	 */
+	private function check_bluesky_replies( int $post_id ): void {
 		$handled_filter = static function () {
 			return array(); // A real connector handled it: no comments imported.
 		};
 		add_filter( 'daymark_import_network_responses', $handled_filter );
 		( new Daymark_Notifications() )->import_responses( $post_id, array( 'bluesky' ) );
 		remove_filter( 'daymark_import_network_responses', $handled_filter );
+	}
+
+	/**
+	 * A `backflow_supported` target's sync recency (issue #258) appears
+	 * once a check has actually run for it.
+	 */
+	public function test_external_posts_includes_sync_recency_for_backflow_supported_target() {
+		$post_id = $this->publish_backflow_supported_mark( 'Sync recency REST test' );
+
+		$before_sync = rest_do_request( $this->request_for( $post_id ) )->get_data();
+		$this->assertSame( '', $before_sync['external_posts']['bluesky']['backflow_last_synced_at'], 'Not checked yet' );
+
+		$this->check_bluesky_replies( $post_id );
 
 		$after_sync = rest_do_request( $this->request_for( $post_id ) )->get_data();
 		$this->assertNotSame( '', $after_sync['external_posts']['bluesky']['backflow_last_synced_at'] );
+	}
+
+	/**
+	 * The sync time says which time zone it's in. It's saved in the site's
+	 * own time, and without the site's offset a phone in another time zone
+	 * read it as the phone's own time, so "Replies last checked" was off by
+	 * the difference.
+	 */
+	public function test_sync_recency_carries_the_site_offset() {
+		update_option( 'timezone_string', 'America/Chicago' );
+		$post_id = $this->publish_backflow_supported_mark( 'Sync recency time zone test' );
+
+		$this->check_bluesky_replies( $post_id );
+
+		$data   = rest_do_request( $this->request_for( $post_id ) )->get_data();
+		$synced = $data['external_posts']['bluesky']['backflow_last_synced_at'];
+		$this->assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[56]:00$/', $synced );
+		$this->assertEqualsWithDelta( time(), strtotime( $synced ), 60, 'The moment it was checked' );
 	}
 
 	/**
