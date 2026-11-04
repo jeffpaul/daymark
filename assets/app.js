@@ -4985,6 +4985,13 @@
 		state.placeName = mark.place_name || '';
 		state.placeNameStatus = state.placeName ? 'done' : 'idle';
 		state.placeNameEdited = false;
+		// A Check In draft keeps where it was, so its next save doesn't take
+		// the map out of the post, and turning Place off and on doesn't swap
+		// in where the phone is now.
+		if ('checkin' === mark.type && mark.location) {
+			state.location = { lat: mark.location.lat, lng: mark.location.lng };
+			state.locationRequested = true;
+		}
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
 		// The draft's saved lists are what the site will use, so every save

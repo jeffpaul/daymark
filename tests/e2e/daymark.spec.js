@@ -1791,6 +1791,64 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
 });
 
+// A Check In draft opened from Drafts keeps where it was, so publishing it
+// keeps its map. The composer used to open it without its location, and the
+// next save took the map out of the post. Turning Place off and on keeps the
+// draft's place too, though the phone is somewhere else now.
+test.describe('a Check In draft, opened somewhere else', () => {
+	test.use({
+		geolocation: { latitude: 40.7128, longitude: -74.006 },
+		permissions: ['geolocation'],
+	});
+
+	test('keeps its map when it is opened and published', async ({ page }) => {
+		const caption = `E2E check in draft ${RUN_ID}`;
+
+		await loginAs(page);
+		await page.goto('/daymark');
+		const draftId = await page.evaluate(async (cap) => {
+			const config = window.daymarkApp;
+			const body = new FormData();
+			body.append('caption', cap);
+			body.append('primary_type', 'checkin');
+			body.append('place_name', 'Blue Bottle Coffee');
+			body.append('location_lat', '37.77493');
+			body.append('location_lng', '-122.41942');
+			body.append('status', 'draft');
+			const res = await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+				body,
+			});
+			return (await res.json()).id;
+		}, caption);
+
+		await page.goto('/daymark/me');
+		await page.locator('[data-edit-draft]').filter({ hasText: caption }).first().click();
+		const place = page.locator('[data-checkin-place]');
+		const placeSwitch = page.locator('[data-attach="place"]');
+		await expect(place).toHaveValue('Blue Bottle Coffee');
+		await placeSwitch.click();
+		await expect(place).toHaveCount(0);
+		await placeSwitch.click();
+		await expect(place).toHaveValue('Blue Bottle Coffee');
+		await page.locator('[data-action="publish"]').click();
+		await expectPublished(page);
+
+		const content = await page.evaluate(async (id) => {
+			const config = window.daymarkApp;
+			const res = await fetch(`${config.restUrl}marks/${id}/content`, {
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+			});
+			return (await res.json()).content;
+		}, draftId);
+		expect(content).toContain('https://tile.openstreetmap.org/15/5241/12665.png');
+		expect(content).toContain('#map=16/37.77493/-122.41942');
+	});
+});
+
 // Every composer has an "Add" bar under the caption. A Note has no
 // camera-first picker, so the bar is how it adds media: "Photo or video"
 // opens the chooser for those two kinds, "Audio" opens the recorder, whose
