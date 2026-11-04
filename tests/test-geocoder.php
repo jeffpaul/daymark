@@ -30,11 +30,19 @@ class Test_Geocoder extends WP_UnitTestCase {
 	 */
 	private int $request_count = 0;
 
+	/**
+	 * Every URL a mocked request went to, in order.
+	 *
+	 * @var string[]
+	 */
+	private array $requested_urls = array();
+
 	public function set_up(): void {
 		parent::set_up();
 
 		$this->http_responses = array();
 		$this->request_count  = 0;
+		$this->requested_urls = array();
 
 		add_filter( 'pre_http_request', array( $this, 'intercept_http_request' ), 10, 3 );
 	}
@@ -57,6 +65,7 @@ class Test_Geocoder extends WP_UnitTestCase {
 		foreach ( $this->http_responses as $prefix => $response ) {
 			if ( str_starts_with( $url, $prefix ) ) {
 				++$this->request_count;
+				$this->requested_urls[] = $url;
 				return $response;
 			}
 		}
@@ -340,6 +349,109 @@ class Test_Geocoder extends WP_UnitTestCase {
 		// Same query, different case — the cache key is lowercased.
 		$this->assertSame( 'Cached Venue', Daymark_Geocoder::search( 'venue' )[0]['place_name'] );
 		$this->assertSame( 1, $this->request_count );
+	}
+
+	/**
+	 * The query string of the Nominatim request made at a given index.
+	 *
+	 * @param int $index Which request, in order.
+	 * @return array<string, string>
+	 */
+	private function requested_query( int $index = 0 ): array {
+		$query = array();
+		wp_parse_str( (string) wp_parse_url( $this->requested_urls[ $index ], PHP_URL_QUERY ), $query );
+
+		return $query;
+	}
+
+	/**
+	 * Searching near a spot asks Nominatim to rank the places around it
+	 * first (a viewbox about 60 km across, centered on the spot rounded to
+	 * about 10 km), so a chain or a common name finds the one nearby. Not
+	 * `bounded`, so a place farther away can still come up.
+	 */
+	public function test_search_near_a_spot_ranks_places_around_it_first() {
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		Daymark_Geocoder::search( 'Mission Bay', 5, 37.77493, -122.41942 );
+
+		$query = $this->requested_query();
+		$this->assertSame( '-122.7,38.1,-122.1,37.5', $query['viewbox'] );
+		$this->assertArrayNotHasKey( 'bounded', $query );
+	}
+
+	/**
+	 * A name with an & or a # in it is searched whole. It used to reach
+	 * Nominatim cut off at the &, so "Barnes & Noble" searched "Barnes".
+	 */
+	public function test_search_sends_the_whole_query() {
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		Daymark_Geocoder::search( 'Barnes & Noble #2' );
+
+		$this->assertSame( 'Barnes & Noble #2', $this->requested_query()['q'] );
+	}
+
+	/** A search with no spot ranks places as before, with no viewbox. */
+	public function test_search_without_a_spot_sends_no_viewbox() {
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		Daymark_Geocoder::search( 'Mission Bay' );
+
+		$this->assertArrayNotHasKey( 'viewbox', $this->requested_query() );
+	}
+
+	/** The same words searched near another place are looked up again, not served from the first place's cache. */
+	public function test_search_caches_each_area_separately() {
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		Daymark_Geocoder::search( 'Coffee', 5, 37.77493, -122.41942 );
+		Daymark_Geocoder::search( 'Coffee', 5, 40.7128, -74.006 );
+		Daymark_Geocoder::search( 'Coffee', 5, 37.7801, -122.4105 );
+
+		$this->assertSame( 2, $this->request_count );
+	}
+
+	/** The Place search route passes the composer's spot along. */
+	public function test_rest_search_route_searches_near_the_spot_sent() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		$request = new WP_REST_Request( 'GET', '/daymark/v1/location/search' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'q', 'Mission Bay' );
+		$request->set_param( 'lat', '37.77493' );
+		$request->set_param( 'lng', '-122.41942' );
+		rest_do_request( $request );
+
+		$this->assertSame( '-122.7,38.1,-122.1,37.5', $this->requested_query()['viewbox'] );
+	}
+
+	/**
+	 * With location capture off, no coordinates go to the geocoder, so a
+	 * spot sent with a search is left out. A spot out of range is too.
+	 */
+	public function test_rest_search_route_leaves_the_spot_out_when_it_cannot_be_used() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->mock_nominatim_search_response( wp_json_encode( array() ) );
+
+		$search = function ( string $q, string $lat ) {
+			$request = new WP_REST_Request( 'GET', '/daymark/v1/location/search' );
+			$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+			$request->set_param( 'q', $q );
+			$request->set_param( 'lat', $lat );
+			$request->set_param( 'lng', '-122.41942' );
+			rest_do_request( $request );
+		};
+
+		$search( 'Out of range', '137.5' );
+		add_filter( 'daymark_capture_location', '__return_false' );
+		$search( 'Capture off', '37.77493' );
+		remove_filter( 'daymark_capture_location', '__return_false' );
+
+		$this->assertSame( 2, $this->request_count );
+		$this->assertArrayNotHasKey( 'viewbox', $this->requested_query( 0 ) );
+		$this->assertArrayNotHasKey( 'viewbox', $this->requested_query( 1 ) );
 	}
 
 	/** GET /daymark/v1/location/search wraps Daymark_Geocoder::search(). */

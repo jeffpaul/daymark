@@ -33,6 +33,8 @@ can't act on them.
 
 ### Changed
 
+- A Check In now goes where the place you type in Place is, when its name matches a place the search found, instead of your phone's exact spot, so naming a neighborhood or city maps that area. Place search also lists places near you first, and now finds a name with an & in it. ([#587](https://github.com/jeffpaul/daymark/pull/587))
+
 - A Mark with no title now shows its caption once, on its card and in the post view, instead of a bold title made of the caption's first words with the same words again under it. That made-up title is still used for feeds, browser tabs, and link previews. ([#583](https://github.com/jeffpaul/daymark/pull/583))
 
 - Photos and files on a Mark now show as a row of thumbnails under the caption, instead of a large block each that pushed the caption off the screen. Each photo has an ALT badge that fills in once it's described; tap a thumbnail to write its alt text or move it, and tap its × to remove it, now also from a draft you reopened. ([#576](https://github.com/jeffpaul/daymark/pull/576))

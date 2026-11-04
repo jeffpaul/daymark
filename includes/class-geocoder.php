@@ -26,6 +26,16 @@ class Daymark_Geocoder {
 	const ADDRESS_MAX_CHARS = 120;
 
 	/**
+	 * How far, in degrees each way, a search near a spot looks first:
+	 * Nominatim ranks places inside that box (about 60 km across) above
+	 * the rest. The spot itself is rounded to one decimal (about 10 km)
+	 * before it is sent.
+	 *
+	 * @var float
+	 */
+	const SEARCH_NEAR_DEGREES = 0.3;
+
+	/**
 	 * Best-effort reverse-geocode a lat/lng pair into a short, human-
 	 * readable place name via Nominatim (OpenStreetMap's own free, keyless
 	 * geocoder) — chosen for the same reason Daymark_Publisher::fetch_weather()
@@ -101,35 +111,44 @@ class Daymark_Geocoder {
 	 * Coffee" locations in different cities) — never written into the
 	 * Place field itself on a pick, just shown in the suggestion list.
 	 *
-	 * Cached by the lowercased query (a shorter TTL than reverse()'s own —
-	 * a search result is more likely to be refined by further typing
-	 * within the same session than repeated verbatim) — never throws,
-	 * degrading to an empty array on any failure so a failed lookup just
-	 * shows no suggestions rather than an error.
+	 * Given a spot (the composer's location), places around it rank first,
+	 * so "Blue Bottle Coffee" or "Mission Bay" finds the one nearby rather
+	 * than the best-known one in the world. The spot is rounded to about
+	 * 10 km and sent as a Nominatim `viewbox`, which ranks without
+	 * filtering: a place farther away still comes up.
+	 *
+	 * Cached by the lowercased query and the rounded spot (a shorter TTL
+	 * than reverse()'s own — a search result is more likely to be refined
+	 * by further typing within the same session than repeated verbatim) —
+	 * never throws, degrading to an empty array on any failure so a failed
+	 * lookup just shows no suggestions rather than an error.
 	 *
 	 * @since 0.17.0
 	 *
-	 * @param string $query Free-text place search query.
-	 * @param int    $limit Maximum number of results. Capped to 10.
+	 * @param string     $query Free-text place search query.
+	 * @param int        $limit Maximum number of results. Capped to 10.
+	 * @param float|null $lat   Latitude to search near, or null for anywhere.
+	 * @param float|null $lng   Longitude to search near, or null for anywhere.
 	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
 	 */
-	public static function search( string $query, int $limit = 5 ): array {
+	public static function search( string $query, int $limit = 5, ?float $lat = null, ?float $lng = null ): array {
 		$query = trim( $query );
 
 		if ( '' === $query ) {
 			return array();
 		}
 
-		$limit = max( 1, min( 10, $limit ) );
+		$limit   = max( 1, min( 10, $limit ) );
+		$viewbox = self::viewbox_near( $lat, $lng );
 
-		$cache_key = 'daymark_geosearch_' . md5( mb_strtolower( $query ) . '|' . $limit );
+		$cache_key = 'daymark_geosearch_' . md5( mb_strtolower( $query ) . '|' . $limit . '|' . $viewbox );
 		$cached    = get_transient( $cache_key );
 
 		if ( is_array( $cached ) ) {
 			return $cached;
 		}
 
-		$results = self::fetch_search( $query, $limit );
+		$results = self::fetch_search( $query, $limit, $viewbox );
 
 		/**
 		 * Filters how long a forward place-search result (including an
@@ -147,24 +166,57 @@ class Daymark_Geocoder {
 	}
 
 	/**
+	 * The Nominatim `viewbox` ("left,top,right,bottom") a search near a
+	 * spot ranks first: SEARCH_NEAR_DEGREES each way around the spot,
+	 * rounded to one decimal.
+	 *
+	 * @param float|null $lat Latitude, or null.
+	 * @param float|null $lng Longitude, or null.
+	 * @return string The viewbox, or '' with no usable spot.
+	 */
+	private static function viewbox_near( ?float $lat, ?float $lng ): string {
+		if ( null === $lat || null === $lng || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180 ) {
+			return '';
+		}
+
+		$lat = round( $lat, 1 );
+		$lng = round( $lng, 1 );
+
+		return implode(
+			',',
+			array(
+				round( max( -180, $lng - self::SEARCH_NEAR_DEGREES ), 1 ),
+				round( min( 90, $lat + self::SEARCH_NEAR_DEGREES ), 1 ),
+				round( min( 180, $lng + self::SEARCH_NEAR_DEGREES ), 1 ),
+				round( max( -90, $lat - self::SEARCH_NEAR_DEGREES ), 1 ),
+			)
+		);
+	}
+
+	/**
 	 * The actual live search lookup, split out from search() so its own
 	 * early returns don't have to duplicate the caching wrapper above.
 	 *
-	 * @param string $query Free-text place search query.
-	 * @param int    $limit Maximum number of results.
+	 * @param string $query   Free-text place search query.
+	 * @param int    $limit   Maximum number of results.
+	 * @param string $viewbox Area to rank first (see viewbox_near()), or ''.
 	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
 	 */
-	private static function fetch_search( string $query, int $limit ): array {
+	private static function fetch_search( string $query, int $limit, string $viewbox = '' ): array {
 		try {
-			$url = add_query_arg(
-				array(
-					'format'         => 'jsonv2',
-					'q'              => $query,
-					'limit'          => $limit,
-					'addressdetails' => 1,
-				),
-				'https://nominatim.openstreetmap.org/search'
+			$args = array(
+				'format'         => 'jsonv2',
+				// Encoded, as add_query_arg() expects: an & or # in a
+				// name would otherwise cut the search short.
+				'q'              => rawurlencode( $query ),
+				'limit'          => $limit,
+				'addressdetails' => 1,
 			);
+			if ( '' !== $viewbox ) {
+				$args['viewbox'] = $viewbox;
+			}
+
+			$url = add_query_arg( $args, 'https://nominatim.openstreetmap.org/search' );
 
 			$timeout = max( 1, (int) apply_filters( 'daymark_geocode_fetch_timeout', 4 ) );
 
