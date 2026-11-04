@@ -3470,26 +3470,6 @@ button.daymark-stat {
 	color: var(--daymark-text-muted);
 }
 
-/* Under a Check In's Place field: Exact spot, Neighborhood, or City
-   (publishing audit R9; placePrecisionMarkup() in app.js), with a hint
-   under them while an area is chosen. Gone when there's no choice. */
-.daymark-checkin-precision {
-	display: flex;
-	flex-direction: column;
-	gap: var(--daymark-spacing-xs);
-	margin-top: var(--daymark-spacing-xs);
-}
-
-.daymark-checkin-precision:empty {
-	display: none;
-}
-
-.daymark-checkin-precision__hint {
-	margin: 0;
-	font-size: 12px;
-	color: var(--daymark-text-secondary);
-}
-
 .daymark-tags__addrow .daymark-btn--secondary {
 	width: auto;
 	flex-shrink: 0;

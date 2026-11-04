@@ -140,11 +140,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'description'       => __( 'Resolved (composer-editable) place name for a Checkin Mark.', 'daymark' ),
 							'sanitize_callback' => 'sanitize_text_field',
 						),
-						'place_precision'      => array(
-							'type'              => 'string',
-							'description'       => __( 'How precisely a Checkin Mark shows its place: venue (the default), neighborhood, or city.', 'daymark' ),
-							'sanitize_callback' => 'sanitize_key',
-						),
 					),
 				),
 				array(
@@ -491,11 +486,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'type'              => 'string',
 							'description'       => __( 'Resolved (composer-editable) place name for a Checkin Mark.', 'daymark' ),
 							'sanitize_callback' => 'sanitize_text_field',
-						),
-						'place_precision'   => array(
-							'type'              => 'string',
-							'description'       => __( 'How precisely a Checkin Mark shows its place: venue (the default), neighborhood, or city.', 'daymark' ),
-							'sanitize_callback' => 'sanitize_key',
 						),
 					),
 				),
@@ -1735,10 +1725,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lng'         => $request->get_param( 'location_lng' ),
 			'location_accuracy'    => $request->get_param( 'location_accuracy' ),
 			// A Checkin Mark's resolved (composer-editable) place name —
-			// see Daymark_Publisher::resolve_place_name() — and how precisely
-			// it's shown (Daymark_Publisher::resolve_place_area()).
+			// see Daymark_Publisher::resolve_place_name().
 			'place_name'           => sanitize_text_field( (string) $request->get_param( 'place_name' ) ),
-			'place_precision'      => sanitize_key( (string) $request->get_param( 'place_precision' ) ),
 			// Set only when composing a reply from a subscribed post's
 			// expanded card (issue #83) — see Daymark_Publisher::resolve_in_reply_to().
 			'in_reply_to'          => (string) $request->get_param( 'in_reply_to' ),
@@ -2466,11 +2454,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * hand rather than surfacing an error for what is, either way, a field
 	 * the author can always edit before publishing.
 	 *
-	 * Also names the place's `neighborhood` and `city` (each '' when
-	 * unknown), which the composer offers instead of the venue so a Check
-	 * In doesn't pin the exact spot (publishing audit R9; see
-	 * Daymark_Geocoder::reverse_place()).
-	 *
 	 * @since 0.17.0
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -2496,15 +2479,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$lat = $request->get_param( 'lat' );
 		$lng = $request->get_param( 'lng' );
 
-		$place = is_numeric( $lat ) && is_numeric( $lng ) && (float) $lat >= -90 && (float) $lat <= 90 && (float) $lng >= -180 && (float) $lng <= 180
-			? Daymark_Geocoder::reverse_place( (float) $lat, (float) $lng )
-			: null;
+		if ( ! is_numeric( $lat ) || ! is_numeric( $lng ) || (float) $lat < -90 || (float) $lat > 90 || (float) $lng < -180 || (float) $lng > 180 ) {
+			return rest_ensure_response( array( 'place_name' => null ) );
+		}
 
 		return rest_ensure_response(
 			array(
-				'place_name'   => $place['place_name'] ?? null,
-				'neighborhood' => $place['neighborhood'] ?? '',
-				'city'         => $place['city'] ?? '',
+				'place_name' => Daymark_Geocoder::reverse( (float) $lat, (float) $lng ),
 			)
 		);
 	}
@@ -4041,7 +4022,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'location_lng'        => $request->get_param( 'location_lng' ),
 			'location_accuracy'   => $request->get_param( 'location_accuracy' ),
 			'place_name'          => sanitize_text_field( (string) $request->get_param( 'place_name' ) ),
-			'place_precision'     => sanitize_key( (string) $request->get_param( 'place_precision' ) ),
 			'in_reply_to'         => (string) $request->get_param( 'in_reply_to' ),
 			'repost_of'           => (string) $request->get_param( 'repost_of' ),
 			'like_of'             => (string) $request->get_param( 'like_of' ),
@@ -5685,15 +5665,6 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		if ( '' !== $place_name ) {
 			$summary['place_name'] = $place_name;
-		}
-
-		// How precisely a Check In shows its place (publishing audit R9), so
-		// the app draws its card's map like the post's: zoomed out with no
-		// pin at a neighborhood or city. Left out at the venue.
-		$place_precision = (string) get_post_meta( $post_id, '_daymark_place_precision', true );
-
-		if ( '' !== $place_precision ) {
-			$summary['place_precision'] = $place_precision;
 		}
 
 		// A Check In's own optional attached photo/video (issue #424): its

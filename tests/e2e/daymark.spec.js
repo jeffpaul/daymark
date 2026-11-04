@@ -1689,8 +1689,6 @@ test('Checkin Mark publishes from just a Place, with no caption or media', async
 	await expect(composer.locator('#daymark-file-input')).toHaveCount(1);
 	await expect(composer.locator('[data-attach="place"]')).toHaveAttribute('aria-pressed', 'true');
 	await composer.locator('[data-checkin-place]').fill(place);
-	// With no location there's no neighborhood or city to offer instead.
-	await expect(composer.locator('[data-place-precision]')).toHaveCount(0);
 
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
@@ -1793,91 +1791,10 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
 });
 
-// Publishing audit R9: a Check In starts at the named place, with its
-// neighborhood or city one tap away under the Place field. Picking one
-// puts its name in the field, and the site keeps only a spot rounded to
-// that area, so the card's map is zoomed out with no pin. The location
-// lookup is mocked like the search above; PHPUnit covers the rounding.
-test.describe('a Check In near home', () => {
-	test.use({
-		geolocation: { latitude: 37.77493, longitude: -122.41942 },
-		permissions: ['geolocation'],
-	});
-
-	test('can show its neighborhood instead of the exact spot', async ({ page }) => {
-		const caption = `E2E neighborhood check in ${RUN_ID}`;
-		await page.route('**/daymark/v1/location/reverse-geocode*', async (route) => {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					place_name: 'Blue Bottle Coffee',
-					neighborhood: 'Mission Bay, San Francisco',
-					city: 'San Francisco',
-				}),
-			});
-		});
-
-		await loginAs(page);
-		await page.goto('/daymark');
-		await openComposer(page, 'checkin');
-
-		const place = page.locator('[data-checkin-place]');
-		await expect(place).toHaveValue('Blue Bottle Coffee');
-		const choices = page.getByRole('group', { name: 'How exact the place is' });
-		const exact = choices.getByRole('button', { name: 'Exact spot' });
-		const neighborhood = choices.getByRole('button', { name: 'Neighborhood' });
-		const city = choices.getByRole('button', { name: 'City' });
-		const hint = page.locator('[data-place-precision-hint]');
-		await expect(exact).toHaveAttribute('aria-pressed', 'true');
-		await expect(hint).toBeHidden();
-
-		await city.click();
-		await expect(city).toHaveAttribute('aria-pressed', 'true');
-		await expect(exact).toHaveAttribute('aria-pressed', 'false');
-		await expect(place).toHaveValue('San Francisco');
-		await expect(hint).toHaveText('The map shows the area, not your exact spot.');
-
-		// Back at the exact spot, the place you had comes back.
-		await exact.click();
-		await expect(place).toHaveValue('Blue Bottle Coffee');
-		await expect(hint).toBeHidden();
-
-		await neighborhood.click();
-		await expect(place).toHaveValue('Mission Bay, San Francisco');
-
-		await page.fill('#daymark-caption', caption);
-		await page.locator('[data-action="publish"]').click();
-		await expectPublished(page);
-
-		const saved = await page.evaluate(async (cap) => {
-			const config = window.daymarkApp;
-			const res = await fetch(`${config.restUrl}marks?per_page=10`, {
-				headers: { 'X-WP-Nonce': config.nonce },
-				credentials: 'same-origin',
-			});
-			return (await res.json()).find((mark) => (mark.excerpt || '').includes(cap));
-		}, caption);
-		expect(saved.place_name).toBe('Mission Bay, San Francisco');
-		expect(saved.place_precision).toBe('neighborhood');
-		expect(saved.location).toEqual({ lat: 37.77, lng: -122.42 });
-
-		await page.goto('/daymark/search');
-		await page.locator('[data-filter="checkin"]').click();
-		const card = page.locator('.daymark-recent__item-wrap').filter({ hasText: caption });
-		await expect(card.locator('.daymark-recent__thumbwrap--checkin img')).toHaveAttribute(
-			'src',
-			'https://tile.openstreetmap.org/13/1310/3166.png'
-		);
-		await expect(card.locator('.daymark-checkin-map__pin')).toHaveCount(0);
-	});
-});
-
-// A Check In draft opened from Drafts keeps where it was and how exactly
-// it shows it (publishing audit R9), so publishing it keeps its
-// zoomed-out map. The composer used to open it without its location, and
-// the next save took the map out of the post. Turning Place off and on
-// keeps the draft's place too, though the phone is somewhere else now.
+// A Check In draft opened from Drafts keeps where it was, so publishing it
+// keeps its map. The composer used to open it without its location, and the
+// next save took the map out of the post. Turning Place off and on keeps the
+// draft's place too, though the phone is somewhere else now.
 test.describe('a Check In draft, opened somewhere else', () => {
 	test.use({
 		geolocation: { latitude: 40.7128, longitude: -74.006 },
@@ -1894,8 +1811,7 @@ test.describe('a Check In draft, opened somewhere else', () => {
 			const body = new FormData();
 			body.append('caption', cap);
 			body.append('primary_type', 'checkin');
-			body.append('place_name', 'Mission Bay, San Francisco');
-			body.append('place_precision', 'neighborhood');
+			body.append('place_name', 'Blue Bottle Coffee');
 			body.append('location_lat', '37.77493');
 			body.append('location_lng', '-122.41942');
 			body.append('status', 'draft');
@@ -1912,11 +1828,11 @@ test.describe('a Check In draft, opened somewhere else', () => {
 		await page.locator('[data-edit-draft]').filter({ hasText: caption }).first().click();
 		const place = page.locator('[data-checkin-place]');
 		const placeSwitch = page.locator('[data-attach="place"]');
-		await expect(place).toHaveValue('Mission Bay, San Francisco');
+		await expect(place).toHaveValue('Blue Bottle Coffee');
 		await placeSwitch.click();
 		await expect(place).toHaveCount(0);
 		await placeSwitch.click();
-		await expect(place).toHaveValue('Mission Bay, San Francisco');
+		await expect(place).toHaveValue('Blue Bottle Coffee');
 		await page.locator('[data-action="publish"]').click();
 		await expectPublished(page);
 
@@ -1928,8 +1844,8 @@ test.describe('a Check In draft, opened somewhere else', () => {
 			});
 			return (await res.json()).content;
 		}, draftId);
-		expect(content).toContain('https://tile.openstreetmap.org/13/1310/3166.png');
-		expect(content).toContain('https://www.openstreetmap.org/#map=13/37.77/-122.42');
+		expect(content).toContain('https://tile.openstreetmap.org/15/5241/12665.png');
+		expect(content).toContain('#map=16/37.77493/-122.41942');
 	});
 });
 
