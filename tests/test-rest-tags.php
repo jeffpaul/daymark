@@ -57,6 +57,41 @@ class Test_Rest_Tags extends WP_UnitTestCase {
 		$this->assertSame( 401, $response->get_status() );
 	}
 
+	/**
+	 * A tag comes back as it was typed. WordPress saves an & in a tag
+	 * name as "&amp;", and the app escapes what it shows, so a
+	 * suggestion read "Sun &amp; Sea".
+	 */
+	public function test_tag_names_are_plain_text() {
+		self::factory()->term->create(
+			array(
+				'taxonomy' => 'post_tag',
+				'name'     => 'Sun & Sea',
+			)
+		);
+
+		$names = wp_list_pluck( rest_do_request( $this->request( 'sun' ) )->get_data(), 'name' );
+
+		$this->assertContains( 'Sun & Sea', $names );
+	}
+
+	/** A draft opened in the composer lists its tags as they were typed, too. */
+	public function test_a_drafts_tags_are_plain_text() {
+		$post_id = ( new Daymark_Publisher() )->publish(
+			array(
+				'caption'      => 'By the water',
+				'primary_type' => 'note',
+				'status'       => 'draft',
+				'tags'         => array( 'Sun & Sea' ),
+			)
+		);
+
+		$request = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$post_id}" );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+
+		$this->assertSame( array( 'Sun & Sea' ), rest_do_request( $request )->get_data()['tags'] );
+	}
+
 	/** A matching search string returns only the matching tags, by name. */
 	public function test_search_returns_matching_tags() {
 		$data  = rest_do_request( $this->request( 'sun' ) )->get_data();

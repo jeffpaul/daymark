@@ -670,7 +670,9 @@ class Daymark_Routes {
 		) as $cat ) {
 			$categories[] = array(
 				'id'     => (int) $cat->term_id,
-				'name'   => $cat->name,
+				// Plain text, like siteTitle below: WordPress saves an & in
+				// a name as "&amp;", and the app escapes what it shows.
+				'name'   => html_entity_decode( $cat->name, ENT_QUOTES, 'UTF-8' ),
 				'parent' => (int) $cat->parent,
 			);
 		}
@@ -724,7 +726,10 @@ class Daymark_Routes {
 			'bookmarkletUrl'         => esc_url_raw( Daymark_Bookmarklet::popup_url() ),
 			'nonce'                  => wp_create_nonce( 'wp_rest' ),
 			'siteUrl'                => esc_url_raw( home_url( '/' ) ),
-			'siteTitle'              => sanitize_text_field( get_bloginfo( 'name' ) ),
+			// Plain text, as Mark titles are sent: WordPress saves the site
+			// title HTML-encoded ("JP&#039;s Daymark"), and the app escapes
+			// it wherever it shows it.
+			'siteTitle'              => html_entity_decode( sanitize_text_field( get_bloginfo( 'name' ) ), ENT_QUOTES, 'UTF-8' ),
 			// A raw PHP date() format string (Settings -> General -> Date
 			// Format) — assets/app.js's formatDateWithPhpFormat() maps it
 			// token-by-token onto a Timeline card's own absolute-date
@@ -809,7 +814,7 @@ class Daymark_Routes {
 			'publishHelpers'         => $awareness_helpers,
 			'currentUser'            => array(
 				'id'             => (int) $user->ID,
-				'displayName'    => $user->display_name,
+				'displayName'    => html_entity_decode( $user->display_name, ENT_QUOTES, 'UTF-8' ),
 				'avatarUrl'      => esc_url_raw( (string) get_avatar_url( $user->ID, array( 'size' => 96 ) ) ),
 				'profileEditUrl' => esc_url_raw( get_edit_profile_url( $user->ID ) ),
 				'logoutUrl'      => esc_url_raw( wp_logout_url( self::app_url( 'me' ) ) ),
