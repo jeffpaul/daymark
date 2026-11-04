@@ -60,14 +60,34 @@ class Daymark_Geocoder {
 	 * @return string|null A short place name, or null when nothing could be resolved.
 	 */
 	public static function reverse( float $lat, float $lng ): ?string {
+		$place = self::reverse_place( $lat, $lng );
+
+		return null !== $place ? $place['place_name'] : null;
+	}
+
+	/**
+	 * The place at a coordinate, as a Check In can show it (publishing
+	 * audit R9): reverse()'s place name, plus the neighborhood and the city
+	 * a Check In can show instead, so it doesn't pin the exact spot. The
+	 * neighborhood comes with its city ("Mission Bay, San Francisco"),
+	 * since a neighborhood's name alone is often shared by several cities.
+	 * Either is '' when OpenStreetMap doesn't name it, and the neighborhood
+	 * is '' when it's named like its city. One lookup answers all three.
+	 *
+	 * @param float $lat Latitude.
+	 * @param float $lng Longitude.
+	 * @return array{place_name: string, neighborhood: string, city: string}|null Null when nothing could be resolved.
+	 */
+	public static function reverse_place( float $lat, float $lng ): ?array {
 		// Cached by rounded coordinates (~110m at the equator) so a device's
 		// small GPS jitter between two nearby check-ins, or a retry, doesn't
-		// cost a second live lookup.
-		$cache_key = 'daymark_geocode_' . md5( round( $lat, 3 ) . ',' . round( $lng, 3 ) );
+		// cost a second live lookup. Not the `daymark_geocode_` key earlier
+		// versions used, which holds the place name alone.
+		$cache_key = 'daymark_geoplace_' . md5( round( $lat, 3 ) . ',' . round( $lng, 3 ) );
 		$cached    = get_transient( $cache_key );
 
 		if ( false !== $cached ) {
-			return '' !== $cached ? $cached : null;
+			return is_array( $cached ) ? $cached : null;
 		}
 
 		$place = self::fetch( $lat, $lng );
@@ -99,7 +119,9 @@ class Daymark_Geocoder {
 	 * separately, so the composer can show it alongside the short name to
 	 * help disambiguate two similarly-named results (e.g. two "Blue Bottle
 	 * Coffee" locations in different cities) — never written into the
-	 * Place field itself on a pick, just shown in the suggestion list.
+	 * Place field itself on a pick, just shown in the suggestion list. Each
+	 * also names its neighborhood and city, as reverse_place() does, so a
+	 * picked place can be shown at either instead.
 	 *
 	 * Cached by the lowercased query (a shorter TTL than reverse()'s own —
 	 * a search result is more likely to be refined by further typing
@@ -111,7 +133,7 @@ class Daymark_Geocoder {
 	 *
 	 * @param string $query Free-text place search query.
 	 * @param int    $limit Maximum number of results. Capped to 10.
-	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
+	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float, neighborhood: string, city: string}>
 	 */
 	public static function search( string $query, int $limit = 5 ): array {
 		$query = trim( $query );
@@ -152,7 +174,7 @@ class Daymark_Geocoder {
 	 *
 	 * @param string $query Free-text place search query.
 	 * @param int    $limit Maximum number of results.
-	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float}>
+	 * @return array<int, array{place_name: string, address: string, lat: float, lng: float, neighborhood: string, city: string}>
 	 */
 	private static function fetch_search( string $query, int $limit ): array {
 		try {
@@ -210,7 +232,7 @@ class Daymark_Geocoder {
 					'address'    => $address,
 					'lat'        => (float) $item['lat'],
 					'lng'        => (float) $item['lon'],
-				);
+				) + self::extract_area_names( $item );
 			}
 
 			return $results;
@@ -220,14 +242,14 @@ class Daymark_Geocoder {
 	}
 
 	/**
-	 * The actual live lookup, split out from reverse() so its own early
-	 * returns don't have to duplicate the caching wrapper above.
+	 * The actual live lookup, split out from reverse_place() so its own
+	 * early returns don't have to duplicate the caching wrapper above.
 	 *
 	 * @param float $lat Latitude.
 	 * @param float $lng Longitude.
-	 * @return string|null
+	 * @return array{place_name: string, neighborhood: string, city: string}|null
 	 */
-	private static function fetch( float $lat, float $lng ): ?string {
+	private static function fetch( float $lat, float $lng ): ?array {
 		try {
 			$url = add_query_arg(
 				array(
@@ -272,10 +294,58 @@ class Daymark_Geocoder {
 				return null;
 			}
 
-			return self::extract_place_name( $body );
+			$place_name = self::extract_place_name( $body );
+
+			if ( null === $place_name ) {
+				return null;
+			}
+
+			return array( 'place_name' => $place_name ) + self::extract_area_names( $body );
 		} catch ( Throwable $e ) {
 			return null;
 		}
+	}
+
+	/**
+	 * The neighborhood and city a Nominatim result lies in, as
+	 * reverse_place() describes them, each '' when it isn't named.
+	 *
+	 * @param array<string, mixed> $body One decoded Nominatim jsonv2 result.
+	 * @return array{neighborhood: string, city: string}
+	 */
+	private static function extract_area_names( array $body ): array {
+		$address = is_array( $body['address'] ?? null ) ? $body['address'] : array();
+
+		// Most to least specific, as OpenStreetMap names them around the
+		// world: a neighbourhood or suburb, a town or village for a city.
+		$neighborhood = self::first_address_part( $address, array( 'neighbourhood', 'suburb', 'quarter', 'city_district' ) );
+		$city         = self::first_address_part( $address, array( 'city', 'town', 'village', 'municipality' ) );
+
+		if ( '' !== $neighborhood && '' !== $city ) {
+			$neighborhood = $neighborhood === $city ? '' : $neighborhood . ', ' . $city;
+		}
+
+		return array(
+			'neighborhood' => '' !== $neighborhood ? self::trim_place( $neighborhood ) : '',
+			'city'         => '' !== $city ? self::trim_place( $city ) : '',
+		);
+	}
+
+	/**
+	 * The first of `$keys` a Nominatim address names.
+	 *
+	 * @param array<string, mixed> $address Nominatim `address` details.
+	 * @param string[]             $keys    Address keys, most specific first.
+	 * @return string The name, or '' when none of them is named.
+	 */
+	private static function first_address_part( array $address, array $keys ): string {
+		foreach ( $keys as $key ) {
+			if ( isset( $address[ $key ] ) && is_string( $address[ $key ] ) && '' !== trim( $address[ $key ] ) ) {
+				return trim( $address[ $key ] );
+			}
+		}
+
+		return '';
 	}
 
 	/**

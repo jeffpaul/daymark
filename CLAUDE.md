@@ -212,6 +212,7 @@ _daymark_weather                = JSON {temperature, unit, condition, code}
 _daymark_camera                 = JSON (non-empty subset of camera|aperture|iso|focal_length|shutter_speed)
 _daymark_reading_time_minutes   = int (only when caption+transcript word count is substantial)
 _daymark_place_name             = plain text (Checkin Marks only; reverse-geocoded, composer-editable place name)
+_daymark_place_precision        = neighborhood|city (Checkin Marks shown at an area, not the venue; _daymark_location then holds only a rounded spot)
 
 // Featured Content (issue #401) — any post type with Featured Image
 // (thumbnail) support that uses the block editor, NOT Mark-specific

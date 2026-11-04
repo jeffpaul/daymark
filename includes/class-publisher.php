@@ -640,6 +640,12 @@ class Daymark_Publisher {
 			$location = null;
 		}
 
+		// A Check In shown at its neighborhood or city (publishing audit R9)
+		// keeps only a spot rounded to that area: the exact one is dropped
+		// here, before anything stores or sends it.
+		$place_area = 'checkin' === $type ? $this->resolve_place_area( $data ) : '';
+		$location   = $this->place_area_location( $location, $place_area );
+
 		// A Like Mark (the composer's "Like" toggle on a subscribed post) is a
 		// pure engagement signal, not user-chosen publishable content — it
 		// must never reach a real syndication destination, regardless of the
@@ -794,6 +800,7 @@ class Daymark_Publisher {
 			$checkin = array(
 				'place'    => $place_name,
 				'location' => $location,
+				'area'     => $place_area,
 			);
 		}
 
@@ -923,11 +930,15 @@ class Daymark_Publisher {
 				$this->maybe_bridge_weather_to_simple_location( $post_id, $weather );
 			}
 
-			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
+			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name, $place_area );
 		}
 
 		if ( null !== $place_name ) {
 			update_post_meta( $post_id, '_daymark_place_name', $place_name );
+		}
+
+		if ( '' !== $place_area ) {
+			update_post_meta( $post_id, '_daymark_place_precision', $place_area );
 		}
 
 		$in_reply_to = $this->resolve_in_reply_to( $data );
@@ -1156,6 +1167,12 @@ class Daymark_Publisher {
 			$location = null;
 		}
 
+		// A Check In shown at its neighborhood or city (publishing audit R9)
+		// keeps only a spot rounded to that area: the exact one is dropped
+		// here, before anything stores or sends it.
+		$place_area = 'checkin' === $type ? $this->resolve_place_area( $data ) : '';
+		$location   = $this->place_area_location( $location, $place_area );
+
 		$raw_targets = $data['syndication_targets'] ?? null;
 
 		// A Like Mark never syndicates, even on an edit — see publish()'s own
@@ -1279,6 +1296,7 @@ class Daymark_Publisher {
 			$checkin = array(
 				'place'    => $place_name,
 				'location' => $location,
+				'area'     => $place_area,
 			);
 		}
 
@@ -1323,6 +1341,10 @@ class Daymark_Publisher {
 			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
 		}
 
+		// The area this Check In showed before this save, so Simple
+		// Location's zoom comes off if it goes back to the venue.
+		$previous_area = (string) get_post_meta( $post_id, '_daymark_place_precision', true );
+
 		// $location was already resolved above (needed before the update
 		// for the checkin place block) — reused here rather than resolved
 		// a second time.
@@ -1344,11 +1366,19 @@ class Daymark_Publisher {
 				}
 			}
 
-			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name );
+			$this->maybe_bridge_location_to_simple_location( $post_id, $location, $place_name, $place_area, '' !== $previous_area );
 		}
 
 		if ( null !== $place_name ) {
 			update_post_meta( $post_id, '_daymark_place_name', $place_name );
+		}
+
+		// Each save sends its place precision, as it does its place and
+		// location, so a save at the venue takes off an earlier area.
+		if ( '' !== $place_area ) {
+			update_post_meta( $post_id, '_daymark_place_precision', $place_area );
+		} else {
+			delete_post_meta( $post_id, '_daymark_place_precision' );
 		}
 
 		$in_reply_to = $this->resolve_in_reply_to( $data );
@@ -1812,12 +1842,13 @@ class Daymark_Publisher {
 	 * Uses core/image, core/gallery, core/video, core/audio, core/embed,
 	 * and core/paragraph so the Mark renders in any theme.
 	 *
-	 * @param int[]                                                                   $media_ids Attachment IDs.
-	 * @param string                                                                  $caption   Caption text (already run through wp_kses_post).
-	 * @param array{url: string, source?: string}|null                                $reblog Reblogged post to lead
-	 *                                                                                         with as an embed, or null for none.
-	 * @param array{place: string, location: array{lat: float, lng: float}|null}|null $checkin Checkin place block
-	 *                                                                        to lead with, or null for none.
+	 * @param int[]                                                                                  $media_ids Attachment IDs.
+	 * @param string                                                                                 $caption   Caption text (already run through wp_kses_post).
+	 * @param array{url: string, source?: string}|null                                               $reblog Reblogged post to lead
+	 *                                                                                                        with as an embed, or null for none.
+	 * @param array{place: string, location: array{lat: float, lng: float}|null, area?: string}|null $checkin Checkin place block
+	 *                                                                                                        to lead with, or null for none. `area` is
+	 *                                                                                                        a PLACE_AREAS key, or '' for the venue.
 	 * @return string Block markup.
 	 */
 	private function build_block_markup( array $media_ids, string $caption, ?array $reblog = null, ?array $checkin = null ): string {
@@ -1825,10 +1856,12 @@ class Daymark_Publisher {
 		$blocks = array();
 
 		if ( $checkin ) {
+			$area = (string) ( $checkin['area'] ?? '' );
+
 			if ( null !== $checkin['location'] ) {
-				$blocks[] = $this->build_map_preview_block( $checkin['location'] );
+				$blocks[] = $this->build_map_preview_block( $checkin['location'], $area );
 			}
-			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'] );
+			$blocks[] = $this->build_place_block( $checkin['place'], $checkin['location'], $area );
 		}
 
 		if ( $reblog ) {
@@ -1919,17 +1952,29 @@ class Daymark_Publisher {
 	 * behind the `daymark_publish_location_publicly` privacy option — the
 	 * place name itself is always part of the published post.
 	 *
+	 * At a neighborhood or city (publishing audit R9) the link opens a map
+	 * of that area, with no marker, since the spot it has is only rounded.
+	 *
 	 * @since 0.17.0
 	 *
 	 * @param string                             $place    Resolved/edited place name (already sanitized).
 	 * @param array{lat: float, lng: float}|null $location Resolved coordinates, or null when unavailable.
+	 * @param string                             $area     A PLACE_AREAS key, or '' for the venue.
 	 * @return string Block markup.
 	 */
-	private function build_place_block( string $place, ?array $location ): string {
-		$map_link = null !== $location
+	private function build_place_block( string $place, ?array $location, string $area = '' ): string {
+		$map_url = '';
+
+		if ( null !== $location ) {
+			$map_url = isset( self::PLACE_AREAS[ $area ] )
+				? sprintf( 'https://www.openstreetmap.org/#map=%1$d/%2$s/%3$s', self::PLACE_AREAS[ $area ]['zoom'], $location['lat'], $location['lng'] )
+				: sprintf( 'https://www.openstreetmap.org/?mlat=%1$s&mlng=%2$s#map=16/%1$s/%2$s', $location['lat'], $location['lng'] );
+		}
+
+		$map_link = '' !== $map_url
 			? sprintf(
 				' — <a href="%s">%s</a>',
-				esc_url( sprintf( 'https://www.openstreetmap.org/?mlat=%1$s&mlng=%2$s#map=16/%1$s/%2$s', $location['lat'], $location['lng'] ) ),
+				esc_url( $map_url ),
 				esc_html__( 'View on map', 'daymark' )
 			)
 			: '';
@@ -1949,6 +1994,26 @@ class Daymark_Publisher {
 	 * @var int
 	 */
 	private const MAP_PREVIEW_ZOOM = 15;
+
+	/**
+	 * The areas a Check In can show instead of its venue (publishing audit
+	 * R9): how many decimal places its coordinates keep (two is about a
+	 * kilometer, one about ten), and how far out its map is zoomed.
+	 * assets/app.js's checkinMapZoom() draws the app's own map at the same
+	 * zooms.
+	 *
+	 * @var array<string, array{decimals: int, zoom: int}>
+	 */
+	private const PLACE_AREAS = array(
+		'neighborhood' => array(
+			'decimals' => 2,
+			'zoom'     => 13,
+		),
+		'city'         => array(
+			'decimals' => 1,
+			'zoom'     => 11,
+		),
+	);
 
 	/**
 	 * Resolves the single OpenStreetMap raster tile that best previews a
@@ -2001,23 +2066,32 @@ class Daymark_Publisher {
 	 * (Daymark_Microformats::location_markup()). This block is never shown
 	 * for any type but Checkin, so that gate is never bypassed by it.
 	 *
+	 * A Check In shown at its neighborhood or city (publishing audit R9)
+	 * gets a zoomed-out tile of that area and no pin, since its spot is
+	 * only rounded to the area.
+	 *
 	 * @since 0.18.0
 	 *
 	 * @param array{lat: float, lng: float} $location Resolved coordinates.
+	 * @param string                        $area     A PLACE_AREAS key, or '' for the venue.
 	 * @return string Block markup.
 	 */
-	private function build_map_preview_block( array $location ): string {
-		$tile     = $this->resolve_map_tile( $location['lat'], $location['lng'], self::MAP_PREVIEW_ZOOM );
+	private function build_map_preview_block( array $location, string $area = '' ): string {
+		$is_area  = isset( self::PLACE_AREAS[ $area ] );
+		$tile     = $this->resolve_map_tile( $location['lat'], $location['lng'], $is_area ? self::PLACE_AREAS[ $area ]['zoom'] : self::MAP_PREVIEW_ZOOM );
 		$tile_url = sprintf( 'https://tile.openstreetmap.org/%1$d/%2$d/%3$d.png', $tile['zoom'], $tile['x'], $tile['y'] );
+		$pin      = $is_area ? '' : sprintf(
+			'<span class="daymark-checkin-map__pin" style="left:%1$s%%;top:%2$s%%" aria-hidden="true"></span>',
+			esc_attr( (string) round( $tile['pixel_x'] / 256 * 100, 3 ) ),
+			esc_attr( (string) round( $tile['pixel_y'] / 256 * 100, 3 ) )
+		);
 
 		return sprintf(
 			"<!-- wp:html -->\n" .
-			'<figure class="daymark-checkin-map"><img src="%1$s" width="256" height="256" alt="" loading="lazy" />' .
-			'<span class="daymark-checkin-map__pin" style="left:%2$s%%;top:%3$s%%" aria-hidden="true"></span></figure>' . "\n" .
+			'<figure class="daymark-checkin-map"><img src="%1$s" width="256" height="256" alt="" loading="lazy" />%2$s</figure>' . "\n" .
 			'<!-- /wp:html -->',
 			esc_url( $tile_url ),
-			esc_attr( (string) round( $tile['pixel_x'] / 256 * 100, 3 ) ),
-			esc_attr( (string) round( $tile['pixel_y'] / 256 * 100, 3 ) )
+			$pin
 		);
 	}
 
@@ -2502,6 +2576,44 @@ class Daymark_Publisher {
 	}
 
 	/**
+	 * Resolve how precisely a Check In shows its place (publishing audit
+	 * R9): 'neighborhood' or 'city', or '' for the venue itself, which is
+	 * the default and covers any other value.
+	 *
+	 * @param array<string, mixed> $data Publisher input.
+	 * @return string A PLACE_AREAS key, or '' for the venue.
+	 */
+	private function resolve_place_area( array $data ): string {
+		$area = sanitize_key( (string) ( $data['place_precision'] ?? '' ) );
+
+		return isset( self::PLACE_AREAS[ $area ] ) ? $area : '';
+	}
+
+	/**
+	 * A Check In's location as its place precision shows it. At the venue
+	 * the spot is kept as it is. At a neighborhood or city only coordinates
+	 * rounded to that area are kept, without the fix's accuracy, so the
+	 * exact spot is never stored, published, or sent on to Simple Location
+	 * or the weather lookup.
+	 *
+	 * @param array{lat: float, lng: float, accuracy?: float}|null $location Resolved coordinates, or null.
+	 * @param string                                               $area     A PLACE_AREAS key, or '' for the venue.
+	 * @return array{lat: float, lng: float, accuracy?: float}|null
+	 */
+	private function place_area_location( ?array $location, string $area ): ?array {
+		if ( null === $location || ! isset( self::PLACE_AREAS[ $area ] ) ) {
+			return $location;
+		}
+
+		$decimals = self::PLACE_AREAS[ $area ]['decimals'];
+
+		return array(
+			'lat' => round( (float) $location['lat'], $decimals ),
+			'lng' => round( (float) $location['lng'], $decimals ),
+		);
+	}
+
+	/**
 	 * Resolve a reply-to URL sent by the composer's "Reply" action on a
 	 * subscribed post (issue #83), if present and a well-formed http(s) URL.
 	 *
@@ -2723,6 +2835,10 @@ class Daymark_Publisher {
 	 * Runs each time a Check In is saved with a location (publish() and
 	 * update()), so Simple Location's copy follows the Mark's own, and
 	 * clear_checkin_data() removes it if the Mark stops being a Check In.
+	 * A Check In shown at its neighborhood or city (publishing audit R9)
+	 * also sets Simple Location's map zoom (`geo_zoom`) to the zoomed-out
+	 * view Daymark's own map uses, and a later save back at the venue
+	 * takes that zoom off again.
 	 * Weather is bridged separately by
 	 * maybe_bridge_weather_to_simple_location(); it was originally held
 	 * back here pending this same schema question, but that was resolved
@@ -2738,9 +2854,12 @@ class Daymark_Publisher {
 	 * @param int                           $post_id    Mark post ID.
 	 * @param array{lat: float, lng: float} $location   Already-resolved coordinates.
 	 * @param string|null                   $place_name Resolved place name (Checkin Marks only), or null.
+	 * @param string                        $place_area A PLACE_AREAS key, or '' for the venue.
+	 * @param bool                          $clear_zoom Whether an earlier save set a zoom that the venue
+	 *                                                  should take off.
 	 * @return void
 	 */
-	private function maybe_bridge_location_to_simple_location( int $post_id, array $location, ?string $place_name ): void {
+	private function maybe_bridge_location_to_simple_location( int $post_id, array $location, ?string $place_name, string $place_area = '', bool $clear_zoom = false ): void {
 		if ( ! Daymark_Plugin_Detector::matches(
 			array(
 				'slugs'   => array( 'simple-location' ),
@@ -2750,17 +2869,21 @@ class Daymark_Publisher {
 			return;
 		}
 
+		$geodata = array(
+			'latitude'  => $location['lat'],
+			'longitude' => $location['lng'],
+			'address'   => $place_name ?? '',
+		);
+
+		// An empty value is how set_geodata() deletes a key.
+		if ( isset( self::PLACE_AREAS[ $place_area ] ) ) {
+			$geodata['zoom'] = self::PLACE_AREAS[ $place_area ]['zoom'];
+		} elseif ( $clear_zoom ) {
+			$geodata['zoom'] = '';
+		}
+
 		try {
-			Geo_Data::set_geodata(
-				'post',
-				$post_id,
-				'',
-				array(
-					'latitude'  => $location['lat'],
-					'longitude' => $location['lng'],
-					'address'   => $place_name ?? '',
-				)
-			);
+			Geo_Data::set_geodata( 'post', $post_id, '', $geodata );
 		} catch ( Throwable $e ) {
 			// A bridge write should never take down a publish — Simple
 			// Location's own storage is a bonus, not a requirement.
@@ -2880,8 +3003,9 @@ class Daymark_Publisher {
 
 	/**
 	 * Removes what a Check In stored about where it was: Daymark's own place
-	 * name, location, and weather, plus the copies the two Simple Location
-	 * bridges above wrote (`geo_latitude`, `geo_longitude`, `geo_address`,
+	 * name, place precision, location, and weather, plus the copies the two
+	 * Simple Location bridges above wrote (`geo_latitude`, `geo_longitude`,
+	 * `geo_address`, `geo_zoom` when the place was shown at an area,
 	 * and `weather_temperature`, `weather_summary`, `weather_code`,
 	 * `weather_provider`), through that plugin's own `Geo_Data::delete_geodata()`
 	 * and `Sloc_Weather_Data::delete_object_weatherdata()` helpers. Called by
@@ -2899,15 +3023,17 @@ class Daymark_Publisher {
 	private function clear_checkin_data( int $post_id ): void {
 		$had_location = '' !== (string) get_post_meta( $post_id, '_daymark_location', true );
 		$had_weather  = '' !== (string) get_post_meta( $post_id, '_daymark_weather', true );
+		$had_area     = '' !== (string) get_post_meta( $post_id, '_daymark_place_precision', true );
 
 		delete_post_meta( $post_id, '_daymark_place_name' );
+		delete_post_meta( $post_id, '_daymark_place_precision' );
 		delete_post_meta( $post_id, '_daymark_location' );
 		delete_post_meta( $post_id, '_daymark_weather' );
 
 		$removals = array();
 
 		if ( $had_location ) {
-			$removals[] = array( 'Geo_Data', 'delete_geodata', array( 'latitude', 'longitude', 'address' ) );
+			$removals[] = array( 'Geo_Data', 'delete_geodata', $had_area ? array( 'latitude', 'longitude', 'address', 'zoom' ) : array( 'latitude', 'longitude', 'address' ) );
 		}
 
 		if ( $had_weather ) {

@@ -1849,6 +1849,228 @@ class Test_Publisher extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Publish a Check In a few meters from Blue Bottle Coffee in San
+	 * Francisco, shown at `$precision`.
+	 *
+	 * @param string               $precision Place precision sent by the composer.
+	 * @param string               $place     Place name.
+	 * @param array<string, mixed> $extra     More publisher input.
+	 * @return int
+	 */
+	private function publish_checkin_at( string $precision, string $place, array $extra = array() ): int {
+		return (int) ( new Daymark_Publisher() )->publish(
+			$extra + array(
+				'primary_type'      => 'checkin',
+				'place_name'        => $place,
+				'place_precision'   => $precision,
+				'location_lat'      => 37.77493,
+				'location_lng'      => -122.41942,
+				'location_accuracy' => 12,
+			)
+		);
+	}
+
+	/**
+	 * A Check In shown at its neighborhood (publishing audit R9) doesn't
+	 * pin the exact spot: it keeps only coordinates rounded to two decimal
+	 * places (about a kilometer), and its map is zoomed out, with no pin.
+	 */
+	public function test_checkin_at_its_neighborhood_keeps_a_rounded_spot_and_a_zoomed_out_map() {
+		$post_id = $this->publish_checkin_at( 'neighborhood', 'Mission Bay, San Francisco' );
+		$post    = get_post( $post_id );
+
+		$this->assertSame( 'Checked in at Mission Bay, San Francisco', $post->post_title );
+		$this->assertSame( 'neighborhood', get_post_meta( $post_id, '_daymark_place_precision', true ) );
+		$this->assertSame(
+			array(
+				'lat' => 37.77,
+				'lng' => -122.42,
+			),
+			json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true )
+		);
+		$this->assertStringContainsString( 'https://tile.openstreetmap.org/13/1310/3166.png', $post->post_content );
+		$this->assertStringNotContainsString( 'daymark-checkin-map__pin', $post->post_content );
+		$this->assertStringContainsString( 'https://www.openstreetmap.org/#map=13/37.77/-122.42', $post->post_content );
+		$this->assertStringNotContainsString( 'mlat', $post->post_content );
+		$this->assertStringNotContainsString( '37.774', $post->post_content );
+	}
+
+	/** At its city, the spot is rounded to one decimal place (about 10 km) and the map zooms out further. */
+	public function test_checkin_at_its_city_keeps_a_rounder_spot_and_a_wider_map() {
+		$post_id = $this->publish_checkin_at( 'city', 'San Francisco' );
+		$post    = get_post( $post_id );
+
+		$this->assertSame( 'city', get_post_meta( $post_id, '_daymark_place_precision', true ) );
+		$this->assertSame(
+			array(
+				'lat' => 37.8,
+				'lng' => -122.4,
+			),
+			json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true )
+		);
+		$this->assertStringContainsString( 'https://tile.openstreetmap.org/11/327/791.png', $post->post_content );
+		$this->assertStringNotContainsString( 'daymark-checkin-map__pin', $post->post_content );
+		$this->assertStringContainsString( 'https://www.openstreetmap.org/#map=11/37.8/-122.4', $post->post_content );
+	}
+
+	/** At the venue, as by default, the exact spot is kept and pinned on a close map. Anything else counts as the venue. */
+	public function test_checkin_at_its_venue_keeps_the_exact_spot() {
+		foreach ( array( 'venue', 'street', '' ) as $precision ) {
+			$post_id = $this->publish_checkin_at( $precision, 'Blue Bottle Coffee' );
+			$post    = get_post( $post_id );
+
+			$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_precision', true ), $precision );
+			$this->assertSame(
+				array(
+					'lat'      => 37.77493,
+					'lng'      => -122.41942,
+					'accuracy' => 12,
+				),
+				json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true ),
+				$precision
+			);
+			$this->assertStringContainsString( 'https://tile.openstreetmap.org/15/5241/12665.png', $post->post_content, $precision );
+			$this->assertStringContainsString( 'daymark-checkin-map__pin', $post->post_content, $precision );
+			$this->assertStringContainsString( 'mlat=37.77493', $post->post_content, $precision );
+		}
+	}
+
+	/**
+	 * A draft's place can change between venue and city: each save keeps
+	 * only what the new choice shows.
+	 */
+	public function test_checkin_draft_can_change_how_precise_its_place_is() {
+		$post_id   = $this->publish_checkin_at( 'city', 'San Francisco', array( 'status' => 'draft' ) );
+		$publisher = new Daymark_Publisher();
+
+		$publisher->update(
+			$post_id,
+			array(
+				'primary_type'    => 'checkin',
+				'place_name'      => 'Blue Bottle Coffee',
+				'place_precision' => 'venue',
+				'location_lat'    => 37.77493,
+				'location_lng'    => -122.41942,
+				'status'          => 'draft',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_precision', true ) );
+		$this->assertSame( 37.77493, json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true )['lat'] );
+		$this->assertStringContainsString( 'tile.openstreetmap.org/15/', get_post( $post_id )->post_content );
+
+		$publisher->update(
+			$post_id,
+			array(
+				'primary_type'    => 'checkin',
+				'place_name'      => 'Mission Bay, San Francisco',
+				'place_precision' => 'neighborhood',
+				'location_lat'    => 37.77493,
+				'location_lng'    => -122.41942,
+				'status'          => 'draft',
+			)
+		);
+
+		$this->assertSame( 'neighborhood', get_post_meta( $post_id, '_daymark_place_precision', true ) );
+		$this->assertSame( 37.77, json_decode( (string) get_post_meta( $post_id, '_daymark_location', true ), true )['lat'] );
+		$this->assertStringContainsString( 'tile.openstreetmap.org/13/', get_post( $post_id )->post_content );
+	}
+
+	/** The app learns how precise a Check In's place is, to draw its card's map the same way. */
+	public function test_checkin_place_precision_on_rest_summary() {
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'primary_type', 'checkin' );
+		$request->set_param( 'place_name', 'San Francisco' );
+		$request->set_param( 'place_precision', 'city' );
+		$request->set_param( 'location_lat', 37.77493 );
+		$request->set_param( 'location_lng', -122.41942 );
+		$saved = rest_do_request( $request )->get_data();
+
+		$this->assertSame( 'city', $saved['place_precision'] );
+		$this->assertSame(
+			array(
+				'lat' => 37.8,
+				'lng' => -122.4,
+			),
+			$saved['location']
+		);
+
+		$venue = $this->publish_checkin_at( 'venue', 'Blue Bottle Coffee' );
+		$get   = new WP_REST_Request( 'GET', "/daymark/v1/marks/{$venue}" );
+		$get->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$this->assertArrayNotHasKey( 'place_precision', rest_do_request( $get )->get_data() );
+	}
+
+	/**
+	 * Simple Location gets the rounded spot too, with the zoomed-out map
+	 * zoom, and loses that zoom when the Mark stops being a Check In.
+	 */
+	public function test_simple_location_gets_the_rounded_spot_and_zoom() {
+		$this->define_geo_data_stub();
+
+		$post_id = $this->publish_checkin_at( 'city', 'San Francisco', array( 'status' => 'draft' ) );
+
+		$this->assertSame(
+			array(
+				'latitude'  => 37.8,
+				'longitude' => -122.4,
+				'address'   => 'San Francisco',
+				'zoom'      => 11,
+			),
+			Geo_Data::$calls[0][3]
+		);
+
+		( new Daymark_Publisher() )->update(
+			$post_id,
+			array(
+				'caption'      => 'Coffee time',
+				'primary_type' => 'note',
+				'status'       => 'draft',
+			)
+		);
+
+		$this->assertSame( '', get_post_meta( $post_id, '_daymark_place_precision', true ) );
+		$this->assertContains( array( 'post', $post_id, 'zoom' ), Geo_Data::$deletes );
+	}
+
+	/**
+	 * Back at the venue, the zoom Daymark gave Simple Location is taken off
+	 * again (an empty value is how Geo_Data::set_geodata() deletes one), and
+	 * a Check In that was never at an area leaves Simple Location's zoom alone.
+	 */
+	public function test_simple_location_loses_the_zoom_back_at_the_venue() {
+		$this->define_geo_data_stub();
+
+		$post_id   = $this->publish_checkin_at( 'city', 'San Francisco', array( 'status' => 'draft' ) );
+		$publisher = new Daymark_Publisher();
+		$at_venue  = array(
+			'primary_type'    => 'checkin',
+			'place_name'      => 'Blue Bottle Coffee',
+			'place_precision' => 'venue',
+			'location_lat'    => 37.77493,
+			'location_lng'    => -122.41942,
+			'status'          => 'draft',
+		);
+
+		$publisher->update( $post_id, $at_venue );
+
+		$this->assertSame(
+			array(
+				'latitude'  => 37.77493,
+				'longitude' => -122.41942,
+				'address'   => 'Blue Bottle Coffee',
+				'zoom'      => '',
+			),
+			Geo_Data::$calls[1][3]
+		);
+
+		$publisher->update( $post_id, $at_venue );
+
+		$this->assertArrayNotHasKey( 'zoom', Geo_Data::$calls[2][3] );
+	}
+
+	/**
 	 * Simple Location's own post-meta convention (issue #345) is bridged
 	 * to only when that plugin is genuinely active — its defining
 	 * `Geo_Data` class isn't loaded in this test environment, so the

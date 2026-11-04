@@ -22,6 +22,7 @@ can't act on them.
 
 ### Added
 
+- A Check In can now show its neighborhood or city instead of the exact spot: pick one under Place, and the post keeps only a rounded spot with a zoomed-out map. The named place stays the default. ([#585](https://github.com/jeffpaul/daymark/pull/585))
 - You can now record sound right in the composer: Record Audio, or Audio under the caption, records with your microphone, and you can listen back before adding it to your Mark. Daymark also takes M4A files, such as an iPhone's Voice Memos, plus AAC, Ogg, and WebM, and turns down a file it can't take as soon as you pick it, naming the formats it does take. ([#577](https://github.com/jeffpaul/daymark/pull/577))
 - Writing a Note in the app now shows how many of the 300 characters that fit in one Bluesky post are left, and says when a longer Note will be shared as a link instead, like the block editor's Note count. The caption box also grows as you type instead of scrolling inside itself. ([#573](https://github.com/jeffpaul/daymark/pull/573))
 - Leaving the composer with something written now says "Saved to Drafts," with Discard if you'd rather throw it away. A new, empty composer also links to your drafts. ([#571](https://github.com/jeffpaul/daymark/pull/571))
@@ -59,6 +60,7 @@ can't act on them.
 
 ### Fixed
 
+- A Check In draft opened from Drafts keeps its map when you publish it. Before, the map was left out of the post. ([#585](https://github.com/jeffpaul/daymark/pull/585))
 - A Mark dated before your newest posts, by its photo or by when you started its draft, now appears where that date puts it on your Timeline right after you publish it, instead of on top until the Timeline reloads. ([#582](https://github.com/jeffpaul/daymark/pull/582))
 - Share on Mastodon and Autopost for X now share a Mark you publish from the app when its Mastodon or X switch is on, including a Mark dated by an older photo. Before, both waited for a step only the block editor takes, so neither shared Marks from the app. ([#581](https://github.com/jeffpaul/daymark/pull/581))
 - A photo you remove from a Mark that has already saved now comes off the saved draft too. A photo Mark's featured image is now always its first photo; before, a photo that finished uploading later could take its place. ([#576](https://github.com/jeffpaul/daymark/pull/576))

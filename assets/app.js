@@ -811,6 +811,19 @@
 		placeName: '',
 		placeNameStatus: 'idle', // idle | loading | done — reverse-geocode lifecycle
 		placeNameEdited: false, // author typed/edited it: never overwrite with a later lookup
+		// How exactly a Check In shows its place (publishing audit R9):
+		// 'venue', the named place at its exact spot (the default), or
+		// 'neighborhood' or 'city', for which the site keeps only a rounded
+		// spot and draws a zoomed-out map with no pin. Sent as
+		// `place_precision`. See CreateScreen.choosePlacePrecision().
+		placePrecision: 'venue',
+		// The neighborhood and city the location lookup or a picked search
+		// result named ('' when not named). Each named one is offered under
+		// the Place field, and picking it puts this name in the field.
+		placeAreas: { neighborhood: '', city: '' },
+		// What the Place field said at the venue, put back when the author
+		// goes back to it from the neighborhood or city.
+		placeVenueName: '',
 		primaryType: 'note',
 		// Set by the Home launcher before navigating to #create so the
 		// composer opens pre-set to the chosen type; cleared by
@@ -2325,6 +2338,9 @@
 		state.placeName = '';
 		state.placeNameStatus = 'idle';
 		state.placeNameEdited = false;
+		state.placePrecision = 'venue';
+		state.placeAreas = { neighborhood: '', city: '' };
+		state.placeVenueName = '';
 		state.primaryType = 'note';
 		state.pendingType = null;
 		state.placeOffTypes = null;
@@ -2414,7 +2430,10 @@
 	// location…" in the field while it looks, but never blocks or errors
 	// visibly: a failed lookup leaves the field blank for the author to type
 	// by hand. Runs again when the Place switch is turned on after a
-	// location was already captured in this session.
+	// location was already captured in this session. The lookup also names
+	// the neighborhood and city, offered under the field instead of the
+	// exact spot (publishing audit R9), even when the author types a place
+	// of their own while it looks.
 	function maybeFetchPlaceName() {
 		if ('checkin' !== effectiveType() || state.placeNameEdited || 'idle' !== state.placeNameStatus || !state.location) {
 			return;
@@ -2422,14 +2441,18 @@
 		const generation = composerGeneration;
 		state.placeNameStatus = 'loading';
 		CreateScreen.refreshPlaceField();
-		const finish = (placeName) => {
+		const finish = (result) => {
 			// The composer has moved on to another Mark.
 			if (generation !== composerGeneration) {
 				return;
 			}
 			state.placeNameStatus = 'done';
+			const placeName = result && result.place_name ? String(result.place_name) : '';
 			if (placeName && !state.placeNameEdited) {
 				state.placeName = placeName;
+			}
+			if (placeName) {
+				state.placeAreas = placeAreasFrom(result);
 			}
 			CreateScreen.refreshPlaceField();
 		};
@@ -2439,8 +2462,17 @@
 				'&lng=' +
 				encodeURIComponent(state.location.lng)
 		)
-			.then((result) => finish(result && result.place_name ? result.place_name : ''))
-			.catch(() => finish(''));
+			.then((result) => finish(result))
+			.catch(() => finish(null));
+	}
+
+	// The neighborhood and city a place lookup or search result named, for
+	// state.placeAreas.
+	function placeAreasFrom(result) {
+		return {
+			neighborhood: result && result.neighborhood ? String(result.neighborhood) : '',
+			city: result && result.city ? String(result.city) : '',
+		};
 	}
 
 	// Whether the composer holds anything worth keeping as a draft: text, a
@@ -3554,6 +3586,11 @@
 			capturedAt: state.capturedAt || null,
 			location: state.location ? Object.assign({}, state.location) : null,
 			placeName: 'checkin' === effectiveType() ? state.placeName || '' : null,
+			// How exactly the Check In shows its place, and what a Mark
+			// reopened from the queue needs to offer the choice again.
+			placePrecision: state.placePrecision,
+			placeAreas: Object.assign({}, state.placeAreas),
+			placeVenueName: state.placeVenueName,
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
@@ -3645,6 +3682,9 @@
 		}
 		if (payload.placeName !== null) {
 			formData.append('place_name', payload.placeName);
+			// Sent with every save of a Check In, like its place, so going
+			// back to the venue takes an earlier neighborhood or city off.
+			formData.append('place_precision', payload.placePrecision || 'venue');
 		}
 		if (payload.inReplyTo) {
 			formData.append('in_reply_to', payload.inReplyTo);
@@ -4597,6 +4637,9 @@
 		state.placeName = payload.placeName || '';
 		state.placeNameStatus = state.placeName ? 'done' : 'idle';
 		state.placeNameEdited = false;
+		state.placePrecision = payload.placePrecision || 'venue';
+		state.placeAreas = placeAreasFrom(payload.placeAreas);
+		state.placeVenueName = payload.placeVenueName || '';
 		state.files = (payload.newFiles || []).map((f, index) => {
 			state.fileCounter += 1;
 			return {
@@ -4985,6 +5028,18 @@
 		state.placeName = mark.place_name || '';
 		state.placeNameStatus = state.placeName ? 'done' : 'idle';
 		state.placeNameEdited = false;
+		// A Check In draft keeps where it was and how exactly it shows it,
+		// so its next save doesn't lose its map or go back to the exact
+		// spot, and turning Place off and on doesn't swap in where the
+		// phone is now. Its location is only the rounded one at a
+		// neighborhood or city, and the names of the other choices aren't
+		// known, so the choice under Place comes back only with a new
+		// search pick.
+		state.placePrecision = mark.place_precision || 'venue';
+		if ('checkin' === mark.type && mark.location) {
+			state.location = { lat: mark.location.lat, lng: mark.location.lng };
+			state.locationRequested = true;
+		}
 		state.targets = Array.isArray(mark.targets) ? mark.targets.slice() : [];
 		state.categories = Array.isArray(mark.categories) ? mark.categories.map(Number) : [];
 		// The draft's saved lists are what the site will use, so every save
@@ -11135,7 +11190,93 @@
 					this.placePlaceholder()
 				)}" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="daymark-checkin-place-suggest" />
 				<ul class="daymark-tags__suggest" id="daymark-checkin-place-suggest" data-checkin-place-suggest hidden></ul>
+				<div class="daymark-checkin-precision" data-place-precision-slot>${this.placePrecisionMarkup()}</div>
 			</div>`;
+		},
+
+		// The choice under the Place field of how exactly a Check In shows
+		// where it was (publishing audit R9): the exact spot, as by default,
+		// or the neighborhood or city the location lookup or a picked search
+		// result named. Offered only with a location to round and an area
+		// name to show instead. See choosePlacePrecision().
+		placePrecisionMarkup() {
+			const areas = state.placeAreas;
+			if (!state.location || (!areas.neighborhood && !areas.city)) {
+				return '';
+			}
+			const choices = [
+				['venue', __('Exact spot', 'daymark')],
+				['neighborhood', __('Neighborhood', 'daymark')],
+				['city', __('City', 'daymark')],
+			].filter(([precision]) => 'venue' === precision || precision === state.placePrecision || areas[precision]);
+			return `<div class="daymark-filterchips" role="group" aria-label="${esc(
+				__('How exact the place is', 'daymark')
+			)}" data-place-precision>${choices
+				.map(
+					([precision, label]) =>
+						`<button type="button" class="daymark-filterchip" data-place-precision-choice="${precision}" aria-pressed="${
+							precision === state.placePrecision ? 'true' : 'false'
+						}">${esc(label)}</button>`
+				)
+				.join('')}</div>
+				<p class="daymark-checkin-precision__hint" data-place-precision-hint${
+					isPlaceArea(state.placePrecision) ? '' : ' hidden'
+				}>${esc(__('The map shows the area, not your exact spot.', 'daymark'))}</p>`;
+		},
+
+		// Redraw the choice under the Place field, when the location lookup
+		// or a search pick names a new neighborhood and city.
+		refreshPlacePrecision() {
+			const slot = root.querySelector('[data-place-precision-slot]');
+			if (slot) {
+				slot.innerHTML = this.placePrecisionMarkup();
+			}
+		},
+
+		// Show the Check In at the exact spot, or at the neighborhood or
+		// city (publishing audit R9). An area's name goes in the Place field,
+		// and going back to the exact spot puts back what the field said
+		// there. For an area the site keeps only a rounded spot; the exact
+		// one stays in state.location, so the exact spot can come back
+		// until the composer closes.
+		choosePlacePrecision(precision) {
+			const areaName = state.placeAreas[precision] || '';
+			if (precision === state.placePrecision || ('venue' !== precision && !areaName)) {
+				return;
+			}
+			if (!isPlaceArea(state.placePrecision)) {
+				state.placeVenueName = state.placeName;
+			}
+			state.placePrecision = isPlaceArea(precision) ? precision : 'venue';
+			state.placeName = isPlaceArea(precision) ? areaName : state.placeVenueName || state.placeName;
+			state.placeNameEdited = true;
+			const field = root.querySelector('[data-checkin-place]');
+			if (field) {
+				field.value = state.placeName;
+			}
+			root.querySelectorAll('[data-place-precision-choice]').forEach((button) => {
+				const on = button.getAttribute('data-place-precision-choice') === state.placePrecision;
+				button.setAttribute('aria-pressed', on ? 'true' : 'false');
+			});
+			const hint = root.querySelector('[data-place-precision-hint]');
+			if (hint) {
+				hint.hidden = !isPlaceArea(state.placePrecision);
+			}
+			this.refreshDraftsLink();
+			scheduleAutosave();
+			announce(
+				isPlaceArea(state.placePrecision)
+					? sprintf(
+							/* translators: %s: the name of a neighborhood or city. */
+							__('Showing %s. The map shows the area, not your exact spot.', 'daymark'),
+							state.placeName
+					  )
+					: sprintf(
+							/* translators: %s: the name of a place. */
+							__('Showing %s at its exact spot.', 'daymark'),
+							state.placeName
+					  )
+			);
 		},
 
 		// Bring the Place field up to date: show or remove it when Place is
@@ -11155,6 +11296,7 @@
 					field.value = state.placeName;
 				}
 				field.setAttribute('placeholder', this.placePlaceholder());
+				this.refreshPlacePrecision();
 				return;
 			}
 			slot.innerHTML = this.placeFieldMarkup();
@@ -11220,6 +11362,16 @@
 			const place = root.querySelector('[data-checkin-place]');
 			if (!place) {
 				return;
+			}
+
+			const precisionSlot = root.querySelector('[data-place-precision-slot]');
+			if (precisionSlot) {
+				precisionSlot.addEventListener('click', (event) => {
+					const choice = event.target.closest('[data-place-precision-choice]');
+					if (choice) {
+						this.choosePlacePrecision(choice.getAttribute('data-place-precision-choice'));
+					}
+				});
 			}
 
 			// Place search-as-you-type: reuses the exact Nominatim host
@@ -11313,8 +11465,15 @@
 					// over background capture" precedent
 					// titleEdited/altEdited/tagsEdited already establish.
 					state.location = { lat: picked.lat, lng: picked.lng };
+					// A picked place starts at its exact spot, with the
+					// neighborhood and city it lies in to choose instead
+					// (publishing audit R9).
+					state.placePrecision = 'venue';
+					state.placeVenueName = picked.place_name;
+					state.placeAreas = placeAreasFrom(picked);
 					input.value = picked.place_name;
 					this.hidePlaceSuggestions();
+					this.refreshPlacePrecision();
 					scheduleAutosave();
 				});
 			});
@@ -13752,14 +13911,37 @@
 	// this needs no daymark_publish_location_publicly privacy check of
 	// its own; class-publisher.php's docblock for build_map_preview_block()
 	// carries the full reasoning.
-	function renderCheckinMapPreview(location) {
-		const tile = osmTileForLocation(location.lat, location.lng, 15);
+	//
+	// A Check In shown at its neighborhood or city (publishing audit R9)
+	// has only a rounded spot: its map is zoomed out to the area, with no
+	// pin, like the one in the post itself.
+	function renderCheckinMapPreview(location, precision) {
+		const tile = osmTileForLocation(location.lat, location.lng, checkinMapZoom(precision));
 		const tileUrl = `https://tile.openstreetmap.org/${tile.zoom}/${tile.x}/${tile.y}.png`;
+		const pin = isPlaceArea(precision)
+			? ''
+			: `<span class="daymark-checkin-map__pin" style="left:${tile.pinLeft}%;top:${tile.pinTop}%" aria-hidden="true"></span>`;
 		return `<span class="daymark-recent__thumbwrap daymark-recent__thumbwrap--media daymark-recent__thumbwrap--checkin">${imgWithFallback(
 			tileUrl,
 			'daymark-recent__thumb',
 			'📍'
-		)}<span class="daymark-checkin-map__pin" style="left:${tile.pinLeft}%;top:${tile.pinTop}%" aria-hidden="true"></span></span>`;
+		)}${pin}</span>`;
+	}
+
+	// Whether a Check In shows a neighborhood or city instead of its exact
+	// spot (publishing audit R9; see state.placePrecision).
+	function isPlaceArea(precision) {
+		return 'neighborhood' === precision || 'city' === precision;
+	}
+
+	// How far in a Check In's map is zoomed: close on the exact spot, out
+	// to the neighborhood or city. Mirrors Daymark_Publisher's
+	// MAP_PREVIEW_ZOOM and PLACE_AREAS; keep them in sync.
+	function checkinMapZoom(precision) {
+		if ('neighborhood' === precision) {
+			return 13;
+		}
+		return 'city' === precision ? 11 : 15;
 	}
 
 	// One card's media slot: a real image — a Mark's own thumbnail, a
@@ -13868,7 +14050,7 @@
 			return renderLinkBanner(item);
 		}
 		if ('checkin' === kind) {
-			return item.location ? renderCheckinMapPreview(item.location) : '';
+			return item.location ? renderCheckinMapPreview(item.location, item.place_precision) : '';
 		}
 		if ('note' === kind || 'link' === kind) {
 			return '';
