@@ -5386,6 +5386,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'permalink'           => $permalink,
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'                => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
+			// The same time with its offset: what get_timeline() sorts by, and
+			// the one date that compares with a Mark's (see
+			// prepare_mark_summary()).
+			'date_gmt'            => self::iso_date_gmt( $published_at ),
 			'post_format'         => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
 			'featured_image_url'  => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
 			// The item's own detected outbound link, when it had no
@@ -5567,6 +5571,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'excerpt'            => $this->card_excerpt( $post_id ),
 			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
 			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
+			// The UTC time get_timeline() sorts by, with its offset. `date` is
+			// the site's local time while a followed post's `date` is UTC, so
+			// only this compares across the two: the app uses it to put a Mark
+			// it just published where the Timeline lists it.
+			'date_gmt'           => self::iso_date_gmt( (string) get_post_field( 'post_date_gmt', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
 			// Federation-plugin likes (stored as comments), WordPress.com
@@ -5808,6 +5817,21 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'count'   => true,
 			)
 		);
+	}
+
+	/**
+	 * A stored UTC time ('Y-m-d H:i:s', as post_date_gmt and a followed
+	 * post's published_at hold it) as ISO 8601 with its offset, the way
+	 * notifications send `date_gmt`. '' when there's no date: a draft
+	 * WordPress hasn't dated yet, or a followed post whose feed gave none.
+	 *
+	 * @param string $mysql_gmt Stored UTC time.
+	 * @return string
+	 */
+	private static function iso_date_gmt( string $mysql_gmt ): string {
+		$timestamp = '' !== $mysql_gmt && '0000-00-00 00:00:00' !== $mysql_gmt ? strtotime( $mysql_gmt . ' UTC' ) : false;
+
+		return false !== $timestamp ? gmdate( 'c', $timestamp ) : '';
 	}
 
 	/**
