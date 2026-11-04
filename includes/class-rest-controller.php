@@ -1922,8 +1922,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 *
 	 * Two more optional filter params, the Search date filter (issue #293):
 	 * `after`/`before` (an inclusive publication datetime window, REST format
-	 * 'date-time' — over post_date for Marks, over the subscription post's own
-	 * `published_at` meta otherwise). An omitted bound means "no bound"; core
+	 * 'date-time' — over post_date_gmt for Marks, over the subscription post's
+	 * own `published_at` meta otherwise, both UTC, so a bound with any offset
+	 * means the same moment for both). An omitted bound means "no bound"; core
 	 * validates the datetime shape itself, via the 'date-time' format.
 	 *
 	 * One more optional param, "On this day" (issue #294): `on_this_day`
@@ -1959,9 +1960,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// Issue #293 Search date filter:
 		// after / before — an inclusive publication datetime window
 		// (REST format 'date-time', so core validates the shape
-		// before this method runs). Normalized to MySQL
+		// before this method runs). Normalized to UTC MySQL
 		// 'Y-m-d H:i:s' for both branches: the Marks side uses
-		// a real WP date_query over post_date, the
+		// a real WP date_query over post_date_gmt, the
 		// subscription-posts side a meta range over its own
 		// `published_at` (that source's real publication time,
 		// per the existing sort below).
@@ -2073,15 +2074,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$marks_args['post__in'] = $bookmarked_post_in;
 			}
 
-			// Inclusive single-column window over post_date: "after This
-			// Week" should keep a Mark published exactly at the window's
-			// boundary, matching how the calendar reads in the app shell.
-			$marks_window = array( 'inclusive' => true );
+			// Inclusive window: "after This Week" should keep a Mark
+			// published exactly at the window's boundary, matching how the
+			// calendar reads in the app shell. The bounds are UTC (normalized
+			// above), so they're compared with post_date_gmt, as a followed
+			// post's are with its UTC published_at. post_date is the site's
+			// clock time, hours off from UTC on a site outside UTC.
+			$marks_date_query = array();
+			$marks_window     = array(
+				'column'    => 'post_date_gmt',
+				'inclusive' => true,
+			);
 			if ( '' !== $after_mysql ) {
 				$marks_window['after'] = $after_mysql;
 			}
 			if ( '' !== $before_mysql ) {
 				$marks_window['before'] = $before_mysql;
+			}
+			if ( count( $marks_window ) > 2 ) {
+				$marks_date_query[] = $marks_window;
 			}
 
 			// "On this day" (Memories, issue #294): the same calendar month
@@ -2095,15 +2106,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// own calendar. A leap-day query (Feb 29) degrades naturally to
 			// empty on non-leap prior years, since no row ever matches.
 			if ( $on_this_day ) {
-				$marks_window['month']  = (int) wp_date( 'n' );
-				$marks_window['day']    = (int) wp_date( 'j' );
-				$marks_window['before'] = wp_date( 'Y-m-d 00:00:00' );
+				$marks_date_query[] = array(
+					'column'    => 'post_date',
+					'inclusive' => true,
+					'month'     => (int) wp_date( 'n' ),
+					'day'       => (int) wp_date( 'j' ),
+					'before'    => wp_date( 'Y-m-d 00:00:00' ),
+				);
 			}
 
 			// With both an explicit after/before window and `on_this_day`
-			// set, both clauses AND together on the same post_date column.
-			if ( count( $marks_window ) > 1 ) {
-				$marks_args['date_query'] = array( $marks_window );
+			// set, both clauses AND together, each on its own column.
+			if ( ! empty( $marks_date_query ) ) {
+				$marks_args['date_query'] = $marks_date_query;
 			}
 
 			$marks_query = new WP_Query( $marks_args );
@@ -2152,8 +2167,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					$notes_args['post__in'] = $bookmarked_post_in;
 				}
 
-				if ( count( $marks_window ) > 1 ) {
-					$notes_args['date_query'] = array( $marks_window );
+				if ( ! empty( $marks_date_query ) ) {
+					$notes_args['date_query'] = $marks_date_query;
 				}
 
 				$notes_query = new WP_Query( $notes_args );
@@ -3116,7 +3131,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 					'message'                 => sanitize_text_field( (string) ( $entry['message'] ?? '' ) ),
 					'backflow_supported'      => ! empty( $entry['backflow_supported'] ),
 					'backflow_last_synced_at' => ! empty( $entry['backflow_supported'] )
-						? $backflow_sync->last_synced_at( $post_id, $connector_id )
+						? self::iso_date_site( $backflow_sync->last_synced_at( $post_id, $connector_id ) )
 						: '',
 				);
 				continue;
@@ -5384,11 +5399,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// site (this CPT has no permalink of its own; see
 			// Daymark_Subscription_Post_Type's class docblock).
 			'permalink'           => $permalink,
-			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
-			'date'                => '' !== $published_at ? mysql_to_rfc3339( $published_at ) : '',
-			// The same time with its offset: what get_timeline() sorts by, and
-			// the one date that compares with a Mark's (see
-			// prepare_mark_summary()).
+			// UTC, with its offset, so the app shows it in the phone's own
+			// time zone. Without the offset it read UTC as local time.
+			'date'                => self::iso_date_gmt( $published_at ),
+			// The same time: what get_timeline() sorts by, and what the app
+			// compares with a Mark's `date_gmt` (see prepare_mark_summary()).
 			'date_gmt'            => self::iso_date_gmt( $published_at ),
 			'post_format'         => sanitize_key( (string) get_post_meta( $post_id, 'post_format', true ) ),
 			'featured_image_url'  => esc_url_raw( (string) get_post_meta( $post_id, 'featured_image_url', true ) ),
@@ -5569,12 +5584,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// a Note Mark's actual text, only its (often timestamp-fallback)
 			// title.
 			'excerpt'            => $this->card_excerpt( $post_id ),
-			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
-			'date'               => mysql_to_rfc3339( (string) get_post_field( 'post_date', $post_id ) ),
-			// The UTC time get_timeline() sorts by, with its offset. `date` is
-			// the site's local time while a followed post's `date` is UTC, so
-			// only this compares across the two: the app uses it to put a Mark
-			// it just published where the Timeline lists it.
+			// The post's time on the site, with the site's offset, so the app
+			// shows it in the phone's own time zone. Without the offset it
+			// read the site's local time as the phone's.
+			'date'               => self::iso_date_local( $post_id ),
+			// The UTC time get_timeline() sorts by, which the app uses to put
+			// a Mark it just published where the Timeline lists it. Unlike
+			// `date`, it's '' for a draft WordPress hasn't dated yet.
 			'date_gmt'           => self::iso_date_gmt( (string) get_post_field( 'post_date_gmt', $post_id ) ),
 			'thumbnail'          => $this->mark_thumbnail_url( $post_id ),
 			'comment_count'      => $this->count_comments_of_type( $post_id, 'comment' ),
@@ -5626,8 +5642,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$captured_at = (string) get_post_meta( $post_id, '_daymark_captured_at', true );
 
 		if ( '' !== $captured_at ) {
-			// phpcs:ignore PHPCompatibility.Extensions.RemovedExtensions.mysql_DeprecatedRemoved -- WordPress core helper, not the removed mysql_ extension.
-			$summary['captured_at'] = mysql_to_rfc3339( $captured_at );
+			$summary['captured_at'] = self::iso_date_gmt( $captured_at );
 		}
 
 		$reading_time = get_post_meta( $post_id, '_daymark_reading_time_minutes', true );
@@ -5832,6 +5847,36 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$timestamp = '' !== $mysql_gmt && '0000-00-00 00:00:00' !== $mysql_gmt ? strtotime( $mysql_gmt . ' UTC' ) : false;
 
 		return false !== $timestamp ? gmdate( 'c', $timestamp ) : '';
+	}
+
+	/**
+	 * A post's own time on the site (post_date) as ISO 8601 with the site's
+	 * offset, as wp-admin shows it. Set even on a draft WordPress hasn't
+	 * dated yet. '' when WordPress can't read it.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private static function iso_date_local( int $post_id ): string {
+		$date = get_post_datetime( $post_id );
+
+		return $date ? $date->format( DATE_RFC3339 ) : '';
+	}
+
+	/**
+	 * A time saved in the site's own time zone ('Y-m-d H:i:s', as
+	 * current_time( 'mysql' ) gives it) as ISO 8601 with the site's offset.
+	 * '' when there's none or it can't be read.
+	 *
+	 * @param string $mysql_local Stored site time.
+	 * @return string
+	 */
+	private static function iso_date_site( string $mysql_local ): string {
+		$date = '' !== $mysql_local && '0000-00-00 00:00:00' !== $mysql_local
+			? date_create_immutable_from_format( 'Y-m-d H:i:s', $mysql_local, wp_timezone() )
+			: false;
+
+		return $date ? $date->format( DATE_RFC3339 ) : '';
 	}
 
 	/**
