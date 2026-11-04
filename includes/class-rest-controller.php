@@ -5550,6 +5550,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				ENT_QUOTES,
 				'UTF-8'
 			),
+			// Whether that title is only the caption's first words, made
+			// because none was typed. The app then shows the caption once
+			// instead of under a title that repeats it (publishing audit R10).
+			'title_from_caption' => $this->title_from_caption( $post_id ),
 			'permalink'          => esc_url_raw( (string) get_permalink( $post_id ) ),
 			'status'             => sanitize_key( (string) get_post_status( $post_id ) ),
 			'type'               => '' !== $note_source ? 'note' : sanitize_key( (string) get_post_meta( $post_id, '_daymark_primary_type', true ) ),
@@ -5616,6 +5620,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$summary['excerpt']   = '';
 			$summary['thumbnail'] = '';
 			$summary['protected'] = true;
+			// With no caption to show, the card keeps the title.
+			$summary['title_from_caption'] = false;
 
 			return $summary;
 		}
@@ -5832,6 +5838,38 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$timestamp = '' !== $mysql_gmt && '0000-00-00 00:00:00' !== $mysql_gmt ? strtotime( $mysql_gmt . ' UTC' ) : false;
 
 		return false !== $timestamp ? gmdate( 'c', $timestamp ) : '';
+	}
+
+	/**
+	 * Whether a post's title is only the first words of its own text, made
+	 * because none was typed: by Daymark_Publisher::generate_title() from a
+	 * Mark's caption, or by Daymark_Notes::title_for() from the text of a
+	 * Note written in the block editor.
+	 *
+	 * Worked out from the post as it is now rather than stored when the
+	 * title was made, so it also covers posts published before the app
+	 * showed the text once, and a title changed later (in wp-admin, say)
+	 * stops counting. A Mark saved before its caption was kept on its own
+	 * is checked against its excerpt, which starts with the same words.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return bool
+	 */
+	private function title_from_caption( int $post_id ): bool {
+		$title   = (string) get_post_field( 'post_title', $post_id, 'raw' );
+		$caption = (string) get_post_meta( $post_id, '_daymark_caption', true );
+
+		if ( '' === trim( wp_strip_all_tags( $caption ) ) ) {
+			$caption = (string) get_post_field( 'post_excerpt', $post_id, 'raw' );
+		}
+
+		if ( '' !== trim( wp_strip_all_tags( $caption ) ) ) {
+			return Daymark_Publisher::generate_title( $caption ) === $title;
+		}
+
+		$content = (string) get_post_field( 'post_content', $post_id, 'raw' );
+
+		return '' !== trim( wp_strip_all_tags( $content ) ) && Daymark_Notes::title_for( $content ) === $title;
 	}
 
 	/**
