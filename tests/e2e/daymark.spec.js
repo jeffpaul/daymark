@@ -3959,6 +3959,174 @@ test('publish is optimistic: back on the Timeline at once, the real card once th
 	await expect(page.locator('[data-new-posts]')).toBeHidden();
 });
 
+// --- A Mark dated earlier than the newest posts (publishing audit F6) ---
+//
+// A Mark keeps the date it was started, or its photo's own date, so once
+// it's published it belongs where that date puts it on the Timeline, not
+// on top. These tests date a draft a second or two before a Mark published
+// just now, so it belongs right below that Mark.
+
+// Publishes a Note dated now through the REST API. Returns its ID.
+async function publishNoteNow(page, caption) {
+	return page.evaluate(async (cap) => {
+		const config = window.daymarkApp;
+		const form = new FormData();
+		form.append('caption', cap);
+		form.append('status', 'publish');
+		const res = await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+			body: form,
+		});
+		return (await res.json()).id;
+	}, caption);
+}
+
+// The time, in UTC, the site dated a post, read through WordPress's own
+// REST API. ISO 8601.
+async function postDateGmt(page, id) {
+	return page.evaluate(async (postId) => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl.replace('daymark/v1/', 'wp/v2/')}posts/${postId}?_fields=date_gmt`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		return `${(await res.json()).date_gmt}Z`;
+	}, id);
+}
+
+// Saves a draft Note dated `seconds` before `isoDate`, the way a draft
+// started earlier is dated. Returns its ID.
+async function createDraftDatedBefore(page, caption, isoDate, seconds) {
+	const date = new Date(new Date(isoDate).getTime() - seconds * 1000).toISOString();
+	return page.evaluate(
+		async ({ cap, capturedAt }) => {
+			const config = window.daymarkApp;
+			const form = new FormData();
+			form.append('caption', cap);
+			form.append('status', 'draft');
+			form.append('captured_at', capturedAt);
+			const res = await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+				body: form,
+			});
+			return (await res.json()).id;
+		},
+		{ cap: caption, capturedAt: date }
+	);
+}
+
+// Holds the app's save of a saved draft (POST /marks/{id}, which Publish
+// sends for a reopened draft) until the returned function is called.
+async function holdDraftSave(page) {
+	let release;
+	const gate = new Promise((resolve) => {
+		release = resolve;
+	});
+	await page.route(/\/daymark\/v1\/marks\/\d+(\?.*)?$/, async (route) => {
+		if ('POST' === route.request().method()) {
+			await gate;
+		}
+		await route.fallback();
+	});
+	return release;
+}
+
+test('a Mark dated earlier goes where its date puts it on the Timeline after Publish, not on top', async ({
+	page,
+}) => {
+	const newer = `E2E dated newer ${RUN_ID}`;
+	const earlier = `E2E dated earlier ${RUN_ID}`;
+	const earliest = `E2E dated earliest ${RUN_ID}`;
+	const cards = page.locator('[data-recent-list] .daymark-recent__item-wrap');
+	const list = page.locator('[data-recent-list]');
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	const newerDate = await postDateGmt(page, await publishNoteNow(page, newer));
+	const earlierId = await createDraftDatedBefore(page, earlier, newerDate, 1);
+	const earliestId = await createDraftDatedBefore(page, earliest, newerDate, 2);
+
+	// Home is showing when the site confirms the Mark: it goes right below
+	// the newer one, which stays on top.
+	await page.goto(`/daymark?daymark_draft=${earlierId}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(earlier);
+	const releaseEarlier = await holdDraftSave(page);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(list).not.toHaveAttribute('aria-busy', 'true');
+	await expect(cards.first()).toContainText(newer);
+	releaseEarlier();
+	await expectPublished(page);
+	await expect(cards.nth(1)).toContainText(earlier);
+	await expect(cards.first()).toContainText(newer);
+
+	// A post is open when the site confirms the next one: back on the
+	// Timeline, it's in its place too.
+	await page.unrouteAll({ behavior: 'wait' });
+	await page.goto(`/daymark?daymark_draft=${earliestId}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(earliest);
+	const releaseEarliest = await holdDraftSave(page);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(list).not.toHaveAttribute('aria-busy', 'true');
+	await cards.first().locator('.daymark-recent__title').click();
+	await expect(page).toHaveURL(/#post$/);
+	releaseEarliest();
+	await expectPublished(page);
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/#home$/);
+	await expect(cards.nth(0)).toContainText(newer);
+	await expect(cards.nth(1)).toContainText(earlier);
+	await expect(cards.nth(2)).toContainText(earliest);
+});
+
+// Publishing returns you to Home at once, so Home's own load is often on
+// its way when the site confirms the Mark, and its answer can be from just
+// before. The Mark still goes where its date puts it.
+test('a Mark dated earlier is placed by its date when Home was loading as it published', async ({ page }) => {
+	const newer = `E2E dated load newer ${RUN_ID}`;
+	const earlier = `E2E dated load earlier ${RUN_ID}`;
+	const cards = page.locator('[data-recent-list] .daymark-recent__item-wrap');
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	const newerDate = await postDateGmt(page, await publishNoteNow(page, newer));
+	const earlierId = await createDraftDatedBefore(page, earlier, newerDate, 1);
+
+	await page.goto(`/daymark?daymark_draft=${earlierId}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(earlier);
+	const releaseSave = await holdDraftSave(page);
+	// Home's first page is read from the site before the Mark is published,
+	// and handed to the app only after.
+	let fetched;
+	const timelineFetched = new Promise((resolve) => {
+		fetched = resolve;
+	});
+	let releaseTimeline;
+	const timelineGate = new Promise((resolve) => {
+		releaseTimeline = resolve;
+	});
+	await page.route(/\/daymark\/v1\/timeline\?/, async (route) => {
+		const response = await route.fetch();
+		fetched();
+		await timelineGate;
+		await route.fulfill({ response });
+	});
+	await page.locator('[data-action="publish"]').click();
+	await expect(page).toHaveURL(/#home$/);
+	await timelineFetched;
+	releaseSave();
+	await expectPublished(page);
+	releaseTimeline();
+	await expect(page.locator('[data-recent-list]')).not.toHaveAttribute('aria-busy', 'true');
+	await expect(cards.nth(1)).toContainText(earlier);
+	await expect(cards.first()).toContainText(newer);
+});
+
 // Regression for the race surfaced (but left unfixed as out of scope) while
 // building the optimistic-publish flow above: picking a file used to fire
 // an autosave that carried the file itself, and tapping Publish while it

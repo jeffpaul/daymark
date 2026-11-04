@@ -185,6 +185,51 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertSame( 'subscription_post', $by_id[ $sub_post_id ]['item_type'] );
 	}
 
+	/**
+	 * Every item carries `date_gmt`, the UTC time the Timeline sorts it by,
+	 * with its offset, so the app can put a Mark it has just published where
+	 * the Timeline lists it (publishing audit F6). `date` can't be compared
+	 * across the two kinds: it is a Mark's local time on the site, but a
+	 * followed post's UTC time.
+	 */
+	public function test_items_carry_the_utc_time_they_are_sorted_by() {
+		update_option( 'timezone_string', 'America/Chicago' );
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-03 18:30:00' );
+		$sub_post_id     = $this->create_subscription_post( $subscription_id, '2024-01-03 20:15:00' );
+		$undated_id      = $this->create_subscription_post( $subscription_id, '', 'Undated' );
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+		$by_id = array_column( $items, null, 'id' );
+
+		$this->assertSame( '2024-01-03T18:30:00+00:00', $by_id[ $mark_id ]['date_gmt'] );
+		$this->assertSame( '2024-01-03T12:30:00', $by_id[ $mark_id ]['date'], "A Mark's date stays its local time" );
+		$this->assertSame( '2024-01-03T20:15:00+00:00', $by_id[ $sub_post_id ]['date_gmt'] );
+		$this->assertSame( '', $by_id[ $undated_id ]['date_gmt'], 'A followed post with no date has none' );
+	}
+
+	/**
+	 * Saving a Mark from the app answers with the same `date_gmt`, which is
+	 * what the app places the new card by. A draft with no date yet (the
+	 * site dates it when it's published) has none.
+	 */
+	public function test_a_saved_mark_answers_with_its_utc_time() {
+		wp_set_current_user( $this->author_a );
+
+		$published = $this->request( 'POST', '/daymark/v1/marks' );
+		$published->set_param( 'caption', 'Dated by its photo' );
+		$published->set_param( 'status', 'publish' );
+		$published->set_param( 'captured_at', '2024-01-02T09:15:00Z' );
+		$draft = $this->request( 'POST', '/daymark/v1/marks' );
+		$draft->set_param( 'caption', 'Not dated yet' );
+		$draft->set_param( 'status', 'draft' );
+
+		$this->assertSame( '2024-01-02T09:15:00+00:00', rest_do_request( $published )->get_data()['date_gmt'] );
+		$this->assertSame( '', rest_do_request( $draft )->get_data()['date_gmt'] );
+	}
+
 	/** A Mark says whether the current user wrote it, and who did. */
 	public function test_mark_items_say_whose_they_are() {
 		wp_set_current_user( $this->author_a );

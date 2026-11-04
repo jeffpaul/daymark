@@ -4210,10 +4210,13 @@
 	}
 
 	// Runs once the server confirms a Mark you saved. For a published Mark:
-	// move your Timeline's last-seen marker to it (your own new post is
-	// never "new" to you, so Home won't open below it or count it in the
-	// "N new posts" button), and if Home is on screen, put its real card at
-	// the top of the Timeline where its pending card was.
+	// if Home is on screen, put its real card where the Timeline lists it
+	// (on top, where its pending card was, unless it's dated earlier than
+	// newer posts; see HomeScreen.insertPublished()), and move your
+	// Timeline's last-seen marker to it (your own new post is never "new"
+	// to you, so Home won't open below it or count it in the "N new posts"
+	// button). The site only moves the marker to a newer post and answers
+	// with where it is, so a Mark dated earlier leaves it alone.
 	function onMarkSaved(response) {
 		if (!response || !response.id) {
 			return;
@@ -4224,12 +4227,13 @@
 		if ('publish' !== response.status) {
 			return;
 		}
-		// Locally first, so a Home load that starts before the save finishes
-		// already opens at the top.
-		timelineLastSeen = { id: Number(response.id), item_type: 'mark' };
+		// On top, the marker moves here at once too, so a Home load that
+		// starts before the save finishes already opens at the top.
+		if (HomeScreen.insertPublished(response)) {
+			timelineLastSeen = { id: Number(response.id), item_type: 'mark' };
+		}
 		queueLastSeenSave(Number(response.id));
 		flushLastSeenSave(false);
-		HomeScreen.insertPublished(response);
 	}
 
 	// --- Publish results in the message bar ---
@@ -8702,6 +8706,29 @@
 		);
 	}
 
+	// Where the Timeline lists `entry` among `items` (newest first): before
+	// the first item dated earlier, or dated the same second with a lower
+	// ID, as GET /timeline sorts them (an item with no date goes last
+	// there). By `date_gmt`, since a Mark's `date` is the site's local time
+	// but a followed post's is UTC. An entry with no date goes on top.
+	function timelineSortTime(item) {
+		const date = item && item.date_gmt ? parseDate(item.date_gmt) : null;
+		return date ? date.getTime() : null;
+	}
+
+	function timelineInsertIndex(items, entry) {
+		const time = timelineSortTime(entry);
+		if (null === time) {
+			return 0;
+		}
+		const id = Number(entry.id) || 0;
+		const index = items.findIndex((item) => {
+			const other = timelineSortTime(item);
+			return null === other || other < time || (other === time && (Number(item.id) || 0) < id);
+		});
+		return index < 0 ? items.length : index;
+	}
+
 	function timelineCardSelector(item) {
 		return 'subscription_post' === item.item_type
 			? '[data-subpost="' + CSS.escape(String(item.id)) + '"]'
@@ -9041,72 +9068,115 @@
 			}
 		},
 
-		// Put a Mark you just published at the top of the Timeline, in place
-		// of its pending card (see onMarkSaved()). When Home isn't on screen
-		// but a saved Timeline is waiting to be restored (you're on the
-		// post view or the Reblog screen it was opened from), it goes on top
-		// of that instead. A no-op when the card is already there, or when
-		// neither applies; the next load shows it either way.
+		// Put a Mark you just published where the Timeline lists it, by its
+		// date (timelineInsertIndex()): on top for one dated now, in place
+		// of its pending card (see onMarkSaved()), and further down for one
+		// dated earlier, by its photo or when its draft was started
+		// (publishing audit F6). When Home isn't on screen but a saved
+		// Timeline is waiting to be restored (you're on the post view or the
+		// Reblog screen it was opened from), it goes into that instead. A
+		// no-op when the card is already there, when neither applies, or
+		// when its place is past the posts loaded so far (a later page
+		// brings it); the next load shows it either way.
+		//
+		// Returns false when the Mark is below a newer post (or past the
+		// loaded ones), and true when it's on top or there was nothing
+		// loaded to compare it with.
 		insertPublished(item) {
 			const list = root.querySelector('[data-recent-list]');
 			const entry = Object.assign({ item_type: 'mark' }, item);
 			if (!list || !list.isConnected) {
-				if (
-					feedSnapshot &&
-					'#home' === feedSnapshot.hash &&
-					Array.isArray(feedSnapshot.items) &&
-					timelineItemIndex(feedSnapshot.items, entry) < 0
-				) {
-					feedSnapshot.items.unshift(entry);
+				if (!feedSnapshot || '#home' !== feedSnapshot.hash || !Array.isArray(feedSnapshot.items)) {
+					return true;
 				}
-				return;
+				const saved = feedSnapshot.items;
+				const there = timelineItemIndex(saved, entry);
+				if (there >= 0) {
+					return 0 === there;
+				}
+				const place = timelineInsertIndex(saved, entry);
+				if (place < saved.length || feedSnapshot.recentDone) {
+					saved.splice(place, 0, entry);
+				}
+				return 0 === place;
 			}
 			// Publishing returns you to Home at once, so Home's own load is
 			// often still on its way when the save lands, and its answer
-			// can predate the Mark. loadRecent() puts it back on top.
+			// can predate the Mark. loadRecent() puts it in its place.
 			if (this._firstPageLoad) {
 				this._publishedDuringLoad = (this._publishedDuringLoad || []).concat(entry);
 			}
-			if (!Array.isArray(this._items) || timelineItemIndex(this._items, entry) >= 0) {
-				return;
+			if (!Array.isArray(this._items)) {
+				return true;
 			}
-			this._items.unshift(entry);
+			const existing = timelineItemIndex(this._items, entry);
+			if (existing >= 0) {
+				return 0 === existing;
+			}
+			const index = timelineInsertIndex(this._items, entry);
+			if (index >= this._items.length && !this.recentDone) {
+				return 0 === index;
+			}
+			this._items.splice(index, 0, entry);
 			rememberItem(this, entry);
-			// Indexes into _items just moved down by one.
-			if (Number.isFinite(this._newestSeenIndex)) {
+			// Indexes into _items from here down just moved by one.
+			if (Number.isFinite(this._newestSeenIndex) && index <= this._newestSeenIndex) {
 				this._newestSeenIndex += 1;
 			}
-			this.hideNewPosts();
-			const date = entry.date ? parseDate(entry.date) : null;
-			const period = timelinePeriod(date || new Date());
+			// The last-seen marker moves to your own post (see onMarkSaved()),
+			// so of the new posts above where Home opened, only the ones
+			// above it are still new.
+			if (index < (this._newPostsCount || 0)) {
+				if (index > 0) {
+					this._newPostsCount = index;
+					this.updateNewPosts(this._newestSeenIndex);
+				} else {
+					this.hideNewPosts();
+				}
+			}
+			const period = timelinePeriod(parseDate(entry.date) || new Date());
 			const cardHtml = renderFeedItem(entry);
+			const header = `<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(period.label)}</h3>`;
+			// The nearest card on screen above and below it (deleting a card
+			// leaves its item in _items), with its period.
+			const neighbour = (from, step) => {
+				for (let i = from; i >= 0 && i < this._items.length; i += step) {
+					const card = list.querySelector(timelineCardSelector(this._items[i]));
+					const wrap = card && card.closest('.daymark-recent__item-wrap');
+					if (wrap) {
+						return { wrap, key: timelinePeriod(parseDate(this._items[i].date) || new Date()).key };
+					}
+				}
+				return null;
+			};
+			const above = neighbour(index - 1, -1);
+			const below = neighbour(index + 1, 1);
 			holdScrollPlace(() => {
 				if (!list.querySelector('.daymark-recent__item-wrap')) {
 					list.innerHTML = '';
 				}
-				const first = list.firstElementChild;
-				if (
-					first &&
-					first.classList.contains('daymark-recent__groupheader') &&
-					first.textContent === period.label
-				) {
-					first.insertAdjacentHTML('afterend', cardHtml);
+				if (above && above.key === period.key) {
+					above.wrap.insertAdjacentHTML('afterend', cardHtml);
+				} else if (below && below.key === period.key) {
+					// Under the header of the period it shares with the card below.
+					below.wrap.insertAdjacentHTML('beforebegin', cardHtml);
+				} else if (above) {
+					above.wrap.insertAdjacentHTML('afterend', header + cardHtml);
 				} else {
-					list.insertAdjacentHTML(
-						'afterbegin',
-						`<h3 class="daymark-section-heading daymark-recent__groupheader">${esc(period.label)}</h3>${cardHtml}`
-					);
-					if (null === this._lastGroupKey) {
-						this._lastGroupKey = period.key;
-					}
+					list.insertAdjacentHTML('afterbegin', header + cardHtml);
 				}
 			});
+			if (index === this._items.length - 1) {
+				// Last on the list: a page loaded later carries on from its period.
+				this._lastGroupKey = period.key;
+			}
 			observeFeaturedImages(this, list);
 			this.observeSeen();
-			// Reading from the top: the new Mark is where you are.
+			// Reading from the top: a new Mark on top is where you are.
 			if (window.scrollY < 4) {
 				this.notePosition();
 			}
+			return 0 === index;
 		},
 
 		// Rebuild the Timeline from a saved snapshot (see feedSnapshot)
@@ -9238,12 +9308,18 @@
 				const fetched = arr.length;
 				const missed = (this._publishedDuringLoad || []).filter((entry) => timelineItemIndex(arr, entry) < 0);
 				this._publishedDuringLoad = [];
-				if (missed.length) {
-					arr = missed.reverse().concat(arr);
-					if (anchorIndex >= 0) {
-						anchorIndex += missed.length;
+				missed.forEach((entry) => {
+					const index = timelineInsertIndex(arr, entry);
+					// Past the last item sent: a later page brings it, unless
+					// this was the last one.
+					if (index >= arr.length && fetched >= loaded) {
+						return;
 					}
-				}
+					arr.splice(index, 0, entry);
+					if (anchorIndex >= 0 && index <= anchorIndex) {
+						anchorIndex += 1;
+					}
+				});
 				this._bySubId.clear();
 				this._byMarkId.clear();
 				this._lastGroupKey = null;
