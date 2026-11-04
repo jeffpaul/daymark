@@ -390,10 +390,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				'callback'            => array( $this, 'location_search' ),
 				'permission_callback' => array( $this, 'permissions_check' ),
 				'args'                => array(
-					'q' => array(
+					'q'   => array(
 						'type'              => 'string',
 						'required'          => true,
 						'sanitize_callback' => 'sanitize_text_field',
+					),
+					// Where the composer is, so places near it rank first.
+					'lat' => array(
+						'type'              => 'number',
+						'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
+					),
+					'lng' => array(
+						'type'              => 'number',
+						'sanitize_callback' => array( __CLASS__, 'sanitize_optional_float' ),
 					),
 				),
 			)
@@ -2515,6 +2524,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * sharing the same rate-limit bucket as the reverse lookup above —
 	 * one OSM dependency, one outbound-request risk class.
 	 *
+	 * An optional `lat`/`lng` (where the composer is) ranks places near
+	 * it first. It is left out with location capture off, as the reverse
+	 * lookup refuses then: no coordinates go to the geocoder.
+	 *
 	 * @since 0.17.0
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -2533,9 +2546,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return rest_ensure_response( array( 'results' => array() ) );
 		}
 
+		$lat  = $request->get_param( 'lat' );
+		$lng  = $request->get_param( 'lng' );
+		$near = Daymark_Settings::capture_location() && is_numeric( $lat ) && is_numeric( $lng );
+
 		return rest_ensure_response(
 			array(
-				'results' => Daymark_Geocoder::search( $query ),
+				'results' => Daymark_Geocoder::search( $query, 5, $near ? (float) $lat : null, $near ? (float) $lng : null ),
 			)
 		);
 	}

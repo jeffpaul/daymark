@@ -811,6 +811,10 @@
 		placeName: '',
 		placeNameStatus: 'idle', // idle | loading | done — reverse-geocode lifecycle
 		placeNameEdited: false, // author typed/edited it: never overwrite with a later lookup
+		// Where the place typed in the Place field is, when its name matches
+		// a place the search found ({ lat, lng }); saved instead of
+		// state.location. See matchTypedPlace().
+		matchedPlaceLocation: null,
 		primaryType: 'note',
 		// Set by the Home launcher before navigating to #create so the
 		// composer opens pre-set to the chosen type; cleared by
@@ -2325,6 +2329,8 @@
 		state.placeName = '';
 		state.placeNameStatus = 'idle';
 		state.placeNameEdited = false;
+		state.matchedPlaceLocation = null;
+		cancelPlaceSearch();
 		state.primaryType = 'note';
 		state.pendingType = null;
 		state.placeOffTypes = null;
@@ -2441,6 +2447,140 @@
 		)
 			.then((result) => finish(result && result.place_name ? result.place_name : ''))
 			.catch(() => finish(''));
+	}
+
+	// Where a save puts the Check In: the place typed in the Place field
+	// when its name matched a place the search found, else state.location
+	// (the phone's spot, a place picked from the list, or a reopened
+	// draft's saved spot).
+	function checkinLocation() {
+		return state.matchedPlaceLocation || state.location;
+	}
+
+	// The Place field's search-as-you-type (see bindPlaceFieldEvents()):
+	// the search waiting out the typing pause (`pending`, run by `timer`),
+	// the one running, and a count that makes an answer stale once a newer
+	// search starts, a place is picked, or the composer moves on.
+	const PLACE_SEARCH_DEBOUNCE_MS = 400;
+	// How long Publish waits for a search still running before it saves
+	// with what it has (see settlePlaceSearch()).
+	const PLACE_SEARCH_PUBLISH_WAIT_MS = 2500;
+	const placeSearch = { timer: null, pending: null, running: null, seq: 0 };
+
+	// Searches for places named like `query`, nearest the composer's spot
+	// first, and lists them under the Place field. Debounced and
+	// length-gated by the caller (never a fetch per keystroke) to stay well
+	// inside Nominatim's usage policy, the same posture the reverse lookup
+	// takes. Resolves once the answer is shown.
+	function runPlaceSearch(query) {
+		clearTimeout(placeSearch.timer);
+		placeSearch.timer = null;
+		placeSearch.pending = null;
+		const seq = ++placeSearch.seq;
+		if (query.length < 3) {
+			CreateScreen.hidePlaceSuggestions();
+			return Promise.resolve();
+		}
+		const near = state.location
+			? '&lat=' + encodeURIComponent(state.location.lat) + '&lng=' + encodeURIComponent(state.location.lng)
+			: '';
+		const running = apiGet('location/search?q=' + encodeURIComponent(query) + near)
+			.then((result) => {
+				if (seq !== placeSearch.seq) {
+					return;
+				}
+				const results = Array.isArray(result && result.results) ? result.results : [];
+				CreateScreen.renderPlaceSuggestions(results);
+				matchTypedPlace(query, results);
+			})
+			.catch(() => {
+				if (seq === placeSearch.seq) {
+					CreateScreen.hidePlaceSuggestions();
+				}
+			})
+			.finally(() => {
+				if (placeSearch.running === running) {
+					placeSearch.running = null;
+				}
+			});
+		placeSearch.running = running;
+		return running;
+	}
+
+	// Search for `query` once typing pauses.
+	function schedulePlaceSearch(query) {
+		clearTimeout(placeSearch.timer);
+		placeSearch.pending = () => runPlaceSearch(query);
+		placeSearch.timer = setTimeout(placeSearch.pending, PLACE_SEARCH_DEBOUNCE_MS);
+	}
+
+	// Drops a waiting search and makes a running one's answer stale.
+	function cancelPlaceSearch() {
+		clearTimeout(placeSearch.timer);
+		placeSearch.timer = null;
+		placeSearch.pending = null;
+		placeSearch.running = null;
+		placeSearch.seq += 1;
+	}
+
+	// Before Publish or Save as draft sends: run a search still waiting
+	// out the typing pause, and wait for one still running (at most
+	// PLACE_SEARCH_PUBLISH_WAIT_MS), so a place typed just before the tap
+	// can still match. Never fails: a slow or failed search saves with the
+	// phone's spot, as before.
+	async function settlePlaceSearch() {
+		if (placeSearch.pending) {
+			placeSearch.pending();
+		}
+		if (placeSearch.running) {
+			await Promise.race([
+				placeSearch.running,
+				new Promise((resolve) => setTimeout(resolve, PLACE_SEARCH_PUBLISH_WAIT_MS)),
+			]);
+		}
+	}
+
+	// A place name as the match compares it: no accents, case, or extra
+	// spaces.
+	function placeNameKey(name) {
+		return String(name || '')
+			.normalize('NFKD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.toLowerCase()
+			.replace(/\s+/g, ' ')
+			.trim();
+	}
+
+	// A Place typed rather than picked, whose name matches a place the
+	// search found for it, puts the Check In at that place instead of the
+	// phone's exact spot: a neighborhood or city you name is where the map
+	// points. With several places of that name, the one nearest the phone.
+	// Only for the words in the field now: typing again drops the match
+	// (see bindPlaceFieldEvents()), and a place picked from the list wins.
+	function matchTypedPlace(query, results) {
+		const key = placeNameKey(query);
+		if (!key || key !== placeNameKey(state.placeName)) {
+			return;
+		}
+		const matches = results.filter(
+			(result) =>
+				placeNameKey(result.place_name) === key && Number.isFinite(result.lat) && Number.isFinite(result.lng)
+		);
+		if (!matches.length) {
+			return;
+		}
+		const from = state.location;
+		// Near enough for picking the closer of a few places: degrees of
+		// longitude shrink toward the poles.
+		const distance = (place) =>
+			from
+				? Math.hypot(place.lat - from.lat, (place.lng - from.lng) * Math.cos((from.lat * Math.PI) / 180))
+				: 0;
+		const nearest = matches.reduce((best, place) => (distance(place) < distance(best) ? place : best));
+		state.matchedPlaceLocation = { lat: nearest.lat, lng: nearest.lng };
+		if (!composerPublishing) {
+			scheduleAutosave();
+		}
 	}
 
 	// Whether the composer holds anything worth keeping as a draft: text, a
@@ -3552,7 +3692,7 @@
 			// all share this one builder), so it survives exactly like every
 			// other composer field does.
 			capturedAt: state.capturedAt || null,
-			location: state.location ? Object.assign({}, state.location) : null,
+			location: checkinLocation() ? Object.assign({}, checkinLocation()) : null,
 			placeName: 'checkin' === effectiveType() ? state.placeName || '' : null,
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
@@ -11235,27 +11375,17 @@
 			// dependency for both directions, rather than a second
 			// geocoding service just for search — so a Checkin author can
 			// pick a real venue instead of only editing the quietly
-			// reverse-geocoded guess. Debounced and length-gated (never a
-			// fetch per keystroke) to stay well inside Nominatim's usage
-			// policy, the same posture the reverse lookup already takes.
-			const runPlaceSearch = debounce((query) => {
-				if (query.length < 3) {
-					this.hidePlaceSuggestions();
-					return;
-				}
-				apiGet('location/search?q=' + encodeURIComponent(query))
-					.then((result) =>
-						this.renderPlaceSuggestions(Array.isArray(result && result.results) ? result.results : [])
-					)
-					.catch(() => this.hidePlaceSuggestions());
-			}, 400);
-
+			// reverse-geocoded guess. See runPlaceSearch(); a typed name
+			// that matches a place found puts the Check In there (see
+			// matchTypedPlace()).
 			place.addEventListener('input', () => {
 				state.placeName = place.value;
 				state.placeNameEdited = true;
+				// A match was for the words before this change.
+				state.matchedPlaceLocation = null;
 				this.refreshDraftsLink();
 				scheduleAutosave();
-				runPlaceSearch(place.value.trim());
+				schedulePlaceSearch(place.value.trim());
 			});
 			place.addEventListener('keydown', (event) => {
 				if ('Escape' === event.key) {
@@ -11320,7 +11450,11 @@
 					// captured device GPS — the same "explicit input wins
 					// over background capture" precedent
 					// titleEdited/altEdited/tagsEdited already establish.
+					// It also wins over a typed name's match, and over one a
+					// search still running would find.
 					state.location = { lat: picked.lat, lng: picked.lng };
+					state.matchedPlaceLocation = null;
+					cancelPlaceSearch();
 					input.value = picked.place_name;
 					this.hidePlaceSuggestions();
 					scheduleAutosave();
@@ -16611,6 +16745,11 @@
 			autosaveState.timer = null;
 			const generation = composerGeneration;
 			await waitForPendingAutosave();
+			// A Place typed just before the tap can still match a place
+			// (see matchTypedPlace()).
+			if ('checkin' === effectiveType()) {
+				await settlePlaceSearch();
+			}
 			if (generation !== composerGeneration) {
 				return; // The composer was cleared meanwhile; nothing left to send.
 			}

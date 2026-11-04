@@ -1791,6 +1791,146 @@ test('Checkin Place field shows and picks a search suggestion', async ({ page })
 	await expect(page.locator('[data-checkin-place-suggest]')).toBeHidden();
 });
 
+// A Place typed without picking it from the list puts the Check In at that
+// place when its name matches a place the search found, instead of at the
+// phone's exact spot. With two places of that name, the one nearer the
+// phone wins, and the search asks for places near the phone first. Typing
+// on to a name nothing matches goes back to the phone's spot, and a place
+// picked from the list still wins.
+test.describe('a Check In at a place typed by name', () => {
+	const PHONE = { latitude: 37.77493, longitude: -122.41942 };
+	test.use({ geolocation: PHONE, permissions: ['geolocation'] });
+
+	const SAN_DIEGO = {
+		place_name: 'Mission Bay',
+		address: 'Mission Bay, San Diego, CA, USA',
+		lat: 32.7767,
+		lng: -117.2264,
+	};
+	const SAN_FRANCISCO = {
+		place_name: 'Mission Bay',
+		address: 'Mission Bay, San Francisco, CA, USA',
+		lat: 37.7706,
+		lng: -122.3915,
+	};
+	const PARK = {
+		place_name: 'Mission Bay Park',
+		address: 'Mission Bay Park, San Diego, CA, USA',
+		lat: 32.7792,
+		lng: -117.2229,
+	};
+
+	// Answers the Place lookups as Nominatim would, after `delay` ms, and
+	// keeps each search's URL in `searches`.
+	async function mockPlaceLookups(page, searches, delay = 0) {
+		await page.route('**/daymark/v1/location/reverse-geocode*', (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ place_name: 'Civic Center Plaza' }),
+			})
+		);
+		await page.route('**/daymark/v1/location/search*', async (route) => {
+			const url = new URL(route.request().url());
+			searches.push(url);
+			const query = (url.searchParams.get('q') || '').toLowerCase();
+			if (delay) {
+				await new Promise((resolve) => setTimeout(resolve, delay));
+			}
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					results: query.startsWith('mission bay') ? [SAN_DIEGO, SAN_FRANCISCO, PARK] : [],
+				}),
+			});
+		});
+	}
+
+	// One field of a Mark save's form body, or null when it wasn't sent.
+	function sentField(request, name) {
+		const match = (request.postData() || '').match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`));
+		return match ? match[1] : null;
+	}
+
+	// The save Publish sends (an autosave of the draft is a 'draft').
+	function publishSave(page) {
+		return page.waitForRequest(
+			(request) =>
+				'POST' === request.method() &&
+				/\/daymark\/v1\/marks(\/\d+)?(\?|$)/.test(request.url()) &&
+				'publish' === sentField(request, 'status')
+		);
+	}
+
+	async function openCheckIn(page, searches, delay) {
+		await mockPlaceLookups(page, searches, delay);
+		await loginAs(page);
+		await page.goto('/daymark');
+		await openComposer(page, 'checkin');
+		// The phone's spot has come in and been named.
+		const place = page.locator('[data-checkin-place]');
+		await expect(place).toHaveValue('Civic Center Plaza');
+		return place;
+	}
+
+	test('uses the matching place nearest the phone, even when Publish is tapped right away', async ({ page }) => {
+		const searches = [];
+		const place = await openCheckIn(page, searches, 800);
+
+		await place.fill('mission bay');
+		const saved = publishSave(page);
+		await page.locator('[data-action="publish"]').click();
+		const request = await saved;
+
+		expect(sentField(request, 'place_name')).toBe('mission bay');
+		expect(sentField(request, 'location_lat')).toBe(String(SAN_FRANCISCO.lat));
+		expect(sentField(request, 'location_lng')).toBe(String(SAN_FRANCISCO.lng));
+		// A named place has no GPS accuracy of its own.
+		expect(sentField(request, 'location_accuracy')).toBeNull();
+		// The search asked for places near the phone first.
+		expect(searches.at(-1).searchParams.get('q')).toBe('mission bay');
+		expect(searches.at(-1).searchParams.get('lat')).toBe(String(PHONE.latitude));
+		expect(searches.at(-1).searchParams.get('lng')).toBe(String(PHONE.longitude));
+		await expectPublished(page);
+	});
+
+	test("goes back to the phone's spot when the name is typed on past the match", async ({ page }) => {
+		const searches = [];
+		const place = await openCheckIn(page, searches);
+
+		await place.fill('Mission Bay');
+		await expect(page.locator('[data-checkin-place-pick]')).toHaveCount(3);
+		await place.fill('Mission Bay Lofts');
+		const saved = publishSave(page);
+		await page.locator('[data-action="publish"]').click();
+		const request = await saved;
+
+		expect(sentField(request, 'place_name')).toBe('Mission Bay Lofts');
+		expect(sentField(request, 'location_lat')).toBe(String(PHONE.latitude));
+		expect(sentField(request, 'location_lng')).toBe(String(PHONE.longitude));
+		await expectPublished(page);
+	});
+
+	test('a place picked from the list still wins over the typed match', async ({ page }) => {
+		const searches = [];
+		const place = await openCheckIn(page, searches);
+
+		await place.fill('Mission Bay');
+		const picks = page.locator('[data-checkin-place-pick]');
+		await expect(picks).toHaveCount(3);
+		await picks.first().click();
+		await expect(place).toHaveValue('Mission Bay');
+		const saved = publishSave(page);
+		await page.locator('[data-action="publish"]').click();
+		const request = await saved;
+
+		expect(sentField(request, 'location_lat')).toBe(String(SAN_DIEGO.lat));
+		expect(sentField(request, 'location_lng')).toBe(String(SAN_DIEGO.lng));
+		await expectPublished(page);
+	});
+});
+
 // A Check In draft opened from Drafts keeps where it was, so publishing it
 // keeps its map. The composer used to open it without its location, and the
 // next save took the map out of the post. Turning Place off and on keeps the
