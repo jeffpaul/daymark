@@ -59,6 +59,7 @@ can't act on them.
 
 ### Fixed
 
+- Share on Mastodon and Autopost for X now share a Mark you publish from the app when its Mastodon or X switch is on, including a Mark dated by an older photo. Before, both waited for a step only the block editor takes, so neither shared Marks from the app. ([#581](https://github.com/jeffpaul/daymark/pull/581))
 - A photo you remove from a Mark that has already saved now comes off the saved draft too. A photo Mark's featured image is now always its first photo; before, a photo that finished uploading later could take its place. ([#576](https://github.com/jeffpaul/daymark/pull/576))
 - Emptying a Mark that has already saved no longer shows "Not saved yet — will retry" or leaves a "Couldn't save draft" card. A new Mark you empty is discarded when you leave, and a draft you reopened keeps what it last saved. ([#576](https://github.com/jeffpaul/daymark/pull/576))
 - Adding a photo to a photo draft you reopened now makes it a gallery, not a mixed-media Mark. ([#576](https://github.com/jeffpaul/daymark/pull/576))
