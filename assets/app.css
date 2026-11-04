@@ -1657,6 +1657,12 @@ h2[tabindex='-1']:focus {
 	overflow-wrap: anywhere;
 }
 
+/* A Mark's caption shown where a title made from its first words would be
+   (markCardText(), app.js): the post's own text, so not bold. */
+.daymark-recent__title--caption {
+	font-weight: 400;
+}
+
 /* A published card is a plain container (not one big <button>), so each
    control inside it is reachable on its own by a screen reader. Its title
    is the "open this post" button, and that button's ::after stretches over
