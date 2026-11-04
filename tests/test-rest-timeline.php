@@ -188,9 +188,7 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 	/**
 	 * Every item carries `date_gmt`, the UTC time the Timeline sorts it by,
 	 * with its offset, so the app can put a Mark it has just published where
-	 * the Timeline lists it (publishing audit F6). `date` can't be compared
-	 * across the two kinds: it is a Mark's local time on the site, but a
-	 * followed post's UTC time.
+	 * the Timeline lists it (publishing audit F6).
 	 */
 	public function test_items_carry_the_utc_time_they_are_sorted_by() {
 		update_option( 'timezone_string', 'America/Chicago' );
@@ -205,9 +203,51 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$by_id = array_column( $items, null, 'id' );
 
 		$this->assertSame( '2024-01-03T18:30:00+00:00', $by_id[ $mark_id ]['date_gmt'] );
-		$this->assertSame( '2024-01-03T12:30:00', $by_id[ $mark_id ]['date'], "A Mark's date stays its local time" );
 		$this->assertSame( '2024-01-03T20:15:00+00:00', $by_id[ $sub_post_id ]['date_gmt'] );
 		$this->assertSame( '', $by_id[ $undated_id ]['date_gmt'], 'A followed post with no date has none' );
+	}
+
+	/**
+	 * Every time an item carries says which time zone it's in, so a phone
+	 * in another time zone shows it right: a Mark's `date` is its time on
+	 * the site with the site's offset, and a followed post's `date` and a
+	 * Mark's `captured_at` are UTC. Without an offset, the app read each of
+	 * them as the phone's own local time.
+	 */
+	public function test_item_times_carry_their_offset() {
+		update_option( 'timezone_string', 'America/Chicago' );
+		wp_set_current_user( $this->author_a );
+
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$mark_id         = $this->create_mark( '2024-01-03 18:30:00' );
+		$sub_post_id     = $this->create_subscription_post( $subscription_id, '2024-01-03 20:15:00' );
+		$undated_id      = $this->create_subscription_post( $subscription_id, '', 'Undated' );
+		update_post_meta( $mark_id, '_daymark_captured_at', '2024-01-03 18:29:00' );
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+		$by_id = array_column( $items, null, 'id' );
+
+		$this->assertSame( '2024-01-03T12:30:00-06:00', $by_id[ $mark_id ]['date'] );
+		$this->assertSame( '2024-01-03T18:29:00+00:00', $by_id[ $mark_id ]['captured_at'] );
+		$this->assertSame( '2024-01-03T20:15:00+00:00', $by_id[ $sub_post_id ]['date'] );
+		$this->assertSame( '', $by_id[ $undated_id ]['date'], 'A followed post with no date has none' );
+	}
+
+	/**
+	 * A draft WordPress hasn't dated yet still has its local time on the
+	 * site, with the site's offset.
+	 */
+	public function test_a_draft_mark_time_carries_its_offset() {
+		update_option( 'timezone_string', 'America/Chicago' );
+		wp_set_current_user( $this->author_a );
+
+		$draft = $this->request( 'POST', '/daymark/v1/marks' );
+		$draft->set_param( 'caption', 'Not dated yet' );
+		$draft->set_param( 'status', 'draft' );
+		$data = rest_do_request( $draft )->get_data();
+
+		$this->assertSame( '', $data['date_gmt'] );
+		$this->assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-0[56]:00$/', $data['date'] );
 	}
 
 	/**
@@ -1252,6 +1292,30 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$request->set_param( 'before', '2024-01-03 00:00:00' );
 		$this->assertSame(
 			array( $newest, $boundary ),
+			array_column( rest_do_request( $request )->get_data(), 'id' )
+		);
+	}
+
+	/**
+	 * The window is a span of real time, so on a site outside UTC a Mark is
+	 * matched by when it was published, as a followed post is, not by its
+	 * clock time on the site. The app sends the bounds in UTC: Search's
+	 * "Today" left out Marks from the first hours of the day.
+	 */
+	public function test_date_window_matches_marks_by_when_they_were_published() {
+		update_option( 'timezone_string', 'America/Chicago' );
+		wp_set_current_user( $this->author_a );
+
+		// Midnight on January 3 in Chicago is 06:00 UTC.
+		$this->create_mark( '2024-01-03 05:30:00', 'Half an hour before midnight' );
+		$after_midnight = $this->create_mark( '2024-01-03 06:30:00', 'Half an hour after midnight' );
+		$this->create_mark( '2024-01-04 06:30:00', 'The next day' );
+
+		$request = $this->request( 'GET', '/daymark/v1/timeline' );
+		$request->set_param( 'after', '2024-01-03T06:00:00Z' );
+		$request->set_param( 'before', '2024-01-04T05:59:59Z' );
+		$this->assertSame(
+			array( $after_midnight ),
 			array_column( rest_do_request( $request )->get_data(), 'id' )
 		);
 	}

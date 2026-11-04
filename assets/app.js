@@ -8716,8 +8716,9 @@
 	// Where the Timeline lists `entry` among `items` (newest first): before
 	// the first item dated earlier, or dated the same second with a lower
 	// ID, as GET /timeline sorts them (an item with no date goes last
-	// there). By `date_gmt`, since a Mark's `date` is the site's local time
-	// but a followed post's is UTC. An entry with no date goes on top.
+	// there). By `date_gmt`, the time it sorts by, which unlike `date` is
+	// empty for a draft WordPress hasn't dated yet. An entry with no date
+	// goes on top.
 	function timelineSortTime(item) {
 		const date = item && item.date_gmt ? parseDate(item.date_gmt) : null;
 		return date ? date.getTime() : null;

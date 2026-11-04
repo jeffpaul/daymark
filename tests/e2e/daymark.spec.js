@@ -1995,6 +1995,39 @@ test('Timeline groups same-day cards under a single "Today" header', async ({ pa
 	);
 });
 
+// A phone in another time zone than the site's shows a post's real time.
+// The site used to send times with no offset, which the app read as the
+// phone's own local time: on a phone nine hours ahead of the site, a Mark
+// published just now read "9h ago".
+test.describe('on a phone in another time zone than the site', () => {
+	test.use({ timezoneId: 'Asia/Tokyo' });
+
+	test('a card shows when its Mark was published', async ({ page }) => {
+		const caption = `E2E time zone ${RUN_ID}`;
+
+		await loginAs(page);
+		await page.goto('/daymark');
+		const saved = await page.evaluate(async (cap) => {
+			const config = window.daymarkApp;
+			const res = await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption: cap, primary_type: 'note' }),
+			});
+			return res.json();
+		}, caption);
+		await page.goto('/daymark');
+
+		const time = page
+			.locator('[data-recent-list] .daymark-recent__item-wrap')
+			.filter({ hasText: caption })
+			.locator('.daymark-recent__timestamprow time');
+		await expect(time).toHaveAttribute('datetime', new Date(saved.date_gmt).toISOString());
+		await expect(time).toHaveText(/^(Just now|1m ago)$/);
+	});
+});
+
 // Categories: the "File under" picker files a Mark under a chosen
 // category and remembers it as the per-type default for the next Mark.
 // (CI seeds the "E2E Photos"/"E2E Travel" categories; the picker only
