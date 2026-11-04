@@ -83,9 +83,11 @@ class Daymark_Publish_Helpers {
 
 	/**
 	 * Controllable adapters: active publishing plugins Daymark can drive
-	 * per-Mark through the plugin's OWN public control filter (never by
-	 * writing the plugin's private meta). Only these get an in-app toggle;
-	 * other detected plugins stay awareness-only.
+	 * per-Mark through the plugin's OWN public per-post control: its
+	 * filter, or the per-post switch its own editor panel saves
+	 * (ATmosphere's `atmosphere_disabled`, Share on Mastodon's
+	 * `_share_on_mastodon`), never the plugin's internal state. Only these
+	 * get an in-app toggle; other detected plugins stay awareness-only.
 	 *
 	 * Each `bind` registers the plugin's control filter with a callback
 	 * that defers to Daymark's per-post selection for Mark posts and
@@ -128,17 +130,10 @@ class Daymark_Publish_Helpers {
 					add_action(
 						'transition_post_status',
 						static function ( $new_status, $old_status, $post ) {
-							if ( 'publish' !== $new_status || ! $post instanceof WP_Post ) {
-								return;
-							}
-							if ( '1' !== (string) get_post_meta( $post->ID, '_daymark_is_mark', true ) ) {
-								return;
-							}
-
-							$selection = json_decode( (string) get_post_meta( $post->ID, self::CONTROL_META, true ), true );
+							$selection = self::publishing_selection( $new_status, $post );
 
 							// No Daymark selection → leave ATmosphere's own behavior alone.
-							if ( ! is_array( $selection ) ) {
+							if ( null === $selection ) {
 								return;
 							}
 
@@ -153,11 +148,11 @@ class Daymark_Publish_Helpers {
 					);
 				},
 			),
-			// Share on Mastodon and Autopost for X start off. Both wait for
-			// the block editor's own save step (`rest_after_insert_post`)
-			// before sharing a post saved over the REST API, and Daymark's
-			// own REST route doesn't fire it, so neither shares a Mark
-			// published from the app on its own today.
+			// Share on Mastodon and Autopost for X start off. Both put off
+			// sharing a post saved over the REST API until
+			// `rest_after_insert_{post_type}`, which Daymark's own Mark
+			// routes fire once a save from the app is finished (see
+			// Daymark_REST_Controller::fire_rest_after_insert()).
 			'share-on-mastodon'     => array(
 				'label'   => 'Share on Mastodon',
 				'network' => 'Mastodon',
@@ -169,6 +164,25 @@ class Daymark_Publish_Helpers {
 						},
 						10,
 						2
+					);
+
+					// Share on Mastodon skips a post dated more than 12 hours
+					// ago unless the post's own switch, `_share_on_mastodon`
+					// (what its block editor panel saves), is on, and it checks
+					// that before the filter above. A Mark dated by an older
+					// photo, or a draft started yesterday, is that old, so the
+					// Mark's choice is copied into that switch as it goes live.
+					add_action(
+						'transition_post_status',
+						static function ( $new_status, $old_status, $post ) {
+							$selection = self::publishing_selection( $new_status, $post );
+
+							if ( null !== $selection ) {
+								update_post_meta( $post->ID, '_share_on_mastodon', in_array( 'share-on-mastodon', $selection, true ) ? '1' : '0' );
+							}
+						},
+						5,
+						3
 					);
 				},
 			),
@@ -332,18 +346,47 @@ class Daymark_Publish_Helpers {
 	 * @return bool
 	 */
 	private static function decide( int $post_id, string $id, bool $fallback ): bool {
-		if ( '1' !== (string) get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
-			return $fallback;
-		}
-
-		$selection = json_decode( (string) get_post_meta( $post_id, self::CONTROL_META, true ), true );
+		$selection = self::selection( $post_id );
 
 		// No recorded selection → don't interfere with the plugin's default.
-		if ( ! is_array( $selection ) ) {
+		if ( null === $selection ) {
 			return $fallback;
 		}
 
 		return in_array( $id, $selection, true );
+	}
+
+	/**
+	 * The helper ids a Mark recorded, or null when the post isn't a Mark or
+	 * recorded no choice (an API caller that left `publish_helpers` out).
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string[]|null
+	 */
+	private static function selection( int $post_id ): ?array {
+		if ( '1' !== (string) get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+			return null;
+		}
+
+		$selection = json_decode( (string) get_post_meta( $post_id, self::CONTROL_META, true ), true );
+
+		return is_array( $selection ) ? $selection : null;
+	}
+
+	/**
+	 * For a `transition_post_status` callback: the recorded helper ids of a
+	 * Mark that is going live, or null for anything else.
+	 *
+	 * @param string $new_status The post's new status.
+	 * @param mixed  $post       The post.
+	 * @return string[]|null
+	 */
+	private static function publishing_selection( string $new_status, $post ): ?array {
+		if ( 'publish' !== $new_status || ! $post instanceof WP_Post ) {
+			return null;
+		}
+
+		return self::selection( $post->ID );
 	}
 
 	/**

@@ -1659,9 +1659,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 *
 	 * Accepts multipart file uploads plus caption/type/target fields and
 	 * delegates to Daymark_Publisher. The composer's autosave also calls this
-	 * (with `status=draft` and `autosave=1`, the latter only changing which
-	 * rate-limit bucket applies) to create the first draft snapshot of an
-	 * in-progress Mark before the user taps Publish or Save as Draft.
+	 * (with `status=draft` and `autosave=1`, which picks the autosave
+	 * rate-limit bucket and skips fire_rest_after_insert()) to create the
+	 * first draft snapshot of an in-progress Mark before the user taps
+	 * Publish or Save as Draft.
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -1754,6 +1755,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		if ( is_wp_error( $post_id ) ) {
 			return $post_id;
+		}
+
+		if ( ! $is_autosave ) {
+			$this->fire_rest_after_insert( (int) $post_id, $request, true );
 		}
 
 		$response = rest_ensure_response( $this->prepare_mark_summary( $post_id ) );
@@ -3950,10 +3955,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	/**
 	 * POST/PUT /daymark/v1/marks/{id} — update a Mark from the composer.
 	 *
-	 * The composer's autosave also calls this (with `autosave=1`, which only
-	 * changes which rate-limit bucket applies) on every subsequent save of an
-	 * in-progress Mark once autosave has created its first draft via
-	 * create_mark().
+	 * The composer's autosave also calls this (with `autosave=1`, which picks
+	 * the autosave rate-limit bucket and skips fire_rest_after_insert()) on
+	 * every subsequent save of an in-progress Mark once autosave has created
+	 * its first draft via create_mark().
 	 *
 	 * @param WP_REST_Request $request The request.
 	 * @return WP_REST_Response|WP_Error
@@ -4041,7 +4046,40 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			return $result;
 		}
 
+		if ( ! $is_autosave ) {
+			$this->fire_rest_after_insert( (int) $result, $request, false );
+		}
+
 		return rest_ensure_response( $this->prepare_mark_summary( (int) $result ) );
+	}
+
+	/**
+	 * Tell other plugins a Mark saved from the app is finished, the way the
+	 * block editor's save does.
+	 *
+	 * Core's posts controller fires `rest_after_insert_{$post_type}` once a
+	 * post and its meta and terms are saved. Plugins that share a post saved
+	 * over the REST API wait for that action, because meta isn't saved yet
+	 * when the post is published (Share on Mastodon and Autopost for X both
+	 * do). Daymark saves a Mark through its own route, so it fires the same
+	 * action with the same arguments once Daymark_Publisher is done. Each
+	 * plugin checks the post's status itself, so a draft save fires it too.
+	 * An autosave doesn't, as core's autosave route doesn't.
+	 *
+	 * @param int             $post_id  The saved Mark.
+	 * @param WP_REST_Request $request  The request that saved it.
+	 * @param bool            $creating Whether the Mark was just created.
+	 * @return void
+	 */
+	private function fire_rest_after_insert( int $post_id, WP_REST_Request $request, bool $creating ): void {
+		$post = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post ) {
+			return;
+		}
+
+		/** This action is documented in wp-includes/rest-api/endpoints/class-wp-rest-posts-controller.php */
+		do_action( "rest_after_insert_{$post->post_type}", $post, $request, $creating ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WordPress core hook.
 	}
 
 	/**

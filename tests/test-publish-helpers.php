@@ -256,6 +256,122 @@ class Test_Publish_Helpers extends WP_UnitTestCase {
 		$this->assertSame( '', get_post_meta( $post_id, Daymark_Publish_Helpers::CONTROL_META, true ) );
 	}
 
+	// --- Share on Mastodon's own per-post switch ---
+
+	/**
+	 * Share on Mastodon won't share a post dated more than 12 hours ago
+	 * unless the post's own switch (`_share_on_mastodon`) is on, and it
+	 * checks that before it asks its filter. A Mark dated by a photo taken
+	 * yesterday is that old, so the Mark's choice is copied into that
+	 * switch as the Mark goes live.
+	 */
+	public function test_mastodon_choice_is_copied_into_share_on_mastodons_switch() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->activate_slug( 'share-on-mastodon' );
+		Daymark_Publish_Helpers::register_adapters();
+
+		$publisher = new Daymark_Publisher();
+		$yesterday = gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS );
+		$on        = (int) $publisher->publish(
+			array(
+				'caption'         => 'Mastodon on',
+				'captured_at'     => $yesterday,
+				'publish_helpers' => array( 'share-on-mastodon' ),
+			)
+		);
+		$off       = (int) $publisher->publish(
+			array(
+				'caption'         => 'Mastodon off',
+				'captured_at'     => $yesterday,
+				'publish_helpers' => array(),
+			)
+		);
+
+		$this->assertSame( 'publish', get_post_status( $on ) );
+		$this->assertSame( '1', get_post_meta( $on, '_share_on_mastodon', true ) );
+		$this->assertSame( '0', get_post_meta( $off, '_share_on_mastodon', true ) );
+	}
+
+	/** A Mark with no recorded choice, a draft, and a post that isn't a Mark keep Share on Mastodon's switch as it was. */
+	public function test_share_on_mastodons_switch_left_alone_without_a_published_choice() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		$this->activate_slug( 'share-on-mastodon' );
+		Daymark_Publish_Helpers::register_adapters();
+
+		$publisher = new Daymark_Publisher();
+		$no_choice = (int) $publisher->publish( array( 'caption' => 'No choice' ) );
+		$draft     = (int) $publisher->publish(
+			array(
+				'caption'         => 'Not yet',
+				'status'          => 'draft',
+				'publish_helpers' => array( 'share-on-mastodon' ),
+			)
+		);
+		// Saved again as a draft: the choice is on record by now.
+		$publisher->update(
+			$draft,
+			array(
+				'caption'         => 'Still not yet',
+				'status'          => 'draft',
+				'publish_helpers' => array( 'share-on-mastodon' ),
+			)
+		);
+		$not_mark = (int) self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$this->assertSame( 'publish', get_post_status( $no_choice ) );
+		$this->assertSame( 'draft', get_post_status( $draft ) );
+		foreach ( array( $no_choice, $draft, $not_mark ) as $post_id ) {
+			$this->assertSame( '', get_post_meta( $post_id, '_share_on_mastodon', true ), "Post {$post_id}" );
+		}
+	}
+
+	/**
+	 * Share on Mastodon and Autopost for X both put off sharing a post
+	 * saved over the REST API until `rest_after_insert_post`. When the app
+	 * publishes a Mark dated yesterday with both switches on, that action
+	 * fires and each plugin finds the Mark's choice in place.
+	 */
+	public function test_sharing_plugins_find_the_marks_choice_when_the_app_publishes() {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+		update_option(
+			'active_plugins',
+			array( 'share-on-mastodon/share-on-mastodon.php', 'autoshare-for-twitter/autoshare-for-twitter.php' )
+		);
+		Daymark_Publish_Helpers::register_adapters();
+
+		$seen = array();
+		add_action(
+			'rest_after_insert_post',
+			static function ( $post ) use ( &$seen ) {
+				$seen[] = array(
+					'mastodon_switch' => get_post_meta( $post->ID, '_share_on_mastodon', true ),
+					'mastodon'        => apply_filters( 'share_on_mastodon_enabled', false, $post->ID ),
+					'x'               => apply_filters( 'autoshare_for_twitter_enabled_default', false, $post->post_type, $post->ID ),
+				);
+			}
+		);
+
+		$request = new WP_REST_Request( 'POST', '/daymark/v1/marks' );
+		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
+		$request->set_param( 'caption', 'Last night' );
+		$request->set_param( 'status', 'publish' );
+		$request->set_param( 'captured_at', gmdate( 'c', time() - DAY_IN_SECONDS ) );
+		$request->set_param( 'publish_helpers', wp_json_encode( array( 'share-on-mastodon', 'autoshare-for-twitter' ) ) );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame(
+			array(
+				array(
+					'mastodon_switch' => '1',
+					'mastodon'        => true,
+					'x'               => true,
+				),
+			),
+			$seen
+		);
+	}
+
 	/** Unknown/inactive helper ids are dropped from the stored selection. */
 	public function test_publisher_drops_inactive_ids() {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
