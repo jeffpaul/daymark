@@ -13566,6 +13566,21 @@
 		return item.title || toPlainText(item.excerpt || '').trim() || fallback;
 	}
 
+	// What a Mark's card says: its title, then its caption when the caption
+	// says more than the title does. A title the site made from the
+	// caption's first words because none was typed (title_from_caption, see
+	// prepare_mark_summary()) would only repeat the caption under it, so
+	// that card shows the caption once instead, as the post's own text, the
+	// way social apps show a post (publishing audit R10).
+	function markCardText(item) {
+		const excerpt = toPlainText(item.excerpt || '').trim();
+		if (item.title_from_caption && excerpt) {
+			return { title: excerpt, excerpt: '', caption: true };
+		}
+		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
+		return { title, excerpt: excerpt !== title ? excerpt : '', caption: false };
+	}
+
 	function resolveCardKind(item) {
 		if ('subscription_post' !== item.item_type) {
 			if (item.type) {
@@ -13939,16 +13954,20 @@
 	// action buttons in the card's footer stay separate controls that a
 	// screen reader can reach on their own. A Draft passes no id, because
 	// its whole card is already a link back into the composer.
-	function renderCardTitle(title, mediaKind, mediaHtml, titleId) {
+	//
+	// `isCaption` says the card shows a Mark's caption where its title
+	// would be (markCardText()): post text, styled as such.
+	function renderCardTitle(title, mediaKind, mediaHtml, titleId, isCaption) {
 		const text = titleId
 			? `<button type="button" class="daymark-recent__open">${esc(title)}</button>`
 			: esc(title);
 		const idAttr = titleId ? ` id="${esc(titleId)}"` : '';
+		const className = 'daymark-recent__title' + (isCaption ? ' daymark-recent__title--caption' : '');
 		const leads =
 			'' !== mediaHtml && !MEDIA_DOMINANT_KINDS.includes(mediaKind) && 'checkin' !== mediaKind && 'quote' !== mediaKind && 'linkpreview' !== mediaKind;
 		return leads
-			? [`<span class="daymark-recent__title daymark-recent__title--lead"${idAttr}>${text}</span>`, '']
-			: ['', `<span class="daymark-recent__title"${idAttr}>${text}</span>`];
+			? [`<span class="${className} daymark-recent__title--lead"${idAttr}>${text}</span>`, '']
+			: ['', `<span class="${className}"${idAttr}>${text}</span>`];
 	}
 
 	// Unique ids for card titles, so each card's <article> can name itself
@@ -14093,7 +14112,7 @@
 	// in one place is what "reuse, don't reinvent Mark card markup" means.
 	function renderMarkCore(item, titleId) {
 		const kind = resolveCardKind(item);
-		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
+		const { title, excerpt, caption } = markCardText(item);
 		// A Draft's own card renders with no "Draft" chip (issue #405) —
 		// every caller that renders one (Home's Drafts row, Me's own Drafts
 		// list) already puts it inside its own "Drafts" section, so the
@@ -14103,13 +14122,6 @@
 		// timestamp row's site name and the stats row, both meaningless for
 		// a Mark with nothing published yet.)
 		const isDraft = item.status && 'publish' !== item.status;
-		// A caption longer than generate_title()'s own 8-word title trim
-		// (class-publisher.php) carries real content beyond the title —
-		// show it as a secondary line; a short caption's title already
-		// *is* the whole caption, so repeating it as an "excerpt" would
-		// just be noise.
-		const excerpt = toPlainText(item.excerpt || '').trim();
-		const showExcerpt = excerpt && excerpt !== title;
 		// The stats/timestamp rows render as a sibling of .daymark-recent__body,
 		// not nested inside it — a kind with a small leading thumbnail (article
 		// with an image, audio, a site-icon fallback) sits that thumbnail
@@ -14121,14 +14133,14 @@
 		// full-width line regardless of kind.
 		const mediaKind = mediaKindForItem(item, kind);
 		const media = renderCardMedia(item, mediaKind);
-		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media, titleId);
+		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media, titleId, caption);
 		return `
 					${leadTitle}
 					${media}
 					<span class="daymark-recent__body">
 						${bodyTitle}
 						<span class="daymark-recent__meta">${renderCardMeta(item)}</span>
-						${showExcerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
+						${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
 					<span class="daymark-recent__footer">
 						${renderCardTimestampRow(item, isDraft ? '' : markAuthorLabel(item), !isDraft && !!item.is_mine)}
@@ -14659,7 +14671,9 @@
 		render() {
 			const view = pendingPostView;
 			const item = view && view.item ? view.item : {};
-			const title = item.title || __('Post', 'daymark');
+			// A title made from the caption's first words would only repeat
+			// the caption the post shows (publishing audit R10).
+			const title = (!item.title_from_caption && item.title) || __('Post', 'daymark');
 			// The interaction row (Like, Comment, Reblog, Bookmark, ⋯) floats
 			// in .daymark-postview-footer, pinned to the bottom of the
 			// screen while the post scrolls under it, like the Jetpack

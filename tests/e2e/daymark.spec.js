@@ -2201,6 +2201,64 @@ test('Timeline cards: image Mark gets the media-dominant layout, Note Mark stays
 	await expect(noteCard.locator('.daymark-recent__thumbwrap--media')).toHaveCount(0);
 });
 
+// With no title typed, the site makes one from the caption's first words.
+// The card and the post view don't show that title above the caption it
+// repeats: they show the caption once (publishing audit R10). A typed title
+// still shows, with the caption under it.
+test('a title made from the caption shows the caption once, on the card and in the post view', async ({ page }) => {
+	const longCaption = `E2E caption once ${RUN_ID}: golden hour from the pier, then the city lights came on one by one.`;
+	const shortCaption = `E2E short caption ${RUN_ID}: it's sunny`;
+	const typedTitle = `E2E typed title ${RUN_ID}`;
+	const titledCaption = `E2E titled caption ${RUN_ID}: the tide went out and took the last of the light with it.`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(async (marks) => {
+		const config = window.daymarkApp;
+		for (const mark of marks) {
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ primary_type: 'note', ...mark }),
+			});
+		}
+	}, [{ caption: titledCaption, title: typedTitle }, { caption: shortCaption }, { caption: longCaption }]);
+	await page.goto('/daymark');
+
+	const cardFor = (text) => page.locator('[data-recent-list] .daymark-recent__item-wrap').filter({ hasText: text });
+
+	// Just the caption, as the card's own text. No title of its first words
+	// above it, and no second copy below.
+	for (const caption of [longCaption, shortCaption]) {
+		const card = cardFor(caption);
+		await expect(card).toBeVisible();
+		await expect(card.locator('.daymark-recent__open')).toHaveText(caption);
+		await expect(card.locator('.daymark-recent__title')).toHaveClass(/daymark-recent__title--caption/);
+		await expect(card.locator('.daymark-recent__excerpt')).toHaveCount(0);
+	}
+
+	// A typed title is a title: it leads, and the caption shows under it.
+	const titledCard = cardFor(typedTitle);
+	await expect(titledCard.locator('.daymark-recent__open')).toHaveText(typedTitle);
+	await expect(titledCard.locator('.daymark-recent__title')).not.toHaveClass(/daymark-recent__title--caption/);
+	await expect(titledCard.locator('.daymark-recent__excerpt')).toHaveText(titledCaption);
+
+	// The post view's top bar doesn't repeat the caption's first words
+	// either: the caption shows once, in the post itself.
+	await cardFor(longCaption).locator('.daymark-recent__open').click();
+	await expect(page).toHaveURL(/#post$/);
+	await expect(page.locator('.daymark-topbar__title')).toHaveText('Post');
+	await expect(page.locator('[data-postview-body]')).toContainText(longCaption);
+
+	// A typed title still names the post view.
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/#home$/);
+	await cardFor(typedTitle).locator('.daymark-recent__open').click();
+	await expect(page).toHaveURL(/#post$/);
+	await expect(page.locator('.daymark-topbar__title')).toHaveText(typedTitle);
+});
+
 // Camera-first: "assume I'm standing somewhere and want to publish." A
 // typed launcher entry's picker offers camera/mic capture as the primary
 // action (requesting it via the `capture` attribute), with a lower-emphasis
@@ -3547,7 +3605,10 @@ test('publish goes back to where the composer was opened, and View opens the new
 
 	await messageBar(page).getByRole('button', { name: 'View' }).click();
 	await expect(page).toHaveURL(/#post$/);
-	await expect(page.locator('h1.daymark-topbar__title')).toHaveText(caption);
+	// With no title typed, the top bar says "Post" and the caption shows
+	// once, in the post itself (publishing audit R10).
+	await expect(page.locator('h1.daymark-topbar__title')).toHaveText('Post');
+	await expect(page.locator('[data-postview-body]')).toContainText(caption);
 });
 
 // Leaving the composer any way but Publish keeps what was written as a
