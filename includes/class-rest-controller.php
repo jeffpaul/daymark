@@ -1364,7 +1364,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		foreach ( $terms as $term ) {
 			$results[] = array(
 				'id'   => $term->term_id,
-				'name' => $term->name,
+				// Plain text: WordPress saves an & in a tag name as
+				// "&amp;", and the app escapes what it shows.
+				'name' => html_entity_decode( $term->name, ENT_QUOTES, 'UTF-8' ),
 			);
 		}
 
@@ -3086,6 +3088,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// null when the Mark never recorded a choice, so the composer starts
 		// each toggle where the plugin itself would land.
 		$helper_list = is_array( $helpers ) ? array_values( array_filter( array_map( 'sanitize_key', $helpers ) ) ) : null;
+		// Plain text, as GET /tags sends them: WordPress saves an & in a
+		// tag name as "&amp;", and the app escapes what it shows.
+		$tag_names = array_map(
+			static fn( string $name ): string => html_entity_decode( $name, ENT_QUOTES, 'UTF-8' ),
+			wp_get_post_tags( $post_id, array( 'fields' => 'names' ) )
+		);
 
 		$payload                = $this->prepare_mark_summary( $post_id );
 		$payload['caption']     = $caption;
@@ -3094,7 +3102,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$payload['targets']     = $target_list;
 		$payload['helpers']     = $helper_list;
 		$payload['categories']  = array_map( 'intval', wp_get_post_categories( $post_id ) );
-		$payload['tags']        = wp_get_post_tags( $post_id, array( 'fields' => 'names' ) );
+		$payload['tags']        = $tag_names;
 		$payload['in_reply_to'] = (string) get_post_meta( $post_id, '_daymark_in_reply_to', true );
 		// Per-connector routing detail (issue #255 — "where did this go"),
 		// server-resolved so it's accurate even for a connector that's
@@ -5641,8 +5649,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// posts "You" and another author's (on a multi-author site) by
 			// name, instead of every post on this site reading the same.
 			'is_mine'            => $author_id > 0 && get_current_user_id() === $author_id,
+			// Plain text, as the title is: WordPress saves an & in a name
+			// as "&amp;", and the app escapes what it shows.
 			'author_name'        => $author_id > 0
-				? sanitize_text_field( (string) get_the_author_meta( 'display_name', $author_id ) )
+				? html_entity_decode( sanitize_text_field( (string) get_the_author_meta( 'display_name', $author_id ) ), ENT_QUOTES, 'UTF-8' )
 				: '',
 		);
 

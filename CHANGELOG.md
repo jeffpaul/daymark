@@ -63,6 +63,7 @@ can't act on them.
 
 ### Fixed
 
+- Names now show in the app as you typed them. A site title with an apostrophe read `JP&#039;s Daymark` on your Marks and in the post view, and an & in a category, tag, or author name read `&amp;`. ([#586](https://github.com/jeffpaul/daymark/pull/586))
 - A Check In draft opened from Drafts keeps its map when you publish it. Before, the map was left out of the post. ([#585](https://github.com/jeffpaul/daymark/pull/585))
 - Times in the app are now right wherever your phone is: a post from a site you follow could read "Just now" for hours on a phone outside UTC, and your own Marks and "Replies last checked" were off when your phone and site were in different time zones. Search's date filters, like Today, also no longer miss or add hours of Marks on a site outside UTC. ([#584](https://github.com/jeffpaul/daymark/pull/584))
 - A Mark dated before your newest posts, by its photo or by when you started its draft, now appears where that date puts it on your Timeline right after you publish it, instead of on top until the Timeline reloads. ([#582](https://github.com/jeffpaul/daymark/pull/582))

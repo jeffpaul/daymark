@@ -112,6 +112,39 @@ class Test_App_Shell extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The site title reaches the app as plain text. WordPress saves it
+	 * HTML-encoded ("JP&#039;s Daymark"), and the app escapes what it
+	 * shows, so the post view and cards showed "JP&#039;s Daymark".
+	 */
+	public function test_config_site_title_is_plain_text() {
+		update_option( 'blogname', "JP's Daymark & Friends" );
+
+		$this->assertSame( "JP's Daymark & Friends", Daymark_Routes::build_app_config()['siteTitle'] );
+	}
+
+	/**
+	 * Category names and your own name reach the app as plain text too.
+	 * WordPress saves an & in them as "&amp;", so the composer's
+	 * Categories list showed "Food &amp; Drink".
+	 */
+	public function test_config_category_and_user_names_are_plain_text() {
+		$food = self::factory()->category->create( array( 'name' => 'Food & Drink' ) );
+		wp_set_current_user(
+			self::factory()->user->create(
+				array(
+					'role'         => 'author',
+					'display_name' => 'Sam & Alex',
+				)
+			)
+		);
+
+		$config = Daymark_Routes::build_app_config();
+
+		$this->assertSame( 'Food & Drink', array_column( $config['categories'], 'name', 'id' )[ $food ] );
+		$this->assertSame( 'Sam & Alex', $config['currentUser']['displayName'] );
+	}
+
+	/**
 	 * The bootstrap config carries the site's Date Format option
 	 * (Settings -> General), which assets/app.js uses to render a Timeline
 	 * card's absolute-date display the same way wp-admin already does,

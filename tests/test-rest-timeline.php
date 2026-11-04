@@ -289,6 +289,31 @@ class Test_Rest_Timeline extends WP_UnitTestCase {
 		$this->assertFalse( $by_id[ $theirs ]['is_mine'] );
 		$this->assertSame( 'Alice Appleseed', $by_id[ $theirs ]['author_name'] );
 	}
+
+	/**
+	 * An author's name reaches the card as it was typed. WordPress saves
+	 * an & in a name as "&amp;", and the app escapes what it shows.
+	 */
+	public function test_mark_author_name_is_plain_text() {
+		wp_set_current_user( $this->author_a );
+		$theirs = $this->create_mark( '2024-01-01 00:00:00', 'Theirs' );
+		wp_update_post(
+			array(
+				'ID'          => $theirs,
+				'post_author' => $this->author_b,
+			)
+		);
+		wp_update_user(
+			array(
+				'ID'           => $this->author_b,
+				'display_name' => 'Sam & Alex',
+			)
+		);
+
+		$items = rest_do_request( $this->request( 'GET', '/daymark/v1/timeline' ) )->get_data();
+
+		$this->assertSame( 'Sam & Alex', array_column( $items, null, 'id' )[ $theirs ]['author_name'] );
+	}
 	/**
 	 * A Mark's card has no other way to show its own caption text — its
 	 * title is often just a timestamp fallback (see
