@@ -82,8 +82,21 @@ row below has the background.
 ## Mission
 
 > Make publishing to your own WordPress site feel as joyful, immediate, and
-> effortless as posting to the best mobile social apps, while ensuring
-> everything you create remains yours.
+> effortless as posting to the best mobile social apps, and following
+> friends' own sites as natural as following them on social media, while
+> ensuring everything you create remains yours.
+
+Behind it is an IndieWeb goal: get more people publishing to, and owning,
+their own sites (with WordPress), and lean less on walled-garden social
+networks. Daymark does that from both sides. Publishing brings social-app
+ease to WordPress and then follows POSSE (Publish on your Own Site,
+Syndicate Elsewhere): the site gets the original, and copies go out to the
+networks people already use, with replies flowing back. The Timeline is a
+feed reader that follows other people's sites the way a social app follows
+friends, so reading doesn't have to happen inside a network either. Public
+copy (readme.txt, README.md, marketing, docs) should carry this framing;
+see docs/architecture-decisions.md's "Mission widened to following, with
+the IndieWeb/POSSE framing" row.
 
 This is the lens for every product and design decision in this repo — weigh a
 new feature, a UI direction, or a PR against this sentence before anything
@@ -399,7 +412,7 @@ implication for the codebase.
    captions, titles) is available but never blocks or gates the publish action.
 2. **Your site is the source of truth.** The site is always the canonical,
    required destination; every other destination is additive syndication, never
-   a replacement — see "Destination visibility" and the content model above.
+   a replacement (POSSE) — see "Destination visibility" and the content model above.
 3. **Mobile is the primary creation experience.** The app shell is designed
    one-handed, phone-first, touch-first — vanilla ES2020 with no build step,
    generous tap targets, no wp-admin chrome. Desktop/tablet use works but isn't

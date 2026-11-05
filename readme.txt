@@ -12,9 +12,9 @@ Your own social app: follow your friends in one calm, chronological feed, and po
 
 == Description ==
 
-Daymark is your own social app, built on your WordPress site. Follow the people you care about by subscribing to their blogs and websites. Their new posts arrive in one simple timeline, newest first, with no algorithm and no ads, and you can like, comment on, reblog, bookmark, or share any of them without leaving the app. It reads like your feed reader and feels like a social app, so keeping up with your friends can be a daily habit that doesn't need a social network.
+Daymark is your own social app, built on your WordPress site. Follow the people you care about by subscribing to their blogs and websites. Their new posts arrive in one simple timeline, newest first, with no algorithm and no ads, and you can like, comment on, reblog, bookmark, or share any of them without leaving the app. It works like a feed reader that follows sites the way a social app follows friends, so keeping up with the people you care about can be a daily habit that doesn't need a social network.
 
-When you have something to share, post a photo, video, voice note, check-in, or quick thought in seconds. It lives on your own site first, under your own name, then goes out to the social networks you've connected, and replies and likes from there come back to your site. Friends can reach you however suits them: on your site, from their own Daymark, or on the network where they saw your post.
+When you have something to share, post a photo, video, voice note, check-in, or quick thought in seconds, as easily as you would in a social app. It lives on your own site first, under your own name, then goes out to the social networks you've connected, and replies and likes from there come back to your site. The IndieWeb calls this POSSE: Publish on your Own Site, Syndicate Elsewhere. Friends can reach you however suits them: on your site, from their own Daymark, or on the network where they saw your post.
 
 = Why people love Daymark =
 
@@ -36,6 +36,12 @@ When you have something to share, post a photo, video, voice note, check-in, or 
 = Your site, your rules =
 
 Daymark never asks you to choose between "easy" and "yours." Your own site is always where a post lives first; anywhere else it appears is a bonus, never a requirement. There's no subscription, no account to create anywhere else, and nothing about what you publish depends on a company staying in business or an app staying in the store.
+
+= Back to the open web =
+
+Social apps made posting effortless, and that's a big reason so much of what we share now lives inside a few walled gardens, where the company owns the feed, decides who sees your posts, and can change the rules or shut down whenever it likes. Daymark exists to get more people publishing to sites they own, with WordPress, by making that just as easy as posting to a social app.
+
+It follows the IndieWeb's approach rather than building yet another network. You publish on your own site, then share copies to the networks your friends already use, so you can still reach them where they are. You follow friends' own sites instead of their accounts on someone else's platform. And it all runs on open standards that any site can speak: RSS, Atom, and JSON Feed for following, Webmention for likes, replies, and reblogs between sites, microformats so other sites and readers understand your posts, and WebSub so new posts arrive quickly. Every site that joins in makes the open web a little more social, and the walled gardens a little less necessary.
 
 = A note on privacy and external services =
 
@@ -95,6 +101,10 @@ To like a subscribed post, the other site must accept Webmentions (every Daymark
 Activation creates no public pages of its own. Timeline, Explore, Search, and Me all live inside the authenticated `/daymark` app shell.
 
 == Frequently Asked Questions ==
+
+= What are the IndieWeb and POSSE? =
+
+The [IndieWeb](https://indieweb.org/) is a community of people who publish on their own websites instead of only on social networks, and who connect those sites to each other with open standards. [POSSE](https://indieweb.org/POSSE) stands for Publish on your Own Site, Syndicate Elsewhere: post on your site first, then share copies to other networks, each linking back to the original. Daymark does both. Your Marks publish to your WordPress site and go out through the sharing plugins you choose, and the sites you follow are other people's own sites, read through their feeds and answered with Webmentions. You don't need to know any of this to use Daymark; it's simply why your posts stay yours.
 
 = How do I publish to social networks? =
 
