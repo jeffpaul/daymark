@@ -22,13 +22,15 @@
   following friends on, sites they own (POSSE and the IndieWeb), with less
   reliance on walled-garden networks.
 - **Non-goals stay non-goals until explicitly overturned.** Real social-API
-  publishing in core, push notifications, a custom post type, and
-  multi-user team workflows are *not* planned. A roadmap line that
-  contradicts one needs a written decision first. (A blanket "no settings
-  dashboard" used to be on this list too — narrowed after the Subscriptions
-  wp-admin screen shipped, and a blanket "no offline PWA" narrowed the same
-  way after offline-first creation shipped; see "Not planned" below and
-  CLAUDE.md's non-goals for the current, precise wording of each.)
+  publishing in core, a custom post type, and multi-user team workflows are
+  *not* planned. A roadmap line that contradicts one needs a written
+  decision first. (A blanket "no settings dashboard" used to be on this list
+  too — narrowed after the Subscriptions wp-admin screen shipped, and a
+  blanket "no offline PWA" narrowed the same way after offline-first
+  creation shipped. "Push notifications" was on it as well, until a written
+  decision reversed it and web push shipped; see "Shipped — Following
+  friends, richer Marks, and publishing polish" below. See "Not planned"
+  below and CLAUDE.md's non-goals for the current, precise wording of each.)
 - **When a bucket changes, record the decision.** The architectural-decisions
   table in [architecture-decisions.md](architecture-decisions.md) is the
   authoritative record; this file is the plan.
@@ -143,7 +145,11 @@ h-card) subscription parsing" below.)
   ([#137](https://github.com/jeffpaul/daymark/issues/137)), and a Friends
   plugin subscription source ([#88](https://github.com/jeffpaul/daymark/issues/88))
   — see below. Native ActivityPub-following ingestion and a Microsub client
-  remain deferred (also tracked under #88): the ActivityPub plugin's own
+  remain deferred. #88 closed once its Friends half shipped, so each now has
+  its own issue: following a Mastodon or Bluesky account by its handle
+  ([#557](https://github.com/jeffpaul/daymark/issues/557)) is the planned route for the ActivityPub half,
+  and the Microsub half is parked as
+  [#592](https://github.com/jeffpaul/daymark/issues/592). The deferral's reasoning: the ActivityPub plugin's own
   Reader UI for followed accounts is still experimental/feature-flagged,
   with an open, unresolved upstream discussion about how incoming posts
   should even be stored, and Microsub requires an external, non-WordPress
@@ -169,7 +175,11 @@ h-card) subscription parsing" below.)
   `u-in-reply-to` on the resulting Mark's permalink. Whichever Webmention/
   ActivityPub/ATmosphere plugin the site owner runs sends and verifies from
   there. See CLAUDE.md's "Webmention: rescoped to lean on ecosystem plugins
-  (issue #83)" decision.
+  (issue #83)" decision. Later revised: Daymark now sends and receives
+  Webmentions itself when the Webmention plugin isn't installed
+  ([#479](https://github.com/jeffpaul/daymark/pull/479)), so Likes, Reblogs, and comments reach another
+  Daymark site with nothing else to install. See the "Built-in Webmention
+  sending and receiving" decision row.
 
 - [x] **Microformats2 (h-entry/h-card) subscription parsing.** A new
   `Daymark_Subscription_Source_Microformats` connector discovers and parses
@@ -284,8 +294,11 @@ Inbound microformats2 parsing (#84), Webmention support (#83), WebSub/PuSH
 Friends-plugin half of additional source connectors (#88), and the admin
 page recommending complementary IndieWeb plugins (#86) have since shipped —
 see the entries above. #88's own ActivityPub/Microsub half remains
-deferred, per that entry's own reasoning above. None of what remains
-otherwise is prioritized yet.
+deferred, now tracked as [#557](https://github.com/jeffpaul/daymark/issues/557) and
+[#592](https://github.com/jeffpaul/daymark/issues/592) — see that entry's own reasoning above. What else
+remains is still open and unscheduled:
+[#79](https://github.com/jeffpaul/daymark/issues/79), [#85](https://github.com/jeffpaul/daymark/issues/85), [#87](https://github.com/jeffpaul/daymark/issues/87),
+[#89](https://github.com/jeffpaul/daymark/issues/89), [#90](https://github.com/jeffpaul/daymark/issues/90), and [#92](https://github.com/jeffpaul/daymark/issues/92).
 
 ---
 
@@ -563,10 +576,14 @@ in." See CLAUDE.md's "Quiet Mark metadata capture" decision.
   capture each have their own filter (default on), later exposed as plain
   checkboxes non-technical site owners can use directly — see "Privacy
   section" under Subscriptions admin maturation, below.
-- [x] **Not displayed anywhere yet, by design.** This is captured ahead of
-  planned future work (Timeline check-ins, weather display, richer photo
-  metadata) — a site owner can opt out before that display work ships,
-  rather than only after.
+- [x] **Captured before it was displayed, by design.** This was captured
+  ahead of planned future work (Timeline check-ins, weather display, richer
+  photo metadata), so a site owner could opt out before that display work
+  shipped rather than only after. Check-ins and reading time have since
+  shipped. Weather is now looked up for a Check In only.
+- [ ] **Show a Check In's weather and a photo's camera details**
+  ([#589](https://github.com/jeffpaul/daymark/issues/589)). Both are still saved but shown nowhere (outside
+  Simple Location's own display when its bridge is active).
 
 ---
 
@@ -752,32 +769,69 @@ could never actually be produced.
 
 ---
 
+## Shipped — Following friends, richer Marks, and publishing polish
+
+Work that shipped after the sections above were written, grouped by theme.
+Each item's issue or PR, and its decision row in
+[architecture-decisions.md](architecture-decisions.md), has the detail.
+
+- [x] **New Mark kinds.** Check In Marks with place search and an optional
+  photo or video ([#143](https://github.com/jeffpaul/daymark/issues/143), [#424](https://github.com/jeffpaul/daymark/issues/424)); a repost card kind ([#396](https://github.com/jeffpaul/daymark/issues/396)); and
+  Featured Content (audio, video, gallery, quote, or link in place of a
+  Featured Image) ([#401](https://github.com/jeffpaul/daymark/issues/401), [#406](https://github.com/jeffpaul/daymark/issues/406)–[#409](https://github.com/jeffpaul/daymark/issues/409), [#461](https://github.com/jeffpaul/daymark/issues/461)).
+- [x] **Media.** AVIF and HEIC photos ([#481](https://github.com/jeffpaul/daymark/issues/481)), animated GIFs that stay
+  animated ([#482](https://github.com/jeffpaul/daymark/issues/482)), and resumable uploads for large video and audio
+  ([#483](https://github.com/jeffpaul/daymark/issues/483)).
+- [x] **Reading friends' sites.** Reply, like, repost, bookmark, and RSVP
+  posts from a followed site show what they respond to ([#168](https://github.com/jeffpaul/daymark/issues/168), which
+  also finished the mf2 mapping deferred from [#292](https://github.com/jeffpaul/daymark/issues/292)); Shortnotes and
+  IndieBlocks notes and likes show up too ([#492](https://github.com/jeffpaul/daymark/issues/492), [#504](https://github.com/jeffpaul/daymark/issues/504)); JSON Feed
+  sites can be followed; Previous and Next in the full post view
+  ([#521](https://github.com/jeffpaul/daymark/pull/521)); a compact list view ([#520](https://github.com/jeffpaul/daymark/pull/520)); and "Read to
+  me" audio for a post ([#522](https://github.com/jeffpaul/daymark/pull/522)).
+- [x] **Engaging with friends' sites.** Like, comment, and reblog counts on
+  followed posts ([#232](https://github.com/jeffpaul/daymark/issues/232)); Jetpack-native Like and Comment ([#391](https://github.com/jeffpaul/daymark/issues/391)); a
+  Reblog preview screen ([#393](https://github.com/jeffpaul/daymark/issues/393)); real ActivityPub Likes ([#439](https://github.com/jeffpaul/daymark/issues/439)) and
+  Bridgy Fed links ([#441](https://github.com/jeffpaul/daymark/issues/441)); built-in Webmention sending and receiving
+  when the Webmention plugin isn't installed ([#479](https://github.com/jeffpaul/daymark/pull/479)); seeing the
+  conversation on a friend's post ([#559](https://github.com/jeffpaul/daymark/issues/559)); and an explanation when Like
+  or Comment can't reach a site ([#561](https://github.com/jeffpaul/daymark/issues/561)).
+- [x] **Following.** Import your WordPress.com Reader follows
+  ([#435](https://github.com/jeffpaul/daymark/issues/435)); follow from anywhere with a bookmarklet, a Follow-me block,
+  or the share menu ([#560](https://github.com/jeffpaul/daymark/issues/560)); favorite sites ([#531](https://github.com/jeffpaul/daymark/issues/531)); and follow
+  announcements other sites can hear ([#528](https://github.com/jeffpaul/daymark/issues/528)).
+- [x] **Web push notifications** for comments, new followers, and new posts
+  from favorite sites ([#525](https://github.com/jeffpaul/daymark/pull/525)–[#527](https://github.com/jeffpaul/daymark/pull/527), [#530](https://github.com/jeffpaul/daymark/issues/530)), plus
+  an optional unread badge on the app icon ([#519](https://github.com/jeffpaul/daymark/pull/519)). This
+  reversed the earlier "push notifications" non-goal by a written decision
+  (the "Web push notifications (foundation)" decision row).
+- [x] **Right-to-left layout** for Arabic, Hebrew, and other RTL languages
+  ([#524](https://github.com/jeffpaul/daymark/issues/524)).
+- [x] **Publishing flow audit** (November 2026): Publish moved onto the
+  composer with a "Where this goes" row, every composer gained an Add bar,
+  in-app audio recording, a photo strip with alt-text badges, reblogs
+  through the background queue, and a batch of fixes
+  ([#568](https://github.com/jeffpaul/daymark/pull/568)–[#587](https://github.com/jeffpaul/daymark/pull/587)).
+
+---
+
 ## Next — building on the loop
 
 The product's core is "fast publish, site-first". These directions deepen
 that loop without new destinations or a new social network.
 
-- **mf2 `repost`/`like`/`bookmark` mapping** ([#292](https://github.com/jeffpaul/daymark/issues/292),
-  the half deliberately deferred when `reply`/`rsvp` shipped — see "Shipped
-  — Subscriptions & Timeline Following" above). The `microformats` source
-  already computes IndieWeb post-type discovery for every h-entry; the open
-  question is what these three reaction types should become on the
-  Timeline — hidden entirely, mirroring how Daymark's own Like/Repost Marks
-  are hidden from discovery ([#361](https://github.com/jeffpaul/daymark/issues/361)),
-  or a `link_url` reuse for `bookmark` specifically. Not resolved.
 - **AI-assisted gallery ordering** ([#134](https://github.com/jeffpaul/daymark/issues/134)).
   Manual gallery reordering shipped as its prerequisite (see "Shipped —
   Publish-loop polish" above); this is now unblocked whenever it's
   prioritized.
-- **Whether Bridgy Fed unblocks native ActivityPub-following**
-  ([#91](https://github.com/jeffpaul/daymark/issues/91)'s own flagged next
-  step, feeding into [#3](https://github.com/jeffpaul/daymark/issues/3)).
-  If a Bridgy-Fed-bridged Mastodon/Bluesky account turns out to expose a
-  fetchable feed or microformats2 shape, the existing `feed`/`microformats`
-  subscription sources could follow it with no new source class at all —
-  never confirmed (this environment can't reach Bridgy Fed's own service to
-  check), so it's the concrete next step before any further native
-  ActivityPub-reading work.
+- **Follow a friend by their Mastodon or Bluesky handle** ([#557](https://github.com/jeffpaul/daymark/issues/557)).
+  Many friends post only there. Typing `@friend@mastodon.social` or
+  `friend.bsky.social` should find the profile's feed and follow it like any
+  other site. This replaces the earlier "does Bridgy Fed unblock native
+  ActivityPub-following" question ([#91](https://github.com/jeffpaul/daymark/issues/91)) for the common case.
+- **Show a Check In's weather and a photo's camera details** ([#589](https://github.com/jeffpaul/daymark/issues/589)).
+  Captured quietly since the metadata work, but still shown nowhere — see
+  "Shipped — Quiet Mark metadata capture" above.
 - **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
   navigation rework" above. Search's date filter and Explore's
   memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
@@ -786,23 +840,31 @@ that loop without new destinations or a new social network.
   [#295](https://github.com/jeffpaul/daymark/issues/295)) each still need new
   supporting REST/data work before they can grow past their current
   foundation.
+- **Smaller ideas, tracked but unscheduled**: AI-written summaries for
+  followed posts ([#224](https://github.com/jeffpaul/daymark/issues/224)), hiding Mark types from the +New launcher
+  ([#398](https://github.com/jeffpaul/daymark/issues/398)), and seeing your followers with a follow-back option
+  ([#529](https://github.com/jeffpaul/daymark/issues/529)).
 
 ---
 
 ## Longer term
 
-Directional, not commitments. Each needs a written decision (and a CLAUDE.md
-decision-table row) before it becomes "next".
+Directional, not commitments. Each needs a written decision (and a row in
+[architecture-decisions.md](architecture-decisions.md)) before it becomes
+"next".
 
 - **Default-on gravity.** The thesis is a third mode next to Admin and Editor.
   Long-term: make Daymark the default recommendation for social-shaped posting —
   surfaced in onboarding, discoverable from wp-admin without being wp-admin, and
-  functional the moment the plugin activates (it already is).
+  functional the moment the plugin activates (it already is). The plugin-side
+  pieces have shipped: a welcome notice after activation with a QR code to
+  open the app on a phone, and the admin bar shortcuts (see "Shipped —
+  wp-admin entry points" above). What's left is outside the plugin.
 - **Measured success.** The candidate signals in
   [planning §10](planning/README.md#10-success-metrics--e2e-acceptance) — first-
   publish completion, time-to-first-Mark, repeat publishing — stay unmeasured by
   design (no analytics dashboard). Long-term, decide what *privacy-respecting*
-  signal (if any) is worth adding.
+  signal (if any) is worth adding ([#591](https://github.com/jeffpaul/daymark/issues/591)).
 - **Hosted Daymark — provenance only.** The consumer publishing product explored
   at planning time (see [planning §12](planning/README.md#12-optional-future-hosted-moment-not-built))
   is explicitly **not** on this roadmap. It is recorded as a candidate direction,
@@ -815,7 +877,7 @@ decision-table row) before it becomes "next".
   CLAUDE.md's decision table) — a deliberate choice for infrequently-touched
   configuration, not a permanent one. A future pass may migrate some of this
   into an in-app Daymark settings screen; the two stay deliberately separate
-  for now.
+  for now. The decision is tracked in [#590](https://github.com/jeffpaul/daymark/issues/590).
 
 ---
 
@@ -835,5 +897,7 @@ decision-table row) before it becomes "next".
   "Shipped — Subscriptions: admin screen and multi-feed maturation" above.
   See CLAUDE.md's decision table for the reasoning and "In-app settings
   screen" above for the possible future direction.
-- Push notifications and multi-user team workflows beyond standard WordPress roles.
+- Multi-user team workflows beyond standard WordPress roles. (Push
+  notifications used to be listed here; they shipped as web push — see
+  "Shipped — Following friends, richer Marks, and publishing polish" above.)
 - API-key storage — AI rides the WordPress 7.0 AI Client or nothing.
