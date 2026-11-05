@@ -76,6 +76,17 @@ Non-goals section of CLAUDE.md and "Not planned" in
 [docs/roadmap.md](roadmap.md)). Power and configuration are always one tap
 away in wp-admin's advanced editor — never inline in the fast-publish path.
 
+**The IndieWeb is where this ownership model points.** "Your site is the
+canonical copy" is the IndieWeb's POSSE (Publish on your Own Site,
+Syndicate Elsewhere), and "standards-based" means the IndieWeb's own
+building blocks: Webmention between sites, microformats2 on every Mark,
+feeds and WebSub for following. Reading follows the same model: the
+Timeline follows people's own sites, not their accounts on a platform. The
+aim (CLAUDE.md → Mission) is more people publishing to sites they own and
+fewer depending on walled-garden networks, so a feature that only works if
+both sides sit inside one company's network is borrowing the lock-in this
+section leaves behind.
+
 ## Modern PWAs — the experience, not the chrome
 
 **Borrow:**

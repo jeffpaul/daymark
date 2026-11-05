@@ -19,16 +19,38 @@ Daymark is your own social app, built on your WordPress site. Follow the
 people you care about by subscribing to their blogs and websites. Their
 new posts arrive in one simple timeline, newest first, with no algorithm
 and no ads, and you can like, comment on, reblog, bookmark, or share any
-of them without leaving the app. It reads like your feed reader and feels
-like a social app, so keeping up with your friends can be a daily habit
-that doesn't need a social network.
+of them without leaving the app. It works like a feed reader that follows
+sites the way a social app follows friends, so keeping up with the people
+you care about can be a daily habit that doesn't need a social network.
 
 When you have something to share, post a photo, video, voice note,
-check-in, or quick thought in seconds. It lives on your own site first,
-under your own name, then goes out to the social networks you've
-connected, and replies and likes from there come back to your site.
-Friends can reach you however suits them: on your site, from their own
-Daymark, or on the network where they saw your post.
+check-in, or quick thought in seconds, as easily as you would in a social
+app. It lives on your own site first, under your own name, then goes out
+to the social networks you've connected, and replies and likes from there
+come back to your site. The IndieWeb calls this
+[POSSE](https://indieweb.org/POSSE): Publish on your Own Site, Syndicate
+Elsewhere. Friends can reach you however suits them: on your site, from
+their own Daymark, or on the network where they saw your post.
+
+## Back to the open web
+
+Social apps made posting effortless, and that's a big reason so much of
+what we share now lives inside a few walled gardens, where the company
+owns the feed, decides who sees your posts, and can change the rules or
+shut down whenever it likes. Daymark exists to get more people publishing
+to sites they own, with WordPress, by making that just as easy as posting
+to a social app.
+
+It follows the [IndieWeb](https://indieweb.org/)'s approach rather than
+building yet another network. You publish on your own site, then share
+copies to the networks your friends already use, so you can still reach
+them where they are. You follow friends' own sites instead of their
+accounts on someone else's platform. And it all runs on open standards
+that any site can speak: RSS, Atom, and JSON Feed for following,
+Webmention for likes, replies, and reblogs between sites, microformats so
+other sites and readers understand your posts, and WebSub so new posts
+arrive quickly. Every site that joins in makes the open web a little more
+social, and the walled gardens a little less necessary.
 
 ## Why people love Daymark
 
@@ -163,9 +185,11 @@ how that works from a user's side.
 ### Architecture, decisions, and project history
 
 - **[CLAUDE.md](CLAUDE.md)** is the authoritative technical record — the
-  content model, REST endpoints, security checklist, and a full log of
-  every architectural decision and why it was made. It's the single best
-  starting point for understanding *why* the code looks the way it does.
+  mission, product principles, content model, REST endpoints, and security
+  checklist. It's the single best starting point for understanding *why*
+  the code looks the way it does.
+- **[docs/architecture-decisions.md](docs/architecture-decisions.md)** — a
+  full log of every architectural decision and why it was made.
 - **[docs/planning/README.md](docs/planning/README.md)** — condensed
   product vision, positioning, and the original MVP spec.
 - **[docs/design-principles.md](docs/design-principles.md)** — the
@@ -176,7 +200,7 @@ how that works from a user's side.
 - **[docs/ui-polish-history.md](docs/ui-polish-history.md)** and
   **[docs/subscription-type-mapping.md](docs/subscription-type-mapping.md)**
   — detailed decision logs for UI polish and subscription content-type
-  detection, split out of CLAUDE.md to keep it focused.
+  detection, split out of the decisions log to keep it focused.
 
 ### Contributing
 

@@ -33,6 +33,8 @@ can't act on them.
 
 ### Changed
 
+- Daymark's plugin description and README now explain the idea behind it: post on your own site first and share copies to other networks (what the IndieWeb calls POSSE), follow friends' own sites the way you'd follow them on a social app, and rely less on walled-garden social networks. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+
 - A Check In now goes where the place you type in Place is, when its name matches a place the search found, instead of your phone's exact spot, so naming a neighborhood or city maps that area. Place search also lists places near you first, and now finds a name with an & in it. ([#587](https://github.com/jeffpaul/daymark/pull/587))
 
 - A Mark with no title now shows its caption once, on its card and in the post view, instead of a bold title made of the caption's first words with the same words again under it. That made-up title is still used for feeds, browser tabs, and link previews. ([#583](https://github.com/jeffpaul/daymark/pull/583))

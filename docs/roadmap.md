@@ -17,6 +17,10 @@
   should also read against [docs/design-principles.md](design-principles.md) —
   the Path / Day One / WordPress / modern-PWA rubric for what a proposal
   should *feel* like, and which parts of those influences stay left behind.
+- **The Mission points it.** Anything proposed should move toward
+  [CLAUDE.md → Mission](../CLAUDE.md)'s goal: more people publishing to, and
+  following friends on, sites they own (POSSE and the IndieWeb), with less
+  reliance on walled-garden networks.
 - **Non-goals stay non-goals until explicitly overturned.** Real social-API
   publishing in core, push notifications, a custom post type, and
   multi-user team workflows are *not* planned. A roadmap line that

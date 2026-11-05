@@ -28,11 +28,13 @@ the essence worth keeping.
 
 ## 1. Vision & positioning
 
-> ⚠️ **Superseded (September 2026):** the authoritative, actively-maintained
-> mission statement — *"Make publishing to your own WordPress site feel as
-> joyful, immediate, and effortless as posting to the best mobile social apps,
-> while ensuring everything you create remains yours."* — lives in
-> **[CLAUDE.md → Mission](../../CLAUDE.md)**, alongside the eight product
+> ⚠️ **Superseded (September 2026, widened November 2026):** the
+> authoritative, actively-maintained mission statement — *"Make publishing to
+> your own WordPress site feel as joyful, immediate, and effortless as posting
+> to the best mobile social apps, and following friends' own sites as natural
+> as following them on social media, while ensuring everything you create
+> remains yours."* — lives in **[CLAUDE.md → Mission](../../CLAUDE.md)**,
+> alongside the IndieWeb/POSSE goal behind it and the eight product
 > principles it grounds. The spirit carries forward unchanged from the
 > section below; CLAUDE.md wins on overlap, per this file's own scope note
 > above.
