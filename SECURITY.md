@@ -7,8 +7,8 @@ release only; there are no long-term support branches.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.21.x  | ✅        |
-| < 0.21  | ❌        |
+| 0.22.x  | ✅        |
+| < 0.22  | ❌        |
 
 ## Reporting a vulnerability
 
