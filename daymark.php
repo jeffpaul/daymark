@@ -3,7 +3,7 @@
  * Plugin Name:       Daymark
  * Plugin URI:        https://github.com/jeffpaul/daymark
  * Description:       Your own social app: follow your friends in one calm, chronological feed, and post from your phone to your site and the networks you use.
- * Version:           0.21.0
+ * Version:           0.22.0
  * Requires at least: 7.0
  * Requires PHP:      8.2
  * Author:            Jeffrey Paul
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'DAYMARK_VERSION', '0.21.0' );
+define( 'DAYMARK_VERSION', '0.22.0' );
 define( 'DAYMARK_PLUGIN_FILE', __FILE__ );
 define( 'DAYMARK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DAYMARK_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

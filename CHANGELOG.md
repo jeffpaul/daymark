@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-05
+
+Daymark 0.22.0 makes posting from your phone to your own site feel more like a social app: Publish now sits on the composer, you can record sound right there, and photos show as a tidy strip with alt-text badges. Your site keeps the original, and each Mark now lists the copies your sharing plugins posted to other networks, so replies there can find their way back home (what the IndieWeb calls POSSE). Following friends' own sites gets easier too, with a "Follow me with Daymark" block, replies on posts you follow, and a plain reason whenever a Like or Comment can't reach a site. This release also includes five security fixes, so update when you can.
+
 ### Added
 
 - You can now record sound right in the composer: Record Audio, or Audio under the caption, records with your microphone, and you can listen back before adding it to your Mark. Daymark also takes M4A files, such as an iPhone's Voice Memos, plus AAC, Ogg, and WebM, and turns down a file it can't take as soon as you pick it, naming the formats it does take. ([#577](https://github.com/jeffpaul/daymark/pull/577))
@@ -30,37 +34,24 @@ can't act on them.
 - On a post from a site you follow, tap Show replies to read the replies on it, from a WordPress site or a Mastodon-style server. After you comment on a WordPress site through Daymark, Daymark checks that site for replies to your comment for 30 days and tells you when someone answers (not yet for comments sent through WordPress.com). ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
 - Follow a site from wherever you find it. The bookmarklet can now follow the site of the post you're reading, and the new "Follow me with Daymark" block lets visitors type their own site's address to open their Daymark ready to follow yours. The block also shows your feed's address for any other feed reader. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
 - When Like is missing or Comment opens the post on its own site, the full post view now says why under the post, such as "This is a Bluesky post. Daymark can like it once your site is connected to Bridgy Fed." When something on your site would fix it, an administrator also gets a link to it. ([#562](https://github.com/jeffpaul/daymark/pull/562), [#565](https://github.com/jeffpaul/daymark/pull/565))
+- Right-to-left (RTL) layout support for Arabic, Hebrew, Persian, Urdu, and other right-to-left languages. Daymark's layout, menus, arrows, Timeline spine, and gallery sliders now mirror to match reading direction when WordPress uses an RTL language. Keys and swipe gestures in the gallery slider and tab list follow reading direction, and CI enforces logical CSS properties. ([#537](https://github.com/jeffpaul/daymark/pull/537))
 
 ### Changed
 
 - Daymark's plugin description and README now explain the idea behind it: post on your own site first and share copies to other networks (what the IndieWeb calls POSSE), follow friends' own sites the way you'd follow them on a social app, and rely less on walled-garden social networks. ([#588](https://github.com/jeffpaul/daymark/pull/588))
-
 - A Check In now goes where the place you type in Place is, when its name matches a place the search found, instead of your phone's exact spot, so naming a neighborhood or city maps that area. Place search also lists places near you first, and now finds a name with an & in it. ([#587](https://github.com/jeffpaul/daymark/pull/587))
-
 - A Mark with no title now shows its caption once, on its card and in the post view, instead of a bold title made of the caption's first words with the same words again under it. That made-up title is still used for feeds, browser tabs, and link previews. ([#583](https://github.com/jeffpaul/daymark/pull/583))
-
 - Photos and files on a Mark now show as a row of thumbnails under the caption, instead of a large block each that pushed the caption off the screen. Each photo has an ALT badge that fills in once it's described; tap a thumbnail to write its alt text or move it, and tap its × to remove it, now also from a draft you reopened. ([#576](https://github.com/jeffpaul/daymark/pull/576))
-
 - Every Mark you write now has a small "Add" bar under the caption: Photo or video, Audio, and Place. A Note can take a photo or a place without starting over. Turning Place on makes the Mark a Check In, and turning it off again removes the place and location it saved. ([#575](https://github.com/jeffpaul/daymark/pull/575))
-
 - Publish now sits on the composer itself, so a Mark no longer needs a second "Where should this go?" screen. A "Where this goes" row shows your site and each destination as a switch you tap on or off, with the full list one tap away, and categories and tags are folded under the caption. ([#574](https://github.com/jeffpaul/daymark/pull/574))
-
 - Reblogs no longer wait for the connection: Publish takes you straight back to where you were, and a reblog made offline waits on this device and publishes once you're back online. The title, which most people leave as it is, is now folded under "Title". ([#572](https://github.com/jeffpaul/daymark/pull/572))
-
 - Publish and Save as draft now take you straight back to where you started, usually the Timeline with your new Mark on top, and a short message says "Published" (with View) or "Saved as draft." This replaces the separate Success screen; where a Mark went is still on its card's "Where this went" menu. ([#571](https://github.com/jeffpaul/daymark/pull/571))
-
 - Daymark's description on its plugin page and in the Plugins list now leads with what it's for: following your friends' sites in one calm, chronological feed, then posting from your phone to your site and the networks you use.
-
 - With Simple Location 6.1.0 or later, a Check In's weather now shows Simple Location's weather icon and Open-Meteo credit, not just the temperature and a text summary. Simple Location 6.1.0 can read the weather codes from Open-Meteo, the service Daymark uses, so Daymark now passes them along. ([#552](https://github.com/jeffpaul/daymark/pull/552))
-
 - The Publish screen now shows categories and tags as two folded sections. Folded, each shows the current choice (your usual categories, or the tags AI suggested); tap to change it. Before, tags could only be changed inside AI Assist, so suggested tags were added with nowhere to see or remove them, and a tag removed from a draft came back.
-
 - On a site that also runs Post Kinds 4.0, Daymark now files each Mark under the matching kind (Photo, Video, Audio, Note, Check-in, Repost, Reply) instead of leaving every Mark as a Note, and keeps Post Kinds' empty reply/repost box off Marks. Followed WordPress sites that run Post Kinds now show replies, reposts, likes, bookmarks, RSVPs, and check-ins as such on their cards. ([#542](https://github.com/jeffpaul/daymark/pull/542))
-
 - With Post Kinds 4.0.1 or later, Daymark tells Post Kinds not to build its reply/repost box for Marks at all, instead of building it and then hiding it, so Mark pages do a little less work. Nothing on the page looks different. ([#563](https://github.com/jeffpaul/daymark/pull/563))
-
 - With ActivityPub 9.4.0 or later, Daymark looks up fediverse posts for Likes and Reblogs the way the plugin now asks, so sites with debugging turned on no longer log a deprecation notice each time. Likes and Reblogs work the same as before. ([#564](https://github.com/jeffpaul/daymark/pull/564))
-
 - With the Syndication Links plugin active, a Mark's links to its copies on other sites now appear in that plugin's own list, following its display settings, instead of in a separate "Also on" line from Daymark. Notifications no longer suggests turning Syndication Links off. ([#562](https://github.com/jeffpaul/daymark/pull/562))
 
 ### Fixed
@@ -97,7 +88,6 @@ can't act on them.
 
 - Brought docs/roadmap.md up to date: it now lists what shipped since its last update (web push, Check Ins, Featured Content, following and engagement work, the publishing audit), drops items that are done, and links each open item to its issue, including new issues #589 to #592.
 - CI now pins its third-party actions and tools to exact versions, Dependabot watches the libraries shipped in `lib/`, and a new check fails when `lib/vendor-prefixed/` doesn't match `lib/composer.lock`. ([#547](https://github.com/jeffpaul/daymark/pull/547))
-- Right-to-left (RTL) layout support for Arabic, Hebrew, Persian, Urdu, and other right-to-left languages. Daymark's layout, menus, arrows, Timeline spine, and gallery sliders now mirror to match reading direction when WordPress uses an RTL language. Keys and swipe gestures in the gallery slider and tab list follow reading direction, and CI enforces logical CSS properties. ([#537](https://github.com/jeffpaul/daymark/pull/537))
 - Moved CLAUDE.md's architectural decisions table into its own file, docs/architecture-decisions.md, leaving a short pointer, and dropped the finished phased-build checklists. CLAUDE.md is read at the start of every Claude Code session, and the table had grown to about 600,000 characters; sessions now start with about 32,000. ([#580](https://github.com/jeffpaul/daymark/pull/580))
 
 ## [0.21.0] - 2026-10-13
@@ -840,7 +830,8 @@ can't act on them.
 - Optional AI Assist (captions, alt text, tags) via the WordPress 7.0 AI Client.
 - Timeline and per-type views as both shortcodes and dynamic blocks.
 
-[unreleased]: https://github.com/jeffpaul/daymark/compare/0.21.0...HEAD
+[unreleased]: https://github.com/jeffpaul/daymark/compare/0.22.0...HEAD
+[0.22.0]: https://github.com/jeffpaul/daymark/compare/0.21.0...0.22.0
 [0.21.0]: https://github.com/jeffpaul/daymark/compare/0.20.0...0.21.0
 [0.20.0]: https://github.com/jeffpaul/daymark/compare/0.19.0...0.20.0
 [0.19.0]: https://github.com/jeffpaul/daymark/compare/0.18.0...0.19.0
