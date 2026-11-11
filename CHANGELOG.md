@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Changed
+
+- A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
+
 ## [0.22.0] - 2026-11-05
 
 Daymark 0.22.0 makes posting from your phone to your own site feel more like a social app: Publish now sits on the composer, you can record sound right there, and photos show as a tidy strip with alt-text badges. Your site keeps the original, and each Mark now lists the copies your sharing plugins posted to other networks, so replies there can find their way back home (what the IndieWeb calls POSSE). Following friends' own sites gets easier too, with a "Follow me with Daymark" block, replies on posts you follow, and a plain reason whenever a Like or Comment can't reach a site. This release also includes five security fixes, so update when you can.
