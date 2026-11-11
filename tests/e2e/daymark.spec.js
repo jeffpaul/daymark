@@ -1669,6 +1669,63 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await expect(page.getByText(caption)).toBeVisible();
 });
 
+// "Published." comes with a check mark every time, and the first Mark
+// someone ever publishes also gets confetti. The site says which Mark is
+// the first (`first_mark` on the save's answer; PHPUnit covers that), so
+// this test answers for the site both times: whether the test account has
+// published before depends on which tests ran first.
+test('Published shows a check mark, and confetti only for a first Mark', async ({ page }) => {
+	let firstMark = false;
+	await page.route(/\/daymark\/v1\/marks(\/\d+)?(?:[?&]|$)/, async (route) => {
+		if ('GET' === route.request().method()) {
+			await route.continue();
+			return;
+		}
+		const response = await route.fetch();
+		let body = null;
+		try {
+			body = await response.json();
+		} catch (error) {
+			body = null;
+		}
+		if (!body || 'object' !== typeof body || !('first_mark' in body)) {
+			await route.fulfill({ response });
+			return;
+		}
+		// The site always answers the question, one way or the other.
+		expect(typeof body.first_mark).toBe('boolean');
+		body.first_mark = firstMark && 'publish' === body.status;
+		await route.fulfill({ response, json: body });
+	});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E published check ${RUN_ID}`);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeVisible();
+	await expect(page.locator('.daymark-confetti')).toHaveCount(0);
+
+	firstMark = true;
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E first Mark confetti ${RUN_ID}`);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.locator('.daymark-confetti i')).toHaveCount(44);
+	await expectPublished(page);
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeVisible();
+	// Decoration only: hidden from screen readers, and it clears itself.
+	await expect(page.locator('.daymark-confetti')).toHaveCount(0);
+
+	// A plain message has no check mark.
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E draft, no check ${RUN_ID}`);
+	await page.locator('[data-action="save-draft"]').click();
+	await expect(messageBar(page)).toContainText('Saved to Drafts.');
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeHidden();
+});
+
 // A Checkin Mark's own optional photo/video (issue #424) is a genuinely
 // optional media picker, not a required one — a manually typed Place
 // (geolocation is neither granted nor mocked in this test context, so the
