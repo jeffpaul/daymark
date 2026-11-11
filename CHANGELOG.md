@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
 
 ## [0.22.0] - 2026-11-05
 
