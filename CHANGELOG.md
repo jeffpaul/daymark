@@ -22,7 +22,7 @@ can't act on them.
 
 ### Changed
 
-- Daymark's plugin description and README now use six lines from the original planning notes, such as "Publish once. Own it forever. Share everywhere.", to say in everyday words why posting on your own site first matters. ([#599](https://github.com/jeffpaul/daymark/pull/599))
+- Daymark's plugin description and README now use six lines from the original planning notes, such as "Publish once. Own it forever. Share everywhere.", to say in everyday words why posting on your own site first matters. ([#600](https://github.com/jeffpaul/daymark/pull/600))
 
 ## [0.22.0] - 2026-11-05
 
