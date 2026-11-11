@@ -719,6 +719,23 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-text-primary);
 }
 
+/* Your site's icon and address, in place of the words "Your site". */
+.daymark-where__siteicon {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	border-radius: 5px;
+	object-fit: cover;
+}
+
+.daymark-where__address {
+	min-width: 0;
+	max-inline-size: 12em;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
 .daymark-where__site svg,
 .daymark-where__chip svg,
 .daymark-attach__btn svg {
@@ -3530,6 +3547,41 @@ button.daymark-stat {
 
 .daymark-dest__name {
 	font-weight: 600;
+}
+
+/* Your site in the sheet: its icon, then its name over its address. */
+.daymark-dest__site {
+	display: flex;
+	align-items: center;
+	gap: var(--daymark-spacing-sm);
+	max-inline-size: 100%;
+	margin-block-end: var(--daymark-spacing-xs);
+}
+
+.daymark-dest__siteicon {
+	flex-shrink: 0;
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	object-fit: cover;
+}
+
+.daymark-dest__sitetext {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.daymark-dest__site .daymark-dest__name,
+.daymark-dest__address {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.daymark-dest__address {
+	font-size: 14px;
+	color: var(--daymark-text-secondary);
 }
 
 /* Your site's lock icon, on the text's baseline. */
