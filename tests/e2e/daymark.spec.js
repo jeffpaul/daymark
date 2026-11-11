@@ -1722,7 +1722,7 @@ test('Published shows a check mark, and confetti only for a first Mark', async (
 	await openComposer(page);
 	await page.fill('#daymark-caption', `E2E draft, no check ${RUN_ID}`);
 	await page.locator('[data-action="save-draft"]').click();
-	await expect(messageBar(page)).toContainText('Saved to Drafts.');
+	await expect(messageBar(page)).toContainText('Saved as draft.');
 	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeHidden();
 });
 
