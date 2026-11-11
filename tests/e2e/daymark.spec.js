@@ -5303,9 +5303,14 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	await openWhere(page);
 	const toggle = page.locator('[data-helper="daymark-e2e-network"]');
 	await expect(toggle).toBeChecked();
-	await expect(page.locator('label[for="daymark-helper-daymark-e2e-network"]')).toContainText(
-		'E2E Network via E2E Plugin'
-	);
+	// Its row reads as the network, then the account it shares as, then
+	// the plugin in small print; the switch's description is the account.
+	const row = page.locator('label[for="daymark-helper-daymark-e2e-network"]');
+	await expect(row.locator('.daymark-dest__name')).toHaveText('E2E Network');
+	await expect(row.locator('.daymark-dest__account')).toHaveText('@e2e@example.social');
+	await expect(row.locator('.daymark-dest__via')).toHaveText('via E2E Plugin');
+	await expect(toggle).toHaveAccessibleName('Share to E2E Network via E2E Plugin');
+	await expect(toggle).toHaveAccessibleDescription('@e2e@example.social');
 	const note = page.locator('[data-reach-note]');
 	await expect(note).toContainText('It also reaches E2E Network.');
 
