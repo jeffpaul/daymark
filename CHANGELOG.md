@@ -22,6 +22,8 @@ can't act on them.
 
 ### Changed
 
+- While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
+
 - "Published." now comes with a small check mark that pops in, and the first Mark you ever publish gets a short burst of confetti. Both stay still when your device asks for reduced motion. ([#597](https://github.com/jeffpaul/daymark/pull/597))
 
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))

@@ -16192,6 +16192,28 @@
 	const WHERE_CHECK_ICON =
 		'<svg class="daymark-where__check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
+	// Your site's address as people say it: no scheme, no "www.", no
+	// trailing slash ("example.com", or "example.com/blog" for a site in a
+	// folder). Shown on the "Where this goes" row and sheet, so the first
+	// destination reads as your own site and not just "a site".
+	function siteAddressLabel() {
+		try {
+			const url = new URL(config.siteUrl);
+			return (url.host.replace(/^www\./, '') + url.pathname).replace(/\/+$/, '');
+		} catch (err) {
+			return '';
+		}
+	}
+
+	// The site's icon beside its address or name: the same icon your own
+	// Marks carry on the Timeline (config.siteIconUrl). The lock stands in
+	// when there's no icon to show.
+	function siteIconMarkup(className, size) {
+		return config.siteIconUrl
+			? `<img class="${className}" src="${esc(config.siteIconUrl)}" alt="" width="${size}" height="${size}" />`
+			: WHERE_LOCK_ICON;
+	}
+
 	const PublishControls = {
 		tagEditor: null,
 
@@ -16199,7 +16221,16 @@
 		// starting with your site.
 		whereNames() {
 			const type = state.primaryType;
-			const names = [__('Your site', 'daymark')];
+			const address = siteAddressLabel();
+			const names = [
+				address
+					? sprintf(
+							/* translators: %s: the site's address, such as "example.com" */
+							__('Your site (%s)', 'daymark'),
+							address
+					  )
+					: __('Your site', 'daymark'),
+			];
 			connectors.forEach((connector) => {
 				if (connectorSupportsType(connector, type) && state.targets.includes(connector.id)) {
 					names.push(connector.label);
@@ -16215,7 +16246,7 @@
 
 		whereOpenLabel() {
 			return sprintf(
-				/* translators: %s: a list such as "Your site, Bluesky via ATmosphere" */
+				/* translators: %s: a list such as "Your site (example.com), Bluesky via ATmosphere" */
 				__('Where this goes: %s', 'daymark'),
 				this.whereNames().join(', ')
 			);
@@ -16225,6 +16256,7 @@
 		// type get a chip; the sheet lists the rest, with the reason.
 		whereBarMarkup() {
 			const type = state.primaryType;
+			const address = siteAddressLabel();
 			const chip = (attr, text, on, label, title) =>
 				`<button type="button" class="daymark-where__chip" ${attr} aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(
 					label
@@ -16269,7 +16301,11 @@
 			return `
 				<button type="button" class="daymark-where__site" data-where-open aria-haspopup="dialog" aria-label="${esc(
 					this.whereOpenLabel()
-				)}">${WHERE_LOCK_ICON}<span>${esc(__('Your site', 'daymark'))}</span>${WHERE_MORE_ICON}</button>
+				)}">${
+					address
+						? `${siteIconMarkup('daymark-where__siteicon', 20)}<bdi class="daymark-where__address">${esc(address)}</bdi>`
+						: `${WHERE_LOCK_ICON}<span>${esc(__('Your site', 'daymark'))}</span>`
+				}${WHERE_MORE_ICON}</button>
 				${connectorChips}
 				${helperChips}`;
 		},
@@ -16354,11 +16390,22 @@
 		// and every publishing plugin with a switch.
 		destinationRowsMarkup() {
 			const type = state.primaryType;
+			const address = siteAddressLabel();
 			const siteRow = `
 				<li class="daymark-dest daymark-dest--locked">
 					<span class="daymark-dest__row">
 						<span class="daymark-dest__info">
-							<span class="daymark-dest__name">${WHERE_LOCK_ICON} ${esc(__('Your site', 'daymark'))}</span>
+							${
+								address
+									? `<span class="daymark-dest__site">
+								${siteIconMarkup('daymark-dest__siteicon', 40)}
+								<span class="daymark-dest__sitetext">
+									<span class="daymark-dest__name">${esc(config.siteTitle || __('Your site', 'daymark'))}</span>
+									<bdi class="daymark-dest__address">${esc(address)}</bdi>
+								</span>
+							</span>`
+									: `<span class="daymark-dest__name">${WHERE_LOCK_ICON} ${esc(__('Your site', 'daymark'))}</span>`
+							}
 							<span class="daymark-chip daymark-chip--success">${esc(__('Required', 'daymark'))}</span>
 						</span>
 						<span class="daymark-toggle">
