@@ -147,8 +147,8 @@ class Daymark_Publisher {
 	/**
 	 * File name extensions a sound-only MP4 or WebM file may keep. WordPress
 	 * calls an .m4a file audio/mpeg and an .mp4 or .webm file video, and
-	 * refuses an .m4a whose content looks like video, so the type is set
-	 * here for these extensions only.
+	 * before 7.2 refuses an .m4a whose content looks like video, so the type
+	 * is set here for these extensions only.
 	 *
 	 * @var array<string, string[]>
 	 */
@@ -497,8 +497,9 @@ class Daymark_Publisher {
 	 * reported as audio.
 	 *
 	 * WordPress names a file's type from its extension and calls an .mp4 or
-	 * .webm file video, and refuses an .m4a file whose content looks like
-	 * video (a browser recording does). While the callback runs, its
+	 * .webm file video, and before 7.2 refuses an .m4a file whose content
+	 * looks like video (a browser recording does; WordPress 7.2 accepts it
+	 * as audio/mpeg, which is kept). While the callback runs, its
 	 * wp_check_filetype_and_ext() result for this one file is set to
 	 * audio/mp4 or audio/webm, and only when the content was found to be
 	 * sound-only, WordPress didn't already call it audio, and the extension
