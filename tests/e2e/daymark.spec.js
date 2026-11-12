@@ -406,7 +406,7 @@ test('authenticated user sees Daymark Home without wp-admin chrome', async ({ pa
 
 	// A fresh user has no drafts: the drafts row must not render
 	// (regression: author display rules once overrode [hidden]).
-	await expect(page.locator('[data-recent-list] .daymark-recent__item, [data-recent-list] .daymark-empty').first()).toBeVisible();
+	await expect(page.locator('[data-recent-list] .daymark-recent__item, [data-recent-list] .daymark-welcome').first()).toBeVisible();
 	await expect(page.locator('[data-drafts-row]')).toBeHidden();
 });
 
@@ -1667,6 +1667,38 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	await page.goto('/daymark/search');
 	await page.locator('[data-filter="note"]').click();
 	await expect(page.getByText(caption)).toBeVisible();
+});
+
+// An empty Timeline greets a new person with a card instead of one line of
+// small text: what Daymark is for, a button to publish a first Mark, and,
+// for someone who can follow sites, a button for that too. The test
+// account's Timeline isn't empty, so the test answers for the site.
+test('an empty Timeline shows a welcome card with Publish and Follow', async ({ page }) => {
+	await page.route('**/daymark/v1/timeline*', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+	});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	const card = page.locator('[data-recent-list] .daymark-welcome');
+	await expect(card).toBeVisible();
+	await expect(card.getByRole('heading', { name: 'Make your first Mark' })).toBeVisible();
+	await expect(card).toContainText('It lives on your own site.');
+	await expect(page.locator('[data-recent-list] .daymark-recent__item')).toHaveCount(0);
+
+	// Follow a site opens the same sheet as everywhere else, and closing
+	// it comes back to the button.
+	const follow = card.getByRole('button', { name: 'Follow a site' });
+	await follow.click();
+	await expect(page.locator('.daymark-sheet__panel #daymark-follow-title')).toHaveText('Follow a site');
+	await page.keyboard.press('Escape');
+	await expect(follow).toBeFocused();
+
+	// Publish your first Mark opens the composer.
+	await card.getByRole('link', { name: 'Publish your first Mark' }).click();
+	await expect(page).toHaveURL(/#create$/);
+	await expect(page.locator('#daymark-caption')).toBeVisible();
 });
 
 // A Checkin Mark's own optional photo/video (issue #424) is a genuinely

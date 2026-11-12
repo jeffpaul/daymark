@@ -24,6 +24,8 @@ can't act on them.
 
 - The "Where this goes" sheet now shows each network's icon and the account your Mark will be posted as: your Bluesky handle from ATmosphere, your Mastodon address from Share on Mastodon, or your X account from Autopost for X, with the sharing plugin named in small print. The network's chip on the composer carries its icon too. ([#596](https://github.com/jeffpaul/daymark/pull/596))
 
+- A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
+
 ### Developer
 
 - The sound-file tests now pass on WordPress 7.2, which accepts a browser's MP4 recording named .m4a on its own and stores it as audio/mpeg, like any .m4a file. Daymark keeps that type; older WordPress still gets audio/mp4. ([#599](https://github.com/jeffpaul/daymark/pull/599))
