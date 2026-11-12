@@ -207,8 +207,9 @@ async function expectPublished(page, options) {
 	await expect(messageBar(page)).toContainText('Published.', options);
 }
 
-// The composer's "Where this goes" row starts with Your site, which opens a
-// sheet listing every destination and publishing plugin with its switch.
+// The composer's "Where this goes" row starts with your site, shown by its
+// address, which opens a sheet listing every destination and publishing
+// plugin with its switch.
 async function openWhere(page) {
 	await page.locator('[data-where-open]').click();
 	await expect(page.locator('#daymark-where-title')).toBeFocused();
@@ -1639,7 +1640,7 @@ test('on a touch screen the header refresh button stays hidden', async ({ page }
 // Publish a note Mark to your own site and see it in the Notes view.
 // With nothing connected, "Your site" is the only destination. Publish is
 // on the composer itself: there is no second screen.
-test('note Mark publishes to your site and is findable via Search', async ({ page }) => {
+test('note Mark publishes to your site and is findable via Search', async ({ page, baseURL }) => {
 	const caption = `E2E note ${RUN_ID}`;
 
 	await loginAs(page);
@@ -1651,11 +1652,24 @@ test('note Mark publishes to your site and is findable via Search', async ({ pag
 	// Your site is always the destination; no social networks are offered
 	// unless a connector plugin registers one.
 	const where = page.locator('[data-where-bar]');
-	await expect(where.locator('[data-where-open]')).toHaveText('Your site');
+	// It's named by its own address (no scheme, "www." or trailing slash),
+	// with the site's icon, and the button's name still says "Your site".
+	const siteUrl = new URL(baseURL);
+	const siteAddress = (siteUrl.host.replace(/^www\./, '') + siteUrl.pathname).replace(/\/+$/, '');
+	await expect(where.locator('[data-where-open]')).toHaveText(siteAddress);
+	await expect(where.locator('[data-where-open] img.daymark-where__siteicon')).toBeVisible();
+	await expect(where.locator('[data-where-open]')).toHaveAccessibleName(
+		new RegExp('^Where this goes: Your site \\(' + siteAddress.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)')
+	);
 	await expect(where.locator('[data-where-target]')).toHaveCount(0);
 	await openWhere(page);
 	const sheet = page.locator('.daymark-sheet:not([hidden])');
-	await expect(sheet.locator('.daymark-dest__name', { hasText: 'Your site' })).toBeVisible();
+	// The sheet's first row is the site by name and address, still Required.
+	const siteRow = sheet.locator('.daymark-dest--locked').first();
+	await expect(siteRow.locator('.daymark-dest__name')).toBeVisible();
+	await expect(siteRow.locator('.daymark-dest__address')).toHaveText(siteAddress);
+	await expect(siteRow.locator('.daymark-chip', { hasText: 'Required' })).toBeVisible();
+	await expect(siteRow.getByRole('checkbox', { name: 'Your site (always included)' })).toBeDisabled();
 	await sheet.locator('[data-sheet-done]').click();
 	await expect(where.locator('[data-where-open]')).toBeFocused();
 
@@ -5364,13 +5378,15 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	await page.keyboard.press('Escape');
 
 	// The last save of this Mark (an autosave may have created it first,
-	// making Publish an update) carries the selection.
+	// making Publish an update) carries the selection. Read from the
+	// request event, not from a route: a route added once the service
+	// worker controls the page can miss the page's requests (Playwright
+	// then reports none of them), which left this body empty on some runs.
 	let sentBody = '';
-	await page.route('**/daymark/v1/marks**', async (route) => {
-		if ('GET' !== route.request().method()) {
-			sentBody = route.request().postData() || '';
+	page.on('request', (request) => {
+		if ('GET' !== request.method() && /\/daymark\/v1\/marks(\/\d+)?$/.test(new URL(request.url()).pathname)) {
+			sentBody = request.postData() || '';
 		}
-		await route.continue();
 	});
 
 	await page.locator('[data-action="publish"]').click();
