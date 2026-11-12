@@ -1895,6 +1895,14 @@ test.describe('a Check In at a place typed by name', () => {
 		);
 	}
 
+	// A Check In saved with a location has its weather looked up on the
+	// site, once, which can take the whole 4 seconds that lookup is allowed
+	// when the weather service is slow. "Published." then comes later than
+	// the default 5-second wait.
+	async function expectCheckInPublished(page) {
+		await expectPublished(page, { timeout: 15000 });
+	}
+
 	async function openCheckIn(page, searches, delay) {
 		await mockPlaceLookups(page, searches, delay);
 		await loginAs(page);
@@ -1924,7 +1932,7 @@ test.describe('a Check In at a place typed by name', () => {
 		expect(searches.at(-1).searchParams.get('q')).toBe('mission bay');
 		expect(searches.at(-1).searchParams.get('lat')).toBe(String(PHONE.latitude));
 		expect(searches.at(-1).searchParams.get('lng')).toBe(String(PHONE.longitude));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 
 	test("goes back to the phone's spot when the name is typed on past the match", async ({ page }) => {
@@ -1941,7 +1949,7 @@ test.describe('a Check In at a place typed by name', () => {
 		expect(sentField(request, 'place_name')).toBe('Mission Bay Lofts');
 		expect(sentField(request, 'location_lat')).toBe(String(PHONE.latitude));
 		expect(sentField(request, 'location_lng')).toBe(String(PHONE.longitude));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 
 	test('a place picked from the list still wins over the typed match', async ({ page }) => {
@@ -1959,7 +1967,7 @@ test.describe('a Check In at a place typed by name', () => {
 
 		expect(sentField(request, 'location_lat')).toBe(String(SAN_DIEGO.lat));
 		expect(sentField(request, 'location_lng')).toBe(String(SAN_DIEGO.lng));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 });
 

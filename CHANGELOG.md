@@ -27,6 +27,7 @@ can't act on them.
 ### Developer
 
 - The sound-file tests now pass on WordPress 7.2, which accepts a browser's MP4 recording named .m4a on its own and stores it as audio/mpeg, like any .m4a file. Daymark keeps that type; older WordPress still gets audio/mp4. ([#599](https://github.com/jeffpaul/daymark/pull/599))
+- The browser tests for a Check In at a typed place now wait long enough for the weather lookup on the site, which may take 4 seconds when the weather service is slow. They failed whenever it did. ([#603](https://github.com/jeffpaul/daymark/pull/603))
 
 ## [0.22.0] - 2026-11-05
 
