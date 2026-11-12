@@ -247,7 +247,6 @@ class Test_Media_Formats extends WP_UnitTestCase {
 			'Ogg'                                   => array( 'test-audio.ogg', 'clip.ogg', 'audio/ogg', 'audio/ogg' ),
 			'Chrome recording (.webm)'              => array( 'test-recording.webm', 'Recording.webm', 'audio/webm', 'audio/webm' ),
 			'Chrome recording, streamed (.webm)'    => array( 'test-recording-streamed.webm', 'Recording.webm', 'audio/webm', 'audio/webm' ),
-			'MP4 recording named .m4a'              => array( 'test-recording.mp4', 'Recording.m4a', 'audio/mp4', 'audio/mp4' ),
 			'MP4 recording named .mp4'              => array( 'test-recording.mp4', 'Recording.mp4', 'audio/mp4', 'audio/mp4' ),
 			'MP4 recording the browser calls video' => array( 'test-recording.mp4', 'Recording.mp4', 'video/mp4', 'audio/mp4' ),
 		);
@@ -271,6 +270,30 @@ class Test_Media_Formats extends WP_UnitTestCase {
 		$this->assertSame( 'audio', get_post_meta( $post_id, '_daymark_primary_type', true ) );
 		$this->assertSame( $stored, get_post_mime_type( $attachment_id ) );
 		$this->assertStringEndsWith( '.' . pathinfo( $name, PATHINFO_EXTENSION ), (string) get_attached_file( $attachment_id ), 'The file keeps its name.' );
+		$this->assertStringContainsString( '<!-- wp:audio', (string) get_post_field( 'post_content', $post_id ) );
+	}
+
+	/**
+	 * A browser's MP4 recording named .m4a. Older WordPress refuses an .m4a
+	 * file whose content looks like video, so Daymark stores it as
+	 * audio/mp4. WordPress 7.2 accepts it itself (core changeset 65340,
+	 * ticket 46544) and calls it audio/mpeg like any .m4a file, and Daymark
+	 * keeps WordPress's audio type rather than overriding it.
+	 */
+	public function test_an_mp4_recording_named_m4a_publishes_as_an_audio_mark(): void {
+		$path   = $this->copy_fixture( 'test-recording.mp4' );
+		$core   = wp_check_filetype_and_ext( $path, 'Recording.m4a' );
+		$stored = str_starts_with( (string) $core['type'], 'audio/' ) ? (string) $core['type'] : 'audio/mp4';
+
+		$post_id = $this->publish_file( $path, 'Recording.m4a', 'audio/mp4' );
+
+		$this->assertIsInt( $post_id, is_wp_error( $post_id ) ? $post_id->get_error_message() : '' );
+
+		$attachment_id = $this->first_media_id( $post_id );
+
+		$this->assertSame( 'audio', get_post_meta( $post_id, '_daymark_primary_type', true ) );
+		$this->assertSame( $stored, get_post_mime_type( $attachment_id ) );
+		$this->assertStringEndsWith( '.m4a', (string) get_attached_file( $attachment_id ), 'The file keeps its name.' );
 		$this->assertStringContainsString( '<!-- wp:audio', (string) get_post_field( 'post_content', $post_id ) );
 	}
 
