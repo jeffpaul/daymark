@@ -1587,23 +1587,30 @@
 		)}<span class="daymark-stat__label">${label}</span></button>`;
 	}
 
-	// The Timeline's empty state. "Subscribe to a site" points at
-	// Settings -> Daymark, which only someone who can manage it can open, so
-	// for everyone else the sentence is just the publish half.
+	// The Timeline's empty state: a card that says what Daymark is for and
+	// offers the two ways to fill the Timeline. It is the first screen a
+	// new person sees, and it goes as soon as there is anything to show.
+	// "Follow a site" opens the Follow a site sheet, which only someone who
+	// can manage Settings -> Daymark can use, so everyone else gets the
+	// publish half alone.
 	function emptyTimelineHtml() {
-		if (!config.adminSubscriptionsUrl) {
-			return `<p class="daymark-empty">${sprintf(
-				/* translators: %s: "Publish a Mark" link */
-				__('Nothing here yet. %s to fill your timeline.', 'daymark'),
-				'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>'
-			)}</p>`;
-		}
-		return `<p class="daymark-empty">${sprintf(
-			/* translators: 1: "Publish a Mark" link, 2: "follow a site" button */
-			__('Nothing here yet. %1$s or %2$s to fill your timeline.', 'daymark'),
-			'<a href="#create">' + esc(__('Publish a Mark', 'daymark')) + '</a>',
-			`<button type="button" class="daymark-linkbtn" data-follow-site>${esc(__('follow a site', 'daymark'))}</button>`
-		)}</p>`;
+		const follow = config.adminSubscriptionsUrl
+			? `<button type="button" class="daymark-btn daymark-btn--secondary" data-follow-site>${esc(
+					__('Follow a site', 'daymark')
+			  )}</button>
+				<p class="daymark-welcome__hint">${esc(
+					__('Follow a friend’s blog and their posts show up here, newest first.', 'daymark')
+				)}</p>`
+			: '';
+		return `<div class="daymark-welcome" data-timeline-empty>
+				<img class="daymark-welcome__icon" src="${esc(config.daymarkIconUrl || '')}" alt="" width="56" height="56" />
+				<h3 class="daymark-welcome__title">${esc(__('Make your first Mark', 'daymark'))}</h3>
+				<p class="daymark-welcome__text">${esc(
+					__('Share a photo, a video or a thought. It lives on your own site.', 'daymark')
+				)}</p>
+				<a class="daymark-btn daymark-btn--primary" href="#create">${esc(__('Publish your first Mark', 'daymark'))}</a>
+				${follow}
+			</div>`;
 	}
 
 	// Unsubscribe (issue #326) — the ⋯ overflow menu's one destructive
