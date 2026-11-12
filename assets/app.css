@@ -2241,6 +2241,51 @@ button.daymark-stat {
 	text-decoration: underline;
 }
 
+/* The empty Timeline's welcome card (emptyTimelineHtml() in
+   assets/app.js): Daymark's icon, a line on what it is for, and the two
+   ways to fill the Timeline. */
+.daymark-welcome {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--daymark-spacing-md);
+	margin-block-start: var(--daymark-spacing-sm);
+	padding: var(--daymark-spacing-xl) var(--daymark-spacing-lg);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-surface);
+	text-align: center;
+}
+
+.daymark-welcome__icon {
+	inline-size: 56px;
+	block-size: 56px;
+	border-radius: 14px;
+}
+
+.daymark-welcome__title {
+	margin: 0;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+.daymark-welcome__text {
+	max-inline-size: 26ch;
+	margin: 0;
+	margin-block-end: var(--daymark-spacing-sm);
+	color: var(--daymark-text-secondary);
+	font-size: 16px;
+	line-height: 1.45;
+}
+
+.daymark-welcome__hint {
+	margin: 0;
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	line-height: 1.4;
+}
+
 .daymark-error {
 	padding: var(--daymark-spacing-md);
 	border-radius: var(--daymark-radius-sm);
