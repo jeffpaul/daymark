@@ -34,6 +34,8 @@ can't act on them.
 
 - The sound-file tests now pass on WordPress 7.2, which accepts a browser's MP4 recording named .m4a on its own and stores it as audio/mpeg, like any .m4a file. Daymark keeps that type; older WordPress still gets audio/mp4. ([#599](https://github.com/jeffpaul/daymark/pull/599))
 
+- The browser tests for a Check In at a typed place now wait long enough for the weather lookup on the site, which may take 4 seconds when the weather service is slow. They failed whenever it did. ([#603](https://github.com/jeffpaul/daymark/pull/603))
+
 ## [0.22.0] - 2026-11-05
 
 Daymark 0.22.0 makes posting from your phone to your own site feel more like a social app: Publish now sits on the composer, you can record sound right there, and photos show as a tidy strip with alt-text badges. Your site keeps the original, and each Mark now lists the copies your sharing plugins posted to other networks, so replies there can find their way back home (what the IndieWeb calls POSSE). Following friends' own sites gets easier too, with a "Follow me with Daymark" block, replies on posts you follow, and a plain reason whenever a Like or Comment can't reach a site. This release also includes five security fixes, so update when you can.
