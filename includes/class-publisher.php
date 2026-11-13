@@ -246,6 +246,13 @@ class Daymark_Publisher {
 	public const WORDS_PER_MINUTE = 225;
 
 	/**
+	 * User meta recording that someone's first published Mark has been
+	 * looked for, so the app's first-Mark confetti can only ever be offered
+	 * once per person. See claim_first_mark().
+	 */
+	public const FIRST_MARK_META = 'daymark_first_mark_claimed';
+
+	/**
 	 * Minimum word count before a reading-time estimate is stored at all.
 	 * Below this, "1 min read" is noise on a two-sentence caption rather
 	 * than useful information.
@@ -2577,6 +2584,62 @@ class Daymark_Publisher {
 		}
 
 		return $url;
+	}
+
+	/**
+	 * Whether the Mark the current user just published is the first one
+	 * they have ever published, answered "yes" at most once per person.
+	 *
+	 * The app celebrates a first Mark with confetti. The first time one of
+	 * someone's Marks goes live this looks for any other published Mark of
+	 * theirs and remembers that it looked (FIRST_MARK_META), so a person
+	 * who already had Marks before this existed, or who later deletes
+	 * their first one, never gets it a second time, and the lookup runs
+	 * once per person rather than on every publish.
+	 *
+	 * Only call this for a Mark that went live in the current request (a
+	 * new Mark, or a draft just published), never for an edit to a Mark
+	 * that was already live.
+	 *
+	 * @param int $post_id The Mark that was just published.
+	 * @return bool True only for the current user's first published Mark.
+	 */
+	public static function claim_first_mark( int $post_id ): bool {
+		$user_id = get_current_user_id();
+		$post    = get_post( $post_id );
+
+		if (
+			! $user_id
+			|| ! $post instanceof WP_Post
+			|| 'post' !== $post->post_type
+			|| 'publish' !== $post->post_status
+			|| (int) $post->post_author !== $user_id
+			|| '1' !== (string) get_post_meta( $post_id, '_daymark_is_mark', true )
+		) {
+			return false;
+		}
+
+		if ( '' !== (string) get_user_meta( $user_id, self::FIRST_MARK_META, true ) ) {
+			return false;
+		}
+
+		update_user_meta( $user_id, self::FIRST_MARK_META, '1' );
+
+		$others = get_posts(
+			array(
+				'post_type'      => 'post',
+				'post_status'    => 'publish',
+				'author'         => $user_id,
+				'post__not_in'   => array( $post_id ),
+				'meta_key'       => '_daymark_is_mark', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one lookup per person, ever.
+				'meta_value'     => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- same.
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+
+		return empty( $others );
 	}
 
 	/**
