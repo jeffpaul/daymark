@@ -749,6 +749,13 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-accent-deep);
 }
 
+/* A sharing plugin's network mark on its chip (networkIconMarkup()), in
+   the chip's own color. */
+.daymark-where__neticon {
+	inline-size: 16px;
+	block-size: 16px;
+}
+
 .daymark-where__check {
 	display: none;
 }
@@ -3632,6 +3639,35 @@ button.daymark-stat {
 /* Your site's lock icon, on the text's baseline. */
 .daymark-dest__name svg {
 	vertical-align: -2px;
+}
+
+/* A sharing plugin's row: its network's mark, in the network's own color,
+   then the name, the account it posts as, and the plugin in small print. */
+.daymark-dest__neticon {
+	flex-shrink: 0;
+	inline-size: 28px;
+	block-size: 28px;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-dest__neticon--bluesky {
+	color: #0a7aff;
+}
+
+.daymark-dest__neticon--mastodon {
+	color: #6364ff;
+}
+
+.daymark-dest__account {
+	max-inline-size: 100%;
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	overflow-wrap: anywhere;
+}
+
+.daymark-dest__via {
+	color: var(--daymark-text-secondary);
+	font-size: 12px;
 }
 
 /* The sheet's body already spaces its parts. */

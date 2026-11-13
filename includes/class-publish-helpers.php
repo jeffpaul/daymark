@@ -122,6 +122,16 @@ class Daymark_Publish_Helpers {
 						&& \Atmosphere\is_connected()
 						&& \Atmosphere\is_auto_publish_enabled();
 				},
+				// The Bluesky handle ATmosphere is connected as.
+				'account'   => static function () {
+					if ( ! function_exists( 'Atmosphere\\get_identity' ) ) {
+						return '';
+					}
+
+					$identity = \Atmosphere\get_identity();
+
+					return self::handle( is_array( $identity ) ? ( $identity['handle'] ?? '' ) : '' );
+				},
 				// ATmosphere exposes no per-post filter; its documented
 				// per-post control is the `atmosphere_disabled` opt-out meta.
 				// Translate the Mark's toggle into that meta just before
@@ -156,6 +166,20 @@ class Daymark_Publish_Helpers {
 			'share-on-mastodon'     => array(
 				'label'   => 'Share on Mastodon',
 				'network' => 'Mastodon',
+				// Share on Mastodon keeps the name it is signed in as, and
+				// its server, in its settings; it offers no function for
+				// either, so they are read (never written) from there.
+				'account' => static function () {
+					$settings = get_option( 'share_on_mastodon_settings' );
+
+					if ( ! is_array( $settings ) ) {
+						return '';
+					}
+
+					$host = wp_parse_url( (string) ( $settings['mastodon_host'] ?? '' ), PHP_URL_HOST );
+
+					return self::handle( $settings['mastodon_username'] ?? '', is_string( $host ) ? $host : '' );
+				},
 				'bind'    => static function () {
 					add_filter(
 						'share_on_mastodon_enabled',
@@ -189,6 +213,35 @@ class Daymark_Publish_Helpers {
 			'autoshare-for-twitter' => array(
 				'label'   => 'Autopost for X',
 				'network' => 'X',
+				// The X accounts a new post is shared to unless its own
+				// editor panel picks others: the plugin's default accounts,
+				// named from its saved account list (read, never written;
+				// its own account getter can call X, so it isn't used here).
+				'account' => static function () {
+					if ( ! function_exists( 'TenUp\\AutoshareForTwitter\\Utils\\get_default_autoshare_accounts' ) ) {
+						return '';
+					}
+
+					$defaults = \TenUp\AutoshareForTwitter\Utils\get_default_autoshare_accounts();
+					$accounts = get_option( 'autoshare_for_twitter_accounts' );
+
+					if ( ! is_array( $defaults ) || ! is_array( $accounts ) ) {
+						return '';
+					}
+
+					$handles = array();
+
+					foreach ( $defaults as $account_id ) {
+						$account = is_scalar( $account_id ) ? ( $accounts[ $account_id ] ?? null ) : null;
+						$handle  = self::handle( is_array( $account ) ? ( $account['username'] ?? '' ) : '' );
+
+						if ( '' !== $handle ) {
+							$handles[] = $handle;
+						}
+					}
+
+					return implode( ', ', $handles );
+				},
 				'bind'    => static function () {
 					add_filter(
 						'autoshare_for_twitter_enabled_default',
@@ -209,8 +262,11 @@ class Daymark_Publish_Helpers {
 		 * filter. Optional keys: `slugs`, `classes`, `functions`, and
 		 * `constants` to detect the plugin (otherwise the matching PLUGINS
 		 * entry's are used), `available` (a callable gate), `network` (the
-		 * service the plugin shares to), and `default` (bool, whether the
-		 * toggle starts on for a new Mark; off when omitted).
+		 * service the plugin shares to), `default` (bool, whether the
+		 * toggle starts on for a new Mark; off when omitted), and `account`
+		 * (a callable returning the account the plugin shares as, such as
+		 * "@you.bsky.social", shown under the toggle; nothing is shown when
+		 * it is omitted or returns an empty string).
 		 *
 		 * @param array<string, array<string, mixed>> $adapters Adapter map.
 		 */
@@ -221,10 +277,11 @@ class Daymark_Publish_Helpers {
 
 	/**
 	 * Active controllable helpers, for the publish-screen toggles. Each is
-	 * [{id, label, plugin, network, default}]: `label` is the toggle's text
-	 * ("Bluesky via ATmosphere", or just the plugin's name when it names no
-	 * network), `plugin` the plugin's name, and `default` whether the toggle
-	 * starts on.
+	 * [{id, label, plugin, network, account, default}]: `label` is the
+	 * toggle's text ("Bluesky via ATmosphere", or just the plugin's name
+	 * when it names no network), `plugin` the plugin's name, `account` the
+	 * account the plugin shares as ("" when it doesn't say), and `default`
+	 * whether the toggle starts on.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
@@ -252,11 +309,52 @@ class Daymark_Publish_Helpers {
 					: $plugin,
 				'plugin'  => $plugin,
 				'network' => $network,
+				'account' => self::adapter_account( $def ),
 				'default' => ! empty( $def['default'] ),
 			);
 		}
 
 		return $found;
+	}
+
+	/**
+	 * The account an adapter's plugin shares as, for the line under its
+	 * toggle. Asked of the adapter's `account` callable; a plugin that
+	 * throws, or answers with anything but text, simply shows no account.
+	 *
+	 * @param array<string, mixed> $def Adapter definition.
+	 * @return string The account, or '' when the plugin doesn't say.
+	 */
+	private static function adapter_account( array $def ): string {
+		if ( ! isset( $def['account'] ) || ! is_callable( $def['account'] ) ) {
+			return '';
+		}
+
+		try {
+			$account = call_user_func( $def['account'] );
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+
+		return is_string( $account ) ? sanitize_text_field( $account ) : '';
+	}
+
+	/**
+	 * Writes an account name the way its network shows it: "@name", or
+	 * "@name@server" on a network of many servers.
+	 *
+	 * @param mixed  $name   The account's name, with or without its "@".
+	 * @param string $server The server it lives on, when the network has many.
+	 * @return string The handle, or '' without a name.
+	 */
+	private static function handle( $name, string $server = '' ): string {
+		$name = is_string( $name ) ? ltrim( trim( $name ), '@' ) : '';
+
+		if ( '' === $name ) {
+			return '';
+		}
+
+		return '@' . $name . ( '' !== $server ? '@' . $server : '' );
 	}
 
 	/**

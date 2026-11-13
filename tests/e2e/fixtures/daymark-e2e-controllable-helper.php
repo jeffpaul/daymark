@@ -59,13 +59,17 @@ add_filter(
 		);
 
 		// A helper whose plugin shares every post unless told not to, like
-		// ATmosphere: it names the network it shares to and starts on.
+		// ATmosphere: it names the network it shares to and the account it
+		// shares as, and starts on.
 		if ( ! empty( $_COOKIE['daymark_e2e_network_helper'] ) ) {
 			$adapters['daymark-e2e-network'] = array(
 				'label'   => 'E2E Plugin',
 				'network' => 'E2E Network',
 				'default' => true,
 				'slugs'   => array( 'daymark-e2e-network' ),
+				'account' => static function () {
+					return '@e2e@example.social';
+				},
 				'bind'    => '__return_null',
 			);
 		}

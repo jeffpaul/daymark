@@ -32,6 +32,11 @@ namespace Atmosphere {
 			return $GLOBALS['daymark_test_atmo_autopub'] ?? true;
 		}
 	}
+	if ( ! function_exists( 'Atmosphere\\get_identity' ) ) {
+		function get_identity() {
+			return $GLOBALS['daymark_test_atmo_identity'] ?? array();
+		}
+	}
 }
 
 namespace {
@@ -49,7 +54,7 @@ namespace {
 		}
 
 		public function tear_down(): void {
-			unset( $GLOBALS['daymark_test_atmo_connected'], $GLOBALS['daymark_test_atmo_autopub'] );
+			unset( $GLOBALS['daymark_test_atmo_connected'], $GLOBALS['daymark_test_atmo_autopub'], $GLOBALS['daymark_test_atmo_identity'] );
 			parent::tear_down();
 		}
 
@@ -79,6 +84,32 @@ namespace {
 			$this->assertSame( 'ATmosphere', $helpers['atmosphere']['plugin'] );
 			$this->assertSame( 'Bluesky', $helpers['atmosphere']['network'] );
 			$this->assertTrue( $helpers['atmosphere']['default'] );
+		}
+
+		/** The toggle carries the Bluesky handle ATmosphere is connected as. */
+		public function test_toggle_carries_the_connected_bluesky_handle() {
+			$GLOBALS['daymark_test_atmo_identity'] = array(
+				'did'    => 'did:plc:example',
+				'handle' => 'jeffpaul.com',
+			);
+
+			$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+
+			$this->assertSame( '@jeffpaul.com', $helpers['atmosphere']['account'] );
+		}
+
+		/** No handle on file means no account line, not an empty "@". */
+		public function test_toggle_has_no_account_without_a_handle() {
+			$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+			$this->assertSame( '', $helpers['atmosphere']['account'] );
+
+			$GLOBALS['daymark_test_atmo_identity'] = array(
+				'did'    => 'did:plc:example',
+				'handle' => '',
+			);
+
+			$helpers = array_column( Daymark_Publish_Helpers::controllable(), null, 'id' );
+			$this->assertSame( '', $helpers['atmosphere']['account'] );
 		}
 
 		/** The "Where this goes" sheet names Bluesky only while ATmosphere would share, tied to its toggle. */
