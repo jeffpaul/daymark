@@ -1772,7 +1772,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$this->fire_rest_after_insert( (int) $post_id, $request, true );
 		}
 
-		$response = rest_ensure_response( $this->prepare_mark_summary( $post_id ) );
+		$summary = $this->prepare_mark_summary( $post_id );
+
+		// The app celebrates someone's first published Mark; see
+		// Daymark_Publisher::claim_first_mark().
+		$summary['first_mark'] = ! $is_autosave && Daymark_Publisher::claim_first_mark( (int) $post_id );
+
+		$response = rest_ensure_response( $summary );
 		$response->set_status( 201 );
 
 		return $response;
@@ -4076,6 +4082,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$data['status'] = $status;
 		}
 
+		// Whether the Mark was already live, so only a draft going live
+		// here can count as someone's first published Mark.
+		$was_published = 'publish' === get_post_status( absint( $request->get_param( 'id' ) ) );
+
 		$result = Daymark_Plugin::instance()->publisher->update(
 			absint( $request->get_param( 'id' ) ),
 			$data,
@@ -4090,7 +4100,12 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			$this->fire_rest_after_insert( (int) $result, $request, false );
 		}
 
-		return rest_ensure_response( $this->prepare_mark_summary( (int) $result ) );
+		$summary = $this->prepare_mark_summary( (int) $result );
+
+		// See create_mark()'s matching comment.
+		$summary['first_mark'] = ! $is_autosave && ! $was_published && Daymark_Publisher::claim_first_mark( (int) $result );
+
+		return rest_ensure_response( $summary );
 	}
 
 	/**

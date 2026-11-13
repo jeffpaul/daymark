@@ -1715,6 +1715,63 @@ test('an empty Timeline shows a welcome card with Publish and Follow', async ({ 
 	await expect(page.locator('#daymark-caption')).toBeVisible();
 });
 
+// "Published." comes with a check mark every time, and the first Mark
+// someone ever publishes also gets confetti. The site says which Mark is
+// the first (`first_mark` on the save's answer; PHPUnit covers that), so
+// this test answers for the site both times: whether the test account has
+// published before depends on which tests ran first.
+test('Published shows a check mark, and confetti only for a first Mark', async ({ page }) => {
+	let firstMark = false;
+	await page.route(/\/daymark\/v1\/marks(\/\d+)?(?:[?&]|$)/, async (route) => {
+		if ('GET' === route.request().method()) {
+			await route.continue();
+			return;
+		}
+		const response = await route.fetch();
+		let body = null;
+		try {
+			body = await response.json();
+		} catch (error) {
+			body = null;
+		}
+		if (!body || 'object' !== typeof body || !('first_mark' in body)) {
+			await route.fulfill({ response });
+			return;
+		}
+		// The site always answers the question, one way or the other.
+		expect(typeof body.first_mark).toBe('boolean');
+		body.first_mark = firstMark && 'publish' === body.status;
+		await route.fulfill({ response, json: body });
+	});
+
+	await loginAs(page);
+	await page.goto('/daymark');
+
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E published check ${RUN_ID}`);
+	await page.locator('[data-action="publish"]').click();
+	await expectPublished(page);
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeVisible();
+	await expect(page.locator('.daymark-confetti')).toHaveCount(0);
+
+	firstMark = true;
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E first Mark confetti ${RUN_ID}`);
+	await page.locator('[data-action="publish"]').click();
+	await expect(page.locator('.daymark-confetti i')).toHaveCount(44);
+	await expectPublished(page);
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeVisible();
+	// Decoration only: hidden from screen readers, and it clears itself.
+	await expect(page.locator('.daymark-confetti')).toHaveCount(0);
+
+	// A plain message has no check mark.
+	await openComposer(page);
+	await page.fill('#daymark-caption', `E2E draft, no check ${RUN_ID}`);
+	await page.locator('[data-action="save-draft"]').click();
+	await expect(messageBar(page)).toContainText('Saved as draft.');
+	await expect(messageBar(page).locator('[data-msgbar-check]')).toBeHidden();
+});
+
 // A Checkin Mark's own optional photo/video (issue #424) is a genuinely
 // optional media picker, not a required one — a manually typed Place
 // (geolocation is neither granted nor mocked in this test context, so the
@@ -1909,6 +1966,14 @@ test.describe('a Check In at a place typed by name', () => {
 		);
 	}
 
+	// A Check In saved with a location has its weather looked up on the
+	// site, once, which can take the whole 4 seconds that lookup is allowed
+	// when the weather service is slow. "Published." then comes later than
+	// the default 5-second wait.
+	async function expectCheckInPublished(page) {
+		await expectPublished(page, { timeout: 15000 });
+	}
+
 	async function openCheckIn(page, searches, delay) {
 		await mockPlaceLookups(page, searches, delay);
 		await loginAs(page);
@@ -1938,7 +2003,7 @@ test.describe('a Check In at a place typed by name', () => {
 		expect(searches.at(-1).searchParams.get('q')).toBe('mission bay');
 		expect(searches.at(-1).searchParams.get('lat')).toBe(String(PHONE.latitude));
 		expect(searches.at(-1).searchParams.get('lng')).toBe(String(PHONE.longitude));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 
 	test("goes back to the phone's spot when the name is typed on past the match", async ({ page }) => {
@@ -1955,7 +2020,7 @@ test.describe('a Check In at a place typed by name', () => {
 		expect(sentField(request, 'place_name')).toBe('Mission Bay Lofts');
 		expect(sentField(request, 'location_lat')).toBe(String(PHONE.latitude));
 		expect(sentField(request, 'location_lng')).toBe(String(PHONE.longitude));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 
 	test('a place picked from the list still wins over the typed match', async ({ page }) => {
@@ -1973,7 +2038,7 @@ test.describe('a Check In at a place typed by name', () => {
 
 		expect(sentField(request, 'location_lat')).toBe(String(SAN_DIEGO.lat));
 		expect(sentField(request, 'location_lng')).toBe(String(SAN_DIEGO.lng));
-		await expectPublished(page);
+		await expectCheckInPublished(page);
 	});
 });
 
@@ -5349,9 +5414,14 @@ test('controllable helper: a default-on helper starts on and the reach note foll
 	await openWhere(page);
 	const toggle = page.locator('[data-helper="daymark-e2e-network"]');
 	await expect(toggle).toBeChecked();
-	await expect(page.locator('label[for="daymark-helper-daymark-e2e-network"]')).toContainText(
-		'E2E Network via E2E Plugin'
-	);
+	// Its row reads as the network, then the account it shares as, then
+	// the plugin in small print; the switch's description is the account.
+	const row = page.locator('label[for="daymark-helper-daymark-e2e-network"]');
+	await expect(row.locator('.daymark-dest__name')).toHaveText('E2E Network');
+	await expect(row.locator('.daymark-dest__account')).toHaveText('@e2e@example.social');
+	await expect(row.locator('.daymark-dest__via')).toHaveText('via E2E Plugin');
+	await expect(toggle).toHaveAccessibleName('Share to E2E Network via E2E Plugin');
+	await expect(toggle).toHaveAccessibleDescription('@e2e@example.social');
 	const note = page.locator('[data-reach-note]');
 	await expect(note).toContainText('It also reaches E2E Network.');
 

@@ -24,11 +24,17 @@ can't act on them.
 
 - While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
 
+- The "Where this goes" sheet now shows each network's icon and the account your Mark will be posted as: your Bluesky handle from ATmosphere, your Mastodon address from Share on Mastodon, or your X account from Autopost for X, with the sharing plugin named in small print. The network's chip on the composer carries its icon too. ([#596](https://github.com/jeffpaul/daymark/pull/596))
+
+- "Published." now comes with a small check mark that pops in, and the first Mark you ever publish gets a short burst of confetti. Both stay still when your device asks for reduced motion. ([#597](https://github.com/jeffpaul/daymark/pull/597))
+
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
 
 ### Developer
 
 - The sound-file tests now pass on WordPress 7.2, which accepts a browser's MP4 recording named .m4a on its own and stores it as audio/mpeg, like any .m4a file. Daymark keeps that type; older WordPress still gets audio/mp4. ([#599](https://github.com/jeffpaul/daymark/pull/599))
+
+- The browser tests for a Check In at a typed place now wait long enough for the weather lookup on the site, which may take 4 seconds when the weather service is slow. They failed whenever it did. ([#603](https://github.com/jeffpaul/daymark/pull/603))
 
 ## [0.22.0] - 2026-11-05
 

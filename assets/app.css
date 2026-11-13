@@ -749,6 +749,13 @@ h2[tabindex='-1']:focus {
 	color: var(--daymark-accent-deep);
 }
 
+/* A sharing plugin's network mark on its chip (networkIconMarkup()), in
+   the chip's own color. */
+.daymark-where__neticon {
+	inline-size: 16px;
+	block-size: 16px;
+}
+
 .daymark-where__check {
 	display: none;
 }
@@ -3634,6 +3641,35 @@ button.daymark-stat {
 	vertical-align: -2px;
 }
 
+/* A sharing plugin's row: its network's mark, in the network's own color,
+   then the name, the account it posts as, and the plugin in small print. */
+.daymark-dest__neticon {
+	flex-shrink: 0;
+	inline-size: 28px;
+	block-size: 28px;
+	color: var(--daymark-text-primary);
+}
+
+.daymark-dest__neticon--bluesky {
+	color: #0a7aff;
+}
+
+.daymark-dest__neticon--mastodon {
+	color: #6364ff;
+}
+
+.daymark-dest__account {
+	max-inline-size: 100%;
+	color: var(--daymark-text-secondary);
+	font-size: 14px;
+	overflow-wrap: anywhere;
+}
+
+.daymark-dest__via {
+	color: var(--daymark-text-secondary);
+	font-size: 12px;
+}
+
 /* The sheet's body already spaces its parts. */
 .daymark-sheet__body .daymark-helpers-note,
 .daymark-sheet__body .daymark-publish-subnote {
@@ -4164,9 +4200,120 @@ button.daymark-stat {
 	font-weight: 600;
 }
 
+/* The check mark that pops in beside "Published." (showMessage()'s
+   `celebrate`). */
+.daymark-msgbar__check {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	inline-size: 26px;
+	block-size: 26px;
+	border-radius: 50%;
+	background: var(--daymark-accent);
+	color: var(--daymark-accent-fg);
+}
+
+.daymark-msgbar__check[hidden] {
+	display: none;
+}
+
+.daymark-msgbar__check.is-pop {
+	animation: daymark-check-pop 420ms cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+@keyframes daymark-check-pop {
+	0% {
+		transform: scale(0);
+	}
+
+	70% {
+		transform: scale(1.18);
+	}
+
+	100% {
+		transform: scale(1);
+	}
+}
+
+/* Confetti for the first Mark someone publishes (burstConfetti() in
+   assets/app.js, which places each piece and sets where it flies). It
+   covers the screen, above everything, but takes no taps. */
+.daymark-confetti {
+	position: fixed;
+	inset: 0;
+	z-index: 200;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.daymark-confetti i {
+	position: absolute;
+	inline-size: 9px;
+	block-size: 9px;
+	border-radius: 2px;
+	background: var(--daymark-accent);
+	opacity: 0;
+	animation: daymark-confetti 1500ms cubic-bezier(0.15, 0.7, 0.3, 1) both;
+}
+
+.daymark-confetti i:nth-child(6n + 2) {
+	background: #f7b267;
+}
+
+.daymark-confetti i:nth-child(6n + 3) {
+	background: #1d2440;
+}
+
+.daymark-confetti i:nth-child(6n + 4) {
+	background: #e9825a;
+}
+
+.daymark-confetti i:nth-child(6n + 5) {
+	background: #f6dcb9;
+}
+
+.daymark-confetti i:nth-child(6n) {
+	background: #2f6f5e;
+}
+
+.daymark-confetti i:nth-child(3n + 1) {
+	border-radius: 50%;
+}
+
+.daymark-confetti i:nth-child(3n + 2) {
+	inline-size: 6px;
+	block-size: 14px;
+}
+
+@keyframes daymark-confetti {
+	0% {
+		transform: translate(0, 0) rotate(0);
+		opacity: 1;
+	}
+
+	55% {
+		transform: translate(var(--daymark-confetti-x), var(--daymark-confetti-y)) rotate(var(--daymark-confetti-turn));
+		opacity: 1;
+	}
+
+	100% {
+		transform: translate(calc(var(--daymark-confetti-x) * 1.1), calc(var(--daymark-confetti-y) + 260px)) rotate(calc(var(--daymark-confetti-turn) * 1.6));
+		opacity: 0;
+	}
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.daymark-msgbar {
 		transition: none;
+	}
+
+	.daymark-msgbar__check.is-pop {
+		animation: none;
+	}
+
+	.daymark-confetti {
+		display: none;
 	}
 }
 
