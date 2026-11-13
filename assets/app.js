@@ -146,6 +146,41 @@
 	let messagePositionFrame = 0;
 	let messagePositionTimer = null;
 
+	// How many pieces a first Mark's confetti has, and how long the burst
+	// stays on the page (a little longer than its animation in app.css).
+	const CONFETTI_PIECES = 44;
+	const CONFETTI_MS = 2200;
+
+	// A short burst of confetti rising from the message bar, for the first
+	// Mark someone ever publishes (notePublishSaved()). Decoration only:
+	// it is hidden from screen readers, takes no taps, removes itself, and
+	// is skipped when the device asks for reduced motion. The pieces'
+	// colors and motion are in app.css (.daymark-confetti).
+	function burstConfetti(bar) {
+		if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			return;
+		}
+		const rect = bar.getBoundingClientRect();
+		const layer = document.createElement('div');
+		layer.className = 'daymark-confetti';
+		layer.setAttribute('aria-hidden', 'true');
+		for (let i = 0; i < CONFETTI_PIECES; i++) {
+			const piece = document.createElement('i');
+			// Up and outward, within about 55 degrees either side of straight up.
+			const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.9;
+			const reach = 180 + Math.random() * 330;
+			piece.style.setProperty('--daymark-confetti-x', Math.round(Math.cos(angle) * reach * 0.75) + 'px');
+			piece.style.setProperty('--daymark-confetti-y', Math.round(Math.sin(angle) * reach) + 'px');
+			piece.style.setProperty('--daymark-confetti-turn', Math.round(Math.random() * 720 - 360) + 'deg');
+			piece.style.left = Math.round(rect.left + rect.width * (0.2 + Math.random() * 0.6)) + 'px';
+			piece.style.top = Math.round(rect.top) + 'px';
+			piece.style.animationDelay = Math.round(Math.random() * 120) + 'ms';
+			layer.appendChild(piece);
+		}
+		document.body.appendChild(layer);
+		setTimeout(() => layer.remove(), CONFETTI_MS);
+	}
+
 	function ensureMessageBar() {
 		if (messageBar) {
 			return messageBar;
@@ -154,6 +189,7 @@
 		messageBar.className = 'daymark-msgbar';
 		messageBar.hidden = true;
 		messageBar.innerHTML =
+			'<span class="daymark-msgbar__check" data-msgbar-check hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12"></polyline></svg></span>' +
 			'<span class="daymark-msgbar__text" data-msgbar-text></span>' +
 			'<button type="button" class="daymark-btn daymark-btn--text daymark-msgbar__action" data-msgbar-action hidden></button>';
 		document.body.appendChild(messageBar);
@@ -203,8 +239,11 @@
 	 * @param {string}  message.text   What the bar says.
 	 * @param {?Object} message.action Optional button: { label, run }.
 	 * @param {boolean} message.error  Shows it as a problem, and longer.
+	 * @param {string}  message.celebrate 'check' pops a check mark in before
+	 *                                    the text; 'confetti' also sends up
+	 *                                    confetti. Empty for a plain message.
 	 */
-	function showMessage({ key, text, action = null, error = false }) {
+	function showMessage({ key, text, action = null, error = false, celebrate = '' }) {
 		const bar = ensureMessageBar();
 		const button = bar.querySelector('[data-msgbar-action]');
 		const buttonHadFocus = document.activeElement === button;
@@ -216,7 +255,8 @@
 			messageState.key === key &&
 			messageState.text === text &&
 			messageState.label === label &&
-			messageState.error === !!error
+			messageState.error === !!error &&
+			messageState.celebrate === celebrate
 		) {
 			// Already saying exactly this: keep it as it is (no second
 			// announcement), with the latest button handler.
@@ -224,8 +264,11 @@
 			return;
 		}
 
-		messageState = { key, text, label, action, error: !!error };
+		messageState = { key, text, label, action, error: !!error, celebrate };
 		bar.querySelector('[data-msgbar-text]').textContent = text;
+		const check = bar.querySelector('[data-msgbar-check]');
+		check.hidden = !celebrate;
+		check.classList.remove('is-pop');
 		if (action) {
 			button.textContent = action.label;
 			button.hidden = false;
@@ -238,6 +281,15 @@
 		bar.classList.toggle('is-error', !!error);
 		bar.hidden = false;
 		positionMessageBar();
+		if (celebrate) {
+			// Reading the size restarts the pop when the bar was already
+			// celebrating a moment ago.
+			void check.offsetWidth;
+			check.classList.add('is-pop');
+			if ('confetti' === celebrate) {
+				burstConfetti(bar);
+			}
+		}
 		// Once more after the screen settles: a screen that just rendered
 		// may still be laying out its bottom nav.
 		clearTimeout(messagePositionTimer);
@@ -4419,7 +4471,9 @@
 
 	// The site saved the Mark. "Published." comes with View, and shows even
 	// if the first message has gone; but not over a Mark you've started
-	// writing since, unless the first message is still up.
+	// writing since, unless the first message is still up. A check mark
+	// pops in beside it every time, and the first Mark someone ever
+	// publishes (the site says so, once, with `first_mark`) gets confetti.
 	function notePublishSaved(pendingId, response) {
 		const notice = publishNotices.get(pendingId);
 		publishNotices.delete(pendingId);
@@ -4435,6 +4489,7 @@
 				key: notice.key,
 				text: __('Published.', 'daymark'),
 				action: { label: __('View', 'daymark'), run: () => viewPublishedMark(response) },
+				celebrate: response.first_mark ? 'confetti' : 'check',
 			});
 			return;
 		}
