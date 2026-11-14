@@ -3816,6 +3816,30 @@ test('manifest serves directly with app start_url', async ({ request }) => {
 	expect(manifest.shortcuts[0].url).toContain('#create');
 });
 
+// Firefox on an iPhone hands iOS no page to read an icon from, so iOS asks
+// the top of the site for these file names. Each is answered with the icon
+// itself (no redirect, no sign-in), and other missing files stay missing.
+test('the top-level iPhone icon addresses serve Daymark\'s icon', async ({ request }) => {
+	for (const path of [
+		'/apple-touch-icon.png',
+		'/apple-touch-icon-precomposed.png',
+		'/apple-touch-icon-180x180.png',
+		'/apple-touch-icon-120x120-precomposed.png',
+	]) {
+		const res = await request.get(path, { maxRedirects: 0 });
+		expect(res.status(), path).toBe(200);
+		expect(res.headers()['content-type'], path).toBe('image/png');
+		const body = await res.body();
+		// The PNG signature, then the IHDR width and height: 180 by 180.
+		expect(body.subarray(0, 8).toString('hex'), path).toBe('89504e470d0a1a0a');
+		expect(body.readUInt32BE(16), path).toBe(180);
+		expect(body.readUInt32BE(20), path).toBe(180);
+	}
+
+	const missing = await request.get('/apple-touch-icon-nope.png', { maxRedirects: 0 });
+	expect(missing.status()).toBe(404);
+});
+
 // Save as Draft → Drafts row → resume editing → publish (running the
 // stored destinations via deferred syndication).
 test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) => {

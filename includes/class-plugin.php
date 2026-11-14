@@ -457,6 +457,12 @@ final class Daymark_Plugin {
 		// registered by then — rather than relying on this plugin happening
 		// to load before that one alphabetically.
 		add_action( 'init', array( $this->like_visibility, 'register_post_type' ), 5 );
+		// At the very start of init: answers the iPhone's fallback icon
+		// addresses (/apple-touch-icon.png at the top of the site) before
+		// anything else on the site does and before WordPress looks the
+		// address up as a missing page. See
+		// Daymark_Routes::is_root_touch_icon_request() for why.
+		add_action( 'init', array( $this->routes, 'maybe_serve_root_touch_icon' ), 0 );
 		add_action( 'init', array( $this, 'on_init' ) );
 		add_action( 'rest_api_init', array( $this->rest_controller, 'register_routes' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( DAYMARK_PLUGIN_FILE ), array( $this, 'add_action_links' ) );
