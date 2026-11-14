@@ -5844,3 +5844,72 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 	await backLink.click();
 	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
 });
+
+// The Install card's Add to Home Screen steps are worded for the iPhone
+// browser in use. It used to say "in Safari" to everyone, Firefox included.
+// Firefox and Chrome are told apart by their own product token; a browser
+// with no steps of its own, or one that can't be told apart, gets wording
+// that names no browser. Safari's steps don't name it either, since other
+// browsers send Safari's exact user agent.
+const IOS_INSTALL_STEPS = [
+	{
+		browser: 'Firefox',
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/145.0 Mobile/15E148 Safari/605.1.15',
+		steps: /^In Firefox, tap the Share button in the address bar, then Add to Home Screen\./,
+	},
+	{
+		browser: 'Chrome',
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0.7444.77 Mobile/15E148 Safari/604.1',
+		steps: /^In Chrome, tap the Share button next to the address bar, then Add to Home Screen\.$/,
+	},
+	{
+		browser: 'Safari',
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.1 Mobile/15E148 Safari/604.1',
+		steps: /^Tap the Share button, then Add to Home Screen\. If you don’t see Share, tap the ••• button first\.$/,
+	},
+	{
+		browser: 'Edge (no steps of its own)',
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 EdgiOS/142.0.3595.66 Mobile/15E148 Safari/605.1.15',
+		steps: /^Open your browser’s Share menu, then tap Add to Home Screen\.$/,
+	},
+	{
+		browser: 'an in-app browser',
+		userAgent:
+			'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
+		steps: /^Open your browser’s Share menu, then tap Add to Home Screen\.$/,
+	},
+];
+
+for (const { browser: browserName, userAgent, steps } of IOS_INSTALL_STEPS) {
+	test.describe(`the Install card on an iPhone, in ${browserName}`, () => {
+		test.use({ userAgent });
+
+		test('gives the Add to Home Screen steps for that browser', async ({ page }) => {
+			await loginAs(page);
+			await page.goto('/daymark');
+
+			const card = page.locator('[data-install-card]');
+			await expect(card).toBeVisible();
+			await expect(card.locator('[data-install-body]')).toHaveText(
+				'Add Daymark to your Home Screen to open it like an app.'
+			);
+			await expect(card.locator('[data-install-steps]')).toHaveText(steps);
+			await expect(card).not.toContainText('Safari');
+			// No browser on an iPhone has an install prompt to open.
+			await expect(card.locator('[data-install-start]')).toBeHidden();
+
+			// Me's Install Daymark row opens the same steps in a sheet.
+			await page.goto('/daymark#me');
+			await page.locator('[data-me-install]').click();
+			const sheet = page.locator('.daymark-sheet__panel--hint');
+			await expect(sheet.locator('.daymark-hint-body').first()).toHaveText(steps);
+			await expect(sheet).not.toContainText('Safari');
+			await sheet.locator('[data-hint-dismiss]').click();
+			await expect(sheet).toBeHidden();
+		});
+	});
+}
