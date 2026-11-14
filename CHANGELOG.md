@@ -28,6 +28,8 @@ can't act on them.
 
 - "Published." now comes with a small check mark that pops in, and the first Mark you ever publish gets a short burst of confetti. Both stay still when your device asks for reduced motion. ([#597](https://github.com/jeffpaul/daymark/pull/597))
 
+- Daymark's plugin description and README now use six lines from the original planning notes, such as "Publish once. Own it forever. Share everywhere.", to say in everyday words why posting on your own site first matters. ([#600](https://github.com/jeffpaul/daymark/pull/600))
+
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
 
 ### Developer

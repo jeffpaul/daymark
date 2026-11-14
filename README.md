@@ -34,6 +34,11 @@ their own Daymark, or on the network where they saw your post.
 
 ## Back to the open web
 
+**Publish once. Own it forever. Share everywhere.**
+
+The web didn't lose because it lacked ownership. It lost because it
+became slower than social media.
+
 Social apps made posting effortless, and that's a big reason so much of
 what we share now lives inside a few walled gardens, where the company
 owns the feed, decides who sees your posts, and can change the rules or
@@ -41,7 +46,8 @@ shut down whenever it likes. Daymark exists to get more people publishing
 to sites they own, with WordPress, by making that just as easy as posting
 to a social app.
 
-It follows the [IndieWeb](https://indieweb.org/)'s approach rather than
+Daymark isn't a new social network. It's a new way to use WordPress. It
+follows the [IndieWeb](https://indieweb.org/)'s approach rather than
 building yet another network. You publish on your own site, then share
 copies to the networks your friends already use, so you can still reach
 them where they are. You follow friends' own sites instead of their
@@ -51,6 +57,9 @@ Webmention for likes, replies, and reblogs between sites, microformats so
 other sites and readers understand your posts, and WebSub so new posts
 arrive quickly. Every site that joins in makes the open web a little more
 social, and the walled gardens a little less necessary.
+
+WordPress doesn't need to become a social network. It needs to become
+the best place for social-shaped content to begin.
 
 ## Why people love Daymark
 
@@ -91,10 +100,12 @@ social, and the walled gardens a little less necessary.
 - **Reach further, without extra work.** Daymark works alongside the
   sharing plugins you already use (such as ActivityPub for Mastodon and
   ATmosphere for Bluesky), and brings replies from those networks back to
-  you automatically.
+  you automatically. Owning your posts isn't only about where they start.
+  It's also about the conversation coming back to something you own.
 - **A helping hand, never a replacement for yours.** Optional AI
   suggestions for captions, titles, tags, and alt text — always yours to
-  accept, edit, or ignore.
+  accept, edit, or ignore. AI never gets between you and the Publish
+  button.
 
 **[Try Daymark right now in your browser](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/jeffpaul/daymark/main/.github/blueprints/blueprint.json)**
 — a full, temporary WordPress site with Daymark pre-installed, no signup

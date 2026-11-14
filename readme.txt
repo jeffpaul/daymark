@@ -30,8 +30,8 @@ When you have something to share, post a photo, video, voice note, check-in, or 
 * **You never lose your work.** Start a caption, get interrupted, lose your signal on the subway — Daymark quietly saves everything as you go. Publish with no connection at all and it goes out the moment you're back online. Nothing you write is ever at risk of disappearing.
 * **Tap Publish and move on with your day.** You're never stuck staring at a spinner, even for a big video or a whole gallery of photos — Daymark confirms instantly and finishes the upload quietly in the background.
 * **It's genuinely yours, for good.** Everything you publish is a real WordPress post, not a locked-in, proprietary format. Your content works with your theme, your feeds, your backups — and stays exactly where it is even if you ever stop using Daymark.
-* **Reach further, without extra work.** Already use a plugin to share to Bluesky, Mastodon, or elsewhere? Daymark works alongside it, and lets you choose per-post where each one of your posts should also go. Replies from those networks flow back to you automatically, right inside Daymark.
-* **A helping hand, never a replacement for yours.** Ask for a suggested caption, title, or tags, or let Daymark describe a photo for accessibility — every suggestion is yours to accept, edit, or ignore, and Daymark works exactly the same with none of it turned on.
+* **Reach further, without extra work.** Already use a plugin to share to Bluesky, Mastodon, or elsewhere? Daymark works alongside it, and lets you choose per-post where each one of your posts should also go. Replies from those networks flow back to you automatically, right inside Daymark. Owning your posts isn't only about where they start. It's also about the conversation coming back to something you own.
+* **A helping hand, never a replacement for yours.** Ask for a suggested caption, title, or tags, or let Daymark describe a photo for accessibility — every suggestion is yours to accept, edit, or ignore, and Daymark works exactly the same with none of it turned on. AI never gets between you and the Publish button.
 
 = Your site, your rules =
 
@@ -39,9 +39,15 @@ Daymark never asks you to choose between "easy" and "yours." Your own site is al
 
 = Back to the open web =
 
+**Publish once. Own it forever. Share everywhere.**
+
+The web didn't lose because it lacked ownership. It lost because it became slower than social media.
+
 Social apps made posting effortless, and that's a big reason so much of what we share now lives inside a few walled gardens, where the company owns the feed, decides who sees your posts, and can change the rules or shut down whenever it likes. Daymark exists to get more people publishing to sites they own, with WordPress, by making that just as easy as posting to a social app.
 
-It follows the IndieWeb's approach rather than building yet another network. You publish on your own site, then share copies to the networks your friends already use, so you can still reach them where they are. You follow friends' own sites instead of their accounts on someone else's platform. And it all runs on open standards that any site can speak: RSS, Atom, and JSON Feed for following, Webmention for likes, replies, and reblogs between sites, microformats so other sites and readers understand your posts, and WebSub so new posts arrive quickly. Every site that joins in makes the open web a little more social, and the walled gardens a little less necessary.
+Daymark isn't a new social network. It's a new way to use WordPress. It follows the IndieWeb's approach rather than building yet another network. You publish on your own site, then share copies to the networks your friends already use, so you can still reach them where they are. You follow friends' own sites instead of their accounts on someone else's platform. And it all runs on open standards that any site can speak: RSS, Atom, and JSON Feed for following, Webmention for likes, replies, and reblogs between sites, microformats so other sites and readers understand your posts, and WebSub so new posts arrive quickly. Every site that joins in makes the open web a little more social, and the walled gardens a little less necessary.
+
+WordPress doesn't need to become a social network. It needs to become the best place for social-shaped content to begin.
 
 = A note on privacy and external services =
 
