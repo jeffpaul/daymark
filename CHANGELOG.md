@@ -34,7 +34,7 @@ can't act on them.
 
 ### Fixed
 
-- Opening a post from a followed site that uses a newer WordPress block theme now shows that post's own text. Some of these sites list other stories lower on the page, and Daymark could show one of those under the post's title. For a post you already opened, use "Refresh content" to fetch it again. ([#605](https://github.com/jeffpaul/daymark/pull/605))
+- Opening a post from a followed site that uses a newer WordPress block theme now shows that post's own text. Some of these sites list other stories lower on the page, and Daymark could show one of those under the post's title. For a post you already opened, use "Refresh content" to fetch it again. ([#607](https://github.com/jeffpaul/daymark/pull/607))
 
 ### Developer
 
