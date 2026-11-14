@@ -36,6 +36,8 @@ can't act on them.
 
 - On an iPhone or iPad, the Install card no longer tells everyone to look "in Safari". Firefox and Chrome each get their own Add to Home Screen steps, Safari's steps say where Share is hiding on newer iPhones, and any other browser gets steps that name no browser. ([#605](https://github.com/jeffpaul/daymark/pull/605))
 
+- Adding Daymark to an iPhone's home screen from Firefox now shows the Daymark icon instead of a blank tile. Firefox doesn't pass the page's own icon along, so iOS looks for one at the top of your site (`/apple-touch-icon.png`), and Daymark now answers there. That address stands for your whole site, so a site that wants its own picture there can put a file at that address or use the `daymark_root_touch_icon_file` filter. ([#606](https://github.com/jeffpaul/daymark/pull/606))
+
 - Opening a post from a followed site that uses a newer WordPress block theme now shows that post's own text. Some of these sites list other stories lower on the page, and Daymark could show one of those under the post's title. For a post you already opened, use "Refresh content" to fetch it again. ([#607](https://github.com/jeffpaul/daymark/pull/607))
 
 ### Developer

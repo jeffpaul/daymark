@@ -387,6 +387,140 @@ class Daymark_Routes {
 	}
 
 	/**
+	 * Whether a request is for one of the iPhone's fallback home-screen icon
+	 * addresses at the top of the site: /apple-touch-icon.png, with an
+	 * optional size (-180x180) and an optional -precomposed.
+	 *
+	 * An iPhone reads a home-screen icon from the page's own apple-touch-icon
+	 * link tag. With no page to read, it asks the top of the site for these
+	 * file names. Firefox for iOS always leaves iOS with no page: its
+	 * "Add to Home Screen" hands over an empty stand-in web view that holds
+	 * only the address and the title (mozilla-mobile/firefox-ios issue
+	 * 35900). So for Firefox these addresses are the only icon there is,
+	 * whatever the app shell declares.
+	 *
+	 * Anchored at the top of the host because that is the only place iOS
+	 * looks; a WordPress living in a sub-folder never receives the request.
+	 *
+	 * @param string $request_uri The request's path, with or without a query string.
+	 * @return bool
+	 */
+	public static function is_root_touch_icon_request( string $request_uri ): bool {
+		$path = explode( '?', $request_uri, 2 )[0];
+
+		return 1 === preg_match( '#^/apple-touch-icon(?:-\d{1,4}x\d{1,4})?(?:-precomposed)?\.png$#D', $path );
+	}
+
+	/**
+	 * The PNG file that answers the iPhone's fallback icon addresses, or ''
+	 * to leave those addresses alone.
+	 *
+	 * Daymark's own opaque home-screen icon by default, never the Site Icon,
+	 * for the same reason as the app shell's own icon (issue #414). These
+	 * addresses stand for the whole site, though, so a site can keep them
+	 * for itself.
+	 *
+	 * @return string Absolute path to a readable PNG, or ''.
+	 */
+	public static function root_touch_icon_file(): string {
+		/**
+		 * Filters the PNG file served at /apple-touch-icon.png (and its sized
+		 * and -precomposed forms) at the top of the site.
+		 *
+		 * Return an empty string to have Daymark leave these addresses
+		 * alone, or the absolute path of another square, opaque PNG to serve
+		 * that instead. A real file at that address on the server always
+		 * wins, since the request then never reaches WordPress.
+		 *
+		 * @param string $file Absolute path to Daymark's 180x180 home-screen icon.
+		 */
+		$file = apply_filters( 'daymark_root_touch_icon_file', DAYMARK_PLUGIN_DIR . 'assets/apple-touch-icon.png' );
+
+		if ( ! is_string( $file ) || '' === $file || ! is_file( $file ) || ! is_readable( $file ) ) {
+			return '';
+		}
+
+		$type = wp_check_filetype( $file, array( 'png' => 'image/png' ) );
+
+		return 'image/png' === $type['type'] ? $file : '';
+	}
+
+	/**
+	 * What to answer a request with, when it is for one of the iPhone's
+	 * fallback icon addresses: the file and its headers. Null for any other
+	 * request, which WordPress then handles as usual.
+	 *
+	 * The file itself rather than a redirect to it, so nothing depends on
+	 * the fetcher following one, and cached for a day rather than for good,
+	 * because this address can't carry a version the way the app shell's own
+	 * icon link does.
+	 *
+	 * @param string $method      The request method.
+	 * @param string $request_uri The request's path, with or without a query string.
+	 * @return array{file: string, headers: array<string, string>, send_body: bool}|null
+	 */
+	public static function root_touch_icon_response( string $method, string $request_uri ): ?array {
+		$method = strtoupper( $method );
+
+		if ( ! in_array( $method, array( 'GET', 'HEAD' ), true ) || ! self::is_root_touch_icon_request( $request_uri ) ) {
+			return null;
+		}
+
+		$file = self::root_touch_icon_file();
+
+		if ( '' === $file ) {
+			return null;
+		}
+
+		return array(
+			'file'      => $file,
+			'headers'   => array(
+				'Content-Type'           => 'image/png',
+				'Content-Length'         => (string) filesize( $file ),
+				'Cache-Control'          => 'public, max-age=' . DAY_IN_SECONDS,
+				'X-Content-Type-Options' => 'nosniff',
+			),
+			'send_body' => 'GET' === $method,
+		);
+	}
+
+	/**
+	 * Answer the iPhone's fallback icon addresses with Daymark's icon.
+	 *
+	 * Hooked at the very start of init (Daymark_Plugin::setup()), so it
+	 * needs no rewrite rule or permalink flush, works with plain permalinks,
+	 * and answers before WordPress builds a "not found" page for what looks
+	 * like a missing file.
+	 *
+	 * @return void
+	 */
+	public function maybe_serve_root_touch_icon(): void {
+		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Only compared against a fixed list and a fixed pattern, never stored or printed.
+		$method      = isset( $_SERVER['REQUEST_METHOD'] ) ? (string) wp_unslash( $_SERVER['REQUEST_METHOD'] ) : '';
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
+		// phpcs:enable WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+		$response = self::root_touch_icon_response( $method, $request_uri );
+
+		if ( null === $response ) {
+			return;
+		}
+
+		status_header( 200 );
+
+		foreach ( $response['headers'] as $name => $value ) {
+			header( $name . ': ' . $value );
+		}
+
+		if ( $response['send_body'] ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_readfile -- Streams one small, plugin-chosen local PNG; WP_Filesystem has no streaming equivalent.
+			readfile( $response['file'] );
+		}
+
+		exit;
+	}
+
+	/**
 	 * A manifest icon descriptor at the given size — always Daymark's own
 	 * bundled icon (see build_manifest()'s own comment for why).
 	 *
