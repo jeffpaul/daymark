@@ -5361,13 +5361,16 @@ test('controllable helper: per-Mark toggle appears and is sent on publish', asyn
 	await page.keyboard.press('Escape');
 	await expect(page.locator('[data-where-open]')).toBeFocused();
 
-	// Capture the create request body to confirm the selection is sent.
+	// The last save of this Mark (an autosave may have created it first,
+	// making Publish an update) carries the selection. Read from the
+	// request event, not from a route: a route added once the service
+	// worker controls the page can miss the page's requests, the flake
+	// fixed in the default-on helper test below.
 	let sentBody = '';
-	await page.route('**/daymark/v1/marks', async (route) => {
-		if ('POST' === route.request().method()) {
-			sentBody = route.request().postData() || '';
+	page.on('request', (request) => {
+		if ('GET' !== request.method() && /\/daymark\/v1\/marks(\/\d+)?$/.test(new URL(request.url()).pathname)) {
+			sentBody = request.postData() || '';
 		}
-		await route.continue();
 	});
 
 	await page.locator('[data-action="publish"]').click();
