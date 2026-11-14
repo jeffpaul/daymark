@@ -393,4 +393,121 @@ class Test_Routes extends WP_UnitTestCase {
 			}
 		}
 	}
+
+	/**
+	 * The iPhone's fallback icon addresses at the top of the site are
+	 * recognised, in every form iOS asks for: plain, sized, and
+	 * "precomposed". Firefox for iOS hands iOS no page to read an icon from,
+	 * so these addresses are all iOS has.
+	 */
+	public function test_root_touch_icon_request_matches_the_addresses_ios_asks_for() {
+		$matches = array(
+			'/apple-touch-icon.png',
+			'/apple-touch-icon-precomposed.png',
+			'/apple-touch-icon-180x180.png',
+			'/apple-touch-icon-120x120-precomposed.png',
+			'/apple-touch-icon.png?v=2',
+		);
+
+		foreach ( $matches as $uri ) {
+			$this->assertTrue( Daymark_Routes::is_root_touch_icon_request( $uri ), $uri );
+		}
+
+		$others = array(
+			'',
+			'/',
+			'/daymark',
+			'/apple-touch-icon.jpg',
+			'/apple-touch-icon',
+			'/blog/apple-touch-icon.png',
+			'/apple-touch-icon.png/',
+			'/apple-touch-icon-big.png',
+			'/apple-touch-icon.png.php',
+			'/favicon.ico',
+			'/?file=/apple-touch-icon.png',
+			'?/apple-touch-icon.png',
+			"/apple-touch-icon.png\n",
+		);
+
+		foreach ( $others as $uri ) {
+			$this->assertFalse( Daymark_Routes::is_root_touch_icon_request( $uri ), $uri );
+		}
+	}
+
+	/**
+	 * A request for one of those addresses is answered with Daymark's own
+	 * opaque home-screen icon, never the site's Site Icon (issue #414), and
+	 * with the file itself rather than a redirect.
+	 */
+	public function test_root_touch_icon_response_is_daymarks_opaque_icon() {
+		$filter = static function () {
+			return 'https://example.test/site-icon.png';
+		};
+		add_filter( 'get_site_icon_url', $filter );
+
+		$response = Daymark_Routes::root_touch_icon_response( 'GET', '/apple-touch-icon.png' );
+
+		remove_filter( 'get_site_icon_url', $filter );
+
+		$this->assertIsArray( $response );
+		$this->assertSame( DAYMARK_PLUGIN_DIR . 'assets/apple-touch-icon.png', $response['file'] );
+		$this->assertSame( 'image/png', $response['headers']['Content-Type'] );
+		$this->assertSame( (string) filesize( $response['file'] ), $response['headers']['Content-Length'] );
+		$this->assertStringContainsString( 'max-age=', $response['headers']['Cache-Control'] );
+		$this->assertTrue( $response['send_body'] );
+	}
+
+	/** A HEAD request gets the same headers and no body. */
+	public function test_root_touch_icon_response_to_head_has_no_body() {
+		$response = Daymark_Routes::root_touch_icon_response( 'HEAD', '/apple-touch-icon-precomposed.png' );
+
+		$this->assertIsArray( $response );
+		$this->assertFalse( $response['send_body'] );
+	}
+
+	/** Anything else is left for WordPress to handle as usual. */
+	public function test_root_touch_icon_response_ignores_other_requests() {
+		$this->assertNull( Daymark_Routes::root_touch_icon_response( 'GET', '/daymark' ) );
+		$this->assertNull( Daymark_Routes::root_touch_icon_response( 'POST', '/apple-touch-icon.png' ) );
+	}
+
+	/**
+	 * A site can keep these addresses for itself (an empty value from the
+	 * filter), or answer them with a PNG of its own.
+	 */
+	public function test_root_touch_icon_file_filter_turns_it_off_or_swaps_the_file() {
+		add_filter( 'daymark_root_touch_icon_file', '__return_empty_string' );
+		$this->assertNull( Daymark_Routes::root_touch_icon_response( 'GET', '/apple-touch-icon.png' ) );
+		remove_filter( 'daymark_root_touch_icon_file', '__return_empty_string' );
+
+		$own = static function () {
+			return DAYMARK_PLUGIN_DIR . 'assets/icon-maskable-192.png';
+		};
+		add_filter( 'daymark_root_touch_icon_file', $own );
+		$response = Daymark_Routes::root_touch_icon_response( 'GET', '/apple-touch-icon.png' );
+		remove_filter( 'daymark_root_touch_icon_file', $own );
+
+		$this->assertSame( DAYMARK_PLUGIN_DIR . 'assets/icon-maskable-192.png', $response['file'] );
+
+		// Not a PNG, not a file, or not a string: nothing is served.
+		foreach ( array( DAYMARK_PLUGIN_DIR . 'daymark.php', DAYMARK_PLUGIN_DIR . 'assets/missing.png', false, array() ) as $bad ) {
+			$filter = static function () use ( $bad ) {
+				return $bad;
+			};
+			add_filter( 'daymark_root_touch_icon_file', $filter );
+			$this->assertNull( Daymark_Routes::root_touch_icon_response( 'GET', '/apple-touch-icon.png' ) );
+			remove_filter( 'daymark_root_touch_icon_file', $filter );
+		}
+	}
+
+	/**
+	 * The check is hooked before the rest of init, so it answers ahead of
+	 * anything else on the site and without loading a "not found" page.
+	 */
+	public function test_root_touch_icon_is_served_at_the_start_of_init() {
+		$this->assertSame(
+			0,
+			has_action( 'init', array( Daymark_Plugin::instance()->routes, 'maybe_serve_root_touch_icon' ) )
+		);
+	}
 }
