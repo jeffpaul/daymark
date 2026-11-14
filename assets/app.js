@@ -394,10 +394,11 @@
 	//
 	// Chromium browsers (Android, desktop Chrome and Edge) fire
 	// `beforeinstallprompt` when the app can be installed; holding on to it
-	// lets an Install button show the browser's own prompt. Safari has no
-	// such event, so on an iPhone or iPad the Install card shows the
-	// Add to Home Screen steps instead. Listening this early (before any
-	// screen renders) matters, since the event can fire right at load.
+	// lets an Install button show the browser's own prompt. No iPhone or
+	// iPad browser has such an event, so there the Install card shows the
+	// Add to Home Screen steps instead, worded for the browser in use (see
+	// iosBrowser()). Listening this early (before any screen renders)
+	// matters, since the event can fire right at load.
 	let deferredInstallPrompt = null;
 
 	window.addEventListener('beforeinstallprompt', (event) => {
@@ -421,6 +422,30 @@
 		const ua = window.navigator.userAgent || '';
 		// iPadOS reports itself as a Mac; a touch screen tells them apart.
 		return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && window.navigator.maxTouchPoints > 1);
+	}
+
+	// Which iPhone or iPad browser this is, for the Add to Home Screen
+	// steps: 'firefox', 'chrome', 'safari', or '' when it can't be told.
+	// Every iOS browser is WebKit underneath, so only the user agent's own
+	// product token tells them apart. Firefox and Chrome add theirs
+	// (FxiOS/, CriOS/). Safari has none of its own: it is what is left when
+	// the string has Version/ and Safari/ and no other browser's token.
+	// Some browsers send exactly Safari's string (Brave, Orion, and any
+	// browser asked for the desktop site), so the Safari steps never name
+	// Safari. An in-app browser (no Version/ or no Safari/) and any browser
+	// without steps of its own get the neutral wording.
+	function iosBrowser() {
+		const ua = window.navigator.userAgent || '';
+		if (/\bFxiOS\//.test(ua)) {
+			return 'firefox';
+		}
+		if (/\bCriOS\//.test(ua)) {
+			return 'chrome';
+		}
+		if (/\b[A-Za-z]+iOS\/|\b(?:OPT|DuckDuckGo|Ddg|YaBrowser|GSA)\//.test(ua) || window.navigator.brave) {
+			return '';
+		}
+		return /\bVersion\/\d/.test(ua) && /\bSafari\//.test(ua) ? 'safari' : '';
 	}
 
 	// 'prompt' (the browser can show its own install prompt), 'ios' (show
@@ -777,10 +802,7 @@
 
 	function installCardBody(method) {
 		if (method === 'ios') {
-			return __(
-				'Add Daymark to your Home Screen to open it like an app: in Safari, tap the Share button, then Add to Home Screen.',
-				'daymark'
-			);
+			return __('Add Daymark to your Home Screen to open it like an app.', 'daymark');
 		}
 		if (/Android/i.test(window.navigator.userAgent || '')) {
 			return __(
@@ -791,15 +813,45 @@
 		return __('Open Daymark in its own window, like an app.', 'daymark');
 	}
 
-	const INSTALL_IOS_STEPS = {
-		glyph:
-			'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>',
-		title: __('Add Daymark to your Home Screen', 'daymark'),
-		body: __(
-			'In Safari, tap the Share button at the bottom of the screen, then tap Add to Home Screen. Daymark then opens from its own icon, like an app.',
-			'daymark'
-		),
-	};
+	// The Add to Home Screen steps on an iPhone or iPad, for the browser in
+	// use. A page can't open the browser's own Share menu, and the share
+	// sheet a page can open (navigator.share()) has no Add to Home Screen
+	// in it: iOS only offers that when the browser itself hands its web
+	// view to the sheet. So this is words, not a button.
+	function installIosSteps() {
+		switch (iosBrowser()) {
+			case 'firefox':
+				/* translators: Steps for Firefox on an iPhone or iPad. "Share" and "Add to Home Screen" are iOS's own labels. */
+				return __(
+					'In Firefox, tap the Share button in the address bar, then Add to Home Screen. If you don’t see Share there, look in Firefox’s menu.',
+					'daymark'
+				);
+			case 'chrome':
+				/* translators: Steps for Chrome on an iPhone or iPad. "Share" and "Add to Home Screen" are iOS's own labels. */
+				return __(
+					'In Chrome, tap the Share button next to the address bar, then Add to Home Screen.',
+					'daymark'
+				);
+			case 'safari':
+				/* translators: Steps for Safari on an iPhone or iPad. "Share" and "Add to Home Screen" are iOS's own labels. ••• is Safari's More button, drawn as three dots. */
+				return __(
+					'Tap the Share button, then Add to Home Screen. If you don’t see Share, tap the ••• button first.',
+					'daymark'
+				);
+			default:
+				/* translators: Steps for an iPhone or iPad browser Daymark can't name. "Share" and "Add to Home Screen" are iOS's own labels. */
+				return __('Open your browser’s Share menu, then tap Add to Home Screen.', 'daymark');
+		}
+	}
+
+	function installIosSheet() {
+		return {
+			glyph:
+				'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line>',
+			title: __('Add Daymark to your Home Screen', 'daymark'),
+			body: [installIosSteps(), __('Daymark then opens from its own icon, like an app.', 'daymark')],
+		};
+	}
 
 	// Show the browser's install prompt, or the iPhone steps.
 	async function startInstall(opener) {
@@ -816,7 +868,7 @@
 			return;
 		}
 		if (isIosDevice()) {
-			InteractionHintSheet.show(INSTALL_IOS_STEPS, opener);
+			InteractionHintSheet.show(installIosSheet(), opener);
 		}
 	}
 
@@ -829,6 +881,9 @@
 			card.hidden = !show;
 			if (show) {
 				card.querySelector('[data-install-body]').textContent = installCardBody(method);
+				const steps = card.querySelector('[data-install-steps]');
+				steps.hidden = method !== 'ios';
+				steps.textContent = method === 'ios' ? installIosSteps() : '';
 				card.querySelector('[data-install-start]').hidden = method !== 'prompt';
 			}
 		}
@@ -9078,6 +9133,7 @@
 					<div class="daymark-installcard__text">
 						<p class="daymark-installcard__title">${esc(__('Install Daymark', 'daymark'))}</p>
 						<p class="daymark-installcard__body" data-install-body></p>
+						<p class="daymark-installcard__body" data-install-steps hidden></p>
 						<div class="daymark-installcard__actions">
 							<button type="button" class="daymark-btn daymark-btn--primary daymark-installcard__btn" data-install-start hidden>${esc(
 								__('Install', 'daymark')
@@ -13517,7 +13573,8 @@
 
 		// `key` is an INTERACTION_HINTS key, or a { glyph, title, body }
 		// object for a one-off explainer that isn't tracked as seen (the
-		// iPhone install instructions).
+		// iPhone install instructions). `body` is one paragraph, or a list
+		// of them.
 		show(key, opener, onDismiss) {
 			const hint = typeof key === 'string' ? INTERACTION_HINTS[key] : key;
 			if (!hint) {
@@ -13546,7 +13603,10 @@
 				<h2 class="daymark-sheet__title daymark-hint-title" id="daymark-hint-title" tabindex="-1">${esc(
 					hint.title
 				)}</h2>
-				<p class="daymark-hint-body">${esc(hint.body)}</p>
+				${[]
+					.concat(hint.body)
+					.map((paragraph) => `<p class="daymark-hint-body">${esc(paragraph)}</p>`)
+					.join('')}
 				<div class="daymark-sheet__actions">
 					<button type="button" class="daymark-btn daymark-btn--primary" data-hint-dismiss>${esc(
 						__('Got it', 'daymark')

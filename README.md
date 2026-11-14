@@ -119,7 +119,9 @@ and nothing to install.
    `https://yoursite.com/daymark`.
 3. Add it to your home screen so it opens like an app. Daymark's Home
    screen shows an Install card until you do:
-   - **iPhone (Safari):** tap Share, then **Add to Home Screen**.
+   - **iPhone:** open your browser's Share menu, then tap **Add to Home
+     Screen**. Safari, Firefox, Chrome, and Edge all offer it, and the card
+     gives the steps for the browser you're using.
    - **Android (Chrome):** tap **Install** on the card, or the **⋮** menu,
      then **Add to Home Screen**.
 
