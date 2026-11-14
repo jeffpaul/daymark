@@ -100,7 +100,7 @@ Daymark's code and its full design history are public on [GitHub](https://github
 1. Upload the `daymark` folder to `/wp-content/plugins/`, or install through the WordPress plugins screen.
 2. Activate the plugin through the **Plugins** screen.
 3. Visit `https://yoursite.example/daymark` on your phone while logged in.
-4. Optional: add it to your home screen (Safari: Share → Add to Home Screen; Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
+4. Optional: add it to your home screen (iPhone: your browser's Share menu → Add to Home Screen; Android Chrome: menu → Add to Home Screen / Install App). Standalone app display requires HTTPS.
 
 To like a subscribed post, the other site must accept Webmentions (every Daymark site does), or you need the ActivityPub plugin or Jetpack with your WordPress.com account linked. See "Why don't I see a Like icon on subscribed posts?" below.
 
