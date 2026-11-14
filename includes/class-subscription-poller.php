@@ -943,6 +943,24 @@ class Daymark_Subscription_Poller {
 	 *    it's also what actually excludes a theme's comments section for
 	 *    the common case: comments are almost always a sibling rendered
 	 *    *after* `</article>`, not nested inside it.
+	 * 3a. Before step 3, look for the post body itself: a `<div>`/`<section>`
+	 *    whose class list has `entry-content`, `wp-block-post-content`, or
+	 *    `post-content` as a whole class name. When it opens before the
+	 *    page's first `<article>` (or the page has no `<article>` at all),
+	 *    it is the post, and steps 3 and 5a are skipped. A block theme's
+	 *    single-post template prints the Post Content block
+	 *    (`entry-content wp-block-post-content`) with no `<article>` around
+	 *    it, while a "read more" grid lower on the same page builds each
+	 *    card for another story from an `<article>`; step 3 alone then took
+	 *    the first of those cards for the post, so the post view showed a
+	 *    different story under the right title. An `<article>` card placed
+	 *    inside the body (a "see also" box) is likewise part of the post
+	 *    here, not the post. With no `<article>` to bound it, the body is
+	 *    cut at its own closing tag (element_inner_html() counts nested
+	 *    tags of the same name), so the rest of the page (author box,
+	 *    comments, those cards) is left out. When the page's `<article>`
+	 *    comes first, nothing changes: step 3 still decides, and a later
+	 *    element that merely reuses one of these class names is ignored.
 	 * 4. As a second, defensive pass over whatever step 3 left: some
 	 *    themes do nest their comments list or reply form inside the same
 	 *    `<article>` as the post content, each conventionally carrying a
@@ -1026,14 +1044,28 @@ class Daymark_Subscription_Poller {
 		$html = (string) preg_replace( '#<a\b[^>]*\bclass=["\'][^"\']*skip-link[^"\']*["\'][^>]*>.*?</a>#is', '', $html );
 		$html = (string) preg_replace( '#<a\b[^>]*\bhref=["\']\#(?:content|main|primary|wp--skip-link--target|site-content|main-content|genesis-content|page)["\'][^>]*>.*?</a>#is', '', $html );
 
-		if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
-			$html = $matches[1];
-		} elseif ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $matches ) ) {
-			$html = $matches[1];
-		}
+		$article_at = preg_match( '#<article\b[^>]*>#i', $html, $matches, PREG_OFFSET_CAPTURE ) ? $matches[0][1] : -1;
+		$has_body   = preg_match(
+			'#<(div|section)\b[^>]*\bclass=["\'](?:[^"\']*\s)?(?:entry-content|wp-block-post-content|post-content)(?:\s[^"\']*)?["\'][^>]*>#i',
+			$html,
+			$post_body,
+			PREG_OFFSET_CAPTURE
+		);
 
-		if ( preg_match( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:entry-content|post-content)\b[^"\']*["\'][^>]*>#i', $html, $matches, PREG_OFFSET_CAPTURE ) ) {
-			$html = substr( $html, $matches[0][1] + strlen( $matches[0][0] ) );
+		if ( $has_body && ( $article_at < 0 || $post_body[0][1] < $article_at ) ) {
+			// The post body opens before any <article> does (step 3a): it is
+			// the post, and an <article> after or inside it is not.
+			$html = self::element_inner_html( $html, $post_body[1][0], $post_body[0][1] + strlen( $post_body[0][0] ) );
+		} else {
+			if ( preg_match( '#<article\b[^>]*>(.*?)</article>#is', $html, $matches ) ) {
+				$html = $matches[1];
+			} elseif ( preg_match( '#<body\b[^>]*>(.*)</body>#is', $html, $matches ) ) {
+				$html = $matches[1];
+			}
+
+			if ( preg_match( '#<(?:div|section)\b[^>]*\bclass=["\'][^"\']*\b(?:entry-content|post-content)\b[^"\']*["\'][^>]*>#i', $html, $matches, PREG_OFFSET_CAPTURE ) ) {
+				$html = substr( $html, $matches[0][1] + strlen( $matches[0][0] ) );
+			}
 		}
 
 		$html = (string) preg_replace( '#<[^>]+\bid=["\'](?:comments|respond)["\'][^>]*>.*$#is', '', $html );
@@ -1041,6 +1073,41 @@ class Daymark_Subscription_Poller {
 		$html = (string) preg_replace( '#<(?:div|section|ul|ol|p|span)\b[^>]*\bclass=["\'][^"\']*\b(?:post-navigation|posts-navigation|nav-links)\b[^"\']*["\'][^>]*>.*$#is', '', $html );
 
 		return $html;
+	}
+
+	/**
+	 * The HTML inside one element, given where its content starts: from
+	 * `$start` up to that element's own closing tag, found by counting
+	 * opening and closing tags of the same name so an element nested inside
+	 * it doesn't end it early. HTML comments are skipped, so a tag written
+	 * inside one isn't counted.
+	 *
+	 * When the closing tag never arrives (a page cut short, or broken
+	 * markup), everything after `$start` is returned.
+	 *
+	 * @param string $html  HTML to read from.
+	 * @param string $tag   The element's tag name, e.g. `div`.
+	 * @param int    $start Offset just past the element's opening tag.
+	 * @return string The element's inner HTML.
+	 */
+	private static function element_inner_html( string $html, string $tag, int $start ): string {
+		$depth = 1;
+
+		if ( preg_match_all( '#<!--.*?-->|<(/?)' . preg_quote( $tag, '#' ) . '\b[^>]*>#is', $html, $tags, PREG_SET_ORDER | PREG_OFFSET_CAPTURE, $start ) ) {
+			foreach ( $tags as $found ) {
+				if ( ! isset( $found[1] ) || $found[1][1] < 0 ) {
+					continue; // An HTML comment.
+				}
+
+				$depth += '/' === $found[1][0] ? -1 : 1;
+
+				if ( 0 === $depth ) {
+					return substr( $html, $start, $found[0][1] - $start );
+				}
+			}
+		}
+
+		return substr( $html, $start );
 	}
 
 	/**
