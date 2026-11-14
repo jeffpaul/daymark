@@ -34,7 +34,7 @@ can't act on them.
 
 ### Fixed
 
-- On an iPhone or iPad, the Install card no longer tells everyone to look "in Safari". Firefox and Chrome each get their own Add to Home Screen steps, Safari's steps say where Share is hiding on newer iPhones, and any other browser gets steps that name no browser. ([#PRNUM](https://github.com/jeffpaul/daymark/pull/PRNUM))
+- On an iPhone or iPad, the Install card no longer tells everyone to look "in Safari". Firefox and Chrome each get their own Add to Home Screen steps, Safari's steps say where Share is hiding on newer iPhones, and any other browser gets steps that name no browser. ([#605](https://github.com/jeffpaul/daymark/pull/605))
 
 ### Developer
 
