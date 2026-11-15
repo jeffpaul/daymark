@@ -33,7 +33,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 	 * @param int $seconds Seconds from now (negative for the past).
 	 * @return array{iso: string, mysql: string}
 	 */
-	private function at( int $seconds ): array {
+	private function time_from_now( int $seconds ): array {
 		$timestamp = time() + $seconds;
 
 		return array(
@@ -48,7 +48,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 	 * @param array<string, mixed> $data Extra publisher input.
 	 * @return int Post ID.
 	 */
-	private function publish( array $data ): int {
+	private function publish_note( array $data ): int {
 		$post_id = Daymark_Plugin::instance()->publisher->publish( array_merge( array( 'caption' => 'For tomorrow morning' ), $data ) );
 
 		$this->assertIsInt( $post_id );
@@ -63,7 +63,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 	 * @param array<string, mixed> $data    Extra publisher input.
 	 * @return void
 	 */
-	private function update( int $post_id, array $data ): void {
+	private function update_note( int $post_id, array $data ): void {
 		$result = Daymark_Plugin::instance()->publisher->update( $post_id, array_merge( array( 'caption' => 'For tomorrow morning' ), $data ) );
 
 		$this->assertSame( $post_id, $result );
@@ -76,7 +76,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 	 * @param string $route  Route.
 	 * @return WP_REST_Request
 	 */
-	private function request( string $method, string $route ): WP_REST_Request {
+	private function rest_request( string $method, string $route ): WP_REST_Request {
 		$request = new WP_REST_Request( $method, $route );
 		$request->set_header( 'X-WP-Nonce', wp_create_nonce( 'wp_rest' ) );
 
@@ -85,8 +85,8 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Publish with a later time holds the Mark until then. */
 	public function test_publish_with_a_later_time_schedules_the_mark(): void {
-		$when    = $this->at( DAY_IN_SECONDS );
-		$post_id = $this->publish(
+		$when    = $this->time_from_now( DAY_IN_SECONDS );
+		$post_id = $this->publish_note(
 			array(
 				'publish_at'          => $when['iso'],
 				'syndication_targets' => array( 'bluesky' ),
@@ -103,9 +103,9 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** At the set time the Mark goes live and its destinations run, once. */
 	public function test_scheduled_mark_goes_live_and_syndicates_at_its_time(): void {
-		$post_id = $this->publish(
+		$post_id = $this->publish_note(
 			array(
-				'publish_at'          => $this->at( DAY_IN_SECONDS )['iso'],
+				'publish_at'          => $this->time_from_now( DAY_IN_SECONDS )['iso'],
 				'syndication_targets' => array( 'bluesky' ),
 			)
 		);
@@ -121,24 +121,24 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** A time that has already passed publishes now. */
 	public function test_a_time_already_past_publishes_now(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( -HOUR_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( -HOUR_IN_SECONDS )['iso'] ) );
 
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
 	}
 
 	/** A time that can't be read publishes now. */
 	public function test_an_unreadable_time_publishes_now(): void {
-		$post_id = $this->publish( array( 'publish_at' => 'next blue moon-ish' ) );
+		$post_id = $this->publish_note( array( 'publish_at' => 'next blue moon-ish' ) );
 
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
 	}
 
 	/** Save as draft with a time is still a draft. */
 	public function test_a_draft_ignores_the_time(): void {
-		$post_id = $this->publish(
+		$post_id = $this->publish_note(
 			array(
 				'status'     => 'draft',
-				'publish_at' => $this->at( DAY_IN_SECONDS )['iso'],
+				'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'],
 			)
 		);
 
@@ -149,16 +149,16 @@ class Test_Scheduling extends WP_UnitTestCase {
 	public function test_a_contributor_gets_a_draft(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'contributor' ) ) );
 
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
 		$this->assertSame( 'draft', get_post_status( $post_id ) );
 	}
 
 	/** When the photo was taken never moves the scheduled time. */
 	public function test_capture_time_does_not_move_the_scheduled_time(): void {
-		$when     = $this->at( DAY_IN_SECONDS );
-		$captured = $this->at( -DAY_IN_SECONDS );
-		$post_id  = $this->publish(
+		$when     = $this->time_from_now( DAY_IN_SECONDS );
+		$captured = $this->time_from_now( -DAY_IN_SECONDS );
+		$post_id  = $this->publish_note(
 			array(
 				'publish_at'  => $when['iso'],
 				'captured_at' => $captured['iso'],
@@ -170,7 +170,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 		$this->assertSame( $captured['mysql'], get_post_meta( $post_id, '_daymark_captured_at', true ) );
 
 		// Nor does a later save of the scheduled Mark.
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'status'      => 'publish',
@@ -187,16 +187,16 @@ class Test_Scheduling extends WP_UnitTestCase {
 	public function test_an_edit_after_it_went_out_keeps_its_date(): void {
 		global $wpdb;
 
-		$captured = $this->at( -DAY_IN_SECONDS );
-		$post_id  = $this->publish(
+		$captured = $this->time_from_now( -DAY_IN_SECONDS );
+		$post_id  = $this->publish_note(
 			array(
-				'publish_at'  => $this->at( DAY_IN_SECONDS )['iso'],
+				'publish_at'  => $this->time_from_now( DAY_IN_SECONDS )['iso'],
 				'captured_at' => $captured['iso'],
 			)
 		);
 
 		// Time passes: the set time was an hour ago, and WordPress published it.
-		$went_out = $this->at( -HOUR_IN_SECONDS );
+		$went_out = $this->time_from_now( -HOUR_IN_SECONDS );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery -- Moves the clock for the test.
 		$wpdb->update(
 			$wpdb->posts,
@@ -209,7 +209,7 @@ class Test_Scheduling extends WP_UnitTestCase {
 		clean_post_cache( $post_id );
 		wp_publish_post( $post_id );
 
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'caption'     => 'For tomorrow morning, typo fixed',
@@ -223,13 +223,13 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** A Mark that is already out can't be pulled back by a later time. */
 	public function test_a_published_mark_is_never_scheduled(): void {
-		$post_id = $this->publish( array() );
+		$post_id = $this->publish_note( array() );
 
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'status'     => 'publish',
-				'publish_at' => $this->at( DAY_IN_SECONDS )['iso'],
+				'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'],
 			)
 		);
 
@@ -238,10 +238,10 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** A Reblog goes out now, whatever time comes with it. */
 	public function test_a_reblog_is_never_scheduled(): void {
-		$post_id = $this->publish(
+		$post_id = $this->publish_note(
 			array(
 				'repost_of'  => 'https://example.org/2026/a-post/',
-				'publish_at' => $this->at( DAY_IN_SECONDS )['iso'],
+				'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'],
 			)
 		);
 
@@ -250,10 +250,10 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** A draft can be scheduled. */
 	public function test_a_draft_can_be_scheduled(): void {
-		$post_id = $this->publish( array( 'status' => 'draft' ) );
-		$when    = $this->at( 2 * DAY_IN_SECONDS );
+		$post_id = $this->publish_note( array( 'status' => 'draft' ) );
+		$when    = $this->time_from_now( 2 * DAY_IN_SECONDS );
 
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'status'     => 'publish',
@@ -267,10 +267,10 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** A scheduled Mark's time can be changed. */
 	public function test_the_time_can_be_changed(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
-		$later   = $this->at( 3 * DAY_IN_SECONDS );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
+		$later   = $this->time_from_now( 3 * DAY_IN_SECONDS );
 
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'status'     => 'publish',
@@ -285,10 +285,10 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** The composer's own background saves leave a scheduled Mark scheduled. */
 	public function test_an_autosave_keeps_a_scheduled_mark_scheduled(): void {
-		$when    = $this->at( DAY_IN_SECONDS );
-		$post_id = $this->publish( array( 'publish_at' => $when['iso'] ) );
+		$when    = $this->time_from_now( DAY_IN_SECONDS );
+		$post_id = $this->publish_note( array( 'publish_at' => $when['iso'] ) );
 
-		$this->update(
+		$this->update_note(
 			$post_id,
 			array(
 				'caption'  => 'For tomorrow morning, reworded',
@@ -304,9 +304,9 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Publish with no time on a scheduled Mark publishes it now. */
 	public function test_publish_now_on_a_scheduled_mark(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
-		$this->update( $post_id, array( 'status' => 'publish' ) );
+		$this->update_note( $post_id, array( 'status' => 'publish' ) );
 
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
 		$this->assertLessThanOrEqual( time(), strtotime( get_post_field( 'post_date_gmt', $post_id ) . ' UTC' ) );
@@ -315,23 +315,23 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Save as draft takes a Mark off the schedule, and it can publish normally later. */
 	public function test_save_as_draft_takes_a_mark_off_the_schedule(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
-		$this->update( $post_id, array( 'status' => 'draft' ) );
+		$this->update_note( $post_id, array( 'status' => 'draft' ) );
 
 		$this->assertSame( 'draft', get_post_status( $post_id ) );
 		$this->assertFalse( wp_next_scheduled( 'publish_future_post', array( $post_id ) ) );
 
 		// Published later with no time, it goes live then, not on the old schedule.
-		$this->update( $post_id, array( 'status' => 'publish' ) );
+		$this->update_note( $post_id, array( 'status' => 'publish' ) );
 
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
 	}
 
 	/** POST /marks answers with the scheduled status and time. */
 	public function test_rest_create_reports_the_schedule(): void {
-		$when    = $this->at( DAY_IN_SECONDS );
-		$request = $this->request( 'POST', '/daymark/v1/marks' );
+		$when    = $this->time_from_now( DAY_IN_SECONDS );
+		$request = $this->rest_request( 'POST', '/daymark/v1/marks' );
 		$request->set_body_params(
 			array(
 				'caption'    => 'Over the REST API',
@@ -352,9 +352,9 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** An autosave sent through the REST API keeps the schedule too. */
 	public function test_rest_autosave_keeps_the_schedule(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
-		$request = $this->request( 'POST', '/daymark/v1/marks/' . $post_id );
+		$request = $this->rest_request( 'POST', '/daymark/v1/marks/' . $post_id );
 		$request->set_body_params(
 			array(
 				'caption'  => 'Autosaved',
@@ -371,11 +371,11 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Scheduled Marks have their own list, and stay out of the others. */
 	public function test_scheduled_marks_are_listed_on_request_only(): void {
-		$scheduled = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
-		$draft     = $this->publish( array( 'status' => 'draft' ) );
+		$scheduled = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
+		$draft     = $this->publish_note( array( 'status' => 'draft' ) );
 
 		$ids = function ( string $query ): array {
-			$request = $this->request( 'GET', '/daymark/v1/marks' );
+			$request = $this->rest_request( 'GET', '/daymark/v1/marks' );
 			$request->set_query_params( wp_parse_args( $query ) );
 
 			return wp_list_pluck( rest_get_server()->dispatch( $request )->get_data(), 'id' );
@@ -388,11 +388,11 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Another author's scheduled Mark isn't listed for you. */
 	public function test_someone_elses_scheduled_mark_is_not_listed(): void {
-		$this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
 
-		$request = $this->request( 'GET', '/daymark/v1/marks' );
+		$request = $this->rest_request( 'GET', '/daymark/v1/marks' );
 		$request->set_query_params( array( 'status' => 'future' ) );
 
 		$this->assertSame( array(), rest_get_server()->dispatch( $request )->get_data() );
@@ -400,9 +400,9 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** POST /marks/{id}/unschedule makes a scheduled Mark a draft, and nothing else. */
 	public function test_unschedule_makes_a_scheduled_mark_a_draft(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
-		$response = rest_get_server()->dispatch( $this->request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
+		$response = rest_get_server()->dispatch( $this->rest_request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
 
 		$this->assertSame( 200, $response->get_status(), wp_json_encode( $response->get_data() ) );
 		$this->assertSame( 'draft', $response->get_data()['status'] );
@@ -418,9 +418,9 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Unschedule never unpublishes a published Mark. */
 	public function test_unschedule_leaves_a_published_mark_alone(): void {
-		$post_id = $this->publish( array() );
+		$post_id = $this->publish_note( array() );
 
-		$response = rest_get_server()->dispatch( $this->request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
+		$response = rest_get_server()->dispatch( $this->rest_request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
 
 		$this->assertSame( 409, $response->get_status() );
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
@@ -428,11 +428,11 @@ class Test_Scheduling extends WP_UnitTestCase {
 
 	/** Only someone who can edit the Mark can take it off the schedule. */
 	public function test_unschedule_needs_edit_rights(): void {
-		$post_id = $this->publish( array( 'publish_at' => $this->at( DAY_IN_SECONDS )['iso'] ) );
+		$post_id = $this->publish_note( array( 'publish_at' => $this->time_from_now( DAY_IN_SECONDS )['iso'] ) );
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
 
-		$response = rest_get_server()->dispatch( $this->request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
+		$response = rest_get_server()->dispatch( $this->rest_request( 'POST', '/daymark/v1/marks/' . $post_id . '/unschedule' ) );
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( 'future', get_post_status( $post_id ) );
