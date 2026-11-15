@@ -20,6 +20,10 @@ can't act on them.
 
 ## [Unreleased]
 
+### Added
+
+- Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
+
 ### Changed
 
 - While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
