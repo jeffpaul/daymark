@@ -238,6 +238,9 @@ _daymark_featured_content_image = JSON {url, width, height, source} — cached s
 // Composer uploads (issue #483) — on the ATTACHMENT, only until a Mark uses it
 _daymark_staged_upload          = user ID of the uploader (finished, not yet attached)
 _daymark_staged_at              = Unix time it finished (cleanup after 7 days unused)
+
+// Crop and rotate from the photo sheet — on the ATTACHMENT, while it has an edit
+_daymark_image_edit             = array {shape, rotate, file, mime, before} — the edit Daymark made, its file, and the attachment metadata from before it (see Daymark_Image_Edit)
 ```
 
 ## Action hooks (must fire in correct order)
