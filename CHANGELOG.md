@@ -22,7 +22,7 @@ can't act on them.
 
 ### Added
 
-- If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in.
+- If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in. ([#611](https://github.com/jeffpaul/daymark/pull/611))
 
 ### Changed
 
