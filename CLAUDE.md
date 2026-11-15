@@ -196,7 +196,7 @@ history.
 ```php
 // Required post fields
 post_type    = 'post'                     // NEVER 'daymark' custom type
-post_status  = 'publish' or 'draft'       // based on capability
+post_status  = 'publish' or 'draft'       // based on capability; 'future' for a Mark set to publish later
 post_title   = generated from caption     // or timestamp fallback
 post_content = block markup               // core/image, core/video, etc.
 
@@ -220,6 +220,7 @@ _daymark_activitypub_activity_type = 'Like'|'Announce'
 
 // Quiet metadata capture (all optional/best-effort — never required, never blocks publishing)
 _daymark_captured_at            = MySQL datetime UTC (client-supplied or EXIF-derived)
+_daymark_scheduled              = '1' (the Mark was given a time to publish at; kept after it goes out, so edits keep that date)
 _daymark_location               = JSON {lat, lng, accuracy?} (Check In Marks only)
 _daymark_weather                = JSON {temperature, unit, condition, code}
 _daymark_camera                 = JSON (non-empty subset of camera|aperture|iso|focal_length|shutter_speed)
@@ -265,6 +266,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | POST | `/daymark/v1/ai/transcript` | Yes — upload_files + nonce |
 | POST | `/daymark/v1/ai/tags` | Yes — edit_posts + nonce |
 | POST | `/daymark/v1/marks/{id}/sync-responses` | Yes — edit_posts + nonce |
+| POST | `/daymark/v1/marks/{id}/unschedule` | Yes — edit_posts + nonce, and edit_post on that Mark (takes a scheduled Mark off its schedule, so it is a draft again; 409 when it isn't scheduled — see the Publish later decision) |
 | GET | `/daymark/v1/marks/{id}/content` | Yes — edit_posts + nonce (Timeline's own visibility rule, not per-post ownership — see the inline-expand decision below) |
 | GET | `/daymark/v1/marks/{id}/featured-content-image` | Yes — edit_posts + nonce (same visibility rule as GET /marks/{id}/content; resolves a missing video/audio Featured Content thumbnail once, rate-limited — see the video card decision below) |
 | GET | `/daymark/v1/marks/{id}/featured-content-link` | Yes — edit_posts + nonce (same visibility rule as GET /marks/{id}/content; returns a link Featured Content's Open Graph preview, resolving it once when not cached, rate-limited — see the link preview decision below) |

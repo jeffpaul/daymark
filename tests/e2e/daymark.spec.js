@@ -3883,6 +3883,128 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
 });
 
+// Publish later: the composer's When fold sets a time, Publish becomes
+// Schedule, and the site holds the Mark until then.
+
+// The signed-in user's scheduled Marks on the site, soonest first.
+function scheduledMarks(page) {
+	return page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}marks?status=future&per_page=50`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const marks = await res.json();
+		return Array.isArray(marks) ? marks : [];
+	});
+}
+
+// Sets the composer's When fold to Later at 8:00 tomorrow morning, this
+// browser's time. Returns that time as an ISO string.
+async function pickTomorrowMorning(page) {
+	await page.locator('[data-fold="when"] summary').click();
+	await page.getByRole('radio', { name: 'Later' }).check();
+	const when = await page.evaluate(() => {
+		const date = new Date();
+		date.setDate(date.getDate() + 1);
+		date.setHours(8, 0, 0, 0);
+		const pad = (n) => String(n).padStart(2, '0');
+		return {
+			field: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T08:00`,
+			iso: date.toISOString(),
+		};
+	});
+	await page.locator('[data-publish-at]').fill(when.field);
+	return when.iso;
+}
+
+test('publish later: Schedule holds a Mark until its time, and Me lists it until it is cancelled', async ({
+	page,
+}) => {
+	const caption = `E2E scheduled ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+
+	// Now by default: nothing changes for a Mark that goes out at once.
+	const publish = page.locator('[data-action="publish"]');
+	await expect(page.locator('[data-fold-value="when"]')).toHaveText('Now');
+	await expect(publish).toHaveText('Publish');
+
+	const iso = await pickTomorrowMorning(page);
+	await expect(page.locator('[data-fold-value="when"]')).toContainText('Tomorrow');
+	await expect(publish).toHaveText('Schedule');
+	await publish.click();
+	await expect(messageBar(page)).toContainText('Scheduled for tomorrow at');
+
+	// The site holds it for that time: not published, not a draft.
+	await expect.poll(async () => (await scheduledMarks(page)).map((mark) => mark.title)).toContain(caption);
+	const saved = (await scheduledMarks(page)).find((mark) => mark.title === caption);
+	expect(saved.status).toBe('future');
+	expect(new Date(saved.date_gmt).getTime()).toBe(new Date(iso).getTime());
+	expect(await draftTitles(page)).not.toContain(caption);
+
+	// Me lists it under Scheduled, with its time, apart from Drafts.
+	await page.goto('/daymark/me');
+	await expect(page.getByRole('heading', { name: 'Scheduled' })).toBeVisible();
+	const card = page.locator('[data-me-scheduled] .daymark-recent__item-wrap').filter({ hasText: caption });
+	await expect(card).toContainText('Tomorrow');
+	await expect(page.locator('[data-me-drafts]').getByText(caption)).toHaveCount(0);
+
+	// Cancel schedule: a draft again, with its words untouched.
+	await card.locator('[data-menu-toggle]').click();
+	await card.getByRole('menuitem', { name: 'Cancel schedule' }).click();
+	await expect(messageBar(page)).toContainText('Moved to Drafts.');
+	await expect(page.locator('[data-me-drafts] [data-edit-draft]').filter({ hasText: caption })).toBeVisible();
+	await expect(page.locator('[data-me-scheduled]').getByText(caption)).toHaveCount(0);
+	expect((await scheduledMarks(page)).map((mark) => mark.title)).not.toContain(caption);
+});
+
+test('publish later: Change reopens a scheduled Mark, and Now publishes it at once', async ({ page }) => {
+	const caption = `E2E reschedule ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await pickTomorrowMorning(page);
+	await page.locator('[data-action="publish"]').click();
+
+	const bar = messageBar(page);
+	await expect(bar).toContainText('Scheduled for tomorrow at');
+	await bar.getByRole('button', { name: 'Change' }).click();
+
+	// The composer, with the time ready to move.
+	await expect(page.locator('h1.daymark-topbar__title')).toHaveText('Scheduled Mark');
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('[data-fold="when"]')).toHaveAttribute('open', '');
+	await expect(page.getByRole('radio', { name: 'Later' })).toBeChecked();
+	await expect(page.locator('[data-action="publish"]')).toHaveText('Schedule');
+
+	// Leaving without a tap keeps it scheduled.
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(bar).toContainText("Saved. It's still scheduled.");
+	await expect.poll(async () => (await scheduledMarks(page)).map((mark) => mark.title)).toContain(caption);
+
+	// Publish now, from its menu on Me: set to Now, one tap from going out.
+	await page.goto('/daymark/me');
+	const card = page.locator('[data-me-scheduled] .daymark-recent__item-wrap').filter({ hasText: caption });
+	await card.locator('[data-menu-toggle]').click();
+	await card.getByRole('menuitem', { name: 'Publish now' }).click();
+	await expect(page.locator('[data-fold-value="when"]')).toHaveText('Now');
+	const publish = page.locator('[data-action="publish"]');
+	await expect(publish).toHaveText('Publish');
+	await expect(publish).toBeFocused();
+	await publish.click();
+	await expectPublished(page);
+
+	expect((await scheduledMarks(page)).map((mark) => mark.title)).not.toContain(caption);
+	await page.goto('/daymark/search');
+	await expect(page.locator('[data-search-results]').getByText(caption)).toBeVisible();
+});
+
 // One-tap "Publish" from the Drafts list (issue #265): a draft that already
 // has a caption opens in the composer with focus on its Publish button, so
 // one more tap publishes it.
