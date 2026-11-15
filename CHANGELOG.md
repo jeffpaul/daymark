@@ -32,6 +32,8 @@ can't act on them.
 
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
 
+- A Mark with several photos is quicker to finish. The photo row now ends in an "Add" tile, so another photo or video can be added right where the photos are. Each photo's sheet has previous and next arrows and a "Next photo" button, so you can describe every photo in one pass without closing the sheet in between. ([#609](https://github.com/jeffpaul/daymark/pull/609))
+
 ### Fixed
 
 - On an iPhone or iPad, the Install card no longer tells everyone to look "in Safari". Firefox and Chrome each get their own Add to Home Screen steps, Safari's steps say where Share is hiding on newer iPhones, and any other browser gets steps that name no browser. ([#605](https://github.com/jeffpaul/daymark/pull/605))
