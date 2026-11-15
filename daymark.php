@@ -99,6 +99,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-external-notes.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-bridgy-fed.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-jetpack-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-reader-import.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-microsub-import.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-activitypub-engagement.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-admin-subscriptions.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-share-target.php';

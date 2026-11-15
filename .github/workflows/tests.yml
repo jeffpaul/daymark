@@ -381,6 +381,9 @@ jobs:
           # Small upload parts, so the resumable-upload tests can split a
           # small generated file into several parts.
           cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-upload-chunks.php" /tmp/wp/wp-content/mu-plugins/
+          # A pretend Microsub server, sign-in page, and followed sites
+          # for the Microsub import test.
+          cp "$GITHUB_WORKSPACE/tests/e2e/fixtures/daymark-e2e-microsub.php" /tmp/wp/wp-content/mu-plugins/
           # A couple of categories so the "File under" picker has a real
           # choice beyond the site's single default category.
           wp term create category "E2E Photos" --path=/tmp/wp || true

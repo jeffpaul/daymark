@@ -56,6 +56,9 @@
  *    (issue #531), updating that row's star icon, state, and tooltip in place
  *    rather than reloading the whole page. Without JavaScript, falls back to
  *    its plain admin-post.php submit. See bindFavoriteForms().
+ * 9. The Microsub import checklist (issue #592) gets the same "Select all"
+ *    checkbox as the Reader one, plus a checkbox beside each channel's name
+ *    for that channel's sites. See bindMicrosubImportToggles().
  */
 (function () {
 	'use strict';
@@ -68,6 +71,7 @@
 		bindEditTitleDisclosures();
 		bindDiscoverSourcesForms();
 		bindReaderImportToggle();
+		bindMicrosubImportToggles();
 		bindBulkActions();
 	} );
 
@@ -127,10 +131,65 @@
 			return;
 		}
 
-		var toggle = form.querySelector( '[data-daymark-reader-import-toggle-all]' );
-		var label = form.querySelector( '[data-daymark-reader-import-toggle-all-label]' );
-		var entries = form.querySelectorAll( '[data-daymark-reader-import-entry]' );
+		bindCheckAll(
+			form.querySelector( '[data-daymark-reader-import-toggle-all]' ),
+			form.querySelector( '[data-daymark-reader-import-toggle-all-label]' ),
+			form.querySelectorAll( '[data-daymark-reader-import-entry]' )
+		);
+	}
 
+	/**
+	 * Wires the Microsub import checklist (behavior 9): a "Select all"
+	 * checkbox for the whole list, and one beside each channel's name that
+	 * checks or unchecks that channel's sites. As in the Reader checklist,
+	 * only sites that can still be imported carry
+	 * `data-daymark-microsub-import-entry`.
+	 *
+	 * @return void
+	 */
+	function bindMicrosubImportToggles() {
+		var form = document.querySelector( '[data-daymark-microsub-import-form]' );
+
+		if ( ! form ) {
+			return;
+		}
+
+		bindCheckAll(
+			form.querySelector( '[data-daymark-microsub-import-toggle-all]' ),
+			form.querySelector( '[data-daymark-microsub-import-toggle-all-label]' ),
+			form.querySelectorAll( '[data-daymark-microsub-import-entry]' )
+		);
+
+		form.querySelectorAll( '[data-daymark-microsub-import-channel]' ).forEach( function ( channel ) {
+			bindCheckAll(
+				channel.querySelector( '[data-daymark-microsub-import-channel-toggle]' ),
+				null,
+				channel.querySelectorAll( '[data-daymark-microsub-import-entry]' )
+			);
+		} );
+	}
+
+	/**
+	 * Every bindCheckAll() checkbox's own "bring me back in step" function.
+	 *
+	 * @type {Function[]}
+	 */
+	var checkAllSyncs = [];
+
+	/**
+	 * Makes one checkbox check or uncheck a set of others, and keeps it in
+	 * step with them (checked when all are, mixed when only some are). The
+	 * checkbox is rendered hidden, since it does nothing without this
+	 * script, and is shown here. Several of these can share entries (the
+	 * whole list and one channel), so using one brings the others back in
+	 * step too.
+	 *
+	 * @param {HTMLInputElement|null} toggle  The "select all" checkbox.
+	 * @param {HTMLElement|null}      label   Its hidden label text, if any.
+	 * @param {NodeList}              entries The checkboxes it controls.
+	 * @return {void}
+	 */
+	function bindCheckAll( toggle, label, entries ) {
 		if ( ! toggle || ! entries.length ) {
 			return;
 		}
@@ -158,13 +217,17 @@
 			entries.forEach( function ( entry ) {
 				entry.checked = toggle.checked;
 			} );
-			toggle.indeterminate = false;
+
+			checkAllSyncs.forEach( function ( syncOne ) {
+				syncOne();
+			} );
 		} );
 
 		entries.forEach( function ( entry ) {
 			entry.addEventListener( 'change', sync );
 		} );
 
+		checkAllSyncs.push( sync );
 		sync();
 	}
 
