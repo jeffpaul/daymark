@@ -852,6 +852,151 @@ XML;
 		$this->assertStringNotContainsString( 'Previous:', $body, 'A <ul>-wrapped post-navigation block is also dropped' );
 	}
 
+	/**
+	 * A block theme's single-post page: the post body sits in the Post
+	 * Content block (`entry-content wp-block-post-content`) with no
+	 * <article> around it, and a "read more" grid further down the page
+	 * builds each card for another story from an <article>. The post body
+	 * must win over the first <article> on the page, and stop at its own
+	 * closing tag rather than run on into the rest of the page.
+	 */
+	public function test_fetch_full_content_prefers_post_content_before_any_article_card() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/block-theme-story/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/block-theme-story/',
+			'<html><head><title>The Real Story</title></head><body class="single wp-theme-example">'
+			. '<header class="site-header wp-block-template-part"><p>Example News</p></header>'
+			. '<main id="wp--skip-link--target" class="wp-block-group">'
+			. '<h1 class="wp-block-post-title">The Real Story Headline</h1>'
+			. '<div class="entry-content alignwide wp-block-post-content has-global-padding">'
+			. '<p>The real story starts here.</p>'
+			. '<!-- a comment that mentions </div> must not end the body early -->'
+			. '<div class="wp-block-group"><div class="wp-block-group__inner"><p>A boxed note inside the story.</p></div></div>'
+			. '<p>The real story ends here.</p>'
+			. '</div>'
+			. '<div class="wp-block-group"><p>About the people behind this site.</p></div>'
+			. '</main>'
+			. '<div class="wp-block-comments"><h2>Join the conversation</h2></div>'
+			. '<div class="read-more"><h3>Read more in News</h3>'
+			. '<article class="read-more__card"><span>NEWS</span> | <span>OCT 28</span>'
+			. '<h4><a href="https://example.com/another-story/">Another Story Entirely</a></h4>'
+			. '<p>What the other story is about.</p><span>By SOMEONE ELSE</span></article>'
+			. '<article class="read-more__card"><h4><a href="https://example.com/third-story/">A Third Story</a></h4></article>'
+			. '</div>'
+			. '<footer class="site-footer"><p>Footer text</p></footer>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The real story starts here', $body );
+		$this->assertStringContainsString( 'A boxed note inside the story', $body, 'A nested <div> does not end the body early' );
+		$this->assertStringContainsString( 'The real story ends here', $body );
+		$this->assertStringNotContainsString( 'Another Story Entirely', $body, 'A card for another story is not taken for the post' );
+		$this->assertStringNotContainsString( 'By SOMEONE ELSE', $body );
+		$this->assertStringNotContainsString( 'A Third Story', $body );
+		$this->assertStringNotContainsString( 'About the people behind this site', $body, 'The body stops at its own closing tag' );
+		$this->assertStringNotContainsString( 'Join the conversation', $body );
+		$this->assertStringNotContainsString( 'The Real Story Headline', $body, 'The page title above the body is left out' );
+	}
+
+	/**
+	 * A story card built from an <article> can also sit inside the post
+	 * body itself (a "see also" box between two paragraphs). The body
+	 * around it is the post, not the card.
+	 */
+	public function test_fetch_full_content_keeps_body_around_an_article_card_inside_it() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/inline-card-story/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/inline-card-story/',
+			'<html><body><main>'
+			. '<div class="entry-content wp-block-post-content">'
+			. '<p>Text before the card.</p>'
+			. '<article class="see-also"><a href="https://example.com/another-story/">See also: Another Story</a></article>'
+			. '<p>Text after the card.</p>'
+			. '</div>'
+			. '</main></body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'Text before the card', $body );
+		$this->assertStringContainsString( 'Text after the card', $body );
+	}
+
+	/**
+	 * The usual layout is unchanged: when the page's <article> comes first,
+	 * it is still the post, even if a later part of the page (here a
+	 * sidebar box) happens to use a post-content class of its own.
+	 */
+	public function test_fetch_full_content_still_prefers_a_leading_article_over_a_later_post_content() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/article-first/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/article-first/',
+			'<html><body>'
+			. '<article class="post"><p>The article is the real post.</p></article>'
+			. '<div class="widget"><div class="post-content"><p>A teaser for some other post.</p></div></div>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'The article is the real post', $body );
+		$this->assertStringNotContainsString( 'A teaser for some other post', $body );
+	}
+
+	/**
+	 * A post body whose closing tag never arrives (a page cut short, or
+	 * broken markup) keeps everything after its opening tag, as before.
+	 */
+	public function test_fetch_full_content_keeps_the_rest_when_post_content_never_closes() {
+		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
+		$post_id         = $this->create_cached_post( $subscription_id, gmdate( 'Y-m-d H:i:s' ) );
+		update_post_meta( $post_id, 'permalink', 'https://example.com/unclosed-body/' );
+		update_post_meta( $post_id, 'body_content', '' );
+		update_post_meta( $post_id, 'content_state', 'excerpt_only' );
+
+		$this->mock_response(
+			'https://example.com/unclosed-body/',
+			'<html><body><main><h1>Headline above the body</h1>'
+			. '<div class="entry-content"><p>First paragraph.</p><div><p>Second paragraph.</p>'
+			. '</body></html>',
+			'text/html; charset=UTF-8'
+		);
+
+		$this->assertTrue( $this->poller->fetch_full_content( $post_id ) );
+
+		$body = (string) get_post_meta( $post_id, 'body_content', true );
+
+		$this->assertStringContainsString( 'First paragraph', $body );
+		$this->assertStringContainsString( 'Second paragraph', $body );
+		$this->assertStringNotContainsString( 'Headline above the body', $body );
+	}
+
 	/** Click-through fetch on a *pruned* post re-triggers the same flow. */
 	public function test_fetch_full_content_on_pruned_post_works_the_same_way() {
 		$subscription_id = $this->create_subscription( 'https://example.com/feed/' );
