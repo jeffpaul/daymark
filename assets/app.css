@@ -732,6 +732,21 @@ h2[tabindex='-1']:focus {
 	flex-grow: 2;
 }
 
+/* Save as draft is a quiet text button, so Publish is the one big button
+   in the row. A draft is already saved as you type and when you leave, so
+   this button is the lesser of the two. It keeps the full tap height. */
+.daymark-actionbar__buttons .daymark-actionbar__draft {
+	flex: 0 0 auto;
+	padding-inline: var(--daymark-spacing-sm) var(--daymark-spacing-md);
+	background: none;
+	color: var(--daymark-text-secondary);
+}
+
+.daymark-actionbar__draft:not(:disabled):hover,
+.daymark-actionbar__draft:not(:disabled):active {
+	color: var(--daymark-text-primary);
+}
+
 /* "Where this goes" (PublishControls.whereBarMarkup()): Your site, which
    is always included and opens the full list, then one chip for each
    destination or publishing plugin that can take this Mark, tapped on or

@@ -11499,7 +11499,7 @@
 				<p class="daymark-status" data-create-status aria-live="polite"></p>
 				<div class="daymark-where" data-where-bar>${PublishControls.whereBarMarkup()}</div>
 				<div class="daymark-actionbar__buttons">
-					<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">${esc(
+					<button type="button" class="daymark-btn daymark-actionbar__draft" data-action="save-draft">${esc(
 						__('Save as draft', 'daymark')
 					)}</button>
 					<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish"${

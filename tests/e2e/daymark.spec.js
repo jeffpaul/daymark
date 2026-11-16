@@ -2600,6 +2600,36 @@ test('camera-first: the Image picker offers capture first, with a library fallba
 	await expect(input).not.toHaveAttribute('capture');
 });
 
+// Publish is the one big button on the composer: Save as draft sits beside
+// it as a quiet text button (no fill, no border), still a full-height tap
+// target, and still saves a draft.
+test('composer: Publish takes most of the row beside a quiet Save as draft', async ({ page }) => {
+	const caption = `E2E quiet draft ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+	await page.fill('#daymark-caption', caption);
+
+	const draft = page.locator('[data-action="save-draft"]');
+	const publish = page.locator('[data-action="publish"]');
+	const draftBox = await draft.boundingBox();
+	const publishBox = await publish.boundingBox();
+	// Same row, Publish clearly the wider of the two.
+	expect(Math.abs(draftBox.y - publishBox.y)).toBeLessThan(2);
+	expect(publishBox.width).toBeGreaterThan(draftBox.width * 1.5);
+	expect(draftBox.height).toBeGreaterThanOrEqual(44);
+	const look = await draft.evaluate((el) => {
+		const style = getComputedStyle(el);
+		return { background: style.backgroundColor, border: style.borderTopColor };
+	});
+	expect(look.background).toBe('rgba(0, 0, 0, 0)');
+	expect(look.border).toBe('rgba(0, 0, 0, 0)');
+
+	await draft.click();
+	await expect.poll(() => draftTitles(page), { timeout: 15000 }).toContain(caption);
+});
+
 // Drag-and-drop (issue #260): dropping a file onto the picker zone attaches
 // it the same way picking it via the file input would — same alt text
 // sheet, same type badge, same publish flow.
