@@ -897,6 +897,9 @@ class Daymark_Routes {
 			// The file name extensions an upload can start with; the
 			// composer refuses any other file when it's picked.
 			'uploadExtensions'       => Daymark_Uploads::accepted_extensions(),
+			// The photo types the photo sheet's crop and rotate work on
+			// (those the server's image editor can change).
+			'imageEdit'              => Daymark_Image_Edit::app_config(),
 			// The Note length count under a Note's caption: the same limit
 			// and Bluesky wording as the block editor's counter.
 			'noteLength'             => Daymark_Note_Length::app_config(),
