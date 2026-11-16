@@ -1725,6 +1725,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Files already uploaded through Daymark_Uploads (issue #483),
 			// checked by Daymark_Uploads::resolve_media_ids().
 			'media_ids'            => $media_ids,
+			// Crop and rotate for those files, keyed by attachment ID; see
+			// Daymark_Image_Edit::apply_map().
+			'media_edits'          => $request->get_param( 'media_edits' ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 			'transcript'           => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture: date/time + optional location, both
@@ -3076,7 +3079,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			$thumbnail = wp_get_attachment_image_url( $attachment_id, 'medium' );
 
-			$media[] = array(
+			$item = array(
 				'id'        => $attachment_id,
 				'kind'      => $kind,
 				'thumbnail' => $thumbnail ? esc_url_raw( $thumbnail ) : '',
@@ -3085,6 +3088,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// (images only; other media carry an empty string).
 				'alt'       => 'image' === $kind ? (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true ) : '',
 			);
+
+			// Crop and rotate: whether the photo sheet offers them, and the
+			// edit this photo already has (with the picture from before it).
+			if ( 'image' === $kind ) {
+				$item += Daymark_Image_Edit::describe( $attachment_id );
+			}
+
+			$media[] = $item;
 		}
 
 		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
@@ -4047,6 +4058,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// map keyed by attachment ID for media already on the Mark.
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
+			// Crop and rotate for the Mark's own photos, keyed by attachment
+			// ID; tidied and scoped by Daymark_Image_Edit::apply_map().
+			'media_edits'         => $request->get_param( 'media_edits' ),
 			// Author-chosen reorder of the Mark's already-attached media
 			// (issue #250) — an ordered list of attachment IDs, honored only
 			// when it's an exact permutation of the stored media list. See

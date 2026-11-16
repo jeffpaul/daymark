@@ -2650,6 +2650,105 @@ test('drag-and-drop: dropping an image onto the picker attaches it', async ({ pa
 	await expectPublished(page);
 });
 
+// Crop and rotate in the photo sheet: a shape (cut from the middle) and
+// Rotate are previewed in the app and made on the site by the next save.
+// Original with no turn puts the photo back as it was.
+test('photo sheet: a shape and Rotate change the saved photo, and Original puts it back', async ({ page }) => {
+	const caption = `E2E crop rotate ${RUN_ID}`;
+
+	// The saved photo's size, read from the file the site now serves.
+	const savedPhotoSize = async () => {
+		const mark = await findMarkByCaption(page, caption);
+		const media = mark && Array.isArray(mark.media) ? mark.media[0] : null;
+		if (!media || !media.thumbnail) {
+			return null;
+		}
+		return page.evaluate(
+			(src) =>
+				new Promise((resolve) => {
+					const img = new Image();
+					img.onload = () => resolve([img.naturalWidth, img.naturalHeight]);
+					img.onerror = () => resolve(null);
+					img.src = src;
+				}),
+			media.thumbnail
+		);
+	};
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await expect.poll(async () => (await savedMediaIds(page, caption)).length, { timeout: 20000 }).toBe(1);
+	// The fixture is a 64 x 64 square.
+	expect(await savedPhotoSize()).toEqual([64, 64]);
+
+	await openMediaSheet(page);
+	await expect(page.getByRole('group', { name: 'Shape' })).toBeVisible();
+	const original = page.locator('[data-edit-shape="original"]');
+	const wide = page.locator('[data-edit-shape="wide"]');
+	await expect(original).toHaveAttribute('aria-pressed', 'true');
+
+	// Wide: the preview's frame becomes 16:9.
+	await wide.click();
+	await expect(wide).toHaveAttribute('aria-pressed', 'true');
+	await expect(original).toHaveAttribute('aria-pressed', 'false');
+	await expect
+		.poll(async () => {
+			const box = await page.locator('[data-sheet-frame]').boundingBox();
+			return box.width / box.height;
+		})
+		.toBeCloseTo(16 / 9, 1);
+
+	// Rotate turns the preview and the thumbnail, and says so.
+	const rotate = page.getByRole('button', { name: 'Rotate' });
+	await rotate.click();
+	await expect(rotate).toBeFocused();
+	await expect(page.locator('[data-sheet-live]')).toHaveText('Rotated.');
+	await expect(page.locator('[data-sheet-preview]')).toHaveClass(/daymark-turned--90/);
+	await expect(page.locator('.daymark-strip__thumb').first()).toHaveClass(/daymark-turned--90/);
+	await page.locator('[data-sheet-done]').click();
+
+	// The site made the edit: 16:9 from the middle of the 64 x 64 photo.
+	await expect.poll(savedPhotoSize, { timeout: 20000 }).toEqual([64, 36]);
+	const edited = await findMarkByCaption(page, caption);
+	expect(edited.media[0].edit).toEqual({ shape: 'wide', rotate: 90 });
+	expect(edited.media[0].editable).toBe(true);
+
+	// Reopened, the draft shows its edit, previewed from the picture
+	// before it.
+	await page.goto(`/daymark?daymark_draft=${edited.id}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('.daymark-strip__thumb').first()).toHaveClass(/daymark-turned--90/);
+	await openMediaSheet(page);
+	await expect(page.locator('[data-edit-shape="wide"]')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.locator('[data-sheet-preview]')).toHaveAttribute('src', edited.media[0].original);
+
+	// Original, and three more turns to come back around.
+	await page.locator('[data-edit-shape="original"]').click();
+	for (let i = 0; i < 3; i++) {
+		await page.getByRole('button', { name: 'Rotate' }).click();
+	}
+	await expect(page.locator('.daymark-strip__thumb').first()).not.toHaveClass(/daymark-turned/);
+	await page.locator('[data-sheet-done]').click();
+
+	await expect.poll(savedPhotoSize, { timeout: 20000 }).toEqual([64, 64]);
+	const restored = await findMarkByCaption(page, caption);
+	expect(restored.media[0].edit).toBeUndefined();
+});
+
+// A video has no shape or Rotate.
+test('photo sheet: a video has no shape or Rotate', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'video');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-video.mp4');
+	await openMediaSheet(page);
+	await expect(page.locator('#daymark-media-title')).toHaveText('Video 1 of 1');
+	await expect(page.locator('[data-sheet-edit]')).toHaveCount(0);
+});
+
 // The photo strip: picked photos show as thumbnails under the caption, each
 // with an ALT badge. A photo's sheet holds its alt text and Move earlier /
 // Move later, and both reach the saved draft.

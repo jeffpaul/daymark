@@ -235,6 +235,10 @@ if ( empty( $daymark_speech_uploads['error'] ) && ! empty( $daymark_speech_uploa
 delete_post_meta_by_key( '_daymark_staged_upload' );
 delete_post_meta_by_key( '_daymark_staged_at' );
 
+// The record of a crop or rotate made in the composer. The edited photo
+// itself stays as it is, like any image edited in the Media Library.
+delete_post_meta_by_key( '_daymark_image_edit' );
+
 $daymark_upload_dir = wp_upload_dir( null, false );
 
 if ( empty( $daymark_upload_dir['error'] ) && ! empty( $daymark_upload_dir['basedir'] ) ) {
