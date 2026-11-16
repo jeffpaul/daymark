@@ -221,6 +221,23 @@ class Daymark_Publisher {
 	public const MAX_TRANSCRIPT_CHARS = 8000;
 
 	/**
+	 * Post meta marking a Mark that was given a time to publish at
+	 * ("publish later"). It stays after the Mark goes live, so a later edit
+	 * keeps the date it went out on; it goes when the Mark is taken off the
+	 * schedule or published by hand instead.
+	 *
+	 * @var string
+	 */
+	public const SCHEDULED_META = '_daymark_scheduled';
+
+	/**
+	 * The furthest ahead a Mark can be scheduled, in seconds.
+	 *
+	 * @var int
+	 */
+	public const MAX_SCHEDULE_AHEAD = 5 * YEAR_IN_SECONDS;
+
+	/**
 	 * Clock-skew tolerance, in seconds, for a client-supplied `captured_at`
 	 * timestamp. A value further in the future than this is treated as
 	 * unusable (ignored, falling through to the next signal) rather than
@@ -793,6 +810,18 @@ class Daymark_Publisher {
 		// publish below.
 		$defer_helpers = $final_publish && ( $has_helper_selection || $is_like_of );
 
+		// Publish later: a time in the future holds the Mark as a scheduled
+		// post, and WordPress publishes it then. Its meta (destinations, the
+		// helper selection) is all in place long before that, so it needs no
+		// draft-first step. A Like or Reblog is never scheduled.
+		$publish_at = ( $final_publish && ! $is_like_of && null === $repost_of )
+			? $this->resolve_publish_at( $data['publish_at'] ?? null )
+			: null;
+
+		if ( null !== $publish_at ) {
+			$defer_helpers = false;
+		}
+
 		// Quiet capture: camera EXIF (first image only — video/audio never
 		// carry EXIF) is read once here, before the post exists, so its
 		// created_timestamp is available as the second-priority signal for
@@ -817,7 +846,7 @@ class Daymark_Publisher {
 			// non-listed post type and never appears anywhere a post does
 			// (see Daymark_Like_Visibility::POST_TYPE).
 			'post_type'    => $is_like_of ? Daymark_Like_Visibility::POST_TYPE : 'post',
-			'post_status'  => ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft',
+			'post_status'  => null !== $publish_at ? 'future' : ( ( $final_publish && ! $defer_helpers ) ? 'publish' : 'draft' ),
 			'post_author'  => get_current_user_id(),
 			'post_title'   => $title,
 			// wp_insert_post() strips backslashes, so the markup is slashed
@@ -833,6 +862,13 @@ class Daymark_Publisher {
 		if ( null !== $captured_at ) {
 			$post_data['post_date_gmt'] = $captured_at;
 			$post_data['post_date']     = get_date_from_gmt( $captured_at );
+		}
+
+		// A scheduled Mark is dated when it goes out, not when its photo was
+		// taken (that still goes in _daymark_captured_at below).
+		if ( null !== $publish_at ) {
+			$post_data['post_date_gmt'] = $publish_at;
+			$post_data['post_date']     = get_date_from_gmt( $publish_at );
 		}
 
 		$post_id = wp_insert_post( $post_data, true );
@@ -916,6 +952,10 @@ class Daymark_Publisher {
 
 		if ( null !== $captured_at ) {
 			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
+		}
+
+		if ( null !== $publish_at ) {
+			update_post_meta( $post_id, self::SCHEDULED_META, '1' );
 		}
 
 		// $location was already resolved above (needed before the insert
@@ -1197,10 +1237,25 @@ class Daymark_Publisher {
 
 		$new_status = $post->post_status;
 
-		if ( isset( $data['status'] ) && 'draft' === $data['status'] ) {
+		// Publish later (see resolve_publish_at()). A scheduled Mark stays
+		// scheduled through the composer's own background saves, which ask
+		// for a draft; only a hand-made save changes that: Save as draft
+		// takes it off the schedule, Publish with a later time moves it, and
+		// Publish with no time sends it out now.
+		$was_scheduled  = 'future' === $post->post_status;
+		$keeps_schedule = $was_scheduled && ! empty( $data['autosave'] );
+		$publish_at     = null;
+
+		if ( $keeps_schedule ) {
+			$new_status = 'future';
+		} elseif ( isset( $data['status'] ) && 'draft' === $data['status'] ) {
 			$new_status = 'draft';
 		} elseif ( isset( $data['status'] ) && 'publish' === $data['status'] && current_user_can( 'publish_posts' ) ) {
-			$new_status = 'publish';
+			// Never for a Mark that is already out, nor a Like or Reblog.
+			$publish_at = 'publish' === $post->post_status || $is_like_of || '' !== (string) get_post_meta( $post_id, '_daymark_repost_of', true )
+				? null
+				: $this->resolve_publish_at( $data['publish_at'] ?? null );
+			$new_status = null !== $publish_at ? 'future' : 'publish';
 		}
 
 		if ( ! empty( $new_ids ) ) {
@@ -1308,9 +1363,32 @@ class Daymark_Publisher {
 			'post_status'  => $new_status,
 		);
 
-		if ( null !== $captured_at ) {
+		// A Mark that was scheduled keeps the date it goes (or went) out on:
+		// when its photo was taken never moves that.
+		$dated_by_schedule = 'future' === $new_status
+			|| ( 'publish' === $post->post_status && '1' === get_post_meta( $post_id, self::SCHEDULED_META, true ) );
+
+		if ( null !== $captured_at && ! $dated_by_schedule ) {
 			$update_data['post_date_gmt'] = $captured_at;
 			$update_data['post_date']     = get_date_from_gmt( $captured_at );
+		}
+
+		if ( null !== $publish_at ) {
+			// edit_date: without it WordPress drops a date given to a draft.
+			$update_data['post_date_gmt'] = $publish_at;
+			$update_data['post_date']     = get_date_from_gmt( $publish_at );
+			$update_data['edit_date']     = true;
+		} elseif ( $was_scheduled && 'publish' === $new_status && ! isset( $update_data['post_date_gmt'] ) ) {
+			// Published now instead: dated now, or WordPress would schedule
+			// it again for the old time.
+			$update_data['post_date_gmt'] = current_time( 'mysql', true );
+			$update_data['post_date']     = current_time( 'mysql' );
+			$update_data['edit_date']     = true;
+		} elseif ( $was_scheduled && 'draft' === $new_status ) {
+			// Off the schedule: an undated draft again, so a later Publish
+			// goes out then.
+			$update_data['post_date_gmt'] = '0000-00-00 00:00:00';
+			$update_data['post_date']     = current_time( 'mysql' );
 		}
 
 		$result = wp_update_post( $update_data, true );
@@ -1338,6 +1416,12 @@ class Daymark_Publisher {
 
 		if ( null !== $captured_at ) {
 			update_post_meta( $post_id, '_daymark_captured_at', $captured_at );
+		}
+
+		if ( null !== $publish_at ) {
+			update_post_meta( $post_id, self::SCHEDULED_META, '1' );
+		} elseif ( $was_scheduled && 'future' !== $new_status ) {
+			delete_post_meta( $post_id, self::SCHEDULED_META );
 		}
 
 		// $location was already resolved above (needed before the update
@@ -2436,6 +2520,71 @@ class Daymark_Publisher {
 		}
 
 		return null;
+	}
+
+	/**
+	 * The time a Mark should publish at ("publish later"), from the
+	 * composer's own `publish_at`. Only a readable time that is still in the
+	 * future counts: anything else (none sent, unreadable, already past)
+	 * means publish now, never an error. At most self::MAX_SCHEDULE_AHEAD
+	 * ahead, which no real schedule reaches.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @param mixed $value Raw publish_at input (expected ISO 8601 string, or empty/absent).
+	 * @return string|null MySQL datetime (UTC), or null to publish now.
+	 */
+	private function resolve_publish_at( $value ): ?string {
+		$value = is_string( $value ) ? trim( $value ) : '';
+
+		if ( '' === $value || strlen( $value ) > 40 ) {
+			return null;
+		}
+
+		$timestamp = strtotime( $value );
+
+		if ( false === $timestamp || $timestamp <= time() || $timestamp > time() + self::MAX_SCHEDULE_AHEAD ) {
+			return null;
+		}
+
+		return gmdate( 'Y-m-d H:i:s', $timestamp );
+	}
+
+	/**
+	 * Take a scheduled Mark off the schedule: it becomes an undated draft
+	 * again, with everything else as it was.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @param int $post_id The Mark.
+	 * @return true|WP_Error A `daymark_not_scheduled` error when it isn't scheduled.
+	 */
+	public function unschedule( int $post_id ) {
+		$post = get_post( $post_id );
+
+		if ( ! $post instanceof WP_Post || 'future' !== $post->post_status || '1' !== get_post_meta( $post_id, '_daymark_is_mark', true ) ) {
+			return new WP_Error( 'daymark_not_scheduled', __( 'This Mark is not scheduled.', 'daymark' ), array( 'status' => 409 ) );
+		}
+
+		$result = wp_update_post(
+			array(
+				'ID'            => $post_id,
+				'post_status'   => 'draft',
+				'post_date'     => current_time( 'mysql' ),
+				'post_date_gmt' => '0000-00-00 00:00:00',
+			),
+			true
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$result->add_data( array( 'status' => 500 ) );
+
+			return $result;
+		}
+
+		delete_post_meta( $post_id, self::SCHEDULED_META );
+
+		return true;
 	}
 
 	/**
