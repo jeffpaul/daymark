@@ -3237,6 +3237,169 @@ button.daymark-stat {
 	background: var(--daymark-surface);
 }
 
+/* The frame around a photo's preview. Once the picture has loaded,
+   MediaSheet.syncPreview() gives the frame the shape the photo's crop and
+   rotate will leave it (--daymark-frame-ratio, width over height), and
+   the picture fills it from the middle, turned as the edit says. A turned
+   picture is laid out on its side first, so it fills the frame once
+   turned. */
+.daymark-mediasheet__frame {
+	display: grid;
+	place-items: center;
+	width: fit-content;
+	max-width: 100%;
+	margin: 0 auto;
+	overflow: hidden;
+	border-radius: var(--daymark-radius-sm);
+}
+
+.daymark-mediasheet__frame--shaped {
+	grid-template-columns: minmax(0, 1fr);
+	width: min(100%, calc(min(28vh, 240px) * var(--daymark-frame-ratio, 1)));
+	aspect-ratio: var(--daymark-frame-ratio, 1);
+	background: var(--daymark-surface);
+}
+
+.daymark-mediasheet__frame--shaped .daymark-mediasheet__preview {
+	width: 100%;
+	height: auto;
+	max-width: none;
+	max-height: none;
+	margin: 0;
+	border-radius: 0;
+	aspect-ratio: var(--daymark-frame-ratio, 1);
+	object-fit: cover;
+}
+
+.daymark-mediasheet__frame--sideways .daymark-mediasheet__preview {
+	width: calc(100% / var(--daymark-frame-ratio, 1));
+	aspect-ratio: 1 / var(--daymark-frame-ratio, 1);
+}
+
+/* A photo turned by its edit: the sheet's preview and the strip's
+   thumbnail. */
+.daymark-turned--90 {
+	transform: rotate(90deg);
+}
+
+.daymark-turned--180 {
+	transform: rotate(180deg);
+}
+
+.daymark-turned--270 {
+	transform: rotate(270deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.daymark-mediasheet__preview {
+		transition: transform 0.15s ease;
+	}
+}
+
+/* Crop and rotate under the preview (MediaSheet.editMarkup()): the four
+   shapes as one row of pressed-or-not buttons, and Rotate beside them. */
+.daymark-mediasheet__edit {
+	display: flex;
+	align-items: stretch;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mediasheet__shapes {
+	display: grid;
+	flex: 1;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	min-width: 0;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	overflow: hidden;
+}
+
+.daymark-mediasheet__shape,
+.daymark-mediasheet__rotate {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	min-width: 0;
+	min-height: 56px;
+	padding: var(--daymark-spacing-xs) 2px;
+	border: 0;
+	background: var(--daymark-bg);
+	color: var(--daymark-text-secondary);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.daymark-mediasheet__shape + .daymark-mediasheet__shape {
+	border-inline-start: 1px solid var(--daymark-border);
+}
+
+.daymark-mediasheet__shape[aria-pressed="true"] {
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-mediasheet__rotate {
+	flex: 0 0 auto;
+	min-width: 64px;
+	padding-inline: var(--daymark-spacing-sm);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	color: var(--daymark-text-primary);
+}
+
+.daymark-mediasheet__shape:focus-visible,
+.daymark-mediasheet__rotate:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: -2px;
+}
+
+.daymark-mediasheet__editlabel {
+	max-width: 100%;
+	overflow-wrap: anywhere;
+	text-align: center;
+}
+
+/* A small outline of each shape. Each takes the same 16px of height, so
+   the labels under them line up. */
+.daymark-mediasheet__shapeicon {
+	display: block;
+	box-sizing: border-box;
+	width: 18px;
+	height: 14px;
+	margin-block: 1px;
+	border: 2px solid currentColor;
+	border-radius: 3px;
+}
+
+.daymark-mediasheet__shapeicon--square {
+	width: 16px;
+	height: 16px;
+	margin-block: 0;
+}
+
+.daymark-mediasheet__shapeicon--tall {
+	width: 13px;
+	height: 16px;
+	margin-block: 0;
+}
+
+.daymark-mediasheet__shapeicon--wide {
+	width: 22px;
+	height: 12px;
+	margin-block: 2px;
+}
+
+.daymark-mediasheet__rotate svg {
+	display: block;
+	width: 16px;
+	height: 16px;
+}
+
 .daymark-mediasheet__file {
 	display: flex;
 	align-items: center;

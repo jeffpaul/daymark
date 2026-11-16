@@ -655,6 +655,11 @@ class Daymark_Publisher {
 		// order, so positional alt text lines up with this list.
 		$media_ids = array_merge( $requested['new'], $sideloaded );
 
+		// Crop and rotate from the photo sheet, made before the Mark's
+		// content is built so it shows the edited photo. Only this Mark's
+		// own files can be named; see Daymark_Image_Edit::apply_map().
+		Daymark_Image_Edit::apply_map( $data['media_edits'] ?? null, $media_ids );
+
 		$type = $this->detect_primary_type( $media_ids, $requested_type );
 
 		// Location is kept for Check Ins only. A Check In's place is its
@@ -1296,6 +1301,10 @@ class Daymark_Publisher {
 
 		$this->apply_positional_alt( array_merge( $alt_ids, array_map( 'intval', $sideloaded ) ), $data['alt'] ?? null );
 		$this->apply_alt_map( $data['existing_alt'] ?? null, $media_ids );
+
+		// Crop and rotate from the photo sheet, for this Mark's own photos,
+		// before the content is rebuilt below with each photo's address.
+		Daymark_Image_Edit::apply_map( $data['media_edits'] ?? null, $media_ids );
 
 		$alt_text = sanitize_text_field( (string) ( $data['alt_text'] ?? '' ) );
 		if ( '' !== $alt_text && $media_ids && ! isset( $data['alt'] ) && ! isset( $data['existing_alt'] ) ) {

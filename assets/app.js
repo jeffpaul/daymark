@@ -952,7 +952,9 @@
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
 		// While editing a draft: { id, type, media: [{id, kind, thumbnail,
-		// filename, alt}], mediaRemoved, partialMedia }. mediaRemoved is set
+		// filename, alt, editable, edit, original}], mediaRemoved,
+		// partialMedia }. editable, edit and original are a photo's crop and
+		// rotate (see mediaEditOf()). mediaRemoved is set
 		// once a file was taken off this Mark, so its type follows its media
 		// again; partialMedia marks a Mark reopened from the queue without its
 		// list of attached media. See effectiveType().
@@ -2057,6 +2059,30 @@
 	// Daymark_Publisher::VISION_MIME_TYPES (#481). Alt text isn't suggested
 	// automatically for any other format, such as AVIF.
 	const VISION_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+	// Crop and rotate (the photo sheet, MediaSheet.editMarkup()). A photo's
+	// edit is { shape, rotate }: one of the shapes below or 'original', and a
+	// clockwise quarter turn (0, 90, 180, 270). The app only previews it, by
+	// turning and framing the picture it already has; the site makes the
+	// edit when a save names it in media_edits (Daymark_Image_Edit), always
+	// from the photo as it was first, so the original is never lost.
+	// Width divided by height for each shape.
+	const EDIT_SHAPE_RATIOS = { square: 1, tall: 4 / 5, wide: 16 / 9 };
+
+	// The edit on a picked file or a draft's photo; no edit when it has none.
+	function mediaEditOf(ref) {
+		const edit = (ref && ref.edit) || {};
+		return {
+			shape: Object.prototype.hasOwnProperty.call(EDIT_SHAPE_RATIOS, edit.shape) ? edit.shape : 'original',
+			rotate: [90, 180, 270].includes(edit.rotate) ? edit.rotate : 0,
+		};
+	}
+
+	// The class that shows a picture turned as its edit says.
+	function turnedClass(ref) {
+		const rotate = mediaEditOf(ref).rotate;
+		return rotate ? ' daymark-turned--' + rotate : '';
+	}
 
 	// A HEIC/HEIF photo, including an image sequence (#481). Some browsers
 	// report no type for one, so the extension counts too.
@@ -3882,6 +3908,10 @@
 	function buildMarkPayload(status, opts) {
 		opts = opts || {};
 		const existingAlt = {};
+		// Crop and rotate for photos already on the Mark, by attachment ID.
+		// Only photos the sheet's controls were used on are named, so the
+		// site leaves every other photo alone.
+		const existingEdits = {};
 		// The author's chosen order for already-attached media (issue #250)
 		// — state.editing.media's own array order, which the media sheet's
 		// Move earlier/Move later (CreateScreen.moveMedia()) changes in place. Newly uploaded files follow, in the composer's
@@ -3891,6 +3921,9 @@
 			state.editing.media.forEach((m) => {
 				if (m.kind === 'image') {
 					existingAlt[m.id] = m.alt || '';
+					if (m.edit) {
+						existingEdits[m.id] = mediaEditOf(m);
+					}
 				}
 				existingMediaIds.push(m.id);
 			});
@@ -3902,6 +3935,8 @@
 			kind: entry.kind,
 			alt: entry.kind === 'image' ? entry.alt || '' : '',
 			attachmentId: entry.uploadedId || null,
+			// Its crop and rotate, once the sheet's controls were used.
+			edit: entry.kind === 'image' && entry.edit ? mediaEditOf(entry) : null,
 		}));
 		// Publish and Save as draft pass `explicit`: what the composer
 		// shows is what the Mark gets. Otherwise (an autosave, leaving the
@@ -3940,6 +3975,7 @@
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
+			existingEdits,
 			existingMediaIds,
 			// The attached media themselves, so a Mark reopened from the queue
 			// shows them (see openPendingMark()). null when the composer doesn't
@@ -3955,6 +3991,10 @@
 						thumbnail: m.thumbnail || '',
 						filename: m.filename || '',
 						alt: m.alt || '',
+						// Crop and rotate: see mediaEditOf().
+						original: m.original || '',
+						editable: !!m.editable,
+						edit: m.edit ? mediaEditOf(m) : null,
 				  })),
 			// Files taken off the Mark (see state.removedMediaIds).
 			removedMediaIds: state.removedMediaIds.slice(),
@@ -4000,6 +4040,18 @@
 		});
 		if (Object.keys(payload.existingAlt || {}).length) {
 			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
+		}
+		// Crop and rotate, by attachment ID: photos already on the Mark, then
+		// the uploaded files. The site makes each edit (or undoes it, for
+		// "original" with no turn) before it builds the Mark's content.
+		const mediaEdits = Object.assign({}, payload.existingEdits || {});
+		ready.forEach((f) => {
+			if (f.edit) {
+				mediaEdits[f.attachmentId] = f.edit;
+			}
+		});
+		if (Object.keys(mediaEdits).length) {
+			formData.append('media_edits', JSON.stringify(mediaEdits));
 		}
 		// Media already on the Mark, then the uploaded files. A Mark queued
 		// before 0.20.0 carries mediaOrder instead of existingMediaIds.
@@ -5034,6 +5086,7 @@
 				alt: f.alt || '',
 				altStatus: 'idle',
 				altEdited: true, // Already-typed alt: never overwrite with a fresh AI suggestion.
+				edit: f.edit || null,
 				uploadedId: null,
 				// The file's attachment when the queue had already uploaded it.
 				// An earlier save may have attached it to the Mark, so removing
@@ -11897,7 +11950,9 @@
 					scope: 'existing',
 					id: String(m.id),
 					kind: m.kind || 'file',
-					thumb: m.thumbnail || '',
+					// A photo the site already cropped or turned is shown from
+					// the picture before that edit, turned as its edit says.
+					thumb: m.original || m.thumbnail || '',
 					name: m.filename || '',
 					ref: m,
 				}))
@@ -11919,6 +11974,21 @@
 			const items = this.mediaItems();
 			const index = items.findIndex((item) => item.key === key);
 			return -1 === index ? null : { item: items[index], position: index + 1, total: items.length };
+		},
+
+		// Whether the photo sheet offers crop and rotate for a file: a photo
+		// of a type the site's image editor can change. For a photo picked in
+		// this visit that's read from its type; for one already on the Mark
+		// the site says.
+		canEditPhoto(item) {
+			if ('image' !== item.kind) {
+				return false;
+			}
+			if ('existing' === item.scope) {
+				return true === item.ref.editable;
+			}
+			const types = (config.imageEdit && config.imageEdit.types) || [];
+			return types.includes(item.ref.file ? item.ref.file.type : '');
 		},
 
 		// The photos a photo can move among: those already on a reopened
@@ -12104,7 +12174,7 @@
 		stripItemMarkup(found) {
 			const { item } = found;
 			const visual = item.thumb
-				? `<img class="daymark-strip__thumb" src="${esc(item.thumb)}" alt="" />`
+				? `<img class="daymark-strip__thumb${turnedClass(item.ref)}" src="${esc(item.thumb)}" alt="" />`
 				: `<span class="daymark-strip__file"><svg class="daymark-strip__fileicon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
 						TYPE_ICONS[item.kind] || TYPE_ICONS.note
 				  }</svg><span class="daymark-strip__name" aria-hidden="true">${esc(item.name)}</span></span>`;
@@ -12187,6 +12257,10 @@
 			const open = item.querySelector('[data-media-open]');
 			if (open) {
 				open.setAttribute('aria-label', this.mediaLabel(found));
+			}
+			const thumb = item.querySelector('.daymark-strip__thumb');
+			if (thumb) {
+				thumb.className = 'daymark-strip__thumb' + turnedClass(found.item.ref);
 			}
 			const badge = item.querySelector('[data-alt-badge]');
 			if (badge) {
@@ -17659,6 +17733,7 @@
 			syncSheetsToVisualViewport();
 			this.el.innerHTML = this.markup(found);
 			this.bind();
+			this.bindEdit();
 			this.onKeydown = (event) => {
 				if ('Escape' === event.key) {
 					this.hide();
@@ -17671,7 +17746,9 @@
 		markup(found) {
 			const { item } = found;
 			const preview = item.thumb
-				? `<img class="daymark-mediasheet__preview" src="${esc(item.thumb)}" alt="" />`
+				? `<div class="daymark-mediasheet__frame" data-sheet-frame><img class="daymark-mediasheet__preview${turnedClass(
+						item.ref
+				  )}" data-sheet-preview src="${esc(item.thumb)}" alt="" /></div>`
 				: `<div class="daymark-mediasheet__file"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
 						TYPE_ICONS[item.kind] || TYPE_ICONS.note
 				  }</svg><span class="daymark-mediasheet__name">${esc(item.name)}</span></div>`;
@@ -17693,6 +17770,7 @@
 				<div class="daymark-sheet__body">
 					${preview}
 					${upload}
+					${this.editMarkup(found)}
 					${'image' === item.kind ? this.altMarkup(item) : ''}
 					<div class="daymark-mediasheet__orderslot" data-sheet-order>${this.orderMarkup(found)}</div>
 					<p class="daymark-visually-hidden" data-sheet-live aria-live="polite"></p>
@@ -17787,6 +17865,105 @@
 				'daymark-mediasheet__upload' +
 				('error' === entry.uploadStatus ? ' daymark-mediasheet__upload--error' : '')
 			);
+		},
+
+		// Crop and rotate (see mediaEditOf()): a shape, cut from the middle
+		// of the photo, and Rotate, a quarter turn clockwise each tap. Only
+		// for a photo the site can edit (CreateScreen.canEditPhoto()).
+		editMarkup(found) {
+			if (!CreateScreen.canEditPhoto(found.item)) {
+				return '';
+			}
+			const edit = mediaEditOf(found.item.ref);
+			const shape = (id, label) =>
+				`<button type="button" class="daymark-mediasheet__shape" data-edit-shape="${id}" aria-pressed="${
+					edit.shape === id ? 'true' : 'false'
+				}"><span class="daymark-mediasheet__shapeicon daymark-mediasheet__shapeicon--${id}" aria-hidden="true"></span><span class="daymark-mediasheet__editlabel">${esc(
+					label
+				)}</span></button>`;
+			return `<div class="daymark-mediasheet__edit" data-sheet-edit>
+						<div class="daymark-mediasheet__shapes" role="group" aria-label="${esc(
+							_x('Shape', 'the shape a photo is cropped to', 'daymark')
+						)}">
+							${shape('original', _x('Original', 'photo shape: as it was taken', 'daymark'))}
+							${shape('square', _x('Square', 'photo shape', 'daymark'))}
+							${shape('tall', _x('Tall', 'photo shape: taller than wide', 'daymark'))}
+							${shape('wide', _x('Wide', 'photo shape: wider than tall', 'daymark'))}
+						</div>
+						<button type="button" class="daymark-mediasheet__rotate" data-edit-rotate><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg><span class="daymark-mediasheet__editlabel">${esc(
+							_x('Rotate', 'button: turn a photo a quarter turn', 'daymark')
+						)}</span></button>
+					</div>`;
+		},
+
+		// The preview follows the photo's edit, and the shape and Rotate
+		// buttons change it. Kept apart from bind() so each has one job.
+		bindEdit() {
+			const preview = this.el.querySelector('[data-sheet-preview]');
+			if (preview) {
+				preview.addEventListener('load', () => this.syncPreview());
+				this.syncPreview();
+			}
+			const controls = this.el.querySelector('[data-sheet-edit]');
+			if (!controls) {
+				return;
+			}
+			controls.addEventListener('click', (event) => {
+				const shape = event.target.closest('[data-edit-shape]');
+				if (shape) {
+					this.changeEdit({ shape: shape.getAttribute('data-edit-shape') });
+					return;
+				}
+				if (event.target.closest('[data-edit-rotate]')) {
+					const found = CreateScreen.findMedia(this.key);
+					if (found) {
+						this.changeEdit({ rotate: (mediaEditOf(found.item.ref).rotate + 90) % 360 });
+						this.say(__('Rotated.', 'daymark'));
+					}
+				}
+			});
+		},
+
+		// A new shape or turn: kept on the photo for the next save, and
+		// shown in the preview and on the photo's thumbnail.
+		changeEdit(change) {
+			const found = CreateScreen.findMedia(this.key);
+			if (!found || !CreateScreen.canEditPhoto(found.item)) {
+				return;
+			}
+			const edit = Object.assign(mediaEditOf(found.item.ref), change);
+			found.item.ref.edit = edit;
+			this.el.querySelectorAll('[data-edit-shape]').forEach((button) => {
+				button.setAttribute(
+					'aria-pressed',
+					button.getAttribute('data-edit-shape') === edit.shape ? 'true' : 'false'
+				);
+			});
+			this.syncPreview();
+			CreateScreen.patchTile(this.key);
+			scheduleAutosave();
+		},
+
+		// Frames the preview the way the edit will leave the photo: turned,
+		// then cut to the shape from the middle. Needs the picture's own
+		// size, so it waits for the picture to load.
+		syncPreview() {
+			const found = CreateScreen.findMedia(this.key);
+			const frame = this.el && this.el.querySelector('[data-sheet-frame]');
+			const img = frame && frame.querySelector('[data-sheet-preview]');
+			if (!found || !img || !img.naturalWidth || !img.naturalHeight) {
+				return;
+			}
+			const edit = mediaEditOf(found.item.ref);
+			const sideways = 90 === edit.rotate || 270 === edit.rotate;
+			const natural = sideways
+				? img.naturalHeight / img.naturalWidth
+				: img.naturalWidth / img.naturalHeight;
+			const ratio = EDIT_SHAPE_RATIOS[edit.shape] || natural;
+			frame.style.setProperty('--daymark-frame-ratio', String(Math.round(ratio * 10000) / 10000));
+			frame.classList.add('daymark-mediasheet__frame--shaped');
+			frame.classList.toggle('daymark-mediasheet__frame--sideways', sideways);
+			img.className = 'daymark-mediasheet__preview' + turnedClass(found.item.ref);
 		},
 
 		// The alt text box. Its data attribute says whose alt text it is:
