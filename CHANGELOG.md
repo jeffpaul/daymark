@@ -23,6 +23,7 @@ can't act on them.
 ### Added
 
 - Tap a photo while you write a Mark to give it a shape (Original, Square, Tall or Wide, cut from the middle) or turn it with Rotate, so a sideways or badly framed photo no longer means a trip to the Photos app first. Your site makes the edit and keeps the original, and Original puts it back. ([#612](https://github.com/jeffpaul/daymark/pull/612))
+- Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
 
 ### Changed
 
