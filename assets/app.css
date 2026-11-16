@@ -2711,6 +2711,38 @@ button.daymark-stat {
 	outline-offset: 2px;
 }
 
+/* The "Add" tile that ends the strip once the Mark has a photo or video
+   (CreateScreen.stripAddMarkup()): the same size as a thumbnail, dashed so
+   it reads as an empty slot. */
+.daymark-strip__add {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	border: 2px dashed var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: none;
+	color: var(--daymark-text-secondary);
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.daymark-strip__add:hover {
+	border-color: var(--daymark-text-secondary);
+	color: var(--daymark-text-primary);
+}
+
+.daymark-strip__add:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
 /* Upload progress along the tile's bottom edge. */
 .daymark-strip__progress {
 	position: absolute;
@@ -3244,7 +3276,63 @@ button.daymark-stat {
 	font-size: 15px;
 }
 
-/* Earlier is to the right in a right-to-left language. */
+/* The title with the previous/next arrows beside it (MediaSheet
+   .stepsMarkup()). The arrows show only when the Mark has several files. */
+.daymark-mediasheet__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mediasheet__head .daymark-sheet__title {
+	min-width: 0;
+	margin: 0;
+}
+
+.daymark-mediasheet__steps {
+	display: flex;
+	flex-shrink: 0;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-mediasheet__steps:empty {
+	display: none;
+}
+
+.daymark-mediasheet__step {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
+	padding: 0;
+	border: 1px solid var(--daymark-border);
+	border-radius: 999px;
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	cursor: pointer;
+}
+
+.daymark-mediasheet__step:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.daymark-mediasheet__step:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+/* Done beside "Next photo": the smaller of the two, since going on to the
+   next photo is the usual step. */
+.daymark-mediasheet__actions .daymark-btn--secondary {
+	flex: 0 1 32%;
+	width: auto;
+	min-width: 0;
+}
+
+/* Earlier (and previous) is to the right in a right-to-left language. */
 [dir='rtl'] .daymark-mediasheet__chevron {
 	transform: scaleX(-1);
 }

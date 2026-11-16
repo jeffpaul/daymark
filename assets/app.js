@@ -11796,9 +11796,26 @@
 				return '';
 			}
 			const total = items.length;
+			// A Mark with a photo or video can take more of them, so the
+			// row ends in an "Add" tile.
+			const canAdd = items.some((item) => 'image' === item.kind || 'video' === item.kind);
 			return `<ul class="daymark-strip" aria-label="${esc(__('Media on this Mark', 'daymark'))}">${items
 				.map((item, index) => this.stripItemMarkup({ item, position: index + 1, total }))
-				.join('')}</ul>`;
+				.join('')}${canAdd ? this.stripAddMarkup() : ''}</ul>`;
+		},
+
+		// The "Add" tile at the end of the strip: opens the same picker as
+		// the Add bar's "Photo or video", from where the photos are.
+		stripAddMarkup() {
+			return `<li class="daymark-strip__item">
+				<div class="daymark-strip__tile">
+					<button type="button" class="daymark-strip__add" data-media-add aria-label="${esc(
+						__('Add another photo or video', 'daymark')
+					)}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span aria-hidden="true">${esc(
+				_x('Add', 'short label on the tile that adds another photo or video', 'daymark')
+			)}</span></button>
+				</div>
+			</li>`;
 		},
 
 		stripItemMarkup(found) {
@@ -11851,8 +11868,12 @@
 			const active = document.activeElement;
 			let focus = null;
 			if (active && slot.contains(active)) {
-				const attr = active.hasAttribute('data-media-remove') ? 'data-media-remove' : 'data-media-open';
-				focus = { attr, key: active.getAttribute(attr) };
+				if (active.hasAttribute('data-media-add')) {
+					focus = { add: true };
+				} else {
+					const attr = active.hasAttribute('data-media-remove') ? 'data-media-remove' : 'data-media-open';
+					focus = { attr, key: active.getAttribute(attr) };
+				}
 			}
 			const list = slot.querySelector('.daymark-strip');
 			const scroll = list ? list.scrollLeft : 0;
@@ -11861,8 +11882,10 @@
 			if (newList) {
 				newList.scrollLeft = scroll;
 			}
-			if (focus && focus.key) {
-				const target = slot.querySelector('[' + focus.attr + '="' + focus.key + '"]');
+			if (focus && (focus.add || focus.key)) {
+				const target = focus.add
+					? slot.querySelector('[data-media-add]')
+					: slot.querySelector('[' + focus.attr + '="' + focus.key + '"]');
 				if (target) {
 					target.focus();
 				}
@@ -11962,6 +11985,10 @@
 				const open = event.target.closest('[data-media-open]');
 				if (open) {
 					MediaSheet.show(open.getAttribute('data-media-open'), open);
+					return;
+				}
+				if (event.target.closest('[data-media-add]')) {
+					this.openFilePicker(ATTACH_MEDIA_ACCEPT, '');
 				}
 			});
 		},
@@ -17241,22 +17268,96 @@
 				__('Close', 'daymark')
 			)}"></button>
 			<div class="daymark-sheet__panel daymark-sheet__panel--media" role="dialog" aria-modal="true" aria-labelledby="daymark-media-title">
-				<h2 class="daymark-sheet__title" id="daymark-media-title" tabindex="-1">${esc(
-					CreateScreen.mediaTitle(found)
-				)}</h2>
+				<div class="daymark-mediasheet__head">
+					<h2 class="daymark-sheet__title" id="daymark-media-title" tabindex="-1">${esc(
+						CreateScreen.mediaTitle(found)
+					)}</h2>
+					<div class="daymark-mediasheet__steps" data-sheet-steps>${this.stepsMarkup(found)}</div>
+				</div>
 				<div class="daymark-sheet__body">
 					${preview}
 					${upload}
 					${'image' === item.kind ? this.altMarkup(item) : ''}
 					<div class="daymark-mediasheet__orderslot" data-sheet-order>${this.orderMarkup(found)}</div>
 					<p class="daymark-visually-hidden" data-sheet-live aria-live="polite"></p>
-					<div class="daymark-sheet__actions">
-						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
-							__('Done', 'daymark')
-						)}</button>
-					</div>
+					<div class="daymark-sheet__actions daymark-mediasheet__actions" data-sheet-actions data-sheet-next-kind="${esc(
+						this.nextKind(found)
+					)}">${this.actionsMarkup(found)}</div>
 				</div>
 			</div>`;
+		},
+
+		// The file after this one in the strip, or before it (direction -1):
+		// null at either end.
+		neighbor(found, direction) {
+			const items = CreateScreen.mediaItems();
+			return items[found.position - 1 + direction] || null;
+		},
+
+		// What kind of file comes next ('image', 'video', ...), or '' when
+		// this is the last one. Decides the sheet's main button.
+		nextKind(found) {
+			const next = this.neighbor(found, 1);
+			return next ? next.kind || 'file' : '';
+		},
+
+		// The previous/next arrows beside the title, so every photo can be
+		// described in one pass without closing the sheet. Nothing for a
+		// Mark with one file.
+		stepsMarkup(found) {
+			if (found.total < 2) {
+				return '';
+			}
+			const button = (direction, label, points, disabled) =>
+				`<button type="button" class="daymark-mediasheet__step" data-media-step="${direction}" aria-label="${esc(
+					label
+				)}"${
+					disabled ? ' disabled' : ''
+				}><svg class="daymark-mediasheet__chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="${points}"></polyline></svg></button>`;
+			return (
+				button(
+					-1,
+					_x('Previous', 'button: show the file before this one on the Mark', 'daymark'),
+					'15 18 9 12 15 6',
+					found.position <= 1
+				) +
+				button(
+					1,
+					_x('Next', 'button: show the file after this one on the Mark', 'daymark'),
+					'9 18 15 12 9 6',
+					found.position >= found.total
+				)
+			);
+		},
+
+		nextLabel(kind) {
+			if ('image' === kind) {
+				return __('Next photo', 'daymark');
+			}
+			if ('video' === kind) {
+				return __('Next video', 'daymark');
+			}
+			if ('audio' === kind) {
+				return __('Next audio', 'daymark');
+			}
+			return __('Next file', 'daymark');
+		},
+
+		// The sheet's buttons. While another file follows, the main button
+		// goes on to it and a smaller Done closes the sheet; on the last
+		// file, Done is the main button.
+		actionsMarkup(found) {
+			const kind = this.nextKind(found);
+			if (!kind) {
+				return `<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
+					__('Done', 'daymark')
+				)}</button>`;
+			}
+			return `<button type="button" class="daymark-btn daymark-btn--secondary" data-sheet-done>${esc(
+				__('Done', 'daymark')
+			)}</button><button type="button" class="daymark-btn daymark-btn--primary" data-sheet-next>${esc(
+				this.nextLabel(kind)
+			)}</button>`;
 		},
 
 		// The upload line under the preview: progress or a failure, and
@@ -17371,12 +17472,29 @@
 
 		bind() {
 			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
-			this.el.querySelector('[data-sheet-done]').addEventListener('click', () => this.hide());
 			const text = this.el.querySelector('#daymark-media-alt');
 			if (text) {
 				text.addEventListener('input', () => this.altChanged(text.value));
 			}
+			// One listener for every button in the panel: the arrows and the
+			// buttons at the bottom are redrawn when the strip changes
+			// (refreshSteps()).
 			this.el.querySelector('.daymark-sheet__panel').addEventListener('click', (event) => {
+				if (event.target.closest('[data-sheet-done]')) {
+					this.hide();
+					return;
+				}
+				if (event.target.closest('[data-sheet-next]')) {
+					this.step(1);
+					return;
+				}
+				const stepButton = event.target.closest('[data-media-step]');
+				if (stepButton) {
+					if (!stepButton.disabled) {
+						this.step(Number(stepButton.getAttribute('data-media-step')));
+					}
+					return;
+				}
 				const move = event.target.closest('[data-media-move]');
 				if (move) {
 					if (!move.disabled) {
@@ -17422,6 +17540,18 @@
 				entry.alt = text.value;
 			}
 			CreateScreen.generateAltFor(entry, { force: true, existingAlt: entry.alt });
+		},
+
+		// Shows the file before or after this one, in the same sheet. What
+		// was typed is already kept (altChanged()), and closing the sheet
+		// puts focus on the file shown last.
+		step(direction) {
+			const found = CreateScreen.findMedia(this.key);
+			const next = found && this.neighbor(found, direction);
+			if (!next) {
+				return;
+			}
+			this.show(next.key, root.querySelector('[data-media-open="' + next.key + '"]'));
 		},
 
 		move(direction) {
@@ -17481,8 +17611,58 @@
 				title.textContent = CreateScreen.mediaTitle(found);
 			}
 			this.refreshOrder(found);
+			this.refreshSteps(found);
 			this.refreshUpload(this.key);
 			this.refreshAiControls(found);
+		},
+
+		// Brings the arrows and the bottom buttons up to date after the
+		// file's place in the strip changed (it moved, or a file was added
+		// or removed). The arrows are patched in place so a focused one
+		// keeps focus; the bottom buttons are redrawn only when what comes
+		// next changed, and focus stays on the button that had it.
+		refreshSteps(found) {
+			const steps = this.el.querySelector('[data-sheet-steps]');
+			if (steps) {
+				const buttons = steps.querySelectorAll('[data-media-step]');
+				if (found.total < 2 || !buttons.length) {
+					const hadFocus = steps.contains(document.activeElement);
+					steps.innerHTML = this.stepsMarkup(found);
+					if (hadFocus) {
+						this.el.querySelector('#daymark-media-title').focus();
+					}
+				} else {
+					const focused = steps.contains(document.activeElement) ? document.activeElement : null;
+					buttons.forEach((button) => {
+						button.disabled =
+							'-1' === button.getAttribute('data-media-step')
+								? found.position <= 1
+								: found.position >= found.total;
+					});
+					if (focused && focused.disabled) {
+						const other = steps.querySelector('[data-media-step]:not(:disabled)');
+						(other || this.el.querySelector('#daymark-media-title')).focus();
+					}
+				}
+			}
+			const actions = this.el.querySelector('[data-sheet-actions]');
+			const kind = this.nextKind(found);
+			if (actions && actions.getAttribute('data-sheet-next-kind') !== kind) {
+				const active = document.activeElement;
+				const focused = actions.contains(active)
+					? active.hasAttribute('data-sheet-next')
+						? 'next'
+						: 'done'
+					: '';
+				actions.setAttribute('data-sheet-next-kind', kind);
+				actions.innerHTML = this.actionsMarkup(found);
+				if (focused) {
+					const target =
+						('next' === focused && actions.querySelector('[data-sheet-next]')) ||
+						actions.querySelector('[data-sheet-done]');
+					target.focus();
+				}
+			}
 		},
 
 		// Patches the order buttons in place, so a focused button keeps
