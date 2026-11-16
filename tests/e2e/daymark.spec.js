@@ -2812,6 +2812,111 @@ test('photo strip on a reopened draft: move, remove, and add a photo', async ({ 
 	expect((await savedMediaIds(page, caption))[0]).toBe(before[1]);
 });
 
+// Once a Mark has a photo, the row ends in an "Add" tile that opens the
+// same picker as the Add bar's "Photo or video". A Mark with one photo has
+// nothing to step to, so its sheet shows no arrows and no "Next photo".
+test('photo strip: the Add tile at the end of the row adds another photo', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+
+	// Nothing picked yet: no row, so no tile.
+	await expect(page.locator('[data-media-add]')).toHaveCount(0);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	const add = page.locator('[data-media-add]');
+	await expect(add).toHaveCount(1);
+	await expect(add).toHaveAccessibleName('Add another photo or video');
+
+	await openMediaSheet(page, 0);
+	await expect(page.locator('[data-media-step]')).toHaveCount(0);
+	await expect(page.locator('[data-sheet-next]')).toHaveCount(0);
+	await page.locator('[data-sheet-done]').click();
+
+	const chooser = page.waitForEvent('filechooser');
+	await add.click();
+	await (await chooser).setFiles('tests/e2e/fixtures/test-image-2.png');
+	// The library picker, not the camera.
+	await expect(page.locator('#daymark-file-input')).not.toHaveAttribute('capture');
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
+	// The tile stays at the end of the row.
+	await expect(page.locator('.daymark-strip > li').last().locator('[data-media-add]')).toHaveCount(1);
+});
+
+// A sound file on its own gets no "Add" tile: the tile adds photos and
+// videos, and the Add bar is still there for those.
+test('photo strip: an audio-only Mark has no Add tile', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-audio.wav');
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	await expect(page.locator('[data-media-add]')).toHaveCount(0);
+});
+
+// Describing every photo in one pass: the sheet's arrows and "Next photo"
+// go from photo to photo without closing it, what was typed is kept, and
+// closing puts focus on the photo shown last.
+test('photo sheet: Next photo steps through the row and keeps each alt text', async ({ page }) => {
+	const caption = `E2E next photo ${RUN_ID}`;
+	const first = `E2E first alt ${RUN_ID}`;
+	const second = `E2E second alt ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', [
+		'tests/e2e/fixtures/test-image.png',
+		'tests/e2e/fixtures/test-image-2.png',
+	]);
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+
+	await openMediaSheet(page, 0);
+	const title = page.locator('#daymark-media-title');
+	const alt = page.locator('#daymark-media-alt');
+	const previous = page.locator('[data-media-step="-1"]');
+	const next = page.locator('[data-sheet-next]');
+	await expect(title).toHaveText('Photo 1 of 2');
+	await expect(previous).toBeDisabled();
+	await alt.fill(first);
+	await expect(next).toHaveText('Next photo');
+	await next.click();
+
+	// The second photo, in the same sheet. It's the last, so Done is the
+	// only button left at the bottom.
+	await expect(title).toHaveText('Photo 2 of 2');
+	await expect(title).toBeFocused();
+	await expect(alt).toHaveValue('');
+	await expect(next).toHaveCount(0);
+	await expect(page.locator('[data-media-step="1"]')).toBeDisabled();
+	await alt.fill(second);
+
+	// Back to the first: what was typed there is still there.
+	await previous.click();
+	await expect(title).toHaveText('Photo 1 of 2');
+	await expect(alt).toHaveValue(first);
+
+	// Moving this photo later makes it the last one, so "Next photo" goes
+	// and the previous arrow comes alive.
+	await page.locator('[data-media-move="1"]').click();
+	await expect(title).toHaveText('Photo 2 of 2');
+	await expect(next).toHaveCount(0);
+	await expect(previous).toBeEnabled();
+
+	await page.locator('[data-sheet-done]').click();
+	await expect(title).toHaveCount(0);
+	await expect(page.locator('[data-media-open]').nth(1)).toBeFocused();
+	await expect(page.locator('[data-alt-badge].daymark-strip__alt--set')).toHaveCount(2);
+
+	await expect
+		.poll(async () => ((await findMarkByCaption(page, caption)) || { media: [] }).media.map((m) => m.alt), {
+			timeout: 20000,
+		})
+		.toEqual([second, first]);
+});
+
 // Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
 // Safari, any other app) posts straight to /daymark/share, which creates a
 // draft and redirects into the composer with it already loaded — no need
