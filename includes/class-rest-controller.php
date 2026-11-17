@@ -46,6 +46,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	private const MAX_TIMELINE_QUERY_ITEMS = 500;
 
 	/**
+	 * How many tags, and how many places, Search offers for what is typed.
+	 *
+	 * @var int
+	 */
+	private const SEARCH_SUGGESTIONS_PER_KIND = 3;
+
+	/**
+	 * How many of the most used tags Search's starting screen shows.
+	 *
+	 * @var int
+	 */
+	private const SEARCH_TOP_TAGS = 8;
+
+	/**
 	 * Longest quote, in characters, a Timeline card shows for a quote
 	 * Featured Content. A longer quote is cut with an ellipsis; the full
 	 * quote is in the post view.
@@ -259,6 +273,39 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'type'              => 'boolean',
 						'default'           => false,
 						'sanitize_callback' => 'rest_sanitize_boolean',
+					),
+					// Search's tag and place shortcuts (issue #269): one
+					// exact tag (a post_tag term ID) or one exact Check In
+					// place name. Only the site's own posts carry either,
+					// so both leave followed sites' posts out.
+					'tag'             => array(
+						'type'              => 'integer',
+						'default'           => 0,
+						'sanitize_callback' => 'absint',
+					),
+					'place'           => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
+					),
+				),
+			)
+		);
+
+		// What Search offers as you type (issue #269): tags and Check In
+		// places that match, and with no query, the most used tags.
+		register_rest_route(
+			$this->namespace,
+			'/search/suggestions',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_search_suggestions' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'q' => array(
+						'type'              => 'string',
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
 					),
 				),
 			)
@@ -2009,6 +2056,13 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		$subscription_id = absint( $request->get_param( 'subscription_id' ) );
 		$bookmarked      = rest_sanitize_boolean( $request->get_param( 'bookmarked' ) );
 
+		// Search's tag and place shortcuts (issue #269). Only the site's
+		// own posts have a tag or a Check In place, so either one leaves
+		// followed sites' posts (and other plugins' notes) out.
+		$tag_id         = absint( $request->get_param( 'tag' ) );
+		$place          = sanitize_text_field( (string) $request->get_param( 'place' ) );
+		$own_posts_only = $tag_id > 0 || '' !== $place;
+
 		// Issue #293 Search date filter:
 		// after / before — an inclusive publication datetime window
 		// (REST format 'date-time', so core validates the shape
@@ -2060,7 +2114,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		// post can never match it, so querying that side would only ever
 		// return noise.
 		$include_marks              = $mine || 0 === $subscription_id || $on_this_day;
-		$include_subscription_posts = ! $mine && ! $on_this_day;
+		$include_subscription_posts = ! $mine && ! $on_this_day && ! $own_posts_only;
 
 		$want_total = rest_sanitize_boolean( $request->get_param( 'count' ) );
 		$total      = 0;
@@ -2117,9 +2171,31 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				);
 			}
 
+			// A keyword also finds a post by its tag's name (issue #269):
+			// WordPress's own search reads only the title and text.
+			$marks_search_extra = '';
+
 			if ( '' !== $search ) {
-				$marks_args['s'] = $search;
-				$marks_args      = $this->exclude_protected_from_search( $marks_args );
+				$marks_args['s']    = $search;
+				$marks_args         = $this->exclude_protected_from_search( $marks_args );
+				$marks_search_extra = $this->search_tag_match_sql( $search );
+			}
+
+			if ( $tag_id > 0 ) {
+				$marks_args['tag_id'] = $tag_id;
+			}
+
+			if ( '' !== $place ) {
+				$marks_args['meta_query'][] = array(
+					'key'   => '_daymark_place_name',
+					'value' => $place,
+				);
+			}
+
+			// Like a keyword, a tag or place must not show that a
+			// password-protected post has it.
+			if ( $own_posts_only ) {
+				$marks_args = $this->exclude_protected_from_search( $marks_args );
 			}
 
 			if ( null !== $bookmarked_post_in ) {
@@ -2173,7 +2249,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$marks_args['date_query'] = $marks_date_query;
 			}
 
-			$marks_query = new WP_Query( $marks_args );
+			$marks_query = $this->query_with_search_extra( $marks_args, $marks_search_extra );
 			$total      += (int) $marks_query->found_posts;
 
 			foreach ( $marks_query->posts as $post ) {
@@ -2197,7 +2273,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// (search, bookmarks, date window, On this day) applies as is.
 			$note_types = Daymark_External_Notes::post_types();
 
-			if ( ! empty( $note_types ) && ( '' === $type || 'note' === $type ) ) {
+			if ( ! empty( $note_types ) && ( '' === $type || 'note' === $type ) && ! $own_posts_only ) {
 				$notes_args = array(
 					'post_type'      => $note_types,
 					'post_status'    => 'publish',
@@ -2330,15 +2406,20 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				$subscription_posts_args['meta_query'] = $meta_query;
 			}
 
+			// A keyword also finds a followed site's posts by the site's
+			// name (issue #269), so a friend's name finds what they wrote.
+			$subscription_search_extra = '';
+
 			if ( '' !== $search ) {
 				$subscription_posts_args['s'] = $search;
+				$subscription_search_extra    = $this->search_site_match_sql( $search );
 			}
 
 			if ( null !== $bookmarked_post_in ) {
 				$subscription_posts_args['post__in'] = $bookmarked_post_in;
 			}
 
-			$subscription_posts_query = new WP_Query( $subscription_posts_args );
+			$subscription_posts_query = $this->query_with_search_extra( $subscription_posts_args, $subscription_search_extra );
 			$total                   += (int) $subscription_posts_query->found_posts;
 
 			foreach ( $subscription_posts_query->posts as $post ) {
@@ -5631,6 +5712,186 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		return $post instanceof WP_Post
 			&& post_password_required( $post )
 			&& ! current_user_can( 'edit_post', $post->ID );
+	}
+
+	/**
+	 * Runs a search query that also matches one more condition.
+	 *
+	 * WordPress's search reads a post's title, excerpt and content. This
+	 * widens that one query's search to "those, or `$extra_sql`", so a
+	 * keyword can also find a post by its tag's name or its site's name
+	 * (issue #269). Every other part of the query (status, type, dates,
+	 * the password rule) still applies to both halves.
+	 *
+	 * @param array<string, mixed> $args      WP_Query arguments with `s` set.
+	 * @param string               $extra_sql A complete SQL condition on the
+	 *                                        posts table, already safe to
+	 *                                        run, or '' for a plain query.
+	 * @return WP_Query
+	 */
+	private function query_with_search_extra( array $args, string $extra_sql ): WP_Query {
+		if ( '' === $extra_sql ) {
+			return new WP_Query( $args );
+		}
+
+		$widen = static function ( $search_sql ) use ( $extra_sql ) {
+			$search_sql = (string) $search_sql;
+
+			// Core's clause is " AND (...) ". Anything else (an empty
+			// clause, or one another plugin rewrote) is left alone.
+			if ( 0 !== strpos( $search_sql, ' AND ' ) ) {
+				return $search_sql;
+			}
+
+			return ' AND (' . substr( $search_sql, 5 ) . ' OR ' . $extra_sql . ') ';
+		};
+
+		add_filter( 'posts_search', $widen );
+		$query = new WP_Query( $args );
+		remove_filter( 'posts_search', $widen );
+
+		return $query;
+	}
+
+	/**
+	 * SQL matching the site's posts whose tag name contains a search.
+	 *
+	 * @param string $search The search text.
+	 * @return string A condition on the posts table, or '' when no tag matches.
+	 */
+	private function search_tag_match_sql( string $search ): string {
+		global $wpdb;
+
+		$tt_ids = get_terms(
+			array(
+				'taxonomy'   => 'post_tag',
+				'name__like' => $search,
+				'fields'     => 'tt_ids',
+				'hide_empty' => true,
+				'number'     => 20,
+			)
+		);
+
+		if ( is_wp_error( $tt_ids ) || empty( $tt_ids ) ) {
+			return '';
+		}
+
+		$tt_ids = implode( ',', array_map( 'absint', (array) $tt_ids ) );
+
+		return "{$wpdb->posts}.ID IN ( SELECT object_id FROM {$wpdb->term_relationships} WHERE term_taxonomy_id IN ( {$tt_ids} ) )";
+	}
+
+	/**
+	 * SQL matching the posts of followed sites whose name contains a search.
+	 *
+	 * Uses the same list of sites, and the same "name contains" rule, as
+	 * the person shortcut the app shows above Search's results.
+	 *
+	 * @param string $search The search text.
+	 * @return string A condition on the posts table, or '' when no site matches.
+	 */
+	private function search_site_match_sql( string $search ): string {
+		global $wpdb;
+
+		$ids = array();
+
+		foreach ( Daymark_Plugin::instance()->subscriptions->get_active() as $row ) {
+			$title = (string) ( $row['site_title'] ?? '' );
+
+			if ( '' !== $title && false !== mb_stripos( $title, $search ) ) {
+				$ids[] = absint( $row['id'] ?? 0 );
+			}
+		}
+
+		$ids = array_filter( $ids );
+
+		if ( empty( $ids ) ) {
+			return '';
+		}
+
+		$ids = implode( ',', $ids );
+
+		return "{$wpdb->posts}.ID IN ( SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = 'subscription_id' AND meta_value IN ( {$ids} ) )";
+	}
+
+	/**
+	 * GET /search/suggestions — tags and Check In places matching what is
+	 * typed in Search, so a tap can show exactly that tag's or place's
+	 * posts (issue #269). With no query it returns the most used tags, for
+	 * Search's starting screen.
+	 *
+	 * People are not included: the app already has the followed sites
+	 * list and matches names against it.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response
+	 */
+	public function get_search_suggestions( WP_REST_Request $request ) {
+		global $wpdb;
+
+		$query = trim( (string) $request->get_param( 'q' ) );
+		$tags  = array();
+
+		$term_args = array(
+			'taxonomy'   => 'post_tag',
+			'orderby'    => 'count',
+			'order'      => 'DESC',
+			'hide_empty' => true,
+			'number'     => '' === $query ? self::SEARCH_TOP_TAGS : self::SEARCH_SUGGESTIONS_PER_KIND,
+		);
+
+		if ( '' !== $query ) {
+			$term_args['name__like'] = $query;
+		}
+
+		$terms = get_terms( $term_args );
+
+		if ( ! is_wp_error( $terms ) && is_array( $terms ) ) {
+			foreach ( $terms as $term ) {
+				$tags[] = array(
+					'id'    => (int) $term->term_id,
+					// Plain text: WordPress saves an & in a tag name as
+					// "&amp;", and the app escapes what it shows.
+					'name'  => html_entity_decode( $term->name, ENT_QUOTES, 'UTF-8' ),
+					'count' => (int) $term->count,
+				);
+			}
+		}
+
+		$places = array();
+
+		// One letter matches nearly every place, so wait for two.
+		if ( mb_strlen( $query ) >= 2 ) {
+			// A password-protected post's place stays out for anyone who
+			// couldn't read the post, as it does in Search's results.
+			$password_sql = current_user_can( 'edit_others_posts' ) ? '' : " AND p.post_password = ''";
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- A grouped count WP_Query can't express; one small read per pause in typing.
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $password_sql is one of two fixed strings.
+					"SELECT pm.meta_value AS name, COUNT(*) AS total FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = '_daymark_place_name' AND pm.meta_value LIKE %s AND p.post_type = 'post' AND p.post_status = 'publish'{$password_sql} GROUP BY pm.meta_value ORDER BY total DESC, name ASC LIMIT %d",
+					'%' . $wpdb->esc_like( $query ) . '%',
+					self::SEARCH_SUGGESTIONS_PER_KIND
+				)
+			);
+
+			foreach ( (array) $rows as $row ) {
+				$places[] = array(
+					'name'  => sanitize_text_field( (string) $row->name ),
+					'count' => (int) $row->total,
+				);
+			}
+		}
+
+		return new WP_REST_Response(
+			array(
+				'tags'   => $tags,
+				'places' => $places,
+			)
+		);
 	}
 
 	/**

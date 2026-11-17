@@ -277,6 +277,7 @@ do_action('daymark_import_responses', $post_id, $network_id);  // backflow trigg
 | GET | `/daymark/v1/notifications/status` | Yes — edit_posts + nonce (unread flag only; marks nothing seen — see the Timeline UX pass decision) |
 | POST | `/daymark/v1/subscriptions/refresh` | Yes — edit_posts + nonce (refresh every active subscription; one `ACTION_SUBSCRIPTION_REFRESH` charge — see the Timeline UX pass decision) |
 | GET | `/daymark/v1/tags` | Yes — edit_posts + nonce |
+| GET | `/daymark/v1/search/suggestions` | Yes — edit_posts + nonce (Search's tag and Check In place shortcuts for what is typed, or the most-used tags when nothing is; a local read, no rate limit — see the Search starting screen and shortcuts decision) |
 | GET | `/daymark/v1/subscriptions/export` | Yes — manage_options + nonce (Settings -> Daymark's own capability; see the manage_options decision below) |
 | POST | `/daymark/v1/subscriptions/import` | Yes — manage_options + nonce (same gate as export) |
 | POST | `/daymark/v1/subscriptions/discover` | Yes — manage_options + nonce (finds a site's feeds for the app's Follow a site sheet; rate-limited) |
@@ -456,7 +457,7 @@ implication for the codebase.
 - Multi-user or team workflows beyond standard WordPress roles
 - Full offline PWA mode. Narrowed twice now: offline **creation** for a session already open when connectivity drops (issue #121), and a **cold load** of `/daymark` itself with zero connectivity (issue #126) — see "Offline-first creation" and "Cold-offline-load support" in the architectural decisions table for both. Still out of scope: general offline **reading** — Timeline/notifications/Explore/Search still require connectivity even on the offline-fallback shell (conservative SW only; only the shell itself, its static assets, and a redacted config are ever cached, never a REST response).
 - A finished Explore, beyond its current "Browse by type" + "Following" foundation — memories, highlights, collections, favorites, recently-popular, and suggested accounts/content are future sections, not implied by what's there today
-- Speculative AI or semantic search — Search stays keyword + explicit filters (type, author, date, tag, location, people followed are the planned filter set; only type and source exist today)
+- Speculative AI or semantic search — Search stays keyword + explicit filters (type, source/person followed, date, tag, and Check In place exist today; see the Search starting screen and shortcuts decision)
 
 ## Strategic line
 

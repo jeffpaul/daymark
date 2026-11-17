@@ -1495,7 +1495,31 @@
 		{ key: 'last_week', label: __('Last Week', 'daymark') },
 		{ key: 'this_month', label: __('This Month', 'daymark') },
 		{ key: 'last_month', label: __('Last Month', 'daymark') },
+		// Past last month (issue #269): the two years most searches for
+		// something older fall in, then any single month by name.
+		{ key: 'this_year', label: __('This Year', 'daymark') },
+		{ key: 'last_year', label: __('Last Year', 'daymark') },
 	];
+
+	// The Date dropdown's last choice. Picking it shows a month and a year
+	// to choose (SearchScreen.showMonthPicker()), and the date filter then
+	// holds 'month:YYYY-MM' instead of one of the keys above.
+	const SEARCH_DATE_PICK_MONTH = 'pick_month';
+
+	// 'month:2024-03' as { year: 2024, month: 2 } (month from 0, as Date
+	// counts them), or null for anything else.
+	function parseMonthFilter(key) {
+		const match = /^month:(\d{4})-(\d{2})$/.exec(key || '');
+		if (!match) {
+			return null;
+		}
+		const month = Number(match[2]) - 1;
+		return month >= 0 && month <= 11 ? { year: Number(match[1]), month } : null;
+	}
+
+	function monthFilterKey(year, month) {
+		return 'month:' + year + '-' + String(month + 1).padStart(2, '0');
+	}
 
 	// Resolves a SEARCH_DATE_FILTERS key into its inclusive [after, before]
 	// bound(s), as RFC 3339 (the format GET /timeline's own args validate).
@@ -1532,8 +1556,23 @@
 				const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
 			}
-			default:
-				return null;
+			case 'this_year':
+				return { after: toIso(new Date(now.getFullYear(), 0, 1)) };
+			case 'last_year': {
+				const end = new Date(now.getFullYear(), 0, 1);
+				const start = new Date(now.getFullYear() - 1, 0, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
+			default: {
+				// One month picked by name: 'month:YYYY-MM'.
+				const picked = parseMonthFilter(key);
+				if (!picked) {
+					return null;
+				}
+				const start = new Date(picked.year, picked.month, 1);
+				const end = new Date(picked.year, picked.month + 1, 1);
+				return { after: toIso(start), before: toIso(new Date(end.getTime() - 1)) };
+			}
 		}
 	}
 
@@ -10440,6 +10479,144 @@
 	// subscription-post detail sheet) with Home via the functions above,
 	// rather than reimplementing them.
 
+	// --- Search: starting screen and shortcuts (issue #269) ---
+
+	// How many followed sites the starting screen's People row shows
+	// (favorites first), how many shortcuts of each kind appear above the
+	// results, and how much must be typed before any do.
+	const SEARCH_START_PEOPLE = 30;
+	const SEARCH_SUGGESTIONS_PER_KIND = 3;
+	const SEARCH_SUGGEST_MIN_LENGTH = 2;
+
+	// Recent searches stay on this device, for this user, and are never
+	// sent anywhere. Five is enough to be useful and few enough to stay
+	// out of the way.
+	const RECENT_SEARCHES_MAX = 5;
+
+	const RECENT_GLYPH = '<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>';
+	const DISMISS_GLYPH = '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>';
+	const TAG_GLYPH =
+		'<path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line>';
+	const CHEVRON_GLYPH = '<polyline points="9 18 15 12 9 6"></polyline>';
+
+	function searchRowIcon(glyph) {
+		return `<svg class="daymark-searchicon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+	}
+
+	// A person's picture, or their initial when they have none.
+	function searchAvatar(url, label, className) {
+		return url
+			? `<img class="${className}" src="${esc(url)}" alt="" loading="lazy" decoding="async" />`
+			: `<span class="${className} ${className}--glyph" aria-hidden="true">${esc(
+					String(label || '').trim().charAt(0).toUpperCase()
+			  )}</span>`;
+	}
+
+	function recentSearchesKey() {
+		return 'daymark:recent-searches:' + ((config.currentUser && config.currentUser.id) || 0);
+	}
+
+	// localStorage can throw (private browsing, storage disabled); with no
+	// storage there are simply no recent searches.
+	function recentSearches() {
+		try {
+			const saved = JSON.parse(window.localStorage.getItem(recentSearchesKey()) || '[]');
+			return Array.isArray(saved)
+				? saved.filter((query) => 'string' === typeof query && query).slice(0, RECENT_SEARCHES_MAX)
+				: [];
+		} catch (err) {
+			return [];
+		}
+	}
+
+	function saveRecentSearches(list) {
+		try {
+			if (list.length) {
+				window.localStorage.setItem(recentSearchesKey(), JSON.stringify(list));
+			} else {
+				window.localStorage.removeItem(recentSearchesKey());
+			}
+		} catch (err) {
+			// Nothing to do: recent searches are a convenience.
+		}
+	}
+
+	// Newest first, each search once whatever its capitals.
+	function rememberRecentSearch(value) {
+		const query = String(value || '').trim();
+		if (query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+			return;
+		}
+		const rest = recentSearches().filter((saved) => saved.toLowerCase() !== query.toLowerCase());
+		saveRecentSearches([query].concat(rest).slice(0, RECENT_SEARCHES_MAX));
+	}
+
+	function forgetRecentSearch(value) {
+		saveRecentSearches(recentSearches().filter((saved) => saved !== value));
+	}
+
+	function clearRecentSearches() {
+		saveRecentSearches([]);
+	}
+
+	// The Date dropdown's choices. A month picked by name ('month:YYYY-MM')
+	// is added as a choice of its own so the closed dropdown can show it.
+	function dateOptionsMarkup(current) {
+		const picked = parseMonthFilter(current);
+		const options = SEARCH_DATE_FILTERS.map(
+			(filter) => `<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
+		);
+		if (picked) {
+			options.push(
+				`<option value="${esc(current)}">${esc(
+					sprintf(
+						/* translators: 1: month name, 2: four-digit year */
+						__('%1$s %2$s', 'daymark'),
+						PHP_MONTH_NAMES[picked.month],
+						String(picked.year)
+					)
+				)}</option>`
+			);
+		}
+		options.push(`<option value="${SEARCH_DATE_PICK_MONTH}">${esc(__('Pick a month…', 'daymark'))}</option>`);
+		return options.join('');
+	}
+
+	// Makes a filter dropdown as wide as the choice it shows. A select is
+	// normally as wide as its longest choice, which on Search's one-row
+	// filters would push the type chips off the screen.
+	function fitSelectToChoice(select) {
+		if (!select || !select.isConnected || !select.options.length) {
+			return;
+		}
+		const option = select.options[select.selectedIndex];
+		const probe = document.createElement('span');
+		probe.className = 'daymark-sourcefilter daymark-sourcefilter--probe';
+		probe.setAttribute('aria-hidden', 'true');
+		probe.textContent = option ? option.textContent : '';
+		select.parentNode.appendChild(probe);
+		const width = probe.getBoundingClientRect().width;
+		probe.remove();
+		select.style.inlineSize = width ? Math.ceil(width) + 'px' : '';
+	}
+
+	// The years "Pick a month…" offers: this year back to the site's first
+	// post, and never fewer than ten, since a followed site's posts can
+	// be older than anything of your own. `include` keeps a year already
+	// picked on the list.
+	function searchYearOptionsMarkup(include) {
+		const thisYear = new Date().getFullYear();
+		let first = Math.min(Number(config.searchFirstYear) || thisYear, thisYear - 10);
+		if (include && include < first) {
+			first = include;
+		}
+		const years = [];
+		for (let year = thisYear; year >= first; year--) {
+			years.push(`<option value="${year}">${year}</option>`);
+		}
+		return years.join('');
+	}
+
 	const SearchScreen = {
 		render() {
 			const filterChips = SEARCH_FILTERS.map(
@@ -10464,23 +10641,31 @@
 					__('Search your Marks and the sites you follow', 'daymark')
 				)}" autocomplete="off" />
 				<div class="daymark-searchfilters" data-search-filters>
-					<div class="daymark-filterchips" role="group" aria-label="${esc(
-						__('Search filters', 'daymark')
-					)}" data-filter-chips>${filterChips}
 					<label class="daymark-visually-hidden" for="daymark-date-filter">${esc(
 						__('Filter by date', 'daymark')
 					)}</label>
-					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${SEARCH_DATE_FILTERS.map(
-						(filter) =>
-							`<option value="${esc(filter.key)}">${esc(filter.label)}</option>`
-					).join('')}</select>
-					</div>
+					<select id="daymark-date-filter" class="daymark-sourcefilter" data-date-filter>${dateOptionsMarkup(
+						''
+					)}</select>
 					<label class="daymark-visually-hidden" for="daymark-source-filter">${esc(
 						__('Filter by source', 'daymark')
 					)}</label>
 					<select id="daymark-source-filter" class="daymark-sourcefilter" data-source-filter>${sourceOptionsMarkup(
 						this._subscriptions
 					)}</select>
+					<div class="daymark-filterchips" role="group" aria-label="${esc(
+						__('Search filters', 'daymark')
+					)}" data-filter-chips>${filterChips}</div>
+				</div>
+				<div class="daymark-searchmonth" role="group" aria-label="${esc(
+					__('Pick a month', 'daymark')
+				)}" data-search-month hidden>
+					<label class="daymark-visually-hidden" for="daymark-search-month">${esc(__('Month', 'daymark'))}</label>
+					<select id="daymark-search-month" class="daymark-sourcefilter" data-search-month-name>${PHP_MONTH_NAMES.map(
+						(name, index) => `<option value="${index}">${esc(name)}</option>`
+					).join('')}</select>
+					<label class="daymark-visually-hidden" for="daymark-search-year">${esc(__('Year', 'daymark'))}</label>
+					<select id="daymark-search-year" class="daymark-sourcefilter" data-search-month-year>${searchYearOptionsMarkup()}</select>
 				</div>
 			</div>
 			<section class="daymark-screen">
@@ -10490,7 +10675,15 @@
 						__('Show everything', 'daymark')
 					)}</button>
 				</p>
-				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading">
+				<p class="daymark-searchbookmarks-banner" data-search-scope-banner hidden>
+					<span data-search-scope-text></span>
+					<button type="button" class="daymark-btn daymark-btn--text" data-search-clear-scope>${esc(
+						__('Show everything', 'daymark')
+					)}</button>
+				</p>
+				<div class="daymark-searchstart" data-search-start hidden></div>
+				<div class="daymark-searchsuggest" data-search-suggest hidden></div>
+				<section class="daymark-recent" aria-labelledby="daymark-search-results-heading" data-search-results-section>
 					<h2 id="daymark-search-results-heading" class="daymark-visually-hidden">${esc(__('Results', 'daymark'))}</h2>
 					<p class="daymark-searchcount" data-search-count aria-live="polite" hidden></p>
 					<div class="daymark-recent__list" data-search-results>
@@ -10513,6 +10706,13 @@
 			if (sourceFilter) {
 				sourceFilter.addEventListener('change', () => {
 					this.searchSource = sourceFilter.value;
+					// Only your own posts have a tag or a Check In place,
+					// so choosing a followed site lets go of either.
+					if (this.searchSource && 'mine' !== this.searchSource) {
+						this.searchTag = null;
+						this.searchPlace = '';
+						this.syncScopeBanner();
+					}
 					this.runSearch();
 				});
 			}
@@ -10524,12 +10724,56 @@
 					this.searchQuery = input.value.trim();
 					runDebounced();
 				});
+				// A search counts as made once the box is left or the
+				// keyboard's Search key is pressed, not on every letter.
+				input.addEventListener('change', () => rememberRecentSearch(input.value));
 			}
 
 			const dateFilter = root.querySelector('[data-date-filter]');
 			if (dateFilter) {
 				dateFilter.addEventListener('change', () => {
+					if (SEARCH_DATE_PICK_MONTH === dateFilter.value) {
+						this.showMonthPicker();
+						return;
+					}
 					this.searchDate = dateFilter.value;
+					this.syncSearchExtras();
+					this.runSearch();
+				});
+			}
+
+			// "Pick a month…": a month and a year, applied as soon as
+			// either changes.
+			const monthName = root.querySelector('[data-search-month-name]');
+			const monthYear = root.querySelector('[data-search-month-year]');
+			if (monthName && monthYear) {
+				const applyMonth = () => {
+					this.searchDate = monthFilterKey(Number(monthYear.value), Number(monthName.value));
+					this.syncSearchExtras();
+					this.runSearch();
+				};
+				monthName.addEventListener('change', applyMonth);
+				monthYear.addEventListener('change', applyMonth);
+			}
+
+			// The starting screen's recent searches, people and tags.
+			const start = root.querySelector('[data-search-start]');
+			if (start) {
+				start.addEventListener('click', (event) => this.onStartClick(event));
+			}
+
+			// The shortcuts above the results: a person, a tag, a place.
+			const suggest = root.querySelector('[data-search-suggest]');
+			if (suggest) {
+				suggest.addEventListener('click', (event) => this.onSuggestClick(event));
+			}
+
+			const clearScope = root.querySelector('[data-search-clear-scope]');
+			if (clearScope) {
+				clearScope.addEventListener('click', () => {
+					this.searchTag = null;
+					this.searchPlace = '';
+					this.syncScopeBanner();
 					this.runSearch();
 				});
 			}
@@ -10570,6 +10814,12 @@
 			this.searchSource = '';
 			this.searchBookmarked = false;
 			this.searchDate = '';
+			// One exact tag ({ id, name }) or Check In place, set from a
+			// shortcut (issue #269).
+			this.searchTag = null;
+			this.searchPlace = '';
+			this._topTags = null;
+			this._suggestions = null;
 			this._bySubId = new Map();
 			this._byMarkId = new Map();
 			this._subscriptions = [];
@@ -10588,6 +10838,8 @@
 				this.searchSource = snapshot.source || '';
 				this.searchBookmarked = !!snapshot.bookmarked;
 				this.searchDate = snapshot.date || '';
+				this.searchTag = snapshot.tag || null;
+				this.searchPlace = snapshot.place || '';
 			}
 
 			// A preset handed from Explore/Me ("browse by type", "your
@@ -10604,6 +10856,7 @@
 
 			this.syncFilterChips();
 			this.syncBookmarksBanner();
+			this.syncScopeBanner();
 			this.syncSearchExtras();
 			const input = root.querySelector('[data-search-input]');
 			if (input && this.searchQuery) {
@@ -10611,7 +10864,10 @@
 			}
 
 			this.loadSubscriptionsForFilter();
+			this.loadTopTags();
 			if (snapshot) {
+				this.showStart(false);
+				this.fitFilters();
 				this.restoreSnapshot(snapshot);
 				return;
 			}
@@ -10648,6 +10904,11 @@
 				const active = (chip.getAttribute('data-filter') || '') === this.searchType;
 				chip.classList.toggle('is-active', active);
 				chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+				// The row scrolls sideways, so a type chosen elsewhere
+				// (Explore's Browse by type) may start off screen.
+				if (active && this.searchType && 'function' === typeof chip.scrollIntoView) {
+					chip.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				}
 			});
 		},
 
@@ -10664,14 +10925,428 @@
 			}
 		},
 
-		// Reflects the current date filter value back onto its control —
-		// called at boot so a fresh render shows any state searchPreset may
-		// have been carrying. Explore hands over type/source only today, so
-		// this is effectively a no-op until a future preset carries a date.
+		// Shows which exact tag or place the results are narrowed to, with
+		// the way back out. Bookmarks has its own line, above.
+		syncScopeBanner() {
+			const banner = root.querySelector('[data-search-scope-banner]');
+			const text = root.querySelector('[data-search-scope-text]');
+			if (!banner || !text) {
+				return;
+			}
+			if (this.searchTag) {
+				text.textContent = sprintf(
+					/* translators: %s: a tag's name */
+					__('Showing Marks tagged %s.', 'daymark'),
+					this.searchTag.name
+				);
+			} else if (this.searchPlace) {
+				text.textContent = sprintf(
+					/* translators: %s: a place's name */
+					__('Showing Check Ins at %s.', 'daymark'),
+					this.searchPlace
+				);
+			}
+			banner.hidden = !this.searchTag && !this.searchPlace;
+		},
+
+		// Reflects the current date filter back onto its controls: the
+		// dropdown (with a picked month added as a choice of its own, so
+		// the pill can name it) and the month and year beside it.
 		syncSearchExtras() {
 			const date = root.querySelector('[data-date-filter]');
-			if (date && date.value !== this.searchDate) {
+			if (date) {
+				date.innerHTML = dateOptionsMarkup(this.searchDate);
 				date.value = this.searchDate;
+			}
+			const picked = parseMonthFilter(this.searchDate);
+			const row = root.querySelector('[data-search-month]');
+			if (row) {
+				row.hidden = !picked;
+			}
+			if (picked) {
+				const monthName = root.querySelector('[data-search-month-name]');
+				const monthYear = root.querySelector('[data-search-month-year]');
+				if (monthName) {
+					monthName.value = String(picked.month);
+				}
+				if (monthYear) {
+					monthYear.innerHTML = searchYearOptionsMarkup(picked.year);
+					monthYear.value = String(picked.year);
+				}
+			}
+		},
+
+		// "Pick a month…" was chosen: start on the newest month the
+		// choices above it don't already cover, and let the two
+		// dropdowns take it from there.
+		showMonthPicker() {
+			const now = new Date();
+			const start = parseMonthFilter(this.searchDate) || {
+				year: new Date(now.getFullYear(), now.getMonth() - 2, 1).getFullYear(),
+				month: new Date(now.getFullYear(), now.getMonth() - 2, 1).getMonth(),
+			};
+			this.searchDate = monthFilterKey(start.year, start.month);
+			this.syncSearchExtras();
+			this.runSearch();
+			const monthName = root.querySelector('[data-search-month-name]');
+			if (monthName) {
+				monthName.focus();
+			}
+		},
+
+		fitFilters() {
+			fitSelectToChoice(root.querySelector('[data-date-filter]'));
+			fitSelectToChoice(root.querySelector('[data-source-filter]'));
+		},
+
+		// Nothing typed and nothing chosen: Search shows its starting
+		// screen instead of a second copy of the Timeline (issue #269).
+		isIdle() {
+			return (
+				!this.searchQuery &&
+				!this.searchType &&
+				!this.searchSource &&
+				!this.searchBookmarked &&
+				!this.searchDate &&
+				!this.searchTag &&
+				!this.searchPlace
+			);
+		},
+
+		// Swaps between the starting screen and the results.
+		showStart(show) {
+			const start = root.querySelector('[data-search-start]');
+			const results = root.querySelector('[data-search-results-section]');
+			if (start) {
+				start.hidden = !show;
+			}
+			if (results) {
+				results.hidden = show;
+			}
+			if (show) {
+				this.renderSuggestions(null);
+			}
+		},
+
+		// The starting screen: recent searches, the people you follow, and
+		// your most used tags. Each part is left out when it has nothing.
+		renderStart() {
+			const start = root.querySelector('[data-search-start]');
+			if (!start) {
+				return;
+			}
+			const recent = recentSearches();
+			const recentHtml = recent.length
+				? `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-recent-heading">
+					<h2 id="daymark-search-recent-heading" class="daymark-section-heading">${esc(__('Recent searches', 'daymark'))}</h2>
+					<ul class="daymark-searchstart__recent">${recent
+						.map(
+							(query) =>
+								`<li class="daymark-searchstart__recentrow"><button type="button" class="daymark-searchstart__recentbtn" data-recent-search="${esc(
+									query
+								)}">${searchRowIcon(RECENT_GLYPH)}<span>${esc(query)}</span></button><button type="button" class="daymark-searchstart__forget" data-recent-forget="${esc(
+									query
+								)}" aria-label="${esc(
+									sprintf(
+										/* translators: %s: a past search */
+										__('Remove %s from recent searches', 'daymark'),
+										query
+									)
+								)}">${searchRowIcon(DISMISS_GLYPH)}</button></li>`
+						)
+						.join('')}</ul>
+				</section>`
+				: '';
+
+			const user = config.currentUser || {};
+			const label = (sub) => (sub.site_title && sub.site_title.trim() ? sub.site_title : sub.site_url);
+			const people = [{ source: 'mine', label: __('You', 'daymark'), icon: user.avatarUrl || '' }].concat(
+				(this._subscriptions || [])
+					.slice()
+					.sort(
+						(a, b) =>
+							Number(!!b.favorite) - Number(!!a.favorite) ||
+							label(a).localeCompare(label(b), undefined, { sensitivity: 'base' })
+					)
+					.slice(0, SEARCH_START_PEOPLE)
+					.map((sub) => ({ source: String(sub.id), label: label(sub), icon: sub.site_icon_url || '' }))
+			);
+			const peopleHtml = `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-people-heading">
+					<h2 id="daymark-search-people-heading" class="daymark-section-heading">${esc(__('People', 'daymark'))}</h2>
+					<ul class="daymark-searchstart__people">${people
+						.map(
+							(person) =>
+								`<li><button type="button" class="daymark-searchstart__person" data-start-source="${esc(
+									person.source
+								)}">${searchAvatar(person.icon, person.label, 'daymark-searchstart__avatar')}<span class="daymark-searchstart__name">${esc(
+									person.label
+								)}</span></button></li>`
+						)
+						.join('')}</ul>
+				</section>`;
+
+			const tags = Array.isArray(this._topTags) ? this._topTags : [];
+			const tagsHtml = tags.length
+				? `<section class="daymark-searchstart__section" aria-labelledby="daymark-search-tags-heading">
+					<h2 id="daymark-search-tags-heading" class="daymark-section-heading">${esc(__('Your tags', 'daymark'))}</h2>
+					<div class="daymark-searchstart__tags">${tags
+						.map(
+							(tag) =>
+								`<button type="button" class="daymark-filterchip" data-start-tag="${esc(
+									String(tag.id)
+								)}" data-tag-name="${esc(tag.name)}">${esc(
+									sprintf(
+										/* translators: %s: a tag's name. The # marks it as a tag. */
+										__('#%s', 'daymark'),
+										tag.name
+									)
+								)}</button>`
+						)
+						.join('')}</div>
+				</section>`
+				: '';
+
+			start.innerHTML = recentHtml + peopleHtml + tagsHtml;
+		},
+
+		onStartClick(event) {
+			const forget = event.target.closest('[data-recent-forget]');
+			if (forget) {
+				forgetRecentSearch(forget.getAttribute('data-recent-forget'));
+				this.renderStart();
+				const next = root.querySelector('[data-recent-forget], [data-search-input]');
+				if (next) {
+					next.focus();
+				}
+				return;
+			}
+			const recent = event.target.closest('[data-recent-search]');
+			if (recent) {
+				this.searchQuery = recent.getAttribute('data-recent-search');
+				const input = root.querySelector('[data-search-input]');
+				if (input) {
+					input.value = this.searchQuery;
+				}
+				rememberRecentSearch(this.searchQuery);
+				this.runSearch();
+				return;
+			}
+			const person = event.target.closest('[data-start-source]');
+			if (person) {
+				this.chooseSource(person.getAttribute('data-start-source'));
+				return;
+			}
+			const tag = event.target.closest('[data-start-tag]');
+			if (tag) {
+				this.chooseTag(Number(tag.getAttribute('data-start-tag')), tag.getAttribute('data-tag-name'));
+			}
+		},
+
+		// The three shortcut taps. Each one answers the question the
+		// typed words were asking, so the words are cleared.
+		clearQuery() {
+			this.searchQuery = '';
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				input.value = '';
+			}
+		},
+
+		chooseSource(source) {
+			this.clearQuery();
+			this.searchSource = source || '';
+			const select = root.querySelector('[data-source-filter]');
+			if (select) {
+				select.value = this.searchSource;
+			}
+			if (this.searchSource && 'mine' !== this.searchSource) {
+				this.searchTag = null;
+				this.searchPlace = '';
+			}
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		// Only your own posts have tags or places, so a followed site
+		// chosen earlier is let go of.
+		chooseTag(id, name) {
+			this.clearQuery();
+			this.searchTag = id ? { id, name: name || '' } : null;
+			this.searchPlace = '';
+			this.dropFollowedSource();
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		choosePlace(name) {
+			this.clearQuery();
+			this.searchPlace = name || '';
+			this.searchTag = null;
+			this.dropFollowedSource();
+			this.syncScopeBanner();
+			this.runSearch();
+		},
+
+		dropFollowedSource() {
+			if (this.searchSource && 'mine' !== this.searchSource) {
+				this.searchSource = '';
+				const select = root.querySelector('[data-source-filter]');
+				if (select) {
+					select.value = '';
+				}
+			}
+		},
+
+		onSuggestClick(event) {
+			const row = event.target.closest('[data-suggest]');
+			if (!row) {
+				return;
+			}
+			const kind = row.getAttribute('data-suggest');
+			if ('person' === kind) {
+				this.chooseSource(row.getAttribute('data-suggest-source'));
+			} else if ('tag' === kind) {
+				this.chooseTag(Number(row.getAttribute('data-suggest-tag')), row.getAttribute('data-suggest-name'));
+			} else if ('place' === kind) {
+				this.choosePlace(row.getAttribute('data-suggest-name'));
+			}
+			const input = root.querySelector('[data-search-input]');
+			if (input) {
+				input.focus();
+			}
+		},
+
+		// The people whose name holds what was typed: you, then the sites
+		// you follow. Matched here, from the list Search already has,
+		// with the same "name contains" rule the server uses to find
+		// their posts.
+		matchingPeople(query) {
+			const needle = query.toLowerCase();
+			const user = config.currentUser || {};
+			const people = [];
+			if (user.displayName && user.displayName.toLowerCase().includes(needle)) {
+				people.push({ source: 'mine', label: user.displayName, icon: user.avatarUrl || '', mine: true });
+			}
+			(this._subscriptions || []).forEach((sub) => {
+				const title = sub.site_title && sub.site_title.trim() ? sub.site_title : '';
+				if (title && title.toLowerCase().includes(needle)) {
+					people.push({ source: String(sub.id), label: title, icon: sub.site_icon_url || '', mine: false });
+				}
+			});
+			return people.slice(0, SEARCH_SUGGESTIONS_PER_KIND);
+		},
+
+		// The shortcuts above the results for what is typed: a person
+		// whose posts to see, a tag, a Check In place. `found` is GET
+		// /search/suggestions' answer, or null to clear the block. A kind
+		// already chosen isn't offered again.
+		renderSuggestions(found) {
+			const block = root.querySelector('[data-search-suggest]');
+			if (!block) {
+				return;
+			}
+			this._suggestions = found;
+			const query = this.searchQuery;
+			if (!found || query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+				block.hidden = true;
+				block.innerHTML = '';
+				return;
+			}
+			const chevron = searchRowIcon(CHEVRON_GLYPH);
+			const rows = [];
+			if (!this.searchSource && !this.searchTag && !this.searchPlace) {
+				this.matchingPeople(query).forEach((person) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="person" data-suggest-source="${esc(
+							person.source
+						)}">${searchAvatar(person.icon, person.label, 'daymark-searchsuggest__figure')}<span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							person.label
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							person.mine ? __('You · see all your Marks', 'daymark') : __('Someone you follow · see all their posts', 'daymark')
+						)}</span></span>${chevron}</button>`
+					);
+				});
+			}
+			if (!this.searchTag && !this.searchPlace) {
+				(Array.isArray(found.tags) ? found.tags : []).forEach((tag) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="tag" data-suggest-tag="${esc(
+							String(tag.id)
+						)}" data-suggest-name="${esc(tag.name)}"><span class="daymark-searchsuggest__figure daymark-searchsuggest__figure--glyph" aria-hidden="true">${searchRowIcon(
+							TAG_GLYPH
+						)}</span><span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							sprintf(
+								/* translators: %s: a tag's name. The # marks it as a tag. */
+								__('#%s', 'daymark'),
+								tag.name
+							)
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							sprintf(
+								/* translators: %d: number of Marks with this tag */
+								_n('Tag · %d Mark', 'Tag · %d Marks', tag.count, 'daymark'),
+								tag.count
+							)
+						)}</span></span>${chevron}</button>`
+					);
+				});
+				(Array.isArray(found.places) ? found.places : []).forEach((place) => {
+					rows.push(
+						`<button type="button" class="daymark-searchsuggest__row" data-suggest="place" data-suggest-name="${esc(
+							place.name
+						)}"><span class="daymark-searchsuggest__figure daymark-searchsuggest__figure--glyph" aria-hidden="true">${searchRowIcon(
+							TYPE_ICONS.checkin
+						)}</span><span class="daymark-searchsuggest__body"><span class="daymark-searchsuggest__title">${esc(
+							place.name
+						)}</span><span class="daymark-searchsuggest__meta">${esc(
+							sprintf(
+								/* translators: %d: number of Check In Marks at this place */
+								_n('Place · %d Check In', 'Place · %d Check Ins', place.count, 'daymark'),
+								place.count
+							)
+						)}</span></span>${chevron}</button>`
+					);
+				});
+			}
+			block.innerHTML = rows.join('');
+			block.hidden = !rows.length;
+		},
+
+		// Asks for the tags and places matching what is typed. Runs beside
+		// the search itself and never holds it up; a failure only means no
+		// shortcuts this time.
+		async loadSuggestions(seq) {
+			const query = this.searchQuery;
+			if (query.length < SEARCH_SUGGEST_MIN_LENGTH) {
+				this.renderSuggestions(null);
+				return;
+			}
+			let found = { tags: [], places: [] };
+			try {
+				const result = await apiGet('search/suggestions?q=' + encodeURIComponent(query));
+				if (result && 'object' === typeof result) {
+					found = result;
+				}
+			} catch (err) {
+				// People still match from the list already loaded.
+			}
+			if (seq !== this._searchSeq || !root.querySelector('[data-search-suggest]')) {
+				return;
+			}
+			this.renderSuggestions(found);
+		},
+
+		// The most used tags, for the starting screen. Asked for once per
+		// visit to Search.
+		async loadTopTags() {
+			try {
+				const result = await apiGet('search/suggestions');
+				this._topTags = result && Array.isArray(result.tags) ? result.tags : [];
+			} catch (err) {
+				this._topTags = [];
+			}
+			const start = root.querySelector('[data-search-start]');
+			if (start && start.isConnected && !start.hidden) {
+				this.renderStart();
 			}
 		},
 
@@ -10684,6 +11359,16 @@
 			if (select && select.isConnected) {
 				select.innerHTML = sourceOptionsMarkup(this._subscriptions);
 				select.value = this.searchSource;
+				fitSelectToChoice(select);
+			}
+			// Both name people from this list, and may be on screen
+			// already.
+			const start = root.querySelector('[data-search-start]');
+			if (start && start.isConnected && !start.hidden) {
+				this.renderStart();
+			}
+			if (this._suggestions) {
+				this.renderSuggestions(this._suggestions);
 			}
 		},
 
@@ -10705,6 +11390,12 @@
 			}
 			if (this.searchBookmarked) {
 				params.set('bookmarked', '1');
+			}
+			if (this.searchTag) {
+				params.set('tag', String(this.searchTag.id));
+			}
+			if (this.searchPlace) {
+				params.set('place', this.searchPlace);
 			}
 			if (this.searchDate) {
 				const bounds = dateFilterBounds(this.searchDate);
@@ -10842,10 +11533,28 @@
 			this.teardownSearchObserver();
 			this._searchLoading = false;
 			this._searchDone = true;
+			// Every filter change comes through here.
+			this.fitFilters();
 			const more = root.querySelector('[data-search-more]');
 			if (more) {
 				more.hidden = true;
 			}
+			// Nothing typed or chosen: the starting screen, not a search.
+			if (this.isIdle()) {
+				teardownLikeAvailabilityObserver(this);
+				teardownFeaturedImages(this);
+				this._bySubId.clear();
+				this._byMarkId.clear();
+				this._items = [];
+				this._searchParams = '';
+				list.innerHTML = '';
+				this.showResultCount(null);
+				this.renderStart();
+				this.showStart(true);
+				return;
+			}
+			this.showStart(false);
+			this.loadSuggestions(seq);
 			list.innerHTML =
 				skeletonRows(2) + '<span class="daymark-visually-hidden">' + esc(__('Searching', 'daymark')) + '</span>';
 			// Targets the merged Timeline endpoint (not /marks) so a search
@@ -10853,9 +11562,8 @@
 			// narrows that down to just Marks (`mine=1`) or just one
 			// subscription's posts (`subscription_id`). No `status` param:
 			// unlike /marks, /timeline always returns published-only from
-			// both sources already. An empty query with no filters still
-			// runs — it's "everything", the same default Home's own first
-			// page shows.
+			// both sources already. An empty query with a filter chosen
+			// still runs: it's everything that filter allows.
 			const filters = this.buildSearchParams();
 			this._searchParams = filters.toString();
 			this._searchPage = 1;
@@ -11309,6 +12017,9 @@
 				logout.addEventListener('click', (event) => {
 					event.preventDefault();
 					const href = logout.href;
+					// Recent searches are kept on the device, so they leave
+					// with the person who made them.
+					clearRecentSearches();
 					Promise.all([clearOfflineShellCache(), unsubscribePushOnLogout()]).then(() => {
 						window.location.href = href;
 					});
@@ -15134,6 +15845,8 @@
 				source: screen.searchSource,
 				bookmarked: screen.searchBookmarked,
 				date: screen.searchDate,
+				tag: screen.searchTag,
+				place: screen.searchPlace,
 				searchParams: screen._searchParams,
 				searchPage: screen._searchPage,
 				searchDone: screen._searchDone,

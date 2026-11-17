@@ -3591,14 +3591,16 @@ test('search: the Search tab shows a query + type filter that narrow the results
 
 	const list = page.locator('[data-search-results]');
 
-	// Landing on Search with no query/filter shows everything by default.
-	await expect(list.getByText(alpha).first()).toBeVisible();
-	await expect(list.getByText(bravo).first()).toBeVisible();
+	// Landing on Search with nothing typed or chosen shows its starting
+	// screen, not a second copy of the Timeline (issue #269).
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+	await expect(list).toBeHidden();
 
 	// A query narrows the results to the matching Mark only.
 	await page.locator('[data-search-input]').fill(alpha);
 	await expect(list.getByText(alpha).first()).toBeVisible();
 	await expect(list.getByText(bravo)).toHaveCount(0);
+	await expect(page.locator('[data-search-start]')).toBeHidden();
 
 	// A type filter narrows too: "Images" excludes these note Marks.
 	await page.locator('[data-search-input]').fill('');
@@ -3608,6 +3610,210 @@ test('search: the Search tab shows a query + type filter that narrow the results
 	// Back to "Notes" surfaces them again.
 	await page.locator('[data-filter-chips] [data-filter="note"]').click();
 	await expect(list.getByText(alpha).first()).toBeVisible();
+
+	// "All", with nothing else chosen, is the starting screen again.
+	await page.locator('[data-filter-chips] [data-filter=""]').click();
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+});
+
+// Search's starting screen (issue #269): recent searches kept on this
+// device, the people you follow (you first), and your most used tags.
+test('search: starts with recent searches, people and tags', async ({ page }) => {
+	const tag = `e2estart${RUN_ID}`;
+	const caption = `E2E start screen ${RUN_ID} pelican`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(
+		async ({ caption, tag }) => {
+			const config = window.daymarkApp;
+			await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ caption, primary_type: 'note', tags: [tag] }),
+			});
+			// Start clean: an earlier test's searches are on this device too.
+			window.localStorage.removeItem('daymark:recent-searches:' + config.currentUser.id);
+		},
+		{ caption, tag }
+	);
+
+	await page.goto('/daymark/search');
+	const start = page.locator('[data-search-start]');
+	await expect(start).toBeVisible();
+	await expect(start.locator('[data-start-source="mine"]')).toHaveText('You');
+	await expect(start.getByText('Recent searches')).toHaveCount(0);
+
+	// A search counts once the box is left, and is then offered again.
+	const input = page.locator('[data-search-input]');
+	await input.fill('pelican');
+	await expect(page.locator('[data-search-results]').getByText(caption).first()).toBeVisible();
+	await input.press('Enter');
+	await input.fill('');
+	const recent = start.locator('[data-recent-search="pelican"]');
+	await expect(recent).toBeVisible();
+
+	await recent.click();
+	await expect(input).toHaveValue('pelican');
+	await expect(page.locator('[data-search-results]').getByText(caption).first()).toBeVisible();
+
+	// The × forgets one.
+	await input.fill('');
+	await start.locator('[data-recent-forget="pelican"]').click();
+	await expect(start.locator('[data-recent-search]')).toHaveCount(0);
+
+	// "You" shows your own Marks, through the Source dropdown.
+	await start.locator('[data-start-source="mine"]').click();
+	await expect(page.locator('[data-source-filter]')).toHaveValue('mine');
+	await expect(page.locator('[data-search-results]').getByText(caption).first()).toBeVisible();
+});
+
+// Search finds a Mark by its tag's name, and offers the tag and a Check In
+// place as shortcuts that narrow to exactly that tag or place (issue #269).
+test('search: a tag or place typed in the box is offered as a shortcut', async ({ page }) => {
+	const tag = `e2etag${RUN_ID}`;
+	const place = `E2E Pier ${RUN_ID}`;
+	const tagged = `E2E tagged without the word ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await page.evaluate(
+		async ({ tagged, tag, place }) => {
+			const config = window.daymarkApp;
+			const post = (body) =>
+				fetch(`${config.restUrl}marks`, {
+					method: 'POST',
+					headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+					credentials: 'same-origin',
+					body: JSON.stringify(body),
+				});
+			await post({ caption: tagged, primary_type: 'note', tags: [tag] });
+			await post({ caption: '', primary_type: 'checkin', place_name: place });
+		},
+		{ tagged, tag, place }
+	);
+
+	await page.goto('/daymark/search');
+	const input = page.locator('[data-search-input]');
+	const list = page.locator('[data-search-results]');
+	const suggest = page.locator('[data-search-suggest]');
+	const banner = page.locator('[data-search-scope-banner]');
+
+	// The tag's name is nowhere in the Mark's words, and still finds it.
+	await input.fill(tag);
+	await expect(list.getByText(tagged).first()).toBeVisible();
+	const tagRow = suggest.locator('[data-suggest="tag"]');
+	await expect(tagRow).toContainText(`#${tag}`);
+	await expect(tagRow).toContainText('Tag · 1 Mark');
+
+	// The shortcut narrows to the tag and clears the words.
+	await tagRow.click();
+	await expect(input).toHaveValue('');
+	await expect(banner).toContainText(`Showing Marks tagged ${tag}.`);
+	await expect(page.locator('[data-search-count]')).toHaveText('1 result');
+	await expect(list.getByText(tagged).first()).toBeVisible();
+
+	// "Show everything" lets go of it.
+	await banner.locator('[data-search-clear-scope]').click();
+	await expect(banner).toBeHidden();
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+
+	// A place works the same way.
+	await input.fill(place);
+	const placeRow = suggest.locator('[data-suggest="place"]');
+	await expect(placeRow).toContainText(place);
+	await expect(placeRow).toContainText('Place · 1 Check In');
+	await placeRow.click();
+	await expect(banner).toContainText(`Showing Check Ins at ${place}.`);
+	await expect(page.locator('[data-search-count]')).toHaveText('1 result');
+});
+
+// Search's filters sit on one row that scrolls sideways, and the Date
+// dropdown reaches past last month (issue #269).
+test('search: filters share one row and the date reaches back', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark/search');
+
+	// One row: the dropdowns and every type chip share a top edge, and
+	// the page itself never scrolls sideways.
+	const tops = await page.evaluate(() =>
+		Array.from(document.querySelectorAll('[data-search-filters] select, [data-search-filters] [data-filter]')).map((el) =>
+			Math.round(el.getBoundingClientRect().top)
+		)
+	);
+	expect(tops.length).toBe(8);
+	expect(new Set(tops).size).toBe(1);
+	const sideways = await page.evaluate(
+		() => document.documentElement.scrollWidth - document.documentElement.clientWidth
+	);
+	expect(sideways).toBe(0);
+
+	const dateFilter = page.locator('[data-date-filter]');
+	await expect(dateFilter.locator('option')).toHaveText([
+		'Any time',
+		'Today',
+		'This Week',
+		'Last Week',
+		'This Month',
+		'Last Month',
+		'This Year',
+		'Last Year',
+		'Pick a month…',
+	]);
+
+	// Last Year asks for exactly that year.
+	const year = new Date().getFullYear() - 1;
+	let request = page.waitForRequest((req) => req.url().includes('/timeline?') && req.url().includes('after='));
+	await dateFilter.selectOption('last_year');
+	let url = new URL((await request).url());
+	expect(new Date(url.searchParams.get('after')).getFullYear()).toBe(year);
+	expect(new Date(url.searchParams.get('before')).getFullYear()).toBe(year);
+
+	// "Pick a month…" shows a month and a year, and the dropdown then
+	// names the month that was picked.
+	const monthRow = page.locator('[data-search-month]');
+	await expect(monthRow).toBeHidden();
+	await dateFilter.selectOption('pick_month');
+	await expect(monthRow).toBeVisible();
+
+	// It starts two months back, so a year two back and a month half a
+	// year away are always a change, whenever this runs.
+	const now = new Date();
+	const pickedYear = now.getFullYear() - 2;
+	const pickedMonth = (new Date(now.getFullYear(), now.getMonth() - 2, 1).getMonth() + 6) % 12;
+	const monthNames = [
+		'January',
+		'February',
+		'March',
+		'April',
+		'May',
+		'June',
+		'July',
+		'August',
+		'September',
+		'October',
+		'November',
+		'December',
+	];
+
+	request = page.waitForRequest((req) => req.url().includes('/timeline?') && req.url().includes('after='));
+	await monthRow.locator('[data-search-month-year]').selectOption(String(pickedYear));
+	await request;
+	request = page.waitForRequest((req) => req.url().includes('/timeline?') && req.url().includes('after='));
+	await monthRow.locator('[data-search-month-name]').selectOption(String(pickedMonth));
+	url = new URL((await request).url());
+	const after = new Date(url.searchParams.get('after'));
+	const before = new Date(url.searchParams.get('before'));
+	expect([after.getFullYear(), after.getMonth(), after.getDate()]).toEqual([pickedYear, pickedMonth, 1]);
+	expect([before.getFullYear(), before.getMonth()]).toEqual([pickedYear, pickedMonth]);
+	expect(new Date(before.getTime() + 1).getDate()).toBe(1);
+	await expect(dateFilter.locator('option:checked')).toHaveText(`${monthNames[pickedMonth]} ${pickedYear}`);
+
+	// Any other choice puts the month and year away again.
+	await dateFilter.selectOption('');
+	await expect(monthRow).toBeHidden();
+	await expect(page.locator('[data-search-start]')).toBeVisible();
 });
 
 // Source filter: "My Marks" scopes results to just the user's own Marks
@@ -3653,14 +3859,12 @@ test('search: Source filter scopes results to My Marks or one subscribed site', 
 	await expect(list.getByText(caption)).toHaveCount(0);
 	await expect(list.locator('[data-subpost]').first()).toBeVisible();
 
-	// Back to "All": the Mark is present again. (Not asserting a
-	// subscription-post card reappears too here — search has no
-	// pagination, a flat per_page=20, and this file's own many
-	// Mark-creating tests can by now outnumber the WordPress.org feed's
-	// handful of older posts within that window. That's an existing,
-	// unrelated limitation of unscoped search, not something this test is
-	// about.)
+	// Back to "All" with nothing typed: Search is at rest again, so its
+	// starting screen shows in place of results. Typing the caption finds
+	// the Mark from every source.
 	await sourceFilter.selectOption('');
+	await expect(page.locator('[data-search-start]')).toBeVisible();
+	await page.fill('[data-search-input]', caption);
 	await expect(list.getByText(caption).first()).toBeVisible();
 });
 
@@ -4114,6 +4318,7 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await page.goto('/daymark/me');
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
 	await page.goto('/daymark/search');
+	await page.fill('[data-search-input]', finished);
 	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
 });
 
@@ -4236,6 +4441,7 @@ test('publish later: Change reopens a scheduled Mark, and Now publishes it at on
 
 	expect((await scheduledMarks(page)).map((mark) => mark.title)).not.toContain(caption);
 	await page.goto('/daymark/search');
+	await page.fill('[data-search-input]', caption);
 	await expect(page.locator('[data-search-results]').getByText(caption)).toBeVisible();
 });
 

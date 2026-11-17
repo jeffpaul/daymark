@@ -25,8 +25,11 @@ can't act on them.
 - Tap a photo while you write a Mark to give it a shape (Original, Square, Tall or Wide, cut from the middle) or turn it with Rotate, so a sideways or badly framed photo no longer means a trip to the Photos app first. Your site makes the edit and keeps the original, and Original puts it back. ([#612](https://github.com/jeffpaul/daymark/pull/612))
 - Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
 - If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in. ([#611](https://github.com/jeffpaul/daymark/pull/611))
+- Search now finds people, tags and places. As you type, matching sites you follow, your tags and your Check In places appear above the results as shortcuts, and the words you type also match tag names and the names of sites you follow. The Date filter gains This Year, Last Year and "Pick a month". ([#615](https://github.com/jeffpaul/daymark/pull/615))
 
 ### Changed
+
+- Search opens on a quiet starting screen with your recent searches, the people you follow and your most-used tags, where it used to show a copy of the Timeline. Its filters now sit in one row that slides sideways, so results start higher on the screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 
 - While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
 

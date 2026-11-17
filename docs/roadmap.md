@@ -340,6 +340,15 @@ decision rows for the full technical record.
   keyword/type/source. Author, tag, and with-location filters were dropped in
   review: they duplicated the Source dropdown, the keyword search, and the
   Check-ins type chip. ([#413](https://github.com/jeffpaul/daymark/pull/413))
+- [x] **Search starting screen, shortcuts, and one filter row**: Search at
+  rest shows recent searches, the people you follow, and your most-used tags
+  where it used to repeat the Timeline. Typing offers matching people, tags,
+  and Check In places as shortcuts above the results, and the keyword also
+  matches tag names and followed sites' names. Date, Source, and the type
+  chips share one sliding row, and Date gains This Year, Last Year, and "Pick
+  a month". Builds on the date filter from
+  [#413](https://github.com/jeffpaul/daymark/pull/413); from the concepts for
+  [#269](https://github.com/jeffpaul/daymark/issues/269). ([#615](https://github.com/jeffpaul/daymark/pull/615))
 - [x] **Me v1**: identity, a link into Search scoped to the user's own Marks,
   a view-only Drafts list, and links out to Notifications, wp-admin
   Subscriptions, and WordPress's own profile/logout.
@@ -836,8 +845,12 @@ that loop without new destinations or a new social network.
   "Shipped — Quiet Mark metadata capture" above.
 - **Explore, Search, and Me's remaining scope** — see "Shipped — Bottom
   navigation rework" above. Search's date filter and Explore's
-  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413));
-  the still-open halves of Explore and Me
+  memories section shipped together ([#413](https://github.com/jeffpaul/daymark/pull/413)),
+  and Search's starting screen, shortcuts, and single filter row followed
+  ([#615](https://github.com/jeffpaul/daymark/pull/615)). A page for each
+  person you follow is tracked on its own
+  ([#614](https://github.com/jeffpaul/daymark/issues/614)).
+  The still-open halves of Explore and Me
   ([#294](https://github.com/jeffpaul/daymark/issues/294),
   [#295](https://github.com/jeffpaul/daymark/issues/295)) each still need new
   supporting REST/data work before they can grow past their current

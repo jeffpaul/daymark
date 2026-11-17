@@ -2297,6 +2297,18 @@ button.daymark-stat {
 	margin: 0 0 var(--daymark-spacing-sm);
 }
 
+/* A tag or place name can be long: the words wrap, the way out doesn't. */
+.daymark-searchbookmarks-banner [data-search-scope-text] {
+	min-inline-size: 0;
+	overflow-wrap: anywhere;
+}
+
+.daymark-searchbookmarks-banner .daymark-btn {
+	flex-shrink: 0;
+	padding-inline: var(--daymark-spacing-sm);
+	white-space: nowrap;
+}
+
 .daymark-empty {
 	padding: var(--daymark-spacing-lg);
 	border: 1px dashed var(--daymark-border);
@@ -4769,22 +4781,46 @@ button.daymark-stat {
 	outline-offset: 2px;
 }
 
-/* The Source filter (All sites / My marks / one subscribed site) sits next to
-   the type-filter chip row, not merged into it — its own control, same
-   row. .daymark-filterchips is given room to wrap onto its own line(s)
-   first (flex: 1 1 auto) while the select stays a fixed, un-shrinking
-   pill alongside it. A select is as wide as its longest choice, so
-   max-width keeps a followed site with a long name from pushing it past
-   the screen edge, which made the whole page wider than the phone. */
+/* Search's filters share one row that scrolls sideways (issue #269): the
+   Date and Source dropdowns first, then the type chips. Nothing wraps, so
+   the results start in the same place whatever is chosen. The row runs to
+   both screen edges (the negative margin undoes the search bar's side
+   padding), which lets a chip that is cut off show there is more to swipe
+   to. The block padding leaves room for a focus ring, which a scrolling
+   box would otherwise clip. */
 .daymark-searchfilters {
 	display: flex;
 	align-items: center;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: var(--daymark-spacing-sm);
+	margin-block: -4px;
+	margin-inline: calc(-1 * var(--daymark-spacing-md));
+	padding-block: 4px;
+	padding-inline: var(--daymark-spacing-md);
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	scrollbar-width: none;
+}
+
+.daymark-searchfilters::-webkit-scrollbar {
+	display: none;
 }
 
 .daymark-searchfilters .daymark-filterchips {
-	flex: 1 1 auto;
+	flex: 0 0 auto;
+	flex-wrap: nowrap;
+}
+
+.daymark-searchfilters .daymark-filterchip {
+	flex-shrink: 0;
+	white-space: nowrap;
+}
+
+/* A select is as wide as its longest choice, so a followed site with a
+   long name is cut short here instead of taking the whole row. */
+.daymark-searchfilters .daymark-sourcefilter {
+	max-inline-size: 12em;
+	text-overflow: ellipsis;
 }
 
 .daymark-sourcefilter {
@@ -4807,9 +4843,254 @@ button.daymark-stat {
 	outline-offset: 2px;
 }
 
-/* The Date dropdown (issue #293) is the last item in the type-chip row, so
-   it wraps in line with the chips (right after Check-ins) instead of
-   taking a row of its own. It reuses the source filter's pill styling. */
+/* Measures a dropdown's chosen label (fitSelectToChoice() in app.js), so
+   each dropdown in the row is only as wide as what it shows. The extra end
+   padding is the room the dropdown's own arrow takes. */
+.daymark-sourcefilter--probe {
+	position: absolute;
+	visibility: hidden;
+	display: inline-block;
+	min-height: 0;
+	padding-inline-end: calc(var(--daymark-spacing-md) + 22px);
+	white-space: nowrap;
+	pointer-events: none;
+}
+
+/* "Pick a month…": a month and a year, on their own row under the
+   filters while a month is chosen. */
+.daymark-searchmonth {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-searchmonth[hidden] {
+	display: none;
+}
+
+/* --- Search: starting screen (issue #269) --- */
+
+/* What Search shows before anything is typed or chosen: recent searches,
+   the people you follow, and your most used tags. */
+.daymark-searchstart {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-lg);
+}
+
+.daymark-searchstart[hidden] {
+	display: none;
+}
+
+.daymark-searchstart__section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-searchstart__recent,
+.daymark-searchstart__people {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.daymark-searchstart__recentrow {
+	display: flex;
+	align-items: center;
+}
+
+.daymark-searchstart__recentrow + .daymark-searchstart__recentrow {
+	border-block-start: 1px solid var(--daymark-border);
+}
+
+.daymark-searchstart__recentbtn {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	gap: 12px;
+	min-inline-size: 0;
+	min-block-size: 48px;
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--daymark-text-primary);
+	font-family: var(--daymark-font);
+	font-size: 16px;
+	text-align: start;
+	cursor: pointer;
+}
+
+.daymark-searchstart__recentbtn span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.daymark-searchicon {
+	flex-shrink: 0;
+	color: var(--daymark-text-muted);
+}
+
+.daymark-searchstart__forget {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	inline-size: var(--daymark-tap-min);
+	block-size: var(--daymark-tap-min);
+	border: none;
+	border-radius: 50%;
+	background: none;
+	cursor: pointer;
+}
+
+/* People scroll sideways, edge to edge, like the filter row. */
+.daymark-searchstart__people {
+	display: flex;
+	gap: var(--daymark-spacing-sm);
+	margin-inline: calc(-1 * var(--daymark-spacing-md));
+	padding-block: 4px;
+	padding-inline: var(--daymark-spacing-md);
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	scrollbar-width: none;
+}
+
+.daymark-searchstart__people::-webkit-scrollbar {
+	display: none;
+}
+
+.daymark-searchstart__person {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	inline-size: 72px;
+	padding: 0;
+	border: none;
+	border-radius: var(--daymark-radius-sm);
+	background: none;
+	color: var(--daymark-text-secondary);
+	font-family: var(--daymark-font);
+	font-size: 12px;
+	line-height: 1.25;
+	text-align: center;
+	cursor: pointer;
+}
+
+.daymark-searchstart__avatar {
+	inline-size: 56px;
+	block-size: 56px;
+	border-radius: 50%;
+	object-fit: cover;
+	background: var(--daymark-surface);
+}
+
+.daymark-searchstart__avatar--glyph,
+.daymark-searchsuggest__figure--glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-accent-deep);
+	font-size: 20px;
+	font-weight: 700;
+}
+
+.daymark-searchstart__name {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	overflow-wrap: anywhere;
+}
+
+.daymark-searchstart__tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-searchstart__recentbtn:focus-visible,
+.daymark-searchstart__forget:focus-visible,
+.daymark-searchstart__person:focus-visible,
+.daymark-searchsuggest__row:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+/* --- Search: shortcuts above the results (issue #269) --- */
+
+/* A person, a tag or a Check In place matching what is typed. A tap shows
+   exactly their posts. */
+.daymark-searchsuggest {
+	display: flex;
+	flex-direction: column;
+	margin-block-end: var(--daymark-spacing-md);
+	padding-inline: 12px;
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius);
+	background: var(--daymark-bg);
+}
+
+.daymark-searchsuggest[hidden] {
+	display: none;
+}
+
+.daymark-searchsuggest__row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-block-size: 56px;
+	padding: 6px 0;
+	border: none;
+	background: none;
+	color: var(--daymark-text-primary);
+	font-family: var(--daymark-font);
+	text-align: start;
+	cursor: pointer;
+}
+
+.daymark-searchsuggest__row + .daymark-searchsuggest__row {
+	border-block-start: 1px solid var(--daymark-border);
+}
+
+.daymark-searchsuggest__figure {
+	flex-shrink: 0;
+	inline-size: 40px;
+	block-size: 40px;
+	border-radius: 50%;
+	object-fit: cover;
+	background: var(--daymark-surface);
+}
+
+.daymark-searchsuggest__figure--glyph .daymark-searchicon {
+	color: var(--daymark-accent-deep);
+}
+
+.daymark-searchsuggest__body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-inline-size: 0;
+}
+
+.daymark-searchsuggest__title {
+	font-size: 16px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.daymark-searchsuggest__meta {
+	font-size: 13px;
+	color: var(--daymark-text-muted);
+}
+
+/* The chevron points the way the text reads. */
+[dir='rtl'] .daymark-searchsuggest__row > .daymark-searchicon {
+	transform: scaleX(-1);
+}
 
 /* --- Recent item: per-item ⋯ actions menu --- */
 /* A flex row: the leading column (.daymark-recent__leadcol, below — the
