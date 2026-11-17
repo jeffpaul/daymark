@@ -71,8 +71,8 @@ the best place for social-shaped content to begin.
   like or comment reaches the original site, and a reblog becomes a post
   on your own site with your thoughts on top.
 - **Bring the people you already follow.** Import an OPML file from your
-  feed reader, or, with Jetpack, the sites you follow in the WordPress.com
-  Reader.
+  feed reader, the sites you follow in the WordPress.com Reader (with
+  Jetpack), or your reading list from a Microsub server.
 - **Follow a site from wherever you find it.** Click the Daymark
   bookmarklet on a post to follow its site, and add the "Follow me with
   Daymark" block to your own site so visitors who use Daymark can follow

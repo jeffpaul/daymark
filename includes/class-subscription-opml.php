@@ -384,22 +384,35 @@ class Daymark_Subscription_OPML {
 	/**
 	 * Import a list of already-parsed entries, one result per entry, then
 	 * trigger one async poll if anything new was created. Shared by
-	 * import() (OPML `<outline>` elements) and the WordPress.com Reader
-	 * import (Daymark_Reader_Import, issue #435), so a row from either
-	 * source goes through the exact same validation, SSRF guard, and
-	 * duplicate handling as one added by hand.
+	 * import() (OPML `<outline>` elements), the WordPress.com Reader
+	 * import (Daymark_Reader_Import, issue #435), and the Microsub import
+	 * (Daymark_Microsub_Import, issue #592), so a row from any of them goes
+	 * through the exact same validation, SSRF guard, and duplicate handling
+	 * as one added by hand.
 	 *
 	 * The caller is responsible for the entry-count cap
 	 * (`daymark_subscription_opml_max_entries`); this method imports
 	 * whatever it is given.
 	 *
-	 * @param array<int, array{label?: string, xml_url?: string, html_url?: string, icon_url?: string, source_type?: string}> $entries Entries to import.
+	 * An entry with no feed URL is looked up live, which takes a second or
+	 * more each. A caller whose entries are all like that (the Microsub
+	 * import, issue #592) passes a deadline: the first entry is always
+	 * imported, and the loop stops before starting another once the
+	 * deadline has passed. The results then cover only the entries that
+	 * were reached, in order, so the caller can tell what is left.
+	 *
+	 * @param array<int, array{label?: string, xml_url?: string, html_url?: string, icon_url?: string, source_type?: string}> $entries  Entries to import.
+	 * @param float                                                                                                           $deadline Optional. A microtime( true ) value to stop at; 0 for no limit.
 	 * @return array<int, array{label: string, status: string, message: string}>
 	 */
-	public function import_entries( array $entries ): array {
+	public function import_entries( array $entries, float $deadline = 0.0 ): array {
 		$results = array();
 
 		foreach ( $entries as $entry ) {
+			if ( $deadline > 0 && array() !== $results && microtime( true ) >= $deadline ) {
+				break;
+			}
+
 			$results[] = $this->import_entry( is_array( $entry ) ? $entry : array() );
 		}
 

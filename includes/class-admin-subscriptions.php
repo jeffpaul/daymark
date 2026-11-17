@@ -182,6 +182,10 @@ class Daymark_Admin_Subscriptions {
 		add_action( 'admin_post_daymark_reader_import_load', array( $this, 'handle_reader_import_load' ) );
 		add_action( 'admin_post_daymark_reader_import_confirm', array( $this, 'handle_reader_import_confirm' ) );
 		add_action( 'admin_post_daymark_reader_import_cancel', array( $this, 'handle_reader_import_cancel' ) );
+		add_action( 'admin_post_daymark_microsub_import_connect', array( $this, 'handle_microsub_import_connect' ) );
+		add_action( 'admin_post_' . Daymark_Microsub_Import::CALLBACK_ACTION, array( $this, 'handle_microsub_import_callback' ) );
+		add_action( 'admin_post_daymark_microsub_import_confirm', array( $this, 'handle_microsub_import_confirm' ) );
+		add_action( 'admin_post_daymark_microsub_import_cancel', array( $this, 'handle_microsub_import_cancel' ) );
 		add_action( 'admin_post_daymark_privacy_save', array( $this, 'handle_privacy_save' ) );
 		add_action( 'admin_post_daymark_bridgy_fed_save', array( $this, 'handle_bridgy_fed_save' ) );
 		add_action( 'admin_post_daymark_blogroll_save', array( $this, 'handle_blogroll_save' ) );
@@ -1046,6 +1050,7 @@ class Daymark_Admin_Subscriptions {
 		$this->render_import_form();
 		$this->render_reader_import_section();
 		$this->render_links_import_section();
+		$this->render_microsub_import_section();
 	}
 
 	/**
@@ -1196,8 +1201,14 @@ class Daymark_Admin_Subscriptions {
 			return;
 		}
 
-		if ( 'opml_imported' === $notice || 'reader_imported' === $notice ) {
+		if ( in_array( $notice, array( 'opml_imported', 'reader_imported', 'microsub_imported' ), true ) ) {
 			$this->render_opml_import_results();
+
+			return;
+		}
+
+		if ( 'microsub_imported_partial' === $notice ) {
+			$this->render_opml_import_results( true );
 
 			return;
 		}
@@ -1546,9 +1557,12 @@ class Daymark_Admin_Subscriptions {
 	 * redirect's query string) — consumed (deleted) here so a page refresh
 	 * doesn't show a stale result again.
 	 *
+	 * @param bool $partial Whether more sites are still waiting (a Microsub
+	 *                      import that stopped at its time budget, issue
+	 *                      #592), so the summary doesn't call it complete.
 	 * @return void
 	 */
-	private function render_opml_import_results(): void {
+	private function render_opml_import_results( bool $partial = false ): void {
 		$transient_key = 'daymark_opml_import_result_' . get_current_user_id();
 		$results       = get_transient( $transient_key );
 
@@ -1557,7 +1571,9 @@ class Daymark_Admin_Subscriptions {
 		if ( ! is_array( $results ) ) {
 			printf(
 				'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
-				esc_html__( 'Import complete.', 'daymark' )
+				$partial
+					? esc_html__( 'Some sites were imported. The rest are waiting under "Import from a Microsub server" below.', 'daymark' )
+					: esc_html__( 'Import complete.', 'daymark' )
 			);
 
 			return;
@@ -1581,8 +1597,11 @@ class Daymark_Admin_Subscriptions {
 			'<div class="notice notice-success is-dismissible"><p>%s</p></div>',
 			esc_html(
 				sprintf(
-					/* translators: 1: number subscribed, 2: number already subscribed, 3: number failed. */
-					__( 'Import complete: %1$d subscribed, %2$d already subscribed, %3$d failed.', 'daymark' ),
+					$partial
+						/* translators: 1: number subscribed, 2: number already subscribed, 3: number failed. "Import from a Microsub server" is a heading on the same screen. */
+						? __( 'Imported so far: %1$d subscribed, %2$d already subscribed, %3$d failed. The rest are waiting under "Import from a Microsub server" below.', 'daymark' )
+						/* translators: 1: number subscribed, 2: number already subscribed, 3: number failed. */
+						: __( 'Import complete: %1$d subscribed, %2$d already subscribed, %3$d failed.', 'daymark' ),
 					$counts['subscribed'],
 					$counts['duplicate'],
 					$counts['failed']
@@ -3049,6 +3068,243 @@ class Daymark_Admin_Subscriptions {
 		foreach ( $entries as $index => $entry ) {
 			if ( isset( $wanted[ (int) $index ] ) && is_array( $entry ) ) {
 				$selected[] = $entry;
+			}
+		}
+
+		return $selected;
+	}
+
+	/**
+	 * The transient key holding the current user's stashed Microsub follow
+	 * list (issue #592) between the sign-in and "Import selected".
+	 *
+	 * @return string
+	 */
+	private static function microsub_import_transient_key(): string {
+		return 'daymark_microsub_import_follows_' . get_current_user_id();
+	}
+
+	/**
+	 * The transient key holding the current user's in-progress Microsub
+	 * sign-in (its one-time state and where to trade the code for a token)
+	 * while their browser is away at their own sign-in page.
+	 *
+	 * @return string
+	 */
+	private static function microsub_sign_in_transient_key(): string {
+		return 'daymark_microsub_import_sign_in_' . get_current_user_id();
+	}
+
+	/**
+	 * Render the "Import from a Microsub server" section (issue #592): a
+	 * web address field and a sign-in button, or the checklist once the
+	 * follow list has been loaded.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return void
+	 */
+	private function render_microsub_import_section(): void {
+		if ( ! Daymark_Microsub_Import::is_enabled() ) {
+			return;
+		}
+		?>
+		<h2 id="daymark-microsub-import"><?php esc_html_e( 'Import from a Microsub server', 'daymark' ); ?></h2>
+		<?php
+		$stashed = get_transient( self::microsub_import_transient_key() );
+
+		if ( is_array( $stashed ) && ! empty( $stashed['entries'] ) && is_array( $stashed['entries'] ) ) {
+			$this->render_microsub_import_picker( $stashed );
+
+			return;
+		}
+		?>
+		<p><?php esc_html_e( 'If you keep your reading list on a Microsub server such as Aperture, you can follow those sites here too. Sign in with your web address, then choose which sites to bring over. Daymark reads the list once and doesn\'t keep the sign-in. This is a one-time import: following or unfollowing later in either place does not carry over.', 'daymark' ); ?></p>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="daymark_microsub_import_connect" />
+			<?php wp_nonce_field( 'daymark_microsub_import_connect', 'daymark_microsub_import_connect_nonce' ); ?>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row">
+						<label for="daymark_microsub_me"><?php esc_html_e( 'Your web address', 'daymark' ); ?></label>
+					</th>
+					<td>
+						<input type="text" inputmode="url" autocapitalize="off" spellcheck="false" class="regular-text code" name="daymark_microsub_me" id="daymark_microsub_me" value="<?php echo esc_attr( home_url( '/' ) ); ?>" required="required" />
+						<p class="description"><?php esc_html_e( 'The address you sign in to your Microsub reader with. You approve this on your own sign-in page, then come back here to choose.', 'daymark' ); ?></p>
+					</td>
+				</tr>
+			</table>
+			<?php submit_button( __( 'Sign in and load my list', 'daymark' ), 'secondary', 'daymark-microsub-import-connect', true ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * Render the Microsub follows checklist, grouped by the server's
+	 * channels. Every site is checked by default, except ones this site
+	 * already follows, which are shown checked and disabled. After an
+	 * import that stopped at its time budget, only the sites still waiting
+	 * are checked.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @param array{entries: array<int, array<string, string>>, server?: string, total?: int, truncated?: bool, incomplete?: bool, pending?: int[]} $stashed The stashed follow list.
+	 * @return void
+	 */
+	private function render_microsub_import_picker( array $stashed ): void {
+		$entries    = $stashed['entries'];
+		$server     = isset( $stashed['server'] ) && '' !== $stashed['server'] ? (string) $stashed['server'] : __( 'Your Microsub server', 'daymark' );
+		$pending    = isset( $stashed['pending'] ) && is_array( $stashed['pending'] ) ? array_flip( array_map( 'intval', $stashed['pending'] ) ) : null;
+		$subscribed = array();
+		$channels   = array();
+
+		foreach ( Daymark_Plugin::instance()->subscriptions->get_all() as $subscription ) {
+			foreach ( array( 'feed_url', 'site_url' ) as $field ) {
+				$subscribed[ strtolower( untrailingslashit( (string) ( $subscription[ $field ] ?? '' ) ) ) ] = true;
+			}
+		}
+
+		foreach ( $entries as $index => $entry ) {
+			$channels[ isset( $entry['channel'] ) ? (string) $entry['channel'] : '' ][ $index ] = $entry;
+		}
+		?>
+		<?php if ( null !== $pending && array() !== $pending ) : ?>
+			<div class="notice notice-info inline">
+				<p>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %d: number of sites not imported yet. */
+							_n( 'Looking up each site takes a moment, so Daymark stopped part way. %d site is still waiting, checked below. Press Import selected to carry on.', 'Looking up each site takes a moment, so Daymark stopped part way. %d sites are still waiting, checked below. Press Import selected to carry on.', count( $pending ), 'daymark' ),
+							count( $pending )
+						)
+					);
+					?>
+				</p>
+			</div>
+		<?php endif; ?>
+		<p>
+			<?php
+			echo esc_html(
+				sprintf(
+					/* translators: 1: the Microsub server's host name, such as aperture.p3k.io, 2: number of sites it follows. */
+					_n( '%1$s follows %2$d site for you. Uncheck it if you don\'t want it here, then import.', '%1$s follows %2$d sites for you. Uncheck any channels or sites you don\'t want here, then import the rest.', count( $entries ), 'daymark' ),
+					$server,
+					count( $entries )
+				)
+			);
+			?>
+		</p>
+		<?php if ( ! empty( $stashed['truncated'] ) ) : ?>
+			<p class="description">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: 1: number of follows listed, 2: total number of follows. */
+						__( 'Only the first %1$d of your %2$d follows are listed. Import these, then add any others by URL.', 'daymark' ),
+						count( $entries ),
+						max( count( $entries ), (int) ( $stashed['total'] ?? 0 ) )
+					)
+				);
+				?>
+			</p>
+		<?php endif; ?>
+		<?php if ( ! empty( $stashed['incomplete'] ) ) : ?>
+			<p class="description"><?php esc_html_e( 'Some channels could not be loaded, so sites may be missing from this list. Import these, then load the list again to check for the rest.', 'daymark' ); ?></p>
+		<?php endif; ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-daymark-microsub-import-form>
+			<input type="hidden" name="action" value="daymark_microsub_import_confirm" />
+			<?php wp_nonce_field( 'daymark_microsub_import_confirm', 'daymark_microsub_import_confirm_nonce' ); ?>
+			<p>
+				<label>
+					<input type="checkbox" data-daymark-microsub-import-toggle-all checked="checked" hidden="hidden" />
+					<span data-daymark-microsub-import-toggle-all-label hidden="hidden"><?php esc_html_e( 'Select all', 'daymark' ); ?></span>
+				</label>
+			</p>
+			<div style="max-height:400px;overflow:auto;border:1px solid #dcdcde;background:#fff;padding:4px 12px;max-width:600px;">
+				<?php foreach ( $channels as $channel => $channel_entries ) : ?>
+					<fieldset data-daymark-microsub-import-channel style="margin:10px 0 14px;">
+						<legend style="padding:0;">
+							<label>
+								<input type="checkbox" data-daymark-microsub-import-channel-toggle checked="checked" hidden="hidden" />
+								<strong><?php echo esc_html( '' !== $channel ? $channel : __( 'No channel', 'daymark' ) ); ?></strong>
+								<span class="description">
+									<?php
+									echo esc_html(
+										sprintf(
+											/* translators: %d: number of subscriptions */
+											_n( '%d site', '%d sites', count( $channel_entries ), 'daymark' ),
+											count( $channel_entries )
+										)
+									);
+									?>
+								</span>
+							</label>
+						</legend>
+						<?php foreach ( $channel_entries as $index => $entry ) : ?>
+							<?php
+							$url     = isset( $entry['html_url'] ) ? (string) $entry['html_url'] : '';
+							$label   = isset( $entry['label'] ) && '' !== $entry['label'] ? (string) $entry['label'] : $url;
+							$already = '' !== $url && isset( $subscribed[ strtolower( untrailingslashit( $url ) ) ] );
+							$checked = $already || null === $pending || isset( $pending[ (int) $index ] );
+							?>
+							<label style="display:block;margin:6px 0;margin-inline-start:24px;">
+								<input
+									type="checkbox"
+									name="daymark_microsub_entry[]"
+									value="<?php echo esc_attr( (string) $index ); ?>"
+									<?php checked( $checked ); ?>
+									<?php disabled( $already ); ?>
+									<?php echo $already ? '' : 'data-daymark-microsub-import-entry'; ?>
+								/>
+								<strong><?php echo esc_html( $label ); ?></strong>
+								<?php if ( $already ) : ?>
+									<em>(<?php esc_html_e( 'already subscribed', 'daymark' ); ?>)</em>
+								<?php endif; ?>
+								<br />
+								<code class="daymark-candidate-url" style="margin-inline-start:24px;"><?php echo esc_html( $url ); ?></code>
+							</label>
+						<?php endforeach; ?>
+					</fieldset>
+				<?php endforeach; ?>
+			</div>
+			<?php submit_button( __( 'Import selected', 'daymark' ), 'primary', 'daymark-microsub-import-submit', false ); ?>
+		</form>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:8px;">
+			<input type="hidden" name="action" value="daymark_microsub_import_cancel" />
+			<?php wp_nonce_field( 'daymark_microsub_import_cancel', 'daymark_microsub_import_cancel_nonce' ); ?>
+			<?php submit_button( __( 'Cancel', 'daymark' ), 'link', 'daymark-microsub-import-cancel', false ); ?>
+		</form>
+		<?php
+	}
+
+	/**
+	 * The stashed Microsub follows a submitted checklist selected, in list
+	 * order and still keyed by their place in the stash, so the caller can
+	 * tell which ones an import that ran out of time did not reach.
+	 * Anything that isn't a non-negative whole number, is out of range, or
+	 * repeats is ignored.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @param array<int, array<string, string>> $entries Stashed follow list.
+	 * @param array<int, mixed>                 $indices Submitted checkbox values.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function selected_microsub_entries( array $entries, array $indices ): array {
+		$wanted = array();
+
+		foreach ( $indices as $index ) {
+			if ( is_int( $index ) || ( is_string( $index ) && ctype_digit( $index ) ) ) {
+				$wanted[ (int) $index ] = true;
+			}
+		}
+
+		$selected = array();
+
+		foreach ( $entries as $index => $entry ) {
+			if ( isset( $wanted[ (int) $index ] ) && is_array( $entry ) ) {
+				$selected[ (int) $index ] = $entry;
 			}
 		}
 
@@ -5468,6 +5724,232 @@ class Daymark_Admin_Subscriptions {
 		delete_transient( self::reader_import_transient_key() );
 
 		$this->redirect( array(), 'import-export' );
+	}
+
+	/**
+	 * Handle "Sign in and load my list"
+	 * (admin_post_daymark_microsub_import_connect, issue #592): look the
+	 * web address up, remember the one-time sign-in details for ten
+	 * minutes, and send the browser to the person's own sign-in page.
+	 * Rate-limited on the same bucket subscribing and the other imports use.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return void
+	 */
+	public function handle_microsub_import_connect(): void {
+		if ( ! current_user_can( self::CAPABILITY ) || ! Daymark_Microsub_Import::is_enabled() ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_microsub_import_connect', 'daymark_microsub_import_connect_nonce' );
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		$me    = isset( $_POST['daymark_microsub_me'] ) ? sanitize_text_field( wp_unslash( $_POST['daymark_microsub_me'] ) ) : '';
+		$begun = Daymark_Microsub_Import::begin( $me );
+
+		if ( is_wp_error( $begun ) ) {
+			$this->redirect_with_error( $begun->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		set_transient( self::microsub_sign_in_transient_key(), $begun['pending'], 10 * MINUTE_IN_SECONDS );
+
+		// phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- The sign-in page is on the site the administrator just named (often another host), found by Daymark_Microsub_Import::discover() and limited there to an http(s) address; wp_safe_redirect() would refuse it.
+		wp_redirect( $begun['redirect'] );
+		exit;
+	}
+
+	/**
+	 * Handle the browser coming back from the sign-in page
+	 * (admin_post_daymark_microsub_callback): finish the sign-in, read the
+	 * follow list, stash it, and show the checklist.
+	 *
+	 * This request can't carry a WordPress nonce, because another site's
+	 * sign-in page builds it. The one-time `state` value, kept for this
+	 * user, is what ties it to the form they submitted. A request whose
+	 * `state` doesn't match is refused without touching the sign-in in
+	 * progress, so a forged link can't cancel a real one; a request whose
+	 * `state` does match uses the sign-in details once and deletes them.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return void
+	 */
+	public function handle_microsub_import_callback(): void {
+		if ( ! current_user_can( self::CAPABILITY ) || ! Daymark_Microsub_Import::is_enabled() ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		$key     = self::microsub_sign_in_transient_key();
+		$pending = get_transient( $key );
+		$state   = self::microsub_callback_param( 'state' );
+
+		if ( ! is_array( $pending ) || ! isset( $pending['state'] ) || ! is_string( $pending['state'] ) || ! hash_equals( $pending['state'], $state ) ) {
+			$this->redirect_with_error( __( 'That sign-in has expired. Please start again.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		delete_transient( $key );
+
+		$follows = Daymark_Microsub_Import::complete(
+			$pending,
+			array(
+				'code'  => self::microsub_callback_param( 'code' ),
+				'state' => $state,
+				'iss'   => self::microsub_callback_param( 'iss' ),
+				'error' => self::microsub_callback_param( 'error' ),
+			)
+		);
+
+		if ( is_wp_error( $follows ) ) {
+			$this->redirect_with_error( $follows->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		if ( empty( $follows['entries'] ) ) {
+			$this->redirect_with_error( __( 'Your Microsub server isn\'t following any sites yet.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		set_transient( self::microsub_import_transient_key(), $follows, HOUR_IN_SECONDS );
+
+		$this->redirect_to_microsub_import();
+	}
+
+	/**
+	 * One value the sign-in page sent back in the query string, limited to
+	 * printable ASCII and a sane length. The code and state are opaque
+	 * strings another server wrote, so they are filtered, not reshaped the
+	 * way sanitize_text_field() would (it drops anything that looks like a
+	 * percent-encoded byte).
+	 *
+	 * @param string $name Query argument name.
+	 * @return string
+	 */
+	private static function microsub_callback_param( string $name ): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- No nonce is possible on a redirect from another site's sign-in page (see handle_microsub_import_callback()); the value is filtered to printable ASCII on the next line.
+		$value = isset( $_GET[ $name ] ) && is_string( $_GET[ $name ] ) ? wp_unslash( $_GET[ $name ] ) : '';
+
+		return substr( (string) preg_replace( '/[^\x21-\x7E]/', '', $value ), 0, 2048 );
+	}
+
+	/**
+	 * Handle the Microsub checklist's "Import selected"
+	 * (admin_post_daymark_microsub_import_confirm): import the checked
+	 * sites through the same per-entry import the OPML import uses, then
+	 * show the same per-entry results. Reads the follow list from the
+	 * stash, never from the request, so a submitted form can only choose
+	 * among what the Microsub server returned.
+	 *
+	 * Every one of these sites is looked up live, so the import stops at
+	 * Daymark_Microsub_Import::time_budget() and keeps what it didn't reach
+	 * checked in the list for another press, instead of running until the
+	 * server cuts the request off.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return void
+	 */
+	public function handle_microsub_import_confirm(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_microsub_import_confirm', 'daymark_microsub_import_confirm_nonce' );
+
+		$stashed = get_transient( self::microsub_import_transient_key() );
+
+		if ( ! is_array( $stashed ) || empty( $stashed['entries'] ) || ! is_array( $stashed['entries'] ) ) {
+			$this->redirect_with_error( __( 'Your Microsub list has expired. Please load it again.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Nonce already verified above via check_admin_referer().
+		$indices  = isset( $_POST['daymark_microsub_entry'] ) && is_array( $_POST['daymark_microsub_entry'] ) ? array_map( 'sanitize_text_field', wp_unslash( $_POST['daymark_microsub_entry'] ) ) : array();
+		$selected = array_slice( self::selected_microsub_entries( $stashed['entries'], $indices ), 0, Daymark_Microsub_Import::max_entries(), true );
+
+		if ( empty( $selected ) ) {
+			$this->redirect_with_error( __( 'Select at least one site to import.', 'daymark' ), 'import-export' );
+
+			return;
+		}
+
+		$rate = Daymark_Plugin::instance()->rate_limiter->attempt( Daymark_Rate_Limiter::ACTION_SUBSCRIBE );
+
+		if ( is_wp_error( $rate ) ) {
+			$this->redirect_with_error( $rate->get_error_message(), 'import-export' );
+
+			return;
+		}
+
+		$results = ( new Daymark_Subscription_OPML() )->import_entries(
+			array_values( $selected ),
+			microtime( true ) + Daymark_Microsub_Import::time_budget()
+		);
+		$waiting = array_slice( array_keys( $selected ), count( $results ) );
+
+		set_transient( 'daymark_opml_import_result_' . get_current_user_id(), $results, MINUTE_IN_SECONDS );
+
+		if ( array() === $waiting ) {
+			delete_transient( self::microsub_import_transient_key() );
+
+			$this->redirect( array( self::NOTICE_QUERY_VAR => 'microsub_imported' ), 'import-export' );
+
+			return;
+		}
+
+		$stashed['pending'] = $waiting;
+
+		set_transient( self::microsub_import_transient_key(), $stashed, HOUR_IN_SECONDS );
+
+		$this->redirect_to_microsub_import( array( self::NOTICE_QUERY_VAR => 'microsub_imported_partial' ) );
+	}
+
+	/**
+	 * Handle the Microsub checklist's Cancel
+	 * (admin_post_daymark_microsub_import_cancel): discard the stashed
+	 * follow list without importing anything.
+	 *
+	 * @since 0.23.0
+	 *
+	 * @return void
+	 */
+	public function handle_microsub_import_cancel(): void {
+		if ( ! current_user_can( self::CAPABILITY ) ) {
+			wp_die( esc_html__( 'You are not allowed to do that.', 'daymark' ), 403 );
+		}
+
+		check_admin_referer( 'daymark_microsub_import_cancel', 'daymark_microsub_import_cancel_nonce' );
+
+		delete_transient( self::microsub_import_transient_key() );
+		delete_transient( self::microsub_sign_in_transient_key() );
+
+		$this->redirect( array(), 'import-export' );
+	}
+
+	/**
+	 * Redirect to the Import/Export tab, scrolled to the Microsub
+	 * checklist, which sits below the other imports.
+	 *
+	 * @param array<string, string> $args Extra query args (e.g. the notice).
+	 * @return void
+	 */
+	private function redirect_to_microsub_import( array $args = array() ): void {
+		wp_safe_redirect( add_query_arg( $args, self::tab_url( 'import-export' ) ) . '#daymark-microsub-import' );
+		exit;
 	}
 
 	/**

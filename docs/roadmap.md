@@ -144,16 +144,17 @@ h-card) subscription parsing" below.)
   WordPress REST API's real `format` field for WP-to-WP subscriptions
   ([#137](https://github.com/jeffpaul/daymark/issues/137)), and a Friends
   plugin subscription source ([#88](https://github.com/jeffpaul/daymark/issues/88))
-  — see below. Native ActivityPub-following ingestion and a Microsub client
-  remain deferred. #88 closed once its Friends half shipped, so each now has
-  its own issue: following a Mastodon or Bluesky account by its handle
+  — see below. Native ActivityPub-following ingestion remains deferred. #88
+  closed once its Friends half shipped, so each remaining half got its own
+  issue: following a Mastodon or Bluesky account by its handle
   ([#557](https://github.com/jeffpaul/daymark/issues/557)) is the planned route for the ActivityPub half,
-  and the Microsub half is parked as
-  [#592](https://github.com/jeffpaul/daymark/issues/592). The deferral's reasoning: the ActivityPub plugin's own
+  and the Microsub half shipped as a one-time import of a Microsub server's
+  follow list ([#592](https://github.com/jeffpaul/daymark/issues/592)), not as a live Microsub client: see
+  the "Microsub import" row in docs/architecture-decisions.md for why. The
+  ActivityPub deferral's reasoning: the ActivityPub plugin's own
   Reader UI for followed accounts is still experimental/feature-flagged,
   with an open, unresolved upstream discussion about how incoming posts
-  should even be stored, and Microsub requires an external, non-WordPress
-  server (e.g. Aperture) most Daymark users won't already have. Revisit
+  should even be stored. Revisit
   once the ActivityPub plugin's own schema stabilizes, or Bridgy Fed
   ([#91](https://github.com/jeffpaul/daymark/issues/91)) offers a
   lower-effort path to the same Mastodon/Fediverse interoperability.
@@ -293,9 +294,9 @@ Inbound microformats2 parsing (#84), Webmention support (#83), WebSub/PuSH
 (#82), WordPress REST API preference for WP-to-WP subscriptions (#137), the
 Friends-plugin half of additional source connectors (#88), and the admin
 page recommending complementary IndieWeb plugins (#86) have since shipped —
-see the entries above. #88's own ActivityPub/Microsub half remains
-deferred, now tracked as [#557](https://github.com/jeffpaul/daymark/issues/557) and
-[#592](https://github.com/jeffpaul/daymark/issues/592) — see that entry's own reasoning above. What else
+see the entries above. #88's own ActivityPub half remains deferred, now
+tracked as [#557](https://github.com/jeffpaul/daymark/issues/557); its Microsub half shipped as a
+one-time import ([#592](https://github.com/jeffpaul/daymark/issues/592)) — see that entry's own reasoning above. What else
 remains is still open and unscheduled:
 [#79](https://github.com/jeffpaul/daymark/issues/79), [#85](https://github.com/jeffpaul/daymark/issues/85), [#87](https://github.com/jeffpaul/daymark/issues/87),
 [#89](https://github.com/jeffpaul/daymark/issues/89), [#90](https://github.com/jeffpaul/daymark/issues/90), and [#92](https://github.com/jeffpaul/daymark/issues/92).
@@ -797,7 +798,8 @@ Each item's issue or PR, and its decision row in
   conversation on a friend's post ([#559](https://github.com/jeffpaul/daymark/issues/559)); and an explanation when Like
   or Comment can't reach a site ([#561](https://github.com/jeffpaul/daymark/issues/561)).
 - [x] **Following.** Import your WordPress.com Reader follows
-  ([#435](https://github.com/jeffpaul/daymark/issues/435)); follow from anywhere with a bookmarklet, a Follow-me block,
+  ([#435](https://github.com/jeffpaul/daymark/issues/435)) or a Microsub server's follow list
+  ([#592](https://github.com/jeffpaul/daymark/issues/592)); follow from anywhere with a bookmarklet, a Follow-me block,
   or the share menu ([#560](https://github.com/jeffpaul/daymark/issues/560)); favorite sites ([#531](https://github.com/jeffpaul/daymark/issues/531)); and follow
   announcements other sites can hear ([#528](https://github.com/jeffpaul/daymark/issues/528)).
 - [x] **Web push notifications** for comments, new followers, and new posts
