@@ -2600,6 +2600,36 @@ test('camera-first: the Image picker offers capture first, with a library fallba
 	await expect(input).not.toHaveAttribute('capture');
 });
 
+// Publish is the one big button on the composer: Save as draft sits beside
+// it as a quiet text button (no fill, no border), still a full-height tap
+// target, and still saves a draft.
+test('composer: Publish takes most of the row beside a quiet Save as draft', async ({ page }) => {
+	const caption = `E2E quiet draft ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+	await page.fill('#daymark-caption', caption);
+
+	const draft = page.locator('[data-action="save-draft"]');
+	const publish = page.locator('[data-action="publish"]');
+	const draftBox = await draft.boundingBox();
+	const publishBox = await publish.boundingBox();
+	// Same row, Publish clearly the wider of the two.
+	expect(Math.abs(draftBox.y - publishBox.y)).toBeLessThan(2);
+	expect(publishBox.width).toBeGreaterThan(draftBox.width * 1.5);
+	expect(draftBox.height).toBeGreaterThanOrEqual(44);
+	const look = await draft.evaluate((el) => {
+		const style = getComputedStyle(el);
+		return { background: style.backgroundColor, border: style.borderTopColor };
+	});
+	expect(look.background).toBe('rgba(0, 0, 0, 0)');
+	expect(look.border).toBe('rgba(0, 0, 0, 0)');
+
+	await draft.click();
+	await expect.poll(() => draftTitles(page), { timeout: 15000 }).toContain(caption);
+});
+
 // Drag-and-drop (issue #260): dropping a file onto the picker zone attaches
 // it the same way picking it via the file input would — same alt text
 // sheet, same type badge, same publish flow.
@@ -2618,6 +2648,105 @@ test('drag-and-drop: dropping an image onto the picker attaches it', async ({ pa
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="publish"]').click();
 	await expectPublished(page);
+});
+
+// Crop and rotate in the photo sheet: a shape (cut from the middle) and
+// Rotate are previewed in the app and made on the site by the next save.
+// Original with no turn puts the photo back as it was.
+test('photo sheet: a shape and Rotate change the saved photo, and Original puts it back', async ({ page }) => {
+	const caption = `E2E crop rotate ${RUN_ID}`;
+
+	// The saved photo's size, read from the file the site now serves.
+	const savedPhotoSize = async () => {
+		const mark = await findMarkByCaption(page, caption);
+		const media = mark && Array.isArray(mark.media) ? mark.media[0] : null;
+		if (!media || !media.thumbnail) {
+			return null;
+		}
+		return page.evaluate(
+			(src) =>
+				new Promise((resolve) => {
+					const img = new Image();
+					img.onload = () => resolve([img.naturalWidth, img.naturalHeight]);
+					img.onerror = () => resolve(null);
+					img.src = src;
+				}),
+			media.thumbnail
+		);
+	};
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await expect.poll(async () => (await savedMediaIds(page, caption)).length, { timeout: 20000 }).toBe(1);
+	// The fixture is a 64 x 64 square.
+	expect(await savedPhotoSize()).toEqual([64, 64]);
+
+	await openMediaSheet(page);
+	await expect(page.getByRole('group', { name: 'Shape' })).toBeVisible();
+	const original = page.locator('[data-edit-shape="original"]');
+	const wide = page.locator('[data-edit-shape="wide"]');
+	await expect(original).toHaveAttribute('aria-pressed', 'true');
+
+	// Wide: the preview's frame becomes 16:9.
+	await wide.click();
+	await expect(wide).toHaveAttribute('aria-pressed', 'true');
+	await expect(original).toHaveAttribute('aria-pressed', 'false');
+	await expect
+		.poll(async () => {
+			const box = await page.locator('[data-sheet-frame]').boundingBox();
+			return box.width / box.height;
+		})
+		.toBeCloseTo(16 / 9, 1);
+
+	// Rotate turns the preview and the thumbnail, and says so.
+	const rotate = page.getByRole('button', { name: 'Rotate' });
+	await rotate.click();
+	await expect(rotate).toBeFocused();
+	await expect(page.locator('[data-sheet-live]')).toHaveText('Rotated.');
+	await expect(page.locator('[data-sheet-preview]')).toHaveClass(/daymark-turned--90/);
+	await expect(page.locator('.daymark-strip__thumb').first()).toHaveClass(/daymark-turned--90/);
+	await page.locator('[data-sheet-done]').click();
+
+	// The site made the edit: 16:9 from the middle of the 64 x 64 photo.
+	await expect.poll(savedPhotoSize, { timeout: 20000 }).toEqual([64, 36]);
+	const edited = await findMarkByCaption(page, caption);
+	expect(edited.media[0].edit).toEqual({ shape: 'wide', rotate: 90 });
+	expect(edited.media[0].editable).toBe(true);
+
+	// Reopened, the draft shows its edit, previewed from the picture
+	// before it.
+	await page.goto(`/daymark?daymark_draft=${edited.id}#create`);
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('.daymark-strip__thumb').first()).toHaveClass(/daymark-turned--90/);
+	await openMediaSheet(page);
+	await expect(page.locator('[data-edit-shape="wide"]')).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.locator('[data-sheet-preview]')).toHaveAttribute('src', edited.media[0].original);
+
+	// Original, and three more turns to come back around.
+	await page.locator('[data-edit-shape="original"]').click();
+	for (let i = 0; i < 3; i++) {
+		await page.getByRole('button', { name: 'Rotate' }).click();
+	}
+	await expect(page.locator('.daymark-strip__thumb').first()).not.toHaveClass(/daymark-turned/);
+	await page.locator('[data-sheet-done]').click();
+
+	await expect.poll(savedPhotoSize, { timeout: 20000 }).toEqual([64, 64]);
+	const restored = await findMarkByCaption(page, caption);
+	expect(restored.media[0].edit).toBeUndefined();
+});
+
+// A video has no shape or Rotate.
+test('photo sheet: a video has no shape or Rotate', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'video');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-video.mp4');
+	await openMediaSheet(page);
+	await expect(page.locator('#daymark-media-title')).toHaveText('Video 1 of 1');
+	await expect(page.locator('[data-sheet-edit]')).toHaveCount(0);
 });
 
 // The photo strip: picked photos show as thumbnails under the caption, each
@@ -2711,6 +2840,111 @@ test('photo strip on a reopened draft: move, remove, and add a photo', async ({ 
 	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
 	await expect.poll(async () => (await savedMediaIds(page, caption)).length, { timeout: 20000 }).toBe(2);
 	expect((await savedMediaIds(page, caption))[0]).toBe(before[1]);
+});
+
+// Once a Mark has a photo, the row ends in an "Add" tile that opens the
+// same picker as the Add bar's "Photo or video". A Mark with one photo has
+// nothing to step to, so its sheet shows no arrows and no "Next photo".
+test('photo strip: the Add tile at the end of the row adds another photo', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+
+	// Nothing picked yet: no row, so no tile.
+	await expect(page.locator('[data-media-add]')).toHaveCount(0);
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-image.png');
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	const add = page.locator('[data-media-add]');
+	await expect(add).toHaveCount(1);
+	await expect(add).toHaveAccessibleName('Add another photo or video');
+
+	await openMediaSheet(page, 0);
+	await expect(page.locator('[data-media-step]')).toHaveCount(0);
+	await expect(page.locator('[data-sheet-next]')).toHaveCount(0);
+	await page.locator('[data-sheet-done]').click();
+
+	const chooser = page.waitForEvent('filechooser');
+	await add.click();
+	await (await chooser).setFiles('tests/e2e/fixtures/test-image-2.png');
+	// The library picker, not the camera.
+	await expect(page.locator('#daymark-file-input')).not.toHaveAttribute('capture');
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+	await expect(page.locator('[data-type-badge]')).toHaveText('Gallery');
+	// The tile stays at the end of the row.
+	await expect(page.locator('.daymark-strip > li').last().locator('[data-media-add]')).toHaveCount(1);
+});
+
+// A sound file on its own gets no "Add" tile: the tile adds photos and
+// videos, and the Add bar is still there for those.
+test('photo strip: an audio-only Mark has no Add tile', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'note');
+	await page.setInputFiles('#daymark-file-input', 'tests/e2e/fixtures/test-audio.wav');
+	await expect(page.locator('[data-media-open]')).toHaveCount(1);
+	await expect(page.locator('[data-media-add]')).toHaveCount(0);
+});
+
+// Describing every photo in one pass: the sheet's arrows and "Next photo"
+// go from photo to photo without closing it, what was typed is kept, and
+// closing puts focus on the photo shown last.
+test('photo sheet: Next photo steps through the row and keeps each alt text', async ({ page }) => {
+	const caption = `E2E next photo ${RUN_ID}`;
+	const first = `E2E first alt ${RUN_ID}`;
+	const second = `E2E second alt ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page, 'image');
+	await page.fill('#daymark-caption', caption);
+	await page.setInputFiles('#daymark-file-input', [
+		'tests/e2e/fixtures/test-image.png',
+		'tests/e2e/fixtures/test-image-2.png',
+	]);
+	await expect(page.locator('[data-media-open]')).toHaveCount(2);
+
+	await openMediaSheet(page, 0);
+	const title = page.locator('#daymark-media-title');
+	const alt = page.locator('#daymark-media-alt');
+	const previous = page.locator('[data-media-step="-1"]');
+	const next = page.locator('[data-sheet-next]');
+	await expect(title).toHaveText('Photo 1 of 2');
+	await expect(previous).toBeDisabled();
+	await alt.fill(first);
+	await expect(next).toHaveText('Next photo');
+	await next.click();
+
+	// The second photo, in the same sheet. It's the last, so Done is the
+	// only button left at the bottom.
+	await expect(title).toHaveText('Photo 2 of 2');
+	await expect(title).toBeFocused();
+	await expect(alt).toHaveValue('');
+	await expect(next).toHaveCount(0);
+	await expect(page.locator('[data-media-step="1"]')).toBeDisabled();
+	await alt.fill(second);
+
+	// Back to the first: what was typed there is still there.
+	await previous.click();
+	await expect(title).toHaveText('Photo 1 of 2');
+	await expect(alt).toHaveValue(first);
+
+	// Moving this photo later makes it the last one, so "Next photo" goes
+	// and the previous arrow comes alive.
+	await page.locator('[data-media-move="1"]').click();
+	await expect(title).toHaveText('Photo 2 of 2');
+	await expect(next).toHaveCount(0);
+	await expect(previous).toBeEnabled();
+
+	await page.locator('[data-sheet-done]').click();
+	await expect(title).toHaveCount(0);
+	await expect(page.locator('[data-media-open]').nth(1)).toBeFocused();
+	await expect(page.locator('[data-alt-badge].daymark-strip__alt--set')).toHaveCount(2);
+
+	await expect
+		.poll(async () => ((await findMarkByCaption(page, caption)) || { media: [] }).media.map((m) => m.alt), {
+			timeout: 20000,
+		})
+		.toEqual([second, first]);
 });
 
 // Web Share Target: "Share -> Daymark" from the OS share sheet (Photos,
@@ -3881,6 +4115,128 @@ test('draft lifecycle: save, resume from Drafts row, publish', async ({ page }) 
 	await expect(page.locator('[data-edit-draft]').filter({ hasText: caption })).toHaveCount(0);
 	await page.goto('/daymark/search');
 	await expect(page.locator('[data-search-results]').getByText(finished)).toBeVisible();
+});
+
+// Publish later: the composer's When fold sets a time, Publish becomes
+// Schedule, and the site holds the Mark until then.
+
+// The signed-in user's scheduled Marks on the site, soonest first.
+function scheduledMarks(page) {
+	return page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}marks?status=future&per_page=50`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		const marks = await res.json();
+		return Array.isArray(marks) ? marks : [];
+	});
+}
+
+// Sets the composer's When fold to Later at 8:00 tomorrow morning, this
+// browser's time. Returns that time as an ISO string.
+async function pickTomorrowMorning(page) {
+	await page.locator('[data-fold="when"] summary').click();
+	await page.getByRole('radio', { name: 'Later' }).check();
+	const when = await page.evaluate(() => {
+		const date = new Date();
+		date.setDate(date.getDate() + 1);
+		date.setHours(8, 0, 0, 0);
+		const pad = (n) => String(n).padStart(2, '0');
+		return {
+			field: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T08:00`,
+			iso: date.toISOString(),
+		};
+	});
+	await page.locator('[data-publish-at]').fill(when.field);
+	return when.iso;
+}
+
+test('publish later: Schedule holds a Mark until its time, and Me lists it until it is cancelled', async ({
+	page,
+}) => {
+	const caption = `E2E scheduled ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+
+	// Now by default: nothing changes for a Mark that goes out at once.
+	const publish = page.locator('[data-action="publish"]');
+	await expect(page.locator('[data-fold-value="when"]')).toHaveText('Now');
+	await expect(publish).toHaveText('Publish');
+
+	const iso = await pickTomorrowMorning(page);
+	await expect(page.locator('[data-fold-value="when"]')).toContainText('Tomorrow');
+	await expect(publish).toHaveText('Schedule');
+	await publish.click();
+	await expect(messageBar(page)).toContainText('Scheduled for tomorrow at');
+
+	// The site holds it for that time: not published, not a draft.
+	await expect.poll(async () => (await scheduledMarks(page)).map((mark) => mark.title)).toContain(caption);
+	const saved = (await scheduledMarks(page)).find((mark) => mark.title === caption);
+	expect(saved.status).toBe('future');
+	expect(new Date(saved.date_gmt).getTime()).toBe(new Date(iso).getTime());
+	expect(await draftTitles(page)).not.toContain(caption);
+
+	// Me lists it under Scheduled, with its time, apart from Drafts.
+	await page.goto('/daymark/me');
+	await expect(page.getByRole('heading', { name: 'Scheduled' })).toBeVisible();
+	const card = page.locator('[data-me-scheduled] .daymark-recent__item-wrap').filter({ hasText: caption });
+	await expect(card).toContainText('Tomorrow');
+	await expect(page.locator('[data-me-drafts]').getByText(caption)).toHaveCount(0);
+
+	// Cancel schedule: a draft again, with its words untouched.
+	await card.locator('[data-menu-toggle]').click();
+	await card.getByRole('menuitem', { name: 'Cancel schedule' }).click();
+	await expect(messageBar(page)).toContainText('Moved to Drafts.');
+	await expect(page.locator('[data-me-drafts] [data-edit-draft]').filter({ hasText: caption })).toBeVisible();
+	await expect(page.locator('[data-me-scheduled]').getByText(caption)).toHaveCount(0);
+	expect((await scheduledMarks(page)).map((mark) => mark.title)).not.toContain(caption);
+});
+
+test('publish later: Change reopens a scheduled Mark, and Now publishes it at once', async ({ page }) => {
+	const caption = `E2E reschedule ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await openComposer(page);
+	await page.fill('#daymark-caption', caption);
+	await pickTomorrowMorning(page);
+	await page.locator('[data-action="publish"]').click();
+
+	const bar = messageBar(page);
+	await expect(bar).toContainText('Scheduled for tomorrow at');
+	await bar.getByRole('button', { name: 'Change' }).click();
+
+	// The composer, with the time ready to move.
+	await expect(page.locator('h1.daymark-topbar__title')).toHaveText('Scheduled Mark');
+	await expect(page.locator('#daymark-caption')).toHaveValue(caption);
+	await expect(page.locator('[data-fold="when"]')).toHaveAttribute('open', '');
+	await expect(page.getByRole('radio', { name: 'Later' })).toBeChecked();
+	await expect(page.locator('[data-action="publish"]')).toHaveText('Schedule');
+
+	// Leaving without a tap keeps it scheduled.
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(bar).toContainText("Saved. It's still scheduled.");
+	await expect.poll(async () => (await scheduledMarks(page)).map((mark) => mark.title)).toContain(caption);
+
+	// Publish now, from its menu on Me: set to Now, one tap from going out.
+	await page.goto('/daymark/me');
+	const card = page.locator('[data-me-scheduled] .daymark-recent__item-wrap').filter({ hasText: caption });
+	await card.locator('[data-menu-toggle]').click();
+	await card.getByRole('menuitem', { name: 'Publish now' }).click();
+	await expect(page.locator('[data-fold-value="when"]')).toHaveText('Now');
+	const publish = page.locator('[data-action="publish"]');
+	await expect(publish).toHaveText('Publish');
+	await expect(publish).toBeFocused();
+	await publish.click();
+	await expectPublished(page);
+
+	expect((await scheduledMarks(page)).map((mark) => mark.title)).not.toContain(caption);
+	await page.goto('/daymark/search');
+	await expect(page.locator('[data-search-results]').getByText(caption)).toBeVisible();
 });
 
 // One-tap "Publish" from the Drafts list (issue #265): a draft that already

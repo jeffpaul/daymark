@@ -120,6 +120,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'description'       => __( 'ISO 8601 capture timestamp from the client, used as the Mark\'s post_date when valid and not materially in the future.', 'daymark' ),
 							'sanitize_callback' => 'sanitize_text_field',
 						),
+						'publish_at'           => array(
+							'type'              => 'string',
+							'description'       => __( 'ISO 8601 time to publish the Mark at. With a time in the future, a published Mark is scheduled for then.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
 						'location_lat'         => array(
 							'type'              => 'number',
 							'description'       => __( 'Captured latitude, if available and permitted.', 'daymark' ),
@@ -160,7 +165,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 						'status'   => array(
 							'type'              => 'string',
 							'default'           => 'any',
-							'enum'              => array( 'any', 'publish', 'draft' ),
+							'enum'              => array( 'any', 'publish', 'draft', 'future' ),
 							'sanitize_callback' => 'sanitize_key',
 						),
 						'type'     => array(
@@ -476,6 +481,11 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 							'description'       => __( 'ISO 8601 capture timestamp from the client, used as the Mark\'s post_date when valid and not materially in the future.', 'daymark' ),
 							'sanitize_callback' => 'sanitize_text_field',
 						),
+						'publish_at'        => array(
+							'type'              => 'string',
+							'description'       => __( 'ISO 8601 time to publish the Mark at. With a time in the future, a published Mark is scheduled for then.', 'daymark' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
 						'location_lat'      => array(
 							'type'              => 'number',
 							'description'       => __( 'Captured latitude, if available and permitted.', 'daymark' ),
@@ -587,6 +597,24 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// Same visibility rule as GET /marks/{id}/content: the card
 				// this fills in is already on the caller's Timeline.
 				'permission_callback' => array( $this, 'permissions_check' ),
+				'args'                => array(
+					'id' => array(
+						'type'              => 'integer',
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
+		// Publish later: take a scheduled Mark off the schedule.
+		register_rest_route(
+			$this->namespace,
+			'/marks/(?P<id>\d+)/unschedule',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'unschedule_mark' ),
+				'permission_callback' => array( $this, 'permissions_check_post' ),
 				'args'                => array(
 					'id' => array(
 						'type'              => 'integer',
@@ -1725,6 +1753,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// Files already uploaded through Daymark_Uploads (issue #483),
 			// checked by Daymark_Uploads::resolve_media_ids().
 			'media_ids'            => $media_ids,
+			// Crop and rotate for those files, keyed by attachment ID; see
+			// Daymark_Image_Edit::apply_map().
+			'media_edits'          => $request->get_param( 'media_edits' ),
 			'tags'                 => array_filter( array_map( 'sanitize_text_field', (array) ( $request->get_param( 'tags' ) ?? array() ) ) ),
 			'transcript'           => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture: date/time + optional location, both
@@ -1732,6 +1763,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// for how these resolve (client value vs. EXIF vs. no signal) and
 			// range-validate. Never required, never blocks publishing.
 			'captured_at'          => sanitize_text_field( (string) $request->get_param( 'captured_at' ) ),
+			// Publish later: see Daymark_Publisher::resolve_publish_at().
+			'publish_at'           => sanitize_text_field( (string) $request->get_param( 'publish_at' ) ),
 			'location_lat'         => $request->get_param( 'location_lat' ),
 			'location_lng'         => $request->get_param( 'location_lng' ),
 			'location_accuracy'    => $request->get_param( 'location_accuracy' ),
@@ -1796,8 +1829,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 		// Status filter, so drafts stay reachable in the app no matter how
 		// many Marks have published since (the Home Drafts row).
+		// Scheduled Marks ("publish later") are only listed when asked for,
+		// soonest first.
 		$status   = sanitize_key( (string) $request->get_param( 'status' ) );
-		$statuses = in_array( $status, array( 'publish', 'draft' ), true )
+		$statuses = in_array( $status, array( 'publish', 'draft', 'future' ), true )
 			? array( $status )
 			: array( 'publish', 'draft' );
 
@@ -1807,7 +1842,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'posts_per_page' => $per_page,
 			'paged'          => $page,
 			'orderby'        => 'date',
-			'order'          => 'DESC',
+			'order'          => 'future' === $status ? 'ASC' : 'DESC',
 			'no_found_rows'  => true,
 			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Personal-site-scale Mark lookup.
 			'meta_key'       => '_daymark_is_mark',
@@ -2907,6 +2942,25 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	}
 
 	/**
+	 * POST /daymark/v1/marks/{id}/unschedule — take a scheduled Mark off
+	 * the schedule, so it is a draft again. Nothing else about it changes,
+	 * and a Mark that isn't scheduled is left alone (409).
+	 *
+	 * @param WP_REST_Request $request The request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function unschedule_mark( WP_REST_Request $request ) {
+		$post_id = absint( $request->get_param( 'id' ) );
+		$result  = Daymark_Plugin::instance()->publisher->unschedule( $post_id );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		return rest_ensure_response( $this->prepare_mark_summary( $post_id ) );
+	}
+
+	/**
 	 * POST /daymark/v1/marks/{id}/sync-responses — import mocked social
 	 * responses for a Mark (conversation backflow).
 	 *
@@ -3076,7 +3130,7 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 
 			$thumbnail = wp_get_attachment_image_url( $attachment_id, 'medium' );
 
-			$media[] = array(
+			$item = array(
 				'id'        => $attachment_id,
 				'kind'      => $kind,
 				'thumbnail' => $thumbnail ? esc_url_raw( $thumbnail ) : '',
@@ -3085,6 +3139,14 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 				// (images only; other media carry an empty string).
 				'alt'       => 'image' === $kind ? (string) get_post_meta( $attachment_id, '_wp_attachment_image_alt', true ) : '',
 			);
+
+			// Crop and rotate: whether the photo sheet offers them, and the
+			// edit this photo already has (with the picture from before it).
+			if ( 'image' === $kind ) {
+				$item += Daymark_Image_Edit::describe( $attachment_id );
+			}
+
+			$media[] = $item;
 		}
 
 		$targets = json_decode( (string) get_post_meta( $post_id, '_daymark_syndication_targets', true ), true );
@@ -4047,6 +4109,9 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			// map keyed by attachment ID for media already on the Mark.
 			'alt'                 => $request->get_param( 'alt' ),
 			'existing_alt'        => $request->get_param( 'existing_alt' ),
+			// Crop and rotate for the Mark's own photos, keyed by attachment
+			// ID; tidied and scoped by Daymark_Image_Edit::apply_map().
+			'media_edits'         => $request->get_param( 'media_edits' ),
 			// Author-chosen reorder of the Mark's already-attached media
 			// (issue #250) — an ordered list of attachment IDs, honored only
 			// when it's an exact permutation of the stored media list. See
@@ -4064,6 +4129,10 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			'transcript'          => sanitize_textarea_field( (string) $request->get_param( 'transcript' ) ),
 			// Quiet metadata capture — see create_mark()'s matching comment.
 			'captured_at'         => sanitize_text_field( (string) $request->get_param( 'captured_at' ) ),
+			// Publish later: see Daymark_Publisher::resolve_publish_at(). A
+			// background save never takes a scheduled Mark off its schedule.
+			'publish_at'          => sanitize_text_field( (string) $request->get_param( 'publish_at' ) ),
+			'autosave'            => $is_autosave,
 			'location_lat'        => $request->get_param( 'location_lat' ),
 			'location_lng'        => $request->get_param( 'location_lng' ),
 			'location_accuracy'   => $request->get_param( 'location_accuracy' ),

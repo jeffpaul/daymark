@@ -909,6 +909,10 @@
 		// Quiet metadata capture (never user-visible, never blocks anything):
 		// set once per fresh composing session by maybeBeginQuietCapture().
 		capturedAt: null, // ISO 8601 string — "when this Mark was actually created"
+		// Publish later (the composer's When fold): whether Later is
+		// picked, and the time as an ISO 8601 string ('' until one is set).
+		publishLater: false,
+		publishAt: '',
 		location: null, // { lat, lng, accuracy } | null — best-effort, silent geolocation
 		locationRequested: false, // guards against asking more than once per session
 		// Checkin-only (issue #143): a resolved/edited place name, shown in
@@ -948,7 +952,9 @@
 		lastPublish: null, // { response, targets, type }
 		fileCounter: 0,
 		// While editing a draft: { id, type, media: [{id, kind, thumbnail,
-		// filename, alt}], mediaRemoved, partialMedia }. mediaRemoved is set
+		// filename, alt, editable, edit, original}], mediaRemoved,
+		// partialMedia }. editable, edit and original are a photo's crop and
+		// rotate (see mediaEditOf()). mediaRemoved is set
 		// once a file was taken off this Mark, so its type follows its media
 		// again; partialMedia marks a Mark reopened from the queue without its
 		// list of attached media. See effectiveType().
@@ -1246,6 +1252,120 @@
 			);
 		}
 		return formatAbsoluteDate(date);
+	}
+
+	// --- Publish later ---
+	//
+	// The composer's When fold (PublishControls.whenFoldMarkup()) sets a
+	// time for a Mark to go out at. Publish (then labelled Schedule) sends
+	// it as `publish_at`, and the site holds the Mark as a scheduled post
+	// that WordPress publishes then, with its destinations
+	// (Daymark_Publisher::resolve_publish_at()). Scheduled Marks are listed
+	// on Me, above Drafts.
+
+	// The time a Mark is set to go out at, as a Date; null when there is
+	// none, or it has already passed.
+	function scheduledDate(iso) {
+		const date = iso ? parseDate(iso) : null;
+		return date && date.getTime() > Date.now() ? date : null;
+	}
+
+	// Whether a queued save is a Mark being scheduled, not published now.
+	function isScheduledPayload(payload) {
+		return !!payload && 'publish' === payload.status && !!scheduledDate(payload.publishAt);
+	}
+
+	function clockTime(date) {
+		return date.toLocaleTimeString(SITE_LANG, { hour: 'numeric', minute: '2-digit' });
+	}
+
+	// 0 for today, 1 for tomorrow, and so on, by the calendar here.
+	function daysFromToday(date) {
+		const start = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+		return Math.round((start(date) - start(new Date())) / 86400000);
+	}
+
+	// "Tomorrow, 8:00 AM": a scheduled time, short, for the When fold and
+	// a scheduled Mark's card.
+	function scheduleSummary(date) {
+		const days = daysFromToday(date);
+		if (0 === days) {
+			return sprintf(
+				/* translators: %s: a time, e.g. 8:00 AM */
+				__('Today, %s', 'daymark'),
+				clockTime(date)
+			);
+		}
+		if (1 === days) {
+			return sprintf(
+				/* translators: %s: a time, e.g. 8:00 AM */
+				__('Tomorrow, %s', 'daymark'),
+				clockTime(date)
+			);
+		}
+		return sprintf(
+			/* translators: 1: date, 2: time */
+			_x('%1$s, %2$s', 'a date, then a time', 'daymark'),
+			formatAbsoluteDate(date),
+			clockTime(date)
+		);
+	}
+
+	// The message after a Mark is scheduled.
+	function scheduledMessage(date) {
+		const days = daysFromToday(date);
+		if (0 === days) {
+			return sprintf(
+				/* translators: %s: a time, e.g. 8:00 AM */
+				__('Scheduled for today at %s.', 'daymark'),
+				clockTime(date)
+			);
+		}
+		if (1 === days) {
+			return sprintf(
+				/* translators: %s: a time, e.g. 8:00 AM */
+				__('Scheduled for tomorrow at %s.', 'daymark'),
+				clockTime(date)
+			);
+		}
+		return sprintf(
+			/* translators: 1: date, 2: time */
+			__('Scheduled for %1$s at %2$s.', 'daymark'),
+			formatAbsoluteDate(date),
+			clockTime(date)
+		);
+	}
+
+	// A Date as a date-and-time field's value (this device's time), and back
+	// to an ISO string ('' when the field is empty or unreadable).
+	function dateToFieldValue(date) {
+		const pad = (n) => String(n).padStart(2, '0');
+		return (
+			date.getFullYear() +
+			'-' +
+			pad(date.getMonth() + 1) +
+			'-' +
+			pad(date.getDate()) +
+			'T' +
+			pad(date.getHours()) +
+			':' +
+			pad(date.getMinutes())
+		);
+	}
+
+	function fieldValueToIso(value) {
+		const date = value ? new Date(value) : null;
+		return date && !Number.isNaN(date.getTime()) ? date.toISOString() : '';
+	}
+
+	// Where Later starts: the next 8:00 in the morning.
+	function defaultPublishTime() {
+		const date = new Date();
+		if (date.getHours() >= 8) {
+			date.setDate(date.getDate() + 1);
+		}
+		date.setHours(8, 0, 0, 0);
+		return date;
 	}
 
 	/**
@@ -1940,6 +2060,30 @@
 	// automatically for any other format, such as AVIF.
 	const VISION_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
+	// Crop and rotate (the photo sheet, MediaSheet.editMarkup()). A photo's
+	// edit is { shape, rotate }: one of the shapes below or 'original', and a
+	// clockwise quarter turn (0, 90, 180, 270). The app only previews it, by
+	// turning and framing the picture it already has; the site makes the
+	// edit when a save names it in media_edits (Daymark_Image_Edit), always
+	// from the photo as it was first, so the original is never lost.
+	// Width divided by height for each shape.
+	const EDIT_SHAPE_RATIOS = { square: 1, tall: 4 / 5, wide: 16 / 9 };
+
+	// The edit on a picked file or a draft's photo; no edit when it has none.
+	function mediaEditOf(ref) {
+		const edit = (ref && ref.edit) || {};
+		return {
+			shape: Object.prototype.hasOwnProperty.call(EDIT_SHAPE_RATIOS, edit.shape) ? edit.shape : 'original',
+			rotate: [90, 180, 270].includes(edit.rotate) ? edit.rotate : 0,
+		};
+	}
+
+	// The class that shows a picture turned as its edit says.
+	function turnedClass(ref) {
+		const rotate = mediaEditOf(ref).rotate;
+		return rotate ? ' daymark-turned--' + rotate : '';
+	}
+
 	// A HEIC/HEIF photo, including an image sequence (#481). Some browsers
 	// report no type for one, so the extension counts too.
 	function isHeicFile(file) {
@@ -2438,6 +2582,8 @@
 		clearTimeout(quietTagsTimer);
 		quietTagsTimer = null;
 		state.capturedAt = null;
+		state.publishLater = false;
+		state.publishAt = '';
 		state.location = null;
 		state.locationRequested = false;
 		state.placeName = '';
@@ -2887,6 +3033,10 @@
 			return;
 		}
 		const fresh = !state.resumed;
+		// A Mark set to go out later stays scheduled (the site never takes
+		// one off its schedule for a background save), so say that instead
+		// of "Drafts". A new time only counts once Schedule is tapped.
+		const scheduled = !!(state.editing && state.editing.scheduled);
 		const uploading = state.files.some((entry) => !entry.uploadedId);
 		const wasOnline = navigator.onLine;
 		leaveCounter += 1;
@@ -2917,11 +3067,13 @@
 		let discarded = false;
 		const saving = abandonComposer();
 
-		const offlineText = __("Saved on this device. It moves to Drafts when you're back online.", 'daymark');
-		let text = __('Saved to Drafts.', 'daymark');
+		const offlineText = scheduled
+			? __("Saved on this device. It's still scheduled.", 'daymark')
+			: __("Saved on this device. It moves to Drafts when you're back online.", 'daymark');
+		let text = scheduled ? __("Saved. It's still scheduled.", 'daymark') : __('Saved to Drafts.', 'daymark');
 		if (!wasOnline) {
 			text = offlineText;
-		} else if (uploading) {
+		} else if (uploading && !scheduled) {
 			text = __('Saved. It moves to Drafts when the upload finishes.', 'daymark');
 		}
 		const discard = fresh
@@ -3756,6 +3908,10 @@
 	function buildMarkPayload(status, opts) {
 		opts = opts || {};
 		const existingAlt = {};
+		// Crop and rotate for photos already on the Mark, by attachment ID.
+		// Only photos the sheet's controls were used on are named, so the
+		// site leaves every other photo alone.
+		const existingEdits = {};
 		// The author's chosen order for already-attached media (issue #250)
 		// — state.editing.media's own array order, which the media sheet's
 		// Move earlier/Move later (CreateScreen.moveMedia()) changes in place. Newly uploaded files follow, in the composer's
@@ -3765,6 +3921,9 @@
 			state.editing.media.forEach((m) => {
 				if (m.kind === 'image') {
 					existingAlt[m.id] = m.alt || '';
+					if (m.edit) {
+						existingEdits[m.id] = mediaEditOf(m);
+					}
 				}
 				existingMediaIds.push(m.id);
 			});
@@ -3776,6 +3935,8 @@
 			kind: entry.kind,
 			alt: entry.kind === 'image' ? entry.alt || '' : '',
 			attachmentId: entry.uploadedId || null,
+			// Its crop and rotate, once the sheet's controls were used.
+			edit: entry.kind === 'image' && entry.edit ? mediaEditOf(entry) : null,
 		}));
 		// Publish and Save as draft pass `explicit`: what the composer
 		// shows is what the Mark gets. Otherwise (an autosave, leaving the
@@ -3806,11 +3967,15 @@
 			// all share this one builder), so it survives exactly like every
 			// other composer field does.
 			capturedAt: state.capturedAt || null,
+			// Publish later: the time to go out at, '' for now. Only a
+			// Publish sends it (payloadToFormData()).
+			publishAt: state.publishLater ? state.publishAt || '' : '',
 			location: checkinLocation() ? Object.assign({}, checkinLocation()) : null,
 			placeName: 'checkin' === effectiveType() ? state.placeName || '' : null,
 			inReplyTo: state.replyTo ? state.replyTo.url : '',
 			newFiles,
 			existingAlt,
+			existingEdits,
 			existingMediaIds,
 			// The attached media themselves, so a Mark reopened from the queue
 			// shows them (see openPendingMark()). null when the composer doesn't
@@ -3826,6 +3991,10 @@
 						thumbnail: m.thumbnail || '',
 						filename: m.filename || '',
 						alt: m.alt || '',
+						// Crop and rotate: see mediaEditOf().
+						original: m.original || '',
+						editable: !!m.editable,
+						edit: m.edit ? mediaEditOf(m) : null,
 				  })),
 			// Files taken off the Mark (see state.removedMediaIds).
 			removedMediaIds: state.removedMediaIds.slice(),
@@ -3872,6 +4041,18 @@
 		if (Object.keys(payload.existingAlt || {}).length) {
 			formData.append('existing_alt', JSON.stringify(payload.existingAlt));
 		}
+		// Crop and rotate, by attachment ID: photos already on the Mark, then
+		// the uploaded files. The site makes each edit (or undoes it, for
+		// "original" with no turn) before it builds the Mark's content.
+		const mediaEdits = Object.assign({}, payload.existingEdits || {});
+		ready.forEach((f) => {
+			if (f.edit) {
+				mediaEdits[f.attachmentId] = f.edit;
+			}
+		});
+		if (Object.keys(mediaEdits).length) {
+			formData.append('media_edits', JSON.stringify(mediaEdits));
+		}
 		// Media already on the Mark, then the uploaded files. A Mark queued
 		// before 0.20.0 carries mediaOrder instead of existingMediaIds.
 		const mediaOrder = (payload.existingMediaIds || payload.mediaOrder || []).concat(
@@ -3889,6 +4070,11 @@
 		formData.append('tags_set', '1');
 		if (payload.capturedAt) {
 			formData.append('captured_at', payload.capturedAt);
+		}
+		// Publish later. A time that has passed by the time this is sent
+		// (a Mark that waited offline) publishes at once.
+		if ('publish' === payload.status && payload.publishAt) {
+			formData.append('publish_at', payload.publishAt);
 		}
 		if (payload.location) {
 			formData.append('location_lat', String(payload.location.lat));
@@ -4504,6 +4690,11 @@
 	let publishNoticeCounter = 0;
 
 	function publishQueuedText(notice, offline) {
+		if (notice.scheduled) {
+			return offline
+				? __("Saved on this device. It's scheduled when you're back online.", 'daymark')
+				: __('Scheduling…', 'daymark');
+		}
 		if (offline) {
 			return notice.wasDraft
 				? __("Saved on this device. It moves to Drafts when you're back online.", 'daymark')
@@ -4516,10 +4707,17 @@
 	}
 
 	// Called by PublishControls.publish() and ReblogScreen.submit() once the
-	// Mark is queued. `reblog` words a failure as a reblog's.
-	function notePublishQueued(pendingId, { wasDraft, needsReview, reblog }) {
+	// Mark is queued. `reblog` words a failure as a reblog's; `scheduled`
+	// is a Mark set to go out later.
+	function notePublishQueued(pendingId, { wasDraft, needsReview, reblog, scheduled }) {
 		publishNoticeCounter += 1;
-		const notice = { key: 'publish-' + publishNoticeCounter, wasDraft, needsReview, reblog: !!reblog };
+		const notice = {
+			key: 'publish-' + publishNoticeCounter,
+			wasDraft,
+			needsReview,
+			reblog: !!reblog,
+			scheduled: !!scheduled,
+		};
 		publishNotices.set(pendingId, notice);
 		showMessage({ key: notice.key, text: publishQueuedText(notice, !navigator.onLine) });
 	}
@@ -4536,6 +4734,22 @@
 			return;
 		}
 		const composing = COMPOSER_SCREENS.includes(currentScreen);
+		if ('future' === response.status) {
+			// Scheduled: say when, with Change to move the time (not while
+			// writing another Mark, which opening this one would set aside).
+			if (composing && !isMessageShowing(notice.key)) {
+				return;
+			}
+			const when = parseDate(response.date_gmt || response.date);
+			showMessage({
+				key: notice.key,
+				text: when ? scheduledMessage(when) : __('Scheduled.', 'daymark'),
+				action: composing
+					? null
+					: { label: __('Change', 'daymark'), run: () => openScheduledMark(response.id).catch(() => {}) },
+			});
+			return;
+		}
 		if ('publish' === response.status) {
 			if (composing && !isMessageShowing(notice.key)) {
 				return;
@@ -4570,6 +4784,9 @@
 		let text = notice.wasDraft ? __("Couldn't save the draft.", 'daymark') : __("Couldn't publish.", 'daymark');
 		if (notice.reblog && !notice.wasDraft) {
 			text = __("Couldn't publish this reblog.", 'daymark');
+		}
+		if (notice.scheduled) {
+			text = __("Couldn't schedule.", 'daymark');
 		}
 		showMessage({
 			key: notice.key,
@@ -4843,6 +5060,8 @@
 		// (a fresh "now" or a fresh geolocation prompt would misrepresent
 		// when/where this Mark was actually created).
 		state.capturedAt = payload.capturedAt || null;
+		state.publishAt = payload.publishAt || '';
+		state.publishLater = !!state.publishAt;
 		state.location = payload.location || null;
 		state.locationRequested = true;
 		state.primaryType = payload.primaryType || 'note';
@@ -4867,6 +5086,7 @@
 				alt: f.alt || '',
 				altStatus: 'idle',
 				altEdited: true, // Already-typed alt: never overwrite with a fresh AI suggestion.
+				edit: f.edit || null,
 				uploadedId: null,
 				// The file's attachment when the queue had already uploaded it.
 				// An earlier save may have attached it to the Mark, so removing
@@ -5229,7 +5449,11 @@
 			id: mark.id,
 			type: mark.type || 'note',
 			media: Array.isArray(mark.media) ? mark.media : [],
+			// A Mark set to go out later, not a draft.
+			scheduled: 'future' === mark.status,
 		};
+		state.publishAt = state.editing.scheduled ? mark.date_gmt || '' : '';
+		state.publishLater = !!state.publishAt;
 		state.caption = mark.caption || '';
 		// Preserve the draft's existing title: seed the field and mark it done
 		// so the AI prefill never overwrites a title the author already has.
@@ -5280,8 +5504,43 @@
 
 	async function openDraftAndPublish(id) {
 		await loadDraftIntoState(id);
+		// For a scheduled Mark this is "Publish now": the time is set aside,
+		// so the button publishes at once. Leaving without tapping it
+		// changes nothing.
+		state.publishLater = false;
 		composerFocusPublish = hasComposerContent();
 		navigate('#create');
+	}
+
+	// "Change" on the Scheduled message, and "Change time" in a scheduled
+	// Mark's ⋯ menu: the composer, with the When fold open.
+	let composerOpenWhen = false;
+
+	async function openScheduledMark(id) {
+		await loadDraftIntoState(id);
+		composerOpenWhen = true;
+		navigate('#create');
+	}
+
+	// "Cancel schedule" in a scheduled Mark's ⋯ menu: it becomes a draft
+	// again, with nothing else changed.
+	async function cancelSchedule(id) {
+		try {
+			await apiPost('marks/' + id + '/unschedule', {});
+			showMessage({ key: 'unschedule', text: __('Moved to Drafts.', 'daymark') });
+		} catch (err) {
+			showMessage({
+				key: 'unschedule',
+				text: sprintf(
+					/* translators: %s: error message */
+					__("Couldn't cancel the schedule: %s", 'daymark'),
+					err.message
+				),
+				error: true,
+			});
+		}
+		HomeScreen.refreshDraftsRow();
+		MeScreen.refreshDrafts();
 	}
 
 	// Whether the composer currently has enough to publish: a caption, a
@@ -6500,6 +6759,9 @@
 		// permalink.
 		const title = cardTitle(item, __('Untitled Mark', 'daymark'));
 		const isDraft = item.status && 'publish' !== item.status;
+		// Set to go out later (see "Publish later"): handled like a draft,
+		// with its own menu.
+		const isScheduled = 'future' === item.status;
 		const editAttr = isDraft ? ` data-edit-draft="${esc(String(item.id))}"` : '';
 		const id = esc(String(item.id));
 		const kind = resolveCardKind(item);
@@ -6538,12 +6800,24 @@
 					</button>
 					<div class="daymark-menu" data-menu role="menu" aria-label="${esc(__('Mark actions', 'daymark'))}" hidden>
 						<div class="daymark-menu__actions" data-menu-actions>
-							<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">${esc(
-								__('Edit', 'daymark')
+							${
+								isScheduled
+									? `<button type="button" class="daymark-menu__item" data-menu-edit data-menu-when role="menuitem">${esc(
+											__('Change time', 'daymark')
+									  )}</button>
+							<button type="button" class="daymark-menu__item" data-menu-publish role="menuitem">${esc(
+								__('Publish now', 'daymark')
 							)}</button>
+							<button type="button" class="daymark-menu__item" data-menu-unschedule role="menuitem">${esc(
+								__('Cancel schedule', 'daymark')
+							)}</button>`
+									: `<button type="button" class="daymark-menu__item" data-menu-edit role="menuitem">${esc(
+											__('Edit', 'daymark')
+									  )}</button>
 							<button type="button" class="daymark-menu__item" data-menu-publish role="menuitem">${esc(
 								__('Publish', 'daymark')
-							)}</button>
+							)}</button>`
+							}
 							<button type="button" class="daymark-menu__item daymark-menu__item--danger" data-menu-delete role="menuitem">${esc(
 								__('Delete', 'daymark')
 							)}</button>
@@ -7240,7 +7514,19 @@
 			const wrap = edit.closest('[data-item]');
 			closeItemMenus();
 			if (wrap) {
-				openDraft(wrap.getAttribute('data-item')).catch(() => {});
+				const open = edit.hasAttribute('data-menu-when') ? openScheduledMark : openDraft;
+				open(wrap.getAttribute('data-item')).catch(() => {});
+			}
+			return;
+		}
+
+		const unschedule = target.closest('[data-menu-unschedule]');
+		if (unschedule) {
+			event.preventDefault();
+			const wrap = unschedule.closest('[data-item]');
+			closeItemMenus();
+			if (wrap) {
+				cancelSchedule(wrap.getAttribute('data-item'));
 			}
 			return;
 		}
@@ -8479,7 +8765,12 @@
 		if (!list || list.querySelector('[data-item]')) {
 			return;
 		}
-		if (list.hasAttribute('data-me-drafts')) {
+		if (list.hasAttribute('data-me-scheduled')) {
+			const section = list.closest('[data-me-scheduled-section]');
+			if (section) {
+				section.hidden = true;
+			}
+		} else if (list.hasAttribute('data-me-drafts')) {
 			list.innerHTML = noDraftsHtml();
 		} else if (list.hasAttribute('data-search-results')) {
 			list.innerHTML =
@@ -8746,7 +9037,8 @@
 			pending.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 			// A Mark on its way to being published goes at the top of the
 			// Timeline; drafts (and anything else) stay in the Pending box.
-			const isPublish = (record) => record.payload && 'publish' === record.payload.status;
+			const isPublish = (record) =>
+				record.payload && 'publish' === record.payload.status && !isScheduledPayload(record.payload);
 			const publishes = timeline ? pending.filter(isPublish) : [];
 			const others = timeline ? pending.filter((record) => !isPublish(record)) : pending;
 			HomeScreen._pendingPublishCount = publishes.length;
@@ -10978,6 +11270,12 @@
 					}
 				</nav>
 				${pushSettingsMarkup()}
+				<section class="daymark-recent" aria-labelledby="daymark-me-scheduled-heading" data-me-scheduled-section hidden>
+					<h2 id="daymark-me-scheduled-heading" class="daymark-section-heading">${esc(
+						_x('Scheduled', 'heading: Marks set to publish later', 'daymark')
+					)}</h2>
+					<div class="daymark-recent__list" data-me-scheduled></div>
+				</section>
 				<section class="daymark-recent" aria-labelledby="daymark-me-drafts-heading">
 					<h2 id="daymark-me-drafts-heading" class="daymark-section-heading">${esc(__('Drafts', 'daymark'))}</h2>
 					<div class="daymark-recent__list" data-me-drafts>
@@ -11024,6 +11322,12 @@
 			if (drafts) {
 				drafts.addEventListener('click', (event) => onFeedListClick(this, event));
 			}
+			// Scheduled Marks, above Drafts: tap one to change it; its ⋯
+			// menu has Change time, Publish now, Cancel schedule, and Delete.
+			const scheduled = root.querySelector('[data-me-scheduled]');
+			if (scheduled) {
+				scheduled.addEventListener('click', (event) => onFeedListClick(this, event));
+			}
 			bindDismissible(this, [itemMenusDismissEntry(), navFooterDismissEntry(this)]);
 			bindNavFooter(this);
 		},
@@ -11045,6 +11349,19 @@
 			}
 		},
 
+		// The Scheduled list: Marks set to publish later, soonest first.
+		// Hidden when there are none.
+		showScheduled(items) {
+			const section = root.querySelector('[data-me-scheduled-section]');
+			const list = root.querySelector('[data-me-scheduled]');
+			if (!section || !list) {
+				return;
+			}
+			list.innerHTML = items.map((item) => renderMarkItem(item)).join('');
+			section.hidden = !items.length;
+			bindDraftTaps(list);
+		},
+
 		async loadDrafts(showDrafts) {
 			const list = root.querySelector('[data-me-drafts]');
 			if (!list) {
@@ -11052,11 +11369,17 @@
 			}
 			const seq = ++this._draftsSeq;
 			try {
-				const drafts = await apiGet('marks?status=draft&per_page=50');
+				// Scheduled Marks load alongside; without them (an older
+				// site, a failed request) the list is simply not shown.
+				const [drafts, scheduled] = await Promise.all([
+					apiGet('marks?status=draft&per_page=50'),
+					false === config.canPublish ? [] : apiGet('marks?status=future&per_page=50').catch(() => []),
+				]);
 				const draftItems = Array.isArray(drafts) ? drafts : [];
 				if (seq !== this._draftsSeq || !list.isConnected) {
 					return;
 				}
+				this.showScheduled(Array.isArray(scheduled) ? scheduled.filter((m) => 'future' === m.status) : []);
 				if (!draftItems.length) {
 					list.innerHTML = noDraftsHtml();
 					return;
@@ -11105,7 +11428,11 @@
 			<header class="daymark-topbar">
 				${backLinkWithIcon('#home', __('Back to Timeline', 'daymark'))}
 				<h1 class="daymark-topbar__title" tabindex="-1"${focusPublish ? '' : ' data-daymark-focus'}>${esc(
-					editing ? __('Edit Draft', 'daymark') : __('New Mark', 'daymark')
+					editing
+						? editing.scheduled
+							? __('Scheduled Mark', 'daymark')
+							: __('Edit Draft', 'daymark')
+						: __('New Mark', 'daymark')
 				)}</h1>
 				<span class="daymark-chip daymark-topbar__typechip" data-type-badge>${esc(
 					TYPE_LABELS[effectiveType()]
@@ -11117,9 +11444,17 @@
 				${
 					editing
 						? '<p class="daymark-editbanner"><span class="daymark-chip daymark-chip--draft">' +
-						  esc(__('Draft', 'daymark')) +
+						  esc(
+								editing.scheduled
+									? _x('Scheduled', 'label on a Mark set to publish later', 'daymark')
+									: __('Draft', 'daymark')
+						  ) +
 						  '</span> ' +
-						  esc(__('Changes save to this draft.', 'daymark')) +
+						  esc(
+								editing.scheduled
+									? __('Changes save to this Mark.', 'daymark')
+									: __('Changes save to this draft.', 'daymark')
+						  ) +
 						  '</p>'
 						: ''
 				}
@@ -11157,18 +11492,19 @@
 				<div class="daymark-composer-folds" data-composer-folds>
 					${PublishControls.categoriesFoldMarkup()}
 					${PublishControls.tagsFoldMarkup()}
+					${PublishControls.whenFoldMarkup()}
 				</div>
 			</section>
 			<footer class="daymark-actionbar daymark-actionbar--compose">
 				<p class="daymark-status" data-create-status aria-live="polite"></p>
 				<div class="daymark-where" data-where-bar>${PublishControls.whereBarMarkup()}</div>
 				<div class="daymark-actionbar__buttons">
-					<button type="button" class="daymark-btn daymark-btn--secondary" data-action="save-draft">${esc(
+					<button type="button" class="daymark-btn daymark-actionbar__draft" data-action="save-draft">${esc(
 						__('Save as draft', 'daymark')
 					)}</button>
 					<button type="button" class="daymark-btn daymark-btn--primary" data-action="publish"${
 						focusPublish ? ' data-daymark-focus' : ''
-					}>${esc(__('Publish', 'daymark'))}</button>
+					}>${esc(PublishControls.publishLabel())}</button>
 				</div>
 			</footer>`;
 		},
@@ -11614,7 +11950,9 @@
 					scope: 'existing',
 					id: String(m.id),
 					kind: m.kind || 'file',
-					thumb: m.thumbnail || '',
+					// A photo the site already cropped or turned is shown from
+					// the picture before that edit, turned as its edit says.
+					thumb: m.original || m.thumbnail || '',
 					name: m.filename || '',
 					ref: m,
 				}))
@@ -11636,6 +11974,21 @@
 			const items = this.mediaItems();
 			const index = items.findIndex((item) => item.key === key);
 			return -1 === index ? null : { item: items[index], position: index + 1, total: items.length };
+		},
+
+		// Whether the photo sheet offers crop and rotate for a file: a photo
+		// of a type the site's image editor can change. For a photo picked in
+		// this visit that's read from its type; for one already on the Mark
+		// the site says.
+		canEditPhoto(item) {
+			if ('image' !== item.kind) {
+				return false;
+			}
+			if ('existing' === item.scope) {
+				return true === item.ref.editable;
+			}
+			const types = (config.imageEdit && config.imageEdit.types) || [];
+			return types.includes(item.ref.file ? item.ref.file.type : '');
 		},
 
 		// The photos a photo can move among: those already on a reopened
@@ -11796,15 +12149,32 @@
 				return '';
 			}
 			const total = items.length;
+			// A Mark with a photo or video can take more of them, so the
+			// row ends in an "Add" tile.
+			const canAdd = items.some((item) => 'image' === item.kind || 'video' === item.kind);
 			return `<ul class="daymark-strip" aria-label="${esc(__('Media on this Mark', 'daymark'))}">${items
 				.map((item, index) => this.stripItemMarkup({ item, position: index + 1, total }))
-				.join('')}</ul>`;
+				.join('')}${canAdd ? this.stripAddMarkup() : ''}</ul>`;
+		},
+
+		// The "Add" tile at the end of the strip: opens the same picker as
+		// the Add bar's "Photo or video", from where the photos are.
+		stripAddMarkup() {
+			return `<li class="daymark-strip__item">
+				<div class="daymark-strip__tile">
+					<button type="button" class="daymark-strip__add" data-media-add aria-label="${esc(
+						__('Add another photo or video', 'daymark')
+					)}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span aria-hidden="true">${esc(
+				_x('Add', 'short label on the tile that adds another photo or video', 'daymark')
+			)}</span></button>
+				</div>
+			</li>`;
 		},
 
 		stripItemMarkup(found) {
 			const { item } = found;
 			const visual = item.thumb
-				? `<img class="daymark-strip__thumb" src="${esc(item.thumb)}" alt="" />`
+				? `<img class="daymark-strip__thumb${turnedClass(item.ref)}" src="${esc(item.thumb)}" alt="" />`
 				: `<span class="daymark-strip__file"><svg class="daymark-strip__fileicon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
 						TYPE_ICONS[item.kind] || TYPE_ICONS.note
 				  }</svg><span class="daymark-strip__name" aria-hidden="true">${esc(item.name)}</span></span>`;
@@ -11851,8 +12221,12 @@
 			const active = document.activeElement;
 			let focus = null;
 			if (active && slot.contains(active)) {
-				const attr = active.hasAttribute('data-media-remove') ? 'data-media-remove' : 'data-media-open';
-				focus = { attr, key: active.getAttribute(attr) };
+				if (active.hasAttribute('data-media-add')) {
+					focus = { add: true };
+				} else {
+					const attr = active.hasAttribute('data-media-remove') ? 'data-media-remove' : 'data-media-open';
+					focus = { attr, key: active.getAttribute(attr) };
+				}
 			}
 			const list = slot.querySelector('.daymark-strip');
 			const scroll = list ? list.scrollLeft : 0;
@@ -11861,8 +12235,10 @@
 			if (newList) {
 				newList.scrollLeft = scroll;
 			}
-			if (focus && focus.key) {
-				const target = slot.querySelector('[' + focus.attr + '="' + focus.key + '"]');
+			if (focus && (focus.add || focus.key)) {
+				const target = focus.add
+					? slot.querySelector('[data-media-add]')
+					: slot.querySelector('[' + focus.attr + '="' + focus.key + '"]');
 				if (target) {
 					target.focus();
 				}
@@ -11881,6 +12257,10 @@
 			const open = item.querySelector('[data-media-open]');
 			if (open) {
 				open.setAttribute('aria-label', this.mediaLabel(found));
+			}
+			const thumb = item.querySelector('.daymark-strip__thumb');
+			if (thumb) {
+				thumb.className = 'daymark-strip__thumb' + turnedClass(found.item.ref);
 			}
 			const badge = item.querySelector('[data-alt-badge]');
 			if (badge) {
@@ -11962,6 +12342,10 @@
 				const open = event.target.closest('[data-media-open]');
 				if (open) {
 					MediaSheet.show(open.getAttribute('data-media-open'), open);
+					return;
+				}
+				if (event.target.closest('[data-media-add]')) {
+					this.openFilePicker(ATTACH_MEDIA_ACCEPT, '');
 				}
 			});
 		},
@@ -14397,6 +14781,8 @@
 		const mediaKind = mediaKindForItem(item, kind);
 		const media = renderCardMedia(item, mediaKind);
 		const [leadTitle, bodyTitle] = renderCardTitle(title, mediaKind, media, titleId, caption);
+		// A scheduled Mark says when it goes out, not how long ago.
+		const scheduledFor = 'future' === item.status ? parseDate(item.date_gmt || item.date) : null;
 		return `
 					${leadTitle}
 					${media}
@@ -14406,7 +14792,13 @@
 						${excerpt ? `<span class="daymark-recent__excerpt">${esc(excerpt)}</span>` : ''}
 					</span>
 					<span class="daymark-recent__footer">
-						${renderCardTimestampRow(item, isDraft ? '' : markAuthorLabel(item), !isDraft && !!item.is_mine)}
+						${
+							scheduledFor
+								? `<span class="daymark-recent__timestamprow"><time datetime="${esc(
+										scheduledFor.toISOString()
+								  )}">${esc(scheduleSummary(scheduledFor))}</time></span>`
+								: renderCardTimestampRow(item, isDraft ? '' : markAuthorLabel(item), !isDraft && !!item.is_mine)
+						}
 						${isDraft ? '' : renderItemStats(item)}
 					</span>`;
 	}
@@ -16695,6 +17087,102 @@
 			);
 		},
 
+		// Publish later (see "Publish later" above): Now, or Later with the
+		// phone's own date and time picker. Only for someone who can
+		// publish; anyone else's Mark waits for an editor anyway.
+		whenFoldMarkup() {
+			if (false === config.canPublish) {
+				return '';
+			}
+			const later = state.publishLater;
+			const set = later && state.publishAt ? parseDate(state.publishAt) : null;
+			const option = (value, label, checked) =>
+				`<label class="daymark-when__option"><input type="radio" class="daymark-when__radio" name="daymark-when" value="${value}"${
+					checked ? ' checked' : ''
+				} /><span>${esc(label)}</span></label>`;
+			const fold = foldSectionMarkup(
+				'when',
+				_x('When', 'when a Mark is published', 'daymark'),
+				this.whenSummary(),
+				`<div class="daymark-when" role="radiogroup" aria-label="${esc(__('When to publish', 'daymark'))}">
+					${option('now', _x('Now', 'when to publish', 'daymark'), !later)}
+					${option('later', _x('Later', 'when to publish', 'daymark'), later)}
+				</div>
+				<div class="daymark-when__later" data-when-later${later ? '' : ' hidden'}>
+					<label class="daymark-visually-hidden" for="daymark-publish-at">${esc(
+						__('Date and time to publish', 'daymark')
+					)}</label>
+					<input type="datetime-local" id="daymark-publish-at" class="daymark-input daymark-when__input" data-publish-at value="${esc(
+						set ? dateToFieldValue(set) : ''
+					)}" min="${esc(dateToFieldValue(new Date()))}" />
+					<p class="daymark-publish-subnote">${esc(
+						__('It publishes then, and goes to the same places it would now.', 'daymark')
+					)}</p>
+				</div>`
+			);
+			// Opened from "Change" or "Change time": unfolded, ready to move.
+			const open = composerOpenWhen;
+			composerOpenWhen = false;
+			return open ? fold.replace('<details ', '<details open ') : fold;
+		},
+
+		whenSummary() {
+			const set = state.publishLater && state.publishAt ? parseDate(state.publishAt) : null;
+			return esc(set ? scheduleSummary(set) : _x('Now', 'when to publish', 'daymark'));
+		},
+
+		// The main button: Schedule once Later is picked.
+		publishLabel() {
+			return state.publishLater && false !== config.canPublish
+				? _x('Schedule', 'button: publish a Mark at a later time', 'daymark')
+				: __('Publish', 'daymark');
+		},
+
+		// After the When fold changes: its summary and the main button.
+		refreshWhen() {
+			const value = root.querySelector('[data-fold-value="when"]');
+			if (value) {
+				value.innerHTML = this.whenSummary();
+			}
+			const button = root.querySelector('[data-action="publish"]');
+			if (button && !button.disabled) {
+				button.textContent = this.publishLabel();
+			}
+		},
+
+		bindWhen() {
+			const fold = root.querySelector('[data-fold="when"]');
+			if (!fold) {
+				return;
+			}
+			const input = fold.querySelector('[data-publish-at]');
+			const laterBox = fold.querySelector('[data-when-later]');
+			fold.querySelectorAll('input[name="daymark-when"]').forEach((radio) => {
+				radio.addEventListener('change', () => {
+					if (!radio.checked) {
+						return;
+					}
+					state.publishLater = 'later' === radio.value;
+					laterBox.hidden = !state.publishLater;
+					if (state.publishLater) {
+						input.min = dateToFieldValue(new Date());
+						// A time that has passed starts over.
+						if (!scheduledDate(fieldValueToIso(input.value))) {
+							input.value = dateToFieldValue(defaultPublishTime());
+						}
+						state.publishAt = fieldValueToIso(input.value);
+					}
+					this.refreshWhen();
+				});
+			});
+			const onTime = () => {
+				state.publishAt = fieldValueToIso(input.value);
+				this.refreshWhen();
+			};
+			input.addEventListener('input', onTime);
+			input.addEventListener('change', onTime);
+		},
+
 		// The categories this Mark will be filed under, by name. With none
 		// picked, WordPress files it under the site's default category.
 		categorySummary() {
@@ -16903,6 +17391,7 @@
 				: null;
 
 			this.refreshRememberedNote('categories');
+			this.bindWhen();
 
 			root.querySelector('[data-action="publish"]').addEventListener('click', () => this.publish('publish'));
 			root.querySelector('[data-action="save-draft"]').addEventListener('click', () => this.publish('draft'));
@@ -16923,12 +17412,28 @@
 				}
 				return;
 			}
+			// Later needs a time that is still ahead. Save as draft doesn't.
+			if ('publish' === postStatus && this.wantsSchedule() && !scheduledDate(state.publishAt)) {
+				if (status) {
+					status.textContent = __('Pick a time that is still ahead.', 'daymark');
+				}
+				const fold = root.querySelector('[data-fold="when"]');
+				if (fold) {
+					fold.open = true;
+				}
+				return;
+			}
 			composerPublishing = true;
 			try {
 				await this.sendPublish(postStatus);
 			} finally {
 				composerPublishing = false;
 			}
+		},
+
+		// Whether Publish means "schedule" right now.
+		wantsSchedule() {
+			return state.publishLater && false !== config.canPublish;
 		},
 
 		async sendPublish(postStatus) {
@@ -16938,6 +17443,8 @@
 			// say so, instead of claiming it was published.
 			const needsReview = !isDraft && false === config.canPublish;
 			const wasDraft = isDraft || needsReview;
+			// Set to go out later, not now (see "Publish later").
+			const scheduled = !wasDraft && this.wantsSchedule();
 			const button = root.querySelector(isDraft ? '[data-action="save-draft"]' : '[data-action="publish"]');
 			const otherButton = root.querySelector(isDraft ? '[data-action="publish"]' : '[data-action="save-draft"]');
 			const status = root.querySelector('[data-create-status]');
@@ -16948,7 +17455,11 @@
 			if (otherButton) {
 				otherButton.disabled = true;
 			}
-			button.textContent = isDraft ? __('Saving…', 'daymark') : __('Publishing…', 'daymark');
+			button.textContent = isDraft
+				? __('Saving…', 'daymark')
+				: scheduled
+				? __('Scheduling…', 'daymark')
+				: __('Publishing…', 'daymark');
 			status.textContent = '';
 
 			// A real Publish/Save as draft supersedes any pending autosave —
@@ -16991,11 +17502,12 @@
 				const pendingId = await publishInBackground(path, targetId, payload, state.offlineQueueId);
 				rememberSelectionLocally(payload);
 				state.lastPublish = null;
-				notePublishQueued(pendingId, { wasDraft, needsReview });
+				notePublishQueued(pendingId, { wasDraft, needsReview, scheduled });
 				resetComposer();
 				// Back to where you started, with the new Mark at the top of
-				// the Timeline (its pending card until the site answers).
-				leaveComposerAfterPublish(!wasDraft);
+				// the Timeline (its pending card until the site answers). A
+				// scheduled Mark isn't there yet.
+				leaveComposerAfterPublish(!wasDraft && !scheduled);
 			} catch (err) {
 				// Queuing itself failed (IndexedDB unavailable — old Safari
 				// private mode, storage disabled, …). Fall back to waiting on
@@ -17020,10 +17532,15 @@
 						// Left while it was sending: say how it went here.
 						showMessage({
 							key: 'publish-direct',
-							text: publish.wasDraft ? __('Saved as draft.', 'daymark') : __('Published.', 'daymark'),
-							action: publish.wasDraft
-								? null
-								: { label: __('View', 'daymark'), run: () => viewPublishedMark(response) },
+							text: publish.scheduled
+								? __('Scheduled.', 'daymark')
+								: publish.wasDraft
+								? __('Saved as draft.', 'daymark')
+								: __('Published.', 'daymark'),
+							action:
+								publish.wasDraft || publish.scheduled
+									? null
+									: { label: __('View', 'daymark'), run: () => viewPublishedMark(response) },
 						});
 					}
 				} catch (err2) {
@@ -17051,7 +17568,7 @@
 					if (otherButton) {
 						otherButton.disabled = false;
 					}
-					button.textContent = isDraft ? __('Save as draft', 'daymark') : __('Publish', 'daymark');
+					button.textContent = isDraft ? __('Save as draft', 'daymark') : this.publishLabel();
 					status.textContent = message;
 				}
 			}
@@ -17216,6 +17733,7 @@
 			syncSheetsToVisualViewport();
 			this.el.innerHTML = this.markup(found);
 			this.bind();
+			this.bindEdit();
 			this.onKeydown = (event) => {
 				if ('Escape' === event.key) {
 					this.hide();
@@ -17228,7 +17746,9 @@
 		markup(found) {
 			const { item } = found;
 			const preview = item.thumb
-				? `<img class="daymark-mediasheet__preview" src="${esc(item.thumb)}" alt="" />`
+				? `<div class="daymark-mediasheet__frame" data-sheet-frame><img class="daymark-mediasheet__preview${turnedClass(
+						item.ref
+				  )}" data-sheet-preview src="${esc(item.thumb)}" alt="" /></div>`
 				: `<div class="daymark-mediasheet__file"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${
 						TYPE_ICONS[item.kind] || TYPE_ICONS.note
 				  }</svg><span class="daymark-mediasheet__name">${esc(item.name)}</span></div>`;
@@ -17241,22 +17761,97 @@
 				__('Close', 'daymark')
 			)}"></button>
 			<div class="daymark-sheet__panel daymark-sheet__panel--media" role="dialog" aria-modal="true" aria-labelledby="daymark-media-title">
-				<h2 class="daymark-sheet__title" id="daymark-media-title" tabindex="-1">${esc(
-					CreateScreen.mediaTitle(found)
-				)}</h2>
+				<div class="daymark-mediasheet__head">
+					<h2 class="daymark-sheet__title" id="daymark-media-title" tabindex="-1">${esc(
+						CreateScreen.mediaTitle(found)
+					)}</h2>
+					<div class="daymark-mediasheet__steps" data-sheet-steps>${this.stepsMarkup(found)}</div>
+				</div>
 				<div class="daymark-sheet__body">
 					${preview}
 					${upload}
+					${this.editMarkup(found)}
 					${'image' === item.kind ? this.altMarkup(item) : ''}
 					<div class="daymark-mediasheet__orderslot" data-sheet-order>${this.orderMarkup(found)}</div>
 					<p class="daymark-visually-hidden" data-sheet-live aria-live="polite"></p>
-					<div class="daymark-sheet__actions">
-						<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
-							__('Done', 'daymark')
-						)}</button>
-					</div>
+					<div class="daymark-sheet__actions daymark-mediasheet__actions" data-sheet-actions data-sheet-next-kind="${esc(
+						this.nextKind(found)
+					)}">${this.actionsMarkup(found)}</div>
 				</div>
 			</div>`;
+		},
+
+		// The file after this one in the strip, or before it (direction -1):
+		// null at either end.
+		neighbor(found, direction) {
+			const items = CreateScreen.mediaItems();
+			return items[found.position - 1 + direction] || null;
+		},
+
+		// What kind of file comes next ('image', 'video', ...), or '' when
+		// this is the last one. Decides the sheet's main button.
+		nextKind(found) {
+			const next = this.neighbor(found, 1);
+			return next ? next.kind || 'file' : '';
+		},
+
+		// The previous/next arrows beside the title, so every photo can be
+		// described in one pass without closing the sheet. Nothing for a
+		// Mark with one file.
+		stepsMarkup(found) {
+			if (found.total < 2) {
+				return '';
+			}
+			const button = (direction, label, points, disabled) =>
+				`<button type="button" class="daymark-mediasheet__step" data-media-step="${direction}" aria-label="${esc(
+					label
+				)}"${
+					disabled ? ' disabled' : ''
+				}><svg class="daymark-mediasheet__chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="${points}"></polyline></svg></button>`;
+			return (
+				button(
+					-1,
+					_x('Previous', 'button: show the file before this one on the Mark', 'daymark'),
+					'15 18 9 12 15 6',
+					found.position <= 1
+				) +
+				button(
+					1,
+					_x('Next', 'button: show the file after this one on the Mark', 'daymark'),
+					'9 18 15 12 9 6',
+					found.position >= found.total
+				)
+			);
+		},
+
+		nextLabel(kind) {
+			if ('image' === kind) {
+				return __('Next photo', 'daymark');
+			}
+			if ('video' === kind) {
+				return __('Next video', 'daymark');
+			}
+			if ('audio' === kind) {
+				return __('Next audio', 'daymark');
+			}
+			return __('Next file', 'daymark');
+		},
+
+		// The sheet's buttons. While another file follows, the main button
+		// goes on to it and a smaller Done closes the sheet; on the last
+		// file, Done is the main button.
+		actionsMarkup(found) {
+			const kind = this.nextKind(found);
+			if (!kind) {
+				return `<button type="button" class="daymark-btn daymark-btn--primary" data-sheet-done>${esc(
+					__('Done', 'daymark')
+				)}</button>`;
+			}
+			return `<button type="button" class="daymark-btn daymark-btn--secondary" data-sheet-done>${esc(
+				__('Done', 'daymark')
+			)}</button><button type="button" class="daymark-btn daymark-btn--primary" data-sheet-next>${esc(
+				this.nextLabel(kind)
+			)}</button>`;
 		},
 
 		// The upload line under the preview: progress or a failure, and
@@ -17270,6 +17865,105 @@
 				'daymark-mediasheet__upload' +
 				('error' === entry.uploadStatus ? ' daymark-mediasheet__upload--error' : '')
 			);
+		},
+
+		// Crop and rotate (see mediaEditOf()): a shape, cut from the middle
+		// of the photo, and Rotate, a quarter turn clockwise each tap. Only
+		// for a photo the site can edit (CreateScreen.canEditPhoto()).
+		editMarkup(found) {
+			if (!CreateScreen.canEditPhoto(found.item)) {
+				return '';
+			}
+			const edit = mediaEditOf(found.item.ref);
+			const shape = (id, label) =>
+				`<button type="button" class="daymark-mediasheet__shape" data-edit-shape="${id}" aria-pressed="${
+					edit.shape === id ? 'true' : 'false'
+				}"><span class="daymark-mediasheet__shapeicon daymark-mediasheet__shapeicon--${id}" aria-hidden="true"></span><span class="daymark-mediasheet__editlabel">${esc(
+					label
+				)}</span></button>`;
+			return `<div class="daymark-mediasheet__edit" data-sheet-edit>
+						<div class="daymark-mediasheet__shapes" role="group" aria-label="${esc(
+							_x('Shape', 'the shape a photo is cropped to', 'daymark')
+						)}">
+							${shape('original', _x('Original', 'photo shape: as it was taken', 'daymark'))}
+							${shape('square', _x('Square', 'photo shape', 'daymark'))}
+							${shape('tall', _x('Tall', 'photo shape: taller than wide', 'daymark'))}
+							${shape('wide', _x('Wide', 'photo shape: wider than tall', 'daymark'))}
+						</div>
+						<button type="button" class="daymark-mediasheet__rotate" data-edit-rotate><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg><span class="daymark-mediasheet__editlabel">${esc(
+							_x('Rotate', 'button: turn a photo a quarter turn', 'daymark')
+						)}</span></button>
+					</div>`;
+		},
+
+		// The preview follows the photo's edit, and the shape and Rotate
+		// buttons change it. Kept apart from bind() so each has one job.
+		bindEdit() {
+			const preview = this.el.querySelector('[data-sheet-preview]');
+			if (preview) {
+				preview.addEventListener('load', () => this.syncPreview());
+				this.syncPreview();
+			}
+			const controls = this.el.querySelector('[data-sheet-edit]');
+			if (!controls) {
+				return;
+			}
+			controls.addEventListener('click', (event) => {
+				const shape = event.target.closest('[data-edit-shape]');
+				if (shape) {
+					this.changeEdit({ shape: shape.getAttribute('data-edit-shape') });
+					return;
+				}
+				if (event.target.closest('[data-edit-rotate]')) {
+					const found = CreateScreen.findMedia(this.key);
+					if (found) {
+						this.changeEdit({ rotate: (mediaEditOf(found.item.ref).rotate + 90) % 360 });
+						this.say(__('Rotated.', 'daymark'));
+					}
+				}
+			});
+		},
+
+		// A new shape or turn: kept on the photo for the next save, and
+		// shown in the preview and on the photo's thumbnail.
+		changeEdit(change) {
+			const found = CreateScreen.findMedia(this.key);
+			if (!found || !CreateScreen.canEditPhoto(found.item)) {
+				return;
+			}
+			const edit = Object.assign(mediaEditOf(found.item.ref), change);
+			found.item.ref.edit = edit;
+			this.el.querySelectorAll('[data-edit-shape]').forEach((button) => {
+				button.setAttribute(
+					'aria-pressed',
+					button.getAttribute('data-edit-shape') === edit.shape ? 'true' : 'false'
+				);
+			});
+			this.syncPreview();
+			CreateScreen.patchTile(this.key);
+			scheduleAutosave();
+		},
+
+		// Frames the preview the way the edit will leave the photo: turned,
+		// then cut to the shape from the middle. Needs the picture's own
+		// size, so it waits for the picture to load.
+		syncPreview() {
+			const found = CreateScreen.findMedia(this.key);
+			const frame = this.el && this.el.querySelector('[data-sheet-frame]');
+			const img = frame && frame.querySelector('[data-sheet-preview]');
+			if (!found || !img || !img.naturalWidth || !img.naturalHeight) {
+				return;
+			}
+			const edit = mediaEditOf(found.item.ref);
+			const sideways = 90 === edit.rotate || 270 === edit.rotate;
+			const natural = sideways
+				? img.naturalHeight / img.naturalWidth
+				: img.naturalWidth / img.naturalHeight;
+			const ratio = EDIT_SHAPE_RATIOS[edit.shape] || natural;
+			frame.style.setProperty('--daymark-frame-ratio', String(Math.round(ratio * 10000) / 10000));
+			frame.classList.add('daymark-mediasheet__frame--shaped');
+			frame.classList.toggle('daymark-mediasheet__frame--sideways', sideways);
+			img.className = 'daymark-mediasheet__preview' + turnedClass(found.item.ref);
 		},
 
 		// The alt text box. Its data attribute says whose alt text it is:
@@ -17371,12 +18065,29 @@
 
 		bind() {
 			this.el.querySelector('[data-sheet-dismiss]').addEventListener('click', () => this.hide());
-			this.el.querySelector('[data-sheet-done]').addEventListener('click', () => this.hide());
 			const text = this.el.querySelector('#daymark-media-alt');
 			if (text) {
 				text.addEventListener('input', () => this.altChanged(text.value));
 			}
+			// One listener for every button in the panel: the arrows and the
+			// buttons at the bottom are redrawn when the strip changes
+			// (refreshSteps()).
 			this.el.querySelector('.daymark-sheet__panel').addEventListener('click', (event) => {
+				if (event.target.closest('[data-sheet-done]')) {
+					this.hide();
+					return;
+				}
+				if (event.target.closest('[data-sheet-next]')) {
+					this.step(1);
+					return;
+				}
+				const stepButton = event.target.closest('[data-media-step]');
+				if (stepButton) {
+					if (!stepButton.disabled) {
+						this.step(Number(stepButton.getAttribute('data-media-step')));
+					}
+					return;
+				}
 				const move = event.target.closest('[data-media-move]');
 				if (move) {
 					if (!move.disabled) {
@@ -17422,6 +18133,18 @@
 				entry.alt = text.value;
 			}
 			CreateScreen.generateAltFor(entry, { force: true, existingAlt: entry.alt });
+		},
+
+		// Shows the file before or after this one, in the same sheet. What
+		// was typed is already kept (altChanged()), and closing the sheet
+		// puts focus on the file shown last.
+		step(direction) {
+			const found = CreateScreen.findMedia(this.key);
+			const next = found && this.neighbor(found, direction);
+			if (!next) {
+				return;
+			}
+			this.show(next.key, root.querySelector('[data-media-open="' + next.key + '"]'));
 		},
 
 		move(direction) {
@@ -17481,8 +18204,58 @@
 				title.textContent = CreateScreen.mediaTitle(found);
 			}
 			this.refreshOrder(found);
+			this.refreshSteps(found);
 			this.refreshUpload(this.key);
 			this.refreshAiControls(found);
+		},
+
+		// Brings the arrows and the bottom buttons up to date after the
+		// file's place in the strip changed (it moved, or a file was added
+		// or removed). The arrows are patched in place so a focused one
+		// keeps focus; the bottom buttons are redrawn only when what comes
+		// next changed, and focus stays on the button that had it.
+		refreshSteps(found) {
+			const steps = this.el.querySelector('[data-sheet-steps]');
+			if (steps) {
+				const buttons = steps.querySelectorAll('[data-media-step]');
+				if (found.total < 2 || !buttons.length) {
+					const hadFocus = steps.contains(document.activeElement);
+					steps.innerHTML = this.stepsMarkup(found);
+					if (hadFocus) {
+						this.el.querySelector('#daymark-media-title').focus();
+					}
+				} else {
+					const focused = steps.contains(document.activeElement) ? document.activeElement : null;
+					buttons.forEach((button) => {
+						button.disabled =
+							'-1' === button.getAttribute('data-media-step')
+								? found.position <= 1
+								: found.position >= found.total;
+					});
+					if (focused && focused.disabled) {
+						const other = steps.querySelector('[data-media-step]:not(:disabled)');
+						(other || this.el.querySelector('#daymark-media-title')).focus();
+					}
+				}
+			}
+			const actions = this.el.querySelector('[data-sheet-actions]');
+			const kind = this.nextKind(found);
+			if (actions && actions.getAttribute('data-sheet-next-kind') !== kind) {
+				const active = document.activeElement;
+				const focused = actions.contains(active)
+					? active.hasAttribute('data-sheet-next')
+						? 'next'
+						: 'done'
+					: '';
+				actions.setAttribute('data-sheet-next-kind', kind);
+				actions.innerHTML = this.actionsMarkup(found);
+				if (focused) {
+					const target =
+						('next' === focused && actions.querySelector('[data-sheet-next]')) ||
+						actions.querySelector('[data-sheet-done]');
+					target.focus();
+				}
+			}
 		},
 
 		// Patches the order buttons in place, so a focused button keeps
@@ -18211,10 +18984,12 @@
 		const status = publish.response && publish.response.status;
 		if (status) {
 			const published = 'publish' === status;
-			if (!published && !publish.wasDraft) {
+			// Set to go out later: neither a draft nor live yet.
+			publish.scheduled = 'future' === status;
+			if (!published && !publish.scheduled && !publish.wasDraft) {
 				publish.needsReview = true;
 			}
-			publish.wasDraft = !published;
+			publish.wasDraft = !published && !publish.scheduled;
 		}
 		return publish;
 	}
@@ -18231,7 +19006,11 @@
 			return `
 			<header class="daymark-topbar">
 				<h1 class="daymark-topbar__title daymark-visually-hidden" tabindex="-1" data-daymark-focus>${esc(
-					publish.wasDraft ? __('Draft saved', 'daymark') : __('Published', 'daymark')
+					publish.scheduled
+						? _x('Scheduled', 'heading: a Mark was set to publish later', 'daymark')
+						: publish.wasDraft
+						? __('Draft saved', 'daymark')
+						: __('Published', 'daymark')
 				)}</h1>
 			</header>
 			<section class="daymark-screen daymark-success">
@@ -18272,11 +19051,22 @@
 				})
 				.join('');
 
+			// Set to go out later: say when, and that its destinations wait
+			// with it.
+			const scheduledFor = publish.scheduled && response ? parseDate(response.date_gmt || response.date) : null;
+			const held = publish.wasDraft || publish.scheduled;
+
 			return `
 			<h2 class="daymark-screen__heading">${esc(
-				publish.wasDraft ? __('Saved as draft', 'daymark') : __('Published to your site', 'daymark')
+				publish.scheduled
+					? scheduledFor
+						? scheduledMessage(scheduledFor)
+						: __('Scheduled.', 'daymark')
+					: publish.wasDraft
+					? __('Saved as draft', 'daymark')
+					: __('Published to your site', 'daymark')
 			)}${
-				!publish.wasDraft && permalink
+				!held && permalink
 					? ` <a class="daymark-success__viewlink" href="${esc(permalink)}" target="_blank" rel="noopener">(${esc(
 							__('view', 'daymark')
 					  )})</a>`
@@ -18291,7 +19081,7 @@
 					: ''
 			}
 			${
-				publish.wasDraft
+				held
 					? publish.targets.length
 						? '<p class="daymark-note-card__meta">' +
 						  esc(__('Selected destinations will publish when this Mark goes live.', 'daymark')) +

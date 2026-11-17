@@ -22,6 +22,8 @@ can't act on them.
 
 ### Added
 
+- Tap a photo while you write a Mark to give it a shape (Original, Square, Tall or Wide, cut from the middle) or turn it with Rotate, so a sideways or badly framed photo no longer means a trip to the Photos app first. Your site makes the edit and keeps the original, and Original puts it back. ([#612](https://github.com/jeffpaul/daymark/pull/612))
+- Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
 - If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in. ([#611](https://github.com/jeffpaul/daymark/pull/611))
 
 ### Changed
@@ -32,9 +34,13 @@ can't act on them.
 
 - "Published." now comes with a small check mark that pops in, and the first Mark you ever publish gets a short burst of confetti. Both stay still when your device asks for reduced motion. ([#597](https://github.com/jeffpaul/daymark/pull/597))
 
+- On the composer, Publish is now the one big button. "Save as draft" sits beside it as a quiet text button, since Daymark already saves a draft as you type and when you leave. ([#610](https://github.com/jeffpaul/daymark/pull/610))
+
 - Daymark's plugin description and README now use six lines from the original planning notes, such as "Publish once. Own it forever. Share everywhere.", to say in everyday words why posting on your own site first matters. ([#600](https://github.com/jeffpaul/daymark/pull/600))
 
 - A Timeline with nothing on it yet now greets you with a welcome card: what Daymark is for, a big "Publish your first Mark" button, and "Follow a site" beside it. Before, it was one line of small text. ([#598](https://github.com/jeffpaul/daymark/pull/598))
+
+- A Mark with several photos is quicker to finish. The photo row now ends in an "Add" tile, so another photo or video can be added right where the photos are. Each photo's sheet has previous and next arrows and a "Next photo" button, so you can describe every photo in one pass without closing the sheet in between. ([#609](https://github.com/jeffpaul/daymark/pull/609))
 
 ### Fixed
 

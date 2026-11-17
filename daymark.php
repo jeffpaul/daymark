@@ -32,6 +32,7 @@ require_once DAYMARK_PLUGIN_DIR . 'includes/class-rest-controller.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-media-container.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publisher.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-uploads.php';
+require_once DAYMARK_PLUGIN_DIR . 'includes/class-image-edit.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-geocoder.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-publish-helpers.php';
 require_once DAYMARK_PLUGIN_DIR . 'includes/class-ai-assist.php';
