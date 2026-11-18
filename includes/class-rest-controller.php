@@ -3142,8 +3142,8 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 	 * unread notifications, without marking anything seen. When the app
 	 * badge setting is on, it also returns `unread_count`. The app checks
 	 * it when it comes back to the foreground and when you move between
-	 * screens, so the bell's dot updates during a visit instead of only on
-	 * a page load.
+	 * screens, so the Notifications tab's unread mark updates during a
+	 * visit instead of only on a page load.
 	 *
 	 * @since 0.20.0
 	 *

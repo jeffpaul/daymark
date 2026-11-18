@@ -106,7 +106,7 @@ Daymark's code and its full design history are public on [GitHub](https://github
 
 To like a subscribed post, the other site must accept Webmentions (every Daymark site does), or you need the ActivityPub plugin or Jetpack with your WordPress.com account linked. See "Why don't I see a Like icon on subscribed posts?" below.
 
-Activation creates no public pages of its own. Timeline, Explore, Search, and Me all live inside the authenticated `/daymark` app shell.
+Activation creates no public pages of its own. Timeline, Explore (with search), Notifications, and Me all live inside the authenticated `/daymark` app shell.
 
 == Frequently Asked Questions ==
 

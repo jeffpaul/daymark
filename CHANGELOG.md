@@ -29,7 +29,9 @@ can't act on them.
 
 ### Changed
 
-- Search opens on a quiet starting screen with your recent searches, the people you follow and your most-used tags, where it used to show a copy of the Timeline. Its filters now sit in one row that slides sideways, so results start higher on the screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- Explore and Search are now one tab. Search sits at the top, and under it are your recent searches, the people you follow, your most-used tags, Bookmarks, On this day and the sites you follow. The tab's icon is a magnifying glass with the compass needle inside. ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- Notifications is now a tab in the bottom bar, where Search used to be, and it shows a mark when something new is waiting. The bell is gone from the top of each screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- With nothing typed, search shows a quiet starting screen where it used to show a copy of the Timeline. Its filters now sit in one row that slides sideways, so results start higher on the screen. ([#615](https://github.com/jeffpaul/daymark/pull/615))
 
 - While you write a Mark, the first destination now shows your site's own icon and address (such as "example.com") where it used to say "Your site", and the "Where this goes" list shows your site's name and address. It's a small reminder that every Mark lives on your own site first. ([#595](https://github.com/jeffpaul/daymark/pull/595))
 

@@ -263,7 +263,7 @@ class Test_Routes extends WP_UnitTestCase {
 		);
 	}
 
-	/** Explore/Search/Me are real routes under the app base, same as notifications already was. */
+	/** Explore/Search/Me are real routes under the app base, same as notifications already was. Search opens Explore in the app (issue #269), and its route stays so saved links work. */
 	public function test_nav_destinations_get_real_routes() {
 		$patterns = $this->registered_rules();
 

@@ -3550,7 +3550,7 @@ test('search shows a result count and loads more past the first 20', async ({ pa
 // Search: its own bottom-nav destination and route (not a collapsible
 // header bar on Home anymore) — a query narrows the results, and a type
 // filter narrows them too.
-test('search: the Search tab shows a query + type filter that narrow the results', async ({ page }) => {
+test('search: on the Explore tab, a query + type filter narrow the results', async ({ page }) => {
 	const tag = `${RUN_ID}srch`;
 	const alpha = `E2E searchable ${tag} alphaword`;
 	const bravo = `E2E searchable ${tag} bravoword`;
@@ -3576,7 +3576,7 @@ test('search: the Search tab shows a query + type filter that narrow the results
 
 	await page.goto('/daymark');
 	// A raw DOM click, not Playwright's own pointer-based one — same reason
-	// as the identical bottom-nav Search click further down in this file
+	// as the identical bottom-nav Explore click further down in this file
 	// (see its own comment): Playwright's click first scrollIntoViewIfNeeded()s
 	// the target, and on this suite's accumulated, never-cleaned-up Timeline
 	// content that scroll itself triggers bindChromeAutoHide()'s scroll-down
@@ -3584,10 +3584,11 @@ test('search: the Search tab shows a query + type filter that narrow the results
 	// mid-click — so Playwright's hit-test at that point lands on whatever
 	// Timeline card is now revealed underneath instead. el.click() skips that
 	// hit-testing entirely.
-	await page.locator('.daymark-bottomnav__link', { hasText: 'Search' }).evaluate((el) => el.click());
-	await expect(page).toHaveURL(/#search$/);
-	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Search');
-	await expect(page.locator('h1', { hasText: 'Search' })).toBeVisible();
+	// Search lives on the Explore tab: one tab, one icon.
+	await page.locator('.daymark-bottomnav__link', { hasText: 'Explore' }).evaluate((el) => el.click());
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveText('Explore');
+	await expect(page.locator('h1', { hasText: 'Explore' })).toBeVisible();
 
 	const list = page.locator('[data-search-results]');
 
@@ -3614,6 +3615,143 @@ test('search: the Search tab shows a query + type filter that narrow the results
 	// "All", with nothing else chosen, is the starting screen again.
 	await page.locator('[data-filter-chips] [data-filter=""]').click();
 	await expect(page.locator('[data-search-start]')).toBeVisible();
+});
+
+// Explore and Search are one tab (issue #269): search on top, and under
+// its starting screen what Explore always had (Bookmarks, On this day, the
+// sites you follow). Each of those searches in place instead of leaving
+// for another screen. The followed sites are canned here, so the test
+// needs no real feed, and "On this day" is handed a Mark from today, since
+// a test site has none from earlier years.
+test('explore: search on top, with Bookmarks, On this day and Following below', async ({ page }) => {
+	const memory = `E2E memory ${RUN_ID}`;
+
+	await loginAs(page);
+	// Both routes go on before the app first loads: one added after its
+	// service worker controls the page can miss requests.
+	await page.route(/\/daymark\/v1\/timeline\?.*on_this_day=1/, async (route) => {
+		const url = new URL(route.request().url());
+		url.searchParams.delete('on_this_day');
+		url.searchParams.set('s', memory);
+		url.searchParams.set('per_page', '1');
+		const response = await route.fetch({ url: url.toString() });
+		await route.fulfill({ response });
+	});
+	await page.route(/\/daymark\/v1\/subscriptions(\?|$)/, async (route) => {
+		if ('GET' !== route.request().method()) {
+			await route.continue();
+			return;
+		}
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([
+				{ id: 990001, site_title: 'Zed Example', site_url: 'https://zed.example/', site_icon_url: '', favorite: false },
+				{ id: 990002, site_title: 'Amy Example', site_url: 'https://amy.example/', site_icon_url: '', favorite: false },
+			]),
+		});
+	});
+	await page.goto('/daymark');
+	await page.evaluate(async (caption) => {
+		const config = window.daymarkApp;
+		await fetch(`${config.restUrl}marks`, {
+			method: 'POST',
+			headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+			credentials: 'same-origin',
+			body: JSON.stringify({ caption, primary_type: 'note' }),
+		});
+	}, memory);
+	await page.goto('/daymark/explore');
+
+	const input = page.locator('[data-search-input]');
+	const start = page.locator('[data-search-start]');
+	const sections = page.locator('[data-explore-sections]');
+	const list = page.locator('[data-search-results]');
+	const source = page.locator('[data-source-filter]');
+
+	// At rest: the search box, the starting screen, then Explore's own
+	// sections under it, in that order.
+	await expect(input).toBeVisible();
+	await expect(start).toBeVisible();
+	await expect(sections).toBeVisible();
+	await expect(list).toBeHidden();
+	await expect(sections.locator('[data-explore-bookmarks]')).toBeVisible();
+	const memories = sections.locator('[data-explore-memories]');
+	await expect(memories.getByText(memory).first()).toBeVisible();
+	await expect(sections.locator('[data-follow-site]')).toBeVisible();
+	const order = await page.evaluate(() => {
+		const top = (selector) => document.querySelector(selector).getBoundingClientRect().top;
+		return [top('[data-search-input]'), top('[data-search-start]'), top('[data-explore-sections]')];
+	});
+	expect(order[0]).toBeLessThan(order[1]);
+	expect(order[1]).toBeLessThan(order[2]);
+
+	// Following lists every followed site, A to Z.
+	const followed = sections.locator('[data-explore-subscription]');
+	await expect(followed).toHaveCount(2);
+	await expect(followed.first()).toContainText('Amy Example');
+
+	// A followed site shows its posts right here: same tab, the Source
+	// filter set, and the sections out of the way of the results.
+	await followed.first().click();
+	await expect(source).toHaveValue('990002');
+	await expect(page).toHaveURL(/\/daymark\/explore\/?(#explore)?$/);
+	await expect(sections).toBeHidden();
+	await expect(start).toBeHidden();
+	await expect(list).toBeVisible();
+
+	// Letting go of the site brings the sections back.
+	await source.selectOption('');
+	await expect(sections).toBeVisible();
+	await expect(start).toBeVisible();
+
+	// Bookmarks works the same way, and says what it is showing.
+	await sections.locator('[data-explore-bookmarks]').click();
+	await expect(page.locator('[data-search-bookmarks-banner]')).toBeVisible();
+	await expect(sections).toBeHidden();
+	await expect(list).toBeVisible();
+
+	// Typing searches as it always did.
+	await page.locator('[data-search-clear-bookmarks]').click();
+	await expect(sections).toBeVisible();
+	await input.fill(`nothing-matches-${RUN_ID}`);
+	await expect(sections).toBeHidden();
+	await expect(list).toContainText('Nothing matches');
+	await input.fill('');
+	await expect(sections).toBeVisible();
+
+	// An "On this day" card opens the post, and Back returns to Explore
+	// with the card still there.
+	await memories.locator('.daymark-recent__title').first().click();
+	await expect(page).toHaveURL(/#post$/);
+	await page.locator('a.daymark-backlink--icon').click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-explore-memories]').getByText(memory).first()).toBeVisible();
+});
+
+// Notifications is a tab in the bottom bar, where Search used to be (issue
+// #269): it keeps the bar on screen, shows the Daymark icon instead of a
+// back arrow, and the other tabs are one tap away from it.
+test('notifications: is a tab in the bottom bar', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	const tab = page.locator('.daymark-bottomnav__link[href="#notifications"]');
+	await tab.evaluate((el) => el.click());
+
+	await expect(page).toHaveURL(/#notifications$/);
+	await expect(page.locator('h1', { hasText: 'Notifications' })).toBeVisible();
+	await expect(page.locator('.daymark-notif-tabs')).toBeVisible();
+	await expect(tab).toHaveClass(/is-active/);
+	await expect(tab).toHaveAttribute('aria-current', 'page');
+	await expect(page.locator('.daymark-bottomnav__link.is-active')).toHaveCount(1);
+	await expect(page.locator('.daymark-homefooter')).toBeVisible();
+	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
+	await expect(page.locator('header.daymark-topbar .daymark-backlink')).toHaveCount(0);
+	await expect(page.locator('header.daymark-topbar a.daymark-iconbtn[href="#home"]')).toBeVisible();
+
+	await page.locator('.daymark-bottomnav__link[href="#explore"]').evaluate((el) => el.click());
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-search-input]')).toBeVisible();
 });
 
 // Search's starting screen (issue #269): recent searches kept on this
@@ -3959,10 +4097,10 @@ test('site icon: a single click filters Timeline to that source', async ({ page 
 	}));
 	await expect(markIcon).toHaveAttribute('title', `${siteConfig.siteTitle || 'Site'}\n${siteConfig.siteUrl}`);
 
-	// One click — no menu-open step first — jumps straight to Search with
-	// "My Marks" already applied.
+	// One click — no menu-open step first — jumps straight to Explore's
+	// search with "My Marks" already applied.
 	await markIcon.click();
-	await expect(page).toHaveURL(/#search$/);
+	await expect(page).toHaveURL(/#explore$/);
 	const sourceFilter = page.locator('[data-source-filter]');
 	const results = page.locator('[data-search-results]');
 	await expect(sourceFilter).toHaveValue('mine');
@@ -4155,9 +4293,9 @@ test('touch targets: fixed controls meet the 44px minimum', async ({ page }) => 
 	// real content the page has scrolled to at that screen position —
 	// sidesteps it for good.
 	await page
-		.locator('.daymark-bottomnav__link', { hasText: 'Search' })
+		.locator('.daymark-bottomnav__link', { hasText: 'Explore' })
 		.evaluate((el) => el.click());
-	await expect(page).toHaveURL(/#search$/);
+	await expect(page).toHaveURL(/#explore$/);
 	box = await page.locator('[data-filter-chips] [data-filter="note"]').boundingBox();
 	expect(box.height).toBeGreaterThanOrEqual(TAP_MIN);
 	box = await page.locator('[data-source-filter]').boundingBox();
@@ -4494,7 +4632,8 @@ test('publish goes back to where the composer was opened, and View opens the new
 	await page.fill('#daymark-caption', caption);
 	await page.locator('[data-action="publish"]').click();
 
-	await expect(page).toHaveURL(/#search$/);
+	// /daymark/search still opens the app, on Explore (where search lives).
+	await expect(page).toHaveURL(/#explore$/);
 	await expect(page.locator('.daymark-success')).toHaveCount(0);
 	await expectPublished(page);
 
@@ -4878,23 +5017,32 @@ test('unread dot appears for a new reply and clears after viewing', async ({ pag
 		});
 	}, reply);
 
-	// Fresh load: the bell carries the unread dot.
+	// Fresh load: the Notifications tab carries the unread mark (a dot, or
+	// a number on a site that shows the unread count on the app's icon),
+	// and says so in its name.
 	await page.goto('/daymark');
-	await expect(page.locator('.daymark-iconbtn__dot')).toBeVisible();
+	const notificationsTab = page.locator('.daymark-bottomnav__link[href="#notifications"]');
+	const unreadMark = notificationsTab.locator('.daymark-bottomnav__dot, .daymark-bottomnav__count');
+	await expect(unreadMark).toBeVisible();
+	await expect(notificationsTab).toHaveText(/unread/);
 
-	// Viewing notifications clears it without a reload, and the reply that
-	// arrived since the last visit is marked unread…
-	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
+	// Viewing notifications clears it without a reload, on the tab that is
+	// now the current one, and the reply that arrived since the last visit
+	// is marked unread…
+	await notificationsTab.evaluate((el) => el.click());
 	await expect(page.getByText(reply).first()).toBeVisible();
 	await expect(page.locator('.daymark-note-card--unread').filter({ hasText: reply }).first()).toBeVisible();
-	await page.locator('.daymark-backlink').click();
-	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
-	await expect(page.locator('.daymark-iconbtn__dot')).toHaveCount(0);
+	await expect(notificationsTab).toHaveClass(/is-active/);
+	await expect(unreadMark).toHaveCount(0);
+	await page.locator('.daymark-bottomnav__link[href="#home"]').evaluate((el) => el.click());
+	await expect(page.locator('#daymark-recent-heading')).toBeVisible();
+	await expect(unreadMark).toHaveCount(0);
 
 	// …and stays cleared across a full reload (server-side read state).
 	await page.goto('/daymark');
 	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
-	await expect(page.locator('.daymark-iconbtn__dot')).toHaveCount(0);
+	await expect(page.locator('#daymark-recent-heading')).toBeVisible();
+	await expect(unreadMark).toHaveCount(0);
 });
 
 // Optimistic publishing: "Tap Publish. Immediately appears in your
@@ -5645,12 +5793,12 @@ test('header home-link points home, and Home shows the Timeline feed', async ({ 
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
 });
 
-// The persistent bottom nav (Timeline, Explore, +New, Search, Me) renders
-// as icon links in that exact order flanking the launcher: an SVG glyph,
+// The persistent bottom nav (Timeline, Explore, +New, Notifications, Me)
+// renders as icon links in that exact order flanking the launcher: an SVG glyph,
 // the label as the accessible name (role+name) and as the hover title, no
 // visible text — plus an active-tab indicator for whichever screen is
 // current, and the launcher never picks that styling up by mistake.
-test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessible labels, and active state', async ({
+test('bottom nav shows Timeline/Explore/Notifications/Me in order, with icons, accessible labels, and active state', async ({
 	page,
 }) => {
 	await loginAs(page);
@@ -5658,7 +5806,7 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 
 	const nav = page.locator('.daymark-bottomnav');
 
-	for (const label of ['Timeline', 'Explore', 'Search', 'Me']) {
+	for (const label of ['Timeline', 'Explore', 'Me']) {
 		// exact: true matters here — getByRole's name match is substring by
 		// default, and "Me" is a substring of "Timeline".
 		const link = nav.getByRole('link', { name: label, exact: true });
@@ -5666,14 +5814,29 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 		await expect(link).toHaveAttribute('title', label);
 		await expect(link.locator('svg.daymark-icon')).toBeVisible();
 	}
+	// Notifications' name grows when something is waiting ("Notifications —
+	// unread replies"), so it is found by where it goes instead.
+	const notifications = nav.locator('a[href="#notifications"]');
+	await expect(notifications).toBeVisible();
+	await expect(notifications).toHaveAttribute('title', 'Notifications');
+	await expect(notifications).toHaveText(/^Notifications/);
+	await expect(notifications.locator('svg.daymark-icon')).toBeVisible();
 	await expect(page.locator('.daymark-bottomnav__link svg')).toHaveCount(4);
 
-	// Required order: Timeline, Explore, +New (center), Search, Me — the
-	// launcher <div> has no title attribute, so it stands out from the tabs.
+	// Search has no tab of its own: it is the top of Explore, whose icon is
+	// a magnifying glass with the compass needle inside the lens.
+	await expect(nav.locator('a[href="#search"]')).toHaveCount(0);
+	const exploreIcon = nav.locator('a[href="#explore"] svg.daymark-icon');
+	await expect(exploreIcon.locator('circle')).toHaveCount(1);
+	await expect(exploreIcon.locator('line')).toHaveCount(1);
+	await expect(exploreIcon.locator('polygon')).toHaveCount(1);
+
+	// Required order: Timeline, Explore, +New (center), Notifications, Me —
+	// the launcher <div> has no title attribute, so it stands out from the tabs.
 	const tabOrder = await nav.evaluate((el) =>
 		Array.from(el.children).map((child) => child.getAttribute('title') || 'launcher')
 	);
-	expect(tabOrder).toEqual(['Timeline', 'Explore', 'launcher', 'Search', 'Me']);
+	expect(tabOrder).toEqual(['Timeline', 'Explore', 'launcher', 'Notifications', 'Me']);
 
 	// Timeline is the default landing destination and shows as active.
 	const timeline = nav.getByRole('link', { name: 'Timeline', exact: true });
@@ -5696,10 +5859,10 @@ test('bottom nav shows Timeline/Explore/Search/Me in order, with icons, accessib
 
 // +New works identically from every nav destination, not just Home — and
 // never mistakes itself for the active tab on any of them.
-test('+New launcher works from Explore, Search, and Me, not just Timeline', async ({ page }) => {
+test('+New launcher works from Explore, Notifications, and Me, not just Timeline', async ({ page }) => {
 	await loginAs(page);
 
-	for (const hash of ['#explore', '#search', '#me']) {
+	for (const hash of ['#explore', '#notifications', '#me']) {
 		await page.goto('/daymark' + hash);
 		// These three URLs differ only by hash fragment, so the browser
 		// treats each `goto()` as a same-document navigation — the app's
@@ -5718,10 +5881,10 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 			/is-active/
 		);
 		await expect(page.locator('[data-action="new-mark"]')).not.toHaveClass(/is-active/);
-		// Explore's Following list and Search's results both render a
-		// `.daymark-skeleton` placeholder synchronously, then replace it
-		// once their async fetch resolves (subscriptions, then a search
-		// results page) — real content of a different size than the
+		// Explore's Following list and On this day, and Notifications'
+		// list, each render a `.daymark-skeleton` placeholder
+		// synchronously, then replace it once their async fetch
+		// resolves — real content of a different size than the
 		// placeholder can reflow the screen under the fixed launcher right
 		// as this loop taps it. Wait for the skeletons to clear first, or
 		// the click can land on the shifting content underneath instead of
@@ -5783,12 +5946,15 @@ test('+New launcher works from Explore, Search, and Me, not just Timeline', asyn
 // Direct navigation and a hard refresh both land correctly on each new
 // destination — they are real server routes (Daymark_Routes), not just
 // client-side hash states.
-test('Explore, Search, and Me are directly linkable and survive a refresh', async ({ page }) => {
+// /daymark/search is still a real address (bookmarks, the home-screen
+// shortcut, links in old notifications): it opens Explore, where search is.
+test('Explore, Notifications, and Me are directly linkable and survive a refresh', async ({ page }) => {
 	await loginAs(page);
 
 	for (const { path, heading } of [
 		{ path: '/daymark/explore', heading: 'Explore' },
-		{ path: '/daymark/search', heading: 'Search' },
+		{ path: '/daymark/search', heading: 'Explore' },
+		{ path: '/daymark/notifications', heading: 'Notifications' },
 		{ path: '/daymark/me', heading: 'Me' },
 	]) {
 		await page.goto(path);
@@ -5798,21 +5964,27 @@ test('Explore, Search, and Me are directly linkable and survive a refresh', asyn
 		await page.reload();
 		await expect(page.locator('h1', { hasText: heading })).toBeVisible();
 	}
+
+	// An old #search link inside the app lands on Explore too.
+	await page.goto('/daymark#search');
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-search-input]')).toBeVisible();
 });
 
-// Explore, Search, and Me now share Home's own header chrome: the Daymark
-// icon (upper left) links back to Timeline, and Notifications (upper
-// right) is reachable from every one of them — so Me's own body no longer
-// needs a separate "Notifications" link.
-test('Explore, Search, and Me headers carry the Daymark icon and Notifications icon', async ({
+// Explore, Notifications, and Me share Home's own header chrome: the
+// Daymark icon (upper left) links back to Timeline. Notifications is a tab
+// in the bottom bar on every one of them, so no header carries a bell and
+// Me's own body needs no separate "Notifications" link.
+test('Explore, Notifications, and Me headers carry the Daymark icon, and Notifications is a tab', async ({
 	page,
 }) => {
 	await loginAs(page);
 
 	await page.goto('/daymark#home');
 	const homeIconBox = await page.locator('.daymark-homelink__icon').boundingBox();
+	await expect(page.locator('header.daymark-topbar a[href="#notifications"]')).toHaveCount(0);
 
-	for (const hash of ['#explore', '#search', '#me']) {
+	for (const hash of ['#explore', '#notifications', '#me']) {
 		await page.goto('/daymark' + hash);
 
 		const homeIcon = page.locator('header.daymark-topbar a.daymark-iconbtn[href="#home"]');
@@ -5833,9 +6005,10 @@ test('Explore, Search, and Me headers carry the Daymark icon and Notifications i
 		const iconBox = await homeIconImg.boundingBox();
 		expect(Math.abs(iconBox.x - homeIconBox.x)).toBeLessThanOrEqual(2);
 
-		await expect(
-			page.locator('header.daymark-topbar a.daymark-iconbtn[href="#notifications"]')
-		).toBeVisible();
+		await expect(page.locator('header.daymark-topbar a[href="#notifications"]')).toHaveCount(0);
+		await expect(page.locator('.daymark-bottomnav a[href="#notifications"]')).toHaveCount(1);
+		// A tab is a place, not a step away from one: no back arrow.
+		await expect(page.locator('header.daymark-topbar .daymark-backlink')).toHaveCount(0);
 	}
 
 	await expect(page.locator('.daymark-melink', { hasText: 'Notifications' })).toHaveCount(0);
@@ -6303,12 +6476,14 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 	// back to Home again. The count must stay at exactly one pair throughout:
 	// under the pre-fix code the very first switch below already left it at
 	// two (Home's pair never removed, Notifications' pair added alongside).
-	await page.locator('a.daymark-iconbtn[href="#notifications"]').click(); // -> #notifications
+	const navTo = (hash) =>
+		page.locator(`.daymark-bottomnav__link[href="${hash}"]`).evaluate((el) => el.click());
+	await navTo('#notifications');
 	await expect(page.getByText(reply).first()).toBeVisible();
 	await expect.poll(async () => (await counts()).click).toBe(1);
 	await expect.poll(async () => (await counts()).keydown).toBe(1);
 
-	await page.locator('.daymark-backlink').click(); // -> #home
+	await navTo('#home');
 	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
 	await expect.poll(async () => (await counts()).click).toBe(1);
 	await expect.poll(async () => (await counts()).keydown).toBe(1);
@@ -6324,7 +6499,7 @@ test('switching screens tears down the previous screen’s dismiss listeners ins
 
 	// Escape on Notifications only ever closes its own reply box, never a
 	// leftover disclosure from a screen that isn't showing anymore.
-	await page.locator('a.daymark-iconbtn[href="#notifications"]').click(); // -> #notifications
+	await navTo('#notifications');
 	const card = page.locator('.daymark-note-card').filter({ hasText: reply }).first();
 	await card.locator('[data-reply-toggle]').click();
 	await expect(card.locator('[data-reply-form]')).toBeVisible();
@@ -6379,13 +6554,8 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 	expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
 	await page.locator(`[data-overflow-toggle="${id}"]`).click();
 
-	// Notifications' back arrow is mirrored to point right. Back to the top
-	// first: tapping the ⋯ menu can scroll the page up, and scrolling up
-	// far down the Timeline hides the header, so the Notifications button
-	// would sit above the screen until the page climbs back near the top.
-	await page.evaluate(() => window.scrollTo(0, 0));
-	await expect(page.locator('.daymark-topbar')).not.toHaveClass(/is-header-hidden/);
-	await page.locator('a.daymark-iconbtn[href="#notifications"]').click();
+	// The composer's back arrow is mirrored to point right.
+	await openComposer(page);
 	const backLink = page.locator('.daymark-backlink');
 	await expect(backLink).toBeVisible();
 	const arrowTransform = await page.evaluate(() => {
@@ -6393,8 +6563,11 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 		return arrow ? window.getComputedStyle(arrow).transform : '';
 	});
 	expect(arrowTransform).toContain('matrix(-1');
+	await backLink.click();
+	await expect(page.locator('#daymark-recent-heading')).toBeVisible();
 
 	// Tab navigation follows reading direction: ArrowLeft moves to the next tab.
+	await page.locator('.daymark-bottomnav__link[href="#notifications"]').evaluate((el) => el.click());
 	const tabs = page.locator('.daymark-notif-tabs__tab');
 	await tabs.first().focus();
 	await expect(tabs.first()).toBeFocused();
@@ -6402,9 +6575,6 @@ test('RTL layout mirrors the back arrow, toggles, ⋯ menu, and tab navigation',
 	await expect(tabs.nth(1)).toBeFocused();
 	await page.keyboard.press('ArrowRight');
 	await expect(tabs.first()).toBeFocused();
-
-	await backLink.click();
-	await expect(page.locator('[data-action="new-mark"]')).toBeVisible();
 });
 
 // The Install card's Add to Home Screen steps are worded for the iPhone

@@ -3,7 +3,7 @@
  * Front-end route handling for the Daymark app shell.
  *
  * Route strategy (committed): rewrite rules mapping /daymark and its
- * /notifications, /explore, /search, and /me sub-routes to the
+ * /notifications, /explore, /search (which opens Explore), and /me sub-routes to the
  * `daymark_app` query var, with a template_include filter that loads
  * templates/app-shell.php.
  *
@@ -48,6 +48,8 @@ class Daymark_Routes {
 	 * WordPress's own permalink handling applies — the same reason
 	 * 'notifications' already worked this way. Create/Publish/Success stay
 	 * pure client-side states layered on top of 'home', same as before.
+	 * Search is part of the Explore screen since issue #269; 'search' stays
+	 * a route so saved links keep working, and the app opens Explore for it.
 	 *
 	 * @var string[]
 	 */

@@ -124,10 +124,8 @@ body.daymark-app {
 	 * inset. A shell padding would lift them up off the screen. */
 }
 
-/* Notifications and the full-screen post view (#post) are both screens
- * without a pinned footer, so they need their own bottom clearance above
- * the home indicator. */
-.daymark-app--notifications .daymark-screen,
+/* The full-screen post view (#post) has no pinned footer, so it needs its
+ * own bottom clearance above the home indicator. */
 .daymark-app--post .daymark-screen {
 	padding-bottom: calc(var(--daymark-spacing-lg) + env(safe-area-inset-bottom, 0px));
 }
@@ -1116,20 +1114,8 @@ h2[tabindex='-1']:focus {
 	white-space: nowrap;
 }
 
-/* Unread indicator on the notifications bell — presence only, no count. */
 .daymark-iconbtn {
 	position: relative;
-}
-
-.daymark-iconbtn__dot {
-	position: absolute;
-	top: 9px;
-	inset-inline-end: 9px;
-	width: 9px;
-	height: 9px;
-	border-radius: 50%;
-	background: var(--daymark-accent);
-	border: 2px solid var(--daymark-bg);
 }
 
 /* Autosave status ("Saving…" / "Saved" / "Not saved yet — will retry") at
@@ -2419,8 +2405,43 @@ button.daymark-stat {
 	stroke-width: 2.5;
 }
 
-/* Generic 22x22 outline icon, shared by the bottom nav, Explore's "Browse
-   by type" buttons, and Me's fallback avatar glyph. */
+/* Holds a tab's icon and, on Notifications, its unread mark: a dot when
+   something is new, or the unread count on a site that counts it. */
+.daymark-bottomnav__icon {
+	position: relative;
+	display: inline-flex;
+}
+
+.daymark-bottomnav__dot,
+.daymark-bottomnav__count {
+	position: absolute;
+	box-sizing: border-box;
+	border: 2px solid var(--daymark-bg);
+	border-radius: 999px;
+	background: var(--daymark-accent);
+}
+
+.daymark-bottomnav__dot {
+	top: -3px;
+	inset-inline-end: -3px;
+	width: 11px;
+	height: 11px;
+}
+
+.daymark-bottomnav__count {
+	top: -8px;
+	inset-inline-start: 11px;
+	min-width: 20px;
+	padding: 0 4px;
+	color: var(--daymark-accent-fg);
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 16px;
+	text-align: center;
+}
+
+/* Generic 22x22 outline icon, shared by the bottom nav, Explore's
+   Bookmarks button, and Me's fallback avatar glyph. */
 .daymark-icon {
 	display: block;
 }
@@ -4448,11 +4469,12 @@ button.daymark-stat {
 	padding-inline-start: calc(8px + 40px + 2 * var(--daymark-spacing-sm));
 }
 
-/* The Undo bar after archiving sits above the bottom edge of the screen. */
+/* The Undo bar after archiving sits above the bottom nav, clear of the
+   +New button that rises out of it. */
 .daymark-notif-undo {
 	position: fixed;
 	inset-inline: var(--daymark-spacing-md);
-	bottom: calc(env(safe-area-inset-bottom, 0px) + var(--daymark-spacing-md));
+	bottom: calc(env(safe-area-inset-bottom, 0px) + var(--daymark-tap-min) + var(--daymark-spacing-md) * 2);
 	z-index: 40;
 	display: flex;
 	align-items: center;
@@ -4879,6 +4901,18 @@ button.daymark-stat {
 }
 
 .daymark-searchstart[hidden] {
+	display: none;
+}
+
+/* Explore at rest: Bookmarks, On this day and Following, under the
+   starting screen's recent searches, people and tags. */
+.daymark-exploresections {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-lg);
+}
+
+.daymark-exploresections[hidden] {
 	display: none;
 }
 
