@@ -6043,6 +6043,164 @@ test('Explore, Notifications, and Me headers carry the Daymark icon, and Notific
 	await expect(page.locator('#daymark-recent-heading')).toHaveText('Timeline');
 });
 
+// Me's "Your days" calendar (issue #295): a month of the days you published
+// on. A day with Marks is a button; tapping it lists that day's Marks
+// under the calendar, and one of those opens like any other card.
+
+// One month of the calendar, as the site answers ('' for the current one).
+function calendarMonth(page, month = '') {
+	return page.evaluate(async (m) => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}calendar${m ? `?month=${m}` : ''}`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		return res.json();
+	}, month);
+}
+
+test('Me calendar: today lists the Mark you just published, and Back returns to that day', async ({ page }) => {
+	const caption = `E2E calendar ${RUN_ID}`;
+
+	await loginAs(page);
+	await page.goto('/daymark');
+	await publishNoteNow(page, caption);
+
+	await page.goto('/daymark/me');
+	// The name block says how many Marks, and since when.
+	await expect(page.locator('[data-me-since]')).toHaveText(/^\d+ Marks? since \S+ \d{4}$/);
+	// Next has nowhere to go from the current month.
+	await expect(page.locator('[data-cal-next]')).toBeDisabled();
+
+	const today = page.locator('[data-cal-grid] button.is-today');
+	await expect(today).toBeVisible();
+	await expect(today).toHaveAttribute('aria-pressed', 'false');
+	await expect(today).toHaveAttribute('aria-label', /\d+ Marks?, today$/);
+	await expect(page.locator('[data-cal-day]')).toBeHidden();
+
+	await today.click();
+	await expect(today).toHaveAttribute('aria-pressed', 'true');
+	const card = page.locator('[data-cal-daylist] .daymark-recent__item-wrap').filter({ hasText: caption });
+	await expect(card).toBeVisible();
+
+	// The card opens the Mark; Back lands on the same day, still listed.
+	await card.locator('.daymark-recent__open').click();
+	await expect(page).toHaveURL(/#post$/);
+	await page.goBack();
+	await expect(page).toHaveURL(/#me$/);
+	await expect(page.locator('[data-cal-daylist]').getByText(caption)).toBeVisible();
+	await expect(page.locator('[data-cal-grid] button.is-today')).toHaveAttribute('aria-pressed', 'true');
+
+	// Tapping the day again puts its list away.
+	await page.locator('[data-cal-grid] button.is-today').click();
+	await expect(page.locator('[data-cal-day]')).toBeHidden();
+	await expect(page.locator('[data-cal-grid] button.is-today')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('Me calendar: Previous steps back to a month with a Mark, and See all opens Search on your Marks', async ({
+	page,
+}) => {
+	await loginAs(page);
+	await page.goto('/daymark/me');
+
+	// A post dated the 15th of last month on the site's own clock, made
+	// through WordPress's own REST API (the composer can't backdate).
+	const current = await calendarMonth(page);
+	const [year, month] = current.month.split('-').map(Number);
+	const last = new Date(Date.UTC(year, month - 2, 15));
+	const lastMonth = `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, '0')}`;
+	const title = `E2E last month ${RUN_ID}`;
+	await page.evaluate(
+		async ({ postTitle, date }) => {
+			const config = window.daymarkApp;
+			await fetch(`${config.restUrl.replace('daymark/v1/', 'wp/v2/')}posts`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce, 'Content-Type': 'application/json' },
+				credentials: 'same-origin',
+				body: JSON.stringify({ title: postTitle, content: 'Written last month.', status: 'publish', date }),
+			});
+		},
+		{ postTitle: title, date: `${lastMonth}-15T12:00:00` }
+	);
+
+	await page.goto('/daymark/me');
+	const heading = page.locator('[data-cal-month]');
+	const prev = page.locator('[data-cal-prev]');
+	const next = page.locator('[data-cal-next]');
+	await expect(prev).toBeEnabled();
+	const thisMonthLabel = await heading.textContent();
+
+	await prev.click();
+	await expect(heading).not.toHaveText(thisMonthLabel);
+	await expect(next).toBeEnabled();
+	const day = page.locator(`[data-cal-pick="${lastMonth}-15"]`);
+	await expect(day).toBeVisible();
+	await day.click();
+	await expect(page.locator('[data-cal-daylist]').getByText(title)).toBeVisible();
+
+	// Stepping to another month puts the open day away.
+	await next.click();
+	await expect(heading).toHaveText(thisMonthLabel);
+	await expect(next).toBeDisabled();
+	await expect(page.locator('[data-cal-day]')).toBeHidden();
+
+	// "See all" is where "My marks" used to lead: search, on your Marks.
+	// Search lives on the Explore tab.
+	await page.locator('[data-me-mymarks]').click();
+	await expect(page).toHaveURL(/#explore$/);
+	await expect(page.locator('[data-source-filter]')).toHaveValue('mine');
+});
+
+// Drafts sit at the top of Me, above the calendar. Past the newest three,
+// the rest wait behind "Show more", so a long list can't bury Your days.
+test('Me shows the newest drafts above the calendar, with the rest behind Show more', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark');
+	const draftIds = await page.evaluate(async (runId) => {
+		const config = window.daymarkApp;
+		const ids = [];
+		for (let i = 1; i <= 4; i++) {
+			const form = new FormData();
+			form.append('caption', `E2E many drafts ${runId} ${i}`);
+			form.append('status', 'draft');
+			const res = await fetch(`${config.restUrl}marks`, {
+				method: 'POST',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+				body: form,
+			});
+			ids.push((await res.json()).id);
+		}
+		return ids;
+	}, RUN_ID);
+
+	await page.goto('/daymark/me');
+	const rows = page.locator('[data-me-drafts] [data-edit-draft]');
+	const more = page.locator('[data-me-drafts-more]');
+	await expect(rows).toHaveCount(3);
+	await expect(more).toHaveText(/^Show \d+ more drafts?$/);
+
+	const draftsBox = await page.locator('[data-me-drafts-section]').boundingBox();
+	const daysBox = await page.locator('[data-me-days]').boundingBox();
+	expect(draftsBox.y).toBeLessThan(daysBox.y);
+
+	await more.click();
+	await expect(more).toBeHidden();
+	expect(await rows.count()).toBeGreaterThan(3);
+
+	// Leave no drafts behind for the tests after this one.
+	await page.evaluate(async (ids) => {
+		const config = window.daymarkApp;
+		for (const id of ids) {
+			await fetch(`${config.restUrl.replace('daymark/v1/', 'wp/v2/')}posts/${id}?force=true`, {
+				method: 'DELETE',
+				headers: { 'X-WP-Nonce': config.nonce },
+				credentials: 'same-origin',
+			});
+		}
+	}, draftIds);
+});
+
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles
 // (icon-only visually, but each still has a real accessible name), and
 // dismisses the same ways the rest of the app already does — an outside

@@ -26,6 +26,7 @@ can't act on them.
 - Publish later: under Tags, a new "When" line lets you pick a date and time for a Mark to go out. Publish then reads "Schedule", your site publishes the Mark at that time and sends it to the same places, and the Me screen lists scheduled Marks so you can change the time, publish now, or cancel. ([#613](https://github.com/jeffpaul/daymark/pull/613))
 - If you keep your reading list on a Microsub server such as Aperture, Settings -> Daymark -> Import/Export can now bring those sites into Daymark. You sign in once with your web address, pick sites from a checklist grouped by your channels, and each one becomes an ordinary followed site. Daymark reads the list once and keeps no sign-in. ([#611](https://github.com/jeffpaul/daymark/pull/611))
 - Search now finds people, tags and places. As you type, matching sites you follow, your tags and your Check In places appear above the results as shortcuts, and the words you type also match tag names and the names of sites you follow. The Date filter gains This Year, Last Year and "Pick a month". ([#615](https://github.com/jeffpaul/daymark/pull/615))
+- The Me screen now opens with your drafts and "Your days", a month calendar of the days you published on. Tap a day to see that day's Marks. Your name now shows your site and how many Marks you have published, and the links sit below under "App and account". Builds on the Me screen yusuf-saif proposed in [#432](https://github.com/jeffpaul/daymark/pull/432). ([#616](https://github.com/jeffpaul/daymark/pull/616))
 
 ### Changed
 

@@ -2523,6 +2523,241 @@ button.daymark-stat {
 	font-weight: 700;
 }
 
+/* Me: the name block's site address and "N Marks since" line. */
+.daymark-meprofile__text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.daymark-mesite {
+	align-self: flex-start;
+	color: var(--daymark-accent);
+	font-size: 14px;
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+
+.daymark-mesite:hover,
+.daymark-mesite:focus-visible {
+	text-decoration: underline;
+}
+
+.daymark-mesince {
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+}
+
+/* Me: "Show N more drafts" under the first few. */
+.daymark-medrafts__more {
+	align-self: flex-start;
+}
+
+/* Me: "Your days" (the calendar) and "App and account" (the links). */
+.daymark-medays,
+.daymark-meapp,
+.daymark-medays__day {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-medays__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-md);
+}
+
+.daymark-medays__all {
+	min-width: var(--daymark-tap-min);
+	min-height: var(--daymark-tap-min);
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--daymark-accent);
+	font-family: inherit;
+	font-size: 14px;
+	text-align: end;
+	cursor: pointer;
+}
+
+.daymark-medays__all:hover,
+.daymark-medays__all:focus-visible {
+	text-decoration: underline;
+}
+
+.daymark-medays__dayhead {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+}
+
+/* The month calendar. A day you published on is a tinted button, with a
+   small picture when one of its Marks has one; any other day is plain
+   text. Nothing marks a day without a Mark as missed. */
+.daymark-cal {
+	display: flex;
+	flex-direction: column;
+	gap: var(--daymark-spacing-sm);
+}
+
+.daymark-cal__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--daymark-spacing-md);
+}
+
+.daymark-cal__month {
+	margin: 0;
+	font-size: 17px;
+	font-weight: 700;
+}
+
+.daymark-cal__nav {
+	display: flex;
+	gap: var(--daymark-spacing-xs);
+}
+
+.daymark-cal__navbtn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--daymark-tap-min);
+	height: var(--daymark-tap-min);
+	border: 1px solid var(--daymark-border);
+	border-radius: var(--daymark-radius-sm);
+	background: var(--daymark-bg);
+	color: var(--daymark-text-primary);
+	cursor: pointer;
+}
+
+/* The arrows point the other way in a right-to-left language. */
+.daymark-cal__navbtn svg {
+	transform: scaleX(var(--daymark-dir));
+}
+
+.daymark-cal__navbtn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+.daymark-cal__navbtn:not(:disabled):hover,
+.daymark-cal__navbtn:focus-visible {
+	color: var(--daymark-accent);
+	border-color: var(--daymark-accent-light);
+	background: var(--daymark-accent-wash);
+}
+
+.daymark-cal__grid {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 4px;
+}
+
+.daymark-cal[aria-busy='true'] .daymark-cal__grid {
+	opacity: 0.5;
+}
+
+.daymark-cal__dow {
+	padding-block-end: 2px;
+	color: var(--daymark-text-muted);
+	font-size: 11px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.daymark-cal__day {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	aspect-ratio: 1;
+	padding: 0;
+	border: none;
+	border-radius: 10px;
+	background: none;
+	color: var(--daymark-text-secondary);
+	font-family: inherit;
+	font-size: 14px;
+	overflow: hidden;
+}
+
+button.daymark-cal__day {
+	cursor: pointer;
+}
+
+.daymark-cal__day--ghost {
+	background: var(--daymark-bg-subtle);
+}
+
+.daymark-cal__day--has {
+	background: var(--daymark-accent-wash);
+	color: var(--daymark-text-primary);
+	font-weight: 600;
+}
+
+.daymark-cal__day.is-future {
+	opacity: 0.45;
+}
+
+.daymark-cal__day:focus-visible {
+	outline: 2px solid var(--daymark-accent);
+	outline-offset: 2px;
+}
+
+.daymark-cal__thumb {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+/* A soft shade over the picture, so the day's number stays readable. */
+.daymark-cal__day--photo::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	background: rgba(0, 0, 0, 0.3);
+}
+
+.daymark-cal__num {
+	position: relative;
+	z-index: 2;
+}
+
+.daymark-cal__day--photo .daymark-cal__num {
+	color: #ffffff;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* Today gets a ring; the day whose Marks are listed below gets a bolder
+   one in the accent color. */
+.daymark-cal__day.is-today::after,
+.daymark-cal__day.is-picked::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: 3;
+	border-radius: inherit;
+	box-shadow: inset 0 0 0 2px var(--daymark-text-primary);
+	pointer-events: none;
+}
+
+.daymark-cal__day.is-picked::after {
+	box-shadow: inset 0 0 0 3px var(--daymark-accent);
+}
+
+.daymark-cal__sum {
+	margin: 0;
+	color: var(--daymark-text-secondary);
+	font-size: 13px;
+}
+
 .daymark-melinks {
 	display: flex;
 	flex-direction: column;
