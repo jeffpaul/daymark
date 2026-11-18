@@ -5797,6 +5797,51 @@ test('Me shows the newest drafts above the calendar, with the rest behind Show m
 	}, draftIds);
 });
 
+// Me's Connections card (issue #295): your site, where Marks are shared,
+// the sites you follow, and Notifications, between Your days and the
+// links. Each row leads to where that thing is handled.
+test('Me lists your connections: your site, the sites you follow, and Notifications', async ({ page }) => {
+	await loginAs(page);
+	await page.goto('/daymark/me');
+
+	const list = page.locator('[data-me-connlist]');
+	const site = list.locator('[data-conn="site"]');
+	await expect(site).toBeVisible();
+	await expect(list).not.toHaveAttribute('aria-busy', 'true');
+
+	// What the site answers is what the card says.
+	const answer = await page.evaluate(async () => {
+		const config = window.daymarkApp;
+		const res = await fetch(`${config.restUrl}connections`, {
+			headers: { 'X-WP-Nonce': config.nonce },
+			credentials: 'same-origin',
+		});
+		return res.json();
+	});
+	await expect(site).toHaveAttribute('href', answer.site.url);
+	await expect(site.locator('.daymark-meconn__detail')).toHaveText(answer.site.address);
+	await expect(list.locator('[data-conn^="helper-"], [data-conn^="connector-"], [data-conn="activitypub"]')).toHaveCount(
+		answer.sharing.length
+	);
+
+	const following = list.locator('[data-conn="following"]');
+	await expect(following.locator('.daymark-meconn__detail')).toHaveText(
+		answer.following.count ? new RegExp(`^${answer.following.count} sites?$`) : 'No sites yet'
+	);
+	await expect(following).toHaveAttribute('href', answer.following.url || '#explore');
+
+	// Below Your days, above the links.
+	const daysBox = await page.locator('[data-me-days]').boundingBox();
+	const cardBox = await page.locator('[data-me-connections]').boundingBox();
+	const linksBox = await page.locator('.daymark-melinks').boundingBox();
+	expect(cardBox.y).toBeGreaterThan(daysBox.y);
+	expect(cardBox.y).toBeLessThan(linksBox.y);
+
+	// The Notifications row opens Notifications.
+	await list.locator('[data-conn="notifications"]').click();
+	await expect(page).toHaveURL(/#notifications$/);
+});
+
 // The launcher: tapping "+ New Mark" fans out 4 labeled, accessible bubbles
 // (icon-only visually, but each still has a real accessible name), and
 // dismisses the same ways the rest of the app already does — an outside

@@ -11204,10 +11204,12 @@
 	// The user's own Daymark, one page top to bottom: who they are (name,
 	// site address, how many Marks since when), anything waiting on them
 	// (Scheduled, then Drafts, each hidden when empty), "Your days" (a
-	// month calendar of the days they published on, issue #295), and then
-	// the surfaces that already exist elsewhere, grouped as "App and
-	// account" (Subscriptions in wp-admin, their WordPress profile —
-	// Notifications is reached from the header icon every screen shares).
+	// month calendar of the days they published on, issue #295),
+	// "Connections" (their site, where a Mark is also shared, the sites
+	// they follow, and what's new, each row leading to where it's
+	// handled), and then the surfaces that already exist elsewhere,
+	// grouped as "App and account" (Subscriptions in wp-admin, their
+	// WordPress profile).
 	// Deliberately doesn't duplicate WordPress's own account settings —
 	// Edit profile and Log out link out to WordPress rather than
 	// reimplementing them.
@@ -11364,6 +11366,137 @@
 			  );
 	}
 
+	// --- Me: the Connections card's helpers ---
+	//
+	// One row each for your site, every place a Mark is also shared, the
+	// sites you follow, and Notifications, as GET /connections answers
+	// (issue #295). A row that leads somewhere is a link; one that doesn't
+	// is plain text.
+
+	const CONNECTION_HOME_GLYPH =
+		'<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline>';
+	const CONNECTION_SHARE_GLYPH =
+		'<circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>';
+	const CONNECTION_PEOPLE_GLYPH =
+		'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path>';
+	const CONNECTION_BELL_GLYPH =
+		'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path>';
+
+	function connectionGlyph(glyph) {
+		return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${glyph}</svg>`;
+	}
+
+	// One row: an icon, a name with a quieter line under it, and an
+	// optional short note at the end ("2 new"), in the accent color when
+	// it wants a look. `href` makes the row a link, and `external` adds
+	// the "opens in WordPress" mark.
+	function connectionRow(row) {
+		const inner = `<span class="daymark-meconn__icon" aria-hidden="true">${row.icon}</span>
+			<span class="daymark-meconn__text">
+				<span class="daymark-meconn__name">${esc(row.name)}</span>
+				${row.detail ? `<span class="daymark-meconn__detail">${esc(row.detail)}</span>` : ''}
+			</span>
+			${
+				row.status
+					? `<span class="daymark-meconn__status${row.alert ? ' daymark-meconn__status--alert' : ''}">${esc(
+							row.status
+					  )}</span>`
+					: ''
+			}
+			${row.href && row.external ? leavesAppMarker() : ''}`;
+		const attrs = `class="daymark-meconn__row" data-conn="${esc(row.key)}"`;
+		return row.href ? `<a ${attrs} href="${esc(row.href)}">${inner}</a>` : `<div ${attrs}>${inner}</div>`;
+	}
+
+	// The card's rows from GET /connections' answer.
+	function connectionsHtml(data) {
+		const rows = [];
+		const site = data.site || {};
+		const sharing = Array.isArray(data.sharing) ? data.sharing : [];
+		const sharingUrl = data.sharing_url || '';
+		const following = data.following || {};
+		const count = Number(following.count) || 0;
+		const failing = Number(following.failing) || 0;
+		const unread = Number(data.notifications && data.notifications.unread) || 0;
+
+		rows.push({
+			key: 'site',
+			icon: config.siteIconUrl
+				? `<img class="daymark-meconn__siteicon" src="${esc(config.siteIconUrl)}" alt="" width="20" height="20" />`
+				: connectionGlyph(CONNECTION_HOME_GLYPH),
+			name: __('Your site', 'daymark'),
+			detail: site.address || '',
+			href: site.url || '',
+		});
+
+		sharing.forEach((entry) => {
+			rows.push({
+				key: entry.id,
+				icon:
+					networkIconMarkup(entry.network, 'daymark-meconn__net', 18) || connectionGlyph(CONNECTION_SHARE_GLYPH),
+				name: entry.name,
+				detail: entry.detail,
+				href: sharingUrl,
+				external: true,
+			});
+		});
+
+		// Nothing shares your Marks yet: someone who can set that up gets
+		// the way in, in the composer's own words for it.
+		if (!sharing.length && sharingUrl) {
+			rows.push({
+				key: 'sharing-setup',
+				icon: connectionGlyph(CONNECTION_SHARE_GLYPH),
+				name: __('Reach the fediverse and Bluesky', 'daymark'),
+				detail: __('Your Marks stay on your site for now', 'daymark'),
+				href: sharingUrl,
+				external: true,
+			});
+		}
+
+		rows.push({
+			key: 'following',
+			icon: connectionGlyph(CONNECTION_PEOPLE_GLYPH),
+			name: __('Following', 'daymark'),
+			detail: count
+				? sprintf(
+						/* translators: %s: number of sites followed */
+						_n('%s site', '%s sites', count, 'daymark'),
+						count
+				  )
+				: __('No sites yet', 'daymark'),
+			status: failing
+				? sprintf(
+						/* translators: %s: number of followed sites that can't be reached */
+						_n('%s needs a look', '%s need a look', failing, 'daymark'),
+						failing
+				  )
+				: '',
+			alert: true,
+			// The failing ones, in WordPress, while there are any (and you
+			// can open that screen); otherwise the Following list.
+			href: following.url || '#explore',
+			external: !!following.url,
+		});
+
+		rows.push({
+			key: 'notifications',
+			icon: connectionGlyph(CONNECTION_BELL_GLYPH),
+			name: __('Notifications', 'daymark'),
+			detail: __('Replies, likes and mentions', 'daymark'),
+			status: unread
+				? sprintf(
+						/* translators: %s: number of unread notifications */
+						_n('%s new', '%s new', unread, 'daymark'),
+						unread
+				  )
+				: '',
+			href: '#notifications',
+		});
+
+		return rows.map(connectionRow).join('');
+	}
+
 	// A trailing icon plus screen-reader text for a Me row that opens a
 	// WordPress screen instead of a Daymark one.
 	function leavesAppMarker() {
@@ -11445,6 +11578,13 @@
 					<div class="daymark-medays__day" data-cal-day aria-live="polite" hidden>
 						<h3 class="daymark-medays__dayhead" data-cal-dayhead></h3>
 						<div class="daymark-recent__list" data-cal-daylist></div>
+					</div>
+				</section>
+				<section class="daymark-meconn" aria-labelledby="daymark-me-conn-heading" data-me-connections>
+					<h2 id="daymark-me-conn-heading" class="daymark-section-heading">${esc(__('Connections', 'daymark'))}</h2>
+					<div class="daymark-meconn__list" data-me-connlist aria-busy="true">
+						${skeletonRows(3)}
+						<span class="daymark-visually-hidden">${esc(__('Loading', 'daymark'))}</span>
 					</div>
 				</section>
 				<section class="daymark-meapp" aria-labelledby="daymark-me-app-heading">
@@ -11610,6 +11750,8 @@
 					this.showDay(snapshot.calDay, snapshot.items);
 				}
 			});
+			// Below everything a Back lands on, so it never holds that up.
+			this.loadConnections();
 			await Promise.all([this.loadDrafts(showDrafts), calendar]);
 			if (snapshot && '#me' === currentScreen) {
 				requestAnimationFrame(() => scrollFeedToAnchor(snapshot, true));
@@ -11711,6 +11853,29 @@
 							esc(err.message)
 						) +
 						'</p>';
+				}
+			}
+		},
+
+		// The Connections card: your site, where a Mark is also shared, the
+		// sites you follow, and what's new. When the site can't be asked
+		// (offline, say), the card steps aside; nothing else waits on it.
+		async loadConnections() {
+			const section = root.querySelector('[data-me-connections]');
+			const list = root.querySelector('[data-me-connlist]');
+			if (!section || !list) {
+				return;
+			}
+			try {
+				const data = await apiGet('connections');
+				if (!list.isConnected) {
+					return;
+				}
+				list.innerHTML = connectionsHtml(data && 'object' === typeof data ? data : {});
+				list.removeAttribute('aria-busy');
+			} catch (err) {
+				if (section.isConnected) {
+					section.hidden = true;
 				}
 			}
 		},

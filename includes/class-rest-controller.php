@@ -300,6 +300,19 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 			)
 		);
 
+		// The Me screen's Connections card (issue #295): where Marks go,
+		// the sites followed, and what is new. A local read, no rate
+		// limit — see Daymark_Connections.
+		register_rest_route(
+			$this->namespace,
+			'/connections',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_connections' ),
+				'permission_callback' => array( $this, 'permissions_check' ),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/ai/suggestions',
@@ -2436,6 +2449,21 @@ class Daymark_REST_Controller extends WP_REST_Controller {
 		}
 
 		return rest_ensure_response( $items );
+	}
+
+	/**
+	 * GET /daymark/v1/connections — the Me screen's Connections card: your
+	 * site, where a Mark is also shared, how many sites are followed (and
+	 * how many are failing), and how many notifications are unread. See
+	 * Daymark_Connections::summary().
+	 *
+	 * @param WP_REST_Request $request The request (no params).
+	 * @return WP_REST_Response
+	 */
+	public function get_connections( WP_REST_Request $request ) {
+		unset( $request );
+
+		return rest_ensure_response( Daymark_Connections::summary() );
 	}
 
 	/**
